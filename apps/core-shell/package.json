@@ -8,8 +8,9 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@aintel/module-crm": "*",
-    "@aintel/theme": "*",
+    "@aintel/module-crm": "workspace:*",
+    "@aintel/module-projects": "workspace:*",
+    "@aintel/theme": "workspace:*",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },

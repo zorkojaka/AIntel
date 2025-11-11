@@ -1,0 +1,38 @@
+.project-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.project-timeline__item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-soft);
+  padding: var(--space-md);
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.project-timeline__item--completed {
+  border-color: var(--color-primary);
+}
+
+.project-timeline__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.project-timeline__badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-soft);
+  background: rgba(15, 99, 247, 0.12);
+}
+
+.project-timeline__date {
+  font-size: 0.9rem;
+  color: var(--color-muted, #6b7280);
+  margin: 0;
+}

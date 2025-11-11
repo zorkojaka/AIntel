@@ -1,0 +1,47 @@
+# Node dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+build/
+**/dist/
+**/build/
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.*
+!.env.example  # dovoli vzorčni .env za referenco
+
+# System / Editor files
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
+
+# Package managers
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Log files
+*.log
+
+# Storybook and docs artifacts
+*.stories.*
+*.md~
+coverage/
+storybook-static/
+
+# Test output
+test-results/
+*.test.ts.snap
+*.spec.ts.snap
+
+# VS Code launch config
+.vscode/launch.json
+
+# Git conflicts / backup
+*.orig
+*.rej

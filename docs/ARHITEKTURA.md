@@ -41,6 +41,7 @@ AIntel je organiziran kot modularni ekosistem, kjer vsak modul vsebuje:
 - Dokument `docs/ARHITEKTURA.md` naj vedno vsebuje ključne točke: kje modul sedi v `backend/routes.ts`, katere `core/` helperje uporablja (npr. normalize, response helpers, shared error handling) ter kateri dokumenti (TODO, korespondenca) so povezani z njegovo fazo.
 - Centralni načrt aplikacije tako ostane na enem mestu: vsak agent, ki prevzame nov modul, posodobi razdelek o modulu in navede trenutni status, da lahko kdorkoli kadarkoli razume, kako se modul povezuje s sistemom.
 - CRM modul (`/crm`) vključuje `people`, `companies`, `notes` rute; uporablja `core/response`, `core/errorHandler` in `utils/normalizeUnicode`. Dokument `docs/faze/01-CRM.md` opisuje uporabniške entitete in testne korake, zato naj vsak agent, ki ga razširja, posodobi ta dokument.
+- Projekti modul (`/projekti`) temelji na `Project` shemi, povezuje CRM stranke in kontakne osebe ter vodi časovnico `offer → invoice`. API-je opisuje `modules/projekti/README.md` in `docs/faze/02-Projekti.md`, kontroler pa se opira na `core/response`, globalno `normalizeUnicode` in helperje iz `modules/projekti/models/*`.
 
 ## Frontend monorepo + dizajn sistem
 - `apps/core-shell` je glavna frontend aplikacija, ki iz `@aintel/module-crm` prevzema manifest in prikazuje CRM stran z osnovnim `CoreLayout` sidebarjem.

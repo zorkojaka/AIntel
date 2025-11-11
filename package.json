@@ -2,12 +2,17 @@
   "name": "aintel-monorepo",
   "private": true,
   "scripts": {
-    "dev": "pnpm --parallel --filter @aintel/core-shell dev --filter @aintel/module-crm dev",
+    "dev": "pnpm --parallel --filter @aintel/core-shell dev --filter @aintel/module-crm dev --filter @aintel/module-projects dev",
     "dev:core": "pnpm --filter @aintel/core-shell dev",
     "dev:crm": "pnpm --filter @aintel/module-crm dev",
+    "dev:all": "pnpm install && pnpm --parallel --filter @aintel/module-projects build --filter @aintel/module-crm build --filter @aintel/core-shell build && pnpm --parallel --filter aintel-backend dev --filter @aintel/core-shell dev --filter @aintel/module-crm dev --filter @aintel/module-projects dev",
+    "dev:stack": "pnpm --parallel --filter aintel-backend --filter @aintel/core-shell --filter @aintel/module-crm --filter @aintel/module-projects dev",
     "lint": "echo \"No lint configured yet\""
   },
   "devDependencies": {
     "pnpm": "^9.0.0"
+  },
+  "dependencies": {
+    "mongodb": "^7.0.0"
   }
 }

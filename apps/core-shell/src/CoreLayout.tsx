@@ -1,16 +1,41 @@
 import React from 'react';
-import { manifest as crmManifest } from '@aintel/module-crm';
 import './CoreLayout.css';
 
-const modules = [crmManifest];
+export interface ModuleManifest {
+  id: string;
+  name?: string;
+  navItems?: Array<{ label?: string }>;
+}
 
-const CoreLayout: React.FC<React.PropsWithChildren> = ({ children }) => (
+interface CoreLayoutProps {
+  children: React.ReactNode;
+  modules: ModuleManifest[];
+  activeModule: string;
+  onModuleSelect: (id: string) => void;
+}
+
+const CoreLayout: React.FC<CoreLayoutProps> = ({
+  children,
+  modules,
+  activeModule,
+  onModuleSelect
+}) => (
   <div className="core-shell">
     <aside className="core-shell__sidebar">
       <h2>AIntel</h2>
       <ul>
-        {modules.map((item) => (
-          <li key={item.id}>{item.navItems[0]?.label ?? item.id}</li>
+        {modules.map((module) => (
+          <li key={module.id}>
+            <button
+              type="button"
+              className={`core-shell__nav-button ${
+                activeModule === module.id ? 'core-shell__nav-button--active' : ''
+              }`}
+              onClick={() => onModuleSelect(module.id)}
+            >
+              {module.navItems?.[0]?.label ?? module.name ?? module.id}
+            </button>
+          </li>
         ))}
       </ul>
     </aside>

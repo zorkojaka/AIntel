@@ -23,8 +23,26 @@
 }
 
 .core-shell__sidebar li {
+  margin-bottom: var(--space-sm);
+}
+
+.core-shell__nav-button {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
   padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-soft);
+  font: inherit;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.core-shell__nav-button:hover {
   background: rgba(15, 99, 247, 0.08);
-  margin-bottom: var(--space-sm);
+}
+
+.core-shell__nav-button--active {
+  background: rgba(15, 99, 247, 0.2);
+  font-weight: 600;
 }

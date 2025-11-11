@@ -35,3 +35,8 @@ Vzpostaviti transparenten register, kjer lahko več agentov hkrati deluje na las
 - Če agent prevzame modul, navede `Modul: <ime>`, `Phase: <nova faza>`, `Start: <datum>`, `Status: in progress`, skupaj s povezavami do relevantnih `docs/faze/` dokumentov.
 - Komunikacija poteka v dokumentih, ne v zasebnih kanalih – tako ostane sledljivost in jasen prehod nalog.
 - Pred zaključkom naloge preverite `docs/TODO.md`, označite status in dodajte kratke povzetke v `docs/ARHITEKTURA.md`, `docs/KOORDINACIJA.md` in `docs/faze/<faza>.md`.
+
+### Agent Codex – Projekti
+1. **Začetne naloge**: Pregledal sem ključne dokumente (`README.md`, `00_CORE.md`, `docs/ARHITEKTURA.md`, `docs/TODO.md`, `docs/MODULES.md`, `docs/faze/01-CRM.md`, `docs/faze/01-2-CRM-UI.md`, `02_PROJEKTI.md`) ter arhitekturo backend delov (`backend/server.ts`, `backend/routes.ts`, `backend/core/*`, `backend/utils/normalizeUnicode.ts`) preden sem začel s kodo.
+2. **Izvedeni koraki**: Zbral sem razumevanje modulov in pravil (JSON response, normalize Unicode, modulne rute) in potrdil navodila za fazo 2 (projekti).
+3. **Naslednji koraki**: Implementirati `modules/projekti` z modeli, kontrolerji, validacijo, APIji in testom; navodila zabeležiti v `docs/faze/02-Projekti.md`, posodobiti `docs/TODO.md` in `docs/KOORDINACIJA.md`, ter začeti frontend modul `apps/module-projects`.

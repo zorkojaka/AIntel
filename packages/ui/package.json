@@ -14,7 +14,7 @@
     "storybook": "echo \"configure Storybook later\""
   },
   "dependencies": {
-    "@aintel/theme": "*",
+    "@aintel/theme": "workspace:*",
     "react": "^18.3.0"
   },
   "devDependencies": {
