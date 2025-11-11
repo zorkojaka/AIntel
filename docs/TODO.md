@@ -25,8 +25,8 @@ Please see `docs/faze/01-CRM.md` for the latest checklist and testing hints.
 - [x] `apps/module-crm` CRM UI
 
 ## FAZA 2 – Projekti
-- [ ] Upravljanje projektov
-- [ ] Statusi, časovnice, povezani dokumenti
+- [x] Upravljanje projektov
+- [x] Statusi, časovnice, povezani dokumenti
 
 ## FAZA 3 – Cenik
 - [ ] Artikel, cena, enota, kategorija

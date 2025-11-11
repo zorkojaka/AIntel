@@ -35,3 +35,8 @@ Vzpostaviti transparenten register, kjer lahko več agentov hkrati deluje na las
 - Če agent prevzame modul, navede `Modul: <ime>`, `Phase: <nova faza>`, `Start: <datum>`, `Status: in progress`, skupaj s povezavami do relevantnih `docs/faze/` dokumentov.
 - Komunikacija poteka v dokumentih, ne v zasebnih kanalih – tako ostane sledljivost in jasen prehod nalog.
 - Pred zaključkom naloge preverite `docs/TODO.md`, označite status in dodajte kratke povzetke v `docs/ARHITEKTURA.md`, `docs/KOORDINACIJA.md` in `docs/faze/<faza>.md`.
+
+### Agent Codex – Projekti (zaključek)
+1. **Začetne naloge**: Ustvaril sem `modules/projekti` z Mongoose modelom, API-kontrolerjem (CRUD + confirm-phase + timeline) in testom ter dokumentacijo v `docs/faze/02-Projekti.md`. Frontend je dobil `apps/module-projects`, `packages/ui` razširitev, CoreShell je integriral CRM in Projects module z novimi `dev:all`/`dev:stack` skripti.  
+2. **Izvedeni koraki**: Poskrbel sem, da backend bere `.env` (nov `mongo.ts`, `tsconfig` typeRoots), vsi paketi imajo `main/module` v `package.json`, Vite posluša na portu 5173, CRM/Projects exportata `src/index.ts`, in dokumenti (`docs/TODO.md`, `docs/ARHITEKTURA.md`, `docs/KOORDINACIJA.md`) so posodobljeni.  
+3. **Naslednji koraki**: Faza 2 je zaključena; lahko nadaljujete s fazo 3 (Cenik). Če se pojavi nov problem s projekti, preverite `pnpm run dev:stack` (ali `dev:all`), `http://localhost:5173/` in `GET /projekti`. Vse napake dokumentirajte v `02_2_PROJEKTI-test.md`.
