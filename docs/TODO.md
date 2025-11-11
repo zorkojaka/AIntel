@@ -1,0 +1,33 @@
+# ✅ TODO tracker za agenta
+
+## FAZA 0 – CORE
+
+- [x] Struktura map
+- [x] MongoDB povezava + health-check
+- [x] Unicode normalizacija (normalizeUnicode.ts)
+- [x] JSON response standard + error handler
+- [x] Dashboard modul z dummy podatki in dokumentacija modula
+- [x] Layout + navigacija (če obstaja frontend)
+- [x] Dokumentacija (CORE.md, TODO.md, ARHITEKTURA.md)
+- [x] Preverjeno `npm run dev` in `GET /health` (prikazuje `connected: false` brez lokalne Mongo povezave)
+
+## FAZA 1 – CRM
+- [ ] Definicija entitet (osebe, podjetja)
+- [ ] Kontakti, klici, zapisi
+- [ ] Povezava s projekti
+
+## FAZA 2 – Projekti
+- [ ] Upravljanje projektov
+- [ ] Statusi, časovnice, povezani dokumenti
+
+## FAZA 3 – Cenik
+- [ ] Artikel, cena, enota, kategorija
+- [ ] API za uporabo pri ponudbah in računih
+
+## FAZA 4 – Nastavitve
+- [ ] Uporabniki, vloge, dovoljenja
+- [ ] DDV stopnje, logotip, barve
+
+## FAZA 5 – Finance
+- [ ] Pregled računov
+- [ ] Stroški, prihodki, izpis za knjigovodstvo

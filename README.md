@@ -1,0 +1,77 @@
+# 🧠 AIntel – Inteligentni Modularni Sistem
+
+Dobrodošli v AIntel – poslovni sistem nove generacije, razvit za inteligentno avtomatizacijo poslovanja podjetij. Projekt je modularno zgrajen, razširljiv in pripravljen za integracijo AI agentov.
+
+---
+
+## 🚀 Vizija
+Zasnovati centralno aplikacijo z:
+- Modularnimi funkcionalnostmi (CRM, projekti, finance …)
+- Razširljivim dashboardom in menijem
+- Povezljivostjo z MongoDB
+- Slovensko lokalizacijo in podporo šumnikom
+- Vgrajeno dokumentacijo in TODO sledenjem
+
+---
+
+## 🏗️ Arhitektura
+Glej `docs/ARHITEKTURA.md` za opis strukture aplikacije.
+
+```
+/backend
+  ├─ core/              # Inicializacija in shared logika
+  ├─ modules/           # Posamezni moduli (CRM, projekti ...)
+  ├─ db/                # Mongo povezava
+  ├─ utils/             # Helperji (normalizeUnicode ...)
+  ├─ docs/              # Dokumentacija (CORE, TODO, navodila)
+```
+
+---
+
+## 🔧 Tehnologije
+- Node.js + Express
+- MongoDB (prek Mongoose)
+- Unicode NFC normalizacija
+- JSON API z enotnim `success/data/error` odzivom
+- `.env` konfiguracija
+
+---
+
+## 📂 Moduli (faze)
+| Faza | Modul     | Namen                                |
+|------|-----------|---------------------------------------|
+| 0    | CORE      | Ogrodje, baza, unicode, dashboard     |
+| 1    | CRM       | Stiki, podjetja, zgodovina            |
+| 2    | Projekti  | Dokumenti, statusi, timeline          |
+| 3    | Cenik     | Artikli, cene, kategorije             |
+| 4    | Nastavitve| Uporabniki, vloge, sistemski podatki  |
+| 5    | Finance   | Računi, bilance, knjigovodska poročila|
+
+---
+
+## 📘 Dokumentacija
+Vsa navodila, status in opombe najdeš v mapi `docs/`.
+
+- `docs/ARHITEKTURA.md` – struktura aplikacije
+- `docs/TODO.md` – sledenje napredku
+- `docs/faza0-Core.md` – navodila za CORE implementacijo
+
+---
+
+## ✅ Zagon projekta
+
+```bash
+npm install
+cp .env.example .env
+# Dodaj MONGO_URI in MONGO_DB v .env
+npm run dev
+```
+
+Aplikacija bo dostopna na `http://localhost:3000`.
+
+---
+
+## 📎 Kontakt & vzdrževanje
+Projekt vodi: **Jaka @ Inteligent d.o.o.**  
+Tehnična vprašanja: vodijo AI agenti znotraj sistema (glej TODO.md za sledenje).
+
