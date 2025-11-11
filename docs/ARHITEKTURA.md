@@ -40,3 +40,11 @@ AIntel je organiziran kot modularni ekosistem, kjer vsak modul vsebuje:
 - Vsak modul je opisan v `docs/ARHITEKTURA.md`, `docs/MODULES.md` in po potrebi v `docs/faze/<faza>.md` ali v lastnem `modules/<module>/README.md`. Tam zapišemo njegove rute, vezave na baze, podsisteme in kako razširja dashboard widgete ali skupne helperje.
 - Dokument `docs/ARHITEKTURA.md` naj vedno vsebuje ključne točke: kje modul sedi v `backend/routes.ts`, katere `core/` helperje uporablja (npr. normalize, response helpers, shared error handling) ter kateri dokumenti (TODO, korespondenca) so povezani z njegovo fazo.
 - Centralni načrt aplikacije tako ostane na enem mestu: vsak agent, ki prevzame nov modul, posodobi razdelek o modulu in navede trenutni status, da lahko kdorkoli kadarkoli razume, kako se modul povezuje s sistemom.
+- CRM modul (`/crm`) vključuje `people`, `companies`, `notes` rute; uporablja `core/response`, `core/errorHandler` in `utils/normalizeUnicode`. Dokument `docs/faze/01-CRM.md` opisuje uporabniške entitete in testne korake, zato naj vsak agent, ki ga razširja, posodobi ta dokument.
+
+## Frontend monorepo + dizajn sistem
+- `apps/core-shell` je glavna frontend aplikacija, ki iz `@aintel/module-crm` prevzema manifest in prikazuje CRM stran z osnovnim `CoreLayout` sidebarjem.
+- `apps/module-crm` eksponira CRM manifest, osnovni `CRMPage` in se lahko razširi z novimi komponentami iz `packages/ui`.
+- `packages/theme` hrani tokens in `applyTheme()`, ki postavlja `var(--color-...)` vrednosti; `packages/ui` bo vseboval generične komponente (Button, Card, Input, ...).
+- CRM stran vsebuje zaposlene obrazce in sezname (osebe, podjetja) z uporabo `DataTable`, `Input` in `Button` iz `packages/ui`, zato novi elementi naj sledijo enotnemu dizajnu.
+- Monorepo uporablja `pnpm-workspace.yaml` in `tsconfig.base.json`, da so vsi paketi povezani, razvoj pa omogoča `pnpm --parallel dev`.

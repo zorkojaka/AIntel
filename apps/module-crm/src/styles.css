@@ -1,0 +1,24 @@
+.crm-page {
+  padding: var(--space-lg);
+}
+
+.crm-page header p {
+  max-width: 640px;
+}
+
+.crm-page__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-lg);
+  margin-top: var(--space-lg);
+}
+
+.crm-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.crm-form button {
+  align-self: flex-start;
+}

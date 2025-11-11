@@ -1,4 +1,4 @@
-# AIntel: Modules Directory
+﻿# AIntel: Modules Directory
 
 Ta mapa vsebuje posamezne funkcionalne module, ki se priklapljajo na core.
 
@@ -11,6 +11,13 @@ Prikazuje osnovne metrike o sistemu in že vsebuje strukturo:
 - rute (`routes/index.ts`),
 - lasten README (`modules/dashboard/README.md`).
 Modul je pripravljen za razširitev: novi moduli lahko dodajo svoje metrike in widgete v dashboard.
+
+### crm/
+Vodi kontakte, podjetja in interakcije; že vsebuje:
+- sheme `Person`, `Company`, `Note` v `modules/crm/schemas/`.
+- kontrolerje in rute za `people`, `companies` in `notes`.
+- dokumentacijo v `modules/crm/README.md`.
+Modul se poveže na core preko `/crm` (v `backend/routes.ts`) in uporablja globalni response/error standard.
 
 ## Navodila za nove module
 1. Ustvari novo mapo v `modules/`

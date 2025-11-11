@@ -1,0 +1,30 @@
+.core-shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.core-shell__sidebar {
+  border-right: 1px solid var(--color-border);
+  padding: var(--space-lg);
+  background: var(--color-surface);
+}
+
+.core-shell__content {
+  padding: var(--space-lg);
+}
+
+.core-shell__sidebar ul {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-md) 0 0 0;
+}
+
+.core-shell__sidebar li {
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-soft);
+  background: rgba(15, 99, 247, 0.08);
+  margin-bottom: var(--space-sm);
+}

@@ -1,0 +1,13 @@
+{
+  "name": "aintel-monorepo",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel --filter @aintel/core-shell dev --filter @aintel/module-crm dev",
+    "dev:core": "pnpm --filter @aintel/core-shell dev",
+    "dev:crm": "pnpm --filter @aintel/module-crm dev",
+    "lint": "echo \"No lint configured yet\""
+  },
+  "devDependencies": {
+    "pnpm": "^9.0.0"
+  }
+}

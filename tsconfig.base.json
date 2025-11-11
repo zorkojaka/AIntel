@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@aintel/theme": ["packages/theme/src"],
+      "@aintel/theme/*": ["packages/theme/src/*"],
+      "@aintel/ui": ["packages/ui/src"],
+      "@aintel/ui/*": ["packages/ui/src/*"],
+      "@aintel/module-crm": ["apps/module-crm/src"],
+      "@aintel/module-crm/*": ["apps/module-crm/src/*"],
+      "@aintel/core-shell": ["apps/core-shell/src"],
+      "@aintel/core-shell/*": ["apps/core-shell/src/*"]
+    }
+  }
+}

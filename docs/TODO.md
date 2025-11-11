@@ -12,9 +12,17 @@
 - [x] Preverjeno `npm run dev` in `GET /health` (prikazuje `connected: false` brez lokalne Mongo povezave)
 
 ## FAZA 1 – CRM
-- [ ] Definicija entitet (osebe, podjetja)
-- [ ] Kontakti, klici, zapisi
+- [x] Definicija entitet (osebe, podjetja, opombe)
+- [x] Kontakti, podjetja, opombe (CRUD / API)
 - [ ] Povezava s projekti
+Please see `docs/faze/01-CRM.md` for the latest checklist and testing hints.
+
+## FAZA 1.2 – CRM UI + Core Shell
+- [x] Monorepo + pnpm + tsconfig base
+- [x] `packages/theme` z CSS var + applyTheme
+- [x] `packages/ui` (komponente + testi)
+- [x] `apps/core-shell` layout + manifest
+- [x] `apps/module-crm` CRM UI
 
 ## FAZA 2 – Projekti
 - [ ] Upravljanje projektov

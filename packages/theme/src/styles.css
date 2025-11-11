@@ -1,0 +1,29 @@
+:root {
+  --color-primary: #0f62fe;
+  --color-primary-dark: #0a4db8;
+  --color-surface: #ffffff;
+  --color-surface-dark: #0f172a;
+  --color-text: #0f172a;
+  --color-text-dark: #f8fafc;
+  --color-border: #e2e8f0;
+  --color-border-dark: #1e293b;
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --radius-soft: 0.5rem;
+  --radius-rounded: 1rem;
+}
+
+body {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  font-family: system-ui, sans-serif;
+  margin: 0;
+}
+
+[data-theme='dark'] {
+  --color-surface: var(--color-surface-dark);
+  --color-text: var(--color-text-dark);
+  --color-border: var(--color-border-dark);
+}

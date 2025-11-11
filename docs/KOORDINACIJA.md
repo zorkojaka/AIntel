@@ -4,25 +4,34 @@
 Vzpostaviti transparenten register, kjer lahko več agentov hkrati deluje na lastnih modulih, jasno deli začete in končane korake ter ohranja centralni načrt, da lahko vsakdo kadarkoli nadaljuje ali prilagodi sistem.
 
 ## Asinhrona komunikacija
-- Vsak agent v docs/KOORDINACIJA.md vodi svojo kratko sekcijo z naslovom ### Agent <ime> – <modul>. Tam zapiše:
+- Vsak agent v `docs/KOORDINACIJA.md` vodi svojo kratko sekcijo `### Agent <ime> – <modul>`, kjer zapiše:
   1. **Začetne naloge** (kaj je prevzel, kateri dokumenti so osnova).
-  2. **Izvedeni koraki** (kateri moduli/rute/sheme so dodani, kje so testi).
-  3. **Naslednji koraki** (kaj še ostane, kateri agent lahko nadaljuje).
-- Dokument služi kot komentiran dnevnik – obvestila so v slovenščini, ključi v angleščini. Vsaka sekcija navede tudi referenco na docs/faze/<faza>-<modul>.md ali modules/<modul>/README.md, kjer so podrobna navodila.
-- Če agent prejme ločen nabor navodil za modul (če že obstaja docs/faze/ datoteka), naj v sekciji zapiše, kje je kopija shranjena, da se drugi agenti ne podvajajo.
+  2. **Izvedeni koraki** (katere rute/sheme je dodal ali posodobil).
+  3. **Naslednji koraki** (kaj še ostaja, kateri modul prevzame naslednji agent).
+- Dokument služi kot komentiran dnevnik v slovenščini; ključi ostanejo v angleščini. Vsaka sekcija naj referencira `docs/faze/<faza>-<modul>.md` ali `modules/<modul>/README.md`.
+- Če agent prejme ločen nabor navodil (npr. že obstaja `docs/faze/01-CRM.md`), naj navede, kje je dokument shranjen in ali je bil posodobljen.
 
 ## Modulni register in navodila
-- Vsak modul ima svoje gradnike: controllers/, 
-outes/, schemas/ in dokument modules/<modul>/README.md, kjer so opisani API-ji, potrebni modeli, migracije in morebitne dashboard integracije.
-- Poleg tega za vsako fazo obstaja datoteka v docs/faze/, kjer so zabeležni koraki, testni primeri in zahtevani podatki – vključite povezave do teh dokumentov v docs/KOORDINACIJA.md, da agenti vedo, ali je navodilo že posodobljeno.
-- Arhitekturo in načrt integracije posodabljamo v docs/ARHITEKTURA.md, kjer zabeležimo, kako modul povežemo z ackend/routes.ts, katere core/ helperje uporablja in kako se povežemo z ostalimi storitvami.
+- Vsak modul vsebuje `controllers/`, `routes/`, `schemas/` ter `modules/<modul>/README.md`, kjer so opisani API-ji, modeli in opombe glede integracij.
+- Za vsako fazo dopolnite `docs/faze/<faza>.md` s strukturirano nalogo in testnim načrtom, nato pa vanjo dodajte povezave tudi v to datoteko.
+- Arhitekturo, povezave do `backend/routes.ts` ter uporabljene `core/` helperje opisujemo v `docs/ARHITEKTURA.md`.
+
+## CRM status
+- CRM modul teče pod `/crm` (people/companies/notes) in že implementira osnovna CRUD opravila; dodatne naloge evidentirajte v `docs/faze/01-CRM.md`.
+- Agent, ki dela na CRM-u, naj doda kratek povzetek v to datoteko, npr. `Agent Ana – CRM: dodani notes endpoint, naslednji kličejo povezavo do projektov`.
+- Po vsakem commitu oziroma pushu na https://github.com/zorkojaka/AIntel zabeležite `Commit: FAZA1-CRM - <korak> (branch: <veja>)`.
+
+## Frontend faza 1.2
+- `docs/faze/01-2-CRM-UI.md` vodi pnpm monorepo postavitev, `theme` tokens in front-end aplikacije. Vse spremembe v tej fazi zapišite v to datoteko.
+- Za vsak commit/push, ki doda frontend infrastrukturo, zapišite `Commit: FAZA1.2-CRM-UI - <korak> (branch: faza/1-2-crm-ui)` in povežite z GitHub repozitorijem.
+- CRM komponenta sedaj vključuje stvarne sezname in obrazce (osebe, podjetja) z uporabo `packages/ui`. Po vsakem bistvenem dodatku v `apps/module-crm` zabeležite, katere komponente ste dodali in katere podatke zajemajo.
 
 ## GitHub in spremljanje faz
-- Vsaka faza (npr. "CORE", "CRM", "Projekti") ali vmesni korak mora biti objavljena v repozitoriju https://github.com/zorkojaka/AIntel. Če ima faza več korakov, vsak pomemben mejnik dobi svoj commit in pripadajočo sled.
-- Imena commitov se morajo ujemati z imenom faze in koraka (primer: CORE - osnovna struktura, FAZA1-CRM - kontakti, CRM - dashboard integracija). Tako je iz zgodovine git razvidno, kateremu delu faze pripada sprememba.
-- Po vsakem pushu v repo v docs/KOORDINACIJA.md kratko označite, kje je commit in kakšna je povezava (npr. Commit: CORE - osnovna struktura (branch: faza0-core)).
+- Vsaka faza ali vmesni korak se objavi na https://github.com/zorkojaka/AIntel; če faza zahteva več commitov, naj ima vsak commit ime `FAZA<n>-<del>: opis` (npr. `FAZA1-CRM - people endpoints`).
+- Imena commitov naj sledijo imenu faze in koraka, da je jasna povezava med zgodovino git-a in načrti.
+- V to datoteko zapišite, kje je commit, npr. `Commit: CORE - osnovna struktura (branch: faza0-core)`.
 
 ## Prevzem modulov
-- Če agent prevzame modul, naj v docs/KOORDINACIJA.md zapiše referenco: Modul: <ime>, Phase: <nova faza>, Start: <datum>, Status: in progress.
-- Komunikacija poteka v dokumentih, ne v zasebnih kanalih – to omogoča sledljivost in jasen prehod nalogam.
-- Vsak agent pred odhodom (ali pred koncem izmenljivih korakov) preveri docs/TODO.md, da označi dokončan status, in doda povzetke v docs/ARHITEKTURA.md ter docs/KOORDINACIJA.md.
+- Če agent prevzame modul, navede `Modul: <ime>`, `Phase: <nova faza>`, `Start: <datum>`, `Status: in progress`, skupaj s povezavami do relevantnih `docs/faze/` dokumentov.
+- Komunikacija poteka v dokumentih, ne v zasebnih kanalih – tako ostane sledljivost in jasen prehod nalog.
+- Pred zaključkom naloge preverite `docs/TODO.md`, označite status in dodajte kratke povzetke v `docs/ARHITEKTURA.md`, `docs/KOORDINACIJA.md` in `docs/faze/<faza>.md`.
