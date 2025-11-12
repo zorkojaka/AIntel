@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@aintel/module-crm": "*",
+    "@aintel/module-projects": "*",
     "@aintel/theme": "*",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"

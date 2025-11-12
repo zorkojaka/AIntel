@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button, Card, DataTable, Input } from '@aintel/ui';
 import { tokens } from '@aintel/theme';
-import './CRMPage.css';
+import './styles.css';
 
 interface Person {
   firstName: string;

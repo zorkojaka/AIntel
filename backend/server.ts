@@ -1,8 +1,9 @@
 import dotenv from 'dotenv';
-import { createApp } from './core/app';
-import { connectToMongo } from './db/mongo';
 
 dotenv.config();
+
+import { createApp } from './core/app';
+import { connectToMongo } from './db/mongo';
 
 const port = Number(process.env.PORT ?? 3000);
 

@@ -3,12 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "types": "./src/index.ts",
   "scripts": {
     "dev": "vite",
     "build": "vite build"
   },
   "dependencies": {
     "@aintel/theme": "*",
+    "@aintel/ui": "*",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },
