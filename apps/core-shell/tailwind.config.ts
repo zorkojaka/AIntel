@@ -3,8 +3,9 @@ import type { Config } from 'tailwindcss';
 const config: Config = {
   content: [
     './src/**/*.{js,jsx,ts,tsx}',
-    '../module-projects/src/**/*.{js,jsx,ts,tsx}',
-    '../module-crm/src/**/*.{js,jsx,ts,tsx}',
+    '../module-projects/src/**/*.{js,jsx,ts,tsx,css}',
+    '../module-crm/src/**/*.{js,jsx,ts,tsx,css}',
+    '../module-cenik/src/**/*.{js,jsx,ts,tsx,css}',
   ],
   theme: {
     extend: {},

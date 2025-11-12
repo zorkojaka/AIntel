@@ -1,5 +1,6 @@
 import React, { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Button, Card, DataTable, Input } from '@aintel/ui';
+import FilterBar from './components/FilterBar';
 
 type Product = {
   _id?: string;
@@ -56,13 +57,13 @@ async function parseEnvelope<T>(response: Response) {
 
 export const CenikPage: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
-  const [filterCategory, setFilterCategory] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [filters, setFilters] = useState<{ q: string; category: string | null }>({ q: '', category: null });
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusBanner | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const loadProducts = async () => {
     setLoading(true);
@@ -88,17 +89,17 @@ export const CenikPage: React.FC = () => {
   );
 
   const filteredProducts = useMemo(() => {
+    const query = filters.q.trim().toLowerCase();
     return products.filter((product) => {
-      const matchesCategory = filterCategory ? product.kategorija === filterCategory : true;
-      const matchesSearch = searchQuery
-        ? product.ime.toLowerCase().includes(searchQuery.toLowerCase())
-        : true;
+      const matchesCategory = filters.category ? product.kategorija === filters.category : true;
+      const matchesSearch = query ? product.ime.toLowerCase().includes(query) : true;
       return matchesCategory && matchesSearch;
     });
-  }, [products, filterCategory, searchQuery]);
+  }, [products, filters]);
 
   const startEdit = (product?: Product) => {
     setEditingProduct(product ? { ...product } : emptyProduct());
+    setIsModalOpen(true);
   };
 
   const handleDelete = async (productId: string | undefined) => {
@@ -155,6 +156,7 @@ export const CenikPage: React.FC = () => {
         text: editingProduct._id ? 'Produkt posodobljen.' : 'Produkt dodan.'
       });
       setEditingProduct(null);
+      setIsModalOpen(false);
     } catch (error) {
       setStatus({
         variant: 'error',
@@ -169,16 +171,15 @@ export const CenikPage: React.FC = () => {
     setEditingProduct((prev) => (prev ? { ...prev, [field]: value } : prev));
   };
 
-  const handleCancel = () => setEditingProduct(null);
+  const handleCancel = () => {
+    setIsModalOpen(false);
+    setEditingProduct(null);
+  };
 
   return (
     <section className="max-w-6xl mx-auto p-6 space-y-6">
       <header className="space-y-2">
-        <p className="text-sm text-muted-foreground">Faza 3: Cenik produktov in storitev</p>
         <h1 className="text-3xl font-semibold text-foreground">Cenik</h1>
-        <p className="text-sm text-muted-foreground">
-          Preglej seznam produktov, filtriraj po kategoriji, dodaj nove izdelke ali posodobi obstoječe.
-        </p>
       </header>
 
       {status && (
@@ -191,36 +192,15 @@ export const CenikPage: React.FC = () => {
         </div>
       )}
 
-      <Card title="Iskanje in filtriranje">
-        <div className="flex flex-wrap gap-3">
-          <Input
-            placeholder="Išči po imenu..."
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-          />
-          <label className="flex flex-col text-xs text-muted-foreground">
-            Kategorija
-            <select
-              className="mt-1 rounded border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
-              value={filterCategory}
-              onChange={(event) => setFilterCategory(event.target.value)}
-            >
-              <option value="">Vse kategorije</option>
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="ml-auto">
-            <Button type="button" onClick={() => startEdit()}>
-              + Dodaj produkt
-            </Button>
-          </div>
-        </div>
-      </Card>
 
+      <Card title="Iskanje in filtriranje">
+        <FilterBar
+          categories={categories}
+          value={{ q: filters.q, category: filters.category }}
+          onChange={setFilters}
+          onAddProduct={() => startEdit()}
+        />
+      </Card>
       <Card title="Seznam produktov">
         {loading ? (
           <p className="text-sm text-muted-foreground">Nalaganje cenika …</p>
@@ -266,108 +246,118 @@ export const CenikPage: React.FC = () => {
         )}
       </Card>
 
-      {editingProduct && (
-        <Card title={editingProduct._id ? 'Uredi produkt' : 'Dodaj produkt'}>
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Input
-                label="Ime"
-                placeholder="Naziv produkta"
-                value={editingProduct.ime}
-                onChange={(event) => updateField('ime', event.target.value)}
-                required
-              />
-              <Input
-                label="Kategorija"
-                placeholder="material / storitev"
-                value={editingProduct.kategorija}
-                onChange={(event) => updateField('kategorija', event.target.value)}
-                required
-              />
-              <Input
-                label="Nabavna cena"
-                type="number"
-                step="0.01"
-                min="0"
-                value={editingProduct.nabavnaCena}
-                onChange={(event) => updateField('nabavnaCena', Number(event.target.value))}
-              />
-              <Input
-                label="Prodajna cena"
-                type="number"
-                step="0.01"
-                min="0"
-                value={editingProduct.prodajnaCena}
-                onChange={(event) => updateField('prodajnaCena', Number(event.target.value))}
-              />
-              <Input
-                label="Proizvajalec"
-                placeholder="npr. BLEBOX"
-                value={editingProduct.proizvajalec}
-                onChange={(event) => updateField('proizvajalec', event.target.value)}
-              />
-              <Input
-                label="Dobavitelj"
-                placeholder="npr. Inteligent"
-                value={editingProduct.dobavitelj}
-                onChange={(event) => updateField('dobavitelj', event.target.value)}
-              />
-              <Input
-                label="Povezava do slike"
-                placeholder="https://..."
-                value={editingProduct.povezavaDoSlike}
-                onChange={(event) => updateField('povezavaDoSlike', event.target.value)}
-              />
-              <Input
-                label="Povezava do produkta"
-                placeholder="https://..."
-                value={editingProduct.povezavaDoProdukta}
-                onChange={(event) => updateField('povezavaDoProdukta', event.target.value)}
-              />
-              <Input
-                label="Naslov dobavitelja"
-                placeholder="naslov"
-                value={editingProduct.naslovDobavitelja}
-                onChange={(event) => updateField('naslovDobavitelja', event.target.value)}
-              />
-              <Input
-                label="Časovna norma"
-                placeholder="npr. 30 min"
-                value={editingProduct.casovnaNorma}
-                onChange={(event) => updateField('casovnaNorma', event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold">Kratek opis</label>
-              <textarea
-                className="w-full rounded border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
-                rows={2}
-                value={editingProduct.kratekOpis}
-                onChange={(event) => updateField('kratekOpis', event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold">Dolg opis</label>
-              <textarea
-                className="w-full rounded border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
-                rows={4}
-                value={editingProduct.dolgOpis}
-                onChange={(event) => updateField('dolgOpis', event.target.value)}
-              />
-            </div>
-
-            <div className="flex flex-wrap gap-3">
-              <Button type="submit" disabled={saving}>
-                Shrani
-              </Button>
-              <Button variant="ghost" type="button" onClick={handleCancel}>
-                Prekliči
+      {isModalOpen && editingProduct && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4 py-6">
+          <div className="w-full max-w-3xl rounded-xl bg-card p-6 shadow-2xl shadow-black/40">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-foreground">
+                {editingProduct._id ? 'Uredi produkt' : 'Dodaj produkt'}
+              </h2>
+              <Button variant="ghost" onClick={handleCancel}>
+                Zapri
               </Button>
             </div>
-          </form>
-        </Card>
+            <form className="space-y-4 mt-4" onSubmit={handleSubmit}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Input
+                  label="Ime"
+                  placeholder="Naziv produkta"
+                  value={editingProduct.ime}
+                  onChange={(event) => updateField('ime', event.target.value)}
+                  required
+                />
+                <Input
+                  label="Kategorija"
+                  placeholder="material / storitev"
+                  value={editingProduct.kategorija}
+                  onChange={(event) => updateField('kategorija', event.target.value)}
+                  required
+                />
+                <Input
+                  label="Nabavna cena"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={editingProduct.nabavnaCena}
+                  onChange={(event) => updateField('nabavnaCena', Number(event.target.value))}
+                />
+                <Input
+                  label="Prodajna cena"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={editingProduct.prodajnaCena}
+                  onChange={(event) => updateField('prodajnaCena', Number(event.target.value))}
+                />
+                <Input
+                  label="Proizvajalec"
+                  placeholder="npr. BLEBOX"
+                  value={editingProduct.proizvajalec}
+                  onChange={(event) => updateField('proizvajalec', event.target.value)}
+                />
+                <Input
+                  label="Dobavitelj"
+                  placeholder="npr. Inteligent"
+                  value={editingProduct.dobavitelj}
+                  onChange={(event) => updateField('dobavitelj', event.target.value)}
+                />
+                <Input
+                  label="Povezava do slike"
+                  placeholder="https://..."
+                  value={editingProduct.povezavaDoSlike}
+                  onChange={(event) => updateField('povezavaDoSlike', event.target.value)}
+                />
+                <Input
+                  label="Povezava do produkta"
+                  placeholder="https://..."
+                  value={editingProduct.povezavaDoProdukta}
+                  onChange={(event) => updateField('povezavaDoProdukta', event.target.value)}
+                />
+                <Input
+                  label="Naslov dobavitelja"
+                  placeholder="naslov"
+                  value={editingProduct.naslovDobavitelja}
+                  onChange={(event) => updateField('naslovDobavitelja', event.target.value)}
+                />
+                <Input
+                  label="Časovna norma"
+                  placeholder="npr. 30 min"
+                  value={editingProduct.casovnaNorma}
+                  onChange={(event) => updateField('casovnaNorma', event.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-semibold">Kratek opis</label>
+                <textarea
+                  className="w-full rounded border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                  rows={2}
+                  value={editingProduct.kratekOpis}
+                  onChange={(event) => updateField('kratekOpis', event.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-semibold">Dolg opis</label>
+                <textarea
+                  className="w-full rounded border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                  rows={4}
+                  value={editingProduct.dolgOpis}
+                  onChange={(event) => updateField('dolgOpis', event.target.value)}
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <Button type="submit" disabled={saving}>
+                  Shrani
+                </Button>
+                <Button variant="ghost" type="button" onClick={handleCancel}>
+                  Zapri
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </section>
   );
