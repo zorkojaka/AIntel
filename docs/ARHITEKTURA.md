@@ -42,6 +42,12 @@ AIntel je organiziran kot modularni ekosistem, kjer vsak modul vsebuje:
 - Centralni načrt aplikacije tako ostane na enem mestu: vsak agent, ki prevzame nov modul, posodobi razdelek o modulu in navede trenutni status, da lahko kdorkoli kadarkoli razume, kako se modul povezuje s sistemom.
 - CRM modul (`/crm`) vključuje `people`, `companies`, `notes` rute; uporablja `core/response`, `core/errorHandler` in `utils/normalizeUnicode`. Dokument `docs/faze/01-CRM.md` opisuje uporabniške entitete in testne korake, zato naj vsak agent, ki ga razširja, posodobi ta dokument.
 
+  - Cenik modul (`/cenik`) hrani artikle in storitve v `backend/modules/cenik`: `product.model.ts` definira slovenska polja, `controllers/cenik.controller.ts` vodi CRUD logiko, `routes/cenik.routes.ts` je registriran v `backend/routes.ts`, `README.md` pa razloži razširitve in povezave z `docs/03_CENIK.md`.
+  - `apps/module-cenik` eksponira `CenikPage`, ki naloži `/api/cenik/products`, prikazuje tabelo, filtre, iskanje, obrazec in tailwind utility razrede ter se manifestno poveže s `core-shell` navigacijo.
+  - Tailwind in PostCSS konfiguracije (`tailwind.config.ts`, `postcss.config.cjs`) vključujejo `module-cenik`, `docs/faze/03-CENIK.md` pa vodi testne korake in dokumentira integracijo.
+
+
+
 ## Frontend monorepo + dizajn sistem
 - `apps/core-shell` je glavna frontend aplikacija, ki iz `@aintel/module-crm` prevzema manifest in prikazuje CRM stran z osnovnim `CoreLayout` sidebarjem.
 - `apps/module-crm` eksponira CRM manifest, osnovni `CRMPage` in se lahko razširi z novimi komponentami iz `packages/ui`.

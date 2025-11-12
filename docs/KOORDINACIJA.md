@@ -40,3 +40,17 @@ Vzpostaviti transparenten register, kjer lahko več agentov hkrati deluje na las
 1. **Začetne naloge**: Ustvaril sem `modules/projekti` z Mongoose modelom, API-kontrolerjem (CRUD + confirm-phase + timeline) in testom ter dokumentacijo v `docs/faze/02-Projekti.md`. Frontend je dobil `apps/module-projects`, `packages/ui` razširitev, CoreShell je integriral CRM in Projects module z novimi `dev:all`/`dev:stack` skripti.  
 2. **Izvedeni koraki**: Poskrbel sem, da backend bere `.env` (nov `mongo.ts`, `tsconfig` typeRoots), vsi paketi imajo `main/module` v `package.json`, Vite posluša na portu 5173, CRM/Projects exportata `src/index.ts`, in dokumenti (`docs/TODO.md`, `docs/ARHITEKTURA.md`, `docs/KOORDINACIJA.md`) so posodobljeni.  
 3. **Naslednji koraki**: Faza 2 je zaključena; lahko nadaljujete s fazo 3 (Cenik). Če se pojavi nov problem s projekti, preverite `pnpm run dev:stack` (ali `dev:all`), `http://localhost:5173/` in `GET /projekti`. Vse napake dokumentirajte v `02_2_PROJEKTI-test.md`.
+
+### Agent Codex – Onboarding
+1. **Začetne naloge**: Preden sem posegel v kodo, sem prebral `README.md`, `00_CORE.md`, `docs/ARHITEKTURA.md`, `docs/TODO.md`, `docs/MODULES.md`, `docs/KOORDINACIJA.md`, `docs/faze/01-CRM.md` in `docs/faze/01-2-CRM-UI.md`, kot to zahtevajo navodila za nove agente.
+2. **Izvedeni koraki**: Potrdil sem, da modularne in dokumentacijske smernice (npr. centralni `core/` helperji, enotni response/error standard, koordinacija v `docs/KOORDINACIJA.md`) veljajo za nadaljnje delo.
+3. **Naslednji koraki**: Pripravljen sem nadaljevati s konkretnimi nalogami (npr. pregled konkretnih modulov, implementacija ali dokumentacija), ob upoštevanju centralnih navodil iz omenjenih dokumentov.
+
+### Agent Codex – Cenik
+Modul: Cenik
+Phase: FAZA 3 – Cenik
+Start: 2025-11-12
+Status: in progress
+1. **Začetne naloge**: Prebral sem `03_CENIK.md`, `docs/faze/03-CENIK.md`, `docs/MODULES.md` in obstoječe backend/frontend module, da sem razumel zahteve in povezave med dokumenti.
+2. **Izvedeni koraki**: Implementiral sem backend (`product.model.ts`, controller, routes, README) ter frontend (`apps/module-cenik` + `CenikPage`, manifest, Tailwind/PostCSS), integriral modul v `core-shell` (manifest, navigation, CSS + Vite proxy + scripts), ter posodobil `docs/MODULES.md`, `docs/ARHITEKTURA.md`, `docs/TODO.md` in `docs/faze/03-CENIK.md`.
+3. **Naslednji koraki**: Uvozi `Cenik___Pripravljena_Struktura.csv` s `pnpm --filter aintel-backend seed:cenik`, zaženi `pnpm run dev:stack`, preveri CRUD scenarije preko `/api/cenik/products`, preizkusi filtre/obrazec in API odgovore ter dokumentiraj vse napake ali dodatne potrebe (npr. dodatni CSV uvozi ali lokalizacija).

@@ -1,9 +1,8 @@
-import dotenv from 'dotenv';
-
-dotenv.config();
-
+import { loadEnvironment } from './loadEnv';
 import { createApp } from './core/app';
 import { connectToMongo } from './db/mongo';
+
+loadEnvironment();
 
 const port = Number(process.env.PORT ?? 3000);
 

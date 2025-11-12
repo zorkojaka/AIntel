@@ -29,8 +29,8 @@ Please see `docs/faze/01-CRM.md` for the latest checklist and testing hints.
 - [x] Statusi, časovnice, povezani dokumenti
 
 ## FAZA 3 – Cenik
-- [ ] Artikel, cena, enota, kategorija
-- [ ] API za uporabo pri ponudbah in računih
+- [x] Artikel, cena, enota, kategorija
+- [x] API za uporabo pri ponudbah in računih
 
 ## FAZA 4 – Nastavitve
 - [ ] Uporabniki, vloge, dovoljenja
