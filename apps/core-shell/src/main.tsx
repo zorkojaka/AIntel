@@ -4,6 +4,7 @@ import App from './App';
 import { applyTheme } from '@aintel/theme';
 import '@aintel/module-projects/src/globals.css';
 import '@aintel/module-crm/src/styles.css';
+import '@aintel/module-cenik/src/globals.css';
 import './index.css';
 
 applyTheme('light');

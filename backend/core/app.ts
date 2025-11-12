@@ -18,7 +18,7 @@ export function createApp() {
     res.success({ connected: isMongoConnected() });
   });
 
-  app.use('/', routes);
+  app.use('/api', routes);
   app.use(errorHandler);
 
   return app;

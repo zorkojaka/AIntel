@@ -33,25 +33,7 @@ git push --set-upstream origin faza-3-nastavitve
 
 > Staro vejo lahko pustiš kot arhiv faze ali izbrišeš.
 
----
 
-## 🚧 Git – varnostna kopija lokalnih sprememb
-
-### 🧱 1. Ustvari lokalno varnostno kopijo
-```bash
-mkdir ../AIntel_backup
-cp -r . ../AIntel_backup
-```
-
-### 🧱 2. Shrani v novo Git vejo (opcijsko)
-```bash
-git checkout -b varnostna-kopija
-git add .
-git commit -m "Varnostna kopija"
-git push --set-upstream origin varnostna-kopija
-```
-
----
 
 ## 🚀 Zagon aplikacije (lokalno)
 
@@ -75,10 +57,5 @@ pnpm --filter @aintel/core-shell dev
 pnpm --filter @aintel/module-crm dev
 pnpm --filter @aintel/module-projects dev
 ```
-
-- Odpri: http://localhost:5173
-- Backend API: http://localhost:3000
-
----
 
 

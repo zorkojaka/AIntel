@@ -1,8 +1,8 @@
-export function normalizeUnicode(obj: any, seen = new WeakMap()) {
+export function normalizeUnicode(obj: any, seen = new WeakMap<object, any>()) {
   if (typeof obj === 'string') return obj.normalize('NFC');
   if (obj && typeof obj === 'object') {
     if (seen.has(obj)) return seen.get(obj);
-    const copy = Array.isArray(obj) ? [] : {};
+    const copy: any = Array.isArray(obj) ? [] : {};
     seen.set(obj, copy);
     for (const key in obj) copy[key] = normalizeUnicode(obj[key], seen);
     return copy;
