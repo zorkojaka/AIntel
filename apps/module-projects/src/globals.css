@@ -79,11 +79,6 @@
 }
 
 @layer base {
-  * {
-    /* Explicit border using CSS variable instead of a non-existing Tailwind utility */
-    border: 1px solid var(--border);
-    outline: 1px solid color-mix(in srgb, var(--ring) 50%, transparent 50%);
-  }
 
   body {
     @apply bg-background text-foreground;
