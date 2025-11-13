@@ -37,6 +37,11 @@ Vzpostaviti transparenten register, kjer lahko več agentov hkrati deluje na las
 - Pred zaključkom naloge preverite `docs/TODO.md`, označite status in dodajte kratke povzetke v `docs/ARHITEKTURA.md`, `docs/KOORDINACIJA.md` in `docs/faze/<faza>.md`.
 
 ### Agent Codex – Projekti (zaključek)
-1. **Začetne naloge**: Ustvaril sem `modules/projekti` z Mongoose modelom, API-kontrolerjem (CRUD + confirm-phase + timeline) in testom ter dokumentacijo v `docs/faze/02-Projekti.md`. Frontend je dobil `apps/module-projects`, `packages/ui` razširitev, CoreShell je integriral CRM in Projects module z novimi `dev:all`/`dev:stack` skripti.  
-2. **Izvedeni koraki**: Poskrbel sem, da backend bere `.env` (nov `mongo.ts`, `tsconfig` typeRoots), vsi paketi imajo `main/module` v `package.json`, Vite posluša na portu 5173, CRM/Projects exportata `src/index.ts`, in dokumenti (`docs/TODO.md`, `docs/ARHITEKTURA.md`, `docs/KOORDINACIJA.md`) so posodobljeni.  
+1. **Začetne naloge**: Ustvaril sem `modules/projekti` z Mongoose modelom, API-kontrolerjem (CRUD + confirm-phase + timeline) in testom ter dokumentacijo v `docs/faze/02-Projekti.md`. Frontend je dobil `apps/module-projects`, `packages/ui` razširitev, CoreShell je integriral CRM in Projects module z novimi `dev:all`/`dev:stack` skripti.
+2. **Izvedeni koraki**: Poskrbel sem, da backend bere `.env` (nov `mongo.ts`, `tsconfig` typeRoots), vsi paketi imajo `main/module` v `package.json`, Vite posluša na portu 5173, CRM/Projects exportata `src/index.ts`, in dokumenti (`docs/TODO.md`, `docs/ARHITEKTURA.md`, `docs/KOORDINACIJA.md`) so posodobljeni.
 3. **Naslednji koraki**: Faza 2 je zaključena; lahko nadaljujete s fazo 3 (Cenik). Če se pojavi nov problem s projekti, preverite `pnpm run dev:stack` (ali `dev:all`), `http://localhost:5173/` in `GET /projekti`. Vse napake dokumentirajte v `02_2_PROJEKTI-test.md`.
+
+### Agent Codex – Finance (faza 5)
+1. **Začetne naloge**: Referenca na `05_FINANCE.md` in navodila faze 5 – model FinanceEntry, API ter integracija s core shellom.
+2. **Izvedeni koraki**: Dodan je modul `backend/modules/finance` (model, kontroler, rute, README), registracija v `backend/routes.ts`, nov frontend `apps/module-finance` z tabelo računov in grafi ter vključitev manifesta v `apps/core-shell`.
+3. **Naslednji koraki**: Pripraviti povezavo z realno bazo (Mongo), razširiti API za analitiko po stroškovnih mestih in povezati modul s CRM/Cenik podatki, ko bodo ti moduli na voljo.
