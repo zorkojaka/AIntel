@@ -37,5 +37,5 @@ Please see `docs/faze/01-CRM.md` for the latest checklist and testing hints.
 - [ ] DDV stopnje, logotip, barve
 
 ## FAZA 5 – Finance
-- [ ] Pregled računov
-- [ ] Stroški, prihodki, izpis za knjigovodstvo
+- [x] Pregled računov
+- [x] Stroški, prihodki, izpis za knjigovodstvo

@@ -10,6 +10,8 @@
   "dependencies": {
     "@aintel/module-crm": "*",
     "@aintel/module-projects": "*",
+    "@aintel/module-finance": "*",
+    "@aintel/module-settings": "*", 
     "@aintel/theme": "*",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
