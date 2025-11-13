@@ -42,9 +42,11 @@ AIntel je organiziran kot modularni ekosistem, kjer vsak modul vsebuje:
 - Centralni načrt aplikacije tako ostane na enem mestu: vsak agent, ki prevzame nov modul, posodobi razdelek o modulu in navede trenutni status, da lahko kdorkoli kadarkoli razume, kako se modul povezuje s sistemom.
 - CRM modul (`/crm`) vključuje `people`, `companies`, `notes` rute; uporablja `core/response`, `core/errorHandler` in `utils/normalizeUnicode`. Dokument `docs/faze/01-CRM.md` opisuje uporabniške entitete in testne korake, zato naj vsak agent, ki ga razširja, posodobi ta dokument.
 
-  - Cenik modul (`/cenik`) hrani artikle in storitve v `backend/modules/cenik`: `product.model.ts` definira slovenska polja, `controllers/cenik.controller.ts` vodi CRUD logiko, `routes/cenik.routes.ts` je registriran v `backend/routes.ts`, `README.md` pa razloži razširitve in povezave z `docs/03_CENIK.md`.
-  - `apps/module-cenik` eksponira `CenikPage`, ki naloži `/api/cenik/products`, prikazuje tabelo, filtre, iskanje, obrazec in tailwind utility razrede ter se manifestno poveže s `core-shell` navigacijo.
+  - Cenik modul (`/cenik`) hrani artikle in storitve v `backend/modules/cenik`: `product.model.ts` definira slovenska polja, `controllers/cenik.controller.ts` vodi CRUD logiko, `routes/cenik.routes.ts` je registriran v `backend/routes.ts`, `README.md` pa razloži razširitve in povezave z `docs/03_CENIK.md`. Modul je zaključen (Seed skripta, dokumentacija, dashboard neobvezno).
+  - `apps/module-cenik` eksponira `CenikPage`, ki naloži `/api/cenik/products`, prikazuje tabelo, filtre (nov `FilterBar`), modal za urejanje/dodajanje in tailwind utility razrede ter se manifestno poveže s `core-shell` navigacijo.
   - Tailwind in PostCSS konfiguracije (`tailwind.config.ts`, `postcss.config.cjs`) vključujejo `module-cenik`, `docs/faze/03-CENIK.md` pa vodi testne korake in dokumentira integracijo.
+  - Settings modul (`/settings`) skrbi za en sam Mongo dokument. `backend/modules/settings` vključuje shemo (`Settings.ts`), servis `settings.service.ts` z helperjem `getSettings()` ter kontroler/rute registrirane v `backend/routes.ts`.
+  - `backend/scripts/seed-settings.ts` + `backend/seeds/settings.json` inicializirata privzete podatke, medtem ko `apps/module-settings` nudi stran `/nastavitve` z logotipom, barvno shemo, dokumentnimi prefiksi in PDF predogledom. Modul izvaža `useSettingsData`, kar omogoča CRM in Projektom prikaz kontaktnih podatkov podjetja.
 
 
 

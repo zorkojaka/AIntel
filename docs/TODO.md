@@ -31,10 +31,12 @@ Please see `docs/faze/01-CRM.md` for the latest checklist and testing hints.
 ## FAZA 3 – Cenik
 - [x] Artikel, cena, enota, kategorija
 - [x] API za uporabo pri ponudbah in računih
+- [x] Faza 3 zaključena (backend + frontend + dokumentacija)
 
 ## FAZA 4 – Nastavitve
-- [ ] Uporabniki, vloge, dovoljenja
-- [ ] DDV stopnje, logotip, barve
+- [x] Centralni Settings model + API (GET/PUT, helper)
+- [x] Seed nastavitev in skripta `seed:settings`
+- [x] Frontend modul `/nastavitve` z logotipom, barvami, PDF predogledom in integracijo z CRM/Projekti
 
 ## FAZA 5 – Finance
 - [ ] Pregled računov

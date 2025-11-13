@@ -3,3 +3,6 @@ export { Button } from './components/Button/Button';
 export { Input } from './components/Input/Input';
 export { Card } from './components/Card/Card';
 export { DataTable } from './components/DataTable/DataTable';
+export { Textarea } from './components/Textarea/Textarea';
+export { ColorPicker } from './components/ColorPicker/ColorPicker';
+export { FileUpload } from './components/FileUpload/FileUpload';

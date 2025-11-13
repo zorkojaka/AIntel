@@ -1,0 +1,15 @@
+.aintel-file-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: var(--font-size, 1rem);
+}
+
+.aintel-file-upload input[type='file'] {
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-soft, 8px);
+  padding: 0.75rem;
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text, inherit);
+  cursor: pointer;
+}

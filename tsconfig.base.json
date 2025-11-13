@@ -16,6 +16,12 @@
       "@aintel/ui/*": ["packages/ui/src/*"],
       "@aintel/module-crm": ["apps/module-crm/src"],
       "@aintel/module-crm/*": ["apps/module-crm/src/*"],
+      "@aintel/module-cenik": ["apps/module-cenik/src"],
+      "@aintel/module-cenik/*": ["apps/module-cenik/src/*"],
+      "@aintel/module-projects": ["apps/module-projects/src"],
+      "@aintel/module-projects/*": ["apps/module-projects/src/*"],
+      "@aintel/module-settings": ["apps/module-settings/src"],
+      "@aintel/module-settings/*": ["apps/module-settings/src/*"],
       "@aintel/core-shell": ["apps/core-shell/src"],
       "@aintel/core-shell/*": ["apps/core-shell/src/*"]
     }
