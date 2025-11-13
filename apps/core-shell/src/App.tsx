@@ -15,6 +15,14 @@ type ModuleId = keyof typeof moduleComponents;
 function App() {
   const [activeModule, setActiveModule] = useState<ModuleId>('finance');
 
+const moduleComponents: Record<string, React.ReactNode> = {
+  crm: <CRMPage />,
+  projects: <ProjectsPage />,
+};
+
+function App() {
+  const [activeModule, setActiveModule] = useState<'crm' | 'projects'>('projects');
+
   return (
     <CoreLayout activeModule={activeModule} onModuleChange={setActiveModule}>
       {moduleComponents[activeModule]}

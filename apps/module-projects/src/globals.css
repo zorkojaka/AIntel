@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --font-size: 14px;
   --background: #f5f6f8;
@@ -111,4 +115,41 @@
   .text-balance {
     text-wrap: balance;
   }
+
+  /* Project design token utilities mapped to CSS variables */
+  .bg-background { background-color: var(--background); }
+  .text-foreground { color: var(--foreground); }
+
+  .bg-card { background-color: var(--card); }
+  .text-card-foreground { color: var(--card-foreground); }
+
+  .bg-popover { background-color: var(--popover); }
+  .text-popover-foreground { color: var(--popover-foreground); }
+
+  .bg-primary { background-color: var(--primary); }
+  .text-primary-foreground { color: var(--primary-foreground); }
+
+  .bg-secondary { background-color: var(--secondary); }
+  .text-secondary-foreground { color: var(--secondary-foreground); }
+
+  .bg-muted { background-color: var(--muted); }
+  .text-muted-foreground { color: var(--muted-foreground); }
+
+  .bg-accent { background-color: var(--accent); }
+  .text-accent-foreground { color: var(--accent-foreground); }
+
+  .bg-destructive { background-color: var(--destructive); }
+  .text-destructive-foreground { color: var(--destructive-foreground); }
+
+  .border-border { border-color: var(--border); }
+  .border-input { border-color: var(--input); }
+
+  .bg-input { background-color: var(--input); }
+  .bg-input-background { background-color: var(--input-background); }
+
+  .bg-sidebar { background-color: var(--sidebar); }
+  .text-sidebar-foreground { color: var(--sidebar-foreground); }
+
+  /* small helpers */
+  .ring-ring { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 20%, transparent 80%); }
 }
