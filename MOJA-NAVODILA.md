@@ -57,7 +57,7 @@ pnpm --filter @aintel/core-shell dev
 pnpm --filter @aintel/module-crm dev
 pnpm --filter @aintel/module-projects dev
 pnpm --filter @aintel/module-cenik dev
-pnpm --filter @aintel/module-nastavitve dev
+pnpm --filter @aintel/module-settings dev
 ```
 
 
