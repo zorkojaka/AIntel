@@ -34,6 +34,13 @@ Skripta `pnpm --filter aintel-backend seed:settings` prebere `backend/seeds/sett
 Frontend del (`apps/module-settings`) nudi stran `/nastavitve` z obrazci za podjetje, logotip, barvo, plačilne pogoje, dokumentne prefikse
 in PDF predogledom. Modul izvaža `useSettingsData`, zato CRM in Projekti prikazujeta kontakt podjetja iz istih nastavitev.
 
+### finance/
+Avtomatsko prevzame podatke iz izdanih računov in ponuja agregirane vpoglede.
+- model `FinanceEntry` z vzorčnimi zapisi v `modules/finance/schemas/financeEntry.ts`.
+- kontroler `financeController.ts` podpira `GET /finance` seznam, `POST /addFromInvoice`, `GET /yearly-summary`, `GET /project/:id`, `GET /client/:id`.
+- manifest in UI `apps/module-finance` prikazujeta tabele, grafe in statistične kartice.
+Modul je registriran v `backend/routes.ts` pod `/finance` in povezan v `apps/core-shell` kot tretji modul.
+
 ## Navodila za nove module
 1. Ustvari novo mapo v `modules/`
 2. Dodaj `routes/`, `controllers/`, `schemas/` po potrebi

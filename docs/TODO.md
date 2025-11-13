@@ -39,5 +39,5 @@ Please see `docs/faze/01-CRM.md` for the latest checklist and testing hints.
 - [x] Frontend modul `/nastavitve` z logotipom, barvami, PDF predogledom in integracijo z CRM/Projekti
 
 ## FAZA 5 – Finance
-- [ ] Pregled računov
-- [ ] Stroški, prihodki, izpis za knjigovodstvo
+- [x] Pregled računov
+- [x] Stroški, prihodki, izpis za knjigovodstvo
