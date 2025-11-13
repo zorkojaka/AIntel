@@ -28,3 +28,4 @@ Vzpostaviti modularen cenik izdelkov in storitev, ki uporablja slovenska polja v
 - Posodobi `docs/MODULES.md`, `docs/TODO.md`, `docs/KOORDINACIJA.md` (nov razdelek) in `docs/faze/03-CENIK.md` pri vsakem večjem napredku.
 - Uporabi `Cenik___Pripravljena_Struktura.csv` in skripto `backend/scripts/seed-cenik.ts`, da popolni nabor podatkov naliješ v MongoDB (`pnpm --filter aintel-backend seed:cenik`).
 - Po uvozu preveri, da so API klici `/api/cenik/products` polni realnih artiklov in da UI sporoči prave kategorije/cene brez 404 napak.
+- Status: FAZA 3 zaključena; nadaljuj z `docs/faze/04-NASTAVITVE.md` ali naslednjo fazo po roadmapu.

@@ -11,6 +11,7 @@ import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Settings, ArrowLeft, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { useSettingsData } from "@aintel/module-settings";
 
 const mockProjects: Project[] = [
   {
@@ -268,6 +269,7 @@ const DEFAULT_TEMPLATES: Template[] = [
 ];
 
 export function ProjectsPage() {
+  const { settings: globalSettings } = useSettingsData({ applyTheme: false });
   const [currentView, setCurrentView] = useState<"list" | "workspace" | "settings">("list");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<Template[]>(DEFAULT_TEMPLATES);
@@ -330,6 +332,13 @@ export function ProjectsPage() {
                   Nastavitve
                 </Button>
               </div>
+            </div>
+            <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900">{globalSettings.companyName}</h2>
+              <p className="text-sm text-slate-500">{globalSettings.address}</p>
+              <p className="text-xs text-slate-500">
+                {[globalSettings.email, globalSettings.phone].filter(Boolean).join(" · ")}
+              </p>
             </div>
             <ProjectList projects={mockProjects} onSelectProject={handleSelectProject} />
           </div>

@@ -69,6 +69,17 @@ npm run dev
 
 Aplikacija bo dostopna na `http://localhost:3000`.
 
+### Sinhronizacija funkcijskih vej
+
+Če v lokalni kopiji ne vidiš najnovejših modulov (npr. `apps/module-settings` iz faze 4 – Nastavitve), posodobi vejo neposredno iz oddaljenega repozitorija:
+
+```bash
+git fetch origin 04_nastavitve
+git checkout 04_nastavitve
+```
+
+Po preklopu lahko narediš `git merge` ali `git rebase` na svojo delovno vejo in ponovno zaženeš `pnpm install && pnpm run dev`, da se modul pojavi v core-shell navigaciji.
+
 ---
 
 ## 📎 Kontakt & vzdrževanje

@@ -1,0 +1,17 @@
+{
+  "companyName": "Vaše podjetje d.o.o.",
+  "address": "Glavna cesta 1, 1000 Ljubljana",
+  "email": "info@vasepodjetje.si",
+  "phone": "+386 1 123 45 67",
+  "logoUrl": "",
+  "primaryColor": "#0f62fe",
+  "documentPrefix": {
+    "offer": "PON-",
+    "invoice": "RAC-",
+    "order": "NOR-",
+    "deliveryNote": "DOB-",
+    "workOrder": "DEL-"
+  },
+  "defaultPaymentTerms": "Plačilo v 15 dneh po prejemu računa.",
+  "disclaimer": "Avtomatsko generiran dokument. Prosimo, preverite podatke pred podpisom."
+}

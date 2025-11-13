@@ -46,11 +46,11 @@ Vzpostaviti transparenten register, kjer lahko več agentov hkrati deluje na las
 2. **Izvedeni koraki**: Potrdil sem, da modularne in dokumentacijske smernice (npr. centralni `core/` helperji, enotni response/error standard, koordinacija v `docs/KOORDINACIJA.md`) veljajo za nadaljnje delo.
 3. **Naslednji koraki**: Pripravljen sem nadaljevati s konkretnimi nalogami (npr. pregled konkretnih modulov, implementacija ali dokumentacija), ob upoštevanju centralnih navodil iz omenjenih dokumentov.
 
-### Agent Codex – Cenik
+### Agent Codex – Cenik (zaključeno)
 Modul: Cenik
 Phase: FAZA 3 – Cenik
 Start: 2025-11-12
-Status: in progress
+Status: completed
 1. **Začetne naloge**: Prebral sem `03_CENIK.md`, `docs/faze/03-CENIK.md`, `docs/MODULES.md` in obstoječe backend/frontend module, da sem razumel zahteve in povezave med dokumenti.
-2. **Izvedeni koraki**: Implementiral sem backend (`product.model.ts`, controller, routes, README) ter frontend (`apps/module-cenik` + `CenikPage`, manifest, Tailwind/PostCSS), integriral modul v `core-shell` (manifest, navigation, CSS + Vite proxy + scripts), ter posodobil `docs/MODULES.md`, `docs/ARHITEKTURA.md`, `docs/TODO.md` in `docs/faze/03-CENIK.md`.
-3. **Naslednji koraki**: Uvozi `Cenik___Pripravljena_Struktura.csv` s `pnpm --filter aintel-backend seed:cenik`, zaženi `pnpm run dev:stack`, preveri CRUD scenarije preko `/api/cenik/products`, preizkusi filtre/obrazec in API odgovore ter dokumentiraj vse napake ali dodatne potrebe (npr. dodatni CSV uvozi ali lokalizacija).
+2. **Izvedeni koraki**: Implementiral sem backend (`product.model.ts`, controller, routes, README) ter frontend (`apps/module-cenik` + `CenikPage`, manifest, FilterBar, modal) in povezavo prek `core-shell` (manifest, navigation, CSS, Vite proxy, Tailwind). Dodal sem debounced filter bar, modal urejanje, seed skripto in dokumentacijo (`docs/MODULES.md`, `docs/ARHITEKTURA.md`, `docs/TODO.md`, `docs/faze/03-CENIK.md`, `docs/KOORDINACIJA.md`).
+3. **Naslednji koraki**: Nadaljuj s fazo 4 (Nastavitve) — preglej `docs/04_NASTAVITVE.md`, definiraj nieuwe `/settings` endpoints in UI, ter preveri morebitne dodatne zahteve za lokalizacijo ali dashboard metrike.

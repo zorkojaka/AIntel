@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Button, Card, DataTable, Input } from '@aintel/ui';
+import { useSettingsData } from '@aintel/module-settings';
 import { tokens } from '@aintel/theme';
 import './styles.css';
 
@@ -27,6 +28,7 @@ const initialCompanies: Company[] = [
 ];
 
 export const CRMPage: React.FC = () => {
+  const { settings: globalSettings } = useSettingsData({ applyTheme: false });
   const [people, setPeople] = useState(initialPeople);
   const [companies, setCompanies] = useState(initialCompanies);
   const [personForm, setPersonForm] = useState({ firstName: '', lastName: '', email: '', company: '' });
@@ -55,6 +57,14 @@ export const CRMPage: React.FC = () => {
           `@aintel/ui`. Vsebuje sezname kontaktov, podjetij in obrazce za ustvarjanje novih vnosev.
         </p>
       </header>
+
+      <Card title="Kontakt podjetja">
+        <div className="crm-contact">
+          <strong>{globalSettings.companyName}</strong>
+          <span>{globalSettings.address}</span>
+          <span>{[globalSettings.email, globalSettings.phone].filter(Boolean).join(' · ')}</span>
+        </div>
+      </Card>
 
       <div className="crm-page__grid">
         <Card title="Kontakti (osebe)">

@@ -27,6 +27,13 @@ Cenik modul hrani artikle/storitve po navodilih iz `03_CENIK.md`. V `backend/mod
 - `README.md`, ki pove, kako razsiriti shemo ali dashboard metrike.
 Frontend je v `apps/module-cenik`: `CenikPage` prikazuje tabelo izdelkov, filtre, obrazec, uporablja `@aintel/ui` komponente in tailwind utility razrede iz `styles.css/globals.css`. Core shell vključuje manifest ter novo navigacijo, `docs/faze/03-CENIK.md` pa vodi testne korake.
 
+### settings/
+Modul Nastavitve hrani en sam dokument z informacijami o podjetju, oblikovanju in prefiksih dokumentov. Backend (`backend/modules/settings`)
+vsebuje `Settings.ts` (Mongoose shema), servis `settings.service.ts` z helperjem `getSettings()` ter kontroler/ruto (`GET/PUT /settings`).
+Skripta `pnpm --filter aintel-backend seed:settings` prebere `backend/seeds/settings.json` in inicializira podatke.
+Frontend del (`apps/module-settings`) nudi stran `/nastavitve` z obrazci za podjetje, logotip, barvo, plačilne pogoje, dokumentne prefikse
+in PDF predogledom. Modul izvaža `useSettingsData`, zato CRM in Projekti prikazujeta kontakt podjetja iz istih nastavitev.
+
 ## Navodila za nove module
 1. Ustvari novo mapo v `modules/`
 2. Dodaj `routes/`, `controllers/`, `schemas/` po potrebi

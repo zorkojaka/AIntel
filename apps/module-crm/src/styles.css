@@ -6,6 +6,13 @@
   max-width: 640px;
 }
 
+.crm-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.95rem;
+}
+
 .crm-page__grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
