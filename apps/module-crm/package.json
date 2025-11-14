@@ -21,6 +21,7 @@
     "@aintel/module-settings": "*",
     "@aintel/theme": "*",
     "@aintel/ui": "*",
+    "zod": "^4.1.12",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },
