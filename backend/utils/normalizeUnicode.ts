@@ -4,7 +4,11 @@ export function normalizeUnicode(obj: any, seen = new WeakMap<object, any>()) {
     if (seen.has(obj)) return seen.get(obj);
     const copy: any = Array.isArray(obj) ? [] : {};
     seen.set(obj, copy);
-    for (const key in obj) copy[key] = normalizeUnicode(obj[key], seen);
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        copy[key] = normalizeUnicode(obj[key], seen);
+      }
+    }
     return copy;
   }
   return obj;

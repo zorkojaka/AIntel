@@ -19,6 +19,7 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@aintel/module-crm": "*",
     "@aintel/module-settings": "*",
     "@radix-ui/react-dialog": "^1.1.1",
     "@radix-ui/react-dropdown-menu": "^2.1.1",

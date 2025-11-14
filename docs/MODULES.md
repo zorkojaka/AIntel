@@ -18,6 +18,8 @@ Vodi kontakte, podjetja in interakcije; ze vsebuje:
 - kontrolerje in rute za `people`, `companies` in `notes`.
 - dokumentacijo v `modules/crm/README.md`.
 Modul se poveze na core preko `/crm` (v `backend/routes.ts`) in uporablja globalni response/error standard.
+- `clients` endpoints (GET/POST/PUT/DELETE `/crm/clients`) urejajo stranke (naziv, tip, DDV, kontakt, oznake, opombe); backend preverja DDV za podjetja in preprečuje enak naziv + DDV.
+- `@aintel/module-crm` eksponira `ClientForm`, ki uniformno preverja tip stranke, DDV, oznake in opombe; ta komponenta je zdaj ponovno uporabljena iz `apps/module-projects` pri gumbu “Dodaj stranko”.
 
 ### cenik/
 Cenik modul hrani artikle/storitve po navodilih iz `03_CENIK.md`. V `backend/modules/cenik` so:
@@ -33,6 +35,13 @@ vsebuje `Settings.ts` (Mongoose shema), servis `settings.service.ts` z helperjem
 Skripta `pnpm --filter aintel-backend seed:settings` prebere `backend/seeds/settings.json` in inicializira podatke.
 Frontend del (`apps/module-settings`) nudi stran `/nastavitve` z obrazci za podjetje, logotip, barvo, plačilne pogoje, dokumentne prefikse
 in PDF predogledom. Modul izvaža `useSettingsData`, zato CRM in Projekti prikazujeta kontakt podjetja iz istih nastavitev.
+
+### finance/
+Avtomatsko prevzame podatke iz izdanih računov in ponuja agregirane vpoglede.
+- model `FinanceEntry` z vzorčnimi zapisi v `modules/finance/schemas/financeEntry.ts`.
+- kontroler `financeController.ts` podpira `GET /finance` seznam, `POST /addFromInvoice`, `GET /yearly-summary`, `GET /project/:id`, `GET /client/:id`.
+- manifest in UI `apps/module-finance` prikazujeta tabele, grafe in statistične kartice.
+Modul je registriran v `backend/routes.ts` pod `/finance` in povezan v `apps/core-shell` kot tretji modul.
 
 ## Navodila za nove module
 1. Ustvari novo mapo v `modules/`

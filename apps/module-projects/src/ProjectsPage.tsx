@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ClientForm, ClientFormPayload } from "@aintel/module-crm";
 import { ProjectList, Project } from "./components/ProjectList";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
 import { TemplateEditor, Template } from "./components/TemplateEditor";
@@ -9,7 +10,7 @@ import { TimelineEvent } from "./components/TimelineFeed";
 import { Toaster } from "./components/ui/sonner";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
-import { Settings, ArrowLeft, Plus } from "lucide-react";
+import { Settings, ArrowLeft, Plus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { useSettingsData } from "@aintel/module-settings";
 
@@ -273,6 +274,7 @@ export function ProjectsPage() {
   const [currentView, setCurrentView] = useState<"list" | "workspace" | "settings">("list");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<Template[]>(DEFAULT_TEMPLATES);
+  const [isClientModalOpen, setClientModalOpen] = useState(false);
 
   const handleSelectProject = (projectId: string) => {
     setSelectedProjectId(projectId);
@@ -286,6 +288,28 @@ export function ProjectsPage() {
 
   const handleNewProject = () => {
     toast.info("Nova projekt funkcionalnost bo dodana");
+  };
+
+  const handleAddClient = () => {
+    setClientModalOpen(true);
+  };
+
+  const handleClientSubmit = async (payload: ClientFormPayload) => {
+    const response = await fetch("/api/crm/clients", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error ?? "Prišlo je do napake pri shranjevanju stranke.");
+    }
+
+    toast.success(
+      result.data?.name
+        ? `Stranka ${result.data.name} je bila dodana.`
+        : "Stranka je bila dodana."
+    );
   };
 
   const handleSaveTemplate = (template: Template) => {
@@ -326,6 +350,10 @@ export function ProjectsPage() {
                 <Button onClick={handleNewProject}>
                   <Plus className="mr-2 h-4 w-4" />
                   Nov projekt
+                </Button>
+                <Button variant="ghost" onClick={handleAddClient}>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Dodaj stranko
                 </Button>
                 <Button variant="outline" onClick={() => setCurrentView("settings")}>
                   <Settings className="mr-2 h-4 w-4" />
@@ -403,6 +431,12 @@ export function ProjectsPage() {
         </div>
       )}
 
+      <ClientForm
+        open={isClientModalOpen}
+        onClose={() => setClientModalOpen(false)}
+        onSubmit={handleClientSubmit}
+        onSuccess={() => setClientModalOpen(false)}
+      />
       <Toaster />
     </>
   );

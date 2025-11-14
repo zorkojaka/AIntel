@@ -4,16 +4,20 @@ import { CRMPage } from '@aintel/module-crm';
 import { ProjectsPage } from '@aintel/module-projects';
 import { CenikPage } from '@aintel/module-cenik';
 import { SettingsPage } from '@aintel/module-settings';
+import { FinancePage } from '@aintel/module-finance';
 
-const moduleComponents: Record<'settings' | 'crm' | 'projects' | 'cenik', React.ReactNode> = {
+const moduleComponents = {
   settings: <SettingsPage />,
   crm: <CRMPage />,
   projects: <ProjectsPage />,
-  cenik: <CenikPage />
+  cenik: <CenikPage />,
+  finance: <FinancePage />
 };
 
+type ModuleId = keyof typeof moduleComponents;
+
 function App() {
-  const [activeModule, setActiveModule] = useState<'settings' | 'crm' | 'projects' | 'cenik'>('settings');
+  const [activeModule, setActiveModule] = useState<ModuleId>('settings');
 
   return (
     <CoreLayout activeModule={activeModule} onModuleChange={setActiveModule}>

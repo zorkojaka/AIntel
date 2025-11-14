@@ -39,5 +39,11 @@ Please see `docs/faze/01-CRM.md` for the latest checklist and testing hints.
 - [x] Frontend modul `/nastavitve` z logotipom, barvami, PDF predogledom in integracijo z CRM/Projekti
 
 ## FAZA 5 – Finance
-- [ ] Pregled računov
-- [ ] Stroški, prihodki, izpis za knjigovodstvo
+- [x] Pregled računov
+- [x] Stroški, prihodki, izpis za knjigovodstvo
+
+## FAZA 6 – CRM
+- [x] Modalni `ClientForm` z Zod validacijo (naziv, tip, DDV za podjetja) in skupnim stilom
+- [x] Backend CRUD na `/crm/clients` z novo shemo, DDV checkerjem in enotnim response handlerjem
+- [x] Projekti modul uporablja `ClientForm` ob kliku “Dodaj stranko” skozi `@aintel/module-crm`
+- [x] Dokumentacija (`docs/faze/06-CRM.md`, `docs/ARHITEKTURA.md`, `docs/MODULES.md`, `docs/KOORDINACIJA.md`) posodobljena

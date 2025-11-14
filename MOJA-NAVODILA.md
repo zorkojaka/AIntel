@@ -45,6 +45,7 @@ pnpm install
 ### 💻 2. Zaženi backend (v mapi `backend/`)
 ```bash
 cd backend
+pnpm run build
 pnpm run dev
 ```
 
@@ -52,12 +53,18 @@ pnpm run dev
 ```bash
 pnpm run dev:stack
 
+pnpm --filter @aintel/core-shell build
+pnpm --filter @aintel/module-crm build
+pnpm --filter @aintel/module-projects build
+pnpm --filter @aintel/module-cenik build
+pnpm --filter @aintel/module-settings build
+
 posamezno:
 pnpm --filter @aintel/core-shell dev
 pnpm --filter @aintel/module-crm dev
 pnpm --filter @aintel/module-projects dev
 pnpm --filter @aintel/module-cenik dev
-pnpm --filter @aintel/module-nastavitve dev
+pnpm --filter @aintel/module-settings dev
 ```
 
 
