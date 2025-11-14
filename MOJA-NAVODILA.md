@@ -45,6 +45,7 @@ pnpm install
 ### 💻 2. Zaženi backend (v mapi `backend/`)
 ```bash
 cd backend
+pnpm run build
 pnpm run dev
 ```
 

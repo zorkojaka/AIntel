@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-<<<<<<< ours
   "main": "./src/index.ts",
   "exports": {
     ".": {
@@ -15,17 +14,12 @@
     "./src/styles.css": "./src/styles.css"
   },
   "types": "./src/index.ts",
-=======
->>>>>>> theirs
   "scripts": {
     "dev": "vite",
     "build": "vite build"
   },
   "dependencies": {
-<<<<<<< ours
     "@aintel/module-settings": "*",
-=======
->>>>>>> theirs
     "@radix-ui/react-dialog": "^1.1.1",
     "@radix-ui/react-dropdown-menu": "^2.1.1",
     "@radix-ui/react-label": "^2.1.0",
