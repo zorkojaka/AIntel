@@ -23,8 +23,27 @@
 }
 
 .core-shell__sidebar li {
+  margin-bottom: var(--space-sm);
+}
+
+.core-shell__sidebar button {
+  display: block;
+  width: 100%;
   padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-soft);
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.core-shell__sidebar button:hover {
   background: rgba(15, 99, 247, 0.08);
-  margin-bottom: var(--space-sm);
+}
+
+.core-shell__sidebar button[data-active="true"] {
+  background: var(--color-primary);
+  color: #fff;
 }
