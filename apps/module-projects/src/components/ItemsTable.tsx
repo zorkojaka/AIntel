@@ -45,7 +45,7 @@ export function ItemsTable({ items, onEdit, onAdd, onDelete }: ItemsTableProps) 
     .filter((item) => item.category === "labor")
     .reduce((acc, item) => acc + item.quantity * item.price * (1 - item.discount / 100), 0);
 
-  const handleRowClick = (item: ProjectItem) => {
+  const handleRowClick = (item: Item) => {
     setSelectedItem(item);
     setIsDrawerOpen(true);
   };

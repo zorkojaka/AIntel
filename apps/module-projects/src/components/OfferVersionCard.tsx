@@ -15,7 +15,7 @@ interface OfferVersionCardProps {
   onCancelConfirmation?: () => void;
 }
 
-const statusColors: Record<ProjectOffer["status"], string> = {
+const statusColors: Record<OfferVersion["status"], string> = {
   draft: "bg-muted text-muted-foreground",
   sent: "bg-blue-100 text-blue-700",
   viewed: "bg-purple-100 text-purple-700",
@@ -24,7 +24,7 @@ const statusColors: Record<ProjectOffer["status"], string> = {
   expired: "bg-gray-100 text-gray-700",
 };
 
-const statusLabels: Record<ProjectOffer["status"], string> = {
+const statusLabels: Record<OfferVersion["status"], string> = {
   draft: "Osnutek",
   sent: "Poslano",
   viewed: "Videno",

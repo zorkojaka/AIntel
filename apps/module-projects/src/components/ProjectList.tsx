@@ -6,6 +6,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Search } from "lucide-react";
 import type { Project, ProjectStatus } from "../types";
 
+type ProjectStatus =
+  | "draft"
+  | "offered"
+  | "ordered"
+  | "in-progress"
+  | "delivered"
+  | "completed"
+  | "invoiced";
+
+export interface Project {
+  id: string;
+  title: string;
+  customer: string;
+  status: ProjectStatus;
+  offerAmount: number;
+  invoiceAmount: number;
+  createdAt: string;
+}
+
 interface ProjectListProps {
   projects: Project[];
   onSelectProject: (projectId: string) => void;

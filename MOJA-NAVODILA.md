@@ -69,6 +69,11 @@ pnpm run dev
 ### 🖥️ 3. Zaženi frontend (iz root mape)
 ```bash
 pnpm run dev:stack
+
+posamezno:
+pnpm --filter @aintel/core-shell dev
+pnpm --filter @aintel/module-crm dev
+pnpm --filter @aintel/module-projects dev
 ```
 
 - Odpri: http://localhost:5173
@@ -76,16 +81,4 @@ pnpm run dev:stack
 
 ---
 
-## 📁 `.gitignore` (da ne objaviš smeti)
-
-V korenu projekta dodaj `.gitignore` s tem:
-```gitignore
-node_modules
-dist
-.env
-.DS_Store
-.vscode
-*.log
-*.test.ts
-```
 

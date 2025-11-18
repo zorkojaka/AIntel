@@ -9,6 +9,14 @@ import type {
   ProjectTimelineEvent,
   ProjectWorkOrder,
 } from "./types";
+import { useState } from "react";
+import { ProjectList, Project } from "./components/ProjectList";
+import { ProjectWorkspace } from "./components/ProjectWorkspace";
+import { TemplateEditor, Template } from "./components/TemplateEditor";
+import { Item } from "./components/ItemsTable";
+import { OfferVersion } from "./components/OfferVersionCard";
+import { WorkOrder } from "./components/WorkOrderCard";
+import { TimelineEvent } from "./components/TimelineFeed";
 import { Toaster } from "./components/ui/sonner";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
@@ -52,6 +60,7 @@ const fallbackProjects: Project[] = [
 ];
 
 const fallbackItems: Item[] = [
+const mockItems: Item[] = [
   {
     id: "item-1",
     name: "DVC IP kamera 4MP",
@@ -107,6 +116,7 @@ const fallbackItems: Item[] = [
 ];
 
 const fallbackOffers: OfferVersion[] = [
+const mockOffers: OfferVersion[] = [
   {
     id: "offer-1",
     version: 1,
@@ -125,6 +135,7 @@ const fallbackOffers: OfferVersion[] = [
 ];
 
 const fallbackWorkOrders: WorkOrder[] = [
+const mockWorkOrders: WorkOrder[] = [
   {
     id: "wo-1",
     team: "Ekipa A - Janez Novak, Marko Horvat",
@@ -136,6 +147,7 @@ const fallbackWorkOrders: WorkOrder[] = [
 ];
 
 const fallbackTimelineEvents: ProjectTimelineEvent[] = [
+const mockTimelineEvents: TimelineEvent[] = [
   {
     id: "evt-1",
     type: "edit",
@@ -397,6 +409,21 @@ export function ProjectsPage() {
       const message = error instanceof Error ? error.message : "Neznana napaka.";
       toast.error(`Napaka pri ustvarjanju projekta: ${message}`);
     }
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<Template[]>(DEFAULT_TEMPLATES);
+
+  const handleSelectProject = (projectId: string) => {
+    setSelectedProjectId(projectId);
+    setCurrentView("workspace");
+  };
+
+  const handleBackToList = () => {
+    setCurrentView("list");
+    setSelectedProjectId(null);
+  };
+
+  const handleNewProject = () => {
+    toast.info("Nova projekt funkcionalnost bo dodana");
   };
 
   const handleSaveTemplate = (template: Template) => {
