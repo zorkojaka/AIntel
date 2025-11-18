@@ -1,13 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Card } from "./ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
-import { ItemsTable, Item } from "./ItemsTable";
-import { OfferVersionCard, OfferVersion } from "./OfferVersionCard";
-import { WorkOrderCard, WorkOrder } from "./WorkOrderCard";
-import { TimelineFeed, TimelineEvent } from "./TimelineFeed";
+import { ItemsTable } from "./ItemsTable";
+import { OfferVersionCard } from "./OfferVersionCard";
+import { WorkOrderCard } from "./WorkOrderCard";
+import { TimelineFeed } from "./TimelineFeed";
 import { ValidationBanner } from "./ValidationBanner";
 import { SignaturePad } from "./SignaturePad";
 import { Template } from "./TemplateEditor";
@@ -19,6 +19,16 @@ import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 import { ArrowLeft, Save, CheckCircle, Plus, FileText, Package, Truck, Wrench, Receipt, FolderOpen, Clock, Eye, Download } from "lucide-react";
 import { toast } from "sonner";
+import { confirmProjectPhase, type ConfirmPhasePayload } from "../api/projects";
+import type {
+  ProjectCustomer,
+  ProjectDetail,
+  ProjectItem,
+  ProjectOffer,
+  ProjectTimelineEvent,
+  ProjectWorkOrder,
+  ProjectStatus,
+} from "../types";
 
 interface PurchaseOrder {
   id: string;
@@ -42,19 +52,16 @@ interface DeliveryNote {
 interface ProjectWorkspaceProps {
   projectId: string;
   projectTitle: string;
-  customer: {
-    name: string;
-    taxId: string;
-    address: string;
-    paymentTerms: string;
-  };
-  items: Item[];
-  offers: OfferVersion[];
-  workOrders: WorkOrder[];
-  timelineEvents: TimelineEvent[];
-  status: string;
+  customer: ProjectCustomer;
+  items: ProjectItem[];
+  offers: ProjectOffer[];
+  workOrders: ProjectWorkOrder[];
+  timelineEvents: ProjectTimelineEvent[];
+  status: ProjectStatus;
+  requirementsText: string;
   templates: Template[];
   onBack: () => void;
+  onProjectUpdated?: (project: ProjectDetail) => void;
 }
 
 export function ProjectWorkspace({
@@ -66,38 +73,81 @@ export function ProjectWorkspace({
   workOrders: initialWorkOrders,
   timelineEvents: initialTimelineEvents,
   status: initialStatus,
+  requirementsText,
   templates,
   onBack,
+  onProjectUpdated,
 }: ProjectWorkspaceProps) {
   const [activeTab, setActiveTab] = useState("items");
-  const [items, setItems] = useState(initialItems);
-  const [offers, setOffers] = useState(initialOffers);
-  const [workOrders, setWorkOrders] = useState(initialWorkOrders);
+  const [items, setItems] = useState<ProjectItem[]>(initialItems);
+  const [offers, setOffers] = useState<ProjectOffer[]>(initialOffers);
+  const [workOrders, setWorkOrders] = useState<ProjectWorkOrder[]>(initialWorkOrders);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [deliveryNotes, setDeliveryNotes] = useState<DeliveryNote[]>([]);
-  const [timeline, setTimeline] = useState(initialTimelineEvents);
-  const [status, setStatus] = useState(initialStatus);
-  const [requirements, setRequirements] = useState("Postavitev 4 IP kamer DVC za nadzor vhoda in parkirišča. Vodenje kablov po stenah, postavitev NVR, konfiguracija.");
+  const [timeline, setTimeline] = useState<ProjectTimelineEvent[]>(initialTimelineEvents);
+  const [status, setStatus] = useState<ProjectStatus>(initialStatus);
+  const [requirements, setRequirements] = useState(requirementsText);
+
+  useEffect(() => {
+    setItems(initialItems);
+  }, [initialItems]);
+
+  useEffect(() => {
+    setOffers(initialOffers);
+  }, [initialOffers]);
+
+  useEffect(() => {
+    setWorkOrders(initialWorkOrders);
+  }, [initialWorkOrders]);
+
+  useEffect(() => {
+    setTimeline(initialTimelineEvents);
+  }, [initialTimelineEvents]);
+
+  useEffect(() => {
+    setStatus(initialStatus);
+  }, [initialStatus]);
+
+  useEffect(() => {
+    setRequirements(requirementsText);
+  }, [requirementsText]);
 
   const selectedOffer = offers.find((o) => o.isSelected);
   const validationIssues: string[] = [];
-  
+
   if (!customer.name) validationIssues.push("Manjka podatek o stranki");
   if (items.length === 0) validationIssues.push("Dodajte vsaj eno postavko");
 
-  const addTimelineEvent = (event: Omit<TimelineEvent, "id">) => {
-    const newEvent: TimelineEvent = {
+  const addTimelineEvent = (event: Omit<ProjectTimelineEvent, "id">) => {
+    const newEvent: ProjectTimelineEvent = {
       ...event,
       id: `evt-${Date.now()}`,
     };
     setTimeline([newEvent, ...timeline]);
   };
 
+  const syncPhaseWithBackend = async (payload: ConfirmPhasePayload) => {
+    try {
+      const updatedProject = await confirmProjectPhase(projectId, payload);
+      setItems(updatedProject.items);
+      setOffers(updatedProject.offers);
+      setWorkOrders(updatedProject.workOrders);
+      setTimeline(updatedProject.timeline);
+      setStatus(updatedProject.status);
+      onProjectUpdated?.(updatedProject);
+      return updatedProject;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Napaka pri komunikaciji s projektno API storitvijo.";
+      toast.error(message);
+      throw error;
+    }
+  };
+
   const handleAddItem = () => {
     toast.success("Postavka dodana");
   };
 
-  const handleEditItem = (item: Item) => {
+  const handleEditItem = (item: ProjectItem) => {
     toast.info("Urejanje postavke");
   };
 
@@ -107,7 +157,7 @@ export function ProjectWorkspace({
   };
 
   const handleCreateOffer = () => {
-    const newVersion: OfferVersion = {
+    const newVersion: ProjectOffer = {
       id: `offer-${offers.length + 1}`,
       version: offers.length + 1,
       status: "draft",
@@ -145,18 +195,16 @@ export function ProjectWorkspace({
     toast.success("Ponudba poslana");
   };
 
-  const handleConfirmOffer = (offerId: string) => {
+  const handleConfirmOffer = async (offerId: string) => {
     const offer = offers.find((o) => o.id === offerId);
     if (!offer) return;
 
-    // Mark offer as accepted and selected
-    setOffers(offers.map((o) => ({
-      ...o,
-      isSelected: o.id === offerId,
-      status: o.id === offerId ? "accepted" : o.status,
-    })));
+    try {
+      await syncPhaseWithBackend({ phase: "offer", offerId, action: "confirm" });
+    } catch {
+      return;
+    }
 
-    // Generate Purchase Orders
     const newPOs: PurchaseOrder[] = [
       {
         id: `PO-${Date.now()}-1`,
@@ -177,8 +225,7 @@ export function ProjectWorkspace({
     ];
     setPurchaseOrders(newPOs);
 
-    // Generate Work Order
-    const newWorkOrder: WorkOrder = {
+    const newWorkOrder: ProjectWorkOrder = {
       id: `WO-${Date.now()}`,
       team: "Ekipa A - Janez Novak, Marko Horvat",
       schedule: "14.11.2024 08:00",
@@ -186,9 +233,8 @@ export function ProjectWorkspace({
       status: "planned",
       notes: "Pripraviti ključe za dostop do tehničnih prostorov",
     };
-    setWorkOrders([...workOrders, newWorkOrder]);
+    setWorkOrders((prev) => [...prev, newWorkOrder]);
 
-    // Generate initial Delivery Notes (as planned)
     const newDeliveryNotes: DeliveryNote[] = newPOs.map((po) => ({
       id: `DN-${Date.now()}-${po.id}`,
       poId: po.id,
@@ -200,96 +246,49 @@ export function ProjectWorkspace({
     }));
     setDeliveryNotes(newDeliveryNotes);
 
-    // Update project status
-    setStatus("ordered");
-
-    // Add timeline events
-    addTimelineEvent({
-      type: "offer",
-      title: `Ponudba v${offer.version} potrjena`,
-      description: "Ponudba označena kot izbrana",
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-      metadata: { amount: `€ ${offer.amount.toFixed(2)}` },
-    });
-
-    addTimelineEvent({
-      type: "po",
-      title: "Naročilnice generirane",
-      description: `Ustvarjenih ${newPOs.length} naročilnic`,
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-      metadata: { count: newPOs.length.toString() },
-    });
-
-    addTimelineEvent({
-      type: "execution",
-      title: "Delovni nalog ustvarjen",
-      description: `Načrtovana montaža: ${newWorkOrder.schedule}`,
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-      metadata: { team: newWorkOrder.team },
-    });
-
-    addTimelineEvent({
-      type: "status-change",
-      title: "Status spremenjen",
-      description: "Projekt prešel v fazo 'Naročeno'",
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-    });
-
     toast.success("Ponudba potrjena! Ustvarjene naročilnice, delovni nalog in dobavnice.");
     setActiveTab("logistics");
   };
 
-  const handleCancelConfirmation = (offerId: string) => {
+  const handleCancelConfirmation = async (offerId: string) => {
     const offer = offers.find((o) => o.id === offerId);
     if (!offer) return;
 
-    // Unmark offer as selected, revert to sent status
-    setOffers(offers.map((o) => ({
-      ...o,
-      isSelected: false,
-      status: o.id === offerId ? "sent" : o.status,
-    })));
+    try {
+      await syncPhaseWithBackend({ phase: "offer", offerId, action: "cancel" });
+    } catch {
+      return;
+    }
 
     // Clear generated documents
     setPurchaseOrders([]);
     setDeliveryNotes([]);
     setWorkOrders(initialWorkOrders);
 
-    // Update project status back
-    setStatus("offered");
-
-    addTimelineEvent({
-      type: "status-change",
-      title: `Potrditev ponudbe v${offer.version} preklicana`,
-      description: "Naročilnice, delovni nalogi in dobavnice izbrisani",
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-    });
-
     toast.info("Potrditev ponudbe preklicana");
   };
 
-  const handleReceiveDelivery = (dnId: string) => {
+  const handleReceiveDelivery = async (dnId: string) => {
     const dn = deliveryNotes.find((d) => d.id === dnId);
     if (!dn) return;
 
-    // Mark delivery as received
-    setDeliveryNotes(
-      deliveryNotes.map((d) =>
-        d.id === dnId
-          ? {
-              ...d,
-              receivedQuantity: d.totalQuantity,
-              receivedDate: new Date().toLocaleDateString("sl-SI"),
-              serials: ["SN-001", "SN-002", "SN-003"],
-            }
-          : d
-      )
+    try {
+      await syncPhaseWithBackend({ phase: "delivery", note: `Dobavnica ${dnId}` });
+    } catch {
+      return;
+    }
+
+    const updatedNotes = deliveryNotes.map((d) =>
+      d.id === dnId
+        ? {
+            ...d,
+            receivedQuantity: d.totalQuantity,
+            receivedDate: new Date().toLocaleDateString("sl-SI"),
+            serials: ["SN-001", "SN-002", "SN-003"],
+          }
+        : d
     );
+    setDeliveryNotes(updatedNotes);
 
     // Update PO status
     setPurchaseOrders(
@@ -297,29 +296,6 @@ export function ProjectWorkspace({
         po.id === dn.poId ? { ...po, status: "delivered" as const } : po
       )
     );
-
-    // Check if all deliveries are complete
-    const allDelivered = deliveryNotes.every((d) => d.id === dnId || d.receivedQuantity > 0);
-    
-    if (allDelivered) {
-      setStatus("in-progress");
-      addTimelineEvent({
-        type: "status-change",
-        title: "Status spremenjen",
-        description: "Projekt prešel v fazo 'V teku' - vsa dobava potrjena",
-        timestamp: new Date().toLocaleString("sl-SI"),
-        user: "Admin",
-      });
-    }
-
-    addTimelineEvent({
-      type: "delivery",
-      title: "Dobavnica potrjena",
-      description: `Dobavnica ${dnId} - ${dn.supplier}`,
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-      metadata: { supplier: dn.supplier },
-    });
 
     toast.success("Dobavnica potrjena! Načrt lahko generiramo.");
   };
@@ -379,27 +355,13 @@ export function ProjectWorkspace({
     toast.success("Ponudba prenesena kot HTML");
   };
 
-  const handleSaveSignature = (signature: string, signerName: string) => {
-    setStatus("completed");
-    
-    addTimelineEvent({
-      type: "execution",
-      title: "Potrdilo o zaključku del",
-      description: `Podpisal: ${signerName}`,
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-      metadata: { signer: signerName },
-    });
-
-    addTimelineEvent({
-      type: "status-change",
-      title: "Status spremenjen",
-      description: "Projekt prešel v fazo 'Zaključeno'",
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-    });
-
-    toast.success(`Podpis shranjen: ${signerName}`);
+  const handleSaveSignature = async (_signature: string, signerName: string) => {
+    try {
+      await syncPhaseWithBackend({ phase: "completion", note: `Podpisal: ${signerName}` });
+      toast.success(`Podpis shranjen: ${signerName}`);
+    } catch {
+      // Napaka je že prikazana v syncPhaseWithBackend
+    }
   };
 
   return (
@@ -439,7 +401,7 @@ export function ProjectWorkspace({
                 <Save className="w-4 h-4 mr-2" />
                 Shrani
               </Button>
-              <Select value={status} onValueChange={setStatus}>
+              <Select value={status} onValueChange={(value) => setStatus(value as ProjectStatus)}>
                 <SelectTrigger className="w-48">
                   <SelectValue />
                 </SelectTrigger>

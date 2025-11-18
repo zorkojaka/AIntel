@@ -27,6 +27,11 @@ Please see `docs/faze/01-CRM.md` for the latest checklist and testing hints.
 ## FAZA 2 – Projekti
 - [x] Upravljanje projektov
 - [x] Statusi, časovnice, povezani dokumenti
+- [x] API modul `/projects` (GET/POST/timeline/confirm-phase) in povezava z UI
+- [x] Gumbi "Nov projekt", "Potrdi ponudbo", "Potrdi prevzem" in "Zaključi" kličejo backend in sinhronizirajo ProjectWorkspace
+- [ ] Povezava gumba "Dodaj iz cenika" z modulom Cenik (čaka fazo 3)
+- [ ] Dodati logiko za "Nova postavka" / "Uvozi iz verzije" / "Rekalkuliraj" v ItemsTable (trenutno placeholderji)
+- [ ] Implementirati dejansko pošiljanje, podvajanje in brisanje ponudb (dropdown v OfferVersionCard)
 
 ## FAZA 3 – Cenik
 - [x] Artikel, cena, enota, kategorija
@@ -41,9 +46,3 @@ Please see `docs/faze/01-CRM.md` for the latest checklist and testing hints.
 ## FAZA 5 – Finance
 - [x] Pregled računov
 - [x] Stroški, prihodki, izpis za knjigovodstvo
-
-## FAZA 6 – CRM
-- [x] Modalni `ClientForm` z Zod validacijo (naziv, tip, DDV za podjetja) in skupnim stilom
-- [x] Backend CRUD na `/crm/clients` z novo shemo, DDV checkerjem in enotnim response handlerjem
-- [x] Projekti modul uporablja `ClientForm` ob kliku “Dodaj stranko” skozi `@aintel/module-crm`
-- [x] Dokumentacija (`docs/faze/06-CRM.md`, `docs/ARHITEKTURA.md`, `docs/MODULES.md`, `docs/KOORDINACIJA.md`) posodobljena

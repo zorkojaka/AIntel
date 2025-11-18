@@ -1,18 +1,17 @@
 import React from 'react';
 import { manifest as crmManifest } from '@aintel/module-crm';
 import { manifest as projectsManifest } from '@aintel/module-projects';
-import { manifest as cenikManifest } from '@aintel/module-cenik';
 import { manifest as financeManifest } from '@aintel/module-finance';
-import { manifest as settingsManifest } from '@aintel/module-settings';
 import './CoreLayout.css';
 
-const modules = [
-  crmManifest,
-  projectsManifest,
-  cenikManifest,
-  financeManifest,
-  settingsManifest,
-];
+const modules = [crmManifest, projectsManifest, financeManifest] as const;
+
+type ModuleId = typeof modules[number]['id'];
+
+interface CoreLayoutProps extends React.PropsWithChildren {
+  activeModule: ModuleId;
+  onModuleChange: (moduleId: ModuleId) => void;
+}
 
 const CoreLayout: React.FC<CoreLayoutProps> = ({ children, activeModule, onModuleChange }) => (
   <div className="core-shell">

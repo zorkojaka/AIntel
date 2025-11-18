@@ -1,3 +1,14 @@
+import { useEffect, useState } from "react";
+import { ProjectList } from "./components/ProjectList";
+import { ProjectWorkspace } from "./components/ProjectWorkspace";
+import { TemplateEditor, Template } from "./components/TemplateEditor";
+import type {
+  Project,
+  ProjectItem,
+  ProjectOffer,
+  ProjectTimelineEvent,
+  ProjectWorkOrder,
+} from "./types";
 import { useState } from "react";
 import { ClientForm, ClientFormPayload } from "@aintel/module-crm";
 import { ProjectList, Project } from "./components/ProjectList";
@@ -12,9 +23,14 @@ import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Settings, ArrowLeft, Plus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import { useSettingsData } from "@aintel/module-settings";
+import {
+  createProject,
+  fetchProjectDetail,
+  fetchProjects,
+  type ProjectDetail,
+} from "./api/projects";
 
-const mockProjects: Project[] = [
+const fallbackProjects: Project[] = [
   {
     id: "PRJ-001",
     title: "Hotel Dolenjc – kamere",
@@ -44,6 +60,7 @@ const mockProjects: Project[] = [
   },
 ];
 
+const fallbackItems: Item[] = [
 const mockItems: Item[] = [
   {
     id: "item-1",
@@ -99,6 +116,7 @@ const mockItems: Item[] = [
   },
 ];
 
+const fallbackOffers: OfferVersion[] = [
 const mockOffers: OfferVersion[] = [
   {
     id: "offer-1",
@@ -117,6 +135,7 @@ const mockOffers: OfferVersion[] = [
   },
 ];
 
+const fallbackWorkOrders: WorkOrder[] = [
 const mockWorkOrders: WorkOrder[] = [
   {
     id: "wo-1",
@@ -128,6 +147,7 @@ const mockWorkOrders: WorkOrder[] = [
   },
 ];
 
+const fallbackTimelineEvents: ProjectTimelineEvent[] = [
 const mockTimelineEvents: TimelineEvent[] = [
   {
     id: "evt-1",
@@ -173,6 +193,32 @@ const mockTimelineEvents: TimelineEvent[] = [
     metadata: { team: "Ekipa A" },
   },
 ];
+
+const FALLBACK_REQUIREMENTS =
+  "Postavitev 4 IP kamer DVC za nadzor vhoda in parkirišča. Vodenje kablov po stenah, postavitev NVR, konfiguracija.";
+
+function buildFallbackDetail(projectId: string): ProjectDetail | null {
+  const summary = fallbackProjects.find((project) => project.id === projectId);
+  if (!summary) {
+    return null;
+  }
+
+  return {
+    ...summary,
+    city: "Ljubljana",
+    requirements: FALLBACK_REQUIREMENTS,
+    customerInfo: {
+      name: summary.customer,
+      taxId: "SI12345678",
+      address: "Tržaška cesta 12, 1000 Ljubljana",
+      paymentTerms: "30 dni",
+    },
+    items: fallbackItems,
+    offers: fallbackOffers,
+    workOrders: fallbackWorkOrders,
+    timeline: fallbackTimelineEvents,
+  };
+}
 
 const DEFAULT_TEMPLATES: Template[] = [
   {
@@ -272,6 +318,99 @@ const DEFAULT_TEMPLATES: Template[] = [
 export function ProjectsPage() {
   const { settings: globalSettings } = useSettingsData({ applyTheme: false });
   const [currentView, setCurrentView] = useState<"list" | "workspace" | "settings">("list");
+  const [projects, setProjects] = useState<Project[]>(fallbackProjects);
+  const [selectedProject, setSelectedProject] = useState<ProjectDetail | null>(null);
+  const [templates, setTemplates] = useState<Template[]>(DEFAULT_TEMPLATES);
+  const [isLoadingList, setIsLoadingList] = useState(true);
+  const [isLoadingProject, setIsLoadingProject] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadProjects() {
+      setIsLoadingList(true);
+      try {
+        const remoteProjects = await fetchProjects();
+        if (!isMounted) return;
+        setProjects(remoteProjects);
+        setListError(null);
+      } catch (error) {
+        if (!isMounted) return;
+        const message = error instanceof Error ? error.message : "API ni dosegljiv.";
+        setListError(message);
+        setProjects(fallbackProjects);
+        toast.warning(`API /projects ni dosegljiv (${message}). Prikazujemo demo podatke.`);
+      } finally {
+        if (isMounted) {
+          setIsLoadingList(false);
+        }
+      }
+    }
+
+    loadProjects();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleSelectProject = async (projectId: string) => {
+    setCurrentView("workspace");
+    setIsLoadingProject(true);
+    setSelectedProject(null);
+
+    try {
+      const detail = await fetchProjectDetail(projectId);
+      setSelectedProject(detail);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "API ni dosegljiv.";
+      toast.warning(`API /projects/${projectId} ni dosegljiv (${message}). Prikazujemo demo podatke.`);
+      const fallback = buildFallbackDetail(projectId);
+      if (fallback) {
+        setSelectedProject(fallback);
+      } else {
+        toast.error(`Projekt ${projectId} ni na voljo.`);
+        setCurrentView("list");
+      }
+    } finally {
+      setIsLoadingProject(false);
+    }
+  };
+
+  const handleBackToList = () => {
+    setSelectedProject(null);
+    setCurrentView("list");
+  };
+
+  const handleNewProject = async () => {
+    const title = window.prompt("Vnesi naziv novega projekta");
+    if (!title) {
+      return;
+    }
+
+    const normalizedTitle = title.trim();
+    if (!normalizedTitle) {
+      toast.error("Naziv projekta je obvezen.");
+      return;
+    }
+
+    const customerName = window.prompt("Naziv stranke", "Nova stranka") ?? "Neznana stranka";
+    const normalizedCustomer = customerName.trim() || "Neznana stranka";
+
+    try {
+      const detail = await createProject({
+        title: normalizedTitle,
+        customer: { name: normalizedCustomer },
+        requirements: FALLBACK_REQUIREMENTS,
+      });
+      setProjects((prev) => [detail, ...prev]);
+      setSelectedProject(detail);
+      setCurrentView("workspace");
+      toast.success("Nov projekt uspešno ustvarjen");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Neznana napaka.";
+      toast.error(`Napaka pri ustvarjanju projekta: ${message}`);
+    }
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<Template[]>(DEFAULT_TEMPLATES);
   const [isClientModalOpen, setClientModalOpen] = useState(false);
@@ -337,7 +476,23 @@ export function ProjectsPage() {
     toast.success("Privzeta predloga nastavljena");
   };
 
-  const selectedProject = mockProjects.find((p) => p.id === selectedProjectId);
+  const handleProjectUpdated = (detail: ProjectDetail) => {
+    setSelectedProject(detail);
+    setProjects((prev) =>
+      prev.map((project) =>
+        project.id === detail.id
+          ? {
+              ...project,
+              title: detail.title,
+              customer: detail.customer,
+              status: detail.status,
+              offerAmount: detail.offerAmount,
+              invoiceAmount: detail.invoiceAmount,
+            }
+          : project
+      )
+    );
+  };
 
   return (
     <>
@@ -361,36 +516,53 @@ export function ProjectsPage() {
                 </Button>
               </div>
             </div>
-            <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-900">{globalSettings.companyName}</h2>
-              <p className="text-sm text-slate-500">{globalSettings.address}</p>
-              <p className="text-xs text-slate-500">
-                {[globalSettings.email, globalSettings.phone].filter(Boolean).join(" · ")}
-              </p>
-            </div>
-            <ProjectList projects={mockProjects} onSelectProject={handleSelectProject} />
+            {listError && (
+              <div className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                API /projects ni dosegljiv ({listError}). Prikazani so demo podatki.
+              </div>
+            )}
+            {isLoadingList ? (
+              <div className="rounded border border-dashed p-8 text-center text-muted-foreground">
+                Nalaganje projektov...
+              </div>
+            ) : (
+              <ProjectList projects={projects} onSelectProject={handleSelectProject} />
+            )}
           </div>
         </div>
       )}
 
-      {currentView === "workspace" && selectedProject && (
-        <ProjectWorkspace
-          projectId={selectedProject.id}
-          projectTitle={selectedProject.title}
-          customer={{
-            name: "Hotel Dolenjc d.o.o.",
-            taxId: "SI12345678",
-            address: "Tržaška cesta 12, 1000 Ljubljana",
-            paymentTerms: "30 dni",
-          }}
-          items={mockItems}
-          offers={mockOffers}
-          workOrders={mockWorkOrders}
-          timelineEvents={mockTimelineEvents}
-          status={selectedProject.status}
-          templates={templates}
-          onBack={handleBackToList}
-        />
+      {currentView === "workspace" && (
+        <>
+          {isLoadingProject && !selectedProject ? (
+            <div className="min-h-screen bg-background p-6">
+              <div className="mx-auto max-w-[1280px] text-center text-muted-foreground">
+                Nalaganje projekta...
+              </div>
+            </div>
+          ) : selectedProject ? (
+            <ProjectWorkspace
+              projectId={selectedProject.id}
+              projectTitle={selectedProject.title}
+              customer={selectedProject.customerInfo}
+              items={selectedProject.items}
+              offers={selectedProject.offers}
+              workOrders={selectedProject.workOrders}
+              timelineEvents={selectedProject.timeline}
+              status={selectedProject.status}
+              requirementsText={selectedProject.requirements}
+              templates={templates}
+              onBack={handleBackToList}
+              onProjectUpdated={handleProjectUpdated}
+            />
+          ) : (
+            <div className="min-h-screen bg-background p-6">
+              <div className="mx-auto max-w-[1280px] text-center text-muted-foreground">
+                Izberite projekt v seznamu.
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {currentView === "settings" && (

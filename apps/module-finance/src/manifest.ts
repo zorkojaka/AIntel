@@ -1,10 +1,10 @@
 export const manifest = {
   id: 'finance',
-  name: 'FINANCE',
+  name: 'Finance',
   version: '0.1.0',
   navItems: [
     {
-      label: 'FINANCE',
+      label: 'Finance Modul',
       path: '/finance',
     },
   ],

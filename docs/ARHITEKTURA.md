@@ -41,16 +41,8 @@ AIntel je organiziran kot modularni ekosistem, kjer vsak modul vsebuje:
 - Dokument `docs/ARHITEKTURA.md` naj vedno vsebuje ključne točke: kje modul sedi v `backend/routes.ts`, katere `core/` helperje uporablja (npr. normalize, response helpers, shared error handling) ter kateri dokumenti (TODO, korespondenca) so povezani z njegovo fazo.
 - Centralni načrt aplikacije tako ostane na enem mestu: vsak agent, ki prevzame nov modul, posodobi razdelek o modulu in navede trenutni status, da lahko kdorkoli kadarkoli razume, kako se modul povezuje s sistemom.
 - CRM modul (`/crm`) vključuje `people`, `companies`, `notes` rute; uporablja `core/response`, `core/errorHandler` in `utils/normalizeUnicode`. Dokument `docs/faze/01-CRM.md` opisuje uporabniške entitete in testne korake, zato naj vsak agent, ki ga razširja, posodobi ta dokument.
-- Dodatna `/crm/clients` podrota upravlja stranke (naziv, tip, DDV, kontakt, oznake, opombe), kar uporablja skupni `ClientForm` komponent; Projects modul uvozi `ClientForm` iz `@aintel/module-crm` in ga odpira pri kliku “Dodaj stranko”.
 - Finance modul (`/finance`) hrani `FinanceEntry` zapise v spominu, ponuja `GET /finance`, `POST /finance/addFromInvoice`, `GET /finance/yearly-summary`, `GET /finance/project/:id` in `GET /finance/client/:id`, ter se prikazuje preko `apps/module-finance` z grafi in tabelami. Podrobnosti so zapisane v `backend/modules/finance/README.md` in `05_FINANCE.md`.
-
-  - Cenik modul (`/cenik`) hrani artikle in storitve v `backend/modules/cenik`: `product.model.ts` definira slovenska polja, `controllers/cenik.controller.ts` vodi CRUD logiko, `routes/cenik.routes.ts` je registriran v `backend/routes.ts`, `README.md` pa razloži razširitve in povezave z `docs/03_CENIK.md`. Modul je zaključen (Seed skripta, dokumentacija, dashboard neobvezno).
-  - `apps/module-cenik` eksponira `CenikPage`, ki naloži `/api/cenik/products`, prikazuje tabelo, filtre (nov `FilterBar`), modal za urejanje/dodajanje in tailwind utility razrede ter se manifestno poveže s `core-shell` navigacijo.
-  - Tailwind in PostCSS konfiguracije (`tailwind.config.ts`, `postcss.config.cjs`) vključujejo `module-cenik`, `docs/faze/03-CENIK.md` pa vodi testne korake in dokumentira integracijo.
-  - Settings modul (`/settings`) skrbi za en sam Mongo dokument. `backend/modules/settings` vključuje shemo (`Settings.ts`), servis `settings.service.ts` z helperjem `getSettings()` ter kontroler/rute registrirane v `backend/routes.ts`.
-  - `backend/scripts/seed-settings.ts` + `backend/seeds/settings.json` inicializirata privzete podatke, medtem ko `apps/module-settings` nudi stran `/nastavitve` z logotipom, barvno shemo, dokumentnimi prefiksi in PDF predogledom. Modul izvaža `useSettingsData`, kar omogoča CRM in Projektom prikaz kontaktnih podatkov podjetja.
-
-
+- Projekti modul (`/projects`) vzdržuje `ProjectDetail` zapise v spominu, ki vključujejo postavke, ponudbe, delovne naloge in časovnice. API ponuja `GET /projects`, `POST /projects`, `GET /projects/:id`, `GET /projects/:id/timeline` in `POST /projects/:id/confirm-phase`, kar omogoča UI-ju v `apps/module-projects` pridobivanje seznamov, ustvarjanje novih projektov ter potrjevanje faz (ponudba, dobava, zaključek) iz delovnega prostora.
 
 ## Frontend monorepo + dizajn sistem
 - `apps/core-shell` je glavna frontend aplikacija, ki iz `@aintel/module-crm` prevzema manifest in prikazuje CRM stran z osnovnim `CoreLayout` sidebarjem.
