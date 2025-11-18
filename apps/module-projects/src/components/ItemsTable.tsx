@@ -8,30 +8,17 @@ import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { MoreVertical, Plus, Calculator, FileUp } from "lucide-react";
-
-export interface Item {
-  id: string;
-  name: string;
-  sku: string;
-  unit: string;
-  quantity: number;
-  price: number;
-  discount: number;
-  vatRate: number;
-  total: number;
-  description?: string;
-  category?: string;
-}
+import type { ProjectItem } from "../types";
 
 interface ItemsTableProps {
-  items: Item[];
-  onEdit: (item: Item) => void;
+  items: ProjectItem[];
+  onEdit: (item: ProjectItem) => void;
   onAdd: () => void;
   onDelete: (id: string) => void;
 }
 
 export function ItemsTable({ items, onEdit, onAdd, onDelete }: ItemsTableProps) {
-  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+  const [selectedItem, setSelectedItem] = useState<ProjectItem | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   const totals = items.reduce(
@@ -58,7 +45,7 @@ export function ItemsTable({ items, onEdit, onAdd, onDelete }: ItemsTableProps) 
     .filter((item) => item.category === "labor")
     .reduce((acc, item) => acc + item.quantity * item.price * (1 - item.discount / 100), 0);
 
-  const handleRowClick = (item: Item) => {
+  const handleRowClick = (item: ProjectItem) => {
     setSelectedItem(item);
     setIsDrawerOpen(true);
   };

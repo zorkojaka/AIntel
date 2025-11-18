@@ -27,6 +27,11 @@ Please see `docs/faze/01-CRM.md` for the latest checklist and testing hints.
 ## FAZA 2 – Projekti
 - [x] Upravljanje projektov
 - [x] Statusi, časovnice, povezani dokumenti
+- [x] API modul `/projects` (GET/POST/timeline/confirm-phase) in povezava z UI
+- [x] Gumbi "Nov projekt", "Potrdi ponudbo", "Potrdi prevzem" in "Zaključi" kličejo backend in sinhronizirajo ProjectWorkspace
+- [ ] Povezava gumba "Dodaj iz cenika" z modulom Cenik (čaka fazo 3)
+- [ ] Dodati logiko za "Nova postavka" / "Uvozi iz verzije" / "Rekalkuliraj" v ItemsTable (trenutno placeholderji)
+- [ ] Implementirati dejansko pošiljanje, podvajanje in brisanje ponudb (dropdown v OfferVersionCard)
 
 ## FAZA 3 – Cenik
 - [x] Artikel, cena, enota, kategorija

@@ -12,8 +12,14 @@ const modules = [
   cenikManifest,
   financeManifest,
   settingsManifest,
-];
+] as const;
 
+type ModuleId = (typeof modules)[number]['id'];
+
+interface CoreLayoutProps extends React.PropsWithChildren {
+  activeModule: ModuleId;
+  onModuleChange: (moduleId: ModuleId) => void;
+}
 const CoreLayout: React.FC<CoreLayoutProps> = ({ children, activeModule, onModuleChange }) => (
   <div className="core-shell">
     <aside className="core-shell__sidebar">

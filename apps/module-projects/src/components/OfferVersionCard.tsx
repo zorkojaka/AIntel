@@ -3,18 +3,10 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { FileText, MoreVertical, Download, Send, CheckCircle, XCircle } from "lucide-react";
-
-export interface OfferVersion {
-  id: string;
-  version: number;
-  status: "draft" | "sent" | "viewed" | "accepted" | "rejected" | "expired";
-  amount: number;
-  date: string;
-  isSelected?: boolean;
-}
+import type { ProjectOffer } from "../types";
 
 interface OfferVersionCardProps {
-  offer: OfferVersion;
+  offer: ProjectOffer;
   onOpen: () => void;
   onPDF: () => void;
   onMarkAsSelected?: () => void;
@@ -23,7 +15,7 @@ interface OfferVersionCardProps {
   onCancelConfirmation?: () => void;
 }
 
-const statusColors: Record<OfferVersion["status"], string> = {
+const statusColors: Record<ProjectOffer["status"], string> = {
   draft: "bg-muted text-muted-foreground",
   sent: "bg-blue-100 text-blue-700",
   viewed: "bg-purple-100 text-purple-700",
@@ -32,7 +24,7 @@ const statusColors: Record<OfferVersion["status"], string> = {
   expired: "bg-gray-100 text-gray-700",
 };
 
-const statusLabels: Record<OfferVersion["status"], string> = {
+const statusLabels: Record<ProjectOffer["status"], string> = {
   draft: "Osnutek",
   sent: "Poslano",
   viewed: "Videno",

@@ -39,6 +39,8 @@ Vzpostaviti transparenten register, kjer lahko več agentov hkrati deluje na las
 ### Agent Codex – Projekti (zaključek)
 1. **Začetne naloge**: Ustvaril sem `modules/projekti` z Mongoose modelom, API-kontrolerjem (CRUD + confirm-phase + timeline) in testom ter dokumentacijo v `docs/faze/02-Projekti.md`. Frontend je dobil `apps/module-projects`, `packages/ui` razširitev, CoreShell je integriral CRM in Projects module z novimi `dev:all`/`dev:stack` skripti.
 2. **Izvedeni koraki**: Poskrbel sem, da backend bere `.env` (nov `mongo.ts`, `tsconfig` typeRoots), vsi paketi imajo `main/module` v `package.json`, Vite posluša na portu 5173, CRM/Projects exportata `src/index.ts`, in dokumenti (`docs/TODO.md`, `docs/ARHITEKTURA.md`, `docs/KOORDINACIJA.md`) so posodobljeni.
+1. **Začetne naloge**: Ustvaril sem `modules/projekti` z Mongoose modelom, API-kontrolerjem (CRUD + confirm-phase + timeline) in testom ter dokumentacijo v `docs/faze/02-Projekti.md`. Frontend je dobil `apps/module-projects`, `packages/ui` razširitev, CoreShell je integriral CRM in Projects module z novimi `dev:all`/`dev:stack` skripti.
+2. **Izvedeni koraki**: Poskrbel sem, da backend bere `.env` (nov `mongo.ts`, `tsconfig` typeRoots), vsi paketi imajo `main/module` v `package.json`, Vite posluša na portu 5173, CRM/Projects exportata `src/index.ts`, in dokumenti (`docs/TODO.md`, `docs/ARHITEKTURA.md`, `docs/KOORDINACIJA.md`) so posodobljeni.
 3. **Naslednji koraki**: Faza 2 je zaključena; lahko nadaljujete s fazo 3 (Cenik). Če se pojavi nov problem s projekti, preverite `pnpm run dev:stack` (ali `dev:all`), `http://localhost:5173/` in `GET /projekti`. Vse napake dokumentirajte v `02_2_PROJEKTI-test.md`.
 
 ### Agent Codex – Onboarding

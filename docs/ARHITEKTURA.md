@@ -51,6 +51,8 @@ AIntel je organiziran kot modularni ekosistem, kjer vsak modul vsebuje:
   - `backend/scripts/seed-settings.ts` + `backend/seeds/settings.json` inicializirata privzete podatke, medtem ko `apps/module-settings` nudi stran `/nastavitve` z logotipom, barvno shemo, dokumentnimi prefiksi in PDF predogledom. Modul izvaža `useSettingsData`, kar omogoča CRM in Projektom prikaz kontaktnih podatkov podjetja.
 
 
+- Finance modul (`/finance`) hrani `FinanceEntry` zapise v spominu, ponuja `GET /finance`, `POST /finance/addFromInvoice`, `GET /finance/yearly-summary`, `GET /finance/project/:id` in `GET /finance/client/:id`, ter se prikazuje preko `apps/module-finance` z grafi in tabelami. Podrobnosti so zapisane v `backend/modules/finance/README.md` in `05_FINANCE.md`.
+- Projekti modul (`/projects`) vzdržuje `ProjectDetail` zapise v spominu, ki vključujejo postavke, ponudbe, delovne naloge in časovnice. API ponuja `GET /projects`, `POST /projects`, `GET /projects/:id`, `GET /projects/:id/timeline` in `POST /projects/:id/confirm-phase`, kar omogoča UI-ju v `apps/module-projects` pridobivanje seznamov, ustvarjanje novih projektov ter potrjevanje faz (ponudba, dobava, zaključek) iz delovnega prostora.
 
 ## Frontend monorepo + dizajn sistem
 - `apps/core-shell` je glavna frontend aplikacija, ki iz `@aintel/module-crm` prevzema manifest in prikazuje CRM stran z osnovnim `CoreLayout` sidebarjem.

@@ -4,25 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Badge } from "./ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Search } from "lucide-react";
-
-type ProjectStatus =
-  | "draft"
-  | "offered"
-  | "ordered"
-  | "in-progress"
-  | "delivered"
-  | "completed"
-  | "invoiced";
-
-export interface Project {
-  id: string;
-  title: string;
-  customer: string;
-  status: ProjectStatus;
-  offerAmount: number;
-  invoiceAmount: number;
-  createdAt: string;
-}
+import type { Project, ProjectStatus } from "../types";
 
 interface ProjectListProps {
   projects: Project[];
