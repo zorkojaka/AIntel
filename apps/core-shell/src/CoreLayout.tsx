@@ -1,16 +1,16 @@
 import React from 'react';
 import { manifest as crmManifest } from '@aintel/module-crm';
-import { manifest as projectsManifest } from '@aintel/module-projects'; 
-import { manifest as financeManifest } from '@aintel/module-finance';
+import { manifest as projectsManifest } from '@aintel/module-projects';
 import { manifest as cenikManifest } from '@aintel/module-cenik';
+import { manifest as financeManifest } from '@aintel/module-finance';
 import { manifest as settingsManifest } from '@aintel/module-settings';
 import './CoreLayout.css';
 
 const modules = [
   crmManifest,
   projectsManifest,
-  financeManifest,
   cenikManifest,
+  financeManifest,
   settingsManifest,
 ];
 

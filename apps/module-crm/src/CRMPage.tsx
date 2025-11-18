@@ -156,17 +156,13 @@ export const CRMPage: React.FC = () => {
 
   return (
       <section className="crm-page">
-        <header className="crm-header">
+        <header className="crm-header crm-header--with-action">
           <h1>STRANKE</h1>
+          <Button className="crm-header__button" onClick={handleOpenClientModal}>
+            Dodaj stranko
+          </Button>
         </header>
-        <div className="crm-layout">
-          <aside className="crm-sidebar">
-            <p className="crm-sidebar__label">CRM</p>
-            <Button className="crm-sidebar__button" onClick={handleOpenClientModal}>
-              Dodaj stranko
-            </Button>
-          </aside>
-          <div className="crm-clients">
+        <div className="crm-clients crm-clients--full">
           <div className="crm-clients__header">
             <input
               className="crm-search"
@@ -196,7 +192,6 @@ export const CRMPage: React.FC = () => {
                   : 'Še ni shranjenih strank. Dodaj novo stranko.'}
             </p>
           )}
-          </div>
         </div>
         <ClientForm
           open={isClientModalOpen}

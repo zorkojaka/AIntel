@@ -1,10 +1,10 @@
 export const manifest = {
   id: 'crm',
-  name: 'CRM',
+  name: 'STRANKE',
   version: '0.1.0',
   navItems: [
     {
-      label: 'CRM Kontakti',
+      label: 'STRANKE',
       path: '/crm'
     }
   ],

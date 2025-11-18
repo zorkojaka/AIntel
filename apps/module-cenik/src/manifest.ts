@@ -1,10 +1,10 @@
 export const manifest = {
   id: 'cenik',
-  name: 'Cenik',
+  name: 'CENIK',
   version: '0.1.0',
   navItems: [
     {
-      label: 'Cenik',
+      label: 'CENIK',
       path: '/cenik'
     }
   ],
