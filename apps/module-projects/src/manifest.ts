@@ -1,10 +1,10 @@
 export const manifest = {
   id: "projects",
-  name: "Projekti",
+  name: "PROJEKTI",
   version: "0.1.0",
   navItems: [
     {
-      label: "Modul Projekti",
+      label: "PROJEKTI",
       path: "/projects",
     },
   ],

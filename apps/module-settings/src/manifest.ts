@@ -1,10 +1,10 @@
 export const manifest = {
   id: 'settings',
-  name: 'Nastavitve',
+  name: 'NASTAVITVE',
   version: '0.1.0',
   navItems: [
     {
-      label: 'Nastavitve',
+      label: 'NASTAVITVE',
       path: '/nastavitve'
     }
   ],

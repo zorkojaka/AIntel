@@ -54,6 +54,8 @@ pnpm run dev
 pnpm run dev:stack
 
 pnpm --filter @aintel/core-shell build
+
+
 pnpm --filter @aintel/module-crm build
 pnpm --filter @aintel/module-projects build
 pnpm --filter @aintel/module-cenik build
