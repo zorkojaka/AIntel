@@ -81,7 +81,7 @@ export default function FilterBar({
   <button
     type="button"
     onClick={onAddProduct}
-    className="rounded-xl bg-blue-600 px-4 py-2 font-medium text-white shadow-sm shadow-blue-400/40 hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+    className="rounded-xl px-4 py-2 font-medium text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 filter-add-button"
   >
     + Dodaj produkt
   </button>

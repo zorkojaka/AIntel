@@ -9,3 +9,17 @@ body {
   background-color: var(--background);
   color: var(--foreground);
 }
+
+.filter-add-button {
+  background-color: var(--color-primary);
+  text-transform: none;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.25);
+}
+
+.filter-add-button:hover {
+  filter: brightness(0.92);
+}
+
+.filter-add-button:focus-visible {
+  outline-color: var(--color-primary);
+}
