@@ -1,22 +1,13 @@
 import type { ComponentType } from "react";
 import { Badge } from "./ui/badge";
 import { FileText, Package, CheckCircle, Clock, Edit } from "lucide-react";
-
-export interface TimelineEvent {
-  id: string;
-  type: "offer" | "po" | "delivery" | "execution" | "invoice" | "status-change" | "edit";
-  title: string;
-  description?: string;
-  timestamp: string;
-  user?: string;
-  metadata?: Record<string, string>;
-}
+import type { ProjectTimelineEvent } from "../types";
 
 interface TimelineFeedProps {
-  events: TimelineEvent[];
+  events: ProjectTimelineEvent[];
 }
 
-const eventIcons: Record<TimelineEvent["type"], ComponentType<{ className?: string }>> = {
+const eventIcons: Record<ProjectTimelineEvent["type"], ComponentType<{ className?: string }>> = {
   offer: FileText,
   po: Package,
   delivery: Package,
@@ -26,7 +17,7 @@ const eventIcons: Record<TimelineEvent["type"], ComponentType<{ className?: stri
   edit: Edit,
 };
 
-const eventColors: Record<TimelineEvent["type"], string> = {
+const eventColors: Record<ProjectTimelineEvent["type"], string> = {
   offer: "bg-blue-500",
   po: "bg-purple-500",
   delivery: "bg-green-500",

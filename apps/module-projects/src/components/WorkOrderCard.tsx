@@ -2,29 +2,21 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Calendar, MapPin, Users } from "lucide-react";
-
-export interface WorkOrder {
-  id: string;
-  team: string;
-  schedule: string;
-  location: string;
-  status: "planned" | "in-progress" | "completed" | "cancelled";
-  notes?: string;
-}
+import type { ProjectWorkOrder } from "../types";
 
 interface WorkOrderCardProps {
-  workOrder: WorkOrder;
+  workOrder: ProjectWorkOrder;
   onEdit?: () => void;
 }
 
-const statusColors: Record<WorkOrder["status"], string> = {
+const statusColors: Record<ProjectWorkOrder["status"], string> = {
   planned: "bg-blue-100 text-blue-700",
   "in-progress": "bg-yellow-100 text-yellow-700",
   completed: "bg-green-100 text-green-700",
   cancelled: "bg-gray-100 text-gray-700",
 };
 
-const statusLabels: Record<WorkOrder["status"], string> = {
+const statusLabels: Record<ProjectWorkOrder["status"], string> = {
   planned: "Načrtovano",
   "in-progress": "V teku",
   completed: "Opravljeno",

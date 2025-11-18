@@ -3,18 +3,10 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { FileText, MoreVertical, Download, Send, CheckCircle, XCircle } from "lucide-react";
-
-export interface OfferVersion {
-  id: string;
-  version: number;
-  status: "draft" | "sent" | "viewed" | "accepted" | "rejected" | "expired";
-  amount: number;
-  date: string;
-  isSelected?: boolean;
-}
+import type { ProjectOffer } from "../types";
 
 interface OfferVersionCardProps {
-  offer: OfferVersion;
+  offer: ProjectOffer;
   onOpen: () => void;
   onPDF: () => void;
   onMarkAsSelected?: () => void;

@@ -1,9 +1,10 @@
 import React from 'react';
 import { manifest as crmManifest } from '@aintel/module-crm';
 import { manifest as projectsManifest } from '@aintel/module-projects';
+import { manifest as financeManifest } from '@aintel/module-finance';
 import './CoreLayout.css';
 
-const modules = [crmManifest, projectsManifest] as const;
+const modules = [crmManifest, projectsManifest, financeManifest] as const;
 
 type ModuleId = typeof modules[number]['id'];
 
