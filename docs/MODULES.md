@@ -21,6 +21,12 @@ Modul se poveze na core preko `/crm` (v `backend/routes.ts`) in uporablja global
 - `clients` endpoints (GET/POST/PUT/DELETE `/crm/clients`) urejajo stranke (naziv, tip, DDV, kontakt, oznake, opombe); backend preverja DDV za podjetja in preprečuje enak naziv + DDV.
 - `@aintel/module-crm` eksponira `ClientForm`, ki uniformno preverja tip stranke, DDV, oznake in opombe; ta komponenta je zdaj ponovno uporabljena iz `apps/module-projects` pri gumbu “Dodaj stranko”.
 
+### projects/
+Projekti modul omogoča spremljanje ponudb in logistike:
+- `backend/modules/projects` hrani projekte v spominu, `routes/index.ts` registrira `/projects` v `backend/routes.ts`.
+- Endpoints: `GET /projects` (povzetki), `GET /projects/:id` (detajli z postavkami, ponudbami, naročilnicami, dobavnicami, timeline), `POST /projects` (nov projekt), `POST /projects/:id/offers` in `POST /projects/:id/offers/:offerId/send|confirm|cancel|select` (upravljanje verzij ponudb), `POST /projects/:id/deliveries/:deliveryId/receive` (potrditev dobave), `POST /projects/:id/status`, `POST /projects/:id/signature`.
+- Frontend `apps/module-projects` zdaj prikazuje podatke iz API-ja, gumbi za novo ponudbo, potrditev ponudbe, potrditev dobavnice in podpis projekta posodabljajo backend in `TimelineFeed`.
+
 ### cenik/
 Cenik modul hrani artikle/storitve po navodilih iz `03_CENIK.md`. V `backend/modules/cenik` so:
 - `product.model.ts`, ki definira ime, kategorijo, nabavno/prodajno ceno in razne opise/proizvajalce/dobavitelje.

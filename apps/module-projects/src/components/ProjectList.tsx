@@ -1,31 +1,13 @@
 import { useState } from "react";
+import { Search } from "lucide-react";
 import { Input } from "./ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Badge } from "./ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { Search } from "lucide-react";
-
-type ProjectStatus =
-  | "draft"
-  | "offered"
-  | "ordered"
-  | "in-progress"
-  | "delivered"
-  | "completed"
-  | "invoiced";
-
-export interface Project {
-  id: string;
-  title: string;
-  customer: string;
-  status: ProjectStatus;
-  offerAmount: number;
-  invoiceAmount: number;
-  createdAt: string;
-}
+import { ProjectStatus, ProjectSummary } from "../types";
 
 interface ProjectListProps {
-  projects: Project[];
+  projects: ProjectSummary[];
   onSelectProject: (projectId: string) => void;
 }
 
@@ -34,7 +16,6 @@ const statusColors: Record<ProjectStatus, string> = {
   offered: "bg-blue-100 text-blue-700",
   ordered: "bg-purple-100 text-purple-700",
   "in-progress": "bg-yellow-100 text-yellow-700",
-  delivered: "bg-green-100 text-green-700",
   completed: "bg-green-100 text-green-700",
   invoiced: "bg-indigo-100 text-indigo-700",
 };
@@ -44,7 +25,6 @@ const statusLabels: Record<ProjectStatus, string> = {
   offered: "Ponujeno",
   ordered: "Naročeno",
   "in-progress": "V teku",
-  delivered: "Dostavljeno",
   completed: "Zaključeno",
   invoiced: "Zaračunano",
 };
@@ -83,7 +63,6 @@ export function ProjectList({ projects, onSelectProject }: ProjectListProps) {
             <SelectItem value="offered">Ponujeno</SelectItem>
             <SelectItem value="ordered">Naročeno</SelectItem>
             <SelectItem value="in-progress">V teku</SelectItem>
-            <SelectItem value="delivered">Dostavljeno</SelectItem>
             <SelectItem value="completed">Zaključeno</SelectItem>
             <SelectItem value="invoiced">Zaračunano</SelectItem>
           </SelectContent>

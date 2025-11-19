@@ -1,178 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ClientForm, ClientFormPayload } from "@aintel/module-crm";
-import { ProjectList, Project } from "./components/ProjectList";
+import { useSettingsData } from "@aintel/module-settings";
+import { Settings, ArrowLeft, Plus, UserPlus } from "lucide-react";
+import { toast } from "sonner";
+import { ProjectList } from "./components/ProjectList";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
 import { TemplateEditor, Template } from "./components/TemplateEditor";
-import { Item } from "./components/ItemsTable";
-import { OfferVersion } from "./components/OfferVersionCard";
-import { WorkOrder } from "./components/WorkOrderCard";
-import { TimelineEvent } from "./components/TimelineFeed";
 import { Toaster } from "./components/ui/sonner";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
-import { Settings, ArrowLeft, Plus, UserPlus } from "lucide-react";
-import { toast } from "sonner";
-import { useSettingsData } from "@aintel/module-settings";
+import { ProjectDetails, ProjectSummary } from "./types";
 
-const mockProjects: Project[] = [
-  {
-    id: "PRJ-001",
-    title: "Hotel Dolenjc – kamere",
-    customer: "Hotel Dolenjc d.o.o.",
-    status: "offered",
-    offerAmount: 2120,
-    invoiceAmount: 0,
-    createdAt: "08.11.2024",
-  },
-  {
-    id: "PRJ-002",
-    title: "Poslovni center – požarni alarm",
-    customer: "ABC Nepremičnine",
-    status: "in-progress",
-    offerAmount: 8450,
-    invoiceAmount: 4225,
-    createdAt: "22.10.2024",
-  },
-  {
-    id: "PRJ-003",
-    title: "Trgovina – LED razsvetljava",
-    customer: "Mega Market",
-    status: "completed",
-    offerAmount: 3200,
-    invoiceAmount: 3200,
-    createdAt: "15.09.2024",
-  },
-];
-
-const mockItems: Item[] = [
-  {
-    id: "item-1",
-    name: "DVC IP kamera 4MP",
-    sku: "DVC-4MP-001",
-    unit: "kos",
-    quantity: 4,
-    price: 185,
-    discount: 0,
-    vatRate: 22,
-    total: 902.8,
-    category: "material",
-    description: "IP kamera 4MP z nočnim vidom, H.265 kodiranje",
-  },
-  {
-    id: "item-2",
-    name: "UTP Cat6 kabel",
-    sku: "UTP-CAT6",
-    unit: "m",
-    quantity: 50,
-    price: 1.2,
-    discount: 5,
-    vatRate: 22,
-    total: 69.54,
-    category: "material",
-    description: "UTP kabel kategorije 6 za prenos podatkov",
-  },
-  {
-    id: "item-3",
-    name: "Montaža in konfiguracija",
-    sku: "SRV-INST",
-    unit: "h",
-    quantity: 8,
-    price: 45,
-    discount: 0,
-    vatRate: 22,
-    total: 439.2,
-    category: "labor",
-    description: "Strokovnjak za montažo in konfiguracijo kamer",
-  },
-  {
-    id: "item-4",
-    name: "NVR 8-kanalni",
-    sku: "NVR-8CH-2TB",
-    unit: "kos",
-    quantity: 1,
-    price: 320,
-    discount: 10,
-    vatRate: 22,
-    total: 351.36,
-    category: "material",
-    description: "Network Video Recorder z 2TB diskom",
-  },
-];
-
-const mockOffers: OfferVersion[] = [
-  {
-    id: "offer-1",
-    version: 1,
-    status: "sent",
-    amount: 1950,
-    date: "08.11.2024",
-  },
-  {
-    id: "offer-2",
-    version: 2,
-    status: "accepted",
-    amount: 2120,
-    date: "09.11.2024",
-    isSelected: true,
-  },
-];
-
-const mockWorkOrders: WorkOrder[] = [
-  {
-    id: "wo-1",
-    team: "Ekipa A - Janez Novak, Marko Horvat",
-    schedule: "14.11.2024 08:00",
-    location: "Hotel Dolenjc, Tržaška cesta 12, Ljubljana",
-    status: "planned",
-    notes: "Pripraviti ključe za dostop do tehničnih prostorov",
-  },
-];
-
-const mockTimelineEvents: TimelineEvent[] = [
-  {
-    id: "evt-1",
-    type: "edit",
-    title: "Projekt ustvarjen",
-    description: "Nov projekt za Hotel Dolenjc",
-    timestamp: "08.11.2024 09:15",
-    user: "Admin",
-  },
-  {
-    id: "evt-2",
-    type: "offer",
-    title: "Ponudba v1 ustvarjena",
-    description: "Prva verzija ponudbe pripravljena",
-    timestamp: "08.11.2024 10:30",
-    user: "Admin",
-    metadata: { amount: "€ 1.950", status: "sent" },
-  },
-  {
-    id: "evt-3",
-    type: "offer",
-    title: "Ponudba v2 ustvarjena",
-    description: "Posodobljena verzija ponudbe z dodanimi postavkami",
-    timestamp: "09.11.2024 14:20",
-    user: "Admin",
-    metadata: { amount: "€ 2.120", status: "accepted" },
-  },
-  {
-    id: "evt-4",
-    type: "status-change",
-    title: "Status spremenjen",
-    description: "Projekt prešel v fazo 'Ponujeno'",
-    timestamp: "09.11.2024 14:25",
-    user: "Admin",
-  },
-  {
-    id: "evt-5",
-    type: "execution",
-    title: "Delovni nalog ustvarjen",
-    description: "Načrtovana montaža za 14.11.2024",
-    timestamp: "10.11.2024 09:00",
-    user: "Admin",
-    metadata: { team: "Ekipa A" },
-  },
-];
+const API_PREFIX = "/api/projects";
 
 const DEFAULT_TEMPLATES: Template[] = [
   {
@@ -201,50 +40,38 @@ const DEFAULT_TEMPLATES: Template[] = [
 </head>
 <body>
   <div class="header">
-    <h1>Ponudba #{{offerVersion}}</h1>
-    <p>{{projectTitle}}</p>
+    <h1>Ponudba</h1>
+    <p>Za projekt: {{project.title}}</p>
   </div>
 
   <div class="info-grid">
     <div class="info-section">
       <h3>Stranka</h3>
-      <p><strong>{{customerName}}</strong></p>
-      <p>{{customerAddress}}</p>
-      <p>ID za DDV: {{customerTaxId}}</p>
+      <p>{{customer.name}}</p>
+      <p>{{customer.address}}</p>
+      <p>ID za DDV: {{customer.taxId}}</p>
     </div>
     <div class="info-section">
-      <h3>Podrobnosti ponudbe</h3>
-      <p>Datum: {{offerDate}}</p>
-      <p>Projekt ID: {{projectId}}</p>
-      <p>Veljavnost: 30 dni</p>
+      <h3>Projekt</h3>
+      <p>ID: {{project.id}}</p>
+      <p>{{project.description}}</p>
     </div>
   </div>
 
-  <div class="description">
-    <h3>Opis projekta</h3>
-    <p>{{projectDescription}}</p>
-  </div>
-
-  <h3>Postavke</h3>
   <table>
-    <thead>
-      <tr>
-        <th>Opis</th>
-        <th>Količina</th>
-        <th>Enota</th>
-        <th style="text-align: right">Cena</th>
-        <th style="text-align: right">DDV</th>
-        <th style="text-align: right">Skupaj</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{items}}
-    </tbody>
+    <tr>
+      <th>Postavka</th>
+      <th>Količina</th>
+      <th>Cena</th>
+      <th>DDV</th>
+      <th>Skupaj</th>
+    </tr>
+    {{items}}
   </table>
 
   <div class="totals">
     <div class="row">
-      <span>Neto znesek:</span>
+      <span>Skupaj brez DDV:</span>
       <span>€ {{totalNet}}</span>
     </div>
     <div class="row">
@@ -269,25 +96,115 @@ const DEFAULT_TEMPLATES: Template[] = [
   },
 ];
 
+function mapProject(data: any): ProjectDetails {
+  return {
+    id: data.id,
+    title: data.title,
+    customer: data.customer?.name ?? data.customer ?? "",
+    status: data.status,
+    offerAmount: data.offerAmount ?? 0,
+    invoiceAmount: data.invoiceAmount ?? 0,
+    createdAt: data.createdAt,
+    customerDetail: data.customer ?? { name: data.customer ?? "" },
+    requirements: data.requirements ?? "",
+    items: data.items ?? [],
+    offers: data.offers ?? [],
+    workOrders: data.workOrders ?? [],
+    purchaseOrders: data.purchaseOrders ?? [],
+    deliveryNotes: data.deliveryNotes ?? [],
+    timelineEvents: data.timeline ?? data.timelineEvents ?? [],
+    templates: data.templates && data.templates.length > 0 ? data.templates : DEFAULT_TEMPLATES,
+  };
+}
+
+function toSummary(project: ProjectDetails): ProjectSummary {
+  return {
+    id: project.id,
+    title: project.title,
+    customer: project.customer,
+    status: project.status,
+    offerAmount: project.offerAmount,
+    invoiceAmount: project.invoiceAmount,
+    createdAt: project.createdAt,
+  };
+}
+
 export function ProjectsPage() {
   const { settings: globalSettings } = useSettingsData({ applyTheme: false });
   const [currentView, setCurrentView] = useState<"list" | "workspace" | "settings">("list");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
   const [templates, setTemplates] = useState<Template[]>(DEFAULT_TEMPLATES);
   const [isClientModalOpen, setClientModalOpen] = useState(false);
 
-  const handleSelectProject = (projectId: string) => {
-    setSelectedProjectId(projectId);
+  useEffect(() => {
+    fetchProjectList();
+  }, []);
+
+  const fetchProjectList = async () => {
+    const response = await fetch(API_PREFIX);
+    const result = await response.json();
+    if (!result.success) {
+      toast.error(result.error ?? "Napaka pri nalaganju projektov.");
+      return;
+    }
+    setProjects(result.data as ProjectSummary[]);
+  };
+
+  const loadProjectDetails = async (projectId: string) => {
+    const response = await fetch(`${API_PREFIX}/${projectId}`);
+    const result = await response.json();
+    if (!result.success) {
+      toast.error(result.error ?? "Projekt ni bil najden.");
+      return;
+    }
+    const mapped = mapProject(result.data);
+    setProjectDetails(mapped);
+    setSelectedProjectId(mapped.id);
+    setTemplates(mapped.templates);
     setCurrentView("workspace");
+  };
+
+  const handleSelectProject = (projectId: string) => {
+    loadProjectDetails(projectId);
   };
 
   const handleBackToList = () => {
     setCurrentView("list");
     setSelectedProjectId(null);
+    setProjectDetails(null);
   };
 
-  const handleNewProject = () => {
-    toast.info("Nova projekt funkcionalnost bo dodana");
+  const handleNewProject = async () => {
+    const payload = {
+      title: `Nov projekt ${projects.length + 1}`,
+      customer: {
+        name: globalSettings.companyName || "Nova stranka",
+        address: globalSettings.address,
+        paymentTerms: globalSettings.defaultPaymentTerms || "30 dni",
+      },
+      requirements: "Dodajte opis projekta",
+    };
+
+    const response = await fetch(API_PREFIX, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!result.success) {
+      toast.error(result.error ?? "Napaka pri ustvarjanju projekta.");
+      return;
+    }
+
+    const mapped = mapProject(result.data);
+    setProjects((prev) => [toSummary(mapped), ...prev]);
+    setProjectDetails(mapped);
+    setTemplates(mapped.templates);
+    setSelectedProjectId(mapped.id);
+    setCurrentView("workspace");
+    toast.success("Projekt uspešno ustvarjen");
   };
 
   const handleAddClient = () => {
@@ -315,29 +232,52 @@ export function ProjectsPage() {
   const handleSaveTemplate = (template: Template) => {
     setTemplates((prev) => {
       const existing = prev.find((t) => t.id === template.id);
-      if (existing) {
-        return prev.map((t) => (t.id === template.id ? template : t));
-      }
-      return [...prev, template];
+      const nextTemplates = existing
+        ? prev.map((t) => (t.id === template.id ? template : t))
+        : [...prev, template];
+
+      setProjectDetails((detail) => (detail ? { ...detail, templates: nextTemplates } : detail));
+      return nextTemplates;
     });
   };
 
   const handleDeleteTemplate = (id: string) => {
-    setTemplates((prev) => prev.filter((t) => t.id !== id));
+    setTemplates((prev) => {
+      const nextTemplates = prev.filter((t) => t.id !== id);
+      setProjectDetails((detail) => (detail ? { ...detail, templates: nextTemplates } : detail));
+      return nextTemplates;
+    });
     toast.success("Predloga izbrisana");
   };
 
   const handleSetDefaultTemplate = (id: string) => {
-    setTemplates((prev) =>
-      prev.map((t) => ({
+    setTemplates((prev) => {
+      const nextTemplates = prev.map((t) => ({
         ...t,
         isDefault: t.id === id,
-      }))
-    );
+      }));
+      setProjectDetails((detail) => (detail ? { ...detail, templates: nextTemplates } : detail));
+      return nextTemplates;
+    });
     toast.success("Privzeta predloga nastavljena");
   };
 
-  const selectedProject = mockProjects.find((p) => p.id === selectedProjectId);
+  const handleProjectUpdate = async (path: string, options?: RequestInit) => {
+    const response = await fetch(path, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
+    });
+    const result = await response.json();
+    if (!result.success) {
+      toast.error(result.error ?? "Napaka pri shranjevanju projekta.");
+      return null;
+    }
+    const mapped = mapProject(result.data);
+    setProjectDetails(mapped);
+    setProjects((prev) => prev.map((proj) => (proj.id === mapped.id ? toSummary(mapped) : proj)));
+    setTemplates(mapped.templates);
+    return mapped;
+  };
 
   return (
     <>
@@ -368,28 +308,19 @@ export function ProjectsPage() {
                 {[globalSettings.email, globalSettings.phone].filter(Boolean).join(" · ")}
               </p>
             </div>
-            <ProjectList projects={mockProjects} onSelectProject={handleSelectProject} />
+            <ProjectList projects={projects} onSelectProject={handleSelectProject} />
           </div>
         </div>
       )}
 
-      {currentView === "workspace" && selectedProject && (
+      {currentView === "workspace" && projectDetails && (
         <ProjectWorkspace
-          projectId={selectedProject.id}
-          projectTitle={selectedProject.title}
-          customer={{
-            name: "Hotel Dolenjc d.o.o.",
-            taxId: "SI12345678",
-            address: "Tržaška cesta 12, 1000 Ljubljana",
-            paymentTerms: "30 dni",
-          }}
-          items={mockItems}
-          offers={mockOffers}
-          workOrders={mockWorkOrders}
-          timelineEvents={mockTimelineEvents}
-          status={selectedProject.status}
+          key={projectDetails.id}
+          project={projectDetails}
           templates={templates}
           onBack={handleBackToList}
+          onRefresh={() => loadProjectDetails(projectDetails.id)}
+          onProjectUpdate={handleProjectUpdate}
         />
       )}
 
@@ -418,12 +349,12 @@ export function ProjectsPage() {
               </TabsContent>
               <TabsContent value="general" className="mt-6">
                 <div className="py-12 text-center text-muted-foreground">
-                  Splošne nastavitve bodo na voljo kmalu
+                  Nastavitve bodo na voljo v naslednji iteraciji.
                 </div>
               </TabsContent>
               <TabsContent value="integrations" className="mt-6">
                 <div className="py-12 text-center text-muted-foreground">
-                  AI integracije in API povezave bodo na voljo kmalu
+                  Integracije bodo na voljo v naslednji iteraciji.
                 </div>
               </TabsContent>
             </Tabs>
@@ -433,7 +364,7 @@ export function ProjectsPage() {
 
       <ClientForm
         open={isClientModalOpen}
-        onClose={() => setClientModalOpen(false)}
+        onOpenChange={setClientModalOpen}
         onSubmit={handleClientSubmit}
         onSuccess={() => setClientModalOpen(false)}
       />

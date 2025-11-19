@@ -1,0 +1,380 @@
+import { Request, Response } from 'express';
+import {
+  Project,
+  ProjectItem,
+  ProjectStatus,
+  addTimeline,
+  calculateOfferAmount,
+  findProject,
+  nextProjectId,
+  projects,
+  summarizeProject,
+} from '../schemas/project';
+
+function validateProjectPayload(body: any) {
+  if (!body?.title) {
+    return 'Manjka naziv projekta (title).';
+  }
+  if (!body?.customer?.name) {
+    return 'Manjka podatek o stranki (customer.name).';
+  }
+  return null;
+}
+
+function toISODate(value?: string) {
+  if (!value) return new Date().toISOString().slice(0, 10);
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? new Date().toISOString().slice(0, 10) : date.toISOString().slice(0, 10);
+}
+
+function responseProject(project: Project) {
+  return project;
+}
+
+export function listProjects(_req: Request, res: Response) {
+  return res.success(projects.map(summarizeProject));
+}
+
+export function getProject(req: Request, res: Response) {
+  const project = findProject(req.params.id);
+  if (!project) {
+    return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+  }
+
+  return res.success(responseProject(project));
+}
+
+export function createProject(req: Request, res: Response) {
+  const error = validateProjectPayload(req.body);
+  if (error) return res.fail(error, 400);
+
+  const id = nextProjectId();
+  const createdAt = toISODate();
+
+  const project: Project = {
+    id,
+    title: req.body.title,
+    customer: {
+      name: req.body.customer.name,
+      taxId: req.body.customer.taxId,
+      address: req.body.customer.address,
+      paymentTerms: req.body.customer.paymentTerms ?? '30 dni',
+    },
+    status: 'draft',
+    offerAmount: 0,
+    invoiceAmount: 0,
+    createdAt,
+    requirements: req.body.requirements ?? '',
+    items: (req.body.items as ProjectItem[])?.map((item) => ({
+      ...item,
+      id: item.id ?? `item-${Date.now()}`,
+    })) ?? [],
+    offers: [],
+    workOrders: [],
+    purchaseOrders: [],
+    deliveryNotes: [],
+    timeline: [],
+    templates: req.body.templates ?? [],
+  };
+
+  addTimeline(project, {
+    type: 'edit',
+    title: 'Projekt ustvarjen',
+    description: project.title,
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+  });
+
+  projects.unshift(project);
+
+  return res.success(responseProject(project), 201);
+}
+
+export function updateStatus(req: Request, res: Response) {
+  const project = findProject(req.params.id);
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const nextStatus = req.body?.status as ProjectStatus;
+  const allowed: ProjectStatus[] = ['draft', 'offered', 'ordered', 'in-progress', 'completed', 'invoiced'];
+  if (!nextStatus || !allowed.includes(nextStatus)) {
+    return res.fail('Neznan status projekta.', 400);
+  }
+
+  project.status = nextStatus;
+  addTimeline(project, {
+    type: 'status-change',
+    title: 'Status spremenjen',
+    description: `Projekt prešel v fazo '${nextStatus}'`,
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+  });
+
+  return res.success(responseProject(project));
+}
+
+export function addOffer(req: Request, res: Response) {
+  const project = findProject(req.params.id);
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const amount = calculateOfferAmount(project.items);
+  const version = project.offers.length + 1;
+  const offer = {
+    id: `offer-${version}`,
+    version,
+    status: 'draft' as const,
+    amount: Number(amount.toFixed(2)),
+    date: new Date().toLocaleDateString('sl-SI'),
+  };
+
+  project.offers.push(offer);
+  project.offerAmount = offer.amount;
+
+  addTimeline(project, {
+    type: 'offer',
+    title: `Ponudba v${version} ustvarjena`,
+    description: `Nova verzija ponudbe v vrednosti € ${offer.amount.toFixed(2)}`,
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+    metadata: { amount: `€ ${offer.amount.toFixed(2)}`, status: 'draft' },
+  });
+
+  project.status = project.status === 'draft' ? 'offered' : project.status;
+
+  return res.success(responseProject(project), 201);
+}
+
+export function sendOffer(req: Request, res: Response) {
+  const project = findProject(req.params.id);
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const offer = project.offers.find((o) => o.id === req.params.offerId);
+  if (!offer) return res.fail('Ponudba ni najdena.', 404);
+
+  offer.status = 'sent';
+  addTimeline(project, {
+    type: 'offer',
+    title: `Ponudba v${offer.version} poslana`,
+    description: 'Ponudba poslana stranki',
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+  });
+
+  return res.success(responseProject(project));
+}
+
+function createPurchaseOrders(project: Project) {
+  return [
+    {
+      id: `PO-${Date.now()}-1`,
+      supplier: 'Aliansa d.o.o.',
+      status: 'sent' as const,
+      amount: 1200,
+      dueDate: toISODate(),
+      items: ['DVC IP kamera 4MP (4x)', 'NVR 8-kanalni (1x)'],
+    },
+    {
+      id: `PO-${Date.now()}-2`,
+      supplier: 'Elektromaterial LLC',
+      status: 'sent' as const,
+      amount: 60,
+      dueDate: toISODate(),
+      items: ['UTP Cat6 kabel (50m)'],
+    },
+  ];
+}
+
+export function confirmOffer(req: Request, res: Response) {
+  const project = findProject(req.params.id);
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const offer = project.offers.find((o) => o.id === req.params.offerId);
+  if (!offer) return res.fail('Ponudba ni najdena.', 404);
+
+  project.offers = project.offers.map((o) => ({
+    ...o,
+    status: o.id === offer.id ? 'accepted' : o.status,
+    isSelected: o.id === offer.id,
+  }));
+
+  const purchaseOrders = createPurchaseOrders(project);
+  const workOrder = {
+    id: `WO-${Date.now()}`,
+    team: 'Ekipa A - Janez Novak, Marko Horvat',
+    schedule: `${toISODate()} 08:00`,
+    location: project.customer.address ?? '',
+    status: 'planned' as const,
+    notes: 'Pripraviti ključe za dostop do tehničnih prostorov',
+  };
+
+  project.purchaseOrders = purchaseOrders;
+  project.deliveryNotes = purchaseOrders.map((po) => ({
+    id: `DN-${Date.now()}-${po.id}`,
+    poId: po.id,
+    supplier: po.supplier,
+    receivedQuantity: 0,
+    totalQuantity: po.items.length,
+    receivedDate: '',
+    serials: [],
+  }));
+  project.workOrders = [...project.workOrders, workOrder];
+  project.status = 'ordered';
+
+  addTimeline(project, {
+    type: 'offer',
+    title: `Ponudba v${offer.version} potrjena`,
+    description: 'Ponudba označena kot izbrana',
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+    metadata: { amount: `€ ${offer.amount.toFixed(2)}` },
+  });
+
+  addTimeline(project, {
+    type: 'po',
+    title: 'Naročilnice generirane',
+    description: `Ustvarjenih ${purchaseOrders.length} naročilnic`,
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+    metadata: { count: purchaseOrders.length.toString() },
+  });
+
+  addTimeline(project, {
+    type: 'execution',
+    title: 'Delovni nalog ustvarjen',
+    description: `Načrtovana montaža: ${workOrder.schedule}`,
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+    metadata: { team: workOrder.team },
+  });
+
+  addTimeline(project, {
+    type: 'status-change',
+    title: 'Status spremenjen',
+    description: "Projekt prešel v fazo 'Naročeno'",
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+  });
+
+  return res.success(responseProject(project));
+}
+
+export function cancelConfirmation(req: Request, res: Response) {
+  const project = findProject(req.params.id);
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const offer = project.offers.find((o) => o.id === req.params.offerId);
+  if (!offer) return res.fail('Ponudba ni najdena.', 404);
+
+  project.offers = project.offers.map((o) => ({
+    ...o,
+    status: o.id === offer.id ? 'sent' : o.status,
+    isSelected: false,
+  }));
+
+  project.purchaseOrders = [];
+  project.deliveryNotes = [];
+  project.workOrders = project.workOrders.filter((wo) => !wo.id.startsWith('WO-'));
+  project.status = 'offered';
+
+  addTimeline(project, {
+    type: 'status-change',
+    title: `Potrditev ponudbe ${offer.id} preklicana`,
+    description: 'Naročilnice, delovni nalogi in dobavnice izbrisani',
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+  });
+
+  return res.success(responseProject(project));
+}
+
+export function selectOffer(req: Request, res: Response) {
+  const project = findProject(req.params.id);
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const offer = project.offers.find((o) => o.id === req.params.offerId);
+  if (!offer) return res.fail('Ponudba ni najdena.', 404);
+
+  project.offers = project.offers.map((o) => ({
+    ...o,
+    isSelected: o.id === offer.id,
+  }));
+
+  addTimeline(project, {
+    type: 'offer',
+    title: `Ponudba ${offer.id} označena kot izbrana`,
+    description: 'Označena ponudba za nadaljnjo obdelavo',
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+  });
+
+  return res.success(responseProject(project));
+}
+
+export function receiveDelivery(req: Request, res: Response) {
+  const project = findProject(req.params.id);
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const delivery = project.deliveryNotes.find((d) => d.id === req.params.deliveryId);
+  if (!delivery) return res.fail('Dobavnica ni najdena.', 404);
+
+  delivery.receivedQuantity = delivery.totalQuantity;
+  delivery.receivedDate = toISODate();
+  delivery.serials = ['SN-001', 'SN-002', 'SN-003'];
+
+  project.purchaseOrders = project.purchaseOrders.map((po) =>
+    po.id === delivery.poId ? { ...po, status: 'delivered' as const } : po
+  );
+
+  const allDelivered = project.deliveryNotes.every((dn) => dn.receivedQuantity > 0);
+  if (allDelivered) {
+    project.status = 'in-progress';
+    addTimeline(project, {
+      type: 'status-change',
+      title: 'Status spremenjen',
+      description: "Projekt prešel v fazo 'V teku' - vsa dobava potrjena",
+      timestamp: new Date().toLocaleString('sl-SI'),
+      user: 'Admin',
+    });
+  }
+
+  addTimeline(project, {
+    type: 'delivery',
+    title: 'Dobavnica potrjena',
+    description: `Dobavnica ${delivery.id} - ${delivery.supplier}`,
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+    metadata: { supplier: delivery.supplier },
+  });
+
+  return res.success(responseProject(project));
+}
+
+export function saveSignature(req: Request, res: Response) {
+  const project = findProject(req.params.id);
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const signerName = req.body?.signerName;
+  if (!signerName) {
+    return res.fail('Manjka ime podpisnika.', 400);
+  }
+
+  project.status = 'completed';
+
+  addTimeline(project, {
+    type: 'execution',
+    title: 'Potrdilo o zaključku del',
+    description: `Podpisal: ${signerName}`,
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+    metadata: { signer: signerName },
+  });
+
+  addTimeline(project, {
+    type: 'status-change',
+    title: 'Status spremenjen',
+    description: "Projekt prešel v fazo 'Zaključeno'",
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+  });
+
+  return res.success(responseProject(project));
+}

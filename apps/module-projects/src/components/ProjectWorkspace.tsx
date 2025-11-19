@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
@@ -17,88 +17,64 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
 import { Input } from "./ui/input";
-import { ArrowLeft, Save, CheckCircle, Plus, FileText, Package, Truck, Wrench, Receipt, FolderOpen, Clock, Eye, Download } from "lucide-react";
+import { ArrowLeft, Save, Plus, FileText, Package, Truck, Wrench, Receipt, FolderOpen, Clock, Eye, Download } from "lucide-react";
 import { toast } from "sonner";
-
-interface PurchaseOrder {
-  id: string;
-  supplier: string;
-  status: "draft" | "sent" | "confirmed" | "delivered";
-  amount: number;
-  dueDate: string;
-  items: string[];
-}
-
-interface DeliveryNote {
-  id: string;
-  poId: string;
-  supplier: string;
-  receivedQuantity: number;
-  totalQuantity: number;
-  receivedDate: string;
-  serials?: string[];
-}
+import { DeliveryNote, ProjectDetails, PurchaseOrder } from "../types";
 
 interface ProjectWorkspaceProps {
-  projectId: string;
-  projectTitle: string;
-  customer: {
-    name: string;
-    taxId: string;
-    address: string;
-    paymentTerms: string;
-  };
-  items: Item[];
-  offers: OfferVersion[];
-  workOrders: WorkOrder[];
-  timelineEvents: TimelineEvent[];
-  status: string;
+  project: ProjectDetails;
   templates: Template[];
   onBack: () => void;
+  onRefresh: () => void;
+  onProjectUpdate: (path: string, options?: RequestInit) => Promise<ProjectDetails | null>;
 }
 
-export function ProjectWorkspace({
-  projectId,
-  projectTitle,
-  customer,
-  items: initialItems,
-  offers: initialOffers,
-  workOrders: initialWorkOrders,
-  timelineEvents: initialTimelineEvents,
-  status: initialStatus,
-  templates,
-  onBack,
-}: ProjectWorkspaceProps) {
+export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProjectUpdate }: ProjectWorkspaceProps) {
   const [activeTab, setActiveTab] = useState("items");
-  const [items, setItems] = useState(initialItems);
-  const [offers, setOffers] = useState(initialOffers);
-  const [workOrders, setWorkOrders] = useState(initialWorkOrders);
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
-  const [deliveryNotes, setDeliveryNotes] = useState<DeliveryNote[]>([]);
-  const [timeline, setTimeline] = useState(initialTimelineEvents);
-  const [status, setStatus] = useState(initialStatus);
-  const [requirements, setRequirements] = useState("Postavitev 4 IP kamer DVC za nadzor vhoda in parkirišča. Vodenje kablov po stenah, postavitev NVR, konfiguracija.");
+  const [items, setItems] = useState<Item[]>(project.items);
+  const [offers, setOffers] = useState<OfferVersion[]>(project.offers);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>(project.workOrders);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(project.purchaseOrders);
+  const [deliveryNotes, setDeliveryNotes] = useState<DeliveryNote[]>(project.deliveryNotes);
+  const [timeline, setTimeline] = useState<TimelineEvent[]>(project.timelineEvents);
+  const [status, setStatus] = useState(project.status);
+  const [requirements, setRequirements] = useState(project.requirements);
 
-  const selectedOffer = offers.find((o) => o.isSelected);
-  const validationIssues: string[] = [];
-  
-  if (!customer.name) validationIssues.push("Manjka podatek o stranki");
-  if (items.length === 0) validationIssues.push("Dodajte vsaj eno postavko");
+  const basePath = `/api/projects/${project.id}`;
 
-  const addTimelineEvent = (event: Omit<TimelineEvent, "id">) => {
-    const newEvent: TimelineEvent = {
-      ...event,
-      id: `evt-${Date.now()}`,
-    };
-    setTimeline([newEvent, ...timeline]);
+  useEffect(() => {
+    setItems(project.items);
+    setOffers(project.offers);
+    setWorkOrders(project.workOrders);
+    setPurchaseOrders(project.purchaseOrders);
+    setDeliveryNotes(project.deliveryNotes);
+    setTimeline(project.timelineEvents);
+    setStatus(project.status);
+    setRequirements(project.requirements);
+  }, [project]);
+
+  const applyProjectUpdate = (updated: ProjectDetails | null) => {
+    if (!updated) return;
+    setItems(updated.items);
+    setOffers(updated.offers);
+    setWorkOrders(updated.workOrders);
+    setPurchaseOrders(updated.purchaseOrders);
+    setDeliveryNotes(updated.deliveryNotes);
+    setTimeline(updated.timelineEvents);
+    setStatus(updated.status);
+    setRequirements(updated.requirements);
   };
+
+  const validationIssues: string[] = [];
+  if (!project.customerDetail.name) validationIssues.push("Manjka podatek o stranki");
+  if (items.length === 0) validationIssues.push("Dodajte vsaj eno postavko");
 
   const handleAddItem = () => {
     toast.success("Postavka dodana");
   };
 
   const handleEditItem = (item: Item) => {
-    toast.info("Urejanje postavke");
+    toast.info(`Urejanje postavke ${item.name}`);
   };
 
   const handleDeleteItem = (id: string) => {
@@ -106,227 +82,45 @@ export function ProjectWorkspace({
     toast.success("Postavka izbrisana");
   };
 
-  const handleCreateOffer = () => {
-    const newVersion: OfferVersion = {
-      id: `offer-${offers.length + 1}`,
-      version: offers.length + 1,
-      status: "draft",
-      amount: items.reduce((acc, item) => acc + item.quantity * item.price * (1 - item.discount / 100) * (1 + item.vatRate / 100), 0),
-      date: new Date().toLocaleDateString("sl-SI"),
-    };
-    setOffers([...offers, newVersion]);
-    
-    addTimelineEvent({
-      type: "offer",
-      title: `Ponudba v${newVersion.version} ustvarjena`,
-      description: `Nova verzija ponudbe v vrednosti € ${newVersion.amount.toFixed(2)}`,
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-      metadata: { amount: `€ ${newVersion.amount.toFixed(2)}`, status: "draft" },
-    });
-    
-    toast.success("Nova verzija ponudbe ustvarjena");
-  };
-
-  const handleSendOffer = (offerId: string) => {
-    setOffers(offers.map((o) => (o.id === offerId ? { ...o, status: "sent" as const } : o)));
-    
-    const offer = offers.find((o) => o.id === offerId);
-    if (offer) {
-      addTimelineEvent({
-        type: "offer",
-        title: `Ponudba v${offer.version} poslana`,
-        description: "Ponudba poslana stranki",
-        timestamp: new Date().toLocaleString("sl-SI"),
-        user: "Admin",
-      });
+  const handleCreateOffer = async () => {
+    const updated = await onProjectUpdate(`${basePath}/offers`, { method: "POST" });
+    applyProjectUpdate(updated);
+    if (updated) {
+      toast.success("Nova verzija ponudbe ustvarjena");
     }
-    
-    toast.success("Ponudba poslana");
   };
 
-  const handleConfirmOffer = (offerId: string) => {
-    const offer = offers.find((o) => o.id === offerId);
-    if (!offer) return;
-
-    // Mark offer as accepted and selected
-    setOffers(offers.map((o) => ({
-      ...o,
-      isSelected: o.id === offerId,
-      status: o.id === offerId ? "accepted" : o.status,
-    })));
-
-    // Generate Purchase Orders
-    const newPOs: PurchaseOrder[] = [
-      {
-        id: `PO-${Date.now()}-1`,
-        supplier: "Aliansa d.o.o.",
-        status: "sent",
-        amount: 1200.0,
-        dueDate: "15.11.2024",
-        items: ["DVC IP kamera 4MP (4x)", "NVR 8-kanalni (1x)"],
-      },
-      {
-        id: `PO-${Date.now()}-2`,
-        supplier: "Elektromaterial LLC",
-        status: "sent",
-        amount: 60.0,
-        dueDate: "12.11.2024",
-        items: ["UTP Cat6 kabel (50m)"],
-      },
-    ];
-    setPurchaseOrders(newPOs);
-
-    // Generate Work Order
-    const newWorkOrder: WorkOrder = {
-      id: `WO-${Date.now()}`,
-      team: "Ekipa A - Janez Novak, Marko Horvat",
-      schedule: "14.11.2024 08:00",
-      location: `${customer.address}`,
-      status: "planned",
-      notes: "Pripraviti ključe za dostop do tehničnih prostorov",
-    };
-    setWorkOrders([...workOrders, newWorkOrder]);
-
-    // Generate initial Delivery Notes (as planned)
-    const newDeliveryNotes: DeliveryNote[] = newPOs.map((po) => ({
-      id: `DN-${Date.now()}-${po.id}`,
-      poId: po.id,
-      supplier: po.supplier,
-      receivedQuantity: 0,
-      totalQuantity: po.items.length,
-      receivedDate: "",
-      serials: [],
-    }));
-    setDeliveryNotes(newDeliveryNotes);
-
-    // Update project status
-    setStatus("ordered");
-
-    // Add timeline events
-    addTimelineEvent({
-      type: "offer",
-      title: `Ponudba v${offer.version} potrjena`,
-      description: "Ponudba označena kot izbrana",
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-      metadata: { amount: `€ ${offer.amount.toFixed(2)}` },
-    });
-
-    addTimelineEvent({
-      type: "po",
-      title: "Naročilnice generirane",
-      description: `Ustvarjenih ${newPOs.length} naročilnic`,
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-      metadata: { count: newPOs.length.toString() },
-    });
-
-    addTimelineEvent({
-      type: "execution",
-      title: "Delovni nalog ustvarjen",
-      description: `Načrtovana montaža: ${newWorkOrder.schedule}`,
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-      metadata: { team: newWorkOrder.team },
-    });
-
-    addTimelineEvent({
-      type: "status-change",
-      title: "Status spremenjen",
-      description: "Projekt prešel v fazo 'Naročeno'",
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-    });
-
-    toast.success("Ponudba potrjena! Ustvarjene naročilnice, delovni nalog in dobavnice.");
-    setActiveTab("logistics");
+  const handleSendOffer = async (offerId: string) => {
+    const updated = await onProjectUpdate(`${basePath}/offers/${offerId}/send`, { method: "POST" });
+    applyProjectUpdate(updated);
+    if (updated) toast.success("Ponudba poslana");
   };
 
-  const handleCancelConfirmation = (offerId: string) => {
-    const offer = offers.find((o) => o.id === offerId);
-    if (!offer) return;
-
-    // Unmark offer as selected, revert to sent status
-    setOffers(offers.map((o) => ({
-      ...o,
-      isSelected: false,
-      status: o.id === offerId ? "sent" : o.status,
-    })));
-
-    // Clear generated documents
-    setPurchaseOrders([]);
-    setDeliveryNotes([]);
-    setWorkOrders(initialWorkOrders);
-
-    // Update project status back
-    setStatus("offered");
-
-    addTimelineEvent({
-      type: "status-change",
-      title: `Potrditev ponudbe v${offer.version} preklicana`,
-      description: "Naročilnice, delovni nalogi in dobavnice izbrisani",
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-    });
-
-    toast.info("Potrditev ponudbe preklicana");
-  };
-
-  const handleReceiveDelivery = (dnId: string) => {
-    const dn = deliveryNotes.find((d) => d.id === dnId);
-    if (!dn) return;
-
-    // Mark delivery as received
-    setDeliveryNotes(
-      deliveryNotes.map((d) =>
-        d.id === dnId
-          ? {
-              ...d,
-              receivedQuantity: d.totalQuantity,
-              receivedDate: new Date().toLocaleDateString("sl-SI"),
-              serials: ["SN-001", "SN-002", "SN-003"],
-            }
-          : d
-      )
-    );
-
-    // Update PO status
-    setPurchaseOrders(
-      purchaseOrders.map((po) =>
-        po.id === dn.poId ? { ...po, status: "delivered" as const } : po
-      )
-    );
-
-    // Check if all deliveries are complete
-    const allDelivered = deliveryNotes.every((d) => d.id === dnId || d.receivedQuantity > 0);
-    
-    if (allDelivered) {
-      setStatus("in-progress");
-      addTimelineEvent({
-        type: "status-change",
-        title: "Status spremenjen",
-        description: "Projekt prešel v fazo 'V teku' - vsa dobava potrjena",
-        timestamp: new Date().toLocaleString("sl-SI"),
-        user: "Admin",
-      });
+  const handleConfirmOffer = async (offerId: string) => {
+    const updated = await onProjectUpdate(`${basePath}/offers/${offerId}/confirm`, { method: "POST" });
+    applyProjectUpdate(updated);
+    if (updated) {
+      toast.success("Ponudba potrjena! Ustvarjene naročilnice, delovni nalog in dobavnice.");
+      setActiveTab("logistics");
     }
-
-    addTimelineEvent({
-      type: "delivery",
-      title: "Dobavnica potrjena",
-      description: `Dobavnica ${dnId} - ${dn.supplier}`,
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-      metadata: { supplier: dn.supplier },
-    });
-
-    toast.success("Dobavnica potrjena! Načrt lahko generiramo.");
   };
 
-  const handleMarkOfferAsSelected = (offerId: string) => {
-    setOffers(offers.map((o) => ({ ...o, isSelected: o.id === offerId })));
-    toast.success("Ponudba označena kot izbrana");
+  const handleCancelConfirmation = async (offerId: string) => {
+    const updated = await onProjectUpdate(`${basePath}/offers/${offerId}/cancel`, { method: "POST" });
+    applyProjectUpdate(updated);
+    if (updated) toast.info("Potrditev ponudbe preklicana");
+  };
+
+  const handleReceiveDelivery = async (dnId: string) => {
+    const updated = await onProjectUpdate(`${basePath}/deliveries/${dnId}/receive`, { method: "POST" });
+    applyProjectUpdate(updated);
+    if (updated) toast.success("Dobavnica potrjena! Načrt lahko generiramo.");
+  };
+
+  const handleMarkOfferAsSelected = async (offerId: string) => {
+    const updated = await onProjectUpdate(`${basePath}/offers/${offerId}/select`, { method: "POST" });
+    applyProjectUpdate(updated);
+    if (updated) toast.success("Ponudba označena kot izbrana");
   };
 
   const handleGeneratePDF = (offerId: string) => {
@@ -340,10 +134,10 @@ export function ProjectWorkspace({
     }
 
     const html = renderTemplate(defaultTemplate, {
-      customer,
+      customer: project.customerDetail,
       project: {
-        id: projectId,
-        title: projectTitle,
+        id: project.id,
+        title: project.title,
         description: requirements,
       },
       offer,
@@ -365,41 +159,36 @@ export function ProjectWorkspace({
     }
 
     const html = renderTemplate(defaultTemplate, {
-      customer,
+      customer: project.customerDetail,
       project: {
-        id: projectId,
-        title: projectTitle,
+        id: project.id,
+        title: project.title,
         description: requirements,
       },
       offer,
       items,
     });
 
-    downloadHTML(html, `Ponudba-${projectId}-v${offer.version}.html`);
+    downloadHTML(html, `Ponudba-${project.id}-v${offer.version}.html`);
     toast.success("Ponudba prenesena kot HTML");
   };
 
-  const handleSaveSignature = (signature: string, signerName: string) => {
-    setStatus("completed");
-    
-    addTimelineEvent({
-      type: "execution",
-      title: "Potrdilo o zaključku del",
-      description: `Podpisal: ${signerName}`,
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
-      metadata: { signer: signerName },
+  const handleSaveSignature = async (signature: string, signerName: string) => {
+    const updated = await onProjectUpdate(`${basePath}/signature`, {
+      method: "POST",
+      body: JSON.stringify({ signerName, signature }),
     });
+    applyProjectUpdate(updated);
+    if (updated) toast.success(`Podpis shranjen: ${signerName}`);
+  };
 
-    addTimelineEvent({
-      type: "status-change",
-      title: "Status spremenjen",
-      description: "Projekt prešel v fazo 'Zaključeno'",
-      timestamp: new Date().toLocaleString("sl-SI"),
-      user: "Admin",
+  const handleStatusChange = async (value: string) => {
+    setStatus(value as any);
+    const updated = await onProjectUpdate(`${basePath}/status`, {
+      method: "POST",
+      body: JSON.stringify({ status: value }),
     });
-
-    toast.success(`Podpis shranjen: ${signerName}`);
+    applyProjectUpdate(updated);
   };
 
   return (
@@ -414,7 +203,7 @@ export function ProjectWorkspace({
               </Button>
               <div>
                 <div className="flex items-center gap-3">
-                  <h1 className="m-0">{projectTitle}</h1>
+                  <h1 className="m-0">{project.title}</h1>
                   <Badge className={
                     status === "draft" ? "bg-gray-100 text-gray-700" :
                     status === "offered" ? "bg-blue-100 text-blue-700" :
@@ -431,15 +220,15 @@ export function ProjectWorkspace({
                      status}
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground m-0">ID: {projectId}</p>
+                <p className="text-sm text-muted-foreground m-0">ID: {project.id}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline">
+              <Button variant="outline" onClick={onRefresh}>
                 <Save className="w-4 h-4 mr-2" />
-                Shrani
+                Osveži
               </Button>
-              <Select value={status} onValueChange={setStatus}>
+              <Select value={status} onValueChange={handleStatusChange}>
                 <SelectTrigger className="w-48">
                   <SelectValue />
                 </SelectTrigger>
@@ -467,19 +256,19 @@ export function ProjectWorkspace({
               <div className="space-y-2 text-sm">
                 <div>
                   <div className="text-muted-foreground">Naziv</div>
-                  <div>{customer.name}</div>
+                  <div>{project.customerDetail.name}</div>
                 </div>
                 <div>
                   <div className="text-muted-foreground">ID za DDV</div>
-                  <div>{customer.taxId}</div>
+                  <div>{project.customerDetail.taxId}</div>
                 </div>
                 <div>
                   <div className="text-muted-foreground">Naslov</div>
-                  <div>{customer.address}</div>
+                  <div>{project.customerDetail.address}</div>
                 </div>
                 <div>
                   <div className="text-muted-foreground">Plačilni pogoji</div>
-                  <div>{customer.paymentTerms}</div>
+                  <div>{project.customerDetail.paymentTerms}</div>
                 </div>
               </div>
             </Card>
@@ -529,22 +318,13 @@ export function ProjectWorkspace({
                   Execution
                 </button>
                 <button
-                  onClick={() => setActiveTab("invoices")}
+                  onClick={() => setActiveTab("documents")}
                   className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                    activeTab === "invoices" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                  }`}
-                >
-                  <Receipt className="w-4 h-4" />
-                  Invoices
-                </button>
-                <button
-                  onClick={() => setActiveTab("files")}
-                  className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                    activeTab === "files" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                    activeTab === "documents" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
                   }`}
                 >
                   <FolderOpen className="w-4 h-4" />
-                  Files
+                  Documents
                 </button>
                 <button
                   onClick={() => setActiveTab("timeline")}
@@ -557,123 +337,48 @@ export function ProjectWorkspace({
                 </button>
               </nav>
             </Card>
-
-            <Card className="p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm">Zadnji dogodki</h4>
-                <button
-                  onClick={() => setActiveTab("timeline")}
-                  className="text-xs text-primary hover:underline"
-                >
-                  Vsi dogodki
-                </button>
-              </div>
-              <div className="space-y-2">
-                {timeline.slice(0, 5).map((event) => {
-                  const getTabForEvent = (type: string) => {
-                    const tabMap: Record<string, string> = {
-                      offer: "offers",
-                      po: "logistics",
-                      delivery: "logistics",
-                      execution: "execution",
-                      invoice: "invoices",
-                      file: "files",
-                    };
-                    return tabMap[type] || "timeline";
-                  };
-
-                  return (
-                    <button
-                      key={event.id}
-                      onClick={() => setActiveTab(getTabForEvent(event.type))}
-                      className="w-full text-left p-2 rounded hover:bg-muted transition-colors group"
-                    >
-                      <div className="flex items-start gap-2">
-                        <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
-                          event.type === "offer" ? "bg-blue-500" :
-                          event.type === "po" ? "bg-purple-500" :
-                          event.type === "delivery" ? "bg-green-500" :
-                          event.type === "execution" ? "bg-orange-500" :
-                          event.type === "invoice" ? "bg-red-500" :
-                          event.type === "status-change" ? "bg-gray-500" :
-                          "bg-gray-400"
-                        }`} />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs group-hover:text-primary transition-colors truncate">
-                            {event.title}
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {event.timestamp}
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-                {timeline.length === 0 && (
-                  <p className="text-xs text-muted-foreground text-center py-2">
-                    Še ni dogodkov
-                  </p>
-                )}
-              </div>
-            </Card>
           </div>
 
-          {/* Main Area */}
+          {/* Content */}
           <div className="col-span-9">
-            <ValidationBanner missing={validationIssues} />
+            {validationIssues.length > 0 && <ValidationBanner issues={validationIssues} />}
 
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="mb-6">
-                <TabsTrigger value="items">Items</TabsTrigger>
-                <TabsTrigger value="offers">Offers</TabsTrigger>
-                <TabsTrigger value="logistics">Logistics</TabsTrigger>
-                <TabsTrigger value="execution">Execution</TabsTrigger>
-                <TabsTrigger value="invoices">Invoices</TabsTrigger>
-                <TabsTrigger value="files">Files</TabsTrigger>
-                <TabsTrigger value="timeline">Timeline</TabsTrigger>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+              <TabsList>
+                <TabsTrigger value="items">Postavke</TabsTrigger>
+                <TabsTrigger value="offers">Ponudbe</TabsTrigger>
+                <TabsTrigger value="logistics">Logistika</TabsTrigger>
+                <TabsTrigger value="execution">Izvedba</TabsTrigger>
+                <TabsTrigger value="documents">Dokumenti</TabsTrigger>
+                <TabsTrigger value="timeline">Zgodovina</TabsTrigger>
               </TabsList>
 
               <TabsContent value="items" className="mt-0">
-                <ItemsTable
-                  items={items}
-                  onAdd={handleAddItem}
-                  onEdit={handleEditItem}
-                  onDelete={handleDeleteItem}
-                />
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="m-0">Postavke</h3>
+                  <Button onClick={handleAddItem}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Dodaj iz cenika
+                  </Button>
+                </div>
+                <ItemsTable items={items} onEdit={handleEditItem} onAdd={handleAddItem} onDelete={handleDeleteItem} />
               </TabsContent>
 
               <TabsContent value="offers" className="mt-0 space-y-4">
-                <div className="flex gap-2">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <h3 className="m-0">Ponudbe</h3>
+                    <p className="text-sm text-muted-foreground">Ustvarite nove verzije in spremljajte status.</p>
+                  </div>
                   <Button onClick={handleCreateOffer}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Nova verzija iz trenutnih Items
+                    <Plus className="mr-2 h-4 w-4" />
+                    Nova verzija
                   </Button>
-                  {selectedOffer && (
-                    <>
-                      <Button variant="outline" onClick={() => handleGeneratePDF(selectedOffer.id)}>
-                        <Eye className="w-4 h-4 mr-2" />
-                        Predogled PDF
-                      </Button>
-                      <Button variant="outline" onClick={() => handleDownloadPDF(selectedOffer.id)}>
-                        <Download className="w-4 h-4 mr-2" />
-                        Prenesi HTML
-                      </Button>
-                    </>
-                  )}
                 </div>
-
-                {!templates.find((t) => t.isDefault && t.category === "offer") && (
-                  <Card className="p-4 bg-yellow-50 border-yellow-200">
-                    <p className="text-sm text-yellow-800">
-                      Opozorilo: Ni nastavljene privzete predloge za ponudbe. Pojdite v Nastavitve → PDF Predloge.
-                    </p>
-                  </Card>
-                )}
 
                 <div className="space-y-3">
                   {offers.map((offer) => (
-                    <div key={offer.id} className="space-y-2">
+                    <div key={offer.id}>
                       <OfferVersionCard
                         offer={offer}
                         onOpen={() => handleGeneratePDF(offer.id)}
@@ -741,7 +446,7 @@ export function ProjectWorkspace({
                     </div>
                   ) : (
                     <Card className="p-6 text-center text-muted-foreground">
-                      {selectedOffer ? "Naročilnice bodo generirane ob potrditvi ponudbe" : "Izberite ponudbo za generiranje naročilnic"}
+                      {offers.length > 0 ? "Naročilnice bodo generirane ob potrditvi ponudbe" : "Izberite ponudbo za generiranje naročilnic"}
                     </Card>
                   )}
                 </div>
@@ -799,112 +504,113 @@ export function ProjectWorkspace({
                     <h3>Delovni nalogi</h3>
                     <Dialog>
                       <DialogTrigger asChild>
-                        <Button>
+                        <Button variant="outline" size="sm">
                           <Plus className="w-4 h-4 mr-2" />
-                          Nov delovni nalog
+                          Dodeli ekipo
                         </Button>
                       </DialogTrigger>
                       <DialogContent>
                         <DialogHeader>
-                          <DialogTitle>Nov delovni nalog</DialogTitle>
+                          <DialogTitle>Dodeli nov delovni nalog</DialogTitle>
                         </DialogHeader>
-                        <div className="space-y-4 mt-4">
-                          <div>
+                        <div className="space-y-4">
+                          <div className="space-y-2">
                             <Label>Ekipa</Label>
-                            <Input placeholder="Ekipa A" className="mt-1" />
+                            <Input placeholder="Ekipa A - Janez, Marko" />
                           </div>
-                          <div>
+                          <div className="space-y-2">
                             <Label>Termin</Label>
-                            <Input type="datetime-local" className="mt-1" />
+                            <Input placeholder="14.11.2024 08:00" />
                           </div>
-                          <div>
+                          <div className="space-y-2">
                             <Label>Lokacija</Label>
-                            <Input placeholder="Hotel Dolenjc, Tržaška 12" className="mt-1" />
+                            <Input placeholder="Tržaška cesta 12, Ljubljana" />
                           </div>
-                          <div>
+                          <div className="space-y-2">
                             <Label>Opombe</Label>
-                            <Textarea placeholder="Dodatne informacije..." className="mt-1" />
+                            <Textarea placeholder="Posebna navodila" />
                           </div>
-                          <Button className="w-full">Ustvari</Button>
+                          <Button className="w-full">Shrani</Button>
                         </div>
                       </DialogContent>
                     </Dialog>
                   </div>
-                  <div className="space-y-3">
-                    {workOrders.map((wo) => (
-                      <WorkOrderCard key={wo.id} workOrder={wo} />
-                    ))}
-                  </div>
-                  {workOrders.length === 0 && (
-                    <Card className="p-6 text-center text-muted-foreground">
-                      Še ni ustvarjenih delovnih nalogov
-                    </Card>
+
+                  {workOrders.length > 0 ? (
+                    <div className="space-y-3">
+                      {workOrders.map((wo) => (
+                        <WorkOrderCard key={wo.id} workOrder={wo} />
+                      ))}
+                    </div>
+                  ) : (
+                    <Card className="p-6 text-center text-muted-foreground">Ni dodeljenih delovnih nalogov</Card>
                   )}
                 </div>
 
-                <div>
-                  <h3 className="mb-4">Potrdilo o zaključku del</h3>
+                <div className="space-y-4">
+                  <h3>Potrditev zaključka</h3>
                   <Card className="p-6">
-                    <div className="space-y-4">
+                    <SignaturePad onSave={handleSaveSignature} />
+                  </Card>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="documents" className="mt-0 space-y-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <Card className="p-4">
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-5 h-5" />
                       <div>
-                        <Label>Opis opravljenih del</Label>
-                        <Textarea
-                          placeholder="Opišite opravljena dela..."
-                          className="mt-1"
-                          rows={4}
-                        />
+                        <p className="m-0 font-medium">Ponudba</p>
+                        <p className="text-sm text-muted-foreground m-0">v2 - potrjena</p>
                       </div>
-                      <SignaturePad onSign={handleSaveSignature} />
+                    </div>
+                    <div className="mt-4 flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => toast.info("Pretvorjeno v delovni nalog")}>Pretvori v DN</Button>
+                      <Button variant="outline" size="sm" onClick={() => toast.info("Pretvorjeno v račun")}>Pretvori v račun</Button>
+                    </div>
+                  </Card>
+                  <Card className="p-4">
+                    <div className="flex items-center gap-3">
+                      <Receipt className="w-5 h-5" />
+                      <div>
+                        <p className="m-0 font-medium">Naročilnica</p>
+                        <p className="text-sm text-muted-foreground m-0">Aliansa d.o.o.</p>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => toast.success("Naročilnica poslana")}>Pošlji</Button>
+                      <Button variant="outline" size="sm" onClick={() => toast.success("Prevzem potrjen")}>Potrdi prevzem</Button>
+                    </div>
+                  </Card>
+                  <Card className="p-4">
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-5 h-5" />
+                      <div>
+                        <p className="m-0 font-medium">Dobavnica</p>
+                        <p className="text-sm text-muted-foreground m-0">Hotel Dolenjc</p>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => toast.success("Dobavnica potrjena")}>Potrdi</Button>
+                      <Button variant="outline" size="sm" onClick={() => toast.info("Dobavnica poslana")}>Pošlji</Button>
                     </div>
                   </Card>
                 </div>
               </TabsContent>
 
-              <TabsContent value="invoices" className="mt-0 space-y-4">
-                <div className="flex gap-2">
-                  <Button disabled={!selectedOffer}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Ustvari račun iz izbrane ponudbe
-                  </Button>
-                  <Button variant="outline" disabled={!selectedOffer}>
-                    Predračun
-                  </Button>
-                  <Button variant="outline" disabled={!selectedOffer}>
-                    Delni račun
-                  </Button>
-                  <Button variant="outline" disabled={!selectedOffer}>
-                    Končni račun
+              <TabsContent value="timeline" className="mt-0">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <h3 className="m-0">Zgodovina</h3>
+                    <p className="text-sm text-muted-foreground m-0">Dogodki projekta in statusne spremembe</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => onRefresh()}>
+                    <Eye className="w-4 h-4 mr-2" />
+                    Osveži
                   </Button>
                 </div>
-                {!selectedOffer && (
-                  <p className="text-sm text-muted-foreground">
-                    Izberite ponudbo pred ustvarjanjem računov
-                  </p>
-                )}
-                <Card className="p-6 text-center text-muted-foreground">
-                  Še ni ustvarjenih računov
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="files" className="mt-0">
-                <Card className="p-12 text-center">
-                  <FolderOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground mb-4">Še ni naloženih datotek</p>
-                  <Button>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Naloži datoteko
-                  </Button>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="timeline" className="mt-0">
-                <Card className="p-6">
-                  {timeline.length > 0 ? (
-                    <TimelineFeed events={timeline} />
-                  ) : (
-                    <p className="text-center text-muted-foreground">Še ni dogodkov</p>
-                  )}
-                </Card>
+                <TimelineFeed events={timeline} />
               </TabsContent>
             </Tabs>
           </div>

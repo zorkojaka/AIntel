@@ -1,0 +1,30 @@
+import { Router } from 'express';
+import {
+  addOffer,
+  cancelConfirmation,
+  confirmOffer,
+  createProject,
+  getProject,
+  listProjects,
+  receiveDelivery,
+  saveSignature,
+  selectOffer,
+  sendOffer,
+  updateStatus,
+} from '../controllers/project.controller';
+
+const router = Router();
+
+router.get('/', listProjects);
+router.post('/', createProject);
+router.get('/:id', getProject);
+router.post('/:id/status', updateStatus);
+router.post('/:id/offers', addOffer);
+router.post('/:id/offers/:offerId/send', sendOffer);
+router.post('/:id/offers/:offerId/confirm', confirmOffer);
+router.post('/:id/offers/:offerId/cancel', cancelConfirmation);
+router.post('/:id/offers/:offerId/select', selectOffer);
+router.post('/:id/deliveries/:deliveryId/receive', receiveDelivery);
+router.post('/:id/signature', saveSignature);
+
+export default router;
