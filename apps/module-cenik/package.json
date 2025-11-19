@@ -11,7 +11,8 @@
     },
     "./src/index.css": "./src/index.css",
     "./src/styles.css": "./src/styles.css",
-    "./src/globals.css": "./src/globals.css"
+    "./src/globals.css": "./src/globals.css",
+    "./globals.css": "./src/globals.css"
   },
   "types": "./src/index.ts",
   "scripts": {

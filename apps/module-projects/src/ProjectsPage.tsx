@@ -61,7 +61,6 @@ const fallbackProjects: Project[] = [
 ];
 
 const fallbackItems: Item[] = [
-const mockItems: Item[] = [
   {
     id: "item-1",
     name: "DVC IP kamera 4MP",
@@ -117,7 +116,6 @@ const mockItems: Item[] = [
 ];
 
 const fallbackOffers: OfferVersion[] = [
-const mockOffers: OfferVersion[] = [
   {
     id: "offer-1",
     version: 1,
@@ -136,7 +134,6 @@ const mockOffers: OfferVersion[] = [
 ];
 
 const fallbackWorkOrders: WorkOrder[] = [
-const mockWorkOrders: WorkOrder[] = [
   {
     id: "wo-1",
     team: "Ekipa A - Janez Novak, Marko Horvat",
@@ -148,7 +145,6 @@ const mockWorkOrders: WorkOrder[] = [
 ];
 
 const fallbackTimelineEvents: ProjectTimelineEvent[] = [
-const mockTimelineEvents: TimelineEvent[] = [
   {
     id: "evt-1",
     type: "edit",
@@ -612,4 +608,5 @@ export function ProjectsPage() {
       <Toaster />
     </>
   );
+}
 }
