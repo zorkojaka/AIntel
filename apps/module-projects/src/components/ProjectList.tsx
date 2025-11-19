@@ -1,14 +1,15 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { Input } from "./ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Badge } from "./ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { ProjectStatus, ProjectSummary } from "../types";
+import { ProjectStatus, ProjectSummary, Category } from "../types";
 
 interface ProjectListProps {
   projects: ProjectSummary[];
   onSelectProject: (projectId: string) => void;
+  categories: Category[];
 }
 
 const statusColors: Record<ProjectStatus, string> = {
@@ -29,9 +30,15 @@ const statusLabels: Record<ProjectStatus, string> = {
   invoiced: "Zaračunano",
 };
 
-export function ProjectList({ projects, onSelectProject }: ProjectListProps) {
+export function ProjectList({ projects, onSelectProject, categories }: ProjectListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  const categoryLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    categories.forEach((category) => map.set(category.id, category.name));
+    return map;
+  }, [categories]);
 
   const filteredProjects = projects.filter((project) => {
     const matchesSearch =
@@ -88,7 +95,20 @@ export function ProjectList({ projects, onSelectProject }: ProjectListProps) {
                 className="cursor-pointer"
                 onClick={() => onSelectProject(project.id)}
               >
-                <TableCell className="font-medium">{project.title}</TableCell>
+                <TableCell className="font-medium">
+                  <div className="flex flex-col gap-1">
+                    <span>{project.title}</span>
+                    {project.categories && project.categories.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {project.categories.map((categoryId) => (
+                          <Badge key={`${project.id}-${categoryId}`} variant="outline">
+                            {categoryLookup.get(categoryId) ?? "Neznano"}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>{project.customer}</TableCell>
                 <TableCell>
                   <Badge className={statusColors[project.status]}>
