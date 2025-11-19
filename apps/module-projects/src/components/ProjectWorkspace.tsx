@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
@@ -17,9 +17,45 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
 import { Input } from "./ui/input";
-import { ArrowLeft, Save, Plus, FileText, Package, Truck, Wrench, Receipt, FolderOpen, Clock, Eye, Download } from "lucide-react";
+import {
+  ArrowLeft,
+  Save,
+  Plus,
+  FileText,
+  Package,
+  Truck,
+  Wrench,
+  Receipt,
+  FolderOpen,
+  Clock,
+  Eye,
+  Download,
+  Search,
+  Loader2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { DeliveryNote, ProjectDetails, PurchaseOrder } from "../types";
+
+type ItemFormState = {
+  name: string;
+  sku: string;
+  unit: string;
+  quantity: number;
+  price: number;
+  discount: number;
+  vatRate: number;
+  description: string;
+  category: Item["category"];
+};
+
+type CatalogProduct = {
+  id: string;
+  name: string;
+  category?: string;
+  price: number;
+  description?: string;
+  supplier?: string;
+};
 
 interface ProjectWorkspaceProps {
   project: ProjectDetails;
@@ -39,6 +75,30 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   const [timeline, setTimeline] = useState<TimelineEvent[]>(project.timelineEvents);
   const [status, setStatus] = useState(project.status);
   const [requirements, setRequirements] = useState(project.requirements);
+  const [isItemDialogOpen, setItemDialogOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [itemForm, setItemForm] = useState<ItemFormState>({
+    name: "",
+    sku: "",
+    unit: "kos",
+    quantity: 1,
+    price: 0,
+    discount: 0,
+    vatRate: 22,
+    description: "",
+    category: "material",
+  });
+  const [isCatalogDialogOpen, setCatalogDialogOpen] = useState(false);
+  const [catalogItems, setCatalogItems] = useState<CatalogProduct[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [selectedCatalogProduct, setSelectedCatalogProduct] = useState<CatalogProduct | null>(null);
+  const [catalogQuantity, setCatalogQuantity] = useState(1);
+  const [catalogDiscount, setCatalogDiscount] = useState(0);
+  const [catalogVatRate, setCatalogVatRate] = useState(22);
+  const [catalogUnit, setCatalogUnit] = useState("kos");
+  const [isSavingItem, setIsSavingItem] = useState(false);
+  const [isAddingFromCatalog, setIsAddingFromCatalog] = useState(false);
 
   const basePath = `/api/projects/${project.id}`;
 
@@ -52,6 +112,47 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     setStatus(project.status);
     setRequirements(project.requirements);
   }, [project]);
+
+  const fetchCatalogItems = useCallback(async () => {
+    setCatalogLoading(true);
+    try {
+      const response = await fetch("/api/cenik/products");
+      const payload = await response.json();
+      if (!payload.success) {
+        throw new Error(payload.error ?? "Napaka pri nalaganju cenika");
+      }
+      const mapped: CatalogProduct[] = (payload.data ?? []).map((product: any) => ({
+        id: product._id ?? product.id,
+        name: product.ime ?? product.name ?? "Neimenovan produkt",
+        category: product.kategorija,
+        price: Number(product.prodajnaCena ?? 0),
+        description: product.kratekOpis ?? product.dolgOpis ?? "",
+        supplier: product.dobavitelj ?? "",
+      }));
+      setCatalogItems(mapped);
+    } catch (error) {
+      console.error(error);
+      toast.error("Cenika ni mogoče naložiti. Poskusite znova.");
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isCatalogDialogOpen) return;
+    if (catalogItems.length > 0 || catalogLoading) return;
+    fetchCatalogItems();
+  }, [isCatalogDialogOpen, catalogItems.length, catalogLoading, fetchCatalogItems]);
+
+  const filteredCatalog = useMemo(() => {
+    const term = catalogSearch.trim().toLowerCase();
+    if (!term) return catalogItems;
+    return catalogItems.filter(
+      (product) =>
+        product.name.toLowerCase().includes(term) ||
+        (product.category ? product.category.toLowerCase().includes(term) : false)
+    );
+  }, [catalogItems, catalogSearch]);
 
   const applyProjectUpdate = (updated: ProjectDetails | null) => {
     if (!updated) return;
@@ -69,17 +170,104 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   if (!project.customerDetail.name) validationIssues.push("Manjka podatek o stranki");
   if (items.length === 0) validationIssues.push("Dodajte vsaj eno postavko");
 
+  const resetItemForm = () => {
+    setItemForm({
+      name: "",
+      sku: "",
+      unit: "kos",
+      quantity: 1,
+      price: 0,
+      discount: 0,
+      vatRate: 22,
+      description: "",
+      category: "material",
+    });
+    setEditingItem(null);
+  };
+
   const handleAddItem = () => {
-    toast.success("Postavka dodana");
+    resetItemForm();
+    setItemDialogOpen(true);
   };
 
   const handleEditItem = (item: Item) => {
-    toast.info(`Urejanje postavke ${item.name}`);
+    setEditingItem(item);
+    setItemForm({
+      name: item.name,
+      sku: item.sku,
+      unit: item.unit,
+      quantity: item.quantity,
+      price: item.price,
+      discount: item.discount,
+      vatRate: item.vatRate,
+      description: item.description ?? "",
+      category: item.category ?? "material",
+    });
+    setItemDialogOpen(true);
   };
 
-  const handleDeleteItem = (id: string) => {
-    setItems(items.filter((item) => item.id !== id));
-    toast.success("Postavka izbrisana");
+  const handleDeleteItem = async (id: string) => {
+    const updated = await onProjectUpdate(`${basePath}/items/${id}`, { method: "DELETE" });
+    applyProjectUpdate(updated);
+    if (updated) toast.success("Postavka izbrisana");
+  };
+
+  const handleSaveItem = async () => {
+    setIsSavingItem(true);
+    const payload = {
+      ...itemForm,
+      quantity: Number(itemForm.quantity),
+      price: Number(itemForm.price),
+      discount: Number(itemForm.discount),
+      vatRate: Number(itemForm.vatRate),
+    };
+    const url = editingItem ? `${basePath}/items/${editingItem.id}` : `${basePath}/items`;
+    const method = editingItem ? "PUT" : "POST";
+    const updated = await onProjectUpdate(url, {
+      method,
+      body: JSON.stringify(payload),
+    });
+    setIsSavingItem(false);
+    applyProjectUpdate(updated);
+    if (updated) {
+      toast.success(editingItem ? "Postavka posodobljena" : "Postavka dodana");
+      setItemDialogOpen(false);
+      resetItemForm();
+    }
+  };
+
+  const handleOpenCatalog = () => {
+    setCatalogDialogOpen(true);
+    setSelectedCatalogProduct(null);
+    setCatalogQuantity(1);
+    setCatalogDiscount(0);
+    setCatalogVatRate(22);
+    setCatalogUnit("kos");
+  };
+
+  const handleAddFromCatalog = async () => {
+    if (!selectedCatalogProduct) {
+      toast.error("Izberite produkt iz cenika.");
+      return;
+    }
+    setIsAddingFromCatalog(true);
+    const updated = await onProjectUpdate(`${basePath}/items/from-cenik`, {
+      method: "POST",
+      body: JSON.stringify({
+        productId: selectedCatalogProduct.id,
+        quantity: catalogQuantity,
+        discount: catalogDiscount,
+        vatRate: catalogVatRate,
+        unit: catalogUnit,
+      }),
+    });
+    setIsAddingFromCatalog(false);
+    applyProjectUpdate(updated);
+    if (updated) {
+      toast.success(`Dodana postavka ${selectedCatalogProduct.name}`);
+      setCatalogDialogOpen(false);
+      setSelectedCatalogProduct(null);
+    }
   };
 
   const handleCreateOffer = async () => {
@@ -354,14 +542,13 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
               </TabsList>
 
               <TabsContent value="items" className="mt-0">
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="m-0">Postavke</h3>
-                  <Button onClick={handleAddItem}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Dodaj iz cenika
-                  </Button>
-                </div>
-                <ItemsTable items={items} onEdit={handleEditItem} onAdd={handleAddItem} onDelete={handleDeleteItem} />
+                <ItemsTable
+                  items={items}
+                  onEdit={handleEditItem}
+                  onAddFromCatalog={handleOpenCatalog}
+                  onAddCustom={handleAddItem}
+                  onDelete={handleDeleteItem}
+                />
               </TabsContent>
 
               <TabsContent value="offers" className="mt-0 space-y-4">
@@ -616,6 +803,231 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={isItemDialogOpen}
+        onOpenChange={(open) => {
+          setItemDialogOpen(open);
+          if (!open) {
+            resetItemForm();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{editingItem ? "Uredi postavko" : "Dodaj postavko"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Naziv</Label>
+                <Input value={itemForm.name} onChange={(e) => setItemForm((prev) => ({ ...prev, name: e.target.value }))} />
+              </div>
+              <div>
+                <Label>SKU</Label>
+                <Input value={itemForm.sku} onChange={(e) => setItemForm((prev) => ({ ...prev, sku: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label>Enota</Label>
+                <Input value={itemForm.unit} onChange={(e) => setItemForm((prev) => ({ ...prev, unit: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Kategorija</Label>
+                <Select
+                  value={itemForm.category ?? "material"}
+                  onValueChange={(value) => setItemForm((prev) => ({ ...prev, category: value as Item["category"] }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="material">Material</SelectItem>
+                    <SelectItem value="labor">Delo</SelectItem>
+                    <SelectItem value="other">Drugo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>DDV %</Label>
+                <Input
+                  type="number"
+                  value={itemForm.vatRate}
+                  onChange={(e) => setItemForm((prev) => ({ ...prev, vatRate: Number(e.target.value) }))}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label>Količina</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={itemForm.quantity}
+                  onChange={(e) => setItemForm((prev) => ({ ...prev, quantity: Number(e.target.value) }))}
+                />
+              </div>
+              <div>
+                <Label>Cena</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={itemForm.price}
+                  onChange={(e) => setItemForm((prev) => ({ ...prev, price: Number(e.target.value) }))}
+                />
+              </div>
+              <div>
+                <Label>Popust %</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.1}
+                  value={itemForm.discount}
+                  onChange={(e) => setItemForm((prev) => ({ ...prev, discount: Number(e.target.value) }))}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Opis</Label>
+              <Textarea
+                rows={3}
+                value={itemForm.description}
+                onChange={(e) => setItemForm((prev) => ({ ...prev, description: e.target.value }))}
+              />
+            </div>
+            <Button onClick={handleSaveItem} disabled={isSavingItem}>
+              {isSavingItem && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {editingItem ? "Shrani spremembe" : "Dodaj postavko"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isCatalogDialogOpen}
+        onOpenChange={(open) => {
+          setCatalogDialogOpen(open);
+          if (!open) {
+            setSelectedCatalogProduct(null);
+            setCatalogQuantity(1);
+            setCatalogDiscount(0);
+            setCatalogVatRate(22);
+            setCatalogUnit("kos");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Dodaj postavko iz cenika</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Išči po nazivu ali kategoriji"
+                  value={catalogSearch}
+                  onChange={(e) => setCatalogSearch(e.target.value)}
+                />
+              </div>
+              <div className="border rounded-lg h-80 overflow-y-auto divide-y">
+                {catalogLoading && (
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Nalagam cenik ...
+                  </div>
+                )}
+                {!catalogLoading && filteredCatalog.length === 0 && (
+                  <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
+                    Ni zadetkov. Spremenite iskalni niz.
+                  </div>
+                )}
+                {!catalogLoading &&
+                  filteredCatalog.map((product) => (
+                    <button
+                      key={product.id}
+                      className={`w-full text-left p-3 transition-colors ${
+                        selectedCatalogProduct?.id === product.id ? "bg-primary/5" : "hover:bg-muted"
+                      }`}
+                      onClick={() => setSelectedCatalogProduct(product)}
+                    >
+                      <div className="font-medium">{product.name}</div>
+                      <div className="text-xs text-muted-foreground">{product.category || "Brez kategorije"}</div>
+                      <div className="text-sm font-semibold">€ {product.price.toFixed(2)}</div>
+                    </button>
+                  ))}
+              </div>
+              <Button variant="outline" size="sm" onClick={fetchCatalogItems} disabled={catalogLoading}>
+                {catalogLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Osveži cenik
+              </Button>
+            </div>
+            <div className="space-y-4">
+              {selectedCatalogProduct ? (
+                <>
+                  <div>
+                    <h4 className="m-0">{selectedCatalogProduct.name}</h4>
+                    <p className="mt-1 text-sm text-muted-foreground">{selectedCatalogProduct.description}</p>
+                    {selectedCatalogProduct.supplier && (
+                      <p className="text-xs text-muted-foreground">Dobavitelj: {selectedCatalogProduct.supplier}</p>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Količina</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={catalogQuantity}
+                        onChange={(e) => setCatalogQuantity(Number(e.target.value))}
+                      />
+                    </div>
+                    <div>
+                      <Label>Enota</Label>
+                      <Input value={catalogUnit} onChange={(e) => setCatalogUnit(e.target.value)} />
+                    </div>
+                    <div>
+                      <Label>Popust %</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.1}
+                        value={catalogDiscount}
+                        onChange={(e) => setCatalogDiscount(Number(e.target.value))}
+                      />
+                    </div>
+                    <div>
+                      <Label>DDV %</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={50}
+                        step={0.1}
+                        value={catalogVatRate}
+                        onChange={(e) => setCatalogVatRate(Number(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                  <Button className="w-full" onClick={handleAddFromCatalog} disabled={isAddingFromCatalog}>
+                    {isAddingFromCatalog && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Dodaj iz cenika
+                  </Button>
+                </>
+              ) : (
+                <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-muted-foreground/40 p-6 text-center text-sm text-muted-foreground">
+                  Izberite produkt iz cenika in določite količino ter DDV.
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
