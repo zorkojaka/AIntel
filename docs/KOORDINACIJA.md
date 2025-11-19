@@ -68,3 +68,4 @@ Status: completed
 ### Agent GPT-5.1-Codex – Projekti backend
 1. **Začetne naloge**: Prebral sem `README.md`, `00_CORE.md`, `01_CRM.md`, `01_2_FRONTEND.md`, `02_PROJEKTI.md`, `03_CENIK.md`, `04_NASTAVITVE.md`, `05_FINANCE.md`, `06_CRM_FINAL.md`, `MOJA-NAVODILA.md`, `docs/ARHITEKTURA.md`, `docs/TODO.md`, `docs/MODULES.md`, `docs/KOORDINACIJA.md` ter `docs/faze/01-CRM.md`, `docs/faze/01-2-CRM-UI.md`, `docs/faze/03-CENIK.md`, `docs/faze/05-NASTAVITVE.md`, `docs/faze/06-CRM.md`.
 2. **Načrtovani koraki**: Dodati backend funkcionalnosti za modul Projekti, kot jih nakazujejo gumbi in obstoječi frontend v `apps/module-projects`, z upoštevanjem obstoječih core helperjev in response standarda.
+3. **Izvedeno poročilo**: Dodana je datoteka `docs/reports/projects-backend-report.md`, ki zbere vse izvedene funkcionalnosti (API rute, avtomatizacijo ponudb/logistike, podpise) ter opisuje, kako posamezna dejanja `module-projects` UI komunicirajo z novim backendom.
