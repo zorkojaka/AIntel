@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { ClientForm, ClientFormPayload, Client } from "@aintel/module-crm";
 import { useSettingsData } from "@aintel/module-settings";
-import { Settings, ArrowLeft, Plus, UserPlus } from "lucide-react";
+import { Settings, ArrowLeft, Plus, UserPlus, Tag } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectList } from "./components/ProjectList";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
@@ -9,8 +10,9 @@ import { TemplateEditor, Template } from "./components/TemplateEditor";
 import { Toaster } from "./components/ui/sonner";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
-import { ProjectDetails, ProjectSummary } from "./types";
+import { Category, ProjectDetails, ProjectSummary } from "./types";
 import { NewProjectDialog } from "./components/NewProjectDialog";
+import { CategoryManagerDialog, CategoryPayload } from "./components/CategoryManagerDialog";
 
 const API_PREFIX = "/api/projects";
 
@@ -115,6 +117,7 @@ function mapProject(data: any): ProjectDetails {
     deliveryNotes: data.deliveryNotes ?? [],
     timelineEvents: data.timeline ?? data.timelineEvents ?? [],
     templates: data.templates && data.templates.length > 0 ? data.templates : DEFAULT_TEMPLATES,
+    categories: Array.isArray(data.categories) ? data.categories : [],
   };
 }
 
@@ -127,6 +130,7 @@ function toSummary(project: ProjectDetails): ProjectSummary {
     offerAmount: project.offerAmount,
     invoiceAmount: project.invoiceAmount,
     createdAt: project.createdAt,
+    categories: project.categories ?? [],
   };
 }
 
@@ -143,13 +147,20 @@ export function ProjectsPage() {
   const [crmClients, setCrmClients] = useState<Client[]>([]);
   const [clientsLoading, setClientsLoading] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [isCategoryManagerOpen, setCategoryManagerOpen] = useState(false);
+  const [newProjectCategoryIds, setNewProjectCategoryIds] = useState<string[]>([]);
   const [newProjectDefaults, setNewProjectDefaults] = useState({
     title: "Nov projekt",
     requirements: "Dodajte opis projekta",
   });
+  const [clientPortalContainer, setClientPortalContainer] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
-    fetchProjectList();
+    if (typeof document !== "undefined") {
+      setClientPortalContainer(document.body);
+    }
   }, []);
 
   const fetchProjectList = async () => {
@@ -161,6 +172,39 @@ export function ProjectsPage() {
     }
     setProjects(result.data as ProjectSummary[]);
   };
+
+  const sortCategories = useCallback(
+    (list: Category[]) =>
+      [...list].sort((a, b) => a.name.localeCompare(b.name, "sl", { sensitivity: "base" })),
+    []
+  );
+
+  const fetchCategories = useCallback(async () => {
+    setCategoriesLoading(true);
+    try {
+      const response = await fetch("/api/categories");
+      const result = await response.json();
+      if (!result.success) {
+        toast.error(result.error ?? "Napaka pri nalaganju kategorij.");
+        return;
+      }
+      setCategories(sortCategories(result.data ?? []));
+    } catch (error) {
+      toast.error("Kategorij ni mogoče pridobiti.");
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }, [sortCategories]);
+
+  useEffect(() => {
+    fetchProjectList();
+    fetchCategories();
+  }, [fetchCategories]);
+
+  useEffect(() => {
+    if (!categories.length) return;
+    setNewProjectCategoryIds((prev) => prev.filter((id) => categories.some((category) => category.id === id)));
+  }, [categories]);
 
   const loadProjectDetails = async (projectId: string) => {
     const response = await fetch(`${API_PREFIX}/${projectId}`);
@@ -209,9 +253,13 @@ export function ProjectsPage() {
       requirements: "Dodajte opis projekta",
     });
     setSelectedClientId(null);
+    setNewProjectCategoryIds([]);
     setNewProjectDialogOpen(true);
     if (!crmClients.length) {
       fetchCrmClients();
+    }
+    if (!categories.length && !categoriesLoading) {
+      fetchCategories();
     }
   };
 
@@ -234,6 +282,7 @@ export function ProjectsPage() {
         paymentTerms: globalSettings.defaultPaymentTerms || "30 dni",
       },
       requirements,
+      categories: newProjectCategoryIds,
     };
 
     try {
@@ -266,6 +315,50 @@ export function ProjectsPage() {
 
   const handleAddClient = () => {
     setClientModalOpen(true);
+  };
+
+  const handleCreateCategory = async (payload: CategoryPayload) => {
+    const response = await fetch("/api/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!result.success) {
+      toast.error(result.error ?? "Kategorije ni mogoče dodati.");
+      throw new Error(result.error ?? "Napaka pri shranjevanju kategorije");
+    }
+    setCategories((prev) => sortCategories([...prev, result.data as Category]));
+    toast.success("Kategorija dodana.");
+  };
+
+  const handleUpdateCategory = async (id: string, payload: CategoryPayload) => {
+    const response = await fetch(`/api/categories/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!result.success) {
+      toast.error(result.error ?? "Kategorije ni mogoče posodobiti.");
+      throw new Error(result.error ?? "Napaka pri posodabljanju kategorije");
+    }
+    setCategories((prev) =>
+      sortCategories(prev.map((category) => (category.id === id ? (result.data as Category) : category)))
+    );
+    toast.success("Kategorija posodobljena.");
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    const response = await fetch(`/api/categories/${id}`, { method: "DELETE" });
+    const result = await response.json();
+    if (!result.success) {
+      toast.error(result.error ?? "Kategorije ni mogoče izbrisati.");
+      throw new Error(result.error ?? "Napaka pri brisanju kategorije");
+    }
+    setCategories((prev) => prev.filter((category) => category.id !== id));
+    setNewProjectCategoryIds((prev) => prev.filter((categoryId) => categoryId !== id));
+    toast.success("Kategorija izbrisana.");
   };
 
   const handleClientSubmit = async (payload: ClientFormPayload) => {
@@ -361,13 +454,17 @@ export function ProjectsPage() {
                   <UserPlus className="mr-2 h-4 w-4" />
                   Dodaj stranko
                 </Button>
+                <Button variant="outline" onClick={() => setCategoryManagerOpen(true)}>
+                  <Tag className="mr-2 h-4 w-4" />
+                  Kategorije
+                </Button>
                 <Button variant="outline" onClick={() => setCurrentView("settings")}>
                   <Settings className="mr-2 h-4 w-4" />
                   Nastavitve
                 </Button>
               </div>
             </div>
-            <ProjectList projects={projects} onSelectProject={handleSelectProject} />
+            <ProjectList projects={projects} onSelectProject={handleSelectProject} categories={categories} />
           </div>
         </div>
       )}
@@ -380,6 +477,8 @@ export function ProjectsPage() {
           onBack={handleBackToList}
           onRefresh={() => loadProjectDetails(projectDetails.id)}
           onProjectUpdate={handleProjectUpdate}
+          categories={categories}
+          onManageCategories={() => setCategoryManagerOpen(true)}
         />
       )}
 
@@ -427,6 +526,7 @@ export function ProjectsPage() {
           setNewProjectDialogOpen(open);
           if (!open) {
             setSelectedClientId(null);
+            setNewProjectCategoryIds([]);
           }
         }}
         defaultTitle={newProjectDefaults.title}
@@ -439,13 +539,30 @@ export function ProjectsPage() {
         onAddClient={handleAddClient}
         onReloadClients={fetchCrmClients}
         onCreateProject={createProjectWithClient}
+        categories={categories}
+        selectedCategoryIds={newProjectCategoryIds}
+        onSelectCategories={setNewProjectCategoryIds}
+        onManageCategories={() => setCategoryManagerOpen(true)}
+        isLoadingCategories={categoriesLoading}
       />
-      <ClientForm
-        open={isClientModalOpen}
-        onClose={() => setClientModalOpen(false)}
-        onSubmit={handleClientSubmit}
-        onSuccess={() => setClientModalOpen(false)}
+      <CategoryManagerDialog
+        open={isCategoryManagerOpen}
+        onOpenChange={setCategoryManagerOpen}
+        categories={categories}
+        onCreate={handleCreateCategory}
+        onUpdate={handleUpdateCategory}
+        onDelete={handleDeleteCategory}
       />
+      {clientPortalContainer &&
+        createPortal(
+          <ClientForm
+            open={isClientModalOpen}
+            onClose={() => setClientModalOpen(false)}
+            onSubmit={handleClientSubmit}
+            onSuccess={() => setClientModalOpen(false)}
+          />,
+          clientPortalContainer,
+        )}
       <Toaster />
     </>
   );
