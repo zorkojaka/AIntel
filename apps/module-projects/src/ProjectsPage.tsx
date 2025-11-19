@@ -367,13 +367,6 @@ export function ProjectsPage() {
                 </Button>
               </div>
             </div>
-            <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-900">{globalSettings.companyName}</h2>
-              <p className="text-sm text-slate-500">{globalSettings.address}</p>
-              <p className="text-xs text-slate-500">
-                {[globalSettings.email, globalSettings.phone].filter(Boolean).join(" · ")}
-              </p>
-            </div>
             <ProjectList projects={projects} onSelectProject={handleSelectProject} />
           </div>
         </div>
