@@ -341,7 +341,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
 
           {/* Content */}
           <div className="col-span-9">
-            {validationIssues.length > 0 && <ValidationBanner issues={validationIssues} />}
+            {validationIssues.length > 0 && <ValidationBanner missing={validationIssues} />}
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
               <TabsList>
