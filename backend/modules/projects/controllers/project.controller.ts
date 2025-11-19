@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { ProductModel } from '../../cenik/product.model';
 import {
   Project,
   ProjectItem,
@@ -29,6 +30,62 @@ function toISODate(value?: string) {
 
 function responseProject(project: Project) {
   return project;
+}
+
+function normalizeNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return parsed;
+}
+
+function withTotals(item: ProjectItem): ProjectItem {
+  const netAmount = item.quantity * item.price * (1 - item.discount / 100);
+  const total = Number((netAmount * (1 + item.vatRate / 100)).toFixed(2));
+  return { ...item, total };
+}
+
+function sanitizeItemPayload(body: any, existing?: ProjectItem) {
+  const name = (body?.name ?? existing?.name ?? '').toString().trim();
+  if (!name) {
+    return { error: 'Naziv postavke je obvezen.' };
+  }
+
+  const quantity = normalizeNumber(body?.quantity ?? existing?.quantity ?? 1, 1);
+  if (quantity <= 0) return { error: 'Količina mora biti večja od 0.' };
+
+  const price = normalizeNumber(body?.price ?? existing?.price ?? 0, 0);
+  if (price < 0) return { error: 'Cena mora biti 0 ali več.' };
+
+  const discount = Math.min(100, Math.max(0, normalizeNumber(body?.discount ?? existing?.discount ?? 0, 0)));
+  const vatRate = Math.min(50, Math.max(0, normalizeNumber(body?.vatRate ?? existing?.vatRate ?? 22, 22)));
+  const unit = (body?.unit ?? existing?.unit ?? 'kos').toString().trim() || 'kos';
+  const sku = (body?.sku ?? existing?.sku ?? '').toString().trim() || `SKU-${Date.now()}`;
+  const allowedCategories: ProjectItem['category'][] = ['material', 'labor', 'other'];
+  const requestedCategory = (body?.category ?? existing?.category ?? 'material') as string;
+  const category = (allowedCategories.includes(requestedCategory as ProjectItem['category'])
+    ? requestedCategory
+    : 'material') as ProjectItem['category'];
+  const description = (body?.description ?? existing?.description ?? '').toString();
+
+  const item: ProjectItem = withTotals({
+    id: existing?.id ?? `item-${Date.now()}`,
+    name,
+    sku,
+    unit,
+    quantity,
+    price,
+    discount,
+    vatRate,
+    category,
+    description,
+    total: 0,
+  });
+
+  return { item };
+}
+
+function updateOfferAmount(project: Project) {
+  project.offerAmount = Number(calculateOfferAmount(project.items).toFixed(2));
 }
 
 export function listProjects(_req: Request, res: Response) {
@@ -141,6 +198,133 @@ export function addOffer(req: Request, res: Response) {
   project.status = project.status === 'draft' ? 'offered' : project.status;
 
   return res.success(responseProject(project), 201);
+}
+
+export function addItem(req: Request, res: Response) {
+  const project = findProject(req.params.id);
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const { item, error } = sanitizeItemPayload(req.body);
+  if (error || !item) {
+    return res.fail(error ?? 'Napaka pri dodajanju postavke.', 400);
+  }
+
+  project.items.push(item);
+  updateOfferAmount(project);
+
+  addTimeline(project, {
+    type: 'edit',
+    title: 'Dodana postavka',
+    description: `${item.name} x${item.quantity}`,
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+  });
+
+  return res.success(responseProject(project), 201);
+}
+
+export async function addItemFromCenik(req: Request, res: Response) {
+  const project = findProject(req.params.id);
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const productId = req.body?.productId;
+  if (!productId) {
+    return res.fail('Manjka produkt iz cenika.', 400);
+  }
+
+  try {
+    const product = await ProductModel.findById(productId).lean();
+    if (!product) {
+      return res.fail('Produkt iz cenika ni najden.', 404);
+    }
+
+    const category = product.kategorija?.toLowerCase().includes('del')
+      ? 'labor'
+      : (product.kategorija?.toLowerCase().includes('storitev') ? 'other' : 'material');
+
+    const { item, error } = sanitizeItemPayload({
+      name: product.ime,
+      sku: productId,
+      unit: req.body?.unit ?? 'kos',
+      quantity: req.body?.quantity ?? 1,
+      price: req.body?.price ?? product.prodajnaCena ?? 0,
+      discount: req.body?.discount ?? 0,
+      vatRate: req.body?.vatRate ?? 22,
+      category,
+      description: product.kratekOpis ?? '',
+    });
+
+    if (error || !item) {
+      return res.fail(error ?? 'Napaka pri dodajanju postavke iz cenika.', 400);
+    }
+
+    project.items.push(item);
+    updateOfferAmount(project);
+
+    addTimeline(project, {
+      type: 'edit',
+      title: 'Dodana postavka iz cenika',
+      description: `${item.name} x${item.quantity}`,
+      timestamp: new Date().toLocaleString('sl-SI'),
+      user: 'Admin',
+      metadata: { source: 'cenik' },
+    });
+
+    return res.success(responseProject(project), 201);
+  } catch (error) {
+    return res.fail('Napaka pri povezavi s cenikom.', 500);
+  }
+}
+
+export function updateItem(req: Request, res: Response) {
+  const project = findProject(req.params.id);
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const existing = project.items.find((item) => item.id === req.params.itemId);
+  if (!existing) {
+    return res.fail('Postavka ni najdena.', 404);
+  }
+
+  const { item, error } = sanitizeItemPayload(req.body, existing);
+  if (error || !item) {
+    return res.fail(error ?? 'Napaka pri shranjevanju postavke.', 400);
+  }
+
+  project.items = project.items.map((current) => (current.id === existing.id ? item : current));
+  updateOfferAmount(project);
+
+  addTimeline(project, {
+    type: 'edit',
+    title: 'Postavka posodobljena',
+    description: `${item.name} x${item.quantity}`,
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+  });
+
+  return res.success(responseProject(project));
+}
+
+export function deleteItem(req: Request, res: Response) {
+  const project = findProject(req.params.id);
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const existing = project.items.find((item) => item.id === req.params.itemId);
+  if (!existing) {
+    return res.fail('Postavka ni najdena.', 404);
+  }
+
+  project.items = project.items.filter((item) => item.id !== existing.id);
+  updateOfferAmount(project);
+
+  addTimeline(project, {
+    type: 'edit',
+    title: 'Postavka izbrisana',
+    description: existing.name,
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+  });
+
+  return res.success(responseProject(project));
 }
 
 export function sendOffer(req: Request, res: Response) {
