@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { ClientForm, ClientFormPayload } from "@aintel/module-crm";
+import { useCallback, useEffect, useState } from "react";
+import { ClientForm, ClientFormPayload, Client } from "@aintel/module-crm";
 import { useSettingsData } from "@aintel/module-settings";
 import { Settings, ArrowLeft, Plus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { Toaster } from "./components/ui/sonner";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { ProjectDetails, ProjectSummary } from "./types";
+import { NewProjectDialog } from "./components/NewProjectDialog";
 
 const API_PREFIX = "/api/projects";
 
@@ -137,6 +138,15 @@ export function ProjectsPage() {
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
   const [templates, setTemplates] = useState<Template[]>(DEFAULT_TEMPLATES);
   const [isClientModalOpen, setClientModalOpen] = useState(false);
+  const [isNewProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [crmClients, setCrmClients] = useState<Client[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [newProjectDefaults, setNewProjectDefaults] = useState({
+    title: "Nov projekt",
+    requirements: "Dodajte opis projekta",
+  });
 
   useEffect(() => {
     fetchProjectList();
@@ -176,35 +186,82 @@ export function ProjectsPage() {
     setProjectDetails(null);
   };
 
-  const handleNewProject = async () => {
-    const payload = {
+  const fetchCrmClients = useCallback(async () => {
+    setClientsLoading(true);
+    try {
+      const response = await fetch("/api/crm/clients");
+      const result = await response.json();
+      if (!result.success) {
+        toast.error(result.error ?? "Napaka pri nalaganju strank.");
+        return;
+      }
+      setCrmClients(result.data ?? []);
+    } catch (error) {
+      toast.error("Ne morem pridobiti strank.");
+    } finally {
+      setClientsLoading(false);
+    }
+  }, []);
+
+  const openNewProjectDialog = () => {
+    setNewProjectDefaults({
       title: `Nov projekt ${projects.length + 1}`,
+      requirements: "Dodajte opis projekta",
+    });
+    setSelectedClientId(null);
+    setNewProjectDialogOpen(true);
+    if (!crmClients.length) {
+      fetchCrmClients();
+    }
+  };
+
+  const createProjectWithClient = async ({
+    title,
+    requirements,
+    client,
+  }: {
+    title: string;
+    requirements: string;
+    client: Client;
+  }) => {
+    setIsCreatingProject(true);
+    const payload = {
+      title,
       customer: {
-        name: globalSettings.companyName || "Nova stranka",
-        address: globalSettings.address,
+        name: client.name,
+        taxId: client.vatNumber,
+        address: client.address,
         paymentTerms: globalSettings.defaultPaymentTerms || "30 dni",
       },
-      requirements: "Dodajte opis projekta",
+      requirements,
     };
 
-    const response = await fetch(API_PREFIX, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const result = await response.json();
-    if (!result.success) {
-      toast.error(result.error ?? "Napaka pri ustvarjanju projekta.");
-      return;
-    }
+    try {
+      const response = await fetch(API_PREFIX, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      if (!result.success) {
+        toast.error(result.error ?? "Napaka pri ustvarjanju projekta.");
+        return;
+      }
 
-    const mapped = mapProject(result.data);
-    setProjects((prev) => [toSummary(mapped), ...prev]);
-    setProjectDetails(mapped);
-    setTemplates(mapped.templates);
-    setSelectedProjectId(mapped.id);
-    setCurrentView("workspace");
-    toast.success("Projekt uspešno ustvarjen");
+      const mapped = mapProject(result.data);
+      setProjects((prev) => [toSummary(mapped), ...prev]);
+      setProjectDetails(mapped);
+      setTemplates(mapped.templates);
+      setSelectedProjectId(mapped.id);
+      setCurrentView("workspace");
+      toast.success("Projekt uspešno ustvarjen");
+      setNewProjectDialogOpen(false);
+      setSelectedClientId(null);
+    } catch (error) {
+      toast.error("Prišlo je do napake pri ustvarjanju projekta.");
+    } finally {
+      setIsCreatingProject(false);
+    }
   };
 
   const handleAddClient = () => {
@@ -222,9 +279,18 @@ export function ProjectsPage() {
       throw new Error(result.error ?? "Prišlo je do napake pri shranjevanju stranke.");
     }
 
+    const createdClient = result.data as Client;
+    setCrmClients((prev) => {
+      if (!prev.some((client) => client.id === createdClient.id)) {
+        return [createdClient, ...prev];
+      }
+      return prev.map((client) => (client.id === createdClient.id ? createdClient : client));
+    });
+    setSelectedClientId(createdClient.id);
+
     toast.success(
-      result.data?.name
-        ? `Stranka ${result.data.name} je bila dodana.`
+      createdClient?.name
+        ? `Stranka ${createdClient.name} je bila dodana.`
         : "Stranka je bila dodana."
     );
   };
@@ -287,7 +353,7 @@ export function ProjectsPage() {
             <div className="mb-6 flex items-center justify-between">
               <h1 className="m-0">Projekti</h1>
               <div className="flex items-center gap-2">
-                <Button onClick={handleNewProject}>
+                <Button onClick={openNewProjectDialog}>
                   <Plus className="mr-2 h-4 w-4" />
                   Nov projekt
                 </Button>
@@ -362,9 +428,28 @@ export function ProjectsPage() {
         </div>
       )}
 
+      <NewProjectDialog
+        open={isNewProjectDialogOpen}
+        onOpenChange={(open) => {
+          setNewProjectDialogOpen(open);
+          if (!open) {
+            setSelectedClientId(null);
+          }
+        }}
+        defaultTitle={newProjectDefaults.title}
+        defaultRequirements={newProjectDefaults.requirements}
+        clients={crmClients}
+        selectedClientId={selectedClientId}
+        onSelectClient={setSelectedClientId}
+        isLoadingClients={clientsLoading}
+        isSubmitting={isCreatingProject}
+        onAddClient={handleAddClient}
+        onReloadClients={fetchCrmClients}
+        onCreateProject={createProjectWithClient}
+      />
       <ClientForm
         open={isClientModalOpen}
-        onOpenChange={setClientModalOpen}
+        onClose={() => setClientModalOpen(false)}
         onSubmit={handleClientSubmit}
         onSuccess={() => setClientModalOpen(false)}
       />
