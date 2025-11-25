@@ -1,5 +1,5 @@
 import React, { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Button, Card, DataTable, Input } from '@aintel/ui';
+import { Button, Card, DataTable, Input, CategoryMultiSelect } from '@aintel/ui';
 import FilterBar from './components/FilterBar';
 
 type Product = {
@@ -16,6 +16,8 @@ type Product = {
   povezavaDoProdukta: string;
   naslovDobavitelja: string;
   casovnaNorma: string;
+  categorySlugs?: string[];
+  isService?: boolean;
 };
 
 type StatusBanner = {
@@ -27,6 +29,14 @@ type ApiEnvelope<T> = {
   success: boolean;
   data: T;
   error: string | null;
+};
+
+type Category = {
+  _id: string;
+  name: string;
+  slug: string;
+  color?: string;
+  order?: number;
 };
 
 const emptyProduct = (): Product => ({
@@ -41,11 +51,52 @@ const emptyProduct = (): Product => ({
   dobavitelj: '',
   povezavaDoProdukta: '',
   naslovDobavitelja: '',
-  casovnaNorma: ''
+  casovnaNorma: '',
+  categorySlugs: [],
+  isService: false
 });
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('sl-SI', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 }).format(value);
+
+const MAX_VISIBLE_CATEGORY_CHIPS = 10;
+
+type CategoryChipRowProps = {
+  slugs: string[];
+  lookup: Map<string, Category>;
+};
+
+function CategoryChipRow({ slugs, lookup }: CategoryChipRowProps) {
+  const [showAll, setShowAll] = useState(false);
+  const visibleSlugs = showAll ? slugs : slugs.slice(0, MAX_VISIBLE_CATEGORY_CHIPS);
+  const hiddenCount = slugs.length - visibleSlugs.length;
+
+  if (slugs.length === 0) {
+    return <span className="text-xs text-muted-foreground">Brez kategorij</span>;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {visibleSlugs.map((slug) => (
+        <span
+          key={slug}
+          className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-xs font-medium text-foreground"
+        >
+          {lookup.get(slug)?.name ?? slug}
+        </span>
+      ))}
+      {!showAll && hiddenCount > 0 && (
+        <button
+          type="button"
+          className="text-xs font-medium text-primary underline"
+          onClick={() => setShowAll(true)}
+        >
+          +{hiddenCount} več
+        </button>
+      )}
+    </div>
+  );
+}
 
 async function parseEnvelope<T>(response: Response) {
   const payload: ApiEnvelope<T> = await response.json();
@@ -64,13 +115,20 @@ export const CenikPage: React.FC = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusBanner | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
 
   const loadProducts = async () => {
     setLoading(true);
     try {
       const response = await fetch('/api/cenik/products');
       const data = await parseEnvelope<Product[]>(response);
-      setProducts(data);
+      setProducts(
+        data.map((product) => ({
+          ...product,
+          categorySlugs: product.categorySlugs ?? [],
+          isService: product.isService ?? false
+        }))
+      );
       setStatus(null);
     } catch (error) {
       setStatus({ variant: 'error', text: 'Ne morem naložiti cenika. Poskusi znova.' });
@@ -83,22 +141,51 @@ export const CenikPage: React.FC = () => {
     loadProducts();
   }, []);
 
-  const categories = useMemo(
-    () => Array.from(new Set(products.map((product) => product.kategorija))).filter(Boolean),
-    [products]
-  );
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await fetch('/api/categories');
+        const data = await parseEnvelope<Category[]>(response);
+        setCategories(data);
+      } catch (error) {
+        console.error('Ne morem naložiti kategorij.', error);
+      }
+    };
+
+    fetchCategories();
+  }, []);
+
+
+
+  const categoryLookup = useMemo(() => {
+    const map = new Map<string, Category>();
+    categories.forEach((category) => map.set(category.slug, category));
+    return map;
+  }, [categories]);
+
+
 
   const filteredProducts = useMemo(() => {
     const query = filters.q.trim().toLowerCase();
     return products.filter((product) => {
-      const matchesCategory = filters.category ? product.kategorija === filters.category : true;
+      const matchesCategory = filters.category
+        ? (product.categorySlugs ?? []).includes(filters.category)
+        : true;
       const matchesSearch = query ? product.ime.toLowerCase().includes(query) : true;
       return matchesCategory && matchesSearch;
     });
   }, [products, filters]);
 
   const startEdit = (product?: Product) => {
-    setEditingProduct(product ? { ...product } : emptyProduct());
+    setEditingProduct(
+      product
+        ? {
+            ...product,
+            categorySlugs: product.categorySlugs ?? [],
+            isService: product.isService ?? false
+          }
+        : emptyProduct()
+    );
     setIsModalOpen(true);
   };
 
@@ -126,13 +213,19 @@ export const CenikPage: React.FC = () => {
     if (!editingProduct) {
       return;
     }
-    if (!editingProduct.ime || !editingProduct.kategorija) {
-      setStatus({ variant: 'error', text: 'Ime in kategorija sta obvezni.' });
+    if (!editingProduct.ime) {
+      setStatus({ variant: 'error', text: 'Ime je obvezno.' });
       return;
     }
 
     setSaving(true);
     const draft: Product = { ...editingProduct };
+    const { kategorija, categorySlugs, ...rest } = draft;
+    const payload = {
+      ...rest,
+      kategorija: draft.kategorija,
+      categorySlugs: categorySlugs ?? []
+    };
     const method = editingProduct._id ? 'PUT' : 'POST';
     const url = editingProduct._id
       ? `/api/cenik/products/${editingProduct._id}`
@@ -142,7 +235,7 @@ export const CenikPage: React.FC = () => {
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(draft)
+        body: JSON.stringify(payload)
       });
       const data = await parseEnvelope<Product>(response);
       setProducts((prev) => {
@@ -210,7 +303,12 @@ export const CenikPage: React.FC = () => {
               <DataTable
                 columns={[
                   { header: 'Ime', accessor: 'ime' },
-                  { header: 'Kategorija', accessor: 'kategorija' },
+                  {
+                    header: 'Kategorije',
+                    accessor: (row: Product) => (
+                      <CategoryChipRow slugs={row.categorySlugs ?? []} lookup={categoryLookup} />
+                    )
+                  },
                   {
                     header: 'Prodajna cena',
                     accessor: (row: Product) => formatCurrency(row.prodajnaCena)
@@ -266,13 +364,30 @@ export const CenikPage: React.FC = () => {
                   onChange={(event) => updateField('ime', event.target.value)}
                   required
                 />
-                <Input
-                  label="Kategorija"
-                  placeholder="material / storitev"
-                  value={editingProduct.kategorija}
-                  onChange={(event) => updateField('kategorija', event.target.value)}
-                  required
-                />
+                <div className="col-span-1 md:col-span-2 flex items-center gap-3">
+                  <input
+                    id="is-service"
+                    type="checkbox"
+                    checked={Boolean(editingProduct.isService)}
+                    onChange={(event) =>
+                      setEditingProduct((prev) => (prev ? { ...prev, isService: event.target.checked } : prev))
+                    }
+                    className="h-4 w-4 rounded border border-border bg-card focus-visible:ring-2 focus-visible:ring-primary"
+                  />
+                  <label htmlFor="is-service" className="text-sm font-medium text-foreground">
+                    Storitev
+                  </label>
+                </div>
+                <div className="col-span-1 md:col-span-2">
+                  <CategoryMultiSelect
+                    label="Kategorije"
+                    categories={categories}
+                    value={editingProduct.categorySlugs ?? []}
+                    onChange={(slugs) =>
+                      setEditingProduct((prev) => (prev ? { ...prev, categorySlugs: slugs } : prev))
+                    }
+                  />
+                </div>
                 <Input
                   label="Nabavna cena"
                   type="number"

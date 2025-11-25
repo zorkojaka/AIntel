@@ -7,6 +7,8 @@ import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Badge } from "./ui/badge";
 import { cn } from "./ui/utils";
+import { CategoryMultiSelect } from "@aintel/ui";
+import type { Category } from "../types";
 
 interface NewProjectDialogProps {
   open: boolean;
@@ -21,6 +23,10 @@ interface NewProjectDialogProps {
   onAddClient: () => void;
   onReloadClients: () => Promise<void> | void;
   onCreateProject: (options: { title: string; requirements: string; client: Client }) => Promise<void>;
+  categories: Category[];
+  selectedCategorySlugs: string[];
+  onSelectCategories: (slugs: string[]) => void;
+  isLoadingCategories: boolean;
 }
 
 export function NewProjectDialog({
@@ -36,6 +42,10 @@ export function NewProjectDialog({
   onAddClient,
   onReloadClients,
   onCreateProject,
+  categories,
+  selectedCategorySlugs,
+  onSelectCategories,
+  isLoadingCategories,
 }: NewProjectDialogProps) {
   const [title, setTitle] = useState(defaultTitle);
   const [requirements, setRequirements] = useState(defaultRequirements);
@@ -58,6 +68,15 @@ export function NewProjectDialog({
   }, [clients, search]);
 
   const selectedClient = clients.find((client) => client.id === selectedClientId) ?? null;
+
+  const toggleCategory = (slug: string) => {
+    const isSelected = selectedCategorySlugs.includes(slug);
+    onSelectCategories(
+      isSelected
+        ? selectedCategorySlugs.filter((value) => value !== slug)
+        : [...selectedCategorySlugs, slug]
+    );
+  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -104,6 +123,34 @@ export function NewProjectDialog({
                 rows={3}
               />
             </div>
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-foreground">Kategorije</p>
+                <p className="text-xs text-muted-foreground">
+                  Oznake pomagajo pri predlogah in filtriranju projektov.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="text-xs font-semibold text-muted-foreground underline transition hover:text-foreground disabled:cursor-not-allowed disabled:text-muted-foreground/60"
+                onClick={() => onSelectCategories([])}
+                disabled={isLoadingCategories || selectedCategorySlugs.length === 0}
+              >
+                Počisti
+              </button>
+            </div>
+            <CategoryMultiSelect
+              categories={categories}
+              value={selectedCategorySlugs}
+              onChange={onSelectCategories}
+              label=""
+            />
+            {isLoadingCategories && (
+              <p className="text-xs text-muted-foreground">Nalagam kategorije ...</p>
+            )}
           </div>
 
           <div className="rounded-lg border border-slate-200 p-4">
@@ -179,7 +226,12 @@ export function NewProjectDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Prekliči
             </Button>
-            <Button type="submit" disabled={!selectedClient || !title.trim() || isSubmitting}>
+            <Button
+              type="submit"
+              disabled={
+                !selectedClient || !title.trim() || isSubmitting || selectedCategorySlugs.length === 0
+              }
+            >
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Ustvari projekt
             </Button>

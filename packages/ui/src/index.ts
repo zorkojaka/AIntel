@@ -6,3 +6,4 @@ export { DataTable } from './components/DataTable/DataTable';
 export { Textarea } from './components/Textarea/Textarea';
 export { ColorPicker } from './components/ColorPicker/ColorPicker';
 export { FileUpload } from './components/FileUpload/FileUpload';
+export { CategoryMultiSelect } from './components/CategoryMultiSelect/CategoryMultiSelect';

@@ -4,6 +4,14 @@ import { OfferVersion } from "./components/OfferVersionCard";
 import { WorkOrder } from "./components/WorkOrderCard";
 import { TimelineEvent } from "./components/TimelineFeed";
 
+export interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  color?: string;
+  order?: number;
+}
+
 export type ProjectStatus =
   | "draft"
   | "offered"
@@ -27,6 +35,7 @@ export interface ProjectSummary {
   offerAmount: number;
   invoiceAmount: number;
   createdAt: string;
+  categories: string[];
 }
 
 export interface PurchaseOrder {

@@ -116,7 +116,9 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   const fetchCatalogItems = useCallback(async () => {
     setCatalogLoading(true);
     try {
-      const response = await fetch("/api/cenik/products");
+      const slugParam = project.categories?.filter(Boolean).join(",");
+      const query = slugParam ? `?suggestForCategories=${encodeURIComponent(slugParam)}` : "";
+      const response = await fetch(`/api/cenik/products${query}`);
       const payload = await response.json();
       if (!payload.success) {
         throw new Error(payload.error ?? "Napaka pri nalaganju cenika");

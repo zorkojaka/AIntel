@@ -3,6 +3,9 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 export interface ProductDocument extends Document {
   ime: string;
   kategorija: string;
+  categorySlugs: string[];
+  categorySlug?: string;
+  categories: string[];
   nabavnaCena: number;
   prodajnaCena: number;
   kratekOpis?: string;
@@ -13,6 +16,7 @@ export interface ProductDocument extends Document {
   povezavaDoProdukta?: string;
   naslovDobavitelja?: string;
   casovnaNorma?: string;
+  isService: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,6 +25,9 @@ const ProductSchema = new Schema<ProductDocument>(
   {
     ime: { type: String, required: true, trim: true },
     kategorija: { type: String, required: true, trim: true },
+    categorySlugs: { type: [String], default: [] },
+    categorySlug: { type: String, trim: true, lowercase: true },
+    categories: { type: [String], default: [] },
     nabavnaCena: { type: Number, required: true, min: 0, default: 0 },
     prodajnaCena: { type: Number, required: true, min: 0, default: 0 },
     kratekOpis: { type: String, trim: true, default: '' },
@@ -30,7 +37,8 @@ const ProductSchema = new Schema<ProductDocument>(
     dobavitelj: { type: String, trim: true, default: '' },
     povezavaDoProdukta: { type: String, trim: true, default: '' },
     naslovDobavitelja: { type: String, trim: true, default: '' },
-    casovnaNorma: { type: String, trim: true, default: '' }
+    casovnaNorma: { type: String, trim: true, default: '' },
+    isService: { type: Boolean, default: false }
   },
   {
     timestamps: true

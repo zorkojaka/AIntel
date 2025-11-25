@@ -36,7 +36,7 @@ export function ProjectList({ projects, onSelectProject, categories }: ProjectLi
 
   const categoryLookup = useMemo(() => {
     const map = new Map<string, string>();
-    categories.forEach((category) => map.set(category.id, category.name));
+    categories.forEach((category) => map.set(category.slug, category.name));
     return map;
   }, [categories]);
 

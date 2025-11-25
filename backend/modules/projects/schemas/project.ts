@@ -95,6 +95,7 @@ export interface Project {
   deliveryNotes: DeliveryNote[];
   timeline: TimelineEvent[];
   templates: ProjectTemplate[];
+  categories: string[];
 }
 
 const defaultTemplates: ProjectTemplate[] = [
@@ -249,6 +250,7 @@ export const projects: Project[] = [
     deliveryNotes: [],
     timeline: seedTimeline,
     templates: defaultTemplates,
+    categories: ['video-nadzor', 'alarm'],
   },
 ];
 

@@ -12,6 +12,24 @@ import {
   summarizeProject,
 } from '../schemas/project';
 
+function normalizeSlug(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function sanitizeCategorySlugs(input: unknown): string[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  const normalized = input
+    .map((value) => (typeof value === 'string' ? normalizeSlug(value) : ''))
+    .filter(Boolean);
+  return Array.from(new Set(normalized));
+}
+
 function validateProjectPayload(body: any) {
   if (!body?.title) {
     return 'Manjka naziv projekta (title).';
@@ -132,6 +150,7 @@ export function createProject(req: Request, res: Response) {
     deliveryNotes: [],
     timeline: [],
     templates: req.body.templates ?? [],
+    categories: sanitizeCategorySlugs(req.body.categories),
   };
 
   addTimeline(project, {
