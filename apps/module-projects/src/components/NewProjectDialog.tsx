@@ -117,8 +117,8 @@ export function NewProjectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl" hideCloseButton>
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
-          <DialogHeader className="flex items-center justify-between">
-            <div>
+          <DialogHeader className="flex flex-row items-center justify-between">
+            <div className="flex flex-col gap-1">
               <DialogTitle>{isEditing ? "Uredi projekt" : "Nov projekt"}</DialogTitle>
               <DialogDescription>
                 Izberite stranko iz CRM baze ali dodajte novo, nato določite osnovne podatke projekta.
