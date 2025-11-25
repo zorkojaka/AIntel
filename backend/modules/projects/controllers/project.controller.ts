@@ -166,6 +166,49 @@ export function createProject(req: Request, res: Response) {
   return res.success(responseProject(project), 201);
 }
 
+export function updateProject(req: Request, res: Response) {
+  const project = findProject(req.params.id);
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const error = validateProjectPayload(req.body);
+  if (error) return res.fail(error, 400);
+
+  project.title = req.body.title;
+  project.requirements = req.body.requirements ?? project.requirements;
+  if (req.body.customer) {
+    project.customer = {
+      name: req.body.customer.name ?? project.customer.name,
+      taxId: req.body.customer.taxId ?? project.customer.taxId,
+      address: req.body.customer.address ?? project.customer.address,
+      paymentTerms: req.body.customer.paymentTerms ?? project.customer.paymentTerms,
+    };
+  }
+  if (Array.isArray(req.body.items)) {
+    project.items = req.body.items.map((item: ProjectItem) => ({
+      ...item,
+      id: item.id ?? `item-${Date.now()}`,
+    }));
+  }
+  if (Array.isArray(req.body.templates)) {
+    project.templates = req.body.templates;
+  }
+  project.categories = sanitizeCategorySlugs(req.body.categories ?? project.categories);
+  if (req.body.status) {
+    project.status = req.body.status;
+  }
+  updateOfferAmount(project);
+
+  addTimeline(project, {
+    type: 'edit',
+    title: 'Projekt posodobljen',
+    description: project.title,
+    timestamp: new Date().toLocaleString('sl-SI'),
+    user: 'Admin',
+  });
+
+  return res.success(responseProject(project));
+}
+
 export function updateStatus(req: Request, res: Response) {
   const project = findProject(req.params.id);
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);

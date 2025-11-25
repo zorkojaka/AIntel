@@ -150,6 +150,7 @@ export function ProjectsPage() {
   const [isClientModalOpen, setClientModalOpen] = useState(false);
   const [isNewProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [projectFormInitial, setProjectFormInitial] = useState<ProjectDetails | null>(null);
   const [crmClients, setCrmClients] = useState<Client[]>([]);
   const [clientsLoading, setClientsLoading] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
@@ -265,6 +266,7 @@ export function ProjectsPage() {
   }, []);
 
   const openNewProjectDialog = () => {
+    setProjectFormInitial(null);
     setNewProjectDefaults({
       title: `Nov projekt ${projects.length + 1}`,
       requirements: "Dodajte opis projekta",
@@ -280,26 +282,86 @@ export function ProjectsPage() {
     }
   };
 
-  const createProjectWithClient = async ({
+  const handleEditProject = async (project: ProjectSummary) => {
+    try {
+      const response = await fetch(`${API_PREFIX}/${project.id}`);
+      const result = await response.json();
+      if (!result.success) {
+        toast.error(result.error ?? "Projekt ni bil najden.");
+        return;
+      }
+      const mapped = mapProject(result.data);
+      setProjectFormInitial(mapped);
+      setNewProjectDefaults({
+        title: mapped.title,
+        requirements: mapped.requirements,
+      });
+      setNewProjectCategorySlugs(mapped.categories ?? []);
+      setSelectedClientId(mapped.customerDetail?.id ?? null);
+      setNewProjectDialogOpen(true);
+      if (!crmClients.length) {
+        fetchCrmClients();
+      }
+      if (!categories.length && !categoriesLoading) {
+        fetchCategories();
+      }
+    } catch (error) {
+      toast.error("Napaka pri nalaganju projekta.");
+    }
+  };
+
+  const handleDeleteProject = async (project: ProjectSummary) => {
+    try {
+      const response = await fetch(`${API_PREFIX}/${project.id}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!result.success) {
+        toast.error(result.error ?? "Projekt ni bil izbrisan.");
+        return;
+      }
+      toast.success("Projekt je bil izbrisan.");
+      fetchProjectList();
+      if (project.id === selectedProjectId) {
+        setSelectedProjectId(null);
+        setProjectDetails(null);
+      }
+    } catch (error) {
+      toast.error("Napaka pri brisanju projekta.");
+    }
+  };
+
+  const handleCreateProject = async ({
     title,
     requirements,
-    client,
+    categories,
   }: {
     title: string;
     requirements: string;
-    client: Client;
+    categories: string[];
   }) => {
+    if (!selectedClientId) {
+      toast.error("Izberi stranko.");
+      return;
+    }
+    const client = crmClients.find((c) => c.id === selectedClientId);
+    if (!client) {
+      toast.error("Izbrana stranka ne obstaja.");
+      return;
+    }
+
     setIsCreatingProject(true);
     const payload = {
       title,
+      requirements,
+      categories,
       customer: {
         name: client.name,
         taxId: client.vatNumber,
         address: client.address,
         paymentTerms: globalSettings.defaultPaymentTerms || "30 dni",
       },
-      requirements,
-      categories: newProjectCategorySlugs,
+      items: [],
+      templates: [],
+      status: "draft" as ProjectStatus,
     };
 
     try {
@@ -323,8 +385,68 @@ export function ProjectsPage() {
       toast.success("Projekt uspešno ustvarjen");
       setNewProjectDialogOpen(false);
       setSelectedClientId(null);
+      setProjectFormInitial(null);
+      setNewProjectCategorySlugs([]);
     } catch (error) {
       toast.error("Prišlo je do napake pri ustvarjanju projekta.");
+    } finally {
+      setIsCreatingProject(false);
+    }
+  };
+
+  const handleUpdateProject = async (
+    projectId: string,
+    {
+      title,
+      requirements,
+      categories,
+    }: {
+      title: string;
+      requirements: string;
+      categories: string[];
+    }
+  ) => {
+    if (!projectFormInitial) {
+      toast.error("Projekt ni pripravljen za urejanje.");
+      return;
+    }
+
+    setIsCreatingProject(true);
+    const payload = {
+      title,
+      requirements,
+      categories,
+      customer: projectFormInitial.customerDetail,
+      items: projectFormInitial.items,
+      templates: projectFormInitial.templates,
+      status: projectFormInitial.status,
+    };
+
+    try {
+      const response = await fetch(`${API_PREFIX}/${projectId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      if (!result.success) {
+        toast.error(result.error ?? "Napaka pri posodabljanju projekta.");
+        return;
+      }
+
+      const mapped = mapProject(result.data);
+      setProjects((prev) =>
+        prev.map((project) => (project.id === mapped.id ? toSummary(mapped) : project))
+      );
+      setProjectDetails(mapped);
+      setTemplates(mapped.templates);
+      setSelectedProjectId(mapped.id);
+      toast.success("Projekt je bil posodobljen.");
+      setNewProjectDialogOpen(false);
+      setProjectFormInitial(null);
+      setNewProjectCategorySlugs(mapped.categories ?? []);
+    } catch (error) {
+      toast.error("Napaka pri posodabljanju projekta.");
     } finally {
       setIsCreatingProject(false);
     }
@@ -433,7 +555,13 @@ export function ProjectsPage() {
                 </Button>
               </div>
             </div>
-            <ProjectList projects={projects} onSelectProject={handleSelectProject} categories={categories} />
+            <ProjectList
+              projects={projects}
+              onSelectProject={handleSelectProject}
+              categories={categories}
+              onEditProject={handleEditProject}
+              onDeleteProject={handleDeleteProject}
+            />
           </div>
         </div>
       )}
@@ -495,6 +623,7 @@ export function ProjectsPage() {
           if (!open) {
             setSelectedClientId(null);
             setNewProjectCategorySlugs([]);
+            setProjectFormInitial(null);
           }
         }}
         defaultTitle={newProjectDefaults.title}
@@ -506,11 +635,13 @@ export function ProjectsPage() {
         isSubmitting={isCreatingProject}
         onAddClient={handleAddClient}
         onReloadClients={fetchCrmClients}
-        onCreateProject={createProjectWithClient}
+        onCreateProject={handleCreateProject}
+        onUpdateProject={handleUpdateProject}
         categories={categories}
         selectedCategorySlugs={newProjectCategorySlugs}
         onSelectCategories={setNewProjectCategorySlugs}
         isLoadingCategories={categoriesLoading}
+        initialProject={projectFormInitial}
       />
       {clientPortalContainer &&
         createPortal(

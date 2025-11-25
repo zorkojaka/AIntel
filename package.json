@@ -9,7 +9,8 @@
     "dev:stack": "pnpm --parallel --filter aintel-backend dev --filter @aintel/core-shell dev --filter @aintel/module-crm dev --filter @aintel/module-cenik dev --filter @aintel/module-settings dev --filter @aintel/module-projects dev",
     "lint": "echo \"No lint configured yet\"",
     "dev:projekti": "pnpm --filter @aintel/module-projects dev",
-    "migrate:product-categories": "cross-env dotenv_config_path=backend/.env ts-node -r dotenv/config backend/scripts/migrate-product-categories.ts"
+    "migrate:product-categories": "cross-env dotenv_config_path=backend/.env ts-node -r dotenv/config backend/scripts/migrate-product-categories.ts",
+    "migrate:cleanup-product-categories": "cross-env dotenv_config_path=backend/.env ts-node -r dotenv/config backend/scripts/cleanup-product-category-fields.ts"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",

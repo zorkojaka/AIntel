@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Client } from "@aintel/module-crm";
-import { Loader2, RefreshCcw } from "lucide-react";
+import { Loader2, RefreshCcw, Save, X } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -8,7 +8,7 @@ import { Textarea } from "./ui/textarea";
 import { Badge } from "./ui/badge";
 import { cn } from "./ui/utils";
 import { CategoryMultiSelect } from "@aintel/ui";
-import type { Category } from "../types";
+import type { Category, ProjectDetails } from "../types";
 
 interface NewProjectDialogProps {
   open: boolean;
@@ -22,14 +22,24 @@ interface NewProjectDialogProps {
   isSubmitting: boolean;
   onAddClient: () => void;
   onReloadClients: () => Promise<void> | void;
-  onCreateProject: (options: { title: string; requirements: string; client: Client }) => Promise<void>;
+  onCreateProject: (payload: {
+    title: string;
+    requirements: string;
+    categories: string[];
+  }) => Promise<void>;
+  onUpdateProject: (
+    projectId: string,
+    payload: { title: string; requirements: string; categories: string[] }
+  ) => Promise<void>;
   categories: Category[];
   selectedCategorySlugs: string[];
   onSelectCategories: (slugs: string[]) => void;
   isLoadingCategories: boolean;
+  initialProject?: ProjectDetails | null;
 }
 
 export function NewProjectDialog({
+  initialProject,
   open,
   onOpenChange,
   defaultTitle,
@@ -42,6 +52,7 @@ export function NewProjectDialog({
   onAddClient,
   onReloadClients,
   onCreateProject,
+  onUpdateProject,
   categories,
   selectedCategorySlugs,
   onSelectCategories,
@@ -50,6 +61,7 @@ export function NewProjectDialog({
   const [title, setTitle] = useState(defaultTitle);
   const [requirements, setRequirements] = useState(defaultRequirements);
   const [search, setSearch] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (open) {
@@ -78,23 +90,58 @@ export function NewProjectDialog({
     );
   };
 
+  const isEditing = Boolean(initialProject?.id);
+  const submitText = isEditing ? "Shrani projekt" : "Ustvari projekt";
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selectedClient) {
-      return;
+    const payload = {
+      title: title.trim(),
+      requirements: requirements.trim(),
+      categories: selectedCategorySlugs,
+    };
+
+    try {
+      if (isEditing && initialProject) {
+        await onUpdateProject(initialProject.id, payload);
+      } else {
+        await onCreateProject(payload);
+      }
+      onOpenChange(false);
+    } catch (error) {
+      console.error("Napaka pri shranjevanju projekta", error);
     }
-    await onCreateProject({ title: title.trim(), requirements: requirements.trim(), client: selectedClient });
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <DialogHeader>
-            <DialogTitle>Nov projekt</DialogTitle>
-            <DialogDescription>
-              Izberite stranko iz CRM baze ali dodajte novo, nato določite osnovne podatke projekta.
-            </DialogDescription>
+      <DialogContent className="sm:max-w-3xl" hideCloseButton>
+        <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
+          <DialogHeader className="flex items-center justify-between">
+            <div>
+              <DialogTitle>{isEditing ? "Uredi projekt" : "Nov projekt"}</DialogTitle>
+              <DialogDescription>
+                Izberite stranko iz CRM baze ali dodajte novo, nato določite osnovne podatke projekta.
+              </DialogDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Shrani"
+                onClick={() => formRef.current?.requestSubmit()}
+                className="inline-flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-card text-foreground transition hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                <Save className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Zapri"
+                onClick={() => onOpenChange(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-card text-foreground transition hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </DialogHeader>
 
           <div className="grid gap-4">
@@ -229,11 +276,11 @@ export function NewProjectDialog({
             <Button
               type="submit"
               disabled={
-                !selectedClient || !title.trim() || isSubmitting || selectedCategorySlugs.length === 0
+                (isEditing ? false : !selectedClient) || !title.trim() || isSubmitting || selectedCategorySlugs.length === 0
               }
             >
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Ustvari projekt
+              {submitText}
             </Button>
           </DialogFooter>
         </form>

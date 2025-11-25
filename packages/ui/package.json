@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@aintel/theme": "*",
-    "react": "^18.3.0"
+    "react": "^18.3.0",
+    "lucide-react": "^0.468.0"
   },
   "devDependencies": {
     "@storybook/react": "^7.0.0",

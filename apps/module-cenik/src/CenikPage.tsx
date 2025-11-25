@@ -1,11 +1,11 @@
-import React, { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Button, Card, DataTable, Input, CategoryMultiSelect } from '@aintel/ui';
+import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Card, DataTable, Input, CategoryMultiSelect, TableRowActions } from '@aintel/ui';
+import { Save, X } from 'lucide-react';
 import FilterBar from './components/FilterBar';
 
 type Product = {
   _id?: string;
   ime: string;
-  kategorija: string;
   nabavnaCena: number;
   prodajnaCena: number;
   kratekOpis: string;
@@ -41,7 +41,6 @@ type Category = {
 
 const emptyProduct = (): Product => ({
   ime: '',
-  kategorija: '',
   nabavnaCena: 0,
   prodajnaCena: 0,
   kratekOpis: '',
@@ -116,6 +115,7 @@ export const CenikPage: React.FC = () => {
   const [status, setStatus] = useState<StatusBanner | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const loadProducts = async () => {
     setLoading(true);
@@ -191,7 +191,6 @@ export const CenikPage: React.FC = () => {
 
   const handleDelete = async (productId: string | undefined) => {
     if (!productId) return;
-    if (!globalThis.confirm('Ali želiš izbrisati ta produkt?')) return;
     setDeletingId(productId);
     try {
       const response = await fetch(`/api/cenik/products/${productId}`, { method: 'DELETE' });
@@ -219,13 +218,11 @@ export const CenikPage: React.FC = () => {
     }
 
     setSaving(true);
-    const draft: Product = { ...editingProduct };
-    const { kategorija, categorySlugs, ...rest } = draft;
+    const { _id, ...rest } = editingProduct;
     const payload = {
       ...rest,
-      kategorija: draft.kategorija,
-      categorySlugs: categorySlugs ?? []
-    };
+      categorySlugs: editingProduct.categorySlugs ?? []
+    } as Omit<Product, '_id'>;
     const method = editingProduct._id ? 'PUT' : 'POST';
     const url = editingProduct._id
       ? `/api/cenik/products/${editingProduct._id}`
@@ -318,18 +315,13 @@ export const CenikPage: React.FC = () => {
                   {
                     header: 'Akcije',
                     accessor: (row: Product) => (
-                      <div className="flex justify-end gap-2">
-                        <Button variant="ghost" onClick={() => startEdit(row)}>
-                          Uredi
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          className="text-destructive"
-                          onClick={() => handleDelete(row._id)}
-                          disabled={deletingId === row._id}
-                        >
-                          Izbriši
-                        </Button>
+                      <div className="flex justify-end">
+                        <TableRowActions
+                          onEdit={() => startEdit(row)}
+                          onDelete={() => handleDelete(row._id)}
+                          deleteConfirmTitle="Izbriši produkt"
+                          deleteConfirmMessage="Si prepričan, da želiš izbrisati ta produkt?"
+                        />
                       </div>
                     )
                   }
@@ -347,15 +339,30 @@ export const CenikPage: React.FC = () => {
       {isModalOpen && editingProduct && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4 py-6">
           <div className="w-full max-w-3xl rounded-xl bg-card p-6 shadow-2xl shadow-black/40">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <h2 className="text-xl font-semibold text-foreground">
                 {editingProduct._id ? 'Uredi produkt' : 'Dodaj produkt'}
               </h2>
-              <Button variant="ghost" onClick={handleCancel}>
-                Zapri
-              </Button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-label="Shrani"
+                  onClick={() => formRef.current?.requestSubmit()}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-card text-foreground transition hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                >
+                  <Save className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Zapri"
+                  onClick={handleCancel}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-card text-foreground transition hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-            <form className="space-y-4 mt-4" onSubmit={handleSubmit}>
+            <form ref={formRef} className="space-y-4 mt-4" onSubmit={handleSubmit}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Input
                   label="Ime"

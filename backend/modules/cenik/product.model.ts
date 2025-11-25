@@ -2,10 +2,10 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export interface ProductDocument extends Document {
   ime: string;
-  kategorija: string;
+  kategorija?: string;
   categorySlugs: string[];
   categorySlug?: string;
-  categories: string[];
+  categories?: string[];
   nabavnaCena: number;
   prodajnaCena: number;
   kratekOpis?: string;
@@ -24,7 +24,7 @@ export interface ProductDocument extends Document {
 const ProductSchema = new Schema<ProductDocument>(
   {
     ime: { type: String, required: true, trim: true },
-    kategorija: { type: String, required: true, trim: true },
+    kategorija: { type: String, trim: true, default: '' },
     categorySlugs: { type: [String], default: [] },
     categorySlug: { type: String, trim: true, lowercase: true },
     categories: { type: [String], default: [] },

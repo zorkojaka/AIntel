@@ -5,11 +5,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Badge } from "./ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { ProjectStatus, ProjectSummary, Category } from "../types";
+import { TableRowActions } from "@aintel/ui";
 
 interface ProjectListProps {
   projects: ProjectSummary[];
   onSelectProject: (projectId: string) => void;
   categories: Category[];
+  onEditProject: (project: ProjectSummary) => void;
+  onDeleteProject: (project: ProjectSummary) => void;
 }
 
 const statusColors: Record<ProjectStatus, string> = {
@@ -30,7 +33,13 @@ const statusLabels: Record<ProjectStatus, string> = {
   invoiced: "Zaračunano",
 };
 
-export function ProjectList({ projects, onSelectProject, categories }: ProjectListProps) {
+export function ProjectList({
+  projects,
+  onSelectProject,
+  categories,
+  onEditProject,
+  onDeleteProject
+}: ProjectListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
@@ -86,16 +95,17 @@ export function ProjectList({ projects, onSelectProject, categories }: ProjectLi
               <TableHead className="text-right">Ponudba (€)</TableHead>
               <TableHead className="text-right">Računi (€)</TableHead>
               <TableHead>Datum</TableHead>
+              <TableHead className="text-right">Akcije</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredProjects.map((project) => (
-              <TableRow
-                key={project.id}
-                className="cursor-pointer"
-                onClick={() => onSelectProject(project.id)}
-              >
-                <TableCell className="font-medium">
+                <TableRow
+                  key={project.id}
+                  className="cursor-pointer"
+                  onClick={() => onSelectProject(project.id)}
+                >
+                  <TableCell className="font-medium">
                   <div className="flex flex-col gap-1">
                     <span>{project.title}</span>
                     {project.categories && project.categories.length > 0 && (
@@ -122,6 +132,17 @@ export function ProjectList({ projects, onSelectProject, categories }: ProjectLi
                   € {project.invoiceAmount.toLocaleString("sl-SI", { minimumFractionDigits: 2 })}
                 </TableCell>
                 <TableCell>{project.createdAt}</TableCell>
+                <TableCell
+                  className="text-right"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <TableRowActions
+                    onEdit={() => onEditProject(project)}
+                    onDelete={() => onDeleteProject(project)}
+                    deleteConfirmTitle="Izbriši projekt"
+                    deleteConfirmMessage="Si prepričan, da želiš izbrisati ta projekt? Tega dejanja ni mogoče razveljaviti."
+                  />
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

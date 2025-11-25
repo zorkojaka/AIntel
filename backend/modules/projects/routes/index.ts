@@ -15,6 +15,7 @@ import {
   sendOffer,
   updateItem,
   updateStatus,
+  updateProject,
 } from '../controllers/project.controller';
 
 const router = Router();
@@ -23,6 +24,7 @@ router.get('/', listProjects);
 router.post('/', createProject);
 router.get('/:id', getProject);
 router.post('/:id/status', updateStatus);
+router.put('/:id', updateProject);
 router.post('/:id/items', addItem);
 router.post('/:id/items/from-cenik', addItemFromCenik);
 router.put('/:id/items/:itemId', updateItem);
