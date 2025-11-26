@@ -26,11 +26,12 @@ export interface Item {
 interface ItemsTableProps {
   items: Item[];
   onEdit: (item: Item) => void;
-  onAdd: () => void;
+  onAddFromCatalog: () => void;
+  onAddCustom: () => void;
   onDelete: (id: string) => void;
 }
 
-export function ItemsTable({ items, onEdit, onAdd, onDelete }: ItemsTableProps) {
+export function ItemsTable({ items, onEdit, onAddFromCatalog, onAddCustom, onDelete }: ItemsTableProps) {
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
@@ -66,11 +67,11 @@ export function ItemsTable({ items, onEdit, onAdd, onDelete }: ItemsTableProps) 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        <Button onClick={onAdd}>
+        <Button onClick={onAddFromCatalog}>
           <Plus className="mr-2 h-4 w-4" />
           Dodaj iz cenika
         </Button>
-        <Button variant="outline">
+        <Button variant="outline" onClick={onAddCustom}>
           <Plus className="mr-2 h-4 w-4" />
           Nova postavka
         </Button>
@@ -89,7 +90,6 @@ export function ItemsTable({ items, onEdit, onAdd, onDelete }: ItemsTableProps) 
           <TableHeader>
             <TableRow>
               <TableHead>Naziv</TableHead>
-              <TableHead>SKU</TableHead>
               <TableHead>Enota</TableHead>
               <TableHead className="text-right">Količina</TableHead>
               <TableHead className="text-right">Cena</TableHead>
@@ -107,7 +107,6 @@ export function ItemsTable({ items, onEdit, onAdd, onDelete }: ItemsTableProps) 
                 onClick={() => handleRowClick(item)}
               >
                 <TableCell>{item.name}</TableCell>
-                <TableCell className="text-muted-foreground">{item.sku}</TableCell>
                 <TableCell>{item.unit}</TableCell>
                 <TableCell className="text-right">{item.quantity}</TableCell>
                 <TableCell className="text-right">€ {item.price.toFixed(2)}</TableCell>
@@ -188,8 +187,8 @@ export function ItemsTable({ items, onEdit, onAdd, onDelete }: ItemsTableProps) 
                   <Input value={selectedItem.name} readOnly />
                 </div>
                 <div>
-                  <Label>SKU</Label>
-                  <Input value={selectedItem.sku} readOnly />
+        <Label>SKU</Label>
+        <Input value={selectedItem.sku} readOnly />
                 </div>
               </div>
 

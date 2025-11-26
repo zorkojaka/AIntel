@@ -1,11 +1,11 @@
-import React, { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Button, Card, DataTable, Input } from '@aintel/ui';
+import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Card, DataTable, Input, CategoryMultiSelect, TableRowActions } from '@aintel/ui';
+import { Save, X } from 'lucide-react';
 import FilterBar from './components/FilterBar';
 
 type Product = {
   _id?: string;
   ime: string;
-  kategorija: string;
   nabavnaCena: number;
   prodajnaCena: number;
   kratekOpis: string;
@@ -16,6 +16,8 @@ type Product = {
   povezavaDoProdukta: string;
   naslovDobavitelja: string;
   casovnaNorma: string;
+  categorySlugs?: string[];
+  isService?: boolean;
 };
 
 type StatusBanner = {
@@ -29,9 +31,16 @@ type ApiEnvelope<T> = {
   error: string | null;
 };
 
+type Category = {
+  _id: string;
+  name: string;
+  slug: string;
+  color?: string;
+  order?: number;
+};
+
 const emptyProduct = (): Product => ({
   ime: '',
-  kategorija: '',
   nabavnaCena: 0,
   prodajnaCena: 0,
   kratekOpis: '',
@@ -41,11 +50,52 @@ const emptyProduct = (): Product => ({
   dobavitelj: '',
   povezavaDoProdukta: '',
   naslovDobavitelja: '',
-  casovnaNorma: ''
+  casovnaNorma: '',
+  categorySlugs: [],
+  isService: false
 });
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('sl-SI', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 }).format(value);
+
+const MAX_VISIBLE_CATEGORY_CHIPS = 10;
+
+type CategoryChipRowProps = {
+  slugs: string[];
+  lookup: Map<string, Category>;
+};
+
+function CategoryChipRow({ slugs, lookup }: CategoryChipRowProps) {
+  const [showAll, setShowAll] = useState(false);
+  const visibleSlugs = showAll ? slugs : slugs.slice(0, MAX_VISIBLE_CATEGORY_CHIPS);
+  const hiddenCount = slugs.length - visibleSlugs.length;
+
+  if (slugs.length === 0) {
+    return <span className="text-xs text-muted-foreground">Brez kategorij</span>;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {visibleSlugs.map((slug) => (
+        <span
+          key={slug}
+          className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-xs font-medium text-foreground"
+        >
+          {lookup.get(slug)?.name ?? slug}
+        </span>
+      ))}
+      {!showAll && hiddenCount > 0 && (
+        <button
+          type="button"
+          className="text-xs font-medium text-primary underline"
+          onClick={() => setShowAll(true)}
+        >
+          +{hiddenCount} več
+        </button>
+      )}
+    </div>
+  );
+}
 
 async function parseEnvelope<T>(response: Response) {
   const payload: ApiEnvelope<T> = await response.json();
@@ -64,13 +114,21 @@ export const CenikPage: React.FC = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusBanner | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const loadProducts = async () => {
     setLoading(true);
     try {
       const response = await fetch('/api/cenik/products');
       const data = await parseEnvelope<Product[]>(response);
-      setProducts(data);
+      setProducts(
+        data.map((product) => ({
+          ...product,
+          categorySlugs: product.categorySlugs ?? [],
+          isService: product.isService ?? false
+        }))
+      );
       setStatus(null);
     } catch (error) {
       setStatus({ variant: 'error', text: 'Ne morem naložiti cenika. Poskusi znova.' });
@@ -83,28 +141,56 @@ export const CenikPage: React.FC = () => {
     loadProducts();
   }, []);
 
-  const categories = useMemo(
-    () => Array.from(new Set(products.map((product) => product.kategorija))).filter(Boolean),
-    [products]
-  );
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await fetch('/api/categories');
+        const data = await parseEnvelope<Category[]>(response);
+        setCategories(data);
+      } catch (error) {
+        console.error('Ne morem naložiti kategorij.', error);
+      }
+    };
+
+    fetchCategories();
+  }, []);
+
+
+
+  const categoryLookup = useMemo(() => {
+    const map = new Map<string, Category>();
+    categories.forEach((category) => map.set(category.slug, category));
+    return map;
+  }, [categories]);
+
+
 
   const filteredProducts = useMemo(() => {
     const query = filters.q.trim().toLowerCase();
     return products.filter((product) => {
-      const matchesCategory = filters.category ? product.kategorija === filters.category : true;
+      const matchesCategory = filters.category
+        ? (product.categorySlugs ?? []).includes(filters.category)
+        : true;
       const matchesSearch = query ? product.ime.toLowerCase().includes(query) : true;
       return matchesCategory && matchesSearch;
     });
   }, [products, filters]);
 
   const startEdit = (product?: Product) => {
-    setEditingProduct(product ? { ...product } : emptyProduct());
+    setEditingProduct(
+      product
+        ? {
+            ...product,
+            categorySlugs: product.categorySlugs ?? [],
+            isService: product.isService ?? false
+          }
+        : emptyProduct()
+    );
     setIsModalOpen(true);
   };
 
   const handleDelete = async (productId: string | undefined) => {
     if (!productId) return;
-    if (!globalThis.confirm('Ali želiš izbrisati ta produkt?')) return;
     setDeletingId(productId);
     try {
       const response = await fetch(`/api/cenik/products/${productId}`, { method: 'DELETE' });
@@ -126,13 +212,17 @@ export const CenikPage: React.FC = () => {
     if (!editingProduct) {
       return;
     }
-    if (!editingProduct.ime || !editingProduct.kategorija) {
-      setStatus({ variant: 'error', text: 'Ime in kategorija sta obvezni.' });
+    if (!editingProduct.ime) {
+      setStatus({ variant: 'error', text: 'Ime je obvezno.' });
       return;
     }
 
     setSaving(true);
-    const draft: Product = { ...editingProduct };
+    const { _id, ...rest } = editingProduct;
+    const payload = {
+      ...rest,
+      categorySlugs: editingProduct.categorySlugs ?? []
+    } as Omit<Product, '_id'>;
     const method = editingProduct._id ? 'PUT' : 'POST';
     const url = editingProduct._id
       ? `/api/cenik/products/${editingProduct._id}`
@@ -142,7 +232,7 @@ export const CenikPage: React.FC = () => {
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(draft)
+        body: JSON.stringify(payload)
       });
       const data = await parseEnvelope<Product>(response);
       setProducts((prev) => {
@@ -210,7 +300,12 @@ export const CenikPage: React.FC = () => {
               <DataTable
                 columns={[
                   { header: 'Ime', accessor: 'ime' },
-                  { header: 'Kategorija', accessor: 'kategorija' },
+                  {
+                    header: 'Kategorije',
+                    accessor: (row: Product) => (
+                      <CategoryChipRow slugs={row.categorySlugs ?? []} lookup={categoryLookup} />
+                    )
+                  },
                   {
                     header: 'Prodajna cena',
                     accessor: (row: Product) => formatCurrency(row.prodajnaCena)
@@ -220,18 +315,13 @@ export const CenikPage: React.FC = () => {
                   {
                     header: 'Akcije',
                     accessor: (row: Product) => (
-                      <div className="flex justify-end gap-2">
-                        <Button variant="ghost" onClick={() => startEdit(row)}>
-                          Uredi
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          className="text-destructive"
-                          onClick={() => handleDelete(row._id)}
-                          disabled={deletingId === row._id}
-                        >
-                          Izbriši
-                        </Button>
+                      <div className="flex justify-end">
+                        <TableRowActions
+                          onEdit={() => startEdit(row)}
+                          onDelete={() => handleDelete(row._id)}
+                          deleteConfirmTitle="Izbriši produkt"
+                          deleteConfirmMessage="Si prepričan, da želiš izbrisati ta produkt?"
+                        />
                       </div>
                     )
                   }
@@ -249,15 +339,30 @@ export const CenikPage: React.FC = () => {
       {isModalOpen && editingProduct && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4 py-6">
           <div className="w-full max-w-3xl rounded-xl bg-card p-6 shadow-2xl shadow-black/40">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <h2 className="text-xl font-semibold text-foreground">
                 {editingProduct._id ? 'Uredi produkt' : 'Dodaj produkt'}
               </h2>
-              <Button variant="ghost" onClick={handleCancel}>
-                Zapri
-              </Button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-label="Shrani"
+                  onClick={() => formRef.current?.requestSubmit()}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-card text-foreground transition hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                >
+                  <Save className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Zapri"
+                  onClick={handleCancel}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-card text-foreground transition hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-            <form className="space-y-4 mt-4" onSubmit={handleSubmit}>
+            <form ref={formRef} className="space-y-4 mt-4" onSubmit={handleSubmit}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Input
                   label="Ime"
@@ -266,13 +371,30 @@ export const CenikPage: React.FC = () => {
                   onChange={(event) => updateField('ime', event.target.value)}
                   required
                 />
-                <Input
-                  label="Kategorija"
-                  placeholder="material / storitev"
-                  value={editingProduct.kategorija}
-                  onChange={(event) => updateField('kategorija', event.target.value)}
-                  required
-                />
+                <div className="col-span-1 md:col-span-2 flex items-center gap-3">
+                  <input
+                    id="is-service"
+                    type="checkbox"
+                    checked={Boolean(editingProduct.isService)}
+                    onChange={(event) =>
+                      setEditingProduct((prev) => (prev ? { ...prev, isService: event.target.checked } : prev))
+                    }
+                    className="h-4 w-4 rounded border border-border bg-card focus-visible:ring-2 focus-visible:ring-primary"
+                  />
+                  <label htmlFor="is-service" className="text-sm font-medium text-foreground">
+                    Storitev
+                  </label>
+                </div>
+                <div className="col-span-1 md:col-span-2">
+                  <CategoryMultiSelect
+                    label="Kategorije"
+                    categories={categories}
+                    value={editingProduct.categorySlugs ?? []}
+                    onChange={(slugs) =>
+                      setEditingProduct((prev) => (prev ? { ...prev, categorySlugs: slugs } : prev))
+                    }
+                  />
+                </div>
                 <Input
                   label="Nabavna cena"
                   type="number"
