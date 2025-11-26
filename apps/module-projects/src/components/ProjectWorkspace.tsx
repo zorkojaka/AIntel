@@ -32,9 +32,10 @@ import {
   Download,
   Search,
   Loader2,
+  RefreshCcw,
 } from "lucide-react";
 import { toast } from "sonner";
-import { DeliveryNote, ProjectDetails, PurchaseOrder } from "../types";
+import { DeliveryNote, ProjectDetails, ProjectOffer, ProjectOfferItem, PurchaseOrder } from "../types";
 
 type ItemFormState = {
   name: string;
@@ -69,6 +70,8 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   const [activeTab, setActiveTab] = useState("items");
   const [items, setItems] = useState<Item[]>(project.items);
   const [offers, setOffers] = useState<OfferVersion[]>(project.offers);
+  const [activeOffer, setActiveOffer] = useState<ProjectOffer | null>(null);
+  const [offerItems, setOfferItems] = useState<ProjectOfferItem[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>(project.workOrders);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(project.purchaseOrders);
   const [deliveryNotes, setDeliveryNotes] = useState<DeliveryNote[]>(project.deliveryNotes);
@@ -77,6 +80,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   const [requirements, setRequirements] = useState(project.requirements);
   const [isItemDialogOpen, setItemDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [itemContext, setItemContext] = useState<"project" | "offer">("project");
   const [itemForm, setItemForm] = useState<ItemFormState>({
     name: "",
     sku: "",
@@ -97,14 +101,63 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   const [catalogDiscount, setCatalogDiscount] = useState(0);
   const [catalogVatRate, setCatalogVatRate] = useState(22);
   const [catalogUnit, setCatalogUnit] = useState("kos");
+  type CatalogTarget = "project" | "offer";
+  const [catalogTarget, setCatalogTarget] = useState<CatalogTarget>("project");
   const [isSavingItem, setIsSavingItem] = useState(false);
   const [isAddingFromCatalog, setIsAddingFromCatalog] = useState(false);
+  const [isOfferLoading, setIsOfferLoading] = useState(false);
 
   const basePath = `/api/projects/${project.id}`;
+
+  const fetchActiveOffer = useCallback(async () => {
+    setIsOfferLoading(true);
+    try {
+      const response = await fetch(`${basePath}/offer`);
+      const result = await response.json();
+      if (!result.success) {
+        toast.error(result.error ?? "Napaka pri nalaganju ponudbe.");
+        return;
+      }
+      const offer: ProjectOffer = result.data;
+      setActiveOffer(offer);
+      setOfferItems(offer?.items ?? []);
+    } catch (error) {
+      toast.error("Ponudbe ni mogoče naložiti.");
+    } finally {
+      setIsOfferLoading(false);
+    }
+  }, [basePath]);
+
+  const persistOfferItems = useCallback(
+    async (itemsToSave: ProjectOfferItem[]) => {
+      try {
+        const response = await fetch(`${basePath}/offer`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: itemsToSave }),
+        });
+        const result = await response.json();
+        if (!result.success) {
+          toast.error(result.error ?? "Napaka pri shranjevanju ponudbe.");
+          return null;
+        }
+        const offer: ProjectOffer = result.data;
+        setActiveOffer(offer);
+        setOfferItems(offer?.items ?? []);
+        return offer;
+      } catch (error) {
+        toast.error("Ponudbe ni mogoče shraniti.");
+        return null;
+      }
+    },
+    [basePath]
+  );
 
   useEffect(() => {
     setItems(project.items);
     setOffers(project.offers);
+    setActiveOffer(null);
+    setOfferItems([]);
     setWorkOrders(project.workOrders);
     setPurchaseOrders(project.purchaseOrders);
     setDeliveryNotes(project.deliveryNotes);
@@ -112,6 +165,12 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     setStatus(project.status);
     setRequirements(project.requirements);
   }, [project]);
+
+  useEffect(() => {
+    if (activeTab === "offers" && !activeOffer && !isOfferLoading) {
+      fetchActiveOffer();
+    }
+  }, [activeTab, activeOffer, fetchActiveOffer, isOfferLoading]);
 
   const fetchCatalogItems = useCallback(async () => {
     setCatalogLoading(true);
@@ -189,6 +248,13 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
 
   const handleAddItem = () => {
     resetItemForm();
+    setItemContext("project");
+    setItemDialogOpen(true);
+  };
+
+  const handleAddOfferItem = () => {
+    resetItemForm();
+    setItemContext("offer");
     setItemDialogOpen(true);
   };
 
@@ -205,6 +271,24 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
       description: item.description ?? "",
       category: item.category ?? "material",
     });
+    setItemContext("project");
+    setItemDialogOpen(true);
+  };
+
+  const handleEditOfferItem = (item: ProjectOfferItem) => {
+    setEditingItem(item as unknown as Item);
+    setItemForm({
+      name: item.name,
+      sku: item.sku ?? "",
+      unit: item.unit,
+      quantity: item.quantity,
+      price: item.price,
+      discount: item.discount,
+      vatRate: item.vatRate,
+      description: item.description ?? "",
+      category: "material",
+    });
+    setItemContext("offer");
     setItemDialogOpen(true);
   };
 
@@ -212,6 +296,14 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     const updated = await onProjectUpdate(`${basePath}/items/${id}`, { method: "DELETE" });
     applyProjectUpdate(updated);
     if (updated) toast.success("Postavka izbrisana");
+  };
+
+  const handleDeleteOfferItem = async (id: string) => {
+    const next = offerItems.filter((item) => item.id !== id);
+    const updated = await persistOfferItems(next);
+    if (updated) {
+      toast.success("Postavka ponudbe izbrisana");
+    }
   };
 
   const handleSaveItem = async () => {
@@ -223,22 +315,69 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
       discount: Number(itemForm.discount),
       vatRate: Number(itemForm.vatRate),
     };
-    const url = editingItem ? `${basePath}/items/${editingItem.id}` : `${basePath}/items`;
-    const method = editingItem ? "PUT" : "POST";
-    const updated = await onProjectUpdate(url, {
-      method,
-      body: JSON.stringify(payload),
-    });
+    const offerPayload =
+      itemContext === "offer"
+        ? {
+            ...payload,
+            total: Number(
+              (
+                payload.quantity *
+                payload.price *
+                (1 - payload.discount / 100) *
+                (1 + payload.vatRate / 100)
+              ).toFixed(2)
+            ),
+          }
+        : payload;
+    const url = editingItem && itemContext === "project" ? `${basePath}/items/${editingItem.id}` : `${basePath}/items`;
+    const method = editingItem && itemContext === "project" ? "PUT" : "POST";
+    const updated =
+      itemContext === "project"
+        ? await onProjectUpdate(url, {
+            method,
+            body: JSON.stringify(payload),
+          })
+        : await persistOfferItems(
+            editingItem
+              ? offerItems.map((current) =>
+                  current.id === editingItem.id ? { ...offerPayload, id: editingItem.id } : current
+                )
+              : [
+                  ...offerItems,
+                  {
+                    ...(offerPayload as ProjectOfferItem),
+                    id: `offer-item-${Date.now()}`,
+                    total: Number(
+                      (
+                        offerPayload.quantity *
+                        offerPayload.price *
+                        (1 - offerPayload.discount / 100) *
+                        (1 + offerPayload.vatRate / 100)
+                      ).toFixed(2)
+                    ),
+                  } as ProjectOfferItem,
+                ]
+          );
     setIsSavingItem(false);
-    applyProjectUpdate(updated);
-    if (updated) {
-      toast.success(editingItem ? "Postavka posodobljena" : "Postavka dodana");
+    if (itemContext === "project") {
+      applyProjectUpdate(updated as ProjectDetails | null);
+      if (updated) {
+        toast.success(editingItem ? "Postavka posodobljena" : "Postavka dodana");
+        setItemDialogOpen(false);
+        resetItemForm();
+      }
+    } else if (updated && "label" in updated) {
+      const offer = updated as ProjectOffer;
+      toast.success(editingItem ? "Postavka ponudbe posodobljena" : "Postavka ponudbe dodana");
       setItemDialogOpen(false);
       resetItemForm();
+      setActiveOffer(offer);
+      setOfferItems(offer.items ?? []);
     }
   };
 
-  const handleOpenCatalog = () => {
+  const openCatalog = (target: CatalogTarget) => {
+    setCatalogTarget(target);
     setCatalogDialogOpen(true);
     setSelectedCatalogProduct(null);
     setCatalogQuantity(1);
@@ -252,23 +391,74 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
       toast.error("Izberite produkt iz cenika.");
       return;
     }
+    console.debug("catalogTarget on confirm:", catalogTarget);
     setIsAddingFromCatalog(true);
-    const updated = await onProjectUpdate(`${basePath}/items/from-cenik`, {
-      method: "POST",
-      body: JSON.stringify({
-        productId: selectedCatalogProduct.id,
+    let updated: ProjectDetails | ProjectOffer | null = null;
+
+    if (catalogTarget === "project") {
+      const newProjectItem: Item = {
+        id: `item-${Date.now()}`,
+        name: selectedCatalogProduct.name,
+        sku: selectedCatalogProduct.id,
+        unit: catalogUnit,
         quantity: catalogQuantity,
+        price: selectedCatalogProduct.price,
         discount: catalogDiscount,
         vatRate: catalogVatRate,
+        total:
+          catalogQuantity *
+          selectedCatalogProduct.price *
+          (1 - catalogDiscount / 100) *
+          (1 + catalogVatRate / 100),
+        description: selectedCatalogProduct.description ?? "",
+        category: "material",
+      };
+
+      updated = await onProjectUpdate(`${basePath}/items`, {
+        method: "POST",
+        body: JSON.stringify(newProjectItem),
+      });
+    } else {
+      if (!activeOffer) {
+        setIsAddingFromCatalog(false);
+        toast.error("Ponudba ni naložena.");
+        return;
+      }
+      const newOfferItem: ProjectOfferItem = {
+        id: `offer-item-${Date.now()}`,
+        productId: selectedCatalogProduct.id,
+        name: selectedCatalogProduct.name,
+        sku: selectedCatalogProduct.id,
         unit: catalogUnit,
-      }),
-    });
+        quantity: catalogQuantity,
+        price: selectedCatalogProduct.price,
+        discount: catalogDiscount,
+        vatRate: catalogVatRate,
+        total:
+          catalogQuantity *
+          selectedCatalogProduct.price *
+          (1 - catalogDiscount / 100) *
+          (1 + catalogVatRate / 100),
+        description: selectedCatalogProduct.description ?? "",
+        category: "material",
+      };
+      updated = await persistOfferItems([...(offerItems ?? []), newOfferItem]);
+    }
+
     setIsAddingFromCatalog(false);
-    applyProjectUpdate(updated);
-    if (updated) {
-      toast.success(`Dodana postavka ${selectedCatalogProduct.name}`);
+    if (catalogTarget === "project") {
+      applyProjectUpdate(updated as ProjectDetails | null);
+      if (updated) {
+        toast.success(`Dodana projektna postavka ${selectedCatalogProduct.name}`);
+        setCatalogDialogOpen(false);
+        setSelectedCatalogProduct(null);
+      }
+    } else if (updated && "label" in updated) {
+      toast.success(`Dodana postavka v ponudbo: ${selectedCatalogProduct.name}`);
       setCatalogDialogOpen(false);
       setSelectedCatalogProduct(null);
+      setActiveOffer(updated as ProjectOffer);
+      setOfferItems((updated as ProjectOffer).items ?? []);
     }
   };
 
@@ -323,8 +513,15 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
       return;
     }
 
+    const templateCustomer = {
+      name: project.customerDetail?.name ?? "",
+      taxId: project.customerDetail?.taxId ?? "",
+      address: project.customerDetail?.address ?? "",
+      paymentTerms: project.customerDetail?.paymentTerms ?? "",
+    };
+
     const html = renderTemplate(defaultTemplate, {
-      customer: project.customerDetail,
+      customer: templateCustomer,
       project: {
         id: project.id,
         title: project.title,
@@ -348,8 +545,15 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
       return;
     }
 
+    const templateCustomer = {
+      name: project.customerDetail?.name ?? "",
+      taxId: project.customerDetail?.taxId ?? "",
+      address: project.customerDetail?.address ?? "",
+      paymentTerms: project.customerDetail?.paymentTerms ?? "",
+    };
+
     const html = renderTemplate(defaultTemplate, {
-      customer: project.customerDetail,
+      customer: templateCustomer,
       project: {
         id: project.id,
         title: project.title,
@@ -547,7 +751,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                 <ItemsTable
                   items={items}
                   onEdit={handleEditItem}
-                  onAddFromCatalog={handleOpenCatalog}
+                  onAddFromCatalog={() => openCatalog("project")}
                   onAddCustom={handleAddItem}
                   onDelete={handleDeleteItem}
                 />
@@ -556,39 +760,42 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
               <TabsContent value="offers" className="mt-0 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
-                    <h3 className="m-0">Ponudbe</h3>
-                    <p className="text-sm text-muted-foreground">Ustvarite nove verzije in spremljajte status.</p>
+                    <h3 className="m-0">Aktivna ponudba</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Postavke ponudbe so ločene od projektnih postavk. Uporabi cenik ali dodaj ročno.
+                    </p>
                   </div>
-                  <Button onClick={handleCreateOffer}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Nova verzija
-                  </Button>
-                </div>
-
-                <div className="space-y-3">
-                  {offers.map((offer) => (
-                    <div key={offer.id}>
-                      <OfferVersionCard
-                        offer={offer}
-                        onOpen={() => handleGeneratePDF(offer.id)}
-                        onPDF={() => handleDownloadPDF(offer.id)}
-                        onMarkAsSelected={() => handleMarkOfferAsSelected(offer.id)}
-                        onSend={() => handleSendOffer(offer.id)}
-                        onConfirm={() => handleConfirmOffer(offer.id)}
-                        onCancelConfirmation={() => handleCancelConfirmation(offer.id)}
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                {offers.length === 0 && (
-                  <Card className="p-12 text-center">
-                    <p className="text-muted-foreground">Še ni ustvarjenih ponudb</p>
-                    <Button className="mt-4" onClick={handleCreateOffer}>
-                      Ustvari prvo ponudbo
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" onClick={() => fetchActiveOffer()} disabled={isOfferLoading}>
+                      <RefreshCcw className="mr-2 h-4 w-4" />
+                      Osveži ponudbo
                     </Button>
-                  </Card>
-                )}
+                    <Button onClick={() => openCatalog("offer")}>
+                      <Package className="mr-2 h-4 w-4" />
+                      Dodaj iz cenika
+                    </Button>
+                  </div>
+                </div>
+
+                <Card className="p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Ponudba</p>
+                      <h4 className="m-0">{activeOffer?.label ?? "Ponudba 1"}</h4>
+                    </div>
+                    <Button variant="outline" onClick={handleAddOfferItem}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Nova postavka
+                    </Button>
+                  </div>
+                  <ItemsTable
+                    items={offerItems as Item[]}
+                    onEdit={(item) => handleEditOfferItem(item as unknown as ProjectOfferItem)}
+                    onAddFromCatalog={() => openCatalog("offer")}
+                    onAddCustom={handleAddOfferItem}
+                    onDelete={handleDeleteOfferItem}
+                  />
+                </Card>
               </TabsContent>
 
               <TabsContent value="logistics" className="mt-0 space-y-6">
@@ -635,7 +842,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                     </div>
                   ) : (
                     <Card className="p-6 text-center text-muted-foreground">
-                      {offers.length > 0 ? "Naročilnice bodo generirane ob potrditvi ponudbe" : "Izberite ponudbo za generiranje naročilnic"}
+                      {offers.length > 0 ? "Naro?ilnice bodo generirane ob potrditvi ponudbe" : "Izberite ponudbo za generiranje naro?ilnic"}
                     </Card>
                   )}
                 </div>
@@ -653,7 +860,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                                 <Badge className={
                                   dn.receivedQuantity > 0 ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
                                 }>
-                                  {dn.receivedQuantity > 0 ? "Prevzeto" : "Čaka"}
+                                  {dn.receivedQuantity > 0 ? "Prevzeto" : "?aka"}
                                 </Badge>
                               </div>
                               <div className="text-sm">
@@ -739,7 +946,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                 <div className="space-y-4">
                   <h3>Potrditev zaključka</h3>
                   <Card className="p-6">
-                    <SignaturePad onSave={handleSaveSignature} />
+                    <SignaturePad onSign={handleSaveSignature} />
                   </Card>
                 </div>
               </TabsContent>

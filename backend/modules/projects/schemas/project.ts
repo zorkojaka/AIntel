@@ -1,3 +1,5 @@
+import mongoose, { Document, Schema } from 'mongoose';
+
 export type ProjectStatus = 'draft' | 'offered' | 'ordered' | 'in-progress' | 'completed' | 'invoiced';
 
 export interface ProjectItem {
@@ -21,6 +23,28 @@ export interface OfferVersion {
   amount: number;
   date: string;
   isSelected?: boolean;
+  label?: string;
+  items?: ProjectOfferItem[];
+}
+
+export interface ProjectOfferItem {
+  id: string;
+  productId?: string;
+  name: string;
+  sku?: string;
+  quantity: number;
+  unit: string;
+  price: number;
+  discount: number;
+  vatRate: number;
+  total: number;
+  description?: string;
+}
+
+export interface ProjectOffer {
+  id: string;
+  label: string;
+  items: ProjectOfferItem[];
 }
 
 export interface WorkOrder {
@@ -98,173 +122,169 @@ export interface Project {
   categories: string[];
 }
 
-const defaultTemplates: ProjectTemplate[] = [
-  {
-    id: 'tpl-default-offer',
-    name: 'Standardna ponudba',
-    description: 'Privzeta predloga za vse ponudbe',
-    category: 'offer',
-    content: '<html><body>Privzeta ponudba</body></html>',
-    isDefault: true,
-    createdAt: '2024-11-01T10:00:00',
-    updatedAt: '2024-11-01T10:00:00',
-  },
-];
+export interface ProjectDocument extends Omit<Project, 'id'>, Document {
+  id: string;
+}
 
-const seedItems: ProjectItem[] = [
+const ProjectItemSchema = new Schema<ProjectItem>(
   {
-    id: 'item-1',
-    name: 'DVC IP kamera 4MP',
-    sku: 'DVC-4MP-001',
-    unit: 'kos',
-    quantity: 4,
-    price: 185,
-    discount: 0,
-    vatRate: 22,
-    total: 902.8,
-    category: 'material',
-    description: 'IP kamera 4MP z nočnim vidom, H.265 kodiranje',
+    id: { type: String, required: true },
+    name: { type: String, required: true },
+    sku: { type: String, required: true },
+    unit: { type: String, required: true },
+    quantity: { type: Number, required: true },
+    price: { type: Number, required: true },
+    discount: { type: Number, required: true },
+    vatRate: { type: Number, required: true },
+    total: { type: Number, required: true },
+    description: { type: String },
+    category: { type: String },
   },
-  {
-    id: 'item-2',
-    name: 'UTP Cat6 kabel',
-    sku: 'UTP-CAT6',
-    unit: 'm',
-    quantity: 50,
-    price: 1.2,
-    discount: 5,
-    vatRate: 22,
-    total: 69.54,
-    category: 'material',
-    description: 'UTP kabel kategorije 6 za prenos podatkov',
-  },
-  {
-    id: 'item-3',
-    name: 'Montaža in konfiguracija',
-    sku: 'SRV-INST',
-    unit: 'h',
-    quantity: 8,
-    price: 45,
-    discount: 0,
-    vatRate: 22,
-    total: 439.2,
-    category: 'labor',
-    description: 'Strokovnjak za montažo in konfiguracijo kamer',
-  },
-  {
-    id: 'item-4',
-    name: 'NVR 8-kanalni',
-    sku: 'NVR-8CH-2TB',
-    unit: 'kos',
-    quantity: 1,
-    price: 320,
-    discount: 10,
-    vatRate: 22,
-    total: 351.36,
-    category: 'material',
-    description: 'Network Video Recorder z 2TB diskom',
-  },
-];
+  { _id: false }
+);
 
-const seedOffers: OfferVersion[] = [
-  { id: 'offer-1', version: 1, status: 'sent', amount: 1950, date: '08.11.2024' },
-  { id: 'offer-2', version: 2, status: 'accepted', amount: 2120, date: '09.11.2024', isSelected: true },
-];
-
-const seedWorkOrders: WorkOrder[] = [
+const OfferSchema = new Schema<OfferVersion>(
   {
-    id: 'wo-1',
-    team: 'Ekipa A - Janez Novak, Marko Horvat',
-    schedule: '14.11.2024 08:00',
-    location: 'Hotel Dolenjc, Tržaška cesta 12, Ljubljana',
-    status: 'planned',
-    notes: 'Pripraviti ključe za dostop do tehničnih prostorov',
-  },
-];
-
-const seedTimeline: TimelineEvent[] = [
-  {
-    id: 'evt-1',
-    type: 'edit',
-    title: 'Projekt ustvarjen',
-    description: 'Nov projekt za Hotel Dolenjc',
-    timestamp: '08.11.2024 09:15',
-    user: 'Admin',
-  },
-  {
-    id: 'evt-2',
-    type: 'offer',
-    title: 'Ponudba v1 ustvarjena',
-    description: 'Prva verzija ponudbe pripravljena',
-    timestamp: '08.11.2024 10:30',
-    user: 'Admin',
-    metadata: { amount: '€ 1.950', status: 'sent' },
-  },
-  {
-    id: 'evt-3',
-    type: 'offer',
-    title: 'Ponudba v2 ustvarjena',
-    description: 'Posodobljena verzija ponudbe z dodanimi postavkami',
-    timestamp: '09.11.2024 14:20',
-    user: 'Admin',
-    metadata: { amount: '€ 2.120', status: 'accepted' },
-  },
-  {
-    id: 'evt-4',
-    type: 'status-change',
-    title: 'Status spremenjen',
-    description: "Projekt prešel v fazo 'Ponujeno'",
-    timestamp: '09.11.2024 14:25',
-    user: 'Admin',
-  },
-  {
-    id: 'evt-5',
-    type: 'execution',
-    title: 'Delovni nalog ustvarjen',
-    description: 'Načrtovana montaža za 14.11.2024',
-    timestamp: '10.11.2024 09:00',
-    user: 'Admin',
-    metadata: { team: 'Ekipa A' },
-  },
-];
-
-export const projects: Project[] = [
-  {
-    id: 'PRJ-001',
-    title: 'Hotel Dolenjc – kamere',
-    customer: {
-      name: 'Hotel Dolenjc d.o.o.',
-      taxId: 'SI12345678',
-      address: 'Tržaška cesta 12, 1000 Ljubljana',
-      paymentTerms: '30 dni',
+    id: { type: String, required: true },
+    version: { type: Number, required: true },
+    status: { type: String, required: true },
+    amount: { type: Number, required: true },
+    date: { type: String, required: true },
+    isSelected: { type: Boolean },
+    label: { type: String },
+    items: {
+      type: [
+        new Schema<ProjectOfferItem>(
+          {
+            id: { type: String, required: true },
+            productId: { type: String },
+            name: { type: String, required: true },
+            sku: { type: String },
+            quantity: { type: Number, required: true },
+            unit: { type: String, required: true },
+            price: { type: Number, required: true },
+            discount: { type: Number, required: true },
+            vatRate: { type: Number, required: true },
+            total: { type: Number, required: true },
+            description: { type: String },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
     },
-    status: 'offered',
-    offerAmount: 2120,
-    invoiceAmount: 0,
-    createdAt: '2024-11-08',
-    requirements: 'Postavitev 4 IP kamer DVC za nadzor vhoda in parkirišča. Vodenje kablov po stenah, postavitev NVR, konfiguracija.',
-    items: seedItems,
-    offers: seedOffers,
-    workOrders: seedWorkOrders,
-    purchaseOrders: [],
-    deliveryNotes: [],
-    timeline: seedTimeline,
-    templates: defaultTemplates,
-    categories: ['video-nadzor', 'alarm'],
   },
-];
+  { _id: false }
+);
 
-export function nextProjectId(): string {
-  const base = 100 + projects.length;
-  return `PRJ-${(base + 1).toString().padStart(3, '0')}`;
+const WorkOrderSchema = new Schema<WorkOrder>(
+  {
+    id: { type: String, required: true },
+    team: { type: String, required: true },
+    schedule: { type: String, required: true },
+    location: { type: String, required: true },
+    status: { type: String, required: true },
+    notes: { type: String },
+  },
+  { _id: false }
+);
+
+const PurchaseOrderSchema = new Schema<PurchaseOrder>(
+  {
+    id: { type: String, required: true },
+    supplier: { type: String, required: true },
+    status: { type: String, required: true },
+    amount: { type: Number, required: true },
+    dueDate: { type: String, required: true },
+    items: [{ type: String, required: true }],
+  },
+  { _id: false }
+);
+
+const DeliveryNoteSchema = new Schema<DeliveryNote>(
+  {
+    id: { type: String, required: true },
+    poId: { type: String, required: true },
+    supplier: { type: String, required: true },
+    receivedQuantity: { type: Number, required: true },
+    totalQuantity: { type: Number, required: true },
+    receivedDate: { type: String, required: true },
+    serials: [{ type: String }],
+  },
+  { _id: false }
+);
+
+const TimelineEventSchema = new Schema<TimelineEvent>(
+  {
+    id: { type: String, required: true },
+    type: { type: String, required: true },
+    title: { type: String, required: true },
+    description: { type: String, required: true },
+    timestamp: { type: String, required: true },
+    user: { type: String, required: true },
+    metadata: { type: Schema.Types.Mixed },
+  },
+  { _id: false }
+);
+
+const ProjectTemplateSchema = new Schema<ProjectTemplate>(
+  {
+    id: { type: String, required: true },
+    name: { type: String, required: true },
+    description: { type: String },
+    category: { type: String, required: true },
+    content: { type: String, required: true },
+    isDefault: { type: Boolean },
+    createdAt: { type: String, required: true },
+    updatedAt: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+const ProjectSchema = new Schema<ProjectDocument>(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    title: { type: String, required: true, trim: true },
+    customer: {
+      name: { type: String, required: true, trim: true },
+      taxId: { type: String, trim: true },
+      address: { type: String, trim: true },
+      paymentTerms: { type: String, trim: true },
+    },
+    status: { type: String, required: true },
+    offerAmount: { type: Number, required: true, default: 0 },
+    invoiceAmount: { type: Number, required: true, default: 0 },
+    createdAt: { type: String, required: true },
+    requirements: { type: String, default: '' },
+    items: { type: [ProjectItemSchema], default: [] },
+    workOrders: { type: [WorkOrderSchema], default: [] },
+    purchaseOrders: { type: [PurchaseOrderSchema], default: [] },
+    deliveryNotes: { type: [DeliveryNoteSchema], default: [] },
+    timeline: { type: [TimelineEventSchema], default: [] },
+    templates: { type: [ProjectTemplateSchema], default: [] },
+    categories: { type: [String], default: [] },
+    offers: { type: [OfferSchema], default: [] },
+  },
+  { versionKey: false }
+);
+
+export const ProjectModel =
+  (mongoose.models.Project as mongoose.Model<ProjectDocument>) ||
+  mongoose.model<ProjectDocument>('Project', ProjectSchema);
+
+export function calculateOfferAmount(items: ProjectItem[]) {
+  return items.reduce(
+    (acc, item) => acc + item.quantity * item.price * (1 - item.discount / 100) * (1 + item.vatRate / 100),
+    0
+  );
 }
 
-export function addTimeline(project: Project, event: Omit<TimelineEvent, 'id'>) {
+export function addTimeline(project: Project | ProjectDocument, event: Omit<TimelineEvent, 'id'>) {
   const newEvent: TimelineEvent = { ...event, id: `evt-${Date.now().toString(36)}` };
-  project.timeline = [newEvent, ...project.timeline];
+  project.timeline = [newEvent, ...(project.timeline ?? [])];
 }
 
-export function summarizeProject(project: Project) {
+export function summarizeProject(project: Project | ProjectDocument) {
   return {
     id: project.id,
     title: project.title,
@@ -273,13 +293,13 @@ export function summarizeProject(project: Project) {
     offerAmount: project.offerAmount,
     invoiceAmount: project.invoiceAmount,
     createdAt: project.createdAt,
+    categories: project.categories ?? [],
   };
 }
 
-export function calculateOfferAmount(items: ProjectItem[]) {
-  return items.reduce((acc, item) => acc + item.quantity * item.price * (1 - item.discount / 100) * (1 + item.vatRate / 100), 0);
-}
-
-export function findProject(id: string) {
-  return projects.find((project) => project.id === id);
+export async function generateProjectId() {
+  const latest = await ProjectModel.findOne().sort({ createdAt: -1 }).lean();
+  const match = latest?.id?.match(/PRJ-(\d+)/);
+  const nextNumber = match ? parseInt(match[1], 10) + 1 : 1;
+  return `PRJ-${nextNumber.toString().padStart(3, '0')}`;
 }

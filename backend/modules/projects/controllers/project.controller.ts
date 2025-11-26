@@ -2,13 +2,15 @@ import { Request, Response } from 'express';
 import { ProductModel } from '../../cenik/product.model';
 import {
   Project,
+  ProjectDocument,
   ProjectItem,
+  ProjectModel,
+  ProjectOffer,
+  ProjectOfferItem,
   ProjectStatus,
   addTimeline,
   calculateOfferAmount,
-  findProject,
-  nextProjectId,
-  projects,
+  generateProjectId,
   summarizeProject,
 } from '../schemas/project';
 
@@ -102,16 +104,48 @@ function sanitizeItemPayload(body: any, existing?: ProjectItem) {
   return { item };
 }
 
+function sanitizeOfferItemPayload(body: any, existing?: ProjectOfferItem): { item?: ProjectOfferItem; error?: string } {
+  const base = sanitizeItemPayload(body, existing as unknown as ProjectItem);
+  if (base.error || !base.item) return base;
+  const item: ProjectOfferItem = {
+    ...base.item,
+    productId: body?.productId ?? existing?.productId,
+  };
+  return { item };
+}
+
 function updateOfferAmount(project: Project) {
   project.offerAmount = Number(calculateOfferAmount(project.items).toFixed(2));
 }
 
-export function listProjects(_req: Request, res: Response) {
-  return res.success(projects.map(summarizeProject));
+async function findProjectById(id: string) {
+  const project =
+    (await ProjectModel.findOne({ id }).lean()) || (await ProjectModel.findById(id).lean<ProjectDocument>());
+  return project ?? null;
 }
 
-export function getProject(req: Request, res: Response) {
-  const project = findProject(req.params.id);
+function calculateOfferItemsTotal(items: ProjectOfferItem[]) {
+  return items.reduce(
+    (acc, item) => acc + item.quantity * item.price * (1 - item.discount / 100) * (1 + item.vatRate / 100),
+    0
+  );
+}
+
+function buildDefaultOffer(): ProjectOffer {
+  return {
+    id: 'OFF-001',
+    label: 'Ponudba 1',
+    items: [],
+  };
+}
+
+export async function listProjects(_req: Request, res: Response) {
+  const all = await ProjectModel.find().lean();
+  return res.success(all.map(summarizeProject));
+}
+
+export async function getProject(req: Request, res: Response) {
+  const project = await findProjectById(req.params.id);
   if (!project) {
     return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
   }
@@ -119,11 +153,11 @@ export function getProject(req: Request, res: Response) {
   return res.success(responseProject(project));
 }
 
-export function createProject(req: Request, res: Response) {
+export async function createProject(req: Request, res: Response) {
   const error = validateProjectPayload(req.body);
   if (error) return res.fail(error, 400);
 
-  const id = nextProjectId();
+  const id = await generateProjectId();
   const createdAt = toISODate();
 
   const project: Project = {
@@ -161,13 +195,13 @@ export function createProject(req: Request, res: Response) {
     user: 'Admin',
   });
 
-  projects.unshift(project);
+  await ProjectModel.create(project);
 
   return res.success(responseProject(project), 201);
 }
 
-export function updateProject(req: Request, res: Response) {
-  const project = findProject(req.params.id);
+export async function updateProject(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
   const error = validateProjectPayload(req.body);
@@ -206,11 +240,13 @@ export function updateProject(req: Request, res: Response) {
     user: 'Admin',
   });
 
-  return res.success(responseProject(project));
+  await project.save();
+
+  return res.success(responseProject(project.toObject()));
 }
 
-export function updateStatus(req: Request, res: Response) {
-  const project = findProject(req.params.id);
+export async function updateStatus(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
   const nextStatus = req.body?.status as ProjectStatus;
@@ -228,11 +264,13 @@ export function updateStatus(req: Request, res: Response) {
     user: 'Admin',
   });
 
-  return res.success(responseProject(project));
+  await project.save();
+
+  return res.success(responseProject(project.toObject()));
 }
 
-export function addOffer(req: Request, res: Response) {
-  const project = findProject(req.params.id);
+export async function addOffer(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
   const amount = calculateOfferAmount(project.items);
@@ -259,11 +297,13 @@ export function addOffer(req: Request, res: Response) {
 
   project.status = project.status === 'draft' ? 'offered' : project.status;
 
-  return res.success(responseProject(project), 201);
+  await project.save();
+
+  return res.success(responseProject(project.toObject()), 201);
 }
 
-export function addItem(req: Request, res: Response) {
-  const project = findProject(req.params.id);
+export async function addItem(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
   const { item, error } = sanitizeItemPayload(req.body);
@@ -282,11 +322,13 @@ export function addItem(req: Request, res: Response) {
     user: 'Admin',
   });
 
-  return res.success(responseProject(project), 201);
+  await project.save();
+
+  return res.success(responseProject(project.toObject()), 201);
 }
 
 export async function addItemFromCenik(req: Request, res: Response) {
-  const project = findProject(req.params.id);
+  const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
   const productId = req.body?.productId;
@@ -332,14 +374,16 @@ export async function addItemFromCenik(req: Request, res: Response) {
       metadata: { source: 'cenik' },
     });
 
-    return res.success(responseProject(project), 201);
+    await project.save();
+
+    return res.success(responseProject(project.toObject()), 201);
   } catch (error) {
     return res.fail('Napaka pri povezavi s cenikom.', 500);
   }
 }
 
-export function updateItem(req: Request, res: Response) {
-  const project = findProject(req.params.id);
+export async function updateItem(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
   const existing = project.items.find((item) => item.id === req.params.itemId);
@@ -363,11 +407,13 @@ export function updateItem(req: Request, res: Response) {
     user: 'Admin',
   });
 
-  return res.success(responseProject(project));
+  await project.save();
+
+  return res.success(responseProject(project.toObject()));
 }
 
-export function deleteItem(req: Request, res: Response) {
-  const project = findProject(req.params.id);
+export async function deleteItem(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
   const existing = project.items.find((item) => item.id === req.params.itemId);
@@ -386,11 +432,13 @@ export function deleteItem(req: Request, res: Response) {
     user: 'Admin',
   });
 
-  return res.success(responseProject(project));
+  await project.save();
+
+  return res.success(responseProject(project.toObject()));
 }
 
-export function sendOffer(req: Request, res: Response) {
-  const project = findProject(req.params.id);
+export async function sendOffer(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
   const offer = project.offers.find((o) => o.id === req.params.offerId);
@@ -405,7 +453,9 @@ export function sendOffer(req: Request, res: Response) {
     user: 'Admin',
   });
 
-  return res.success(responseProject(project));
+  await project.save();
+
+  return res.success(responseProject(project.toObject()));
 }
 
 function createPurchaseOrders(project: Project) {
@@ -429,8 +479,8 @@ function createPurchaseOrders(project: Project) {
   ];
 }
 
-export function confirmOffer(req: Request, res: Response) {
-  const project = findProject(req.params.id);
+export async function confirmOffer(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
   const offer = project.offers.find((o) => o.id === req.params.offerId);
@@ -500,11 +550,13 @@ export function confirmOffer(req: Request, res: Response) {
     user: 'Admin',
   });
 
-  return res.success(responseProject(project));
+  await project.save();
+
+  return res.success(responseProject(project.toObject()));
 }
 
-export function cancelConfirmation(req: Request, res: Response) {
-  const project = findProject(req.params.id);
+export async function cancelConfirmation(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
   const offer = project.offers.find((o) => o.id === req.params.offerId);
@@ -529,11 +581,13 @@ export function cancelConfirmation(req: Request, res: Response) {
     user: 'Admin',
   });
 
-  return res.success(responseProject(project));
+  await project.save();
+
+  return res.success(responseProject(project.toObject()));
 }
 
-export function selectOffer(req: Request, res: Response) {
-  const project = findProject(req.params.id);
+export async function selectOffer(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
   const offer = project.offers.find((o) => o.id === req.params.offerId);
@@ -552,11 +606,13 @@ export function selectOffer(req: Request, res: Response) {
     user: 'Admin',
   });
 
-  return res.success(responseProject(project));
+  await project.save();
+
+  return res.success(responseProject(project.toObject()));
 }
 
-export function receiveDelivery(req: Request, res: Response) {
-  const project = findProject(req.params.id);
+export async function receiveDelivery(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
   const delivery = project.deliveryNotes.find((d) => d.id === req.params.deliveryId);
@@ -591,11 +647,13 @@ export function receiveDelivery(req: Request, res: Response) {
     metadata: { supplier: delivery.supplier },
   });
 
-  return res.success(responseProject(project));
+  await project.save();
+
+  return res.success(responseProject(project.toObject()));
 }
 
-export function saveSignature(req: Request, res: Response) {
-  const project = findProject(req.params.id);
+export async function saveSignature(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
   const signerName = req.body?.signerName;
@@ -622,5 +680,90 @@ export function saveSignature(req: Request, res: Response) {
     user: 'Admin',
   });
 
-  return res.success(responseProject(project));
+  await project.save();
+
+  return res.success(responseProject(project.toObject()));
+}
+
+export async function getProjectOffer(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.projectId });
+  if (!project) return res.fail(`Projekt ${req.params.projectId} ni najden.`, 404);
+
+  if (!project.offers || project.offers.length === 0) {
+    const defaultOffer = {
+      id: 'OFF-001',
+      version: 1,
+      status: 'draft' as const,
+      amount: 0,
+      date: toISODate(),
+      label: 'Ponudba 1',
+      items: [],
+    };
+    project.offers = [defaultOffer];
+    await project.save();
+  }
+
+  const offer = project.offers[0];
+  const payload: ProjectOffer = {
+    id: offer.id,
+    label: offer.label ?? 'Ponudba 1',
+    items: offer.items ?? [],
+  };
+
+  return res.success(payload);
+}
+
+export async function updateProjectOffer(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.projectId });
+  if (!project) return res.fail(`Projekt ${req.params.projectId} ni najden.`, 404);
+
+  const bodyItems = Array.isArray(req.body?.items) ? req.body.items : Array.isArray(req.body?.offer?.items) ? req.body.offer.items : null;
+  if (!bodyItems) {
+    return res.fail('Manjkajo postavke ponudbe.', 400);
+  }
+
+  const sanitized: ProjectOfferItem[] = [];
+  for (const raw of bodyItems) {
+    const { item, error } = sanitizeOfferItemPayload(raw);
+    if (error || !item) {
+      return res.fail(error ?? 'Napaka pri validaciji postavk ponudbe.', 400);
+    }
+    sanitized.push(item);
+  }
+
+  if (!project.offers || project.offers.length === 0) {
+    project.offers = [
+      {
+        id: 'OFF-001',
+        version: 1,
+        status: 'draft',
+        amount: 0,
+        date: toISODate(),
+        label: 'Ponudba 1',
+        items: [],
+      },
+    ];
+  }
+
+  const active = project.offers[0];
+  active.items = sanitized;
+  active.amount = Number(calculateOfferItemsTotal(sanitized).toFixed(2));
+  active.label = active.label ?? 'Ponudba 1';
+  project.offers[0] = active;
+
+  await project.save();
+
+  return res.success({
+    id: active.id,
+    label: active.label,
+    items: active.items,
+  });
+}
+
+export async function deleteProject(req: Request, res: Response) {
+  const deleted = await ProjectModel.findOneAndDelete({ id: req.params.id }).lean();
+  if (!deleted) {
+    return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+  }
+  return res.success({ id: deleted.id });
 }

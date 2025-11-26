@@ -90,7 +90,6 @@ export function ItemsTable({ items, onEdit, onAddFromCatalog, onAddCustom, onDel
           <TableHeader>
             <TableRow>
               <TableHead>Naziv</TableHead>
-              <TableHead>SKU</TableHead>
               <TableHead>Enota</TableHead>
               <TableHead className="text-right">Količina</TableHead>
               <TableHead className="text-right">Cena</TableHead>
@@ -108,7 +107,6 @@ export function ItemsTable({ items, onEdit, onAddFromCatalog, onAddCustom, onDel
                 onClick={() => handleRowClick(item)}
               >
                 <TableCell>{item.name}</TableCell>
-                <TableCell className="text-muted-foreground">{item.sku}</TableCell>
                 <TableCell>{item.unit}</TableCell>
                 <TableCell className="text-right">{item.quantity}</TableCell>
                 <TableCell className="text-right">€ {item.price.toFixed(2)}</TableCell>
@@ -189,8 +187,8 @@ export function ItemsTable({ items, onEdit, onAddFromCatalog, onAddCustom, onDel
                   <Input value={selectedItem.name} readOnly />
                 </div>
                 <div>
-                  <Label>SKU</Label>
-                  <Input value={selectedItem.sku} readOnly />
+        <Label>SKU</Label>
+        <Input value={selectedItem.sku} readOnly />
                 </div>
               </div>
 

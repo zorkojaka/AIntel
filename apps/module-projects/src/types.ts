@@ -57,6 +57,26 @@ export interface DeliveryNote {
   serials?: string[];
 }
 
+export interface ProjectOfferItem {
+  id: string;
+  productId?: string;
+  name: string;
+  sku?: string;
+  quantity: number;
+  unit: string;
+  price: number;
+  discount: number;
+  vatRate: number;
+  total: number;
+  description?: string;
+}
+
+export interface ProjectOffer {
+  id: string;
+  label: string;
+  items: ProjectOfferItem[];
+}
+
 export interface ProjectDetails extends ProjectSummary {
   customerDetail: ProjectCustomer;
   requirements: string;

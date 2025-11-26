@@ -169,6 +169,31 @@ export function ProjectsPage() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!projectFormInitial || crmClients.length === 0) return;
+
+    const byId = projectFormInitial.customerDetail?.id
+      ? crmClients.find((client) => client.id === projectFormInitial.customerDetail?.id)
+      : null;
+
+    const byTaxId = !byId && projectFormInitial.customerDetail?.taxId
+      ? crmClients.find((client) => client.vatNumber === projectFormInitial.customerDetail?.taxId)
+      : null;
+
+    const byNameAndTax = !byId && !byTaxId
+      ? crmClients.find(
+          (client) =>
+            client.name === projectFormInitial.customerDetail?.name &&
+            (!!client.vatNumber && client.vatNumber === projectFormInitial.customerDetail?.taxId)
+        )
+      : null;
+
+    const match = byId || byTaxId || byNameAndTax;
+    if (match) {
+      setSelectedClientId(match.id);
+    }
+  }, [projectFormInitial, crmClients]);
+
   const fetchProjectList = async () => {
     const response = await fetch(API_PREFIX);
     const result = await response.json();
@@ -411,12 +436,29 @@ export function ProjectsPage() {
       return;
     }
 
+    const selectedClient =
+      selectedClientId != null ? crmClients.find((client) => client.id === selectedClientId) : null;
+    if (selectedClientId && !selectedClient) {
+      toast.error("Izbrana stranka ne obstaja.");
+      return;
+    }
+
+    const customer =
+      selectedClient != null
+        ? {
+            name: selectedClient.name,
+            taxId: selectedClient.vatNumber,
+            address: selectedClient.address,
+            paymentTerms: globalSettings.defaultPaymentTerms || "30 dni",
+          }
+        : projectFormInitial.customerDetail;
+
     setIsCreatingProject(true);
     const payload = {
       title,
       requirements,
       categories,
-      customer: projectFormInitial.customerDetail,
+      customer,
       items: projectFormInitial.items,
       templates: projectFormInitial.templates,
       status: projectFormInitial.status,
