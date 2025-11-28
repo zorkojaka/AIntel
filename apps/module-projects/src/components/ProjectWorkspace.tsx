@@ -49,6 +49,13 @@ type ItemFormState = {
   category: Item["category"];
 };
 
+type RequirementRow = {
+  id: string;
+  label: string;
+  categorySlug: string;
+  notes?: string;
+};
+
 type CatalogProduct = {
   id: string;
   name: string;
@@ -72,12 +79,25 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   const [offers, setOffers] = useState<OfferVersion[]>(project.offers);
   const [activeOffer, setActiveOffer] = useState<ProjectOffer | null>(null);
   const [offerItems, setOfferItems] = useState<ProjectOfferItem[]>([]);
+  const [draftOfferItem, setDraftOfferItem] = useState<Partial<ProjectOfferItem>>({
+    name: "",
+    sku: "",
+    unit: "kos",
+    quantity: 1,
+    price: 0,
+    discount: 0,
+    vatRate: 22,
+    total: 0,
+    description: "",
+    productId: "",
+  });
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>(project.workOrders);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(project.purchaseOrders);
   const [deliveryNotes, setDeliveryNotes] = useState<DeliveryNote[]>(project.deliveryNotes);
   const [timeline, setTimeline] = useState<TimelineEvent[]>(project.timelineEvents);
   const [status, setStatus] = useState(project.status);
-  const [requirements, setRequirements] = useState(project.requirements);
+  const [requirementsText, setRequirementsText] = useState(project.requirements);
+  const [requirements, setRequirements] = useState<RequirementRow[]>([]);
   const [isItemDialogOpen, setItemDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [itemContext, setItemContext] = useState<"project" | "offer">("project");
@@ -106,8 +126,11 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   const [isSavingItem, setIsSavingItem] = useState(false);
   const [isAddingFromCatalog, setIsAddingFromCatalog] = useState(false);
   const [isOfferLoading, setIsOfferLoading] = useState(false);
+  const [offerVatRate, setOfferVatRate] = useState<number>(22);
+  const [globalDiscount, setGlobalDiscount] = useState<number>(0);
 
   const basePath = `/api/projects/${project.id}`;
+  const isExecutionPhase = status === "ordered" || status === "in-progress" || status === "completed";
 
   const fetchActiveOffer = useCallback(async () => {
     setIsOfferLoading(true);
@@ -163,8 +186,18 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     setDeliveryNotes(project.deliveryNotes);
     setTimeline(project.timelineEvents);
     setStatus(project.status);
-    setRequirements(project.requirements);
+    setRequirementsText(project.requirements);
   }, [project]);
+
+  useEffect(() => {
+    const firstVat = offerItems[0]?.vatRate ?? 22;
+    setOfferVatRate(firstVat);
+    if (offerItems.length > 0) {
+      setGlobalDiscount(offerItems[0].discount ?? 0);
+    } else {
+      setGlobalDiscount(0);
+    }
+  }, [offerItems]);
 
   useEffect(() => {
     if (activeTab === "offers" && !activeOffer && !isOfferLoading) {
@@ -224,7 +257,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     setDeliveryNotes(updated.deliveryNotes);
     setTimeline(updated.timelineEvents);
     setStatus(updated.status);
-    setRequirements(updated.requirements);
+    setRequirementsText(updated.requirements);
   };
 
   const validationIssues: string[] = [];
@@ -252,11 +285,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     setItemDialogOpen(true);
   };
 
-  const handleAddOfferItem = () => {
-    resetItemForm();
-    setItemContext("offer");
-    setItemDialogOpen(true);
-  };
+  
 
   const handleEditItem = (item: Item) => {
     setEditingItem(item);
@@ -275,22 +304,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     setItemDialogOpen(true);
   };
 
-  const handleEditOfferItem = (item: ProjectOfferItem) => {
-    setEditingItem(item as unknown as Item);
-    setItemForm({
-      name: item.name,
-      sku: item.sku ?? "",
-      unit: item.unit,
-      quantity: item.quantity,
-      price: item.price,
-      discount: item.discount,
-      vatRate: item.vatRate,
-      description: item.description ?? "",
-      category: "material",
-    });
-    setItemContext("offer");
-    setItemDialogOpen(true);
-  };
+  
 
   const handleDeleteItem = async (id: string) => {
     const updated = await onProjectUpdate(`${basePath}/items/${id}`, { method: "DELETE" });
@@ -307,6 +321,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   };
 
   const handleSaveItem = async () => {
+    // Modal-based add/edit ni v uporabi za offer kontekst; ohranimo le project branch
     setIsSavingItem(true);
     const payload = {
       ...itemForm,
@@ -315,64 +330,18 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
       discount: Number(itemForm.discount),
       vatRate: Number(itemForm.vatRate),
     };
-    const offerPayload =
-      itemContext === "offer"
-        ? {
-            ...payload,
-            total: Number(
-              (
-                payload.quantity *
-                payload.price *
-                (1 - payload.discount / 100) *
-                (1 + payload.vatRate / 100)
-              ).toFixed(2)
-            ),
-          }
-        : payload;
     const url = editingItem && itemContext === "project" ? `${basePath}/items/${editingItem.id}` : `${basePath}/items`;
     const method = editingItem && itemContext === "project" ? "PUT" : "POST";
-    const updated =
-      itemContext === "project"
-        ? await onProjectUpdate(url, {
-            method,
-            body: JSON.stringify(payload),
-          })
-        : await persistOfferItems(
-            editingItem
-              ? offerItems.map((current) =>
-                  current.id === editingItem.id ? { ...offerPayload, id: editingItem.id } : current
-                )
-              : [
-                  ...offerItems,
-                  {
-                    ...(offerPayload as ProjectOfferItem),
-                    id: `offer-item-${Date.now()}`,
-                    total: Number(
-                      (
-                        offerPayload.quantity *
-                        offerPayload.price *
-                        (1 - offerPayload.discount / 100) *
-                        (1 + offerPayload.vatRate / 100)
-                      ).toFixed(2)
-                    ),
-                  } as ProjectOfferItem,
-                ]
-          );
+    const updated = await onProjectUpdate(url, {
+      method,
+      body: JSON.stringify(payload),
+    });
     setIsSavingItem(false);
-    if (itemContext === "project") {
-      applyProjectUpdate(updated as ProjectDetails | null);
-      if (updated) {
-        toast.success(editingItem ? "Postavka posodobljena" : "Postavka dodana");
-        setItemDialogOpen(false);
-        resetItemForm();
-      }
-    } else if (updated && "label" in updated) {
-      const offer = updated as ProjectOffer;
-      toast.success(editingItem ? "Postavka ponudbe posodobljena" : "Postavka ponudbe dodana");
+    applyProjectUpdate(updated as ProjectDetails | null);
+    if (updated) {
+      toast.success(editingItem ? "Postavka posodobljena" : "Postavka dodana");
       setItemDialogOpen(false);
       resetItemForm();
-      setActiveOffer(offer);
-      setOfferItems(offer.items ?? []);
     }
   };
 
@@ -424,7 +393,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
         toast.error("Ponudba ni naložena.");
         return;
       }
-      const newOfferItem: ProjectOfferItem = {
+      const newOfferItem = buildOfferItem({
         id: `offer-item-${Date.now()}`,
         productId: selectedCatalogProduct.id,
         name: selectedCatalogProduct.name,
@@ -434,14 +403,8 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
         price: selectedCatalogProduct.price,
         discount: catalogDiscount,
         vatRate: catalogVatRate,
-        total:
-          catalogQuantity *
-          selectedCatalogProduct.price *
-          (1 - catalogDiscount / 100) *
-          (1 + catalogVatRate / 100),
         description: selectedCatalogProduct.description ?? "",
-        category: "material",
-      };
+      });
       updated = await persistOfferItems([...(offerItems ?? []), newOfferItem]);
     }
 
@@ -460,6 +423,145 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
       setActiveOffer(updated as ProjectOffer);
       setOfferItems((updated as ProjectOffer).items ?? []);
     }
+  };
+
+  const buildOfferItem = ({
+    id,
+    name,
+    sku,
+    unit,
+    description,
+    quantity,
+    price,
+    discount,
+    vatRate,
+    productId,
+  }: {
+    id: string;
+    name: string;
+    sku?: string;
+    unit: string;
+    description?: string;
+    quantity: number;
+    price: number;
+    discount: number;
+    vatRate: number;
+    productId?: string;
+  }): ProjectOfferItem => {
+    const net = quantity * price * (1 - discount / 100);
+    const total = net * (1 + vatRate / 100);
+    return {
+      id,
+      name,
+      sku,
+      unit,
+      description,
+      quantity,
+      price,
+      discount,
+      vatRate,
+      total: Number(total.toFixed(2)),
+      productId,
+    };
+  };
+
+  const handleProjectItemFieldChange = async (id: string, changes: Partial<Item>) => {
+    const current = items.find((item) => item.id === id);
+    if (!current) return;
+    const payload = { ...current, ...changes };
+    const updated = await onProjectUpdate(`${basePath}/items/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    applyProjectUpdate(updated);
+  };
+
+  const handleOfferItemFieldChange = async (id: string, changes: Partial<ProjectOfferItem>) => {
+    const next: ProjectOfferItem[] = offerItems.map((item) => {
+      if (item.id !== id) return item;
+      return buildOfferItem({
+        id: item.id,
+        name: item.name,
+        sku: item.sku,
+        unit: item.unit,
+        description: item.description,
+        quantity: changes.quantity ?? item.quantity,
+        price: changes.price ?? item.price,
+        discount: changes.discount ?? item.discount,
+        vatRate: changes.vatRate ?? item.vatRate,
+        productId: item.productId,
+      });
+    });
+    await persistOfferItems(next);
+  };
+
+  const handleSubmitDraftOfferItem = async () => {
+    if (!draftOfferItem.name || !draftOfferItem.quantity || !draftOfferItem.price) return;
+    const newItem = buildOfferItem({
+      id: `offer-item-${Date.now()}`,
+      name: draftOfferItem.name ?? "",
+      sku: draftOfferItem.sku ?? "",
+      unit: draftOfferItem.unit ?? "kos",
+      quantity: draftOfferItem.quantity ?? 1,
+      price: draftOfferItem.price ?? 0,
+      discount: draftOfferItem.discount ?? globalDiscount ?? 0,
+      vatRate: draftOfferItem.vatRate ?? offerVatRate ?? 22,
+      description: draftOfferItem.description ?? "",
+      productId: draftOfferItem.productId,
+    });
+    await persistOfferItems([...(offerItems ?? []), newItem]);
+    setDraftOfferItem({
+      name: "",
+      sku: "",
+      unit: "kos",
+      quantity: 1,
+      price: 0,
+      discount: globalDiscount ?? 0,
+      vatRate: offerVatRate ?? 22,
+      total: 0,
+      description: "",
+      productId: "",
+    });
+  };
+
+  const hasAnyDiscount =
+    globalDiscount > 0 || (offerItems ?? []).some((item) => Number(item.discount ?? 0) > 0);
+
+  const handleOfferVatRateChange = async (value: number) => {
+    setOfferVatRate(value);
+    const updatedItems: ProjectOfferItem[] = (offerItems ?? []).map((item) =>
+      buildOfferItem({ ...item, vatRate: value })
+    );
+    await persistOfferItems(updatedItems);
+  };
+
+  const handleGlobalDiscountChange = async (value: number) => {
+    setGlobalDiscount(value);
+    const updatedItems: ProjectOfferItem[] = (offerItems ?? []).map((item) =>
+      buildOfferItem({ ...item, discount: value })
+    );
+    await persistOfferItems(updatedItems);
+  };
+
+  const addRequirementRow = () => {
+    const defaultCategory = project.categories?.[0] ?? "";
+    setRequirements((prev) => [
+      ...prev,
+      { id: `req-${Date.now()}`, label: "", categorySlug: defaultCategory, notes: "" },
+    ]);
+  };
+
+  const updateRequirementRow = (id: string, changes: Partial<RequirementRow>) => {
+    setRequirements((prev) => prev.map((row) => (row.id === id ? { ...row, ...changes } : row)));
+  };
+
+  const deleteRequirementRow = (id: string) => {
+    setRequirements((prev) => prev.filter((row) => row.id !== id));
+  };
+
+  const handleConnectProducts = (id: string) => {
+    toast.info("Povezava produktov bo dodana v naslednji fazi.");
+    console.debug("TODO: Poveži produkte za zahtevo", id);
   };
 
   const handleCreateOffer = async () => {
@@ -525,7 +627,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
       project: {
         id: project.id,
         title: project.title,
-        description: requirements,
+        description: requirementsText,
       },
       offer,
       items,
@@ -557,7 +659,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
       project: {
         id: project.id,
         title: project.title,
-        description: requirements,
+        description: requirementsText,
       },
       offer,
       items,
@@ -669,7 +771,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
 
             <Card className="p-4">
               <h3 className="mb-3">Zahteve</h3>
-              <p className="text-sm text-muted-foreground">{requirements}</p>
+              <p className="text-sm text-muted-foreground">{requirementsText}</p>
             </Card>
 
             <Card className="p-4">
@@ -682,7 +784,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                   }`}
                 >
                   <FileText className="w-4 h-4" />
-                  Items
+                  Zahteve
                 </button>
                 <button
                   onClick={() => setActiveTab("offers")}
@@ -691,7 +793,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                   }`}
                 >
                   <FileText className="w-4 h-4" />
-                  Offers
+                  Ponudbe
                 </button>
                 <button
                   onClick={() => setActiveTab("logistics")}
@@ -700,7 +802,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                   }`}
                 >
                   <Package className="w-4 h-4" />
-                  Logistics
+                  Logistika
                 </button>
                 <button
                   onClick={() => setActiveTab("execution")}
@@ -709,7 +811,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                   }`}
                 >
                   <Wrench className="w-4 h-4" />
-                  Execution
+                  Izvedba
                 </button>
                 <button
                   onClick={() => setActiveTab("documents")}
@@ -718,7 +820,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                   }`}
                 >
                   <FolderOpen className="w-4 h-4" />
-                  Documents
+                  Dokumenti
                 </button>
                 <button
                   onClick={() => setActiveTab("timeline")}
@@ -727,7 +829,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                   }`}
                 >
                   <Clock className="w-4 h-4" />
-                  Timeline
+                  Zgodovina
                 </button>
               </nav>
             </Card>
@@ -739,7 +841,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
               <TabsList>
-                <TabsTrigger value="items">Postavke</TabsTrigger>
+                <TabsTrigger value="items">Zahteve</TabsTrigger>
                 <TabsTrigger value="offers">Ponudbe</TabsTrigger>
                 <TabsTrigger value="logistics">Logistika</TabsTrigger>
                 <TabsTrigger value="execution">Izvedba</TabsTrigger>
@@ -747,14 +849,109 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                 <TabsTrigger value="timeline">Zgodovina</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="items" className="mt-0">
-                <ItemsTable
-                  items={items}
-                  onEdit={handleEditItem}
-                  onAddFromCatalog={() => openCatalog("project")}
-                  onAddCustom={handleAddItem}
-                  onDelete={handleDeleteItem}
-                />
+              <TabsContent value="items" className="mt-0 space-y-4">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold">Opis zahtev stranke</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Zapišite glavne potrebe, opažanja z ogleda in posebne želje stranke.
+                  </p>
+                  <Textarea
+                    value={requirementsText}
+                    onChange={(event) => setRequirementsText(event.target.value)}
+                    placeholder="Npr. videonadzor 4 kamere žično, snemanje 7 dni, dostop preko aplikacije ..."
+                    rows={4}
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold">Zahteve</h3>
+                  <div className="bg-card rounded-[var(--radius-card)] border overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Naziv</TableHead>
+                          <TableHead>Kategorija</TableHead>
+                          <TableHead>Opombe</TableHead>
+                          <TableHead className="text-right w-52">Akcije</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {requirements.map((req) => (
+                          <TableRow key={req.id}>
+                            <TableCell>
+                              <Input
+                                value={req.label}
+                                onChange={(event) => updateRequirementRow(req.id, { label: event.target.value })}
+                                placeholder="Naziv zahteve"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Select
+                                value={req.categorySlug}
+                                onValueChange={(value) => updateRequirementRow(req.id, { categorySlug: value })}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Izberi kategorijo" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(project.categories ?? []).map((slug) => (
+                                    <SelectItem key={slug} value={slug}>
+                                      {slug}
+                                    </SelectItem>
+                                  ))}
+                                  {(project.categories ?? []).length === 0 && (
+                                    <SelectItem value="">Brez kategorij</SelectItem>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                value={req.notes ?? ""}
+                                onChange={(event) => updateRequirementRow(req.id, { notes: event.target.value })}
+                                placeholder="Opombe"
+                              />
+                            </TableCell>
+                            <TableCell className="text-right space-x-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleConnectProducts(req.id)}
+                              >
+                                Poveži produkte
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => deleteRequirementRow(req.id)}>
+                                Izbriši
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <Button variant="outline" onClick={addRequirementRow}>
+                    Dodaj zahtevo
+                  </Button>
+                </div>
+
+                {!isExecutionPhase ? (
+                  <Card className="p-4 text-sm text-muted-foreground">
+                    Tehnične postavke bodo na voljo, ko bo ponudba sprejeta in bo projekt v izvedbi.
+                  </Card>
+                ) : (
+                  <div className="space-y-3">
+                    <h3 className="text-lg font-semibold">Tehnične postavke</h3>
+                    <ItemsTable
+                      items={items}
+                      onEditField={handleProjectItemFieldChange}
+                      onAddFromCatalog={() => openCatalog("project")}
+                      onAddCustom={handleAddItem}
+                      onDelete={handleDeleteItem}
+                      showDraftRow={false}
+                      showDiscount
+                    />
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="offers" className="mt-0 space-y-4">
@@ -783,18 +980,43 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                       <p className="text-sm text-muted-foreground">Ponudba</p>
                       <h4 className="m-0">{activeOffer?.label ?? "Ponudba 1"}</h4>
                     </div>
-                    <Button variant="outline" onClick={handleAddOfferItem}>
+                    <Button variant="outline" onClick={() => openCatalog("offer")}>
                       <Plus className="mr-2 h-4 w-4" />
                       Nova postavka
                     </Button>
                   </div>
                   <ItemsTable
                     items={offerItems as Item[]}
-                    onEdit={(item) => handleEditOfferItem(item as unknown as ProjectOfferItem)}
+                    onEditField={(id, changes) => handleOfferItemFieldChange(id, changes as Partial<ProjectOfferItem>)}
                     onAddFromCatalog={() => openCatalog("offer")}
-                    onAddCustom={handleAddOfferItem}
+                    onAddCustom={() => handleSubmitDraftOfferItem()}
                     onDelete={handleDeleteOfferItem}
+                    showDiscount={hasAnyDiscount}
+                    showDraftRow
+                    draftItem={draftOfferItem as Item}
+                    onChangeDraft={(changes) => setDraftOfferItem((prev) => ({ ...prev, ...(changes as ProjectOfferItem) }))}
+                    onSubmitDraft={handleSubmitDraftOfferItem}
                   />
+                  <div className="grid gap-3 sm:grid-cols-2 mt-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">DDV za ponudbo</label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        value={offerVatRate}
+                        onChange={(event) => handleOfferVatRateChange(Number(event.target.value))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">Popust na celotno ponudbo (%)</label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        value={globalDiscount}
+                        onChange={(event) => handleGlobalDiscountChange(Number(event.target.value))}
+                      />
+                    </div>
+                  </div>
                 </Card>
               </TabsContent>
 
