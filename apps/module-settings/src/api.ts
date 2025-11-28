@@ -1,4 +1,5 @@
 import { ApiEnvelope, DocumentPrefixKey, SettingsDto } from './types';
+import type { RequirementTemplateGroup } from '@aintel/shared/types/project';
 
 export const DEFAULT_SETTINGS: SettingsDto = {
   companyName: 'Vaše podjetje d.o.o.',
@@ -61,6 +62,44 @@ export async function saveSettings(payload: SettingsDto): Promise<SettingsDto> {
   });
   const data = await parseEnvelope<SettingsDto>(response);
   return mergeWithDefaults(data);
+}
+
+export async function fetchRequirementTemplates(
+  categorySlug?: string
+): Promise<RequirementTemplateGroup[]> {
+  const query = categorySlug ? `?categorySlug=${encodeURIComponent(categorySlug)}` : '';
+  const response = await fetch(`/api/requirement-templates${query}`);
+  return parseEnvelope<RequirementTemplateGroup[]>(response);
+}
+
+export async function createRequirementTemplateGroup(
+  payload: Omit<RequirementTemplateGroup, 'id'>
+): Promise<RequirementTemplateGroup> {
+  const response = await fetch('/api/requirement-templates', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return parseEnvelope<RequirementTemplateGroup>(response);
+}
+
+export async function updateRequirementTemplateGroup(
+  id: string,
+  payload: Omit<RequirementTemplateGroup, 'id'>
+): Promise<RequirementTemplateGroup> {
+  const response = await fetch(`/api/requirement-templates/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return parseEnvelope<RequirementTemplateGroup>(response);
+}
+
+export async function deleteRequirementTemplateGroup(id: string): Promise<void> {
+  const response = await fetch(`/api/requirement-templates/${id}`, {
+    method: 'DELETE'
+  });
+  await parseEnvelope(response);
 }
 
 export function applySettingsTheme(settings: SettingsDto) {

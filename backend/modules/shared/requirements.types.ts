@@ -23,22 +23,3 @@ export interface RequirementTemplateGroup {
   label: string;
   rows: RequirementTemplateRow[];
 }
-
-export interface ProjectRequirement {
-  id: string;
-  label: string;
-  categorySlug: string;
-  notes?: string;
-  value?: string;
-  templateRowId?: string;
-  fieldType?: RequirementFieldType;
-  productCategorySlug?: string | null;
-  formulaConfig?: RequirementFormulaConfig | null;
-}
-
-export interface Project {
-  id: string;
-  name: string;
-  categories: string[];
-  requirements?: ProjectRequirement[];
-}

@@ -3,6 +3,7 @@ import { Item } from "./components/ItemsTable";
 import { OfferVersion } from "./components/OfferVersionCard";
 import { WorkOrder } from "./components/WorkOrderCard";
 import { TimelineEvent } from "./components/TimelineFeed";
+import type { ProjectRequirement } from "@aintel/shared/types/project";
 
 export interface Category {
   id: string;
@@ -29,6 +30,7 @@ export interface ProjectCustomer {
 
 export interface ProjectSummary {
   id: string;
+  _id?: string;
   title: string;
   customer: string;
   status: ProjectStatus;
@@ -77,9 +79,12 @@ export interface ProjectOffer {
   items: ProjectOfferItem[];
 }
 
+export type RequirementRow = ProjectRequirement;
+
 export interface ProjectDetails extends ProjectSummary {
   customerDetail: ProjectCustomer;
-  requirements: string;
+  requirements?: ProjectRequirement[];
+  requirementsText?: string;
   items: Item[];
   offers: OfferVersion[];
   workOrders: WorkOrder[];

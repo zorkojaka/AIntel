@@ -106,6 +106,10 @@ const DEFAULT_TEMPLATES: Template[] = [
 ];
 
 function mapProject(data: any): ProjectDetails {
+  const requirementsArray = Array.isArray(data.requirements) ? data.requirements : [];
+  const requirementsText = !Array.isArray(data.requirements) && typeof data.requirements === "string"
+    ? data.requirements
+    : "";
   return {
     id: data.id,
     title: data.title,
@@ -115,7 +119,8 @@ function mapProject(data: any): ProjectDetails {
     invoiceAmount: data.invoiceAmount ?? 0,
     createdAt: data.createdAt,
     customerDetail: data.customer ?? { name: data.customer ?? "" },
-    requirements: data.requirements ?? "",
+    requirements: requirementsArray,
+    requirementsText,
     items: data.items ?? [],
     offers: data.offers ?? [],
     workOrders: data.workOrders ?? [],
@@ -319,7 +324,7 @@ export function ProjectsPage() {
       setProjectFormInitial(mapped);
       setNewProjectDefaults({
         title: mapped.title,
-        requirements: mapped.requirements,
+        requirements: mapped.requirementsText ?? "",
       });
       setNewProjectCategorySlugs(mapped.categories ?? []);
       setSelectedClientId(mapped.customerDetail?.id ?? null);

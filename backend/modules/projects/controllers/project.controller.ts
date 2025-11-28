@@ -4,6 +4,7 @@ import {
   Project,
   ProjectDocument,
   ProjectItem,
+  ProjectRequirement,
   ProjectModel,
   ProjectOffer,
   ProjectOfferItem,
@@ -13,6 +14,9 @@ import {
   generateProjectId,
   summarizeProject,
 } from '../schemas/project';
+import { Types } from 'mongoose';
+import { generateRequirementsFromTemplates } from '../services/requirements-from-templates';
+import type { RequirementFieldType, RequirementFormulaConfig } from '../../shared/requirements.types';
 
 function normalizeSlug(value: string) {
   return value
@@ -50,6 +54,41 @@ function toISODate(value?: string) {
 
 function responseProject(project: Project) {
   return project;
+}
+
+const allowedRequirementFieldTypes: RequirementFieldType[] = ['number', 'text', 'select', 'boolean'];
+
+function sanitizeRequirementFormula(input: any): RequirementFormulaConfig | null {
+  if (!input || typeof input !== 'object') return null;
+  const baseFieldId = String(input.baseFieldId ?? '').trim();
+  if (!baseFieldId) return null;
+  const multiplyBy = input.multiplyBy === undefined ? undefined : Number(input.multiplyBy);
+  const notes = input.notes ? String(input.notes) : undefined;
+  return {
+    baseFieldId,
+    multiplyBy: Number.isFinite(multiplyBy) ? multiplyBy : undefined,
+    notes,
+  };
+}
+
+function sanitizeRequirements(input: unknown): ProjectRequirement[] {
+  const rawReqs = Array.isArray(input) ? input : [];
+
+  const requirements = rawReqs
+    .map((r: any) => ({
+      id: String(r?.id ?? new Types.ObjectId().toString()),
+      label: (r?.label ?? '').toString().trim(),
+      value: typeof r?.value === 'number' ? r.value : null,
+      categorySlug: r?.categorySlug ? String(r.categorySlug) : '',
+      notes: (r?.notes ?? '').toString().trim(),
+      templateRowId: r?.templateRowId ? String(r.templateRowId) : undefined,
+      fieldType: (r?.fieldType as RequirementFieldType) || 'number',
+      productCategorySlug: r?.productCategorySlug ? String(r.productCategorySlug) : null,
+      formulaConfig: sanitizeRequirementFormula(r?.formulaConfig),
+    }))
+    .filter((req) => req.label !== '' || req.value !== null);
+
+  return requirements;
 }
 
 function normalizeNumber(value: unknown, fallback = 0) {
@@ -159,6 +198,11 @@ export async function createProject(req: Request, res: Response) {
 
   const id = await generateProjectId();
   const createdAt = toISODate();
+  const categories = sanitizeCategorySlugs(req.body.categories);
+  let requirements = sanitizeRequirements(req.body?.requirements);
+  if (requirements.length === 0 && categories.length > 0) {
+    requirements = await generateRequirementsFromTemplates(categories);
+  }
 
   const project: Project = {
     id,
@@ -173,7 +217,7 @@ export async function createProject(req: Request, res: Response) {
     offerAmount: 0,
     invoiceAmount: 0,
     createdAt,
-    requirements: req.body.requirements ?? '',
+    requirements,
     items: (req.body.items as ProjectItem[])?.map((item) => ({
       ...item,
       id: item.id ?? `item-${Date.now()}`,
@@ -184,7 +228,7 @@ export async function createProject(req: Request, res: Response) {
     deliveryNotes: [],
     timeline: [],
     templates: req.body.templates ?? [],
-    categories: sanitizeCategorySlugs(req.body.categories),
+    categories,
   };
 
   addTimeline(project, {
@@ -208,7 +252,9 @@ export async function updateProject(req: Request, res: Response) {
   if (error) return res.fail(error, 400);
 
   project.title = req.body.title;
-  project.requirements = req.body.requirements ?? project.requirements;
+  if (req.body?.requirements !== undefined) {
+    project.requirements = sanitizeRequirements(req.body.requirements);
+  }
   if (req.body.customer) {
     project.customer = {
       name: req.body.customer.name ?? project.customer.name,

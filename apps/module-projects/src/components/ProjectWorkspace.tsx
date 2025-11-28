@@ -33,9 +33,11 @@ import {
   Search,
   Loader2,
   RefreshCcw,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { DeliveryNote, ProjectDetails, ProjectOffer, ProjectOfferItem, PurchaseOrder } from "../types";
+import type { ProjectRequirement } from "@aintel/shared/types/project";
 
 type ItemFormState = {
   name: string;
@@ -49,12 +51,7 @@ type ItemFormState = {
   category: Item["category"];
 };
 
-type RequirementRow = {
-  id: string;
-  label: string;
-  categorySlug: string;
-  notes?: string;
-};
+type RequirementRow = ProjectRequirement;
 
 type CatalogProduct = {
   id: string;
@@ -63,6 +60,19 @@ type CatalogProduct = {
   price: number;
   description?: string;
   supplier?: string;
+  categorySlugs?: string[];
+};
+
+type GeneratedOfferItemCandidate = {
+  id: string;
+  productId: string;
+  name: string;
+  sku?: string;
+  price: number;
+  quantity: number;
+  vatRate: number;
+  discount: number;
+  unit: string;
 };
 
 interface ProjectWorkspaceProps {
@@ -96,8 +106,8 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   const [deliveryNotes, setDeliveryNotes] = useState<DeliveryNote[]>(project.deliveryNotes);
   const [timeline, setTimeline] = useState<TimelineEvent[]>(project.timelineEvents);
   const [status, setStatus] = useState(project.status);
-  const [requirementsText, setRequirementsText] = useState(project.requirements);
-  const [requirements, setRequirements] = useState<RequirementRow[]>([]);
+  const [requirementsText, setRequirementsText] = useState(project.requirementsText ?? "");
+  const [requirements, setRequirements] = useState<RequirementRow[]>(() => project.requirements ?? []);
   const [isItemDialogOpen, setItemDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [itemContext, setItemContext] = useState<"project" | "offer">("project");
@@ -128,6 +138,10 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   const [isOfferLoading, setIsOfferLoading] = useState(false);
   const [offerVatRate, setOfferVatRate] = useState<number>(22);
   const [globalDiscount, setGlobalDiscount] = useState<number>(0);
+  const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
+  const [isGeneratingOffer, setIsGeneratingOffer] = useState(false);
+  const [offerCandidates, setOfferCandidates] = useState<GeneratedOfferItemCandidate[]>([]);
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
 
   const basePath = `/api/projects/${project.id}`;
   const isExecutionPhase = status === "ordered" || status === "in-progress" || status === "completed";
@@ -186,8 +200,13 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     setDeliveryNotes(project.deliveryNotes);
     setTimeline(project.timelineEvents);
     setStatus(project.status);
-    setRequirementsText(project.requirements);
+    setRequirements(project.requirements ?? []);
+    setRequirementsText(project.requirementsText ?? "");
   }, [project]);
+
+  useEffect(() => {
+    setRequirements(project.requirements ?? []);
+  }, [project.requirements]);
 
   useEffect(() => {
     const firstVat = offerItems[0]?.vatRate ?? 22;
@@ -257,7 +276,8 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     setDeliveryNotes(updated.deliveryNotes);
     setTimeline(updated.timelineEvents);
     setStatus(updated.status);
-    setRequirementsText(updated.requirements);
+    setRequirements(updated.requirements ?? []);
+    setRequirementsText(updated.requirementsText ?? "");
   };
 
   const validationIssues: string[] = [];
@@ -465,6 +485,24 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     };
   };
 
+  const parseNumericValue = (value?: string | number | null) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : null;
+    }
+    const normalized = value.replace(",", ".").trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const findRequirementByTemplateId = (templateId?: string | null) => {
+    if (!templateId) return null;
+    return (requirements ?? []).find(
+      (req) => req.templateRowId === templateId || req.id === templateId
+    );
+  };
+
   const handleProjectItemFieldChange = async (id: string, changes: Partial<Item>) => {
     const current = items.find((item) => item.id === id);
     if (!current) return;
@@ -543,20 +581,179 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     await persistOfferItems(updatedItems);
   };
 
-  const addRequirementRow = () => {
+  const applyRequirementsUpdate = async (next: RequirementRow[]) => {
+    setRequirements(next);
+    const updated = await onProjectUpdate(basePath, {
+      method: "PUT",
+      body: JSON.stringify({
+        title: project.title,
+        customer: project.customerDetail,
+        status: project.status,
+        requirements: next,
+        categories: project.categories ?? [],
+        templates,
+      }),
+    });
+    applyProjectUpdate(updated as ProjectDetails | null);
+  };
+
+  const addRequirementRow = async () => {
     const defaultCategory = project.categories?.[0] ?? "";
-    setRequirements((prev) => [
-      ...prev,
-      { id: `req-${Date.now()}`, label: "", categorySlug: defaultCategory, notes: "" },
-    ]);
+    const next: RequirementRow[] = [
+      ...(requirements ?? []),
+      {
+        id: crypto.randomUUID(),
+        label: "",
+        categorySlug: defaultCategory,
+        notes: "",
+        value: "",
+        fieldType: "text",
+      },
+    ];
+    await applyRequirementsUpdate(next);
   };
 
-  const updateRequirementRow = (id: string, changes: Partial<RequirementRow>) => {
-    setRequirements((prev) => prev.map((row) => (row.id === id ? { ...row, ...changes } : row)));
+  const updateRequirementRow = async (id: string, changes: Partial<RequirementRow>) => {
+    const next = (requirements ?? []).map((row) => (row.id === id ? { ...row, ...changes } : row));
+    await applyRequirementsUpdate(next);
   };
 
-  const deleteRequirementRow = (id: string) => {
-    setRequirements((prev) => prev.filter((row) => row.id !== id));
+  const deleteRequirementRow = async (id: string) => {
+    const next = (requirements ?? []).filter((row) => row.id !== id);
+    await applyRequirementsUpdate(next);
+  };
+
+  const loadProductsForCategories = async (categorySlugs: string[]): Promise<CatalogProduct[]> => {
+    try {
+      const query = categorySlugs.length
+        ? `?suggestForCategories=${encodeURIComponent(categorySlugs.join(","))}`
+        : "";
+      const response = await fetch(`/api/cenik/products${query}`);
+      const payload = await response.json();
+      if (!payload.success) {
+        throw new Error(payload.error ?? "Napaka pri nalaganju cenika");
+      }
+      return (payload.data ?? []).map((product: any) => ({
+        id: product._id ?? product.id ?? product.sku ?? `prod-${Date.now()}`,
+        name: product.ime ?? product.name ?? "Neimenovan produkt",
+        category: product.categorySlugs?.[0],
+        categorySlugs: product.categorySlugs ?? [],
+        price: Number(product.prodajnaCena ?? 0),
+        description: product.kratekOpis ?? product.dolgOpis ?? "",
+        supplier: product.dobavitelj ?? "",
+      }));
+    } catch (error) {
+      toast.error("Cenika ni mogoče naložiti.");
+      return [];
+    }
+  };
+
+  const buildOfferCandidatesFromRequirements = async (): Promise<GeneratedOfferItemCandidate[]> => {
+    const reqs = requirements ?? [];
+    if (reqs.length === 0) return [];
+    const productCategorySlugs = Array.from(
+      new Set(
+        reqs
+          .map((req) => req.productCategorySlug)
+          .filter((slug): slug is string => typeof slug === "string" && !!slug.trim())
+      )
+    );
+    const catalog = await loadProductsForCategories(
+      productCategorySlugs.length ? productCategorySlugs : project.categories ?? []
+    );
+    const catalogByCategory = (slug: string) =>
+      catalog.find((product) => (product.categorySlugs ?? []).includes(slug)) ?? null;
+
+    const candidates: GeneratedOfferItemCandidate[] = [];
+    reqs.forEach((req) => {
+      if (!req.productCategorySlug) return;
+
+      let quantity = parseNumericValue(req.value);
+      if (req.fieldType === "boolean" && typeof req.value === "string") {
+        const normalized = req.value.trim().toLowerCase();
+        if (normalized === "true" || normalized === "da" || normalized === "yes") {
+          quantity = 1;
+        }
+      }
+
+      if (req.formulaConfig) {
+        const baseReq = findRequirementByTemplateId(req.formulaConfig.baseFieldId);
+        const baseValue = parseNumericValue(baseReq?.value);
+        if (baseValue !== null) {
+          const multiplier = req.formulaConfig.multiplyBy ?? 1;
+          quantity = baseValue * multiplier;
+        }
+      }
+
+      if (!quantity || quantity <= 0) return;
+      const product = catalogByCategory(req.productCategorySlug);
+      if (!product) return;
+
+      candidates.push({
+        id: `${product.id}-${req.id}`,
+        productId: product.id,
+        name: product.name,
+        sku: product.id,
+        price: product.price,
+        quantity,
+        vatRate: 22,
+        discount: 0,
+        unit: "kos",
+      });
+    });
+
+    return candidates;
+  };
+
+  const handleGenerateOfferFromRequirements = async () => {
+    setIsGeneratingOffer(true);
+    try {
+      const candidates = await buildOfferCandidatesFromRequirements();
+      if (!candidates.length) {
+        toast.error("Ni predlaganih postavk iz zahtev.");
+        return;
+      }
+      setOfferCandidates(candidates);
+      setSelectedCandidateIds(candidates.map((c) => c.id));
+      setIsGenerateModalOpen(true);
+    } catch (error) {
+      toast.error("Napaka pri generiranju ponudbe iz zahtev.");
+    } finally {
+      setIsGeneratingOffer(false);
+    }
+  };
+
+  const handleConfirmOfferFromRequirements = async () => {
+    const selected = offerCandidates.filter((candidate) => selectedCandidateIds.includes(candidate.id));
+    if (!selected.length) {
+      setIsGenerateModalOpen(false);
+      return;
+    }
+    const nextItems: ProjectOfferItem[] = [
+      ...(offerItems ?? []),
+      ...selected.map((candidate) =>
+        buildOfferItem({
+          id: `offer-item-${Date.now()}-${candidate.productId}`,
+          name: candidate.name,
+          sku: candidate.sku,
+          unit: candidate.unit,
+          description: "",
+          quantity: candidate.quantity,
+          price: candidate.price,
+          discount: candidate.discount,
+          vatRate: candidate.vatRate,
+          productId: candidate.productId,
+        })
+      ),
+    ];
+    await persistOfferItems(nextItems);
+    setIsGenerateModalOpen(false);
+  };
+
+  const toggleCandidateSelection = (id: string) => {
+    setSelectedCandidateIds((prev) =>
+      prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]
+    );
   };
 
   const handleConnectProducts = (id: string) => {
@@ -870,6 +1067,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                       <TableHeader>
                         <TableRow>
                           <TableHead>Naziv</TableHead>
+                          <TableHead>Vrednost</TableHead>
                           <TableHead>Kategorija</TableHead>
                           <TableHead>Opombe</TableHead>
                           <TableHead className="text-right w-52">Akcije</TableHead>
@@ -883,6 +1081,13 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                                 value={req.label}
                                 onChange={(event) => updateRequirementRow(req.id, { label: event.target.value })}
                                 placeholder="Naziv zahteve"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                value={req.value ?? ""}
+                                onChange={(event) => updateRequirementRow(req.id, { value: event.target.value })}
+                                placeholder="Vrednost"
                               />
                             </TableCell>
                             <TableCell>
@@ -966,6 +1171,14 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                     <Button variant="outline" onClick={() => fetchActiveOffer()} disabled={isOfferLoading}>
                       <RefreshCcw className="mr-2 h-4 w-4" />
                       Osveži ponudbo
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleGenerateOfferFromRequirements}
+                      disabled={isGeneratingOffer}
+                    >
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Generiraj iz zahtev
                     </Button>
                     <Button onClick={() => openCatalog("offer")}>
                       <Package className="mr-2 h-4 w-4" />
@@ -1234,6 +1447,66 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={isGenerateModalOpen}
+        onOpenChange={(open) => setIsGenerateModalOpen(open)}
+      >
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Predlagane postavke iz zahtev</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {offerCandidates.length === 0 && (
+              <div className="text-sm text-muted-foreground">Ni kandidatov za dodajanje.</div>
+            )}
+            {offerCandidates.length > 0 && (
+              <div className="space-y-2">
+                {offerCandidates.map((candidate) => {
+                  const total =
+                    candidate.quantity *
+                    candidate.price *
+                    (1 - candidate.discount / 100) *
+                    (1 + candidate.vatRate / 100);
+                  const checked = selectedCandidateIds.includes(candidate.id);
+                  return (
+                    <div
+                      key={candidate.id}
+                      className="flex items-center justify-between rounded border border-border px-3 py-2"
+                    >
+                      <label className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleCandidateSelection(candidate.id)}
+                        />
+                        <div>
+                          <div className="font-medium">{candidate.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {candidate.quantity} x € {candidate.price.toFixed(2)} (DDV {candidate.vatRate}%)
+                          </div>
+                        </div>
+                      </label>
+                      <div className="text-sm font-semibold">€ {total.toFixed(2)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsGenerateModalOpen(false)}>
+                Prekliči
+              </Button>
+              <Button
+                onClick={handleConfirmOfferFromRequirements}
+                disabled={selectedCandidateIds.length === 0}
+              >
+                Potrdi in dodaj v ponudbo
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={isItemDialogOpen}

@@ -100,11 +100,11 @@ export function ProjectList({
           </TableHeader>
           <TableBody>
             {filteredProjects.map((project) => (
-                <TableRow
-                  key={project.id}
-                  className="cursor-pointer"
-                  onClick={() => onSelectProject(project.id)}
-                >
+              <TableRow
+                key={project._id ?? project.id}
+                className="cursor-pointer"
+                onClick={() => onSelectProject(project.id)}
+              >
                   <TableCell className="font-medium">
                   <div className="flex flex-col gap-1">
                     <span>{project.title}</span>

@@ -53,8 +53,8 @@ pnpm run dev
 ```bash
 pnpm run dev:stack
 
-pnpm --filter aintel-backend build
 
+pnpm --filter aintel-backend build
 pnpm --filter @aintel/core-shell build
 pnpm --filter @aintel/module-crm build
 pnpm --filter @aintel/module-projects build

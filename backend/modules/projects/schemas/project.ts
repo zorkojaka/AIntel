@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import type { RequirementFieldType, RequirementFormulaConfig } from '../../shared/requirements.types';
 
 export type ProjectStatus = 'draft' | 'offered' | 'ordered' | 'in-progress' | 'completed' | 'invoiced';
 
@@ -103,6 +104,18 @@ export interface ProjectTemplate {
   updatedAt: string;
 }
 
+export interface ProjectRequirement {
+  id: string;
+  label: string;
+  categorySlug: string;
+  notes?: string;
+  value?: string;
+  templateRowId?: string;
+  fieldType?: RequirementFieldType;
+  productCategorySlug?: string | null;
+  formulaConfig?: RequirementFormulaConfig | null;
+}
+
 export interface Project {
   id: string;
   title: string;
@@ -111,7 +124,7 @@ export interface Project {
   offerAmount: number;
   invoiceAmount: number;
   createdAt: string;
-  requirements: string;
+  requirements?: ProjectRequirement[];
   items: ProjectItem[];
   offers: OfferVersion[];
   workOrders: WorkOrder[];
@@ -241,6 +254,31 @@ const ProjectTemplateSchema = new Schema<ProjectTemplate>(
   { _id: false }
 );
 
+const ProjectRequirementSchema = new Schema<ProjectRequirement>(
+  {
+    id: { type: String, required: true },
+    label: { type: String, required: false, trim: true, default: '' },
+    categorySlug: { type: String, required: true },
+    notes: { type: String, required: false },
+    value: { type: String, required: false },
+    templateRowId: { type: String, required: false },
+    fieldType: { type: String, required: false },
+    productCategorySlug: { type: String, required: false },
+    formulaConfig: {
+      type: new Schema(
+        {
+          baseFieldId: { type: String, required: true },
+          multiplyBy: { type: Number, required: false },
+          notes: { type: String, required: false },
+        },
+        { _id: false }
+      ),
+      required: false,
+    },
+  },
+  { _id: false }
+);
+
 const ProjectSchema = new Schema<ProjectDocument>(
   {
     id: { type: String, required: true, unique: true, index: true },
@@ -255,7 +293,10 @@ const ProjectSchema = new Schema<ProjectDocument>(
     offerAmount: { type: Number, required: true, default: 0 },
     invoiceAmount: { type: Number, required: true, default: 0 },
     createdAt: { type: String, required: true },
-    requirements: { type: String, default: '' },
+    requirements: {
+      type: [ProjectRequirementSchema],
+      default: [],
+    },
     items: { type: [ProjectItemSchema], default: [] },
     workOrders: { type: [WorkOrderSchema], default: [] },
     purchaseOrders: { type: [PurchaseOrderSchema], default: [] },
