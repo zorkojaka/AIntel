@@ -129,6 +129,7 @@ function mapProject(data: any): ProjectDetails {
     timelineEvents: data.timeline ?? data.timelineEvents ?? [],
     templates: data.templates && data.templates.length > 0 ? data.templates : DEFAULT_TEMPLATES,
     categories: Array.isArray(data.categories) ? data.categories : [],
+    requirementsTemplateVariantSlug: data.requirementsTemplateVariantSlug,
   };
 }
 
@@ -142,6 +143,7 @@ function toSummary(project: ProjectDetails): ProjectSummary {
     invoiceAmount: project.invoiceAmount,
     createdAt: project.createdAt,
     categories: project.categories ?? [],
+    requirementsTemplateVariantSlug: project.requirementsTemplateVariantSlug,
   };
 }
 

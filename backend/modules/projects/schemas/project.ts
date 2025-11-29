@@ -124,6 +124,7 @@ export interface Project {
   offerAmount: number;
   invoiceAmount: number;
   createdAt: string;
+  requirementsTemplateVariantSlug?: string;
   requirements?: ProjectRequirement[];
   items: ProjectItem[];
   offers: OfferVersion[];
@@ -293,6 +294,7 @@ const ProjectSchema = new Schema<ProjectDocument>(
     offerAmount: { type: Number, required: true, default: 0 },
     invoiceAmount: { type: Number, required: true, default: 0 },
     createdAt: { type: String, required: true },
+    requirementsTemplateVariantSlug: { type: String, required: false },
     requirements: {
       type: [ProjectRequirementSchema],
       default: [],

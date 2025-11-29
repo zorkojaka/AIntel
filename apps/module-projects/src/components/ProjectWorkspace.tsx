@@ -36,7 +36,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
-import { DeliveryNote, ProjectDetails, ProjectOffer, ProjectOfferItem, PurchaseOrder } from "../types";
+import { DeliveryNote, ProjectDetails, ProjectOffer, ProjectOfferItem, PurchaseOrder, OfferCandidate } from "../types";
+import { fetchOfferCandidates, fetchProductsByCategories, fetchRequirementVariants, type ProductLookup } from "../api";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
 
 type ItemFormState = {
@@ -63,17 +64,6 @@ type CatalogProduct = {
   categorySlugs?: string[];
 };
 
-type GeneratedOfferItemCandidate = {
-  id: string;
-  productId: string;
-  name: string;
-  sku?: string;
-  price: number;
-  quantity: number;
-  vatRate: number;
-  discount: number;
-  unit: string;
-};
 
 interface ProjectWorkspaceProps {
   project: ProjectDetails;
@@ -107,7 +97,9 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   const [timeline, setTimeline] = useState<TimelineEvent[]>(project.timelineEvents);
   const [status, setStatus] = useState(project.status);
   const [requirementsText, setRequirementsText] = useState(project.requirementsText ?? "");
-  const [requirements, setRequirements] = useState<RequirementRow[]>(() => project.requirements ?? []);
+  const [requirements, setRequirements] = useState<RequirementRow[]>(() =>
+    Array.isArray(project.requirements) ? project.requirements : []
+  );
   const [isItemDialogOpen, setItemDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [itemContext, setItemContext] = useState<"project" | "offer">("project");
@@ -140,8 +132,13 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   const [globalDiscount, setGlobalDiscount] = useState<number>(0);
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
   const [isGeneratingOffer, setIsGeneratingOffer] = useState(false);
-  const [offerCandidates, setOfferCandidates] = useState<GeneratedOfferItemCandidate[]>([]);
-  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
+  const [offerCandidates, setOfferCandidates] = useState<OfferCandidate[]>([]);
+  const [candidateSelections, setCandidateSelections] = useState<Record<string, { productId?: string; quantity: number; include: boolean }>>({});
+  const [candidateProducts, setCandidateProducts] = useState<Record<string, ProductLookup[]>>({});
+  const [variantOptions, setVariantOptions] = useState<{ variantSlug: string; label: string }[]>([]);
+  const [variantLoading, setVariantLoading] = useState(false);
+  const [selectedVariantSlug, setSelectedVariantSlug] = useState<string>(project.requirementsTemplateVariantSlug ?? "");
+  const showVariantWizard = variantOptions.length > 0 && !project.requirementsTemplateVariantSlug;
 
   const basePath = `/api/projects/${project.id}`;
   const isExecutionPhase = status === "ordered" || status === "in-progress" || status === "completed";
@@ -200,12 +197,12 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     setDeliveryNotes(project.deliveryNotes);
     setTimeline(project.timelineEvents);
     setStatus(project.status);
-    setRequirements(project.requirements ?? []);
+    setRequirements(Array.isArray(project.requirements) ? project.requirements : []);
     setRequirementsText(project.requirementsText ?? "");
   }, [project]);
 
   useEffect(() => {
-    setRequirements(project.requirements ?? []);
+    setRequirements(Array.isArray(project.requirements) ? project.requirements : []);
   }, [project.requirements]);
 
   useEffect(() => {
@@ -217,6 +214,24 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
       setGlobalDiscount(0);
     }
   }, [offerItems]);
+
+  useEffect(() => {
+    const loadVariants = async () => {
+      setVariantLoading(true);
+      try {
+        const variants = await fetchRequirementVariants((project.categories ?? [])[0]);
+        setVariantOptions(variants);
+        if (!selectedVariantSlug && variants.length > 0) {
+          setSelectedVariantSlug(variants[0].variantSlug);
+        }
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setVariantLoading(false);
+      }
+    };
+    loadVariants();
+  }, [project.categories, selectedVariantSlug]);
 
   useEffect(() => {
     if (activeTab === "offers" && !activeOffer && !isOfferLoading) {
@@ -278,6 +293,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     setStatus(updated.status);
     setRequirements(updated.requirements ?? []);
     setRequirementsText(updated.requirementsText ?? "");
+    setSelectedVariantSlug(updated.requirementsTemplateVariantSlug ?? "");
   };
 
   const validationIssues: string[] = [];
@@ -623,100 +639,63 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     await applyRequirementsUpdate(next);
   };
 
-  const loadProductsForCategories = async (categorySlugs: string[]): Promise<CatalogProduct[]> => {
-    try {
-      const query = categorySlugs.length
-        ? `?suggestForCategories=${encodeURIComponent(categorySlugs.join(","))}`
-        : "";
-      const response = await fetch(`/api/cenik/products${query}`);
-      const payload = await response.json();
-      if (!payload.success) {
-        throw new Error(payload.error ?? "Napaka pri nalaganju cenika");
-      }
-      return (payload.data ?? []).map((product: any) => ({
-        id: product._id ?? product.id ?? product.sku ?? `prod-${Date.now()}`,
-        name: product.ime ?? product.name ?? "Neimenovan produkt",
-        category: product.categorySlugs?.[0],
-        categorySlugs: product.categorySlugs ?? [],
-        price: Number(product.prodajnaCena ?? 0),
-        description: product.kratekOpis ?? product.dolgOpis ?? "",
-        supplier: product.dobavitelj ?? "",
-      }));
-    } catch (error) {
-      toast.error("Cenika ni mogoče naložiti.");
-      return [];
-    }
-  };
-
-  const buildOfferCandidatesFromRequirements = async (): Promise<GeneratedOfferItemCandidate[]> => {
-    const reqs = requirements ?? [];
-    if (reqs.length === 0) return [];
-    const productCategorySlugs = Array.from(
-      new Set(
-        reqs
-          .map((req) => req.productCategorySlug)
-          .filter((slug): slug is string => typeof slug === "string" && !!slug.trim())
-      )
-    );
-    const catalog = await loadProductsForCategories(
-      productCategorySlugs.length ? productCategorySlugs : project.categories ?? []
-    );
-    const catalogByCategory = (slug: string) =>
-      catalog.find((product) => (product.categorySlugs ?? []).includes(slug)) ?? null;
-
-    const candidates: GeneratedOfferItemCandidate[] = [];
-    reqs.forEach((req) => {
-      if (!req.productCategorySlug) return;
-
-      let quantity = parseNumericValue(req.value);
-      if (req.fieldType === "boolean" && typeof req.value === "string") {
-        const normalized = req.value.trim().toLowerCase();
-        if (normalized === "true" || normalized === "da" || normalized === "yes") {
-          quantity = 1;
-        }
-      }
-
-      if (req.formulaConfig) {
-        const baseReq = findRequirementByTemplateId(req.formulaConfig.baseFieldId);
-        const baseValue = parseNumericValue(baseReq?.value);
-        if (baseValue !== null) {
-          const multiplier = req.formulaConfig.multiplyBy ?? 1;
-          quantity = baseValue * multiplier;
-        }
-      }
-
-      if (!quantity || quantity <= 0) return;
-      const product = catalogByCategory(req.productCategorySlug);
-      if (!product) return;
-
-      candidates.push({
-        id: `${product.id}-${req.id}`,
-        productId: product.id,
-        name: product.name,
-        sku: product.id,
-        price: product.price,
-        quantity,
-        vatRate: 22,
-        discount: 0,
-        unit: "kos",
-      });
+  const handleConfirmVariantSelection = async () => {
+    if (!selectedVariantSlug) return;
+    const payload = {
+      title: project.title,
+      customer: project.customerDetail,
+      status: project.status,
+      categories: project.categories ?? [],
+      requirementsTemplateVariantSlug: selectedVariantSlug,
+    };
+    const updated = await onProjectUpdate(basePath, {
+      method: "PUT",
+      body: JSON.stringify(payload),
     });
-
-    return candidates;
+    applyProjectUpdate(updated as ProjectDetails | null);
   };
 
   const handleGenerateOfferFromRequirements = async () => {
     setIsGeneratingOffer(true);
     try {
-      const candidates = await buildOfferCandidatesFromRequirements();
-      if (!candidates.length) {
+      const candidatesResponse = await fetchOfferCandidates(project.id);
+      if (!candidatesResponse.length) {
         toast.error("Ni predlaganih postavk iz zahtev.");
+        setOfferCandidates([]);
         return;
       }
-      setOfferCandidates(candidates);
-      setSelectedCandidateIds(candidates.map((c) => c.id));
+      const categories = Array.from(
+        new Set(candidatesResponse.map((c) => c.productCategorySlug).filter(Boolean))
+      );
+      const products = await fetchProductsByCategories(categories);
+      const grouped: Record<string, ProductLookup[]> = {};
+      products.forEach((product) => {
+        (product.categorySlugs ?? []).forEach((slug) => {
+          if (!grouped[slug]) grouped[slug] = [];
+          grouped[slug].push(product);
+        });
+      });
+
+      const selections: Record<
+        string,
+        { productId?: string; quantity: number; include: boolean }
+      > = {};
+      candidatesResponse.forEach((c) => {
+        const productsForCategory = grouped[c.productCategorySlug] ?? products;
+        const defaultProductId = c.suggestedProductId ?? productsForCategory[0]?.id;
+        selections[c.ruleId] = {
+          productId: defaultProductId,
+          quantity: c.quantity ?? 1,
+          include: true,
+        };
+      });
+
+      setCandidateProducts(grouped);
+      setOfferCandidates(candidatesResponse);
+      setCandidateSelections(selections);
       setIsGenerateModalOpen(true);
     } catch (error) {
+      console.error(error);
       toast.error("Napaka pri generiranju ponudbe iz zahtev.");
     } finally {
       setIsGeneratingOffer(false);
@@ -724,41 +703,66 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   };
 
   const handleConfirmOfferFromRequirements = async () => {
-    const selected = offerCandidates.filter((candidate) => selectedCandidateIds.includes(candidate.id));
-    if (!selected.length) {
+    const selectedCandidates = offerCandidates.filter((c) => candidateSelections[c.ruleId]?.include);
+    if (!selectedCandidates.length) {
       setIsGenerateModalOpen(false);
       return;
     }
-    const nextItems: ProjectOfferItem[] = [
-      ...(offerItems ?? []),
-      ...selected.map((candidate) =>
+    const newItems: ProjectOfferItem[] = [...(offerItems ?? [])];
+    selectedCandidates.forEach((candidate) => {
+      const selection = candidateSelections[candidate.ruleId];
+      if (!selection) return;
+      const productList =
+        candidateProducts[candidate.productCategorySlug] ?? [];
+      const product = productList.find((p) => p.id === selection.productId) ?? productList[0];
+      if (!product) return;
+      const quantityParsed = Number(selection.quantity);
+      const quantity = Number.isFinite(quantityParsed) && quantityParsed > 0 ? quantityParsed : candidate.quantity ?? 1;
+      const price = product.price ?? 0;
+      const vatRate = typeof product.vatRate === "number" ? product.vatRate : 22;
+      newItems.push(
         buildOfferItem({
-          id: `offer-item-${Date.now()}-${candidate.productId}`,
-          name: candidate.name,
-          sku: candidate.sku,
-          unit: candidate.unit,
+          id: `offer-item-${Date.now()}-${candidate.ruleId}`,
+          name: product.name ?? candidate.suggestedName,
+          sku: product.sku ?? product.id,
+          unit: product.unit ?? "kos",
           description: "",
-          quantity: candidate.quantity,
-          price: candidate.price,
-          discount: candidate.discount,
-          vatRate: candidate.vatRate,
-          productId: candidate.productId,
+          quantity,
+          price,
+          discount: 0,
+          vatRate,
+          productId: product.id,
         })
-      ),
-    ];
-    await persistOfferItems(nextItems);
+      );
+    });
+    await persistOfferItems(newItems);
     setIsGenerateModalOpen(false);
   };
 
-  const toggleCandidateSelection = (id: string) => {
-    setSelectedCandidateIds((prev) =>
-      prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]
-    );
+  const toggleCandidateSelection = (ruleId: string, include: boolean) => {
+    setCandidateSelections((prev) => ({
+      ...prev,
+      [ruleId]: { ...(prev[ruleId] ?? { quantity: 1 }), include },
+    }));
   };
 
-  const handleConnectProducts = (id: string) => {
-    toast.info("Povezava produktov bo dodana v naslednji fazi.");
-    console.debug("TODO: Poveži produkte za zahtevo", id);
+  const handleProceedToOffer = async () => {
+    if (status === "draft" || (status as string) === "inquiry") {
+      const updated = await onProjectUpdate(basePath, {
+        method: "PUT",
+        body: JSON.stringify({
+          title: project.title,
+          customer: project.customerDetail,
+          status: "offered",
+          categories: project.categories ?? [],
+        }),
+      });
+      applyProjectUpdate(updated as ProjectDetails | null);
+      setStatus("offered");
+    }
+    setActiveTab("offers");
+    await handleGenerateOfferFromRequirements();
+    setIsGenerateModalOpen(true);
   };
 
   const handleCreateOffer = async () => {
@@ -1047,6 +1051,43 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
               </TabsList>
 
               <TabsContent value="items" className="mt-0 space-y-4">
+                {showVariantWizard && (
+                  <Card className="p-4 space-y-3">
+                    <h3 className="text-lg font-semibold">Izberi varianto zahtev</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Izberi varianto sistema, da se predizpolnijo vrstice zahtev.
+                    </p>
+                    <Select
+                      value={selectedVariantSlug || undefined}
+                      onValueChange={(value) => setSelectedVariantSlug(value)}
+                      disabled={variantLoading}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Izberi varianto" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {variantOptions
+                          .filter((variant) => variant.variantSlug && variant.variantSlug.trim() !== "")
+                          .map((variant) => (
+                            <SelectItem key={variant.variantSlug} value={variant.variantSlug}>
+                              {variant.label || variant.variantSlug}
+                            </SelectItem>
+                          ))}
+                        {variantOptions.length === 0 && (
+                          <SelectItem value="__noval__" disabled>
+                            Ni variant
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex gap-2">
+                      <Button onClick={handleConfirmVariantSelection} disabled={!selectedVariantSlug}>
+                        Potrdi varianto
+                      </Button>
+                    </div>
+                  </Card>
+                )}
+
                 <div className="space-y-2">
                   <h3 className="text-lg font-semibold">Opis zahtev stranke</h3>
                   <p className="text-sm text-muted-foreground">
@@ -1074,7 +1115,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {requirements.map((req) => (
+                        {(requirements ?? []).map((req) => (
                           <TableRow key={req.id}>
                             <TableCell>
                               <Input
@@ -1092,8 +1133,16 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                             </TableCell>
                             <TableCell>
                               <Select
-                                value={req.categorySlug}
-                                onValueChange={(value) => updateRequirementRow(req.id, { categorySlug: value })}
+                                value={
+                                  (project.categories?.length ?? 0) > 0
+                                    ? req.categorySlug
+                                    : "__none__"
+                                }
+                                onValueChange={(value) =>
+                                  value === "__none__"
+                                    ? null
+                                    : updateRequirementRow(req.id, { categorySlug: value })
+                                }
                               >
                                 <SelectTrigger>
                                   <SelectValue placeholder="Izberi kategorijo" />
@@ -1105,7 +1154,9 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                                     </SelectItem>
                                   ))}
                                   {(project.categories ?? []).length === 0 && (
-                                    <SelectItem value="">Brez kategorij</SelectItem>
+                                    <SelectItem value="__none__" disabled>
+                                      Brez kategorij
+                                    </SelectItem>
                                   )}
                                 </SelectContent>
                               </Select>
@@ -1118,13 +1169,6 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                               />
                             </TableCell>
                             <TableCell className="text-right space-x-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleConnectProducts(req.id)}
-                              >
-                                Poveži produkte
-                              </Button>
                               <Button variant="ghost" size="sm" onClick={() => deleteRequirementRow(req.id)}>
                                 Izbriši
                               </Button>
@@ -1137,6 +1181,10 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                   <Button variant="outline" onClick={addRequirementRow}>
                     Dodaj zahtevo
                   </Button>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button onClick={handleProceedToOffer}>Pripravi ponudbo</Button>
                 </div>
 
                 {!isExecutionPhase ? (
@@ -1179,6 +1227,18 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                     >
                       <Sparkles className="mr-2 h-4 w-4" />
                       Generiraj iz zahtev
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => console.debug("TODO export PDF", activeOffer?.id)}
+                    >
+                      Izvozi PDF
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => console.debug("TODO email offer", activeOffer?.id)}
+                    >
+                      Pošlji ponudbo stranki
                     </Button>
                     <Button onClick={() => openCatalog("offer")}>
                       <Package className="mr-2 h-4 w-4" />
@@ -1463,31 +1523,86 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
             {offerCandidates.length > 0 && (
               <div className="space-y-2">
                 {offerCandidates.map((candidate) => {
-                  const total =
-                    candidate.quantity *
-                    candidate.price *
-                    (1 - candidate.discount / 100) *
-                    (1 + candidate.vatRate / 100);
-                  const checked = selectedCandidateIds.includes(candidate.id);
+                  const selection = candidateSelections[candidate.ruleId] ?? {
+                    productId: candidate.suggestedProductId,
+                    quantity: candidate.quantity ?? 1,
+                    include: true,
+                  };
+                  const productsForCategory = candidateProducts[candidate.productCategorySlug] ?? [];
+                  const product = productsForCategory.find((p) => p.id === selection.productId) ?? productsForCategory[0];
+                  const price = product?.price ?? 0;
+                  const vatRate = typeof product?.vatRate === "number" ? product?.vatRate : 22;
+                  const total = (selection.quantity || 0) * price * (1 + vatRate / 100);
                   return (
                     <div
-                      key={candidate.id}
+                      key={candidate.ruleId}
                       className="flex items-center justify-between rounded border border-border px-3 py-2"
                     >
                       <label className="flex items-center gap-3">
                         <input
                           type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleCandidateSelection(candidate.id)}
+                          checked={selection.include}
+                          onChange={(event) => toggleCandidateSelection(candidate.ruleId, event.target.checked)}
                         />
                         <div>
-                          <div className="font-medium">{candidate.name}</div>
+                          <div className="font-medium">{candidate.suggestedName}</div>
                           <div className="text-xs text-muted-foreground">
-                            {candidate.quantity} x € {candidate.price.toFixed(2)} (DDV {candidate.vatRate}%)
+                            Pravilo: {candidate.ruleId} | Kategorija: {candidate.productCategorySlug}
                           </div>
                         </div>
                       </label>
-                      <div className="text-sm font-semibold">€ {total.toFixed(2)}</div>
+                      <div className="flex items-center gap-3">
+                        <Select
+                          value={
+                            productsForCategory.length > 0
+                              ? selection.productId ?? productsForCategory[0].id
+                              : "__none__"
+                          }
+                          onValueChange={(value) =>
+                            setCandidateSelections((prev) => ({
+                              ...prev,
+                              [candidate.ruleId]: {
+                                ...(prev[candidate.ruleId] ?? { include: true, quantity: candidate.quantity ?? 1 }),
+                                productId: value === "__none__" ? undefined : value,
+                              },
+                            }))
+                          }
+                          disabled={productsForCategory.length === 0}
+                        >
+                          <SelectTrigger className="w-48">
+                            <SelectValue placeholder="Izberi produkt" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {productsForCategory.length === 0 && (
+                              <SelectItem value="__none__" disabled>
+                                Ni produktov
+                              </SelectItem>
+                            )}
+                            {productsForCategory.map((productOption) => (
+                              <SelectItem key={productOption.id} value={productOption.id}>
+                                {productOption.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          className="w-24"
+                          type="number"
+                          inputMode="decimal"
+                          value={selection.quantity}
+                          onChange={(event) =>
+                            setCandidateSelections((prev) => ({
+                              ...prev,
+                              [candidate.ruleId]: {
+                                ...(prev[candidate.ruleId] ?? { include: true }),
+                                productId: selection.productId,
+                                quantity: Number(event.target.value),
+                              },
+                            }))
+                          }
+                        />
+                        <div className="text-sm font-semibold min-w-[90px] text-right">€ {total.toFixed(2)}</div>
+                      </div>
                     </div>
                   );
                 })}
@@ -1499,7 +1614,9 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
               </Button>
               <Button
                 onClick={handleConfirmOfferFromRequirements}
-                disabled={selectedCandidateIds.length === 0}
+                disabled={
+                  !offerCandidates.some((c) => candidateSelections[c.ruleId]?.include !== false)
+                }
               >
                 Potrdi in dodaj v ponudbo
               </Button>

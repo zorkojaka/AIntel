@@ -39,12 +39,14 @@ const RequirementTemplateGroupSchema = new Schema<RequirementTemplateGroupDocume
   {
     categorySlug: { type: String, required: true, trim: true },
     label: { type: String, required: true, trim: true },
+    variantSlug: { type: String, required: true, trim: true },
     rows: { type: [RequirementTemplateRowSchema], default: [] },
   },
   { timestamps: true }
 );
 
 RequirementTemplateGroupSchema.index({ categorySlug: 1 });
+RequirementTemplateGroupSchema.index({ categorySlug: 1, variantSlug: 1 });
 
 export const RequirementTemplateGroupModel =
   (mongoose.models.RequirementTemplateGroup as mongoose.Model<RequirementTemplateGroupDocument>) ||

@@ -67,6 +67,7 @@ export function RequirementTemplatesSection() {
       setGroups(
         data.map((group) => ({
           ...group,
+          variantSlug: group.variantSlug ?? 'default',
           rows: (group.rows ?? []).map((row) => ({
             ...row,
             optionsText: row.options?.join(', ') ?? '',
@@ -96,7 +97,7 @@ export function RequirementTemplatesSection() {
     const tempId = `temp-${Date.now()}`;
     setGroups((prev) => [
       ...prev,
-      { id: tempId, label: 'Nova skupina', categorySlug, rows: [] },
+      { id: tempId, label: 'Nova skupina', categorySlug, variantSlug: 'default', rows: [] },
     ]);
   };
 
@@ -156,6 +157,7 @@ export function RequirementTemplatesSection() {
     const payload: Omit<RequirementTemplateGroup, 'id'> = {
       label: group.label.trim(),
       categorySlug: ensureCategory(group.categorySlug),
+      variantSlug: group.variantSlug || 'default',
       rows: (group.rows ?? []).map((row) => ({
         id: row.id,
         label: row.label.trim(),
@@ -249,7 +251,7 @@ export function RequirementTemplatesSection() {
 
       <div className="space-y-4">
         {groups.map((group) => (
-          <div key={group.id} className="rounded border border-border p-4 space-y-3 bg-white">
+          <div key={(group as any)._id ?? group.id} className="rounded border border-border p-4 space-y-3 bg-white">
             <div className="grid gap-3 md:grid-cols-2">
               <Input
                 label="Naziv skupine"
@@ -270,6 +272,12 @@ export function RequirementTemplatesSection() {
                   ))}
                 </select>
               </label>
+              <Input
+                label="Varianta"
+                value={group.variantSlug}
+                onChange={(event) => handleGroupChange(group.id, { variantSlug: event.target.value })}
+                placeholder="npr. default"
+              />
             </div>
 
             <div className="overflow-x-auto">

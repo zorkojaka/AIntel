@@ -17,6 +17,7 @@ import {
 import { Types } from 'mongoose';
 import { generateRequirementsFromTemplates } from '../services/requirements-from-templates';
 import type { RequirementFieldType, RequirementFormulaConfig } from '../../shared/requirements.types';
+import { getOfferCandidatesFromRequirements } from '../services/offer-from-requirements';
 
 function normalizeSlug(value: string) {
   return value
@@ -78,7 +79,10 @@ function sanitizeRequirements(input: unknown): ProjectRequirement[] {
     .map((r: any) => ({
       id: String(r?.id ?? new Types.ObjectId().toString()),
       label: (r?.label ?? '').toString().trim(),
-      value: typeof r?.value === 'number' ? r.value : null,
+      value:
+        r?.value !== undefined && r?.value !== null
+          ? String(r.value).trim()
+          : '',
       categorySlug: r?.categorySlug ? String(r.categorySlug) : '',
       notes: (r?.notes ?? '').toString().trim(),
       templateRowId: r?.templateRowId ? String(r.templateRowId) : undefined,
@@ -86,7 +90,13 @@ function sanitizeRequirements(input: unknown): ProjectRequirement[] {
       productCategorySlug: r?.productCategorySlug ? String(r.productCategorySlug) : null,
       formulaConfig: sanitizeRequirementFormula(r?.formulaConfig),
     }))
-    .filter((req) => req.label !== '' || req.value !== null);
+    .filter((req) => {
+      const hasLabel = !!req.label?.trim();
+      const hasValue = req.value !== undefined && req.value !== null && `${req.value}`.trim() !== '';
+      const hasCategory = !!req.categorySlug;
+      const hasNotes = !!req.notes?.trim();
+      return hasLabel || hasValue || hasCategory || hasNotes;
+    });
 
   return requirements;
 }
@@ -192,6 +202,15 @@ export async function getProject(req: Request, res: Response) {
   return res.success(responseProject(project));
 }
 
+export async function getOfferCandidates(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
+  if (!project) {
+    return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+  }
+  const candidates = await getOfferCandidatesFromRequirements(project);
+  return res.success(candidates);
+}
+
 export async function createProject(req: Request, res: Response) {
   const error = validateProjectPayload(req.body);
   if (error) return res.fail(error, 400);
@@ -199,9 +218,12 @@ export async function createProject(req: Request, res: Response) {
   const id = await generateProjectId();
   const createdAt = toISODate();
   const categories = sanitizeCategorySlugs(req.body.categories);
+  const variantSlug = req.body?.requirementsTemplateVariantSlug
+    ? String(req.body.requirementsTemplateVariantSlug).trim()
+    : '';
   let requirements = sanitizeRequirements(req.body?.requirements);
-  if (requirements.length === 0 && categories.length > 0) {
-    requirements = await generateRequirementsFromTemplates(categories);
+  if (requirements.length === 0 && categories.length > 0 && variantSlug) {
+    requirements = await generateRequirementsFromTemplates(categories, variantSlug);
   }
 
   const project: Project = {
@@ -217,6 +239,7 @@ export async function createProject(req: Request, res: Response) {
     offerAmount: 0,
     invoiceAmount: 0,
     createdAt,
+    requirementsTemplateVariantSlug: variantSlug || undefined,
     requirements,
     items: (req.body.items as ProjectItem[])?.map((item) => ({
       ...item,
@@ -251,9 +274,20 @@ export async function updateProject(req: Request, res: Response) {
   const error = validateProjectPayload(req.body);
   if (error) return res.fail(error, 400);
 
+  const requestedVariantSlug = req.body?.requirementsTemplateVariantSlug
+    ? String(req.body.requirementsTemplateVariantSlug).trim()
+    : project.requirementsTemplateVariantSlug;
+
   project.title = req.body.title;
   if (req.body?.requirements !== undefined) {
     project.requirements = sanitizeRequirements(req.body.requirements);
+  } else if (
+    requestedVariantSlug &&
+    requestedVariantSlug !== project.requirementsTemplateVariantSlug &&
+    (req.body?.requirementsTemplateVariantSlug !== undefined || req.body?.categories !== undefined)
+  ) {
+    const categories = sanitizeCategorySlugs(req.body.categories ?? project.categories);
+    project.requirements = await generateRequirementsFromTemplates(categories, requestedVariantSlug);
   }
   if (req.body.customer) {
     project.customer = {
@@ -276,6 +310,7 @@ export async function updateProject(req: Request, res: Response) {
   if (req.body.status) {
     project.status = req.body.status;
   }
+  project.requirementsTemplateVariantSlug = requestedVariantSlug || undefined;
   updateOfferAmount(project);
 
   addTimeline(project, {

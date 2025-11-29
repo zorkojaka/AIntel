@@ -6,12 +6,20 @@ function toRequirementId(groupId: string, rowId: string) {
   return `${groupId}-${rowId}`;
 }
 
-export async function generateRequirementsFromTemplates(categories: string[]): Promise<ProjectRequirement[]> {
+export async function generateRequirementsFromTemplates(
+  categories: string[],
+  variantSlug?: string
+): Promise<ProjectRequirement[]> {
   if (!Array.isArray(categories) || categories.length === 0) {
     return [];
   }
 
-  const groups = await RequirementTemplateGroupModel.find({ categorySlug: { $in: categories } }).lean();
+  const query: Record<string, any> = { categorySlug: { $in: categories } };
+  if (variantSlug) {
+    query.variantSlug = variantSlug;
+  }
+
+  const groups = await RequirementTemplateGroupModel.find(query).lean();
   const requirements: ProjectRequirement[] = [];
 
   groups.forEach((group) => {

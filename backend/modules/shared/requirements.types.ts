@@ -20,6 +20,23 @@ export interface RequirementTemplateRow {
 export interface RequirementTemplateGroup {
   id: string;
   categorySlug: string;
+  variantSlug: string;
   label: string;
   rows: RequirementTemplateRow[];
+}
+
+export interface RequirementTemplateVariant {
+  variantSlug: string;
+  label: string;
+}
+
+export interface OfferGenerationRule {
+  id: string;
+  categorySlug: string;
+  variantSlug: string;
+  label: string;
+  targetProductCategorySlug: string;
+  conditionExpression?: string;
+  quantityExpression: string;
+  productSelectionMode: 'auto-first' | 'manual';
 }

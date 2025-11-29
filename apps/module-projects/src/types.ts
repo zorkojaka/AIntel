@@ -38,6 +38,7 @@ export interface ProjectSummary {
   invoiceAmount: number;
   createdAt: string;
   categories: string[];
+  requirementsTemplateVariantSlug?: string;
 }
 
 export interface PurchaseOrder {
@@ -85,6 +86,7 @@ export interface ProjectDetails extends ProjectSummary {
   customerDetail: ProjectCustomer;
   requirements?: ProjectRequirement[];
   requirementsText?: string;
+  requirementsTemplateVariantSlug?: string;
   items: Item[];
   offers: OfferVersion[];
   workOrders: WorkOrder[];
@@ -92,4 +94,12 @@ export interface ProjectDetails extends ProjectSummary {
   deliveryNotes: DeliveryNote[];
   timelineEvents: TimelineEvent[];
   templates: Template[];
+}
+
+export interface OfferCandidate {
+  ruleId: string;
+  productCategorySlug: string;
+  suggestedProductId?: string;
+  suggestedName: string;
+  quantity: number;
 }

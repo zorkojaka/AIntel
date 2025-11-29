@@ -19,6 +19,7 @@ import {
   deleteProject,
   updateStatus,
   updateProject,
+  getOfferCandidates,
 } from '../controllers/project.controller';
 
 const router = Router();
@@ -29,6 +30,7 @@ router.get('/:id', getProject);
 router.post('/:id/status', updateStatus);
 router.put('/:id', updateProject);
 router.delete('/:id', deleteProject);
+router.get('/:id/offer-candidates', getOfferCandidates);
 router.post('/:id/items', addItem);
 router.post('/:id/items/from-cenik', addItemFromCenik);
 router.put('/:id/items/:itemId', updateItem);

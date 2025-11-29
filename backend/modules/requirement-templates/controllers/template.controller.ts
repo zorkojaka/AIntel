@@ -56,6 +56,7 @@ function mapGroup(doc: RequirementTemplateGroupDocument): RequirementTemplateGro
   return {
     id: doc.id ?? doc._id.toString(),
     categorySlug: doc.categorySlug,
+    variantSlug: (doc as any).variantSlug ?? '',
     label: doc.label,
     rows: (doc.rows ?? []).map((row: RequirementTemplateRow) => ({
       ...row,
@@ -68,7 +69,10 @@ function mapGroup(doc: RequirementTemplateGroupDocument): RequirementTemplateGro
 export async function listRequirementTemplates(req: Request, res: Response) {
   try {
     const categorySlug = req.query?.categorySlug ? String(req.query.categorySlug).trim() : '';
-    const query = categorySlug ? { categorySlug } : {};
+    const variantSlug = req.query?.variantSlug ? String(req.query.variantSlug).trim() : '';
+    const query: Record<string, string> = {};
+    if (categorySlug) query.categorySlug = categorySlug;
+    if (variantSlug) query.variantSlug = variantSlug;
     const groups = await RequirementTemplateGroupModel.find(query).sort({ categorySlug: 1, label: 1 }).lean();
     res.success(groups.map((group) => mapGroup(group as RequirementTemplateGroupDocument)));
   } catch (error) {
@@ -76,12 +80,35 @@ export async function listRequirementTemplates(req: Request, res: Response) {
   }
 }
 
+export async function listTemplateVariants(req: Request, res: Response) {
+  try {
+    const categorySlug = req.query?.categorySlug ? String(req.query.categorySlug).trim() : '';
+    const query: Record<string, string> = {};
+    if (categorySlug) query.categorySlug = categorySlug;
+    const groups = await RequirementTemplateGroupModel.find(query).select(['variantSlug', 'label']).lean();
+    const variantsMap = new Map<string, string>();
+    groups.forEach((group) => {
+      if (group.variantSlug) {
+        variantsMap.set(group.variantSlug, (group as any).label ?? group.variantSlug);
+      }
+    });
+    const variants = Array.from(variantsMap.entries()).map(([variantSlug, label]) => ({
+      variantSlug,
+      label,
+    }));
+    res.success(variants);
+  } catch (error) {
+    res.fail('Ne morem pridobiti variant zahtev.');
+  }
+}
+
 export async function createRequirementTemplate(req: Request, res: Response) {
   try {
     const label = String(req.body?.label ?? '').trim();
     const categorySlug = String(req.body?.categorySlug ?? '').trim();
-    if (!label || !categorySlug) {
-      return res.fail('Manjka naziv ali kategorija template-a.', 400);
+    const variantSlug = String(req.body?.variantSlug ?? '').trim();
+    if (!label || !categorySlug || !variantSlug) {
+      return res.fail('Manjka naziv, kategorija ali varianta template-a.', 400);
     }
     const rowsInput = Array.isArray(req.body?.rows) ? req.body.rows : [];
     const rows = rowsInput
@@ -91,6 +118,7 @@ export async function createRequirementTemplate(req: Request, res: Response) {
     const created = await RequirementTemplateGroupModel.create({
       label,
       categorySlug,
+      variantSlug,
       rows,
     });
 
@@ -104,8 +132,9 @@ export async function updateRequirementTemplate(req: Request, res: Response) {
   try {
     const label = String(req.body?.label ?? '').trim();
     const categorySlug = String(req.body?.categorySlug ?? '').trim();
-    if (!label || !categorySlug) {
-      return res.fail('Manjka naziv ali kategorija template-a.', 400);
+    const variantSlug = String(req.body?.variantSlug ?? '').trim();
+    if (!label || !categorySlug || !variantSlug) {
+      return res.fail('Manjka naziv, kategorija ali varianta template-a.', 400);
     }
     const rowsInput = Array.isArray(req.body?.rows) ? req.body.rows : [];
     const rows = rowsInput
@@ -114,7 +143,7 @@ export async function updateRequirementTemplate(req: Request, res: Response) {
 
     const updated = await RequirementTemplateGroupModel.findByIdAndUpdate(
       req.params.id,
-      { label, categorySlug, rows },
+      { label, categorySlug, variantSlug, rows },
       { new: true }
     );
 
