@@ -8,10 +8,14 @@
     "dev:all": "pnpm install && pnpm --parallel --filter @aintel/module-projects build --filter @aintel/module-crm build --filter @aintel/module-cenik build --filter @aintel/module-settings build --filter @aintel/core-shell build && pnpm --parallel --filter aintel-backend dev --filter @aintel/core-shell dev --filter @aintel/module-crm dev --filter @aintel/module-cenik dev --filter @aintel/module-settings dev --filter @aintel/module-projects dev",
     "dev:stack": "pnpm --parallel --filter aintel-backend dev --filter @aintel/core-shell dev --filter @aintel/module-crm dev --filter @aintel/module-cenik dev --filter @aintel/module-settings dev --filter @aintel/module-projects dev",
     "lint": "echo \"No lint configured yet\"",
-    "dev:projekti": "pnpm --filter @aintel/module-projects dev"
-  
+    "dev:projekti": "pnpm --filter @aintel/module-projects dev",
+    "migrate:product-categories": "cross-env dotenv_config_path=backend/.env ts-node -r dotenv/config backend/scripts/migrate-product-categories.ts",
+    "migrate:cleanup-product-categories": "cross-env dotenv_config_path=backend/.env ts-node -r dotenv/config backend/scripts/cleanup-product-category-fields.ts"
   },
   "devDependencies": {
-    "pnpm": "^9.0.0"
+    "@types/pdfkit": "^0.17.4",
+    "cross-env": "^7.0.3",
+    "pnpm": "^9.0.0",
+    "ts-node": "^10.9.1"
   }
 }

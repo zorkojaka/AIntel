@@ -3,6 +3,8 @@ import { Button, Card, ColorPicker, DataTable, FileUpload, Input, Textarea } fro
 import { applySettingsTheme, DOCUMENT_PREFIX_LABELS, saveSettings } from './api';
 import { useSettingsData } from './hooks/useSettings';
 import { DocumentPrefixKey, SettingsDto } from './types';
+import { RequirementTemplatesSection } from './RequirementTemplatesSection';
+import { OfferRulesSection } from './OfferRulesSection';
 
 interface StatusBanner {
   variant: 'success' | 'error';
@@ -315,6 +317,9 @@ export const SettingsPage: React.FC = () => {
           </div>
         </Card>
       )}
+
+      <RequirementTemplatesSection />
+      <OfferRulesSection />
     </section>
   );
 };

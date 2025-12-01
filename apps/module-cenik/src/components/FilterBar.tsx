@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
 
+type CategoryOption = {
+  slug: string;
+  name: string;
+};
+
 type FilterValue = { q: string; category: string | null };
 
 type Props = {
-  categories: string[];
+  categories: CategoryOption[];
   value?: FilterValue;
   onChange: (v: FilterValue) => void;
   onAddProduct: () => void;
@@ -60,8 +65,10 @@ export default function FilterBar({
     title="Kategorija"
   >
     <option value="">Vse kategorije</option>
-    {categories.map((c) => (
-      <option key={c} value={c}>{c}</option>
+    {categories.map((category) => (
+      <option key={category.slug} value={category.slug}>
+        {category.name}
+      </option>
     ))}
   </select>
 

@@ -1,4 +1,5 @@
 import { ApiEnvelope, DocumentPrefixKey, SettingsDto } from './types';
+import type { RequirementTemplateGroup, RequirementTemplateVariant, OfferGenerationRule } from '@aintel/shared/types/project';
 
 export const DEFAULT_SETTINGS: SettingsDto = {
   companyName: 'Vaše podjetje d.o.o.',
@@ -61,6 +62,94 @@ export async function saveSettings(payload: SettingsDto): Promise<SettingsDto> {
   });
   const data = await parseEnvelope<SettingsDto>(response);
   return mergeWithDefaults(data);
+}
+
+export async function fetchRequirementTemplates(
+  categorySlug?: string
+): Promise<RequirementTemplateGroup[]> {
+  const query = categorySlug ? `?categorySlug=${encodeURIComponent(categorySlug)}` : '';
+  const response = await fetch(`/api/requirement-templates${query}`);
+  return parseEnvelope<RequirementTemplateGroup[]>(response);
+}
+
+export async function createRequirementTemplateGroup(
+  payload: Omit<RequirementTemplateGroup, 'id'>
+): Promise<RequirementTemplateGroup> {
+  const response = await fetch('/api/requirement-templates', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return parseEnvelope<RequirementTemplateGroup>(response);
+}
+
+export async function updateRequirementTemplateGroup(
+  id: string,
+  payload: Omit<RequirementTemplateGroup, 'id'>
+): Promise<RequirementTemplateGroup> {
+  const response = await fetch(`/api/requirement-templates/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return parseEnvelope<RequirementTemplateGroup>(response);
+}
+
+export async function deleteRequirementTemplateGroup(id: string): Promise<void> {
+  const response = await fetch(`/api/requirement-templates/${id}`, {
+    method: 'DELETE'
+  });
+  await parseEnvelope(response);
+}
+
+export async function fetchRequirementVariants(
+  categorySlug?: string
+): Promise<RequirementTemplateVariant[]> {
+  const query = categorySlug ? `?categorySlug=${encodeURIComponent(categorySlug)}` : '';
+  const response = await fetch(`/api/requirement-templates/variants${query}`);
+  return parseEnvelope<RequirementTemplateVariant[]>(response);
+}
+
+export async function fetchOfferRules(params?: {
+  category?: string;
+  variant?: string;
+}): Promise<OfferGenerationRule[]> {
+  const search = new URLSearchParams();
+  if (params?.category) search.set('category', params.category);
+  if (params?.variant) search.set('variant', params.variant);
+  const query = search.toString() ? `?${search.toString()}` : '';
+  const response = await fetch(`/api/requirement-templates/offer-rules${query}`);
+  return parseEnvelope<OfferGenerationRule[]>(response);
+}
+
+export async function createOfferRule(
+  payload: Omit<OfferGenerationRule, 'id'>
+): Promise<OfferGenerationRule> {
+  const response = await fetch('/api/requirement-templates/offer-rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return parseEnvelope<OfferGenerationRule>(response);
+}
+
+export async function updateOfferRule(
+  id: string,
+  payload: Omit<OfferGenerationRule, 'id'>
+): Promise<OfferGenerationRule> {
+  const response = await fetch(`/api/requirement-templates/offer-rules/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return parseEnvelope<OfferGenerationRule>(response);
+}
+
+export async function deleteOfferRule(id: string): Promise<void> {
+  const response = await fetch(`/api/requirement-templates/offer-rules/${id}`, {
+    method: 'DELETE'
+  });
+  await parseEnvelope(response);
 }
 
 export function applySettingsTheme(settings: SettingsDto) {
