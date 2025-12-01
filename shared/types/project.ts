@@ -55,6 +55,8 @@ export interface ProjectRequirement {
 
 export interface Project {
   id: string;
+  code: string;
+  projectNumber: number;
   name: string;
   categories: string[];
   requirements?: ProjectRequirement[];

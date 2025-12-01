@@ -23,6 +23,7 @@ function sanitizeLineItem(raw: unknown): OfferLineItem | null {
   const unitPrice = clampNumber(item?.unitPrice, 0, 0);
   const vatRate = clampNumber(item?.vatRate, 22, 0);
   const unit = normalizeText(item?.unit, 'kos') || 'kos';
+  const discountPercent = clampNumber(item?.discountPercent, 0, 0);
 
   if (!name || unitPrice <= 0) return null;
 
@@ -38,36 +39,65 @@ function sanitizeLineItem(raw: unknown): OfferLineItem | null {
     unit,
     unitPrice,
     vatRate,
+    discountPercent,
     totalNet,
     totalVat,
     totalGross,
   };
 }
 
-function calculateTotals(items: OfferLineItem[]) {
-  let totalNet = 0;
-  let totalVat22 = 0;
-  let totalVat95 = 0;
+function calculateOfferTotals(offer: {
+  items: OfferLineItem[];
+  usePerItemDiscount: boolean;
+  useGlobalDiscount: boolean;
+  globalDiscountPercent: number;
+  vatMode: number;
+}) {
+  const { items, usePerItemDiscount, useGlobalDiscount, globalDiscountPercent, vatMode } = offer;
 
-  for (const item of items) {
-    totalNet += item.totalNet;
-    if (Math.abs(item.vatRate - 22) < 0.001) {
-      totalVat22 += item.totalVat;
-    } else if (Math.abs(item.vatRate - 9.5) < 0.001) {
-      totalVat95 += item.totalVat;
-    } else {
-      totalVat22 += 0;
-      totalVat95 += 0;
-    }
-  }
+  const baseWithoutVat = items.reduce((sum, item) => sum + (item.unitPrice || 0) * (item.quantity || 0), 0);
 
-  totalNet = Number(totalNet.toFixed(2));
-  totalVat22 = Number(totalVat22.toFixed(2));
-  totalVat95 = Number(totalVat95.toFixed(2));
-  const totalVat = Number((totalVat22 + totalVat95).toFixed(2));
-  const totalGross = Number((totalNet + totalVat).toFixed(2));
+  const perItemDiscountAmount = usePerItemDiscount
+    ? items.reduce((sum, item) => {
+        const pct = clampNumber(item.discountPercent, 0, 0);
+        const lineNet = (item.unitPrice || 0) * (item.quantity || 0);
+        return sum + (lineNet * pct) / 100;
+      }, 0)
+    : 0;
 
-  return { totalNet, totalVat22, totalVat95, totalVat, totalGross };
+  const baseAfterPerItem = baseWithoutVat - perItemDiscountAmount;
+
+  const normalizedGlobalPct = useGlobalDiscount ? Math.min(100, Math.max(0, Number(globalDiscountPercent) || 0)) : 0;
+  const globalDiscountAmount = normalizedGlobalPct > 0 ? (baseAfterPerItem * normalizedGlobalPct) / 100 : 0;
+
+  const baseAfterDiscount = baseAfterPerItem - globalDiscountAmount;
+
+  const vatMultiplier = vatMode === 22 ? 0.22 : vatMode === 9.5 ? 0.095 : 0;
+  const vatAmount = baseAfterDiscount * vatMultiplier;
+
+  const totalNetAfterDiscount = baseAfterDiscount;
+  const totalGrossAfterDiscount = totalNetAfterDiscount + vatAmount;
+
+  const round2 = (value: number) => Number(value.toFixed(2));
+
+  return {
+    baseWithoutVat: round2(baseWithoutVat),
+    perItemDiscountAmount: round2(perItemDiscountAmount),
+    globalDiscountAmount: round2(globalDiscountAmount),
+    baseAfterDiscount: round2(baseAfterDiscount),
+    vatAmount: round2(vatAmount),
+    totalNet: round2(baseAfterDiscount),
+    totalVat22: vatMode === 22 ? round2(vatAmount) : 0,
+    totalVat95: vatMode === 9.5 ? round2(vatAmount) : 0,
+    totalVat: round2(vatAmount),
+    totalGross: round2(totalGrossAfterDiscount),
+    discountPercent: normalizedGlobalPct,
+    discountAmount: round2(perItemDiscountAmount + globalDiscountAmount),
+    totalNetAfterDiscount: round2(totalNetAfterDiscount),
+    totalGrossAfterDiscount: round2(totalGrossAfterDiscount),
+    totalWithVat: round2(totalGrossAfterDiscount),
+    vatMode,
+  };
 }
 
 function extractBaseTitle(rawTitle?: string) {
@@ -87,6 +117,20 @@ function serializeOffer(offer: OfferVersion) {
     validUntil: offer.validUntil ? new Date(offer.validUntil).toISOString() : null,
     createdAt: offer.createdAt ? new Date(offer.createdAt).toISOString() : '',
     updatedAt: offer.updatedAt ? new Date(offer.updatedAt).toISOString() : '',
+    discountPercent: offer.discountPercent ?? 0,
+    globalDiscountPercent: offer.globalDiscountPercent ?? offer.discountPercent ?? 0,
+    discountAmount: offer.discountAmount ?? 0,
+    totalNetAfterDiscount: offer.totalNetAfterDiscount ?? offer.totalNet ?? 0,
+    totalGrossAfterDiscount: offer.totalGrossAfterDiscount ?? offer.totalGross ?? 0,
+    useGlobalDiscount: offer.useGlobalDiscount ?? true,
+    usePerItemDiscount: offer.usePerItemDiscount ?? false,
+    vatMode: (offer.vatMode as number) ?? 22,
+    baseWithoutVat: offer.baseWithoutVat ?? 0,
+    perItemDiscountAmount: offer.perItemDiscountAmount ?? 0,
+    globalDiscountAmount: offer.globalDiscountAmount ?? offer.discountAmount ?? 0,
+    baseAfterDiscount: offer.baseAfterDiscount ?? offer.totalNetAfterDiscount ?? 0,
+    vatAmount: offer.vatAmount ?? offer.totalVat ?? 0,
+    totalWithVat: offer.totalWithVat ?? offer.totalGrossAfterDiscount ?? offer.totalGross ?? 0,
   } as OfferVersion;
 }
 
@@ -103,7 +147,13 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
       return res.fail('Ponudba mora vsebovati vsaj eno veljavno postavko.', 400);
     }
 
-    const { totalNet, totalVat22, totalVat95, totalVat, totalGross } = calculateTotals(items);
+    const totals = calculateOfferTotals({
+      items,
+      usePerItemDiscount: body?.usePerItemDiscount ?? false,
+      useGlobalDiscount: body?.useGlobalDiscount ?? true,
+      globalDiscountPercent: body?.globalDiscountPercent ?? body?.discountPercent ?? 0,
+      vatMode: body?.vatMode ?? 22,
+    });
 
     const now = new Date();
     const validUntilValue = body?.validUntil;
@@ -123,11 +173,25 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
       paymentTerms: normalizeText(body?.paymentTerms) || null,
       introText: normalizeText(body?.introText) || null,
       items,
-      totalNet,
-      totalVat22,
-      totalVat95,
-      totalVat,
-      totalGross,
+      totalNet: totals.totalNet,
+      totalVat22: totals.totalVat22,
+      totalVat95: totals.totalVat95,
+      totalVat: totals.totalVat,
+      totalGross: totals.totalGross,
+      discountPercent: totals.discountPercent,
+      globalDiscountPercent: totals.discountPercent,
+      discountAmount: totals.discountAmount,
+      totalNetAfterDiscount: totals.totalNetAfterDiscount,
+      totalGrossAfterDiscount: totals.totalGrossAfterDiscount,
+      useGlobalDiscount: body?.useGlobalDiscount ?? true,
+      usePerItemDiscount: body?.usePerItemDiscount ?? false,
+      vatMode: body?.vatMode ?? 22,
+      baseWithoutVat: totals.baseWithoutVat ?? totals.totalNet ?? 0,
+      perItemDiscountAmount: totals.perItemDiscountAmount ?? 0,
+      globalDiscountAmount: totals.globalDiscountAmount ?? 0,
+      baseAfterDiscount: totals.baseAfterDiscount ?? totals.totalNetAfterDiscount ?? 0,
+      vatAmount: totals.vatAmount ?? totals.totalVat ?? 0,
+      totalWithVat: totals.totalWithVat ?? totals.totalGrossAfterDiscount ?? totals.totalGross ?? 0,
       status: (body?.status as OfferStatus) || 'draft',
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
@@ -166,6 +230,9 @@ export async function listOffersForProject(req: Request, res: Response, next: Ne
       title: o.title,
       status: o.status,
       createdAt: o.createdAt ? new Date(o.createdAt).toISOString() : '',
+      totalGross: o.totalGrossAfterDiscount ?? o.totalWithVat ?? o.totalGross ?? 0,
+      totalGrossAfterDiscount: o.totalGrossAfterDiscount ?? o.totalWithVat ?? o.totalGross ?? 0,
+      totalWithVat: o.totalWithVat ?? o.totalGrossAfterDiscount ?? o.totalGross ?? 0,
     }));
     return res.success(data);
   } catch (err) {
@@ -193,7 +260,17 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
       .map((raw: unknown) => sanitizeLineItem(raw))
       .filter((item: OfferLineItem | null): item is OfferLineItem => !!item);
 
-    const totals = calculateTotals(items);
+    if (!items.length) {
+      return res.fail('Ponudba mora vsebovati vsaj eno veljavno postavko.', 400);
+    }
+
+    const totals = calculateOfferTotals({
+      items,
+      usePerItemDiscount: body?.usePerItemDiscount ?? false,
+      useGlobalDiscount: body?.useGlobalDiscount ?? true,
+      globalDiscountPercent: body?.globalDiscountPercent ?? body?.discountPercent ?? 0,
+      vatMode: body?.vatMode ?? 22,
+    });
 
     const existing = await OfferVersionModel.findOne({ _id: offerId, projectId });
     if (!existing) {
@@ -210,6 +287,20 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
     existing.totalVat95 = totals.totalVat95;
     existing.totalVat = totals.totalVat;
     existing.totalGross = totals.totalGross;
+    existing.discountPercent = totals.discountPercent;
+    existing.globalDiscountPercent = totals.discountPercent;
+    existing.discountAmount = totals.discountAmount;
+    existing.totalNetAfterDiscount = totals.totalNetAfterDiscount;
+    existing.totalGrossAfterDiscount = totals.totalGrossAfterDiscount;
+    existing.useGlobalDiscount = body?.useGlobalDiscount ?? existing.useGlobalDiscount ?? true;
+    existing.usePerItemDiscount = body?.usePerItemDiscount ?? existing.usePerItemDiscount ?? false;
+    existing.vatMode = body?.vatMode ?? existing.vatMode ?? 22;
+    existing.baseWithoutVat = totals.baseWithoutVat ?? existing.baseWithoutVat ?? 0;
+    existing.perItemDiscountAmount = totals.perItemDiscountAmount ?? existing.perItemDiscountAmount ?? 0;
+    existing.globalDiscountAmount = totals.globalDiscountAmount ?? existing.globalDiscountAmount ?? 0;
+    existing.baseAfterDiscount = totals.baseAfterDiscount ?? existing.baseAfterDiscount ?? 0;
+    existing.vatAmount = totals.vatAmount ?? existing.vatAmount ?? 0;
+    existing.totalWithVat = totals.totalWithVat ?? existing.totalWithVat ?? existing.totalGrossAfterDiscount ?? 0;
     existing.status = body.status ?? existing.status;
 
     await existing.save();
@@ -224,6 +315,7 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
       })
     );
   } catch (err) {
+    console.error('Failed to update offer version', err);
     next(err);
   }
 }

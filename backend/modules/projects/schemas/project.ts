@@ -118,6 +118,8 @@ export interface ProjectRequirement {
 
 export interface Project {
   id: string;
+  code: string;
+  projectNumber: number;
   title: string;
   customer: ProjectCustomer;
   status: ProjectStatus;
@@ -283,6 +285,8 @@ const ProjectRequirementSchema = new Schema<ProjectRequirement>(
 const ProjectSchema = new Schema<ProjectDocument>(
   {
     id: { type: String, required: true, unique: true, index: true },
+    code: { type: String, required: true, unique: true, index: true },
+    projectNumber: { type: Number, required: true, unique: true, index: true },
     title: { type: String, required: true, trim: true },
     customer: {
       name: { type: String, required: true, trim: true },
@@ -311,6 +315,9 @@ const ProjectSchema = new Schema<ProjectDocument>(
   { versionKey: false }
 );
 
+ProjectSchema.index({ projectNumber: 1 }, { unique: true });
+ProjectSchema.index({ code: 1 }, { unique: true });
+
 export const ProjectModel =
   (mongoose.models.Project as mongoose.Model<ProjectDocument>) ||
   mongoose.model<ProjectDocument>('Project', ProjectSchema);
@@ -330,6 +337,8 @@ export function addTimeline(project: Project | ProjectDocument, event: Omit<Time
 export function summarizeProject(project: Project | ProjectDocument) {
   return {
     id: project.id,
+    code: project.code,
+    projectNumber: project.projectNumber,
     title: project.title,
     customer: project.customer.name,
     status: project.status,
@@ -340,9 +349,21 @@ export function summarizeProject(project: Project | ProjectDocument) {
   };
 }
 
-export async function generateProjectId() {
-  const latest = await ProjectModel.findOne().sort({ createdAt: -1 }).lean();
-  const match = latest?.id?.match(/PRJ-(\d+)/);
-  const nextNumber = match ? parseInt(match[1], 10) + 1 : 1;
-  return `PRJ-${nextNumber.toString().padStart(3, '0')}`;
+export async function generateProjectIdentifiers() {
+  const latestWithNumber = await ProjectModel.findOne({ projectNumber: { $exists: true } })
+    .sort({ projectNumber: -1 })
+    .lean();
+
+  let nextNumber = (latestWithNumber?.projectNumber ?? 0) + 1;
+
+  if (!latestWithNumber) {
+    const latestByCode = await ProjectModel.findOne({ id: /^PRJ-\d+$/ }).sort({ id: -1 }).lean();
+    const match = latestByCode?.id?.match(/PRJ-(\d+)/);
+    if (match) {
+      nextNumber = parseInt(match[1], 10) + 1;
+    }
+  }
+
+  const code = `PRJ-${nextNumber.toString().padStart(3, '0')}`;
+  return { id: code, code, projectNumber: nextNumber };
 }

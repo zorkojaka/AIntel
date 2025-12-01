@@ -17,6 +17,7 @@ const OfferLineItemSchema = new Schema<OfferLineItemDocument>(
     totalNet: { type: Number, required: true, min: 0 },
     totalVat: { type: Number, required: true, min: 0 },
     totalGross: { type: Number, required: true, min: 0 },
+    discountPercent: { type: Number, default: 0 },
   } as Record<keyof OfferLineItem, any>,
   { _id: false }
 );
@@ -40,6 +41,20 @@ const OfferVersionSchema = new Schema<OfferVersionDocument>(
     totalVat95: { type: Number, required: true, default: 0 },
     totalVat: { type: Number, required: true, default: 0 },
     totalGross: { type: Number, required: true, default: 0 },
+    discountPercent: { type: Number, required: true, default: 0 },
+    globalDiscountPercent: { type: Number, required: true, default: 0 },
+    discountAmount: { type: Number, required: true, default: 0 },
+    totalNetAfterDiscount: { type: Number, required: true, default: 0 },
+    totalGrossAfterDiscount: { type: Number, required: true, default: 0 },
+    useGlobalDiscount: { type: Boolean, required: true, default: true },
+    usePerItemDiscount: { type: Boolean, required: true, default: false },
+    vatMode: { type: Number, required: true, default: 22 },
+    baseWithoutVat: { type: Number, required: true, default: 0 },
+    perItemDiscountAmount: { type: Number, required: true, default: 0 },
+    globalDiscountAmount: { type: Number, required: true, default: 0 },
+    baseAfterDiscount: { type: Number, required: true, default: 0 },
+    vatAmount: { type: Number, required: true, default: 0 },
+    totalWithVat: { type: Number, required: true, default: 0 },
     status: { type: String, required: true, default: 'draft' as OfferStatus },
   },
   { timestamps: true }

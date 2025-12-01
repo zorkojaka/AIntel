@@ -11,6 +11,7 @@ export interface OfferLineItem {
   totalNet: number;
   totalVat: number;
   totalGross: number;
+  discountPercent?: number;
 }
 
 export interface OfferVersion {
@@ -28,6 +29,20 @@ export interface OfferVersion {
   totalVat95: number;
   totalVat: number;
   totalGross: number;
+  discountPercent: number;
+  globalDiscountPercent?: number;
+  discountAmount: number;
+  totalNetAfterDiscount: number;
+  totalGrossAfterDiscount: number;
+  useGlobalDiscount: boolean;
+  usePerItemDiscount: boolean;
+  vatMode: 0 | 9.5 | 22;
+  baseWithoutVat?: number;
+  perItemDiscountAmount?: number;
+  globalDiscountAmount?: number;
+  baseAfterDiscount?: number;
+  vatAmount?: number;
+  totalWithVat?: number;
   status: OfferStatus;
   createdAt: string;
   updatedAt: string;
@@ -40,4 +55,7 @@ export interface OfferVersionSummary {
   title: string;
   status: OfferStatus;
   createdAt: string;
+  totalGross: number;
+  totalGrossAfterDiscount?: number;
+  totalWithVat?: number;
 }

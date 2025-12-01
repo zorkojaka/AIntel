@@ -11,7 +11,7 @@ import {
   ProjectStatus,
   addTimeline,
   calculateOfferAmount,
-  generateProjectId,
+  generateProjectIdentifiers,
   summarizeProject,
 } from '../schemas/project';
 import { Types } from 'mongoose';
@@ -215,7 +215,7 @@ export async function createProject(req: Request, res: Response) {
   const error = validateProjectPayload(req.body);
   if (error) return res.fail(error, 400);
 
-  const id = await generateProjectId();
+  const { id, code, projectNumber } = await generateProjectIdentifiers();
   const createdAt = toISODate();
   const categories = sanitizeCategorySlugs(req.body.categories);
   const variantSlug = req.body?.requirementsTemplateVariantSlug
@@ -228,6 +228,8 @@ export async function createProject(req: Request, res: Response) {
 
   const project: Project = {
     id,
+    code,
+    projectNumber,
     title: req.body.title,
     customer: {
       name: req.body.customer.name,

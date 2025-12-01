@@ -124,7 +124,7 @@ export async function createRequirementTemplate(req: Request, res: Response) {
 
     res.success(mapGroup(created), 201);
   } catch (error) {
-    res.fail('Template skupine ni bilo mogo�?e ustvariti.');
+    res.fail('Template skupine ni bilo mogoče ustvariti.');
   }
 }
 
@@ -153,7 +153,7 @@ export async function updateRequirementTemplate(req: Request, res: Response) {
 
     res.success(mapGroup(updated));
   } catch (error) {
-    res.fail('Template skupine ni bilo mogo�?e posodobiti.');
+    res.fail('Template skupine ni bilo mogoče posodobiti.');
   }
 }
 
@@ -165,6 +165,6 @@ export async function deleteRequirementTemplate(req: Request, res: Response) {
     }
     res.success({ id: deleted.id ?? deleted._id.toString() });
   } catch (error) {
-    res.fail('Template skupine ni bilo mogo�?e izbrisati.');
+    res.fail('Template skupine ni bilo mogoče izbrisati.');
   }
 }

@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { toast } from "sonner";
-import type { OfferLineItem, OfferVersion } from "@aintel/shared/types/offers";
-import type { OfferVersionSummary } from "@aintel/shared/types/offers";
+
+import type { OfferLineItem, OfferVersion, OfferVersionSummary } from "@aintel/shared/types/offers";
 import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
+
 import { Loader2, Plus, Search, Trash } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "./ui/command";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Checkbox } from "./ui/checkbox";
 
 type OffersTabProps = {
   projectId: string;
@@ -27,6 +30,7 @@ type OfferLineItemForm = {
   totalNet: number;
   totalVat: number;
   totalGross: number;
+  discountPercent: number;
 };
 
 const createEmptyItem = (): OfferLineItemForm => ({
@@ -37,6 +41,7 @@ const createEmptyItem = (): OfferLineItemForm => ({
   unit: "kos",
   unitPrice: 0,
   vatRate: 22,
+  discountPercent: 0,
   totalNet: 0,
   totalVat: 0,
   totalGross: 0,
@@ -48,15 +53,35 @@ const clampPositive = (value: unknown, fallback = 0) => {
   return Math.max(0, parsed);
 };
 
-const isItemValid = (item: OfferLineItem) => item.name.trim() !== "" && item.unitPrice > 0;
+const isItemValid = (item: OfferLineItem | OfferLineItemForm) =>
+  item.name.trim() !== "" && item.unitPrice > 0;
 
 export function OffersTab({ projectId }: OffersTabProps) {
   const [items, setItems] = useState<OfferLineItemForm[]>([createEmptyItem()]);
+
   const [title, setTitle] = useState("Ponudba");
   const [paymentTerms, setPaymentTerms] = useState<string>("");
   const [introText, setIntroText] = useState<string>("");
+
   const [currentOffer, setCurrentOffer] = useState<OfferVersion | null>(null);
   const [activeRowIndex, setActiveRowIndex] = useState(0);
+
+  const [globalDiscountPercent, setGlobalDiscountPercent] = useState<number>(0);
+  const [discountAmount, setDiscountAmount] = useState<number>(0);
+  const [totalNetAfterDiscount, setTotalNetAfterDiscount] = useState<number>(0);
+  const [totalGrossAfterDiscount, setTotalGrossAfterDiscount] = useState<number>(0);
+
+  const [useGlobalDiscount, setUseGlobalDiscount] = useState<boolean>(false);
+  const [usePerItemDiscount, setUsePerItemDiscount] = useState<boolean>(false);
+  const [vatMode, setVatMode] = useState<0 | 9.5 | 22>(22);
+  const [overriddenVatIds, setOverriddenVatIds] = useState<Set<string>>(new Set());
+
+  const [perItemDiscountAmount, setPerItemDiscountAmount] = useState<number>(0);
+  const [baseWithoutVat, setBaseWithoutVat] = useState<number>(0);
+  const [baseAfterDiscount, setBaseAfterDiscount] = useState<number>(0);
+  const [globalDiscountAmount, setGlobalDiscountAmount] = useState<number>(0);
+  const [vatAmount, setVatAmount] = useState<number>(0);
+
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -65,9 +90,11 @@ export function OffersTab({ projectId }: OffersTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchRowId, setSearchRowId] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
-  const searchDebounce = useRef<NodeJS.Timeout | null>(null);
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const nameInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const focusRowId = useRef<string | null>(null);
+
   const [versions, setVersions] = useState<OfferVersionSummary[]>([]);
   const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
 
@@ -78,6 +105,67 @@ export function OffersTab({ projectId }: OffersTabProps) {
     setIntroText("");
     setItems([createEmptyItem()]);
     setActiveRowIndex(0);
+    setGlobalDiscountPercent(0);
+    setUseGlobalDiscount(false);
+    setUsePerItemDiscount(false);
+    setVatMode(22);
+    setBaseWithoutVat(0);
+    setPerItemDiscountAmount(0);
+    setGlobalDiscountAmount(0);
+    setBaseAfterDiscount(0);
+    setVatAmount(0);
+    setTotalNetAfterDiscount(0);
+    setTotalGrossAfterDiscount(0);
+  };
+
+  const loadOfferById = async (offerId: string) => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/offers/${offerId}`);
+      const payload = await response.json();
+      if (!payload.success) return;
+      const offer: OfferVersion = payload.data;
+      if (!offer) return;
+
+      setTitle(offer.baseTitle || "Ponudba");
+      setPaymentTerms(offer.paymentTerms ?? "");
+      setIntroText(offer.introText ?? "");
+
+      setUseGlobalDiscount(offer.useGlobalDiscount ?? false);
+      setUsePerItemDiscount(offer.usePerItemDiscount ?? false);
+      setVatMode((offer.vatMode as 0 | 9.5 | 22) ?? 22);
+
+      const gPercent = offer.globalDiscountPercent ?? offer.discountPercent ?? 0;
+      setGlobalDiscountPercent(gPercent);
+
+      setBaseWithoutVat(offer.baseWithoutVat ?? offer.totalNet ?? 0);
+      setPerItemDiscountAmount(offer.perItemDiscountAmount ?? 0);
+      setGlobalDiscountAmount(offer.globalDiscountAmount ?? offer.discountAmount ?? 0);
+      setBaseAfterDiscount(offer.baseAfterDiscount ?? offer.totalNetAfterDiscount ?? 0);
+      setVatAmount(offer.vatAmount ?? offer.totalVat ?? 0);
+      setTotalNetAfterDiscount(offer.totalNetAfterDiscount ?? offer.baseAfterDiscount ?? 0);
+      setTotalGrossAfterDiscount(offer.totalGrossAfterDiscount ?? offer.totalGross ?? 0);
+      setDiscountAmount(offer.globalDiscountAmount ?? offer.discountAmount ?? 0);
+
+      setCurrentOffer(offer);
+
+      const mapped: OfferLineItemForm[] = (offer.items ?? []).map((item) => ({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        unit: item.unit,
+        unitPrice: item.unitPrice,
+        vatRate: item.vatRate,
+        discountPercent: item.discountPercent ?? 0,
+        totalNet: item.totalNet,
+        totalVat: item.totalVat,
+        totalGross: item.totalGross,
+        productId: item.productId ?? null,
+      }));
+
+      setItems([...mapped, createEmptyItem()]);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   useEffect(() => {
@@ -95,6 +183,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
         return;
       }
 
+      // privzeto zadnja verzija
       const last = list[list.length - 1];
       setSelectedOfferId(last._id);
       await loadOfferById(last._id);
@@ -104,43 +193,29 @@ export function OffersTab({ projectId }: OffersTabProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  const loadOfferById = async (offerId: string) => {
-    try {
-      const response = await fetch(`/api/projects/${projectId}/offers/${offerId}`);
-      const payload = await response.json();
-      if (!payload.success) return;
-      const offer: OfferVersion = payload.data;
-      if (!offer) return;
-      setTitle(offer.baseTitle || "Ponudba");
-      setPaymentTerms(offer.paymentTerms ?? "");
-      setIntroText(offer.introText ?? "");
-      setCurrentOffer(offer);
-      const mapped = (offer.items ?? []).map((item) => ({
-        id: item.id,
-        name: item.name,
-        quantity: item.quantity,
-        unit: item.unit,
-        unitPrice: item.unitPrice,
-        vatRate: item.vatRate,
-        totalNet: item.totalNet,
-        totalVat: item.totalVat,
-        totalGross: item.totalGross,
-        productId: item.productId ?? null,
-      }));
-      setItems([...mapped, createEmptyItem()]);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
   const recalcItem = (item: OfferLineItemForm): OfferLineItemForm => {
     const quantity = clampPositive(item.quantity, 1);
     const unitPrice = clampPositive(item.unitPrice, 0);
     const vatRate = clampPositive(item.vatRate, 0);
-    const totalNet = Number((quantity * unitPrice).toFixed(2));
-    const totalVat = Number((totalNet * (vatRate / 100)).toFixed(2));
-    const totalGross = Number((totalNet + totalVat).toFixed(2));
-    return { ...item, quantity, unitPrice, vatRate, totalNet, totalVat, totalGross };
+
+    const perItemDiscount = usePerItemDiscount ? clampPositive(item.discountPercent ?? 0, 0) : 0;
+
+    const net = Number((quantity * unitPrice * (1 - perItemDiscount / 100)).toFixed(2));
+
+    const effectiveVatRate = vatMode === 0 ? 0 : vatMode ?? vatRate;
+    const totalVat = Number((net * (effectiveVatRate / 100)).toFixed(2));
+    const totalGross = Number((net + totalVat).toFixed(2));
+
+    return {
+      ...item,
+      quantity,
+      unitPrice,
+      vatRate,
+      discountPercent: perItemDiscount,
+      totalNet: net,
+      totalVat,
+      totalGross,
+    };
   };
 
   const ensureTrailingBlank = (list: OfferLineItemForm[]) => {
@@ -157,9 +232,11 @@ export function OffersTab({ projectId }: OffersTabProps) {
     setItems((prev) => {
       const idx = prev.findIndex((item) => item.id === id);
       if (idx === -1) return prev;
+
       const next = [...prev];
       const merged = { ...next[idx], ...changes };
       next[idx] = recalcItem(merged);
+
       const last = next[next.length - 1];
       const isLastFilled = last && isItemValid(last);
       return isLastFilled ? [...next, createEmptyItem()] : next;
@@ -193,20 +270,23 @@ export function OffersTab({ projectId }: OffersTabProps) {
       setSearchRowId(target.id);
       setSearchTerm(target.name);
     }
-  }, [activeRowIndex, items, setSearchRowId, setSearchTerm]);
+  }, [activeRowIndex, items]);
 
   useEffect(() => {
     if (!searchRowId) {
       setSearchResults([]);
       return;
     }
+
     if (searchDebounce.current) {
       clearTimeout(searchDebounce.current);
     }
+
     if (!searchTerm.trim()) {
       setSearchResults([]);
       return;
     }
+
     searchDebounce.current = setTimeout(async () => {
       setSearching(true);
       try {
@@ -232,25 +312,86 @@ export function OffersTab({ projectId }: OffersTabProps) {
   const validItems = useMemo(() => items.filter(isItemValid), [items]);
 
   const totals = useMemo(() => {
-    return validItems.reduce(
-      (acc, item) => {
-        acc.totalNet += item.totalNet;
-        if (Math.abs(item.vatRate - 22) < 0.001) {
-          acc.totalVat22 += item.totalVat;
-        } else if (Math.abs(item.vatRate - 9.5) < 0.001) {
-          acc.totalVat95 += item.totalVat;
-        }
-        acc.totalVat += item.totalVat;
-        acc.totalGross += item.totalGross;
-        return acc;
-      },
-      { totalNet: 0, totalVat22: 0, totalVat95: 0, totalVat: 0, totalGross: 0 }
+    const baseWithout = validItems.reduce(
+      (acc, item) => acc + item.quantity * item.unitPrice,
+      0
     );
-  }, [validItems]);
 
-  const handleSelectProduct = (rowId: string, product: PriceListSearchItem, rowIndex: number) => {
+    const perItemDisc = usePerItemDiscount
+      ? validItems.reduce(
+          (acc, item) =>
+            acc + item.quantity * item.unitPrice * ((item.discountPercent ?? 0) / 100),
+          0
+        )
+      : 0;
+
+    const baseAfterPerItem = Number((baseWithout - perItemDisc).toFixed(2));
+
+    const normalizedDiscount = useGlobalDiscount
+      ? Math.min(100, Math.max(0, globalDiscountPercent || 0))
+      : 0;
+
+    const globalDisc = Number((baseAfterPerItem * (normalizedDiscount / 100)).toFixed(2));
+    const baseAfterAll = Number((baseAfterPerItem - globalDisc).toFixed(2));
+
+    const vatRate =
+      vatMode === 22 ? 0.22 : vatMode === 9.5 ? 0.095 : 0;
+
+    const vatAmt = Number((baseAfterAll * vatRate).toFixed(2));
+    const totalWithVatVal = Number((baseAfterAll + vatAmt).toFixed(2));
+
+    return {
+      baseWithoutVat: baseWithout,
+      perItemDiscountAmount: perItemDisc,
+      globalDiscountAmount: globalDisc,
+      baseAfterDiscount: baseAfterAll,
+      vatAmount: vatAmt,
+      totalWithVat: totalWithVatVal,
+    };
+  }, [validItems, usePerItemDiscount, useGlobalDiscount, globalDiscountPercent, vatMode]);
+
+  useEffect(() => {
+    setPerItemDiscountAmount(totals.perItemDiscountAmount ?? 0);
+    setGlobalDiscountAmount(totals.globalDiscountAmount ?? 0);
+    setBaseWithoutVat(totals.baseWithoutVat ?? 0);
+    setBaseAfterDiscount(totals.baseAfterDiscount ?? 0);
+    setVatAmount(totals.vatAmount ?? 0);
+    setTotalGrossAfterDiscount(totals.totalWithVat ?? 0);
+    setTotalNetAfterDiscount(totals.baseAfterDiscount ?? 0);
+    setDiscountAmount(totals.globalDiscountAmount ?? 0);
+  }, [totals]);
+
+  const formatCurrency = (value: number) =>
+    `${value.toLocaleString("sl-SI", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} €`;
+
+  const handleToggleGlobalDiscount = (checked: boolean) => {
+    setUseGlobalDiscount(checked);
+    if (!checked) {
+      setGlobalDiscountPercent(0);
+    }
+  };
+
+  const handleVatModeChange = (mode: 0 | 9.5 | 22) => {
+    setVatMode(mode);
+    setItems((prev) =>
+      prev.map((item) => {
+        if (overriddenVatIds.has(item.id)) return recalcItem(item);
+        return recalcItem({ ...item, vatRate: mode });
+      })
+    );
+  };
+
+  const handleSelectProduct = (
+    rowId: string,
+    product: PriceListSearchItem,
+    rowIndex: number
+  ) => {
     setSearchRowId(null);
     setSearchResults([]);
+
     updateItem(rowId, {
       name: product.name,
       productId: product.id,
@@ -258,6 +399,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
       unitPrice: product.unitPrice,
       vatRate: product.vatRate ?? 22,
     });
+
     setActiveRowIndex(rowIndex + 1);
   };
 
@@ -275,7 +417,10 @@ export function OffersTab({ projectId }: OffersTabProps) {
         totalNet: i.totalNet,
         totalVat: i.totalVat,
         totalGross: i.totalGross,
+        discountPercent: usePerItemDiscount ? i.discountPercent ?? 0 : 0,
       }));
+
+    const effectiveGlobalPercent = useGlobalDiscount ? globalDiscountPercent : 0;
 
     return {
       title,
@@ -283,7 +428,23 @@ export function OffersTab({ projectId }: OffersTabProps) {
       paymentTerms,
       introText,
       items: cleanItems,
+      // kompatibilnost s starimi polji
+      discountPercent: effectiveGlobalPercent,
+      globalDiscountPercent: effectiveGlobalPercent,
+      useGlobalDiscount,
+      usePerItemDiscount,
+      vatMode,
     };
+  };
+
+  const reloadVersionsAndSelect = async (offerId: string) => {
+    const response = await fetch(`/api/projects/${projectId}/offers`);
+    const payload = await response.json();
+    if (!payload.success) return;
+    const list: OfferVersionSummary[] = payload.data ?? [];
+    setVersions(list);
+    setSelectedOfferId(offerId);
+    await loadOfferById(offerId);
   };
 
   const handleSave = async () => {
@@ -291,6 +452,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
       toast.error("Dodajte vsaj eno postavko z nazivom in ceno.");
       return null;
     }
+
     setSaving(true);
     try {
       const payloadBody = buildPayloadFromCurrentState();
@@ -298,16 +460,19 @@ export function OffersTab({ projectId }: OffersTabProps) {
         ? `/api/projects/${projectId}/offers/${selectedOfferId}`
         : `/api/projects/${projectId}/offers`;
       const method = selectedOfferId ? "PUT" : "POST";
+
       const response = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payloadBody),
       });
+
       const payload = await response.json();
       if (!payload.success) {
-        toast.error(payload.error ?? "Ponudbe ni bilo mogoce shraniti.");
+        toast.error(payload.error ?? "Ponudbe ni bilo mogoče shraniti.");
         return null;
       }
+
       const created: OfferVersion = payload.data;
       await reloadVersionsAndSelect(created._id);
       toast.success("Ponudba shranjena.");
@@ -327,6 +492,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
     }
     return handleSave();
   };
+
   const handleCreateNewVersion = () => {
     setSelectedOfferId(null);
     resetToEmptyOffer();
@@ -334,8 +500,11 @@ export function OffersTab({ projectId }: OffersTabProps) {
 
   const handleDeleteVersion = async () => {
     if (!selectedOfferId) return;
-    if (!window.confirm("Res zelis izbrisati to verzijo ponudbe?")) return;
-    const response = await fetch(`/api/projects/${projectId}/offers/${selectedOfferId}`, { method: "DELETE" });
+    if (!window.confirm("Res želiš izbrisati to verzijo ponudbe?")) return;
+
+    const response = await fetch(`/api/projects/${projectId}/offers/${selectedOfferId}`, {
+      method: "DELETE",
+    });
     const payload = await response.json();
     if (!payload.success || !payload.data) return;
 
@@ -344,14 +513,12 @@ export function OffersTab({ projectId }: OffersTabProps) {
     if (!listJson.success) return;
     const list: OfferVersionSummary[] = listJson.data ?? [];
     setVersions(list);
+
     if (list.length === 0) {
-      setSelectedOfferId(null);
-      setTitle("Ponudba");
-      setPaymentTerms("");
-      setIntroText("");
-      setItems([createEmptyItem()]);
+      resetToEmptyOffer();
       return;
     }
+
     const last = list[list.length - 1];
     setSelectedOfferId(last._id);
     await loadOfferById(last._id);
@@ -370,14 +537,10 @@ export function OffersTab({ projectId }: OffersTabProps) {
     const created: OfferVersion = json.data;
     await reloadVersionsAndSelect(created._id);
   };
-  const reloadVersionsAndSelect = async (offerId: string) => {
-    const response = await fetch(`/api/projects/${projectId}/offers`);
-    const payload = await response.json();
-    if (!payload.success) return;
-    const list: OfferVersionSummary[] = payload.data ?? [];
-    setVersions(list);
-    setSelectedOfferId(offerId);
-    await loadOfferById(offerId);
+
+  const handleChangeVersion = async (value: string) => {
+    setSelectedOfferId(value);
+    await loadOfferById(value);
   };
 
   const handleExportPdf = async () => {
@@ -397,13 +560,19 @@ export function OffersTab({ projectId }: OffersTabProps) {
     try {
       const saved = await ensureSavedOffer();
       if (!saved?._id) return;
-      const response = await fetch(`/api/projects/${projectId}/offers/${saved._id}/send`, { method: "POST" });
+
+      const response = await fetch(
+        `/api/projects/${projectId}/offers/${saved._id}/send`,
+        { method: "POST" }
+      );
       const payload = await response.json();
       if (!payload.success) {
         toast.error(payload.error ?? "Pošiljanje ni uspelo.");
         return;
       }
-      toast.success(payload.data?.message ?? "Pošiljanje bo implementirano kasneje.");
+      toast.success(
+        payload.data?.message ?? "Pošiljanje bo implementirano kasneje."
+      );
     } catch (error) {
       console.error(error);
       toast.error("Pošiljanje ni uspelo.");
@@ -414,44 +583,132 @@ export function OffersTab({ projectId }: OffersTabProps) {
 
   return (
     <Card className="p-4 space-y-4">
-      <div className="flex items-center gap-2">
-        <Select
-          value={selectedOfferId ?? (versions[versions.length - 1]?._id ?? "")}
-          onValueChange={async (value) => {
-            if (!value) return;
-            setSelectedOfferId(value);
-            await loadOfferById(value);
-          }}
-        >
-          <SelectTrigger className="w-[220px]">
-            <SelectValue placeholder="Izberi verzijo" />
-          </SelectTrigger>
-          <SelectContent>
-            {versions.map((v) => (
-              <SelectItem key={v._id} value={v._id}>
-                {`${v.baseTitle}_${v.versionNumber}`}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button type="button" variant="outline" onClick={handleCreateNewVersion}>
-          Nova verzija
-        </Button>
-        <Button type="button" variant="outline" onClick={handleCloneVersion} disabled={!selectedOfferId}>
-          Kopiraj verzijo
-        </Button>
-        <Button type="button" variant="destructive" disabled={!selectedOfferId} onClick={handleDeleteVersion}>
-          Izbrisi verzijo
-        </Button>
+      {/* VERZIJE + DDV + POPUSTI */}
+      <div className="mb-4 border-b pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Verzija ponudbe
+            </span>
+            <Select
+              value={selectedOfferId ?? ""}
+              onValueChange={handleChangeVersion}
+            >
+              <SelectTrigger className="min-w-[260px]">
+                <SelectValue placeholder="Izberi verzijo ponudbe" />
+              </SelectTrigger>
+              <SelectContent>
+                {versions.map((v) => (
+                  <SelectItem key={v._id} value={v._id}>
+                    {v.title} –{" "}
+                    {formatCurrency(
+                      v.totalGrossAfterDiscount ?? v.totalWithVat ?? v.totalGross ?? 0
+                    )}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleCreateNewVersion}
+            >
+              Nova verzija
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleCloneVersion}
+              disabled={!selectedOfferId}
+            >
+              Kopiraj verzijo
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={!selectedOfferId}
+              onClick={handleDeleteVersion}
+            >
+              Izbriši verzijo
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">DDV način</span>
+            <Select
+              value={String(vatMode)}
+              onValueChange={(value) =>
+                handleVatModeChange(Number(value) as 0 | 9.5 | 22)
+              }
+            >
+              <SelectTrigger className="w-[120px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="22">22 %</SelectItem>
+                <SelectItem value="9.5">9,5 %</SelectItem>
+                <SelectItem value="0">0 % (76. člen)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2">
+              <Checkbox
+                checked={useGlobalDiscount}
+                onChange={(e) =>
+                  handleToggleGlobalDiscount(e.target.checked)
+                }
+              />
+              <span>Popust na celotno ponudbo</span>
+              {useGlobalDiscount && (
+                <>
+                  <Input
+                    type="number"
+                    className="w-20 text-right"
+                    inputMode="decimal"
+                    value={globalDiscountPercent}
+                    onChange={(e) =>
+                      setGlobalDiscountPercent(
+                        Number(e.target.value) || 0
+                      )
+                    }
+                  />
+                  <span className="text-muted-foreground">%</span>
+                </>
+              )}
+            </label>
+
+            <label className="flex items-center gap-2">
+              <Checkbox
+                checked={usePerItemDiscount}
+                onChange={(e) =>
+                  setUsePerItemDiscount(e.target.checked)
+                }
+              />
+              <span>Popust po produktih</span>
+            </label>
+          </div>
+        </div>
       </div>
 
+      {/* HEADER POLJA */}
       <div className="grid gap-3 md:grid-cols-3">
         <div className="space-y-2">
           <label className="text-sm font-medium">Naziv ponudbe</label>
-          <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ponudba" />
+          <Input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="Ponudba"
+          />
         </div>
         <div className="space-y-2">
-          <label className="text-sm font-medium">Placilni pogoji</label>
+          <label className="text-sm font-medium">Plačilni pogoji</label>
           <Input
             value={paymentTerms}
             onChange={(event) => setPaymentTerms(event.target.value)}
@@ -468,31 +725,57 @@ export function OffersTab({ projectId }: OffersTabProps) {
         </div>
       </div>
 
+      {/* TABELA POSTAVK */}
       <div className="bg-card rounded-[var(--radius-card)] border overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Naziv</TableHead>
-              <TableHead className="w-24 text-right">Kolicina</TableHead>
-              <TableHead className="w-24">Enota</TableHead>
-              <TableHead className="w-32 text-right">Cena</TableHead>
-              <TableHead className="w-24 text-right">DDV %</TableHead>
-              <TableHead className="w-32 text-right">Skupaj</TableHead>
-              <TableHead className="w-12" />
+              <TableHead className="w-[42%] text-left pl-4">
+                Naziv
+              </TableHead>
+              <TableHead className="w-[10%] text-right">
+                Količina
+              </TableHead>
+              <TableHead className="w-[10%] text-right">
+                Enota
+              </TableHead>
+              <TableHead className="w-[12%] text-right">
+                Cena
+              </TableHead>
+              {usePerItemDiscount && (
+                <TableHead className="w-[10%] text-right">
+                  Popust %
+                </TableHead>
+              )}
+              <TableHead className="w-[10%] text-right">
+                DDV %
+              </TableHead>
+              <TableHead className="w-[12%] text-right pr-4">
+                Skupaj
+              </TableHead>
+              <TableHead className="w-[4%] text-center" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {items.map((item, index) => (
               <TableRow key={item.id}>
-                <TableCell className="relative">
-                  <Popover open={searchRowId === item.id} onOpenChange={(open) => setSearchRowId(open ? item.id : null)}>
+                <TableCell className="w-[42%] text-left pl-4 align-top">
+                  <Popover
+                    open={searchRowId === item.id}
+                    onOpenChange={(open) =>
+                      setSearchRowId(open ? item.id : null)
+                    }
+                  >
                     <PopoverTrigger asChild>
                       <Input
                         ref={(node) => (nameInputs.current[item.id] = node)}
                         value={item.name}
                         placeholder="Naziv ali iskanje v ceniku"
+                        className="text-left justify-start"
                         onChange={(event) => {
-                          updateItem(item.id, { name: event.target.value });
+                          updateItem(item.id, {
+                            name: event.target.value,
+                          });
                           setSearchRowId(item.id);
                           setSearchTerm(event.target.value);
                         }}
@@ -503,12 +786,18 @@ export function OffersTab({ projectId }: OffersTabProps) {
                         autoFocus={index === activeRowIndex}
                       />
                     </PopoverTrigger>
-                    <PopoverContent className="w-[320px] p-0" side="bottom" align="start">
+                    <PopoverContent
+                      className="w-[320px] p-0"
+                      side="bottom"
+                      align="start"
+                    >
                       <Command shouldFilter={false}>
                         <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
                           <Search className="h-4 w-4" />
-                          <span>Poisci v ceniku</span>
-                          {searching && <Loader2 className="h-4 w-4 animate-spin ml-auto" />}
+                          <span>Poišči v ceniku</span>
+                          {searching && (
+                            <Loader2 className="h-4 w-4 animate-spin ml-auto" />
+                          )}
                         </div>
                         <CommandInput
                           placeholder="Vnesi naziv ali kodo"
@@ -519,21 +808,34 @@ export function OffersTab({ projectId }: OffersTabProps) {
                           }}
                         />
                         <CommandList>
-                          <CommandEmpty>Ni zadetkov v ceniku, nadaljujte z rocnim vnosom.</CommandEmpty>
+                          <CommandEmpty>
+                            Ni zadetkov v ceniku, nadaljujte z ročnim
+                            vnosom.
+                          </CommandEmpty>
                           <CommandGroup>
                             {searchResults.slice(0, 5).map((result) => (
                               <CommandItem
                                 key={result.id}
                                 onSelect={() => {
-                          handleSelectProduct(item.id, result, index);
-                          setSearchRowId(null);
-                        }}
-                        className="flex flex-col items-start gap-1"
-                      >
+                                  handleSelectProduct(
+                                    item.id,
+                                    result,
+                                    index
+                                  );
+                                  setSearchRowId(null);
+                                }}
+                                className="flex flex-col items-start gap-1"
+                              >
                                 <div className="flex w-full justify-between">
-                                  <span className="font-medium">{result.name}</span>
+                                  <span className="font-medium">
+                                    {result.name}
+                                  </span>
                                   <span className="text-muted-foreground">
-                                    {result.unitPrice.toLocaleString("sl-SI", { minimumFractionDigits: 2 })} €
+                                    {result.unitPrice.toLocaleString(
+                                      "sl-SI",
+                                      { minimumFractionDigits: 2 }
+                                    )}{" "}
+                                    €
                                   </span>
                                 </div>
                                 <div className="text-xs text-muted-foreground w-full flex justify-between">
@@ -548,39 +850,94 @@ export function OffersTab({ projectId }: OffersTabProps) {
                     </PopoverContent>
                   </Popover>
                 </TableCell>
-                <TableCell className="text-right">
+
+                <TableCell className="w-[10%] text-right align-top">
                   <Input
+                    className="text-right"
                     type="number"
                     inputMode="decimal"
                     value={item.quantity}
-                    onChange={(event) => updateItem(item.id, { quantity: Number(event.target.value) })}
+                    onChange={(event) =>
+                      updateItem(item.id, {
+                        quantity: Number(event.target.value),
+                      })
+                    }
                   />
                 </TableCell>
-                <TableCell>
-                  <Input value={item.unit} onChange={(event) => updateItem(item.id, { unit: event.target.value })} />
-                </TableCell>
-                <TableCell className="text-right">
+
+                <TableCell className="w-[10%] text-right align-top">
                   <Input
+                    className="text-right"
+                    value={item.unit}
+                    onChange={(event) =>
+                      updateItem(item.id, { unit: event.target.value })
+                    }
+                  />
+                </TableCell>
+
+                <TableCell className="w-[12%] text-right align-top">
+                  <Input
+                    className="text-right"
                     type="number"
                     inputMode="decimal"
                     value={item.unitPrice}
-                    onChange={(event) => updateItem(item.id, { unitPrice: Number(event.target.value) })}
+                    onChange={(event) =>
+                      updateItem(item.id, {
+                        unitPrice: Number(event.target.value),
+                      })
+                    }
                   />
                 </TableCell>
-                <TableCell className="text-right">
+
+                {usePerItemDiscount && (
+                  <TableCell className="w-[10%] text-right align-top">
+                    <Input
+                      className="text-right"
+                      type="number"
+                      inputMode="decimal"
+                      value={item.discountPercent ?? 0}
+                      onChange={(event) =>
+                        updateItem(item.id, {
+                          discountPercent: Number(event.target.value),
+                        })
+                      }
+                    />
+                  </TableCell>
+                )}
+
+                <TableCell className="w-[10%] text-right align-top">
                   <Input
+                    className="text-right"
                     type="number"
                     inputMode="decimal"
                     value={item.vatRate}
-                    onChange={(event) => updateItem(item.id, { vatRate: Number(event.target.value) })}
+                    onChange={(event) => {
+                      setOverriddenVatIds((prev) => {
+                        const next = new Set(prev);
+                        next.add(item.id);
+                        return next;
+                      });
+                      updateItem(item.id, {
+                        vatRate: Number(event.target.value),
+                      });
+                    }}
                   />
                 </TableCell>
-                <TableCell className="text-right">
-                  {(item.totalGross || 0).toLocaleString("sl-SI", { minimumFractionDigits: 2 })}
+
+                <TableCell className="w-[12%] text-right align-top pr-4">
+                  {(item.totalGross || 0).toLocaleString("sl-SI", {
+                    minimumFractionDigits: 2,
+                  })}{" "}
+                  €
                 </TableCell>
-                <TableCell className="text-right">
+
+                <TableCell className="w-[4%] text-center align-top">
                   {items.length > 1 && (
-                    <Button size="icon" variant="ghost" onClick={() => deleteRow(item.id)}>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => deleteRow(item.id)}
+                    >
                       <Trash className="h-4 w-4" />
                     </Button>
                   )}
@@ -591,58 +948,74 @@ export function OffersTab({ projectId }: OffersTabProps) {
         </Table>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="space-y-1 rounded-md border p-3">
-          <div className="text-sm text-muted-foreground">Material</div>
-          <div className="text-xl font-semibold">
-            {totals.totalNet.toLocaleString("sl-SI", { minimumFractionDigits: 2 })} €
-          </div>
+      {/* POVZETEK / IZRAČUNI */}
+      <div className="mt-6 space-y-1 text-sm">
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">Osnova brez DDV</span>
+          <span>{formatCurrency(totals.baseWithoutVat ?? 0)}</span>
         </div>
-        <div className="space-y-1 rounded-md border p-3">
-          <div className="text-sm text-muted-foreground">DDV (9.5%)</div>
-          <div className="text-xl font-semibold">
-            {totals.totalVat95.toLocaleString("sl-SI", { minimumFractionDigits: 2 })} €
+
+        {usePerItemDiscount && (totals.perItemDiscountAmount ?? 0) > 0 && (
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">
+              Popust po produktih
+            </span>
+            <span>
+              -{formatCurrency(totals.perItemDiscountAmount ?? 0)}
+            </span>
           </div>
+        )}
+
+        {useGlobalDiscount && (totals.globalDiscountAmount ?? 0) > 0 && (
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">
+              Popust na celotno ponudbo ({globalDiscountPercent || 0}%)
+            </span>
+            <span>
+              -{formatCurrency(totals.globalDiscountAmount ?? 0)}
+            </span>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">Osnova po popustih</span>
+          <span>{formatCurrency(totals.baseAfterDiscount ?? 0)}</span>
         </div>
-        <div className="space-y-1 rounded-md border p-3">
-          <div className="text-sm text-muted-foreground">DDV (22%)</div>
-          <div className="text-xl font-semibold">
-            {totals.totalVat22.toLocaleString("sl-SI", { minimumFractionDigits: 2 })} €
-          </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">DDV ({vatMode}%)</span>
+          <span>{formatCurrency(vatAmount)}</span>
         </div>
-        <div className="space-y-1 rounded-md border p-3">
-          <div className="text-sm text-muted-foreground">DDV za ponudbo</div>
-          <div className="text-xl font-semibold">
-            {totals.totalVat.toLocaleString("sl-SI", { minimumFractionDigits: 2 })} €
-          </div>
-        </div>
-        <div className="space-y-1 rounded-md border p-3">
-          <div className="text-sm text-muted-foreground">Skupaj z DDV</div>
-          <div className="text-xl font-semibold">
-            {totals.totalGross.toLocaleString("sl-SI", { minimumFractionDigits: 2 })} €
-          </div>
+
+        <div className="flex items-center justify-between font-medium pt-1">
+          <span>Skupaj za plačilo (z DDV)</span>
+          <span>{formatCurrency(totalGrossAfterDiscount)}</span>
         </div>
       </div>
 
+      {/* GUMBI */}
       <div className="flex flex-wrap gap-2 justify-end">
         <Button onClick={handleSave} disabled={saving}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Shrani ponudbo
         </Button>
-        <Button variant="outline" onClick={handleExportPdf} disabled={downloading}>
+        <Button
+          variant="outline"
+          onClick={handleExportPdf}
+          disabled={downloading}
+        >
           {downloading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Izvozi PDF
         </Button>
-        <Button variant="outline" onClick={handleSend} disabled={sending}>
+        <Button
+          variant="outline"
+          onClick={handleSend}
+          disabled={sending}
+        >
           {sending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Poslji ponudbo stranki
-        </Button>
-        <Button variant="ghost" onClick={() => ensureTrailingBlank([...items])}>
-          <Plus className="mr-2 h-4 w-4" />
-          Dodaj vrstico
+          Pošlji ponudbo stranki
         </Button>
       </div>
     </Card>
   );
 }
-

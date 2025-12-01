@@ -31,6 +31,8 @@ export interface ProjectCustomer {
 export interface ProjectSummary {
   id: string;
   _id?: string;
+  code?: string;
+  projectNumber?: number;
   title: string;
   customer: string;
   status: ProjectStatus;
