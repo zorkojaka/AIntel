@@ -23,7 +23,6 @@ import {
   Plus,
   FileText,
   Package,
-  Truck,
   Wrench,
   Receipt,
   FolderOpen,
@@ -36,10 +35,11 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
-import { DeliveryNote, ProjectDetails, ProjectOffer, ProjectOfferItem, PurchaseOrder, OfferCandidate } from "../types";
+import { ProjectDetails, ProjectOffer, ProjectOfferItem, OfferCandidate } from "../types";
 import { fetchOfferCandidates, fetchProductsByCategories, fetchRequirementVariants, type ProductLookup } from "../api";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
 import { OffersTab } from "./OffersTab";
+import { LogisticsTab } from "./LogisticsTab";
 
 type ItemFormState = {
   name: string;
@@ -93,8 +93,6 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     productId: "",
   });
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>(project.workOrders);
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(project.purchaseOrders);
-  const [deliveryNotes, setDeliveryNotes] = useState<DeliveryNote[]>(project.deliveryNotes);
   const [timeline, setTimeline] = useState<TimelineEvent[]>(project.timelineEvents);
   const [status, setStatus] = useState(project.status);
   const [requirementsText, setRequirementsText] = useState(project.requirementsText ?? "");
@@ -194,8 +192,6 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     setActiveOffer(null);
     setOfferItems([]);
     setWorkOrders(project.workOrders);
-    setPurchaseOrders(project.purchaseOrders);
-    setDeliveryNotes(project.deliveryNotes);
     setTimeline(project.timelineEvents);
     setStatus(project.status);
     setRequirements(Array.isArray(project.requirements) ? project.requirements : []);
@@ -288,8 +284,6 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     setItems(updated.items);
     setOffers(updated.offers);
     setWorkOrders(updated.workOrders);
-    setPurchaseOrders(updated.purchaseOrders);
-    setDeliveryNotes(updated.deliveryNotes);
     setTimeline(updated.timelineEvents);
     setStatus(updated.status);
     setRequirements(updated.requirements ?? []);
@@ -795,12 +789,6 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     if (updated) toast.info("Potrditev ponudbe preklicana");
   };
 
-  const handleReceiveDelivery = async (dnId: string) => {
-    const updated = await onProjectUpdate(`${basePath}/deliveries/${dnId}/receive`, { method: "POST" });
-    applyProjectUpdate(updated);
-    if (updated) toast.success("Dobavnica potrjena! Načrt lahko generiramo.");
-  };
-
   const handleMarkOfferAsSelected = async (offerId: string) => {
     const updated = await onProjectUpdate(`${basePath}/offers/${offerId}/select`, { method: "POST" });
     applyProjectUpdate(updated);
@@ -1213,99 +1201,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
               </TabsContent>
 
               <TabsContent value="logistics" className="mt-0 space-y-6">
-                <div>
-                  <h3 className="mb-4">Naročilnice po dobaviteljih</h3>
-                  {purchaseOrders.length > 0 ? (
-                    <div className="border rounded-[var(--radius-card)] bg-card overflow-hidden">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Dobavitelj</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Znesek</TableHead>
-                            <TableHead>Rok</TableHead>
-                            <TableHead>Postavke</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {purchaseOrders.map((po) => (
-                            <TableRow key={po.id}>
-                              <TableCell className="font-medium">{po.supplier}</TableCell>
-                              <TableCell>
-                                <Badge className={
-                                  po.status === "sent" ? "bg-blue-100 text-blue-700" :
-                                  po.status === "confirmed" ? "bg-green-100 text-green-700" :
-                                  po.status === "delivered" ? "bg-green-100 text-green-700" :
-                                  "bg-gray-100 text-gray-700"
-                                }>
-                                  {po.status === "sent" ? "Poslano" :
-                                   po.status === "confirmed" ? "Potrjeno" :
-                                   po.status === "delivered" ? "Dostavljeno" :
-                                   po.status}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right">€ {po.amount.toFixed(2)}</TableCell>
-                              <TableCell>{po.dueDate}</TableCell>
-                              <TableCell className="text-sm text-muted-foreground">
-                                {po.items.join(", ")}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  ) : (
-                    <Card className="p-6 text-center text-muted-foreground">
-                      {offers.length > 0 ? "Naro?ilnice bodo generirane ob potrditvi ponudbe" : "Izberite ponudbo za generiranje naro?ilnic"}
-                    </Card>
-                  )}
-                </div>
-
-                <div>
-                  <h3 className="mb-4">Dobavnice</h3>
-                  {deliveryNotes.length > 0 ? (
-                    <div className="space-y-3">
-                      {deliveryNotes.map((dn) => (
-                        <Card key={dn.id} className="p-4">
-                          <div className="flex items-start justify-between">
-                            <div className="space-y-2 flex-1">
-                              <div className="flex items-center gap-3">
-                                <h4 className="m-0">{dn.id}</h4>
-                                <Badge className={
-                                  dn.receivedQuantity > 0 ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
-                                }>
-                                  {dn.receivedQuantity > 0 ? "Prevzeto" : "?aka"}
-                                </Badge>
-                              </div>
-                              <div className="text-sm">
-                                <div className="text-muted-foreground">Dobavitelj: {dn.supplier}</div>
-                                {dn.receivedDate && (
-                                  <div className="text-muted-foreground">Datum prevzema: {dn.receivedDate}</div>
-                                )}
-                                {dn.serials && dn.serials.length > 0 && (
-                                  <div className="text-muted-foreground">Serijske št.: {dn.serials.join(", ")}</div>
-                                )}
-                                <div className="mt-1">
-                                  Prevzeto: {dn.receivedQuantity}/{dn.totalQuantity} kosov
-                                </div>
-                              </div>
-                            </div>
-                            {dn.receivedQuantity === 0 && (
-                              <Button size="sm" onClick={() => handleReceiveDelivery(dn.id)}>
-                                <Truck className="w-4 h-4 mr-2" />
-                                Potrdi prevzem
-                              </Button>
-                            )}
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : (
-                    <Card className="p-6 text-center text-muted-foreground">
-                      Še ni zabeleženih dobav
-                    </Card>
-                  )}
-                </div>
+                <LogisticsTab projectId={project.id} />
               </TabsContent>
 
               <TabsContent value="execution" className="mt-0 space-y-6">
