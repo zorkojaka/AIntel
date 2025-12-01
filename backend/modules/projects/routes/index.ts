@@ -2,25 +2,28 @@ import { Router } from 'express';
 import {
   addItem,
   addItemFromCenik,
-  addOffer,
-  cancelConfirmation,
-  confirmOffer,
   createProject,
   deleteItem,
-  getProjectOffer,
   getProject,
   listProjects,
   receiveDelivery,
   saveSignature,
-  selectOffer,
-  sendOffer,
-  updateProjectOffer,
   updateItem,
   deleteProject,
   updateStatus,
   updateProject,
   getOfferCandidates,
 } from '../controllers/project.controller';
+import {
+  exportOfferPdf,
+  saveOfferVersion,
+  sendOfferVersionStub,
+  getActiveOffer,
+  listOffersForProject,
+  getOfferById,
+  updateOfferVersion,
+  deleteOfferVersion,
+} from '../controllers/offer-version.controller';
 
 const router = Router();
 
@@ -35,13 +38,14 @@ router.post('/:id/items', addItem);
 router.post('/:id/items/from-cenik', addItemFromCenik);
 router.put('/:id/items/:itemId', updateItem);
 router.delete('/:id/items/:itemId', deleteItem);
-router.post('/:id/offers', addOffer);
-router.get('/:projectId/offer', getProjectOffer);
-router.put('/:projectId/offer', updateProjectOffer);
-router.post('/:id/offers/:offerId/send', sendOffer);
-router.post('/:id/offers/:offerId/confirm', confirmOffer);
-router.post('/:id/offers/:offerId/cancel', cancelConfirmation);
-router.post('/:id/offers/:offerId/select', selectOffer);
+router.post('/:projectId/offers', saveOfferVersion);
+router.get('/:projectId/offers', listOffersForProject);
+router.get('/:projectId/offers/:offerId', getOfferById);
+router.put('/:projectId/offers/:offerId', updateOfferVersion);
+router.delete('/:projectId/offers/:offerId', deleteOfferVersion);
+router.get('/:projectId/offers/:offerVersionId/pdf', exportOfferPdf);
+router.post('/:projectId/offers/:offerVersionId/send', sendOfferVersionStub);
+router.get('/:projectId/offer', getActiveOffer);
 router.post('/:id/deliveries/:deliveryId/receive', receiveDelivery);
 router.post('/:id/signature', saveSignature);
 

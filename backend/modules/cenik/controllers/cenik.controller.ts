@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { ProductDocument, ProductModel } from '../product.model';
+import type { PriceListSearchItem } from '../../../../shared/types/price-list';
 
 type ProductPayload = Pick<
   ProductDocument,
@@ -199,5 +200,36 @@ export async function deleteProduct(req: Request, res: Response) {
     res.success({ message: 'Produkt izbrisan' });
   } catch (error) {
     res.fail('Napaka pri brisanju produkta');
+  }
+}
+
+export async function searchPriceListItems(req: Request, res: Response) {
+  const q = (req.query?.q ?? '').toString().trim();
+  const limit = Math.min(50, Math.max(1, Number(req.query?.limit) || 5));
+  if (!q) {
+    return res.success([] as PriceListSearchItem[]);
+  }
+
+  try {
+    const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const products = await ProductModel.find({
+      $or: [{ ime: regex }, { kategorija: regex }],
+    })
+      .sort({ ime: 1 })
+      .limit(limit)
+      .lean();
+
+    const mapped: PriceListSearchItem[] = products.map((product) => ({
+      id: product._id.toString(),
+      name: product.ime,
+      code: product.kategorija ?? undefined,
+      unit: product.isService ? 'ura' : 'kos',
+      unitPrice: Number(product.prodajnaCena ?? 0),
+      vatRate: 22,
+    }));
+
+    res.success(mapped);
+  } catch (_error) {
+    res.fail('Napaka pri iskanju po ceniku');
   }
 }

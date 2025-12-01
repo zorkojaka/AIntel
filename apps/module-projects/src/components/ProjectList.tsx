@@ -99,9 +99,9 @@ export function ProjectList({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredProjects.map((project) => (
+            {filteredProjects.map((project, index) => (
               <TableRow
-                key={project._id ?? project.id}
+                key={project._id ?? project.id ?? `${project.title}-${index}`}
                 className="cursor-pointer"
                 onClick={() => onSelectProject(project.id)}
               >

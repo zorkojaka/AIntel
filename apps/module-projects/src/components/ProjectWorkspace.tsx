@@ -39,6 +39,7 @@ import { toast } from "sonner";
 import { DeliveryNote, ProjectDetails, ProjectOffer, ProjectOfferItem, PurchaseOrder, OfferCandidate } from "../types";
 import { fetchOfferCandidates, fetchProductsByCategories, fetchRequirementVariants, type ProductLookup } from "../api";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
+import { OffersTab } from "./OffersTab";
 
 type ItemFormState = {
   name: string;
@@ -1208,89 +1209,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
               </TabsContent>
 
               <TabsContent value="offers" className="mt-0 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-1">
-                    <h3 className="m-0">Aktivna ponudba</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Postavke ponudbe so ločene od projektnih postavk. Uporabi cenik ali dodaj ročno.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" onClick={() => fetchActiveOffer()} disabled={isOfferLoading}>
-                      <RefreshCcw className="mr-2 h-4 w-4" />
-                      Osveži ponudbo
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={handleGenerateOfferFromRequirements}
-                      disabled={isGeneratingOffer}
-                    >
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      Generiraj iz zahtev
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => console.debug("TODO export PDF", activeOffer?.id)}
-                    >
-                      Izvozi PDF
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => console.debug("TODO email offer", activeOffer?.id)}
-                    >
-                      Pošlji ponudbo stranki
-                    </Button>
-                    <Button onClick={() => openCatalog("offer")}>
-                      <Package className="mr-2 h-4 w-4" />
-                      Dodaj iz cenika
-                    </Button>
-                  </div>
-                </div>
-
-                <Card className="p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Ponudba</p>
-                      <h4 className="m-0">{activeOffer?.label ?? "Ponudba 1"}</h4>
-                    </div>
-                    <Button variant="outline" onClick={() => openCatalog("offer")}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Nova postavka
-                    </Button>
-                  </div>
-                  <ItemsTable
-                    items={offerItems as Item[]}
-                    onEditField={(id, changes) => handleOfferItemFieldChange(id, changes as Partial<ProjectOfferItem>)}
-                    onAddFromCatalog={() => openCatalog("offer")}
-                    onAddCustom={() => handleSubmitDraftOfferItem()}
-                    onDelete={handleDeleteOfferItem}
-                    showDiscount={hasAnyDiscount}
-                    showDraftRow
-                    draftItem={draftOfferItem as Item}
-                    onChangeDraft={(changes) => setDraftOfferItem((prev) => ({ ...prev, ...(changes as ProjectOfferItem) }))}
-                    onSubmitDraft={handleSubmitDraftOfferItem}
-                  />
-                  <div className="grid gap-3 sm:grid-cols-2 mt-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground">DDV za ponudbo</label>
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        value={offerVatRate}
-                        onChange={(event) => handleOfferVatRateChange(Number(event.target.value))}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground">Popust na celotno ponudbo (%)</label>
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        value={globalDiscount}
-                        onChange={(event) => handleGlobalDiscountChange(Number(event.target.value))}
-                      />
-                    </div>
-                  </div>
-                </Card>
+                <OffersTab projectId={project.id} />
               </TabsContent>
 
               <TabsContent value="logistics" className="mt-0 space-y-6">
@@ -1852,3 +1771,4 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     </div>
   );
 }
+

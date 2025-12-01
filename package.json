@@ -13,6 +13,7 @@
     "migrate:cleanup-product-categories": "cross-env dotenv_config_path=backend/.env ts-node -r dotenv/config backend/scripts/cleanup-product-category-fields.ts"
   },
   "devDependencies": {
+    "@types/pdfkit": "^0.17.4",
     "cross-env": "^7.0.3",
     "pnpm": "^9.0.0",
     "ts-node": "^10.9.1"
