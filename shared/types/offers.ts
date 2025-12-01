@@ -1,4 +1,4 @@
-export type OfferStatus = 'draft' | 'offered' | 'accepted' | 'rejected';
+export type OfferStatus = 'draft' | 'offered' | 'accepted' | 'rejected' | 'cancelled';
 
 export interface OfferLineItem {
   id: string;

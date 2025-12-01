@@ -26,6 +26,8 @@ export interface ProjectCustomer {
   taxId?: string;
   address?: string;
   paymentTerms?: string;
+  email?: string;
+  phone?: string;
 }
 
 export interface ProjectSummary {

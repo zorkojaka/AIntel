@@ -25,6 +25,7 @@ import {
   deleteOfferVersion,
 } from '../controllers/offer-version.controller';
 import * as logisticsController from '../controllers/logistics.controller';
+import { cancelOfferConfirmation } from '../controllers/logistics.controller';
 
 const router = Router();
 
@@ -48,6 +49,7 @@ router.get('/:projectId/offers/:offerVersionId/pdf', exportOfferPdf);
 router.post('/:projectId/offers/:offerVersionId/send', sendOfferVersionStub);
 router.get('/:projectId/offer', getActiveOffer);
 router.post('/:projectId/offers/:offerId/confirm', logisticsController.confirmOffer);
+router.post('/:projectId/logistics/cancel-confirmation', cancelOfferConfirmation);
 router.get('/:projectId/logistics', logisticsController.getProjectLogistics);
 router.put('/:projectId/work-orders/:workOrderId', logisticsController.updateWorkOrder);
 router.post('/:id/deliveries/:deliveryId/receive', receiveDelivery);

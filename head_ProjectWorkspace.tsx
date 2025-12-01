@@ -66,26 +66,6 @@ type CatalogProduct = {
 };
 
 
-type ProjectCrmClient = {
-  email?: string | null;
-  phone?: string | null;
-  street?: string | null;
-  postalCode?: string | null;
-  postalCity?: string | null;
-  address?: string | null;
-};
-
-function formatClientAddress(client?: ProjectCrmClient | null) {
-  if (!client) return "";
-  const street = client.street?.trim();
-  const postalParts = [client.postalCode, client.postalCity].map((part) => part?.trim()).filter(Boolean);
-  const postal = postalParts.join(" ").trim();
-  if (street && postal) return `${street}, ${postal}`;
-  if (street) return street;
-  if (postal) return postal;
-  return client.address?.trim() ?? "";
-}
-
 interface ProjectWorkspaceProps {
   project: ProjectDetails;
   templates: Template[];
@@ -161,11 +141,6 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
 
   const basePath = `/api/projects/${project.id}`;
   const isExecutionPhase = status === "ordered" || status === "in-progress" || status === "completed";
-  const crmClient = (project as ProjectDetails & { client?: ProjectCrmClient }).client ?? null;
-  const displayedClient: ProjectCrmClient = crmClient ?? project.customerDetail;
-  const infoCardAddress = formatClientAddress(displayedClient) || project.customerDetail.address || "-";
-  const infoCardEmail = crmClient?.email ?? project.customerDetail.email ?? "-";
-  const infoCardPhone = crmClient?.phone ?? project.customerDetail.phone ?? "-";
 
   const fetchActiveOffer = useCallback(async () => {
     setIsOfferLoading(true);
@@ -975,19 +950,11 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                 </div>
                 <div>
                   <div className="text-muted-foreground">Naslov</div>
-                  <div>{infoCardAddress}</div>
+                  <div>{project.customerDetail.address}</div>
                 </div>
                 <div>
                   <div className="text-muted-foreground">Plačilni pogoji</div>
                   <div>{project.customerDetail.paymentTerms}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Email</div>
-                  <div>{infoCardEmail}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Telefon</div>
-                  <div>{infoCardPhone}</div>
                 </div>
               </div>
             </Card>
@@ -1234,7 +1201,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
               </TabsContent>
 
               <TabsContent value="logistics" className="mt-0 space-y-6">
-                <LogisticsTab projectId={project.id} client={displayedClient} />
+                <LogisticsTab projectId={project.id} />
               </TabsContent>
 
               <TabsContent value="execution" className="mt-0 space-y-6">

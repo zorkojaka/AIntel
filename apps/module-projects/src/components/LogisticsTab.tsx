@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type {
   MaterialOrder,
@@ -15,9 +15,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 
 interface LogisticsTabProps {
   projectId: string;
+  client?: {
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    address?: string | null;
+    street?: string | null;
+    postalCode?: string | null;
+    postalCity?: string | null;
+  };
 }
 
 const workOrderStatuses = ["draft", "scheduled", "in_progress", "completed", "cancelled"] as const;
+const STATUS_LABELS: Record<string, string> = {
+  DRAFT: "DRAFT",
+  OFFERED: "OFFERED",
+  ACCEPTED: "Potrjeno",
+  CANCELLED: "Preklicano",
+  REJECTED: "Zavrnjeno",
+};
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("sl-SI", { style: "currency", currency: "EUR" }).format(value);
@@ -30,11 +46,32 @@ function formatDateTimeLocal(value: string | null | undefined) {
   return date.toISOString().slice(0, 16);
 }
 
-export function LogisticsTab({ projectId }: LogisticsTabProps) {
+type LogisticsClient = NonNullable<LogisticsTabProps["client"]>;
+
+function formatClientAddress(client?: LogisticsClient | null) {
+  if (!client) return "";
+  const street = client.street?.trim();
+  const postalParts = [client.postalCode, client.postalCity].map((part) => part?.trim()).filter(Boolean);
+  const postal = postalParts.join(" ").trim();
+  if (street && postal) return `${street}, ${postal}`;
+  if (street) return street;
+  if (postal) return postal;
+  return client.address?.trim() ?? "";
+}
+
+function isBlank(value?: string | null) {
+  return !value || value.trim().length === 0;
+}
+
+export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
   const [snapshot, setSnapshot] = useState<ProjectLogisticsSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const [workOrderForm, setWorkOrderForm] = useState<Partial<LogisticsWorkOrder>>({});
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [phoneTouched, setPhoneTouched] = useState(false);
+  const [locationTouched, setLocationTouched] = useState(false);
   const [savingWorkOrder, setSavingWorkOrder] = useState(false);
 
   const hasConfirmed = useMemo(() => !!snapshot?.confirmedOfferVersionId, [snapshot]);
@@ -69,6 +106,36 @@ export function LogisticsTab({ projectId }: LogisticsTabProps) {
     }
   }, [snapshot]);
 
+  useEffect(() => {
+    if (!client) return;
+    const formattedAddress = formatClientAddress(client);
+    setWorkOrderForm((prev) => {
+      const updates: Partial<LogisticsWorkOrder> = {};
+      if (!emailTouched && isBlank(prev.customerEmail) && client.email) {
+        updates.customerEmail = client.email;
+      }
+      if (!phoneTouched && isBlank(prev.customerPhone) && client.phone) {
+        updates.customerPhone = client.phone;
+      }
+      if (!locationTouched && isBlank(prev.location) && formattedAddress) {
+        updates.location = formattedAddress;
+      }
+      if (Object.keys(updates).length === 0) {
+        return prev;
+      }
+      return { ...prev, ...updates };
+    });
+  }, [client, emailTouched, phoneTouched, locationTouched]);
+
+  useEffect(() => {
+    const snapshotAddress = snapshot?.workOrder?.customerAddress;
+    const clientAddress = formatClientAddress(client ?? null);
+    const desiredAddress = snapshotAddress || clientAddress;
+    if (!locationTouched && isBlank(workOrderForm.location) && desiredAddress) {
+      setWorkOrderForm((prev) => ({ ...prev, location: desiredAddress }));
+    }
+  }, [client, snapshot?.workOrder?.customerAddress, locationTouched, workOrderForm.location]);
+
   const handleConfirmOffer = async (offerId: string) => {
     setConfirmingId(offerId);
     try {
@@ -87,7 +154,30 @@ export function LogisticsTab({ projectId }: LogisticsTabProps) {
     }
   };
 
+  const handleCancelConfirmation = async () => {
+    if (!window.confirm("Res želiš preklicati potrditev ponudbe?")) return;
+    setCancelling(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/logistics/cancel-confirmation`, { method: "POST" });
+      const payload = await response.json();
+      if (!payload.success) {
+        toast.error(payload.error ?? "Preklic potrditve ni uspel.");
+        return;
+      }
+      const data = payload.data as ProjectLogisticsSnapshot;
+      setSnapshot(data);
+      toast.success("Potrditev ponudbe je bila preklicana.");
+    } catch (error) {
+      toast.error("Preklic potrditve ni uspel.");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const handleWorkOrderChange = (field: keyof LogisticsWorkOrder, value: unknown) => {
+    if (field === "location") setLocationTouched(true);
+    if (field === "customerEmail") setEmailTouched(true);
+    if (field === "customerPhone") setPhoneTouched(true);
     setWorkOrderForm((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -125,13 +215,13 @@ export function LogisticsTab({ projectId }: LogisticsTabProps) {
 
   const renderMaterialOrder = (materialOrder: MaterialOrder | null) => {
     if (!materialOrder) {
-      return <p className="text-sm text-muted-foreground">Naročilo za material bo ustvarjeno ob potrditvi ponudbe.</p>;
+      return <p className="text-sm text-muted-foreground">Naro─ìilo za material bo ustvarjeno ob potrditvi ponudbe.</p>;
     }
 
     return (
       <div className="space-y-3">
         <div className="flex items-center gap-3">
-          <h4 className="text-base font-semibold m-0">Naročilo za material</h4>
+          <h4 className="text-base font-semibold m-0">Naro─ìilo za material</h4>
           <Badge variant="outline" className="uppercase text-xs tracking-wide">
             {materialOrder.status}
           </Badge>
@@ -141,7 +231,7 @@ export function LogisticsTab({ projectId }: LogisticsTabProps) {
             <TableHeader>
               <TableRow>
                 <TableHead>Naziv</TableHead>
-                <TableHead className="text-right">Količina</TableHead>
+                <TableHead className="text-right">Koli─ìina</TableHead>
                 <TableHead>Enota</TableHead>
               </TableRow>
             </TableHeader>
@@ -165,74 +255,98 @@ export function LogisticsTab({ projectId }: LogisticsTabProps) {
       return <p className="text-sm text-muted-foreground">Delovni nalog bo ustvarjen ob potrditvi ponudbe.</p>;
     }
 
+    const customerName = workOrder.customerName || client?.name || "-";
+    const customerAddress = workOrder.customerAddress || formatClientAddress(client ?? null) || "-";
+    const customerEmail = workOrder.customerEmail || client?.email || "-";
+    const customerPhone = workOrder.customerPhone || client?.phone || "-";
+    const currentStatus = (workOrderForm.status as string) ?? workOrder.status;
+
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-3">
           <h4 className="text-base font-semibold m-0">Delovni nalog</h4>
-          <Badge variant="outline" className="uppercase text-xs tracking-wide">
-            {workOrder.status}
-          </Badge>
+          <Select value={currentStatus} onValueChange={(value) => handleWorkOrderChange("status", value)}>
+            <SelectTrigger className="h-auto w-fit border-0 bg-transparent p-0 focus:ring-0">
+              <Badge variant="outline" className="uppercase text-xs tracking-wide px-3 py-1">
+                {currentStatus}
+              </Badge>
+            </SelectTrigger>
+            <SelectContent align="end">
+              {workOrderStatuses.map((status) => (
+                <SelectItem key={status} value={status}>
+                  {status}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Termin izvedbe</label>
-            <Input
-              type="datetime-local"
-              value={(workOrderForm.scheduledAt as string) ?? ""}
-              onChange={(e) => handleWorkOrderChange("scheduledAt", e.target.value)}
-            />
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <span className="text-xs text-muted-foreground">Stranka</span>
+              <span className="font-medium">{customerName}</span>
+              <p className="text-xs text-muted-foreground m-0">{customerAddress}</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Email</label>
+              <Input
+                value={workOrderForm.customerEmail ?? ""}
+                onChange={(e) => handleWorkOrderChange("customerEmail", e.target.value)}
+                placeholder={customerEmail === "-" ? "Email stranke" : customerEmail}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Telefon</label>
+              <Input
+                value={workOrderForm.customerPhone ?? ""}
+                onChange={(e) => handleWorkOrderChange("customerPhone", e.target.value)}
+                placeholder={customerPhone === "-" ? "Telefon stranke" : customerPhone}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Lokacija</label>
+              <Input
+                value={workOrderForm.location ?? ""}
+                onChange={(e) => handleWorkOrderChange("location", e.target.value)}
+                placeholder="Naslov monta?e"
+              />
+            </div>
           </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Ime tehnika</label>
-            <Input
-              value={workOrderForm.technicianName ?? ""}
-              onChange={(e) => handleWorkOrderChange("technicianName", e.target.value)}
-              placeholder="Tehnik"
-            />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Termin izvedbe</label>
+              <Input
+                type="datetime-local"
+                value={(workOrderForm.scheduledAt as string) ?? ""}
+                onChange={(e) => handleWorkOrderChange("scheduledAt", e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Ime tehnika</label>
+              <Input
+                value={workOrderForm.technicianName ?? ""}
+                onChange={(e) => handleWorkOrderChange("technicianName", e.target.value)}
+                placeholder="Tehnik"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">ID tehnika</label>
+              <Input
+                value={workOrderForm.technicianId ?? ""}
+                onChange={(e) => handleWorkOrderChange("technicianId", e.target.value)}
+                placeholder="ID"
+              />
+            </div>
           </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">ID tehnika</label>
-            <Input
-              value={workOrderForm.technicianId ?? ""}
-              onChange={(e) => handleWorkOrderChange("technicianId", e.target.value)}
-              placeholder="ID"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Lokacija</label>
-            <Input
-              value={workOrderForm.location ?? ""}
-              onChange={(e) => handleWorkOrderChange("location", e.target.value)}
-              placeholder="Naslov montaže"
-            />
-          </div>
-          <div className="space-y-2 md:col-span-2">
-            <label className="text-sm font-medium">Status</label>
-            <Select
-              value={(workOrderForm.status as string) ?? workOrder.status}
-              onValueChange={(value) => handleWorkOrderChange("status", value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Izberi status" />
-              </SelectTrigger>
-              <SelectContent>
-                {workOrderStatuses.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {status}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2 md:col-span-2">
-            <label className="text-sm font-medium">Opombe</label>
-            <Textarea
-              value={workOrderForm.notes ?? ""}
-              onChange={(e) => handleWorkOrderChange("notes", e.target.value)}
-              placeholder="Navodila za tehnika"
-              rows={3}
-            />
-          </div>
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Opombe</label>
+          <Textarea
+            value={workOrderForm.notes ?? ""}
+            onChange={(e) => handleWorkOrderChange("notes", e.target.value)}
+            placeholder="Navodila za tehnika"
+            rows={3}
+          />
         </div>
         <div className="flex justify-end">
           <Button onClick={handleSaveWorkOrder} disabled={savingWorkOrder}>
@@ -244,7 +358,7 @@ export function LogisticsTab({ projectId }: LogisticsTabProps) {
             <TableHeader>
               <TableRow>
                 <TableHead>Artikel</TableHead>
-                <TableHead className="text-right">Količina</TableHead>
+                <TableHead className="text-right">Koli?ina</TableHead>
                 <TableHead>Enota</TableHead>
               </TableRow>
             </TableHeader>
@@ -262,6 +376,7 @@ export function LogisticsTab({ projectId }: LogisticsTabProps) {
       </div>
     );
   };
+
 
   return (
     <div className="space-y-6">
@@ -288,8 +403,11 @@ export function LogisticsTab({ projectId }: LogisticsTabProps) {
                 </TableHeader>
                 <TableBody>
                   {(snapshot.offerVersions ?? []).map((offer) => {
+                    const statusKey = (offer.status ?? "").toUpperCase();
+                    const statusLabel = STATUS_LABELS[statusKey] ?? offer.status ?? "";
                     const isConfirmed = snapshot.confirmedOfferVersionId === offer._id;
-                    const isAccepted = offer.status === "accepted";
+                    const isAccepted = statusKey === "ACCEPTED";
+                    const isCancelled = statusKey === "CANCELLED";
                     return (
                       <TableRow key={offer._id}>
                         <TableCell className="font-medium flex items-center gap-2">
@@ -298,19 +416,43 @@ export function LogisticsTab({ projectId }: LogisticsTabProps) {
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="uppercase text-xs tracking-wide">
-                            {offer.status}
+                            {statusLabel}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">{formatCurrency(offer.totalWithVat)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(offer.totalWithVat ?? 0)}</TableCell>
                         <TableCell>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={isAccepted || confirmingId === offer._id}
-                            onClick={() => handleConfirmOffer(offer._id)}
-                          >
-                            {isAccepted ? "Potrjeno" : confirmingId === offer._id ? "Potrjujem..." : "Potrdi to verzijo"}
-                          </Button>
+                          <div className="flex gap-2">
+                            {!isAccepted && !isCancelled && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={confirmingId === offer._id}
+                                onClick={() => handleConfirmOffer(offer._id)}
+                              >
+                                {confirmingId === offer._id ? "Potrjujem..." : "Potrdi to verzijo"}
+                              </Button>
+                            )}
+                            {isAccepted && (
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={handleCancelConfirmation}
+                                disabled={cancelling}
+                              >
+                                {cancelling ? "Preklicujem..." : "Prekliči potrditev"}
+                              </Button>
+                            )}
+                            {isCancelled && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleConfirmOffer(offer._id)}
+                                disabled={confirmingId === offer._id}
+                              >
+                                {confirmingId === offer._id ? "Potrjujem..." : "Ponovno potrdi verzijo"}
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -326,7 +468,7 @@ export function LogisticsTab({ projectId }: LogisticsTabProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Naročilo za material</CardTitle>
+          <CardTitle>Naro─ìilo za material</CardTitle>
         </CardHeader>
         <CardContent>{renderMaterialOrder(snapshot?.materialOrder ?? null)}</CardContent>
       </Card>

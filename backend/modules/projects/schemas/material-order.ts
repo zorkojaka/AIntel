@@ -12,6 +12,8 @@ interface MaterialOrderDocument extends Document {
     note?: string;
   }[];
   status: 'draft' | 'ordered' | 'received' | 'cancelled';
+  cancelledAt?: Date | null;
+  reopened?: boolean;
 }
 
 const materialItemSchema = new Schema(
@@ -32,6 +34,8 @@ const materialOrderSchema = new Schema<MaterialOrderDocument>(
     offerVersionId: { type: String, required: true, index: true },
     items: { type: [materialItemSchema], default: [] },
     status: { type: String, enum: ['draft', 'ordered', 'received', 'cancelled'], default: 'draft' },
+    cancelledAt: { type: Date, default: null },
+    reopened: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

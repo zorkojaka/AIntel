@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import type { ProjectLogisticsSnapshot } from '../../../../shared/types/logistics';
 import { OfferVersionModel } from '../schemas/offer-version';
-import { ProjectModel } from '../schemas/project';
+import { ProjectModel, addTimeline } from '../schemas/project';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
 import type { OfferLineItem } from '../../../../shared/types/offers';
@@ -84,6 +84,8 @@ function serializeMaterialOrder(order: any) {
       note: item.note,
     })),
     status: order.status,
+    cancelledAt: serializeDate(order.cancelledAt),
+    reopened: !!order.reopened,
     createdAt: serializeDate(order.createdAt) ?? '',
     updatedAt: serializeDate(order.updatedAt) ?? '',
   };
@@ -109,6 +111,12 @@ function serializeWorkOrder(order: any) {
     technicianId: order.technicianId,
     location: order.location,
     notes: order.notes,
+    customerName: order.customerName ?? '',
+    customerEmail: order.customerEmail ?? '',
+    customerPhone: order.customerPhone ?? '',
+    customerAddress: order.customerAddress ?? '',
+    cancelledAt: serializeDate(order.cancelledAt),
+    reopened: !!order.reopened,
     createdAt: serializeDate(order.createdAt) ?? '',
     updatedAt: serializeDate(order.updatedAt) ?? '',
   };
@@ -129,6 +137,18 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
     ? await WorkOrderModel.findOne({ projectId, offerVersionId: confirmedOfferVersionId }).lean()
     : await WorkOrderModel.findOne({ projectId }).sort({ updatedAt: -1 }).lean();
 
+  const resolveTotalWithVat = (offer: any) => {
+    const sumFromItems =
+      offer?.items?.reduce((sum: number, item: any) => sum + (item?.totalGross ?? 0), 0) ?? 0;
+    return (
+      offer?.totalWithVat ??
+      offer?.totalGrossAfterDiscount ??
+      offer?.totalGross ??
+      offer?.totalNetAfterDiscount ??
+      sumFromItems
+    );
+  };
+
   return {
     projectId,
     confirmedOfferVersionId,
@@ -137,7 +157,7 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
       title: offer.title,
       versionNumber: offer.versionNumber,
       status: offer.status,
-      totalWithVat: offer.totalWithVat ?? offer.totalGrossAfterDiscount ?? offer.totalGross ?? 0,
+      totalWithVat: resolveTotalWithVat(offer),
     })),
     materialOrder: serializeMaterialOrder(materialOrder),
     workOrder: serializeWorkOrder(workOrder),
@@ -147,37 +167,137 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
 export async function confirmOffer(req: Request, res: Response, next: NextFunction) {
   try {
     const { projectId, offerId } = req.params;
-    const offer = await OfferVersionModel.findOne({ _id: offerId, projectId });
+    const [offer, project] = await Promise.all([
+      OfferVersionModel.findOne({ _id: offerId, projectId }),
+      ProjectModel.findOne({ id: projectId }),
+    ]);
 
-    if (!offer) {
+    if (!offer || !project) {
       return res.fail('Ponudba ni najdena.', 404);
     }
 
+    const previousStatus = offer.status;
     offer.status = 'accepted';
     await offer.save();
 
-    await ProjectModel.findOneAndUpdate(
+    const updatedProject = await ProjectModel.findOneAndUpdate(
       { id: projectId },
       { confirmedOfferVersionId: offerId },
       { new: true }
     );
 
     const logisticsItems = mapOfferItemsToLogistics(offer.items || []);
+    const customerName = project.customer?.name ?? '';
+    const customerEmail = (project as any).customer?.email ?? '';
+    const customerPhone = (project as any).customer?.phone ?? '';
+    const customerAddress = project.customer?.address ?? '';
+
+    const materialOrder = await MaterialOrderModel.findOne({ projectId, offerVersionId: offerId });
+    if (materialOrder) {
+      const wasCancelled = materialOrder.status === 'cancelled';
+      materialOrder.items = logisticsItems;
+      materialOrder.status = wasCancelled ? 'draft' : materialOrder.status;
+      materialOrder.cancelledAt = null;
+      materialOrder.reopened = wasCancelled;
+      await materialOrder.save();
+    } else {
+      await MaterialOrderModel.create({
+        projectId,
+        offerVersionId: offerId,
+        items: logisticsItems,
+        status: 'draft',
+        reopened: false,
+      });
+    }
+
+    const workOrder = await WorkOrderModel.findOne({ projectId, offerVersionId: offerId });
+    if (workOrder) {
+      const wasCancelled = workOrder.status === 'cancelled';
+      workOrder.items = logisticsItems;
+      workOrder.status = wasCancelled ? 'draft' : workOrder.status;
+      workOrder.cancelledAt = null;
+      workOrder.reopened = wasCancelled;
+      workOrder.customerName = customerName;
+      workOrder.customerEmail = customerEmail;
+      workOrder.customerPhone = customerPhone;
+      workOrder.customerAddress = customerAddress;
+      await workOrder.save();
+    } else {
+      await WorkOrderModel.create({
+        projectId,
+        offerVersionId: offerId,
+        items: logisticsItems,
+        status: 'draft',
+        reopened: false,
+        scheduledAt: null,
+        customerName,
+        customerEmail,
+        customerPhone,
+        customerAddress,
+      });
+    }
+
+    if (updatedProject) {
+      addTimeline(updatedProject, {
+        type: 'offer',
+        title: previousStatus === 'cancelled' ? 'Ponovno potrjena ponudba' : 'Ponudba potrjena',
+        description: `Verzija ${offer.title || offer.baseTitle || offerId}`,
+        timestamp: new Date().toISOString(),
+        user: 'system',
+      });
+      await updatedProject.save();
+    }
+
+    const snapshot = await buildLogisticsSnapshot(projectId);
+    return res.success(snapshot);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function cancelOfferConfirmation(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { projectId } = req.params;
+
+    const project = await ProjectModel.findOne({ id: projectId });
+    if (!project || !project.confirmedOfferVersionId) {
+      return res.fail('Ni potrjene ponudbe za preklic.', 400);
+    }
+
+    const confirmedOfferVersionId = project.confirmedOfferVersionId;
+    project.confirmedOfferVersionId = null;
+    await project.save();
+
+    const offer = await OfferVersionModel.findOneAndUpdate(
+      { _id: confirmedOfferVersionId, projectId },
+      { status: 'cancelled' },
+      { new: true }
+    );
+
+    const now = new Date();
 
     await MaterialOrderModel.findOneAndUpdate(
-      { projectId, offerVersionId: offerId },
-      { $set: { items: logisticsItems, projectId, offerVersionId: offerId }, $setOnInsert: { status: 'draft' } },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      { projectId, offerVersionId: confirmedOfferVersionId },
+      { status: 'cancelled', cancelledAt: now, reopened: false },
+      { new: true }
     );
 
     await WorkOrderModel.findOneAndUpdate(
-      { projectId, offerVersionId: offerId },
-      {
-        $set: { items: logisticsItems, projectId, offerVersionId: offerId },
-        $setOnInsert: { status: 'draft', scheduledAt: null },
-      },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      { projectId, offerVersionId: confirmedOfferVersionId },
+      { status: 'cancelled', cancelledAt: now, reopened: false },
+      { new: true }
     );
+
+    if (project) {
+      addTimeline(project, {
+        type: 'offer',
+        title: 'Potrditev ponudbe preklicana',
+        description: `Verzija ${(offer && (offer as any).title) || confirmedOfferVersionId}`,
+        timestamp: now.toISOString(),
+        user: 'system',
+      });
+      await project.save();
+    }
 
     const snapshot = await buildLogisticsSnapshot(projectId);
     return res.success(snapshot);
@@ -190,42 +310,26 @@ export async function getProjectLogistics(req: Request, res: Response, next: Nex
   try {
     const { projectId } = req.params;
 
-    const project = await ProjectModel.findOne({ id: projectId }).lean();
-
-    const offers = await OfferVersionModel.find({ projectId }).sort({ createdAt: 1 }).lean();
-    const offerRows = offers.map((offer) => {
-      const totals = calculateOfferTotalsFromSnapshot({
-        items: offer.items || [],
-        usePerItemDiscount: offer.usePerItemDiscount ?? false,
-        useGlobalDiscount: offer.useGlobalDiscount ?? true,
-        globalDiscountPercent: offer.globalDiscountPercent ?? offer.discountPercent ?? 0,
-        vatMode: offer.vatMode ?? 22,
+    const snapshot = await buildLogisticsSnapshot(projectId);
+    if (!snapshot) {
+      return res.success({
+        projectId,
+        confirmedOfferVersionId: null,
+        offerVersions: [],
+        offers: [],
+        materialOrder: null,
+        workOrder: null,
+        invoices: [],
+        events: [],
       });
-
-      return {
-        _id: String(offer._id),
-        title: offer.title || offer.baseTitle || 'Ponudba',
-        versionNumber: offer.versionNumber ?? 0,
-        status: offer.status ?? 'draft',
-        totalWithVat: totals.totalWithVat ?? offer.totalWithVat ?? offer.totalGrossAfterDiscount ?? offer.totalGross ?? 0,
-        createdAt: offer.createdAt ? new Date(offer.createdAt).toISOString() : new Date().toISOString(),
-      };
-    });
+    }
 
     return res.success({
-      projectId,
-      confirmedOfferVersionId: project?.confirmedOfferVersionId ?? null,
-
-      // Verzije ponudb (LogisticsTab jih prikazuje)
-      offerVersions: offerRows,
-      offers: offerRows,
-
-      // Potrjena verzija ponudbe (združeno z confirmedOfferVersionId)
-      acceptedOfferId: project?.confirmedOfferVersionId ?? null,
-
-      // Naročilnice / Delovni nalogi / Računi / dogodki
-      materialOrder: null,
-      workOrder: null,
+      ...snapshot,
+      offers: snapshot.offerVersions,
+      acceptedOfferId: snapshot.confirmedOfferVersionId,
+      materialOrder: snapshot.materialOrder,
+      workOrder: snapshot.workOrder,
       invoices: [],
       events: [],
     });

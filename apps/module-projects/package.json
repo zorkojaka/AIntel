@@ -16,7 +16,9 @@
   "types": "./src/index.ts",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "prebuild": "node ./scripts/check-encoding.cjs",
+    "check-encoding": "node ./scripts/check-encoding.cjs"
   },
   "dependencies": {
     "@aintel/module-crm": "*",
