@@ -145,8 +145,8 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
         toast.error(payload.error ?? "Ponudbe ni mogoče potrditi.");
         return;
       }
-      setSnapshot(payload.data as ProjectLogisticsSnapshot);
       toast.success("Ponudba potrjena.");
+      await fetchSnapshot();
     } catch (error) {
       toast.error("Ponudbe ni mogoče potrditi.");
     } finally {
@@ -164,9 +164,8 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
         toast.error(payload.error ?? "Preklic potrditve ni uspel.");
         return;
       }
-      const data = payload.data as ProjectLogisticsSnapshot;
-      setSnapshot(data);
       toast.success("Potrditev ponudbe je bila preklicana.");
+      await fetchSnapshot();
     } catch (error) {
       toast.error("Preklic potrditve ni uspel.");
     } finally {
@@ -255,21 +254,20 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
       return <p className="text-sm text-muted-foreground">Delovni nalog bo ustvarjen ob potrditvi ponudbe.</p>;
     }
 
-    const customerName = workOrder.customerName || client?.name || "-";
-    const customerAddress = workOrder.customerAddress || formatClientAddress(client ?? null) || "-";
-    const customerEmail = workOrder.customerEmail || client?.email || "-";
-    const customerPhone = workOrder.customerPhone || client?.phone || "-";
+    const customerName = workOrder.customerName || client?.name || "";
+    const customerAddress = workOrder.customerAddress || formatClientAddress(client ?? null) || "";
+    const customerEmail = workOrder.customerEmail || client?.email || "";
+    const customerPhone = workOrder.customerPhone || client?.phone || "";
+    const fallbackLocation = formatClientAddress(client ?? null) || "";
     const currentStatus = (workOrderForm.status as string) ?? workOrder.status;
 
     return (
-      <div className="space-y-4">
-        <div className="flex items-center gap-3">
+      <div className="space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h4 className="text-base font-semibold m-0">Delovni nalog</h4>
           <Select value={currentStatus} onValueChange={(value) => handleWorkOrderChange("status", value)}>
-            <SelectTrigger className="h-auto w-fit border-0 bg-transparent p-0 focus:ring-0">
-              <Badge variant="outline" className="uppercase text-xs tracking-wide px-3 py-1">
-                {currentStatus}
-              </Badge>
+            <SelectTrigger className="h-8 w-fit border border-input bg-background px-3 py-0 text-xs font-medium uppercase tracking-wide focus:ring-0">
+              <SelectValue />
             </SelectTrigger>
             <SelectContent align="end">
               {workOrderStatuses.map((status) => (
@@ -280,19 +278,22 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
             </SelectContent>
           </Select>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <span className="text-xs text-muted-foreground">Stranka</span>
-              <span className="font-medium">{customerName}</span>
-              <p className="text-xs text-muted-foreground m-0">{customerAddress}</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Stranka</label>
+              <Input value={customerName} readOnly placeholder="-" className="bg-muted/50" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Naslov</label>
+              <Input value={customerAddress} readOnly placeholder="-" className="bg-muted/50" />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Email</label>
               <Input
                 value={workOrderForm.customerEmail ?? ""}
                 onChange={(e) => handleWorkOrderChange("customerEmail", e.target.value)}
-                placeholder={customerEmail === "-" ? "Email stranke" : customerEmail}
+                placeholder={customerEmail || "Email stranke"}
               />
             </div>
             <div className="space-y-2">
@@ -300,7 +301,7 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
               <Input
                 value={workOrderForm.customerPhone ?? ""}
                 onChange={(e) => handleWorkOrderChange("customerPhone", e.target.value)}
-                placeholder={customerPhone === "-" ? "Telefon stranke" : customerPhone}
+                placeholder={customerPhone || "Telefon stranke"}
               />
             </div>
             <div className="space-y-2">
@@ -308,11 +309,11 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
               <Input
                 value={workOrderForm.location ?? ""}
                 onChange={(e) => handleWorkOrderChange("location", e.target.value)}
-                placeholder="Naslov monta?e"
+                placeholder={fallbackLocation || "Lokacija montaže"}
               />
             </div>
           </div>
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="space-y-2">
               <label className="text-sm font-medium">Termin izvedbe</label>
               <Input

@@ -67,6 +67,7 @@ type CatalogProduct = {
 
 
 type ProjectCrmClient = {
+  name?: string | null;
   email?: string | null;
   phone?: string | null;
   street?: string | null;
@@ -161,11 +162,41 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
 
   const basePath = `/api/projects/${project.id}`;
   const isExecutionPhase = status === "ordered" || status === "in-progress" || status === "completed";
-  const crmClient = (project as ProjectDetails & { client?: ProjectCrmClient }).client ?? null;
+  const inlineClient = (project as ProjectDetails & { client?: ProjectCrmClient }).client ?? null;
+  const [remoteClient, setRemoteClient] = useState<ProjectCrmClient | null>(null);
+  const crmClient = inlineClient ?? remoteClient;
   const displayedClient: ProjectCrmClient = crmClient ?? project.customerDetail;
   const infoCardAddress = formatClientAddress(displayedClient) || project.customerDetail.address || "-";
   const infoCardEmail = crmClient?.email ?? project.customerDetail.email ?? "-";
   const infoCardPhone = crmClient?.phone ?? project.customerDetail.phone ?? "-";
+
+  useEffect(() => {
+    let cancelled = false;
+    if (inlineClient) {
+      setRemoteClient(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+    const fetchClient = async () => {
+      try {
+        const response = await fetch(`/api/projects/${project.id}`);
+        const payload = await response.json();
+        if (!payload.success || cancelled) {
+          return;
+        }
+        setRemoteClient(payload.data?.client ?? null);
+      } catch {
+        if (!cancelled) {
+          setRemoteClient(null);
+        }
+      }
+    };
+    fetchClient();
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id, inlineClient]);
 
   const fetchActiveOffer = useCallback(async () => {
     setIsOfferLoading(true);
@@ -808,8 +839,8 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     }
   };
 
-  const handleCancelConfirmation = async (offerId: string) => {
-    const updated = await onProjectUpdate(`${basePath}/offers/${offerId}/cancel`, { method: "POST" });
+  const handleCancelConfirmation = async (_offerId: string) => {
+    const updated = await onProjectUpdate(`${basePath}/logistics/cancel-confirmation`, { method: "POST" });
     applyProjectUpdate(updated);
     if (updated) toast.info("Potrditev ponudbe preklicana");
   };

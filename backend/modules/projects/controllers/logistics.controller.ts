@@ -5,6 +5,7 @@ import { ProjectModel, addTimeline } from '../schemas/project';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
 import type { OfferLineItem } from '../../../../shared/types/offers';
+import { formatClientAddress, resolveProjectClient, serializeProjectDetails } from '../services/project.service';
 
 function calculateOfferTotalsFromSnapshot(offer: {
   items: OfferLineItem[];
@@ -176,21 +177,29 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       return res.fail('Ponudba ni najdena.', 404);
     }
 
+    const projectClient = await resolveProjectClient(project);
     const previousStatus = offer.status;
     offer.status = 'accepted';
     await offer.save();
 
+    const updatePayload: Record<string, unknown> = {
+      confirmedOfferVersionId: offerId,
+    };
+    if (project.status !== 'completed') {
+      updatePayload.status = 'ordered';
+    }
+
     const updatedProject = await ProjectModel.findOneAndUpdate(
       { id: projectId },
-      { confirmedOfferVersionId: offerId },
+      updatePayload,
       { new: true }
     );
 
     const logisticsItems = mapOfferItemsToLogistics(offer.items || []);
-    const customerName = project.customer?.name ?? '';
-    const customerEmail = (project as any).customer?.email ?? '';
-    const customerPhone = (project as any).customer?.phone ?? '';
-    const customerAddress = project.customer?.address ?? '';
+    const customerName = project.customer?.name ?? projectClient?.name ?? '';
+    const customerEmail = projectClient?.email ?? '';
+    const customerPhone = projectClient?.phone ?? '';
+    const customerAddress = formatClientAddress(projectClient, project.customer?.address ?? '');
 
     const materialOrder = await MaterialOrderModel.findOne({ projectId, offerVersionId: offerId });
     if (materialOrder) {
@@ -248,8 +257,9 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       await updatedProject.save();
     }
 
-    const snapshot = await buildLogisticsSnapshot(projectId);
-    return res.success(snapshot);
+    const finalProject = updatedProject ?? project;
+    const payload = await serializeProjectDetails(finalProject, projectClient);
+    return res.success(payload);
   } catch (err) {
     next(err);
   }
@@ -264,8 +274,12 @@ export async function cancelOfferConfirmation(req: Request, res: Response, next:
       return res.fail('Ni potrjene ponudbe za preklic.', 400);
     }
 
+    const projectClient = await resolveProjectClient(project);
     const confirmedOfferVersionId = project.confirmedOfferVersionId;
     project.confirmedOfferVersionId = null;
+    if (project.status !== 'completed') {
+      project.status = 'offered';
+    }
     await project.save();
 
     const offer = await OfferVersionModel.findOneAndUpdate(
@@ -299,8 +313,8 @@ export async function cancelOfferConfirmation(req: Request, res: Response, next:
       await project.save();
     }
 
-    const snapshot = await buildLogisticsSnapshot(projectId);
-    return res.success(snapshot);
+    const payload = await serializeProjectDetails(project, projectClient);
+    return res.success(payload);
   } catch (err) {
     next(err);
   }

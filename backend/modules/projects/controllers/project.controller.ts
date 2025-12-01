@@ -18,6 +18,7 @@ import { Types } from 'mongoose';
 import { generateRequirementsFromTemplates } from '../services/requirements-from-templates';
 import type { RequirementFieldType, RequirementFormulaConfig } from '../../shared/requirements.types';
 import { getOfferCandidatesFromRequirements } from '../services/offer-from-requirements';
+import { serializeProjectDetails } from '../services/project.service';
 
 function normalizeSlug(value: string) {
   return value
@@ -53,8 +54,8 @@ function toISODate(value?: string) {
   return Number.isNaN(date.valueOf()) ? new Date().toISOString().slice(0, 10) : date.toISOString().slice(0, 10);
 }
 
-function responseProject(project: Project) {
-  return project;
+async function responseProject(project: Project | ProjectDocument) {
+  return serializeProjectDetails(project);
 }
 
 const allowedRequirementFieldTypes: RequirementFieldType[] = ['number', 'text', 'select', 'boolean'];
@@ -199,7 +200,7 @@ export async function getProject(req: Request, res: Response) {
     return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
   }
 
-  return res.success(responseProject(project));
+  return res.success(await responseProject(project));
 }
 
 export async function getOfferCandidates(req: Request, res: Response) {
@@ -266,7 +267,7 @@ export async function createProject(req: Request, res: Response) {
 
   await ProjectModel.create(project);
 
-  return res.success(responseProject(project), 201);
+  return res.success(await responseProject(project), 201);
 }
 
 export async function updateProject(req: Request, res: Response) {
@@ -325,7 +326,7 @@ export async function updateProject(req: Request, res: Response) {
 
   await project.save();
 
-  return res.success(responseProject(project.toObject()));
+  return res.success(await responseProject(project.toObject()));
 }
 
 export async function updateStatus(req: Request, res: Response) {
@@ -349,7 +350,7 @@ export async function updateStatus(req: Request, res: Response) {
 
   await project.save();
 
-  return res.success(responseProject(project.toObject()));
+  return res.success(await responseProject(project.toObject()));
 }
 
 export async function addOffer(req: Request, res: Response) {
@@ -382,7 +383,7 @@ export async function addOffer(req: Request, res: Response) {
 
   await project.save();
 
-  return res.success(responseProject(project.toObject()), 201);
+  return res.success(await responseProject(project.toObject()), 201);
 }
 
 export async function addItem(req: Request, res: Response) {
@@ -407,7 +408,7 @@ export async function addItem(req: Request, res: Response) {
 
   await project.save();
 
-  return res.success(responseProject(project.toObject()), 201);
+  return res.success(await responseProject(project.toObject()), 201);
 }
 
 export async function addItemFromCenik(req: Request, res: Response) {
@@ -459,7 +460,7 @@ export async function addItemFromCenik(req: Request, res: Response) {
 
     await project.save();
 
-    return res.success(responseProject(project.toObject()), 201);
+    return res.success(await responseProject(project.toObject()), 201);
   } catch (error) {
     return res.fail('Napaka pri povezavi s cenikom.', 500);
   }
@@ -492,7 +493,7 @@ export async function updateItem(req: Request, res: Response) {
 
   await project.save();
 
-  return res.success(responseProject(project.toObject()));
+  return res.success(await responseProject(project.toObject()));
 }
 
 export async function deleteItem(req: Request, res: Response) {
@@ -517,7 +518,7 @@ export async function deleteItem(req: Request, res: Response) {
 
   await project.save();
 
-  return res.success(responseProject(project.toObject()));
+  return res.success(await responseProject(project.toObject()));
 }
 
 export async function sendOffer(req: Request, res: Response) {
@@ -538,7 +539,7 @@ export async function sendOffer(req: Request, res: Response) {
 
   await project.save();
 
-  return res.success(responseProject(project.toObject()));
+  return res.success(await responseProject(project.toObject()));
 }
 
 function createPurchaseOrders(project: Project) {
@@ -635,7 +636,7 @@ export async function confirmOffer(req: Request, res: Response) {
 
   await project.save();
 
-  return res.success(responseProject(project.toObject()));
+  return res.success(await responseProject(project.toObject()));
 }
 
 export async function cancelConfirmation(req: Request, res: Response) {
@@ -666,7 +667,7 @@ export async function cancelConfirmation(req: Request, res: Response) {
 
   await project.save();
 
-  return res.success(responseProject(project.toObject()));
+  return res.success(await responseProject(project.toObject()));
 }
 
 export async function selectOffer(req: Request, res: Response) {
@@ -691,7 +692,7 @@ export async function selectOffer(req: Request, res: Response) {
 
   await project.save();
 
-  return res.success(responseProject(project.toObject()));
+  return res.success(await responseProject(project.toObject()));
 }
 
 export async function receiveDelivery(req: Request, res: Response) {
@@ -732,7 +733,7 @@ export async function receiveDelivery(req: Request, res: Response) {
 
   await project.save();
 
-  return res.success(responseProject(project.toObject()));
+  return res.success(await responseProject(project.toObject()));
 }
 
 export async function saveSignature(req: Request, res: Response) {
@@ -765,7 +766,7 @@ export async function saveSignature(req: Request, res: Response) {
 
   await project.save();
 
-  return res.success(responseProject(project.toObject()));
+  return res.success(await responseProject(project.toObject()));
 }
 
 export async function getProjectOffer(req: Request, res: Response) {
