@@ -1,25 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Card } from "./ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
-import { ItemsTable, Item } from "./ItemsTable";
-import { OfferVersionCard, OfferVersion } from "./OfferVersionCard";
+import type { Item } from "../domains/requirements/ItemsTable";
+import { OfferVersionCard, OfferVersion } from "../domains/offers/OfferVersionCard";
 import { WorkOrderCard, WorkOrder } from "./WorkOrderCard";
 import { TimelineFeed, TimelineEvent } from "./TimelineFeed";
-import { ValidationBanner } from "./ValidationBanner";
 import { SignaturePad } from "./SignaturePad";
 import { Template } from "./TemplateEditor";
-import { renderTemplate, openPreview, downloadHTML } from "./TemplateRenderer";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { renderTemplate, openPreview, downloadHTML } from "../domains/offers/TemplateRenderer";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 import {
-  ArrowLeft,
-  Save,
   Plus,
   FileText,
   Package,
@@ -38,33 +32,17 @@ import { toast } from "sonner";
 import { ProjectDetails, ProjectOffer, ProjectOfferItem, OfferCandidate } from "../types";
 import { fetchOfferCandidates, fetchProductsByCategories, fetchRequirementVariants, type ProductLookup } from "../api";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
-import { OffersTab } from "./OffersTab";
 import { LogisticsTab } from "./LogisticsTab";
-
-type ItemFormState = {
-  name: string;
-  sku: string;
-  unit: string;
-  quantity: number;
-  price: number;
-  discount: number;
-  vatRate: number;
-  description: string;
-  category: Item["category"];
-};
-
-type RequirementRow = ProjectRequirement;
-
-type CatalogProduct = {
-  id: string;
-  name: string;
-  category?: string;
-  price: number;
-  description?: string;
-  supplier?: string;
-  categorySlugs?: string[];
-};
-
+import { useProject } from "../domains/core/useProject";
+import { ProjectHeader } from "../domains/core/ProjectHeader";
+import {
+  RequirementsPanel,
+  ItemFormState,
+  RequirementRow,
+  CatalogProduct,
+  CatalogTarget,
+} from "../domains/requirements/RequirementsPanel";
+import { OffersPanel } from "../domains/offers/OffersPanel";
 
 type ProjectCrmClient = {
   name?: string | null;
@@ -88,17 +66,24 @@ function formatClientAddress(client?: ProjectCrmClient | null) {
 }
 
 interface ProjectWorkspaceProps {
-  project: ProjectDetails;
+  projectId: string;
+  initialProject?: ProjectDetails | null;
   templates: Template[];
   onBack: () => void;
-  onRefresh: () => void;
   onProjectUpdate: (path: string, options?: RequestInit) => Promise<ProjectDetails | null>;
 }
 
-export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProjectUpdate }: ProjectWorkspaceProps) {
+export function ProjectWorkspace({
+  projectId,
+  initialProject,
+  templates,
+  onBack,
+  onProjectUpdate,
+}: ProjectWorkspaceProps) {
+  const { project, loading, error, refresh, setProject } = useProject(projectId, initialProject ?? null);
   const [activeTab, setActiveTab] = useState("items");
-  const [items, setItems] = useState<Item[]>(project.items);
-  const [offers, setOffers] = useState<OfferVersion[]>(project.offers);
+  const [items, setItems] = useState<Item[]>(project?.items ?? []);
+  const [offers, setOffers] = useState<OfferVersion[]>(project?.offers ?? []);
   const [activeOffer, setActiveOffer] = useState<ProjectOffer | null>(null);
   const [offerItems, setOfferItems] = useState<ProjectOfferItem[]>([]);
   const [draftOfferItem, setDraftOfferItem] = useState<Partial<ProjectOfferItem>>({
@@ -113,12 +98,12 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     description: "",
     productId: "",
   });
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>(project.workOrders);
-  const [timeline, setTimeline] = useState<TimelineEvent[]>(project.timelineEvents);
-  const [status, setStatus] = useState(project.status);
-  const [requirementsText, setRequirementsText] = useState(project.requirementsText ?? "");
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>(project?.workOrders ?? []);
+  const [timeline, setTimeline] = useState<TimelineEvent[]>(project?.timelineEvents ?? []);
+  const [status, setStatus] = useState(project?.status ?? "draft");
+  const [requirementsText, setRequirementsText] = useState(project?.requirementsText ?? "");
   const [requirements, setRequirements] = useState<RequirementRow[]>(() =>
-    Array.isArray(project.requirements) ? project.requirements : []
+    Array.isArray(project?.requirements) ? project.requirements : []
   );
   const [isItemDialogOpen, setItemDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
@@ -143,7 +128,6 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   const [catalogDiscount, setCatalogDiscount] = useState(0);
   const [catalogVatRate, setCatalogVatRate] = useState(22);
   const [catalogUnit, setCatalogUnit] = useState("kos");
-  type CatalogTarget = "project" | "offer";
   const [catalogTarget, setCatalogTarget] = useState<CatalogTarget>("project");
   const [isSavingItem, setIsSavingItem] = useState(false);
   const [isAddingFromCatalog, setIsAddingFromCatalog] = useState(false);
@@ -157,20 +141,22 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   const [candidateProducts, setCandidateProducts] = useState<Record<string, ProductLookup[]>>({});
   const [variantOptions, setVariantOptions] = useState<{ variantSlug: string; label: string }[]>([]);
   const [variantLoading, setVariantLoading] = useState(false);
-  const [selectedVariantSlug, setSelectedVariantSlug] = useState<string>(project.requirementsTemplateVariantSlug ?? "");
-  const showVariantWizard = variantOptions.length > 0 && !project.requirementsTemplateVariantSlug;
+  const [selectedVariantSlug, setSelectedVariantSlug] = useState<string>(project?.requirementsTemplateVariantSlug ?? "");
+  const showVariantWizard = variantOptions.length > 0 && !project?.requirementsTemplateVariantSlug;
 
-  const basePath = `/api/projects/${project.id}`;
+  const basePath = project ? `/api/projects/${project.id}` : "";
   const isExecutionPhase = status === "ordered" || status === "in-progress" || status === "completed";
-  const inlineClient = (project as ProjectDetails & { client?: ProjectCrmClient }).client ?? null;
+  const inlineClient = project ? ((project as ProjectDetails & { client?: ProjectCrmClient }).client ?? null) : null;
   const [remoteClient, setRemoteClient] = useState<ProjectCrmClient | null>(null);
   const crmClient = inlineClient ?? remoteClient;
-  const displayedClient: ProjectCrmClient = crmClient ?? project.customerDetail;
-  const infoCardAddress = formatClientAddress(displayedClient) || project.customerDetail.address || "-";
-  const infoCardEmail = crmClient?.email ?? project.customerDetail.email ?? "-";
-  const infoCardPhone = crmClient?.phone ?? project.customerDetail.phone ?? "-";
+  const displayedClient: ProjectCrmClient = crmClient ?? project?.customerDetail ?? {};
+  const infoCardAddress =
+    formatClientAddress(displayedClient) || project?.customerDetail.address || "-";
+  const infoCardEmail = crmClient?.email ?? project?.customerDetail.email ?? "-";
+  const infoCardPhone = crmClient?.phone ?? project?.customerDetail.phone ?? "-";
 
   useEffect(() => {
+    if (!project) return undefined;
     let cancelled = false;
     if (inlineClient) {
       setRemoteClient(null);
@@ -196,7 +182,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     return () => {
       cancelled = true;
     };
-  }, [project.id, inlineClient]);
+  }, [project, inlineClient]);
 
   const fetchActiveOffer = useCallback(async () => {
     setIsOfferLoading(true);
@@ -243,6 +229,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   );
 
   useEffect(() => {
+    if (!project) return;
     setItems(project.items);
     setOffers(project.offers);
     setActiveOffer(null);
@@ -252,6 +239,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     setStatus(project.status);
     setRequirements(Array.isArray(project.requirements) ? project.requirements : []);
     setRequirementsText(project.requirementsText ?? "");
+    setSelectedVariantSlug(project.requirementsTemplateVariantSlug ?? "");
   }, [project]);
 
   useEffect(() => {
@@ -269,6 +257,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
   }, [offerItems]);
 
   useEffect(() => {
+    if (!project) return;
     const loadVariants = async () => {
       setVariantLoading(true);
       try {
@@ -284,15 +273,17 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
       }
     };
     loadVariants();
-  }, [project.categories, selectedVariantSlug]);
+  }, [project, selectedVariantSlug]);
 
   useEffect(() => {
+    if (!basePath) return;
     if (activeTab === "offers" && !activeOffer && !isOfferLoading) {
       fetchActiveOffer();
     }
   }, [activeTab, activeOffer, fetchActiveOffer, isOfferLoading]);
 
   const fetchCatalogItems = useCallback(async () => {
+    if (!project) return;
     setCatalogLoading(true);
     try {
       const slugParam = project.categories?.filter(Boolean).join(",");
@@ -317,7 +308,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     } finally {
       setCatalogLoading(false);
     }
-  }, []);
+  }, [project]);
 
   useEffect(() => {
     if (!isCatalogDialogOpen) return;
@@ -337,6 +328,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
 
   const applyProjectUpdate = (updated: ProjectDetails | null) => {
     if (!updated) return;
+    setProject(() => updated);
     setItems(updated.items);
     setOffers(updated.offers);
     setWorkOrders(updated.workOrders);
@@ -346,6 +338,18 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
     setRequirementsText(updated.requirementsText ?? "");
     setSelectedVariantSlug(updated.requirementsTemplateVariantSlug ?? "");
   };
+
+  if (loading || !project) {
+    return <div className="min-h-screen bg-background p-6">Nalaganje...</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background p-6">
+        <p className="text-destructive">Napaka pri nalaganju projekta.</p>
+      </div>
+    );
+  }
 
   const validationIssues: string[] = [];
   if (!project.customerDetail.name) validationIssues.push("Manjka podatek o stranki");
@@ -935,58 +939,13 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b bg-card sticky top-0 z-10">
-        <div className="max-w-[1280px] mx-auto px-6 py-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={onBack}>
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
-              <div>
-                <div className="flex items-center gap-3">
-                  <h1 className="m-0">{project.title}</h1>
-                  <Badge className={
-                    status === "draft" ? "bg-gray-100 text-gray-700" :
-                    status === "offered" ? "bg-blue-100 text-blue-700" :
-                    status === "ordered" ? "bg-purple-100 text-purple-700" :
-                    status === "in-progress" ? "bg-yellow-100 text-yellow-700" :
-                    status === "completed" ? "bg-green-100 text-green-700" :
-                    "bg-gray-100 text-gray-700"
-                  }>
-                    {status === "draft" ? "Osnutek" :
-                     status === "offered" ? "Ponujeno" :
-                     status === "ordered" ? "Naročeno" :
-                     status === "in-progress" ? "V teku" :
-                     status === "completed" ? "Zaključeno" :
-                     status}
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground m-0">ID: {project.id}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={onRefresh}>
-                <Save className="w-4 h-4 mr-2" />
-                Osveži
-              </Button>
-              <Select value={status} onValueChange={handleStatusChange}>
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="draft">Osnutek</SelectItem>
-                  <SelectItem value="offered">Ponujeno</SelectItem>
-                  <SelectItem value="ordered">Naročeno</SelectItem>
-                  <SelectItem value="in-progress">V teku</SelectItem>
-                  <SelectItem value="completed">Zaključeno</SelectItem>
-                  <SelectItem value="invoiced">Zaračunano</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-      </div>
+      <ProjectHeader
+        project={project}
+        status={status}
+        onStatusChange={handleStatusChange}
+        onBack={onBack}
+        onRefresh={refresh}
+      />
 
       {/* Main Content */}
       <div className="max-w-[1280px] mx-auto px-6 py-6">
@@ -1091,8 +1050,6 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
 
           {/* Content */}
           <div className="col-span-9">
-            {validationIssues.length > 0 && <ValidationBanner missing={validationIssues} />}
-
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
               <TabsList>
                 <TabsTrigger value="items">Zahteve</TabsTrigger>
@@ -1104,164 +1061,69 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
               </TabsList>
 
               <TabsContent value="items" className="mt-0 space-y-4">
-                {showVariantWizard && (
-                  <Card className="p-4 space-y-3">
-                    <h3 className="text-lg font-semibold">Izberi varianto zahtev</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Izberi varianto sistema, da se predizpolnijo vrstice zahtev.
-                    </p>
-                    <Select
-                      value={selectedVariantSlug || undefined}
-                      onValueChange={(value) => setSelectedVariantSlug(value)}
-                      disabled={variantLoading}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Izberi varianto" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {variantOptions
-                          .filter((variant) => variant.variantSlug && variant.variantSlug.trim() !== "")
-                          .map((variant) => (
-                            <SelectItem key={variant.variantSlug} value={variant.variantSlug}>
-                              {variant.label || variant.variantSlug}
-                            </SelectItem>
-                          ))}
-                        {variantOptions.length === 0 && (
-                          <SelectItem value="__noval__" disabled>
-                            Ni variant
-                          </SelectItem>
-                        )}
-                      </SelectContent>
-                    </Select>
-                    <div className="flex gap-2">
-                      <Button onClick={handleConfirmVariantSelection} disabled={!selectedVariantSlug}>
-                        Potrdi varianto
-                      </Button>
-                    </div>
-                  </Card>
-                )}
-
-                <div className="space-y-2">
-                  <h3 className="text-lg font-semibold">Opis zahtev stranke</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Zapišite glavne potrebe, opažanja z ogleda in posebne želje stranke.
-                  </p>
-                  <Textarea
-                    value={requirementsText}
-                    onChange={(event) => setRequirementsText(event.target.value)}
-                    placeholder="Npr. videonadzor 4 kamere žično, snemanje 7 dni, dostop preko aplikacije ..."
-                    rows={4}
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <h3 className="text-lg font-semibold">Zahteve</h3>
-                  <div className="bg-card rounded-[var(--radius-card)] border overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Naziv</TableHead>
-                          <TableHead>Vrednost</TableHead>
-                          <TableHead>Kategorija</TableHead>
-                          <TableHead>Opombe</TableHead>
-                          <TableHead className="text-right w-52">Akcije</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(requirements ?? []).map((req) => (
-                          <TableRow key={req.id}>
-                            <TableCell>
-                              <Input
-                                value={req.label}
-                                onChange={(event) => updateRequirementRow(req.id, { label: event.target.value })}
-                                placeholder="Naziv zahteve"
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Input
-                                value={req.value ?? ""}
-                                onChange={(event) => updateRequirementRow(req.id, { value: event.target.value })}
-                                placeholder="Vrednost"
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Select
-                                value={
-                                  (project.categories?.length ?? 0) > 0
-                                    ? req.categorySlug
-                                    : "__none__"
-                                }
-                                onValueChange={(value) =>
-                                  value === "__none__"
-                                    ? null
-                                    : updateRequirementRow(req.id, { categorySlug: value })
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Izberi kategorijo" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {(project.categories ?? []).map((slug) => (
-                                    <SelectItem key={slug} value={slug}>
-                                      {slug}
-                                    </SelectItem>
-                                  ))}
-                                  {(project.categories ?? []).length === 0 && (
-                                    <SelectItem value="__none__" disabled>
-                                      Brez kategorij
-                                    </SelectItem>
-                                  )}
-                                </SelectContent>
-                              </Select>
-                            </TableCell>
-                            <TableCell>
-                              <Input
-                                value={req.notes ?? ""}
-                                onChange={(event) => updateRequirementRow(req.id, { notes: event.target.value })}
-                                placeholder="Opombe"
-                              />
-                            </TableCell>
-                            <TableCell className="text-right space-x-2">
-                              <Button variant="ghost" size="sm" onClick={() => deleteRequirementRow(req.id)}>
-                                Izbriši
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                  <Button variant="outline" onClick={addRequirementRow}>
-                    Dodaj zahtevo
-                  </Button>
-                </div>
-
-                <div className="flex justify-end">
-                  <Button onClick={handleProceedToOffer}>Pripravi ponudbo</Button>
-                </div>
-
-                {!isExecutionPhase ? (
-                  <Card className="p-4 text-sm text-muted-foreground">
-                    Tehnične postavke bodo na voljo, ko bo ponudba sprejeta in bo projekt v izvedbi.
-                  </Card>
-                ) : (
-                  <div className="space-y-3">
-                    <h3 className="text-lg font-semibold">Tehnične postavke</h3>
-                    <ItemsTable
-                      items={items}
-                      onEditField={handleProjectItemFieldChange}
-                      onAddFromCatalog={() => openCatalog("project")}
-                      onAddCustom={handleAddItem}
-                      onDelete={handleDeleteItem}
-                      showDraftRow={false}
-                      showDiscount
-                    />
-                  </div>
-                )}
+                <RequirementsPanel
+                  project={project}
+                  validationIssues={validationIssues}
+                  showVariantWizard={showVariantWizard}
+                  selectedVariantSlug={selectedVariantSlug}
+                  setSelectedVariantSlug={setSelectedVariantSlug}
+                  variantOptions={variantOptions}
+                  variantLoading={variantLoading}
+                  onConfirmVariantSelection={handleConfirmVariantSelection}
+                  requirementsText={requirementsText}
+                  setRequirementsText={setRequirementsText}
+                  requirements={requirements}
+                  updateRequirementRow={updateRequirementRow}
+                  deleteRequirementRow={deleteRequirementRow}
+                  addRequirementRow={addRequirementRow}
+                  handleProceedToOffer={handleProceedToOffer}
+                  isExecutionPhase={isExecutionPhase}
+                  items={items}
+                  handleProjectItemFieldChange={handleProjectItemFieldChange}
+                  openCatalog={openCatalog}
+                  handleAddItem={handleAddItem}
+                  handleDeleteItem={handleDeleteItem}
+                  isGenerateModalOpen={isGenerateModalOpen}
+                  setIsGenerateModalOpen={setIsGenerateModalOpen}
+                  offerCandidates={offerCandidates}
+                  candidateSelections={candidateSelections}
+                  candidateProducts={candidateProducts}
+                  toggleCandidateSelection={toggleCandidateSelection}
+                  setCandidateSelections={setCandidateSelections}
+                  handleConfirmOfferFromRequirements={handleConfirmOfferFromRequirements}
+                  isItemDialogOpen={isItemDialogOpen}
+                  setItemDialogOpen={setItemDialogOpen}
+                  resetItemForm={resetItemForm}
+                  editingItem={editingItem}
+                  itemForm={itemForm}
+                  setItemForm={setItemForm}
+                  itemContext={itemContext}
+                  setItemContext={setItemContext}
+                  isSavingItem={isSavingItem}
+                  handleSaveItem={handleSaveItem}
+                  isCatalogDialogOpen={isCatalogDialogOpen}
+                  setCatalogDialogOpen={setCatalogDialogOpen}
+                  filteredCatalog={filteredCatalog}
+                  catalogSearch={catalogSearch}
+                  setCatalogSearch={setCatalogSearch}
+                  selectedCatalogProduct={selectedCatalogProduct}
+                  setSelectedCatalogProduct={setSelectedCatalogProduct}
+                  catalogQuantity={catalogQuantity}
+                  setCatalogQuantity={setCatalogQuantity}
+                  catalogDiscount={catalogDiscount}
+                  setCatalogDiscount={setCatalogDiscount}
+                  catalogVatRate={catalogVatRate}
+                  setCatalogVatRate={setCatalogVatRate}
+                  catalogUnit={catalogUnit}
+                  setCatalogUnit={setCatalogUnit}
+                  handleAddFromCatalog={handleAddFromCatalog}
+                  isAddingFromCatalog={isAddingFromCatalog}
+                  catalogLoading={catalogLoading}
+                />
               </TabsContent>
 
               <TabsContent value="offers" className="mt-0 space-y-4">
-                <OffersTab projectId={project.id} />
+                <OffersPanel project={project} refreshProject={refresh} />
               </TabsContent>
 
               <TabsContent value="logistics" className="mt-0 space-y-6">
@@ -1375,7 +1237,7 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
                     <h3 className="m-0">Zgodovina</h3>
                     <p className="text-sm text-muted-foreground m-0">Dogodki projekta in statusne spremembe</p>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => onRefresh()}>
+                  <Button variant="outline" size="sm" onClick={() => refresh()}>
                     <Eye className="w-4 h-4 mr-2" />
                     Osveži
                   </Button>
@@ -1387,347 +1249,6 @@ export function ProjectWorkspace({ project, templates, onBack, onRefresh, onProj
         </div>
       </div>
 
-      <Dialog
-        open={isGenerateModalOpen}
-        onOpenChange={(open) => setIsGenerateModalOpen(open)}
-      >
-        <DialogContent className="sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Predlagane postavke iz zahtev</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            {offerCandidates.length === 0 && (
-              <div className="text-sm text-muted-foreground">Ni kandidatov za dodajanje.</div>
-            )}
-            {offerCandidates.length > 0 && (
-              <div className="space-y-2">
-                {offerCandidates.map((candidate) => {
-                  const selection = candidateSelections[candidate.ruleId] ?? {
-                    productId: candidate.suggestedProductId,
-                    quantity: candidate.quantity ?? 1,
-                    include: true,
-                  };
-                  const productsForCategory = candidateProducts[candidate.productCategorySlug] ?? [];
-                  const product = productsForCategory.find((p) => p.id === selection.productId) ?? productsForCategory[0];
-                  const price = product?.price ?? 0;
-                  const vatRate = typeof product?.vatRate === "number" ? product?.vatRate : 22;
-                  const total = (selection.quantity || 0) * price * (1 + vatRate / 100);
-                  return (
-                    <div
-                      key={candidate.ruleId}
-                      className="flex items-center justify-between rounded border border-border px-3 py-2"
-                    >
-                      <label className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={selection.include}
-                          onChange={(event) => toggleCandidateSelection(candidate.ruleId, event.target.checked)}
-                        />
-                        <div>
-                          <div className="font-medium">{candidate.suggestedName}</div>
-                          <div className="text-xs text-muted-foreground">
-                            Pravilo: {candidate.ruleId} | Kategorija: {candidate.productCategorySlug}
-                          </div>
-                        </div>
-                      </label>
-                      <div className="flex items-center gap-3">
-                        <Select
-                          value={
-                            productsForCategory.length > 0
-                              ? selection.productId ?? productsForCategory[0].id
-                              : "__none__"
-                          }
-                          onValueChange={(value) =>
-                            setCandidateSelections((prev) => ({
-                              ...prev,
-                              [candidate.ruleId]: {
-                                ...(prev[candidate.ruleId] ?? { include: true, quantity: candidate.quantity ?? 1 }),
-                                productId: value === "__none__" ? undefined : value,
-                              },
-                            }))
-                          }
-                          disabled={productsForCategory.length === 0}
-                        >
-                          <SelectTrigger className="w-48">
-                            <SelectValue placeholder="Izberi produkt" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {productsForCategory.length === 0 && (
-                              <SelectItem value="__none__" disabled>
-                                Ni produktov
-                              </SelectItem>
-                            )}
-                            {productsForCategory.map((productOption) => (
-                              <SelectItem key={productOption.id} value={productOption.id}>
-                                {productOption.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          className="w-24"
-                          type="number"
-                          inputMode="decimal"
-                          value={selection.quantity}
-                          onChange={(event) =>
-                            setCandidateSelections((prev) => ({
-                              ...prev,
-                              [candidate.ruleId]: {
-                                ...(prev[candidate.ruleId] ?? { include: true }),
-                                productId: selection.productId,
-                                quantity: Number(event.target.value),
-                              },
-                            }))
-                          }
-                        />
-                        <div className="text-sm font-semibold min-w-[90px] text-right">€ {total.toFixed(2)}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsGenerateModalOpen(false)}>
-                Prekliči
-              </Button>
-              <Button
-                onClick={handleConfirmOfferFromRequirements}
-                disabled={
-                  !offerCandidates.some((c) => candidateSelections[c.ruleId]?.include !== false)
-                }
-              >
-                Potrdi in dodaj v ponudbo
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={isItemDialogOpen}
-        onOpenChange={(open) => {
-          setItemDialogOpen(open);
-          if (!open) {
-            resetItemForm();
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>{editingItem ? "Uredi postavko" : "Dodaj postavko"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Naziv</Label>
-                <Input value={itemForm.name} onChange={(e) => setItemForm((prev) => ({ ...prev, name: e.target.value }))} />
-              </div>
-              <div>
-                <Label>SKU</Label>
-                <Input value={itemForm.sku} onChange={(e) => setItemForm((prev) => ({ ...prev, sku: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label>Enota</Label>
-                <Input value={itemForm.unit} onChange={(e) => setItemForm((prev) => ({ ...prev, unit: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Kategorija</Label>
-                <Select
-                  value={itemForm.category ?? "material"}
-                  onValueChange={(value) => setItemForm((prev) => ({ ...prev, category: value as Item["category"] }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="material">Material</SelectItem>
-                    <SelectItem value="labor">Delo</SelectItem>
-                    <SelectItem value="other">Drugo</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>DDV %</Label>
-                <Input
-                  type="number"
-                  value={itemForm.vatRate}
-                  onChange={(e) => setItemForm((prev) => ({ ...prev, vatRate: Number(e.target.value) }))}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label>Količina</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={itemForm.quantity}
-                  onChange={(e) => setItemForm((prev) => ({ ...prev, quantity: Number(e.target.value) }))}
-                />
-              </div>
-              <div>
-                <Label>Cena</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={itemForm.price}
-                  onChange={(e) => setItemForm((prev) => ({ ...prev, price: Number(e.target.value) }))}
-                />
-              </div>
-              <div>
-                <Label>Popust %</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.1}
-                  value={itemForm.discount}
-                  onChange={(e) => setItemForm((prev) => ({ ...prev, discount: Number(e.target.value) }))}
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Opis</Label>
-              <Textarea
-                rows={3}
-                value={itemForm.description}
-                onChange={(e) => setItemForm((prev) => ({ ...prev, description: e.target.value }))}
-              />
-            </div>
-            <Button onClick={handleSaveItem} disabled={isSavingItem}>
-              {isSavingItem && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {editingItem ? "Shrani spremembe" : "Dodaj postavko"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={isCatalogDialogOpen}
-        onOpenChange={(open) => {
-          setCatalogDialogOpen(open);
-          if (!open) {
-            setSelectedCatalogProduct(null);
-            setCatalogQuantity(1);
-            setCatalogDiscount(0);
-            setCatalogVatRate(22);
-            setCatalogUnit("kos");
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Dodaj postavko iz cenika</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="space-y-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  placeholder="Išči po nazivu ali kategoriji"
-                  value={catalogSearch}
-                  onChange={(e) => setCatalogSearch(e.target.value)}
-                />
-              </div>
-              <div className="border rounded-lg h-80 overflow-y-auto divide-y">
-                {catalogLoading && (
-                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Nalagam cenik ...
-                  </div>
-                )}
-                {!catalogLoading && filteredCatalog.length === 0 && (
-                  <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
-                    Ni zadetkov. Spremenite iskalni niz.
-                  </div>
-                )}
-                {!catalogLoading &&
-                  filteredCatalog.map((product) => (
-                    <button
-                      key={product.id}
-                      className={`w-full text-left p-3 transition-colors ${
-                        selectedCatalogProduct?.id === product.id ? "bg-primary/5" : "hover:bg-muted"
-                      }`}
-                      onClick={() => setSelectedCatalogProduct(product)}
-                    >
-                      <div className="font-medium">{product.name}</div>
-                      <div className="text-xs text-muted-foreground">{product.category || "Brez kategorije"}</div>
-                      <div className="text-sm font-semibold">€ {product.price.toFixed(2)}</div>
-                    </button>
-                  ))}
-              </div>
-              <Button variant="outline" size="sm" onClick={fetchCatalogItems} disabled={catalogLoading}>
-                {catalogLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Osveži cenik
-              </Button>
-            </div>
-            <div className="space-y-4">
-              {selectedCatalogProduct ? (
-                <>
-                  <div>
-                    <h4 className="m-0">{selectedCatalogProduct.name}</h4>
-                    <p className="mt-1 text-sm text-muted-foreground">{selectedCatalogProduct.description}</p>
-                    {selectedCatalogProduct.supplier && (
-                      <p className="text-xs text-muted-foreground">Dobavitelj: {selectedCatalogProduct.supplier}</p>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Količina</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={catalogQuantity}
-                        onChange={(e) => setCatalogQuantity(Number(e.target.value))}
-                      />
-                    </div>
-                    <div>
-                      <Label>Enota</Label>
-                      <Input value={catalogUnit} onChange={(e) => setCatalogUnit(e.target.value)} />
-                    </div>
-                    <div>
-                      <Label>Popust %</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={100}
-                        step={0.1}
-                        value={catalogDiscount}
-                        onChange={(e) => setCatalogDiscount(Number(e.target.value))}
-                      />
-                    </div>
-                    <div>
-                      <Label>DDV %</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={50}
-                        step={0.1}
-                        value={catalogVatRate}
-                        onChange={(e) => setCatalogVatRate(Number(e.target.value))}
-                      />
-                    </div>
-                  </div>
-                  <Button className="w-full" onClick={handleAddFromCatalog} disabled={isAddingFromCatalog}>
-                    {isAddingFromCatalog && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Dodaj iz cenika
-                  </Button>
-                </>
-              ) : (
-                <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-muted-foreground/40 p-6 text-center text-sm text-muted-foreground">
-                  Izberite produkt iz cenika in določite količino ter DDV.
-                </div>
-              )}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
