@@ -32,7 +32,7 @@ import { toast } from "sonner";
 import { ProjectDetails, ProjectOffer, ProjectOfferItem, OfferCandidate } from "../types";
 import { fetchOfferCandidates, fetchProductsByCategories, fetchRequirementVariants, type ProductLookup } from "../api";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
-import { LogisticsTab } from "./LogisticsTab";
+import { LogisticsPanel } from "../domains/logistics/LogisticsPanel";
 import { useProject } from "../domains/core/useProject";
 import { ProjectHeader } from "../domains/core/ProjectHeader";
 import {
@@ -1127,7 +1127,7 @@ export function ProjectWorkspace({
               </TabsContent>
 
               <TabsContent value="logistics" className="mt-0 space-y-6">
-                <LogisticsTab projectId={project.id} client={displayedClient} />
+                <LogisticsPanel projectId={project.id} client={displayedClient} />
               </TabsContent>
 
               <TabsContent value="execution" className="mt-0 space-y-6">
