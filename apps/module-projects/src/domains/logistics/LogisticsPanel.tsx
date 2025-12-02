@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type {
   MaterialOrder,
@@ -7,15 +7,15 @@ import type {
   WorkOrder as LogisticsWorkOrder,
   WorkOrderStatus,
 } from "@aintel/shared/types/logistics";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
-import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { Textarea } from "./ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 
-interface LogisticsTabProps {
+interface LogisticsPanelProps {
   projectId: string;
   client?: {
     name?: string | null;
@@ -25,7 +25,7 @@ interface LogisticsTabProps {
     street?: string | null;
     postalCode?: string | null;
     postalCity?: string | null;
-  };
+  } | null;
 }
 
 const workOrderStatusOptions: WorkOrderStatus[] = ["draft", "issued", "in-progress", "confirmed", "completed"];
@@ -95,7 +95,7 @@ function formatDateTimeLocal(value: string | null | undefined) {
   return date.toISOString().slice(0, 16);
 }
 
-type LogisticsClient = NonNullable<LogisticsTabProps["client"]>;
+type LogisticsClient = NonNullable<LogisticsPanelProps["client"]>;
 
 function formatClientAddress(client?: LogisticsClient | null) {
   if (!client) return "";
@@ -112,7 +112,7 @@ function isBlank(value?: string | null) {
   return !value || value.trim().length === 0;
 }
 
-export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
+export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
   const [snapshot, setSnapshot] = useState<ProjectLogisticsSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -561,7 +561,6 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
       </div>
     );
   };
-
 
   const headerWorkOrderStatus: WorkOrderStatus =
     (workOrderForm.status as WorkOrderStatus) ?? (snapshot?.workOrder?.status as WorkOrderStatus) ?? "draft";
