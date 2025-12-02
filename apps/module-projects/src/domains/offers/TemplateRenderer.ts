@@ -1,6 +1,6 @@
-import { Item } from "./ItemsTable";
+import { Item } from "../requirements/ItemsTable";
 import { OfferVersion } from "./OfferVersionCard";
-import { Template } from "./TemplateEditor";
+import { Template } from "../../components/TemplateEditor";
 
 interface TemplateData {
   customer: {
