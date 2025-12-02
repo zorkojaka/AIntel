@@ -1,4 +1,4 @@
-/* Simple guard to fail CI/build when replacement characters (�) are present in source */
+/* Guard to fail CI/build when replacement characters or suspicious dashes are present in source */
 const fs = require('fs');
 const path = require('path');
 
@@ -14,18 +14,35 @@ function walk(dir, files = []) {
   return files;
 }
 
-const badFiles = [];
+const letterClass = 'A-Za-zČŠŽčšž';
+const dashBetweenLetters = new RegExp(`[${letterClass}][\\u2013\\u2014][${letterClass}]`, 'u');
+const issues = [];
+
 for (const file of walk(path.join(__dirname, '..', 'src'))) {
   const content = fs.readFileSync(file, 'utf8');
-  if (content.includes('\uFFFD')) {
-    badFiles.push(file);
-  }
+  const lines = content.split(/\r?\n/);
+  lines.forEach((line, index) => {
+    if (line.includes('\uFFFD')) {
+      issues.push({ file, line: index + 1, reason: 'replacement character (�) detected', snippet: line.trim() });
+    }
+    if (/[\u0096\u0097]/.test(line)) {
+      issues.push({ file, line: index + 1, reason: 'control dash character (\\u0096/\\u0097) detected', snippet: line.trim() });
+    }
+    if (dashBetweenLetters.test(line)) {
+      issues.push({ file, line: index + 1, reason: 'suspicious dash between letters (\\u2013/\\u2014)', snippet: line.trim() });
+    }
+  });
 }
 
-if (badFiles.length) {
-  console.error('Encoding check failed. Found replacement characters (�) in:');
-  badFiles.forEach((f) => console.error(` - ${f}`));
+if (issues.length) {
+  console.error('Encoding check failed due to suspicious characters:');
+  issues.forEach(({ file, line, reason, snippet }) => {
+    console.error(` - ${file}:${line} -> ${reason}`);
+    if (snippet) {
+      console.error(`     ${snippet}`);
+    }
+  });
   process.exit(1);
 } else {
-  console.log('Encoding check passed (no � characters found).');
+  console.log('Encoding check passed (no replacement or suspicious dash characters found).');
 }

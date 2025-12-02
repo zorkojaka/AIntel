@@ -54,6 +54,8 @@ function calculateOfferTotalsFromSnapshot(offer: {
   };
 }
 
+const MATERIAL_STATUS_VALUES = ['Za naročit', 'Naročeno', 'Prevzeto', 'Pripravljeno', 'Dostavljeno', 'Zmontirano'];
+
 function serializeDate(value: Date | string | null | undefined) {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(value);
@@ -85,6 +87,9 @@ function serializeMaterialOrder(order: any) {
       note: item.note,
     })),
     status: order.status,
+    materialStatus: order.materialStatus ?? 'Za naročit',
+    technicianId: order.technicianId ?? null,
+    technicianName: order.technicianName ?? null,
     cancelledAt: serializeDate(order.cancelledAt),
     reopened: !!order.reopened,
     createdAt: serializeDate(order.createdAt) ?? '',
@@ -203,11 +208,10 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
 
     const materialOrder = await MaterialOrderModel.findOne({ projectId, offerVersionId: offerId });
     if (materialOrder) {
-      const wasCancelled = materialOrder.status === 'cancelled';
       materialOrder.items = logisticsItems;
-      materialOrder.status = wasCancelled ? 'draft' : materialOrder.status;
+      materialOrder.materialStatus = materialOrder.materialStatus ?? 'Za naročit';
       materialOrder.cancelledAt = null;
-      materialOrder.reopened = wasCancelled;
+      materialOrder.reopened = false;
       await materialOrder.save();
     } else {
       await MaterialOrderModel.create({
@@ -215,17 +219,18 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
         offerVersionId: offerId,
         items: logisticsItems,
         status: 'draft',
+        materialStatus: 'Za naročit',
+        technicianId: null,
+        technicianName: null,
         reopened: false,
       });
     }
 
     const workOrder = await WorkOrderModel.findOne({ projectId, offerVersionId: offerId });
     if (workOrder) {
-      const wasCancelled = workOrder.status === 'cancelled';
       workOrder.items = logisticsItems;
-      workOrder.status = wasCancelled ? 'draft' : workOrder.status;
       workOrder.cancelledAt = null;
-      workOrder.reopened = wasCancelled;
+      workOrder.reopened = false;
       workOrder.customerName = customerName;
       workOrder.customerEmail = customerEmail;
       workOrder.customerPhone = customerPhone;
@@ -372,15 +377,38 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     if ('notes' in payload) updates.notes = payload.notes;
     if (
       payload.status === 'draft' ||
-      payload.status === 'scheduled' ||
-      payload.status === 'in_progress' ||
-      payload.status === 'completed' ||
-      payload.status === 'cancelled'
+      payload.status === 'issued' ||
+      payload.status === 'in-progress' ||
+      payload.status === 'confirmed' ||
+      payload.status === 'completed'
     ) {
       updates.status = payload.status;
     }
 
     const updated = await WorkOrderModel.findOneAndUpdate({ _id: workOrderId, projectId }, { $set: updates }, { new: true });
+
+    const materialOrderId = typeof payload.materialOrderId === 'string' ? payload.materialOrderId : null;
+    if (materialOrderId) {
+      const materialUpdates: Record<string, unknown> = {};
+      if (typeof payload.materialStatus === 'string' && MATERIAL_STATUS_VALUES.includes(payload.materialStatus)) {
+        materialUpdates.materialStatus = payload.materialStatus;
+      }
+      if ('materialTechnicianId' in payload) {
+        materialUpdates.technicianId = payload.materialTechnicianId ?? null;
+      }
+      if ('materialTechnicianName' in payload) {
+        materialUpdates.technicianName = payload.materialTechnicianName ?? null;
+      }
+
+      if (Object.keys(materialUpdates).length > 0) {
+        await MaterialOrderModel.findOneAndUpdate(
+          { _id: materialOrderId, projectId },
+          { $set: materialUpdates },
+          { new: false }
+        );
+      }
+    }
+
     return res.success(serializeWorkOrder(updated));
   } catch (err) {
     next(err);

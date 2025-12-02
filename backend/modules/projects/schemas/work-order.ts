@@ -11,7 +11,7 @@ interface WorkOrderDocument extends Document {
     unit: string;
     note?: string;
   }[];
-  status: 'draft' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'draft' | 'issued' | 'in-progress' | 'confirmed' | 'completed';
   scheduledAt: Date | null;
   technicianName?: string;
   technicianId?: string;
@@ -44,7 +44,7 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
     items: { type: [workOrderItemSchema], default: [] },
     status: {
       type: String,
-      enum: ['draft', 'scheduled', 'in_progress', 'completed', 'cancelled'],
+      enum: ['draft', 'issued', 'in-progress', 'confirmed', 'completed'],
       default: 'draft',
     },
     scheduledAt: { type: Date, default: null },

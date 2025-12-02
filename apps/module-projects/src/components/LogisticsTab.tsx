@@ -2,8 +2,10 @@
 import { toast } from "sonner";
 import type {
   MaterialOrder,
+  MaterialStatus,
   ProjectLogisticsSnapshot,
   WorkOrder as LogisticsWorkOrder,
+  WorkOrderStatus,
 } from "@aintel/shared/types/logistics";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
@@ -26,7 +28,15 @@ interface LogisticsTabProps {
   };
 }
 
-const workOrderStatuses = ["draft", "scheduled", "in_progress", "completed", "cancelled"] as const;
+const workOrderStatusOptions: WorkOrderStatus[] = ["draft", "issued", "in-progress", "confirmed", "completed"];
+const workOrderStatusLabels: Record<WorkOrderStatus, string> = {
+  draft: "V pripravi",
+  issued: "Izdan",
+  "in-progress": "V delu",
+  confirmed: "Potrjen",
+  completed: "Zaključen",
+};
+
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "DRAFT",
   OFFERED: "OFFERED",
@@ -34,6 +44,45 @@ const STATUS_LABELS: Record<string, string> = {
   CANCELLED: "Preklicano",
   REJECTED: "Zavrnjeno",
 };
+
+type TechnicianOption = {
+  id: string;
+  name: string;
+};
+
+const technicians: TechnicianOption[] = [
+  { id: "tech-1", name: "Tehnik 1" },
+  { id: "tech-2", name: "Tehnik 2" },
+];
+
+const materialStatusOptions: MaterialStatus[] = [
+  "Za naročit",
+  "Naročeno",
+  "Prevzeto",
+  "Pripravljeno",
+  "Preklicano",
+];
+
+const materialStatusSequence: MaterialStatus[] = ["Za naročit", "Naročeno", "Prevzeto", "Pripravljeno"];
+
+function getNextMaterialStatus(current?: MaterialStatus | null) {
+  if (!current) return null;
+  const index = materialStatusSequence.indexOf(current);
+  if (index === -1 || index === materialStatusSequence.length - 1) {
+    return null;
+  }
+  return materialStatusSequence[index + 1];
+}
+
+function selectTechnician(
+  id: string,
+  update: (payload: { id: string; name: string }) => void,
+  technicianList: TechnicianOption[],
+) {
+  const selected = technicianList.find((tech) => tech.id === id);
+  if (!selected) return;
+  update({ id: selected.id, name: selected.name });
+}
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("sl-SI", { style: "currency", currency: "EUR" }).format(value);
@@ -69,10 +118,12 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [workOrderForm, setWorkOrderForm] = useState<Partial<LogisticsWorkOrder>>({});
+  const [materialOrderForm, setMaterialOrderForm] = useState<MaterialOrder | null>(null);
   const [emailTouched, setEmailTouched] = useState(false);
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [locationTouched, setLocationTouched] = useState(false);
   const [savingWorkOrder, setSavingWorkOrder] = useState(false);
+  const [issuingOrder, setIssuingOrder] = useState(false);
 
   const hasConfirmed = useMemo(() => !!snapshot?.confirmedOfferVersionId, [snapshot]);
 
@@ -105,6 +156,10 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
       });
     }
   }, [snapshot]);
+
+  useEffect(() => {
+    setMaterialOrderForm(snapshot?.materialOrder ?? null);
+  }, [snapshot?.materialOrder]);
 
   useEffect(() => {
     if (!client) return;
@@ -180,8 +235,31 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
     setWorkOrderForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSaveWorkOrder = async () => {
-    if (!snapshot?.workOrder) return;
+  const handleMaterialStatusChange = (status: MaterialStatus) => {
+    setMaterialOrderForm((prev) => (prev ? { ...prev, materialStatus: status } : prev));
+  };
+
+  const handleMaterialNextStatus = async (nextStatus: MaterialStatus) => {
+    setMaterialOrderForm((prev) => (prev ? { ...prev, materialStatus: nextStatus } : prev));
+    await handleSaveWorkOrder({ materialStatus: nextStatus });
+  };
+
+  const handleMaterialTechnicianSelect = (technicianId: string) => {
+    if (!technicianId || !materialOrderForm) return;
+    selectTechnician(
+      technicianId,
+      ({ id, name }) =>
+        setMaterialOrderForm((prev) => (prev ? { ...prev, technicianId: id, technicianName: name } : prev)),
+      technicians,
+    );
+  };
+
+  const handleSaveWorkOrder = async (
+    materialOverrides?: Partial<MaterialOrder>,
+    workOrderOverrides?: Partial<LogisticsWorkOrder>,
+  ) => {
+    if (!snapshot?.workOrder) return false;
+    const currentMaterial = materialOrderForm ?? snapshot.materialOrder ?? null;
     setSavingWorkOrder(true);
     try {
       const response = await fetch(`/api/projects/${projectId}/work-orders/${snapshot.workOrder._id}`, {
@@ -193,44 +271,138 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
           technicianId: workOrderForm.technicianId ?? "",
           location: workOrderForm.location ?? "",
           notes: workOrderForm.notes ?? "",
-          status: workOrderForm.status ?? undefined,
+          status: workOrderOverrides?.status ?? workOrderForm.status ?? undefined,
+          materialOrderId: materialOverrides?._id ?? currentMaterial?._id ?? null,
+          materialStatus: materialOverrides?.materialStatus ?? currentMaterial?.materialStatus ?? undefined,
+          materialTechnicianId: materialOverrides?.technicianId ?? currentMaterial?.technicianId ?? null,
+          materialTechnicianName: materialOverrides?.technicianName ?? currentMaterial?.technicianName ?? null,
         }),
       });
       const payload = await response.json();
       if (!payload.success) {
-        toast.error(payload.error ?? "Delovnega naloga ni mogoče shraniti.");
-        return;
+        toast.error(payload.error ?? "Delovnega naloga ni mogoce shraniti.");
+        return false;
       }
       const updated: LogisticsWorkOrder = payload.data;
-      setSnapshot((prev) => (prev ? { ...prev, workOrder: updated } : prev));
-      setWorkOrderForm({ ...updated, scheduledAt: formatDateTimeLocal(updated.scheduledAt) });
+      const mergedWorkOrder = { ...updated, ...(workOrderOverrides ?? {}) };
+      setSnapshot((prev) =>
+        prev
+          ? {
+              ...prev,
+              workOrder: mergedWorkOrder,
+              materialOrder:
+                currentMaterial || materialOverrides
+                  ? {
+                      ...(currentMaterial ?? prev.materialOrder ?? {}),
+                      ...(materialOverrides ?? {}),
+                    }
+                  : prev.materialOrder,
+            }
+          : prev,
+      );
+      if (materialOverrides) {
+        setMaterialOrderForm((prev) => (prev ? { ...prev, ...materialOverrides } : prev));
+      }
+      setWorkOrderForm({
+        ...mergedWorkOrder,
+        scheduledAt: formatDateTimeLocal(mergedWorkOrder.scheduledAt),
+      });
       toast.success("Delovni nalog posodobljen.");
+      return true;
     } catch (error) {
-      toast.error("Delovnega naloga ni mogoče shraniti.");
+      toast.error("Delovnega naloga ni mogoce shraniti.");
+      return false;
     } finally {
       setSavingWorkOrder(false);
     }
   };
 
+  const effectiveMaterialStatus: MaterialStatus | null =
+    materialOrderForm?.materialStatus ?? snapshot?.materialOrder?.materialStatus ?? null;
+
+  const resolveField = (value?: string | null, fallback?: string | null) => (value ?? fallback ?? "").trim();
+
+  const resolvedCustomerName = resolveField(workOrderForm.customerName, snapshot?.workOrder?.customerName);
+  const resolvedCustomerAddress = resolveField(workOrderForm.customerAddress, snapshot?.workOrder?.customerAddress);
+  const resolvedCustomerEmail = resolveField(workOrderForm.customerEmail, snapshot?.workOrder?.customerEmail);
+  const resolvedCustomerPhone = resolveField(workOrderForm.customerPhone, snapshot?.workOrder?.customerPhone);
+  const resolvedSchedule = resolveField(
+    typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : undefined,
+    snapshot?.workOrder?.scheduledAt ? formatDateTimeLocal(snapshot.workOrder.scheduledAt) : undefined,
+  );
+  const resolvedTechnicianId = resolveField(workOrderForm.technicianId, snapshot?.workOrder?.technicianId);
+
+  const canIssueOrder =
+    effectiveMaterialStatus === "Pripravljeno" &&
+    resolvedCustomerName &&
+    resolvedCustomerAddress &&
+    resolvedCustomerEmail &&
+    resolvedCustomerPhone &&
+    resolvedSchedule &&
+    resolvedTechnicianId;
+
+  const handleIssueWorkOrder = async () => {
+    if (!canIssueOrder || issuingOrder) return;
+    setIssuingOrder(true);
+    setWorkOrderForm((prev) => ({ ...prev, status: "issued" }));
+    const saved = await handleSaveWorkOrder(undefined, { status: "issued" });
+    if (!saved) {
+      setIssuingOrder(false);
+      return;
+    }
+    try {
+      const response = await fetch(`/api/projects/${projectId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "in-progress" }),
+      });
+      const payload = await response.json();
+      if (!payload.success) {
+        toast.error(payload.error ?? "Status projekta ni bilo mogoče posodobiti.");
+        return;
+      }
+      toast.success("Nalog izdan in projekt v izvedbi.");
+      await fetchSnapshot();
+    } catch (error) {
+      toast.error("Status projekta ni bilo mogoče posodobiti.");
+    } finally {
+      setIssuingOrder(false);
+    }
+  };
+
   const renderMaterialOrder = (materialOrder: MaterialOrder | null) => {
     if (!materialOrder) {
-      return <p className="text-sm text-muted-foreground">Naro─ìilo za material bo ustvarjeno ob potrditvi ponudbe.</p>;
+      return <p className="text-sm text-muted-foreground">Naročilo za material bo ustvarjeno ob potrditvi ponudbe.</p>;
     }
 
+    const technicianValue: string | undefined = materialOrder.technicianId ?? undefined;
+    const nextStatus = getNextMaterialStatus(materialOrder.materialStatus);
+
     return (
-      <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          <h4 className="text-base font-semibold m-0">Naro─ìilo za material</h4>
-          <Badge variant="outline" className="uppercase text-xs tracking-wide">
-            {materialOrder.status}
-          </Badge>
+      <div className="space-y-4">
+        <div className="max-w-sm space-y-2">
+          <label className="text-sm font-medium">Tehnik</label>
+          <Select value={technicianValue} onValueChange={handleMaterialTechnicianSelect}>
+            <SelectTrigger>
+              <SelectValue placeholder="Izberi tehnika" />
+            </SelectTrigger>
+            <SelectContent>
+              {technicians
+                .filter((technician) => technician.id.trim().length > 0)
+                .map((technician) => (
+                  <SelectItem key={technician.id} value={technician.id}>
+                    {technician.name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="border rounded-[var(--radius-card)] bg-card overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Naziv</TableHead>
-                <TableHead className="text-right">Koli─ìina</TableHead>
+                <TableHead className="text-right">Količina</TableHead>
                 <TableHead>Enota</TableHead>
               </TableRow>
             </TableHeader>
@@ -245,6 +417,13 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
             </TableBody>
           </Table>
         </div>
+        {nextStatus && (
+          <div className="flex justify-end">
+            <Button onClick={() => handleMaterialNextStatus(nextStatus)} disabled={savingWorkOrder}>
+              {nextStatus}
+            </Button>
+          </div>
+        )}
       </div>
     );
   };
@@ -258,35 +437,20 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
     const customerAddress = workOrder.customerAddress || formatClientAddress(client ?? null) || "";
     const customerEmail = workOrder.customerEmail || client?.email || "";
     const customerPhone = workOrder.customerPhone || client?.phone || "";
-    const fallbackLocation = formatClientAddress(client ?? null) || "";
-    const currentStatus = (workOrderForm.status as string) ?? workOrder.status;
+    const technicianValue: string | undefined =
+      workOrderForm.technicianId ?? workOrder.technicianId ?? undefined;
 
     return (
       <div className="space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h4 className="text-base font-semibold m-0">Delovni nalog</h4>
-          <Select value={currentStatus} onValueChange={(value) => handleWorkOrderChange("status", value)}>
-            <SelectTrigger className="h-8 w-fit border border-input bg-background px-3 py-0 text-xs font-medium uppercase tracking-wide focus:ring-0">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end">
-              {workOrderStatuses.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {status}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-3">
-            <div className="space-y-2">
+          <div className="space-y-4">
+            <div className="space-y-1">
               <label className="text-sm font-medium">Stranka</label>
-              <Input value={customerName} readOnly placeholder="-" className="bg-muted/50" />
+              <p className="rounded-md border border-input bg-muted/50 px-3 py-2 text-sm">{customerName || "-"}</p>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1">
               <label className="text-sm font-medium">Naslov</label>
-              <Input value={customerAddress} readOnly placeholder="-" className="bg-muted/50" />
+              <p className="rounded-md border border-input bg-muted/50 px-3 py-2 text-sm">{customerAddress || "-"}</p>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Email</label>
@@ -304,16 +468,8 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
                 placeholder={customerPhone || "Telefon stranke"}
               />
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Lokacija</label>
-              <Input
-                value={workOrderForm.location ?? ""}
-                onChange={(e) => handleWorkOrderChange("location", e.target.value)}
-                placeholder={fallbackLocation || "Lokacija montaže"}
-              />
-            </div>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Termin izvedbe</label>
               <Input
@@ -323,20 +479,41 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Ime tehnika</label>
-              <Input
-                value={workOrderForm.technicianName ?? ""}
-                onChange={(e) => handleWorkOrderChange("technicianName", e.target.value)}
-                placeholder="Tehnik"
-              />
+              <label className="text-sm font-medium">Tehnik</label>
+              <Select
+                value={technicianValue}
+                onValueChange={(id) =>
+                  selectTechnician(
+                    id,
+                    ({ id: technicianId, name }) =>
+                      setWorkOrderForm((prev) => ({
+                        ...prev,
+                        technicianId,
+                        technicianName: name,
+                      })),
+                    technicians,
+                  )
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Izberi tehnika" />
+                </SelectTrigger>
+                <SelectContent>
+                  {technicians
+                    .filter((technician) => technician.id.trim().length > 0)
+                    .map((technician) => (
+                      <SelectItem key={technician.id} value={technician.id}>
+                        {technician.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">ID tehnika</label>
-              <Input
-                value={workOrderForm.technicianId ?? ""}
-                onChange={(e) => handleWorkOrderChange("technicianId", e.target.value)}
-                placeholder="ID"
-              />
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Status materiala</label>
+              <p className="rounded-md border border-input bg-muted/50 px-3 py-2 text-sm">
+                {effectiveMaterialStatus ?? "-"}
+              </p>
             </div>
           </div>
         </div>
@@ -349,9 +526,16 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
             rows={3}
           />
         </div>
-        <div className="flex justify-end">
-          <Button onClick={handleSaveWorkOrder} disabled={savingWorkOrder}>
+        <div className="flex justify-end gap-2">
+          <Button onClick={() => handleSaveWorkOrder()} disabled={savingWorkOrder}>
             {savingWorkOrder ? "Shranjujem..." : "Shrani delovni nalog"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleIssueWorkOrder}
+            disabled={!canIssueOrder || savingWorkOrder || issuingOrder}
+          >
+            {issuingOrder ? "Dokončujem..." : "Dokončaj naročilo"}
           </Button>
         </div>
         <div className="border rounded-[var(--radius-card)] bg-card overflow-hidden">
@@ -359,7 +543,7 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
             <TableHeader>
               <TableRow>
                 <TableHead>Artikel</TableHead>
-                <TableHead className="text-right">Koli?ina</TableHead>
+                <TableHead className="text-right">Količina</TableHead>
                 <TableHead>Enota</TableHead>
               </TableRow>
             </TableHeader>
@@ -378,6 +562,9 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
     );
   };
 
+
+  const headerWorkOrderStatus: WorkOrderStatus =
+    (workOrderForm.status as WorkOrderStatus) ?? (snapshot?.workOrder?.status as WorkOrderStatus) ?? "draft";
 
   return (
     <div className="space-y-6">
@@ -468,15 +655,53 @@ export function LogisticsTab({ projectId, client }: LogisticsTabProps) {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Naro─ìilo za material</CardTitle>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-4">
+          <CardTitle className="m-0">Naročilo za material</CardTitle>
+          {materialOrderForm && (
+            <Select
+              value={materialOrderForm.materialStatus ?? "Za naročit"}
+              onValueChange={(value) => handleMaterialStatusChange(value as MaterialStatus)}
+            >
+              <SelectTrigger className="h-8 w-fit border border-input bg-background px-3 py-0 focus:ring-0">
+                <Badge variant="outline" className="uppercase text-xs tracking-wide px-3 py-1">
+                  <SelectValue />
+                </Badge>
+              </SelectTrigger>
+              <SelectContent align="end">
+                {materialStatusOptions.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {status}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </CardHeader>
-        <CardContent>{renderMaterialOrder(snapshot?.materialOrder ?? null)}</CardContent>
+        <CardContent>{renderMaterialOrder(materialOrderForm)}</CardContent>
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Delovni nalog</CardTitle>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-4">
+          <CardTitle className="m-0">Delovni nalog</CardTitle>
+          {snapshot?.workOrder && (
+            <Select
+              value={headerWorkOrderStatus}
+              onValueChange={(value) => handleWorkOrderChange("status", value)}
+            >
+              <SelectTrigger className="h-8 w-fit border border-input bg-background px-3 py-0 focus:ring-0">
+                <Badge variant="outline" className="uppercase text-xs tracking-wide px-3 py-1">
+                  <SelectValue />
+                </Badge>
+              </SelectTrigger>
+              <SelectContent align="end">
+                {workOrderStatusOptions.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {workOrderStatusLabels[status]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </CardHeader>
         <CardContent>{renderWorkOrder(snapshot?.workOrder ?? null)}</CardContent>
       </Card>
