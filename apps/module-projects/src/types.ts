@@ -1,8 +1,8 @@
 import { Template } from "./components/TemplateEditor";
 import { Item } from "./domains/requirements/ItemsTable";
 import { OfferVersion } from "./domains/offers/OfferVersionCard";
-import { WorkOrder } from "./components/WorkOrderCard";
-import { TimelineEvent } from "./components/TimelineFeed";
+import { WorkOrder } from "./domains/logistics/WorkOrderCard";
+import { TimelineEvent } from "./domains/core/TimelineFeed";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
 
 export interface Category {

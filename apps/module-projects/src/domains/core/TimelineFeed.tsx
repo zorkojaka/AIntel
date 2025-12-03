@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { Badge } from "./ui/badge";
+import { Badge } from "../../components/ui/badge";
 import { FileText, Package, CheckCircle, Clock, Edit } from "lucide-react";
 
 export interface TimelineEvent {

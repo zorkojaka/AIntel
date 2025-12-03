@@ -3,31 +3,12 @@ import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Card } from "./ui/card";
 import type { Item } from "../domains/requirements/ItemsTable";
-import { OfferVersionCard, OfferVersion } from "../domains/offers/OfferVersionCard";
-import { WorkOrderCard, WorkOrder } from "./WorkOrderCard";
-import { TimelineFeed, TimelineEvent } from "./TimelineFeed";
-import { SignaturePad } from "./SignaturePad";
+import { OfferVersion } from "../domains/offers/OfferVersionCard";
+import type { WorkOrder } from "../domains/logistics/WorkOrderCard";
+import type { TimelineEvent } from "../domains/core/TimelineFeed";
 import { Template } from "./TemplateEditor";
 import { renderTemplate, openPreview, downloadHTML } from "../domains/offers/TemplateRenderer";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
-import { Textarea } from "./ui/textarea";
-import { Label } from "./ui/label";
-import { Input } from "./ui/input";
-import {
-  Plus,
-  FileText,
-  Package,
-  Wrench,
-  Receipt,
-  FolderOpen,
-  Clock,
-  Eye,
-  Download,
-  Search,
-  Loader2,
-  RefreshCcw,
-  Sparkles,
-} from "lucide-react";
+import { FileText, FolderOpen, Package, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectDetails, ProjectOffer, ProjectOfferItem, OfferCandidate } from "../types";
 import { fetchOfferCandidates, fetchProductsByCategories, fetchRequirementVariants, type ProductLookup } from "../api";
@@ -43,6 +24,8 @@ import {
   CatalogTarget,
 } from "../domains/requirements/RequirementsPanel";
 import { OffersPanel } from "../domains/offers/OffersPanel";
+import { ExecutionPanel } from "../domains/execution/ExecutionPanel";
+import { ClosingPanel } from "../domains/closing/ClosingPanel";
 
 type ProjectCrmClient = {
   name?: string | null;
@@ -1027,22 +1010,13 @@ export function ProjectWorkspace({
                   Izvedba
                 </button>
                 <button
-                  onClick={() => setActiveTab("documents")}
+                  onClick={() => setActiveTab("closing")}
                   className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                    activeTab === "documents" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                    activeTab === "closing" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
                   }`}
                 >
                   <FolderOpen className="w-4 h-4" />
-                  Dokumenti
-                </button>
-                <button
-                  onClick={() => setActiveTab("timeline")}
-                  className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                    activeTab === "timeline" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                  }`}
-                >
-                  <Clock className="w-4 h-4" />
-                  Zgodovina
+                  Zaključek
                 </button>
               </nav>
             </Card>
@@ -1056,8 +1030,7 @@ export function ProjectWorkspace({
                 <TabsTrigger value="offers">Ponudbe</TabsTrigger>
                 <TabsTrigger value="logistics">Logistika</TabsTrigger>
                 <TabsTrigger value="execution">Izvedba</TabsTrigger>
-                <TabsTrigger value="documents">Dokumenti</TabsTrigger>
-                <TabsTrigger value="timeline">Zgodovina</TabsTrigger>
+                <TabsTrigger value="closing">Zaključek</TabsTrigger>
               </TabsList>
 
               <TabsContent value="items" className="mt-0 space-y-4">
@@ -1131,118 +1104,11 @@ export function ProjectWorkspace({
               </TabsContent>
 
               <TabsContent value="execution" className="mt-0 space-y-6">
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3>Delovni nalogi</h3>
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" size="sm">
-                          <Plus className="w-4 h-4 mr-2" />
-                          Dodeli ekipo
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Dodeli nov delovni nalog</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <div className="space-y-2">
-                            <Label>Ekipa</Label>
-                            <Input placeholder="Ekipa A - Janez, Marko" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Termin</Label>
-                            <Input placeholder="14.11.2024 08:00" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Lokacija</Label>
-                            <Input placeholder="Tržaška cesta 12, Ljubljana" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Opombe</Label>
-                            <Textarea placeholder="Posebna navodila" />
-                          </div>
-                          <Button className="w-full">Shrani</Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-
-                  {workOrders.length > 0 ? (
-                    <div className="space-y-3">
-                      {workOrders.map((wo) => (
-                        <WorkOrderCard key={wo.id} workOrder={wo} />
-                      ))}
-                    </div>
-                  ) : (
-                    <Card className="p-6 text-center text-muted-foreground">Ni dodeljenih delovnih nalogov</Card>
-                  )}
-                </div>
-
-                <div className="space-y-4">
-                  <h3>Potrditev zaključka</h3>
-                  <Card className="p-6">
-                    <SignaturePad onSign={handleSaveSignature} />
-                  </Card>
-                </div>
+                <ExecutionPanel workOrders={workOrders} onSaveSignature={handleSaveSignature} />
               </TabsContent>
 
-              <TabsContent value="documents" className="mt-0 space-y-4">
-                <div className="grid grid-cols-3 gap-4">
-                  <Card className="p-4">
-                    <div className="flex items-center gap-3">
-                      <FileText className="w-5 h-5" />
-                      <div>
-                        <p className="m-0 font-medium">Ponudba</p>
-                        <p className="text-sm text-muted-foreground m-0">v2 - potrjena</p>
-                      </div>
-                    </div>
-                    <div className="mt-4 flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => toast.info("Pretvorjeno v delovni nalog")}>Pretvori v DN</Button>
-                      <Button variant="outline" size="sm" onClick={() => toast.info("Pretvorjeno v račun")}>Pretvori v račun</Button>
-                    </div>
-                  </Card>
-                  <Card className="p-4">
-                    <div className="flex items-center gap-3">
-                      <Receipt className="w-5 h-5" />
-                      <div>
-                        <p className="m-0 font-medium">Naročilnica</p>
-                        <p className="text-sm text-muted-foreground m-0">Aliansa d.o.o.</p>
-                      </div>
-                    </div>
-                    <div className="mt-4 flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => toast.success("Naročilnica poslana")}>Pošlji</Button>
-                      <Button variant="outline" size="sm" onClick={() => toast.success("Prevzem potrjen")}>Potrdi prevzem</Button>
-                    </div>
-                  </Card>
-                  <Card className="p-4">
-                    <div className="flex items-center gap-3">
-                      <FileText className="w-5 h-5" />
-                      <div>
-                        <p className="m-0 font-medium">Dobavnica</p>
-                        <p className="text-sm text-muted-foreground m-0">Hotel Dolenjc</p>
-                      </div>
-                    </div>
-                    <div className="mt-4 flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => toast.success("Dobavnica potrjena")}>Potrdi</Button>
-                      <Button variant="outline" size="sm" onClick={() => toast.info("Dobavnica poslana")}>Pošlji</Button>
-                    </div>
-                  </Card>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="timeline" className="mt-0">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h3 className="m-0">Zgodovina</h3>
-                    <p className="text-sm text-muted-foreground m-0">Dogodki projekta in statusne spremembe</p>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => refresh()}>
-                    <Eye className="w-4 h-4 mr-2" />
-                    Osveži
-                  </Button>
-                </div>
-                <TimelineFeed events={timeline} />
+              <TabsContent value="closing" className="mt-0 space-y-4">
+                <ClosingPanel events={timeline} onRefresh={refresh} />
               </TabsContent>
             </Tabs>
           </div>
