@@ -54,6 +54,7 @@ export interface WorkOrder {
   customerPhone?: string;
   customerAddress?: string;
   reopened?: boolean;
+  executionNote?: string | null;
   createdAt: string;
   updatedAt: string;
 }

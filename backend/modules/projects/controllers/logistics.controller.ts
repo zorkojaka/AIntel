@@ -209,6 +209,7 @@ function serializeWorkOrder(order: any): WorkOrder | null {
     customerEmail: order.customerEmail ?? '',
     customerPhone: order.customerPhone ?? '',
     customerAddress: order.customerAddress ?? '',
+    executionNote: typeof order.executionNote === 'string' ? order.executionNote : null,
     cancelledAt: serializeDate(order.cancelledAt),
     reopened: !!order.reopened,
     createdAt: serializeDate(order.createdAt) ?? '',
@@ -488,6 +489,12 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     if ('technicianId' in payload) updates.technicianId = payload.technicianId;
     if ('location' in payload) updates.location = payload.location;
     if ('notes' in payload) updates.notes = payload.notes;
+    if ('executionNote' in payload) {
+      updates.executionNote =
+        typeof payload.executionNote === 'string' && payload.executionNote.trim().length > 0
+          ? payload.executionNote
+          : payload.executionNote ?? null;
+    }
     if (
       payload.status === 'draft' ||
       payload.status === 'issued' ||

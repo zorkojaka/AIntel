@@ -26,6 +26,7 @@ interface WorkOrderDocument extends Document {
   customerAddress?: string;
   cancelledAt?: Date | null;
   reopened?: boolean;
+  executionNote?: string | null;
 }
 
 const workOrderItemSchema = new Schema(
@@ -64,6 +65,7 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
     customerAddress: { type: String },
     cancelledAt: { type: Date, default: null },
     reopened: { type: Boolean, default: false },
+    executionNote: { type: String, default: null },
   },
   { timestamps: true }
 );

@@ -1,7 +1,7 @@
 import { Template } from "./components/TemplateEditor";
 import { Item } from "./domains/requirements/ItemsTable";
 import { OfferVersion } from "./domains/offers/OfferVersionCard";
-import { WorkOrder } from "./domains/logistics/WorkOrderCard";
+import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import { TimelineEvent } from "./domains/core/TimelineFeed";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
 
@@ -93,11 +93,11 @@ export interface ProjectDetails extends ProjectSummary {
   requirementsTemplateVariantSlug?: string;
   items: Item[];
   offers: OfferVersion[];
-  workOrders: WorkOrder[];
   purchaseOrders: PurchaseOrder[];
   deliveryNotes: DeliveryNote[];
   timelineEvents: TimelineEvent[];
   templates: Template[];
+  logistics?: ProjectLogistics | null;
 }
 
 export interface OfferCandidate {

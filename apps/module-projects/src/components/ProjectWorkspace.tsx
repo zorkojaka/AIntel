@@ -4,7 +4,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Card } from "./ui/card";
 import type { Item } from "../domains/requirements/ItemsTable";
 import { OfferVersion } from "../domains/offers/OfferVersionCard";
-import type { WorkOrder } from "../domains/logistics/WorkOrderCard";
+import type { WorkOrder as LogisticsWorkOrder } from "@aintel/shared/types/logistics";
+import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import type { TimelineEvent } from "../domains/core/TimelineFeed";
 import { Template } from "./TemplateEditor";
 import { renderTemplate, openPreview, downloadHTML } from "../domains/offers/TemplateRenderer";
@@ -81,7 +82,6 @@ export function ProjectWorkspace({
     description: "",
     productId: "",
   });
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>(project?.workOrders ?? []);
   const [timeline, setTimeline] = useState<TimelineEvent[]>(project?.timelineEvents ?? []);
   const [status, setStatus] = useState(project?.status ?? "draft");
   const [requirementsText, setRequirementsText] = useState(project?.requirementsText ?? "");
@@ -217,7 +217,6 @@ export function ProjectWorkspace({
     setOffers(project.offers);
     setActiveOffer(null);
     setOfferItems([]);
-    setWorkOrders(project.workOrders);
     setTimeline(project.timelineEvents);
     setStatus(project.status);
     setRequirements(Array.isArray(project.requirements) ? project.requirements : []);
@@ -311,28 +310,19 @@ export function ProjectWorkspace({
 
   const applyProjectUpdate = (updated: ProjectDetails | null) => {
     if (!updated) return;
-    setProject(() => updated);
+    setProject((prev) => ({
+      ...prev,
+      ...updated,
+      logistics: updated.logistics ?? prev.logistics ?? null,
+    }));
     setItems(updated.items);
     setOffers(updated.offers);
-    setWorkOrders(updated.workOrders);
     setTimeline(updated.timelineEvents);
     setStatus(updated.status);
     setRequirements(updated.requirements ?? []);
     setRequirementsText(updated.requirementsText ?? "");
     setSelectedVariantSlug(updated.requirementsTemplateVariantSlug ?? "");
   };
-
-  if (loading || !project) {
-    return <div className="min-h-screen bg-background p-6">Nalaganje...</div>;
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-background p-6">
-        <p className="text-destructive">Napaka pri nalaganju projekta.</p>
-      </div>
-    );
-  }
 
   const validationIssues: string[] = [];
   if (!project.customerDetail.name) validationIssues.push("Manjka podatek o stranki");
@@ -835,6 +825,36 @@ export function ProjectWorkspace({
     if (updated) toast.info("Potrditev ponudbe preklicana");
   };
 
+  const handleWorkOrderUpdated = useCallback(
+    (updatedWorkOrder: LogisticsWorkOrder) => {
+      setProject((prev) => {
+        const previousLogistics = prev.logistics ?? null;
+        const existingWorkOrders = previousLogistics?.workOrders ?? [];
+        const hasOrder = existingWorkOrders.some((order) => order._id === updatedWorkOrder._id);
+        const nextWorkOrders = hasOrder
+          ? existingWorkOrders.map((order) => (order._id === updatedWorkOrder._id ? updatedWorkOrder : order))
+          : [...existingWorkOrders, updatedWorkOrder];
+        const nextLogistics: ProjectLogistics = {
+          workOrders: nextWorkOrders,
+          materialOrders: previousLogistics?.materialOrders ?? [],
+          materialOrder: previousLogistics?.materialOrder ?? null,
+          workOrder:
+            previousLogistics?.workOrder && previousLogistics.workOrder._id === updatedWorkOrder._id
+              ? updatedWorkOrder
+              : previousLogistics?.workOrder ?? null,
+          acceptedOfferId: previousLogistics?.acceptedOfferId,
+          confirmedOfferVersionId: previousLogistics?.confirmedOfferVersionId,
+          offerVersions: previousLogistics?.offerVersions,
+        };
+        return {
+          ...prev,
+          logistics: nextLogistics,
+        };
+      });
+    },
+    [setProject]
+  );
+
   const handleMarkOfferAsSelected = async (offerId: string) => {
     const updated = await onProjectUpdate(`${basePath}/offers/${offerId}/select`, { method: "POST" });
     applyProjectUpdate(updated);
@@ -923,202 +943,226 @@ export function ProjectWorkspace({
     applyProjectUpdate(updated);
   };
 
-  return (
-    <div className="min-h-screen bg-background">
-      <ProjectHeader
-        project={project}
-        status={status}
-        onStatusChange={handleStatusChange}
-        onBack={onBack}
-        onRefresh={refresh}
-      />
+  const renderContent = () => {
+    if (loading) {
+      return <div className="min-h-screen bg-background p-6">Nalaganje...</div>;
+    }
 
-      {/* Main Content */}
-      <div className="max-w-[1280px] mx-auto px-6 py-6">
-        <div className="grid grid-cols-12 gap-6">
-          {/* Sidebar */}
-          <div className="col-span-3 space-y-4">
-            <Card className="p-4">
-              <h3 className="mb-3">Stranka</h3>
-              <div className="space-y-2 text-sm">
-                <div>
-                  <div className="text-muted-foreground">Naziv</div>
-                  <div>{project.customerDetail.name}</div>
+    if (error) {
+      return (
+        <div className="min-h-screen bg-background p-6">
+          <p className="text-destructive">Napaka pri nalaganju projekta.</p>
+        </div>
+      );
+    }
+
+    if (!project) {
+      return (
+        <div className="min-h-screen bg-background p-6">
+          <p className="text-muted-foreground">Projekt ni na voljo.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen bg-background">
+        <ProjectHeader
+          project={project}
+          status={status}
+          onStatusChange={handleStatusChange}
+          onBack={onBack}
+          onRefresh={refresh}
+        />
+        <div className="max-w-[1280px] mx-auto px-6 py-6">
+          <div className="grid grid-cols-12 gap-6">
+            <div className="col-span-3 space-y-4">
+              <Card className="p-4">
+                <h3 className="mb-3">Stranka</h3>
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <div className="text-muted-foreground">Naziv</div>
+                    <div>{project.customerDetail.name}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">ID za DDV</div>
+                    <div>{project.customerDetail.taxId}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Naslov</div>
+                    <div>{infoCardAddress}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Plačilni pogoji</div>
+                    <div>{project.customerDetail.paymentTerms}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Email</div>
+                    <div>{infoCardEmail}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Telefon</div>
+                    <div>{infoCardPhone}</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-muted-foreground">ID za DDV</div>
-                  <div>{project.customerDetail.taxId}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Naslov</div>
-                  <div>{infoCardAddress}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Plačilni pogoji</div>
-                  <div>{project.customerDetail.paymentTerms}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Email</div>
-                  <div>{infoCardEmail}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Telefon</div>
-                  <div>{infoCardPhone}</div>
-                </div>
-              </div>
-            </Card>
+              </Card>
 
-            <Card className="p-4">
-              <h3 className="mb-3">Zahteve</h3>
-              <p className="text-sm text-muted-foreground">{requirementsText}</p>
-            </Card>
+              <Card className="p-4">
+                <h3 className="mb-3">Zahteve</h3>
+                <p className="text-sm text-muted-foreground">{requirementsText}</p>
+              </Card>
 
-            <Card className="p-4">
-              <h4 className="mb-3 text-sm">Hitra navigacija</h4>
-              <nav className="space-y-1">
-                <button
-                  onClick={() => setActiveTab("items")}
-                  className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                    activeTab === "items" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                  }`}
-                >
-                  <FileText className="w-4 h-4" />
-                  Zahteve
-                </button>
-                <button
-                  onClick={() => setActiveTab("offers")}
-                  className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                    activeTab === "offers" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                  }`}
-                >
-                  <FileText className="w-4 h-4" />
-                  Ponudbe
-                </button>
-                <button
-                  onClick={() => setActiveTab("logistics")}
-                  className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                    activeTab === "logistics" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                  }`}
-                >
-                  <Package className="w-4 h-4" />
-                  Logistika
-                </button>
-                <button
-                  onClick={() => setActiveTab("execution")}
-                  className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                    activeTab === "execution" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                  }`}
-                >
-                  <Wrench className="w-4 h-4" />
-                  Izvedba
-                </button>
-                <button
-                  onClick={() => setActiveTab("closing")}
-                  className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                    activeTab === "closing" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                  }`}
-                >
-                  <FolderOpen className="w-4 h-4" />
-                  Zaključek
-                </button>
-              </nav>
-            </Card>
-          </div>
+              <Card className="p-4">
+                <h4 className="mb-3 text-sm">Hitra navigacija</h4>
+                <nav className="space-y-1">
+                  <button
+                    onClick={() => setActiveTab("items")}
+                    className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
+                      activeTab === "items" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                    }`}
+                  >
+                    <FileText className="w-4 h-4" />
+                    Zahteve
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("offers")}
+                    className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
+                      activeTab === "offers" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                    }`}
+                  >
+                    <FileText className="w-4 h-4" />
+                    Ponudbe
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("logistics")}
+                    className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
+                      activeTab === "logistics" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                    }`}
+                  >
+                    <Package className="w-4 h-4" />
+                    Logistika
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("execution")}
+                    className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
+                      activeTab === "execution" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                    }`}
+                  >
+                    <Wrench className="w-4 h-4" />
+                    Izvedba
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("closing")}
+                    className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
+                      activeTab === "closing" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                    }`}
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                    Zaključek
+                  </button>
+                </nav>
+              </Card>
+            </div>
 
-          {/* Content */}
-          <div className="col-span-9">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-              <TabsList>
-                <TabsTrigger value="items">Zahteve</TabsTrigger>
-                <TabsTrigger value="offers">Ponudbe</TabsTrigger>
-                <TabsTrigger value="logistics">Logistika</TabsTrigger>
-                <TabsTrigger value="execution">Izvedba</TabsTrigger>
-                <TabsTrigger value="closing">Zaključek</TabsTrigger>
-              </TabsList>
+            <div className="col-span-9">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+                <TabsList>
+                  <TabsTrigger value="items">Zahteve</TabsTrigger>
+                  <TabsTrigger value="offers">Ponudbe</TabsTrigger>
+                  <TabsTrigger value="logistics">Logistika</TabsTrigger>
+                  <TabsTrigger value="execution">Izvedba</TabsTrigger>
+                  <TabsTrigger value="closing">Zaključek</TabsTrigger>
+                </TabsList>
 
-              <TabsContent value="items" className="mt-0 space-y-4">
-                <RequirementsPanel
-                  project={project}
-                  validationIssues={validationIssues}
-                  showVariantWizard={showVariantWizard}
-                  selectedVariantSlug={selectedVariantSlug}
-                  setSelectedVariantSlug={setSelectedVariantSlug}
-                  variantOptions={variantOptions}
-                  variantLoading={variantLoading}
-                  onConfirmVariantSelection={handleConfirmVariantSelection}
-                  requirementsText={requirementsText}
-                  setRequirementsText={setRequirementsText}
-                  requirements={requirements}
-                  updateRequirementRow={updateRequirementRow}
-                  deleteRequirementRow={deleteRequirementRow}
-                  addRequirementRow={addRequirementRow}
-                  handleProceedToOffer={handleProceedToOffer}
-                  isExecutionPhase={isExecutionPhase}
-                  items={items}
-                  handleProjectItemFieldChange={handleProjectItemFieldChange}
-                  openCatalog={openCatalog}
-                  handleAddItem={handleAddItem}
-                  handleDeleteItem={handleDeleteItem}
-                  isGenerateModalOpen={isGenerateModalOpen}
-                  setIsGenerateModalOpen={setIsGenerateModalOpen}
-                  offerCandidates={offerCandidates}
-                  candidateSelections={candidateSelections}
-                  candidateProducts={candidateProducts}
-                  toggleCandidateSelection={toggleCandidateSelection}
-                  setCandidateSelections={setCandidateSelections}
-                  handleConfirmOfferFromRequirements={handleConfirmOfferFromRequirements}
-                  isItemDialogOpen={isItemDialogOpen}
-                  setItemDialogOpen={setItemDialogOpen}
-                  resetItemForm={resetItemForm}
-                  editingItem={editingItem}
-                  itemForm={itemForm}
-                  setItemForm={setItemForm}
-                  itemContext={itemContext}
-                  setItemContext={setItemContext}
-                  isSavingItem={isSavingItem}
-                  handleSaveItem={handleSaveItem}
-                  isCatalogDialogOpen={isCatalogDialogOpen}
-                  setCatalogDialogOpen={setCatalogDialogOpen}
-                  filteredCatalog={filteredCatalog}
-                  catalogSearch={catalogSearch}
-                  setCatalogSearch={setCatalogSearch}
-                  selectedCatalogProduct={selectedCatalogProduct}
-                  setSelectedCatalogProduct={setSelectedCatalogProduct}
-                  catalogQuantity={catalogQuantity}
-                  setCatalogQuantity={setCatalogQuantity}
-                  catalogDiscount={catalogDiscount}
-                  setCatalogDiscount={setCatalogDiscount}
-                  catalogVatRate={catalogVatRate}
-                  setCatalogVatRate={setCatalogVatRate}
-                  catalogUnit={catalogUnit}
-                  setCatalogUnit={setCatalogUnit}
-                  handleAddFromCatalog={handleAddFromCatalog}
-                  isAddingFromCatalog={isAddingFromCatalog}
-                  catalogLoading={catalogLoading}
-                />
-              </TabsContent>
+                <TabsContent value="items" className="mt-0 space-y-4">
+                  <RequirementsPanel
+                    project={project}
+                    validationIssues={validationIssues}
+                    showVariantWizard={showVariantWizard}
+                    selectedVariantSlug={selectedVariantSlug}
+                    setSelectedVariantSlug={setSelectedVariantSlug}
+                    variantOptions={variantOptions}
+                    variantLoading={variantLoading}
+                    onConfirmVariantSelection={handleConfirmVariantSelection}
+                    requirementsText={requirementsText}
+                    setRequirementsText={setRequirementsText}
+                    requirements={requirements}
+                    updateRequirementRow={updateRequirementRow}
+                    deleteRequirementRow={deleteRequirementRow}
+                    addRequirementRow={addRequirementRow}
+                    handleProceedToOffer={handleProceedToOffer}
+                    isExecutionPhase={isExecutionPhase}
+                    items={items}
+                    handleProjectItemFieldChange={handleProjectItemFieldChange}
+                    openCatalog={openCatalog}
+                    handleAddItem={handleAddItem}
+                    handleDeleteItem={handleDeleteItem}
+                    isGenerateModalOpen={isGenerateModalOpen}
+                    setIsGenerateModalOpen={setIsGenerateModalOpen}
+                    offerCandidates={offerCandidates}
+                    candidateSelections={candidateSelections}
+                    candidateProducts={candidateProducts}
+                    toggleCandidateSelection={toggleCandidateSelection}
+                    setCandidateSelections={setCandidateSelections}
+                    handleConfirmOfferFromRequirements={handleConfirmOfferFromRequirements}
+                    isItemDialogOpen={isItemDialogOpen}
+                    setItemDialogOpen={setItemDialogOpen}
+                    resetItemForm={resetItemForm}
+                    editingItem={editingItem}
+                    itemForm={itemForm}
+                    setItemForm={setItemForm}
+                    itemContext={itemContext}
+                    setItemContext={setItemContext}
+                    isSavingItem={isSavingItem}
+                    handleSaveItem={handleSaveItem}
+                    isCatalogDialogOpen={isCatalogDialogOpen}
+                    setCatalogDialogOpen={setCatalogDialogOpen}
+                    filteredCatalog={filteredCatalog}
+                    catalogSearch={catalogSearch}
+                    setCatalogSearch={setCatalogSearch}
+                    selectedCatalogProduct={selectedCatalogProduct}
+                    setSelectedCatalogProduct={setSelectedCatalogProduct}
+                    catalogQuantity={catalogQuantity}
+                    setCatalogQuantity={setCatalogQuantity}
+                    catalogDiscount={catalogDiscount}
+                    setCatalogDiscount={setCatalogDiscount}
+                    catalogVatRate={catalogVatRate}
+                    setCatalogVatRate={setCatalogVatRate}
+                    catalogUnit={catalogUnit}
+                    setCatalogUnit={setCatalogUnit}
+                    handleAddFromCatalog={handleAddFromCatalog}
+                    isAddingFromCatalog={isAddingFromCatalog}
+                    catalogLoading={catalogLoading}
+                  />
+                </TabsContent>
 
-              <TabsContent value="offers" className="mt-0 space-y-4">
-                <OffersPanel project={project} refreshProject={refresh} />
-              </TabsContent>
+                <TabsContent value="offers" className="mt-0 space-y-4">
+                  <OffersPanel project={project} refreshProject={refresh} />
+                </TabsContent>
 
-              <TabsContent value="logistics" className="mt-0 space-y-6">
-                <LogisticsPanel projectId={project.id} client={displayedClient} />
-              </TabsContent>
+                <TabsContent value="logistics" className="mt-0 space-y-6">
+                  <LogisticsPanel projectId={project.id} client={displayedClient} />
+                </TabsContent>
 
-              <TabsContent value="execution" className="mt-0 space-y-6">
-                <ExecutionPanel workOrders={workOrders} onSaveSignature={handleSaveSignature} />
-              </TabsContent>
+                <TabsContent value="execution" className="mt-0 space-y-6">
+                  <ExecutionPanel
+                    projectId={project.id}
+                    logistics={project.logistics}
+                    onSaveSignature={handleSaveSignature}
+                    onWorkOrderUpdated={handleWorkOrderUpdated}
+                  />
+                </TabsContent>
 
-              <TabsContent value="closing" className="mt-0 space-y-4">
-                <ClosingPanel events={timeline} onRefresh={refresh} />
-              </TabsContent>
-            </Tabs>
+                <TabsContent value="closing" className="mt-0 space-y-4">
+                  <ClosingPanel events={timeline} onRefresh={refresh} />
+                </TabsContent>
+              </Tabs>
+            </div>
           </div>
         </div>
       </div>
+    );
+  };
 
-    </div>
-  );
+  return renderContent();
 }
 
