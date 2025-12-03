@@ -1,6 +1,6 @@
-import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
-import { Card } from "./ui/card";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Card } from "../../components/ui/card";
 import { Calendar, MapPin, Users } from "lucide-react";
 
 export interface WorkOrder {

@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { OfferCandidate, ProjectDetails } from "../../types";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
 import { ProductLookup } from "../../api";
-import { ValidationBanner } from "../../components/ValidationBanner";
+import { ValidationBanner } from "../core/ValidationBanner";
 import { openPreview } from "../offers/TemplateRenderer";
 
 export type ItemFormState = {

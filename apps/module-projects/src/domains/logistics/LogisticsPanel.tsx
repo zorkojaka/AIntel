@@ -14,6 +14,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { MaterialOrderCard, TechnicianOption } from "./MaterialOrderCard";
 
 interface LogisticsPanelProps {
   projectId: string;
@@ -43,11 +44,6 @@ const STATUS_LABELS: Record<string, string> = {
   ACCEPTED: "Potrjeno",
   CANCELLED: "Preklicano",
   REJECTED: "Zavrnjeno",
-};
-
-type TechnicianOption = {
-  id: string;
-  name: string;
 };
 
 const technicians: TechnicianOption[] = [
@@ -319,6 +315,7 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
 
   const effectiveMaterialStatus: MaterialStatus | null =
     materialOrderForm?.materialStatus ?? snapshot?.materialOrder?.materialStatus ?? null;
+  const nextMaterialStatus = getNextMaterialStatus(materialOrderForm?.materialStatus ?? null);
 
   const resolveField = (value?: string | null, fallback?: string | null) => (value ?? fallback ?? "").trim();
 
@@ -368,64 +365,6 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
     } finally {
       setIssuingOrder(false);
     }
-  };
-
-  const renderMaterialOrder = (materialOrder: MaterialOrder | null) => {
-    if (!materialOrder) {
-      return <p className="text-sm text-muted-foreground">Naročilo za material bo ustvarjeno ob potrditvi ponudbe.</p>;
-    }
-
-    const technicianValue: string | undefined = materialOrder.technicianId ?? undefined;
-    const nextStatus = getNextMaterialStatus(materialOrder.materialStatus);
-
-    return (
-      <div className="space-y-4">
-        <div className="max-w-sm space-y-2">
-          <label className="text-sm font-medium">Tehnik</label>
-          <Select value={technicianValue} onValueChange={handleMaterialTechnicianSelect}>
-            <SelectTrigger>
-              <SelectValue placeholder="Izberi tehnika" />
-            </SelectTrigger>
-            <SelectContent>
-              {technicians
-                .filter((technician) => technician.id.trim().length > 0)
-                .map((technician) => (
-                  <SelectItem key={technician.id} value={technician.id}>
-                    {technician.name}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="border rounded-[var(--radius-card)] bg-card overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Naziv</TableHead>
-                <TableHead className="text-right">Količina</TableHead>
-                <TableHead>Enota</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(materialOrder.items ?? []).map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell className="font-medium">{item.name}</TableCell>
-                  <TableCell className="text-right">{item.quantity}</TableCell>
-                  <TableCell>{item.unit}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-        {nextStatus && (
-          <div className="flex justify-end">
-            <Button onClick={() => handleMaterialNextStatus(nextStatus)} disabled={savingWorkOrder}>
-              {nextStatus}
-            </Button>
-          </div>
-        )}
-      </div>
-    );
   };
 
   const renderWorkOrder = (workOrder: LogisticsWorkOrder | null) => {
@@ -676,7 +615,16 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
             </Select>
           )}
         </CardHeader>
-        <CardContent>{renderMaterialOrder(materialOrderForm)}</CardContent>
+        <CardContent>
+          <MaterialOrderCard
+            materialOrder={materialOrderForm}
+            technicians={technicians}
+            nextStatus={nextMaterialStatus}
+            onTechnicianSelect={handleMaterialTechnicianSelect}
+            onAdvanceStatus={handleMaterialNextStatus}
+            savingWorkOrder={savingWorkOrder}
+          />
+        </CardContent>
       </Card>
 
       <Card>
