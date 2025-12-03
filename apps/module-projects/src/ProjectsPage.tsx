@@ -12,7 +12,7 @@ import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Category, ProjectDetails, ProjectSummary } from "./types";
 import { NewProjectDialog } from "./components/NewProjectDialog";
-import { DEFAULT_TEMPLATES, mapProject } from "./domains/core/useProject";
+import { mapProject } from "./domains/core/useProject";
 
 const slugify = (value?: string) =>
   (value ?? "")
@@ -43,7 +43,7 @@ export function ProjectsPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
-  const [templates, setTemplates] = useState<Template[]>(DEFAULT_TEMPLATES);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [isClientModalOpen, setClientModalOpen] = useState(false);
   const [isNewProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
