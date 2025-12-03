@@ -826,8 +826,11 @@ export function ProjectWorkspace({
     }
   };
 
-  const handleCancelConfirmation = async (_offerId: string) => {
-    const updated = await onProjectUpdate(`${basePath}/logistics/cancel-confirmation`, { method: "POST" });
+  const handleCancelConfirmation = async (offerId: string) => {
+    const updated = await onProjectUpdate(`${basePath}/logistics/cancel-confirmation`, {
+      method: "POST",
+      body: JSON.stringify({ offerVersionId: offerId }),
+    });
     applyProjectUpdate(updated);
     if (updated) toast.info("Potrditev ponudbe preklicana");
   };
