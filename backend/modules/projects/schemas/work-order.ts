@@ -3,6 +3,9 @@ import { Schema, model, type Document } from 'mongoose';
 interface WorkOrderDocument extends Document {
   projectId: string;
   offerVersionId: string;
+  sequence?: number;
+  code?: string;
+  title?: string;
   items: {
     id: string;
     productId: string | null;
@@ -41,6 +44,9 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
   {
     projectId: { type: String, required: true, index: true },
     offerVersionId: { type: String, required: true, index: true },
+    sequence: { type: Number, default: null },
+    code: { type: String, default: null },
+    title: { type: String, default: null },
     items: { type: [workOrderItemSchema], default: [] },
     status: {
       type: String,

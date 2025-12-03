@@ -11,8 +11,8 @@ export interface LogisticsMaterialItem {
 
 export type MaterialStatus =
   | "Preklicano"
-  | "Za naro?it"
-  | "Naro?eno"
+  | "Za naročit"
+  | "Naročeno"
   | "Prevzeto"
   | "Pripravljeno";
 
@@ -20,6 +20,7 @@ export interface MaterialOrder {
   _id: string;
   projectId: string;
   offerVersionId: string;
+  workOrderId?: string;
   items: LogisticsMaterialItem[];
   status: "draft" | "ordered" | "received" | "cancelled";
   materialStatus: MaterialStatus;
@@ -37,6 +38,9 @@ export interface WorkOrder {
   _id: string;
   projectId: string;
   offerVersionId: string;
+  sequence?: number | null;
+  code?: string | null;
+  title?: string | null;
   items: LogisticsMaterialItem[];
   status: WorkOrderStatus;
   scheduledAt: string | null;
@@ -72,6 +76,8 @@ export interface ProjectLogisticsSnapshot {
     totalWithVat: number;
   }[];
   acceptedOfferId?: string | null;
+  materialOrders: MaterialOrder[];
+  workOrders: WorkOrder[];
   materialOrder: MaterialOrder | null;
   workOrder: WorkOrder | null;
   invoices?: any[];
