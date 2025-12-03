@@ -78,6 +78,7 @@ function serializeMaterialOrder(order: any) {
     _id: String(order._id),
     projectId: order.projectId,
     offerVersionId: order.offerVersionId,
+    workOrderId: order.workOrderId ? String(order.workOrderId) : undefined,
     items: (order.items || []).map((item: any) => ({
       id: item.id,
       productId: item.productId ?? null,
@@ -103,6 +104,9 @@ function serializeWorkOrder(order: any) {
     _id: String(order._id),
     projectId: order.projectId,
     offerVersionId: order.offerVersionId,
+    sequence: typeof order.sequence === 'number' ? order.sequence : null,
+    code: order.code ?? null,
+    title: order.title ?? null,
     items: (order.items || []).map((item: any) => ({
       id: item.id,
       productId: item.productId ?? null,
@@ -135,13 +139,16 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
   const offerVersions = await OfferVersionModel.find({ projectId }).sort({ versionNumber: 1 }).lean();
   const confirmedOfferVersionId = project.confirmedOfferVersionId ?? null;
 
-  const materialOrder = confirmedOfferVersionId
-    ? await MaterialOrderModel.findOne({ projectId, offerVersionId: confirmedOfferVersionId }).lean()
-    : await MaterialOrderModel.findOne({ projectId }).sort({ updatedAt: -1 }).lean();
+  const materialOrderQuery = confirmedOfferVersionId
+    ? { projectId, offerVersionId: confirmedOfferVersionId }
+    : { projectId };
 
-  const workOrder = confirmedOfferVersionId
-    ? await WorkOrderModel.findOne({ projectId, offerVersionId: confirmedOfferVersionId }).lean()
-    : await WorkOrderModel.findOne({ projectId }).sort({ updatedAt: -1 }).lean();
+  const workOrderQuery = confirmedOfferVersionId ? { projectId, offerVersionId: confirmedOfferVersionId } : { projectId };
+
+  const [materialOrderDocs, workOrderDocs] = await Promise.all([
+    MaterialOrderModel.find(materialOrderQuery).sort({ createdAt: 1 }).lean(),
+    WorkOrderModel.find(workOrderQuery).sort({ sequence: 1, createdAt: 1 }).lean(),
+  ]);
 
   const resolveTotalWithVat = (offer: any) => {
     const sumFromItems =
@@ -155,6 +162,9 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
     );
   };
 
+  const serializedMaterialOrders = materialOrderDocs.map(serializeMaterialOrder).filter(Boolean);
+  const serializedWorkOrders = workOrderDocs.map(serializeWorkOrder).filter(Boolean);
+
   return {
     projectId,
     confirmedOfferVersionId,
@@ -165,8 +175,10 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
       status: offer.status,
       totalWithVat: resolveTotalWithVat(offer),
     })),
-    materialOrder: serializeMaterialOrder(materialOrder),
-    workOrder: serializeWorkOrder(workOrder),
+    materialOrders: serializedMaterialOrders,
+    workOrders: serializedWorkOrders,
+    materialOrder: serializedMaterialOrders[0] ?? null,
+    workOrder: serializedWorkOrders[0] ?? null,
   };
 }
 
@@ -206,27 +218,8 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
     const customerPhone = projectClient?.phone ?? '';
     const customerAddress = formatClientAddress(projectClient, project.customer?.address ?? '');
 
-    const materialOrder = await MaterialOrderModel.findOne({ projectId, offerVersionId: offerId });
-    if (materialOrder) {
-      materialOrder.items = logisticsItems;
-      materialOrder.materialStatus = materialOrder.materialStatus ?? 'Za naročit';
-      materialOrder.cancelledAt = null;
-      materialOrder.reopened = false;
-      await materialOrder.save();
-    } else {
-      await MaterialOrderModel.create({
-        projectId,
-        offerVersionId: offerId,
-        items: logisticsItems,
-        status: 'draft',
-        materialStatus: 'Za naročit',
-        technicianId: null,
-        technicianName: null,
-        reopened: false,
-      });
-    }
-
-    const workOrder = await WorkOrderModel.findOne({ projectId, offerVersionId: offerId });
+    const existingWorkOrders = await WorkOrderModel.find({ projectId, offerVersionId: offerId }).sort({ sequence: 1, createdAt: 1 });
+    let workOrder = existingWorkOrders[0];
     if (workOrder) {
       workOrder.items = logisticsItems;
       workOrder.cancelledAt = null;
@@ -235,11 +228,15 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       workOrder.customerEmail = customerEmail;
       workOrder.customerPhone = customerPhone;
       workOrder.customerAddress = customerAddress;
+      if (typeof workOrder.sequence !== 'number') {
+        workOrder.sequence = 1;
+      }
       await workOrder.save();
     } else {
-      await WorkOrderModel.create({
+      workOrder = await WorkOrderModel.create({
         projectId,
         offerVersionId: offerId,
+        sequence: 1,
         items: logisticsItems,
         status: 'draft',
         reopened: false,
@@ -248,6 +245,33 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
         customerEmail,
         customerPhone,
         customerAddress,
+      });
+    }
+
+    const existingMaterialOrders = await MaterialOrderModel.find({ projectId, offerVersionId: offerId }).sort({ createdAt: 1 });
+    let materialOrder = existingMaterialOrders.find((order) => String(order.workOrderId) === String(workOrder._id));
+    if (!materialOrder) {
+      materialOrder = existingMaterialOrders[0] ?? null;
+    }
+
+    if (materialOrder) {
+      materialOrder.items = logisticsItems;
+      materialOrder.workOrderId = workOrder._id;
+      materialOrder.materialStatus = materialOrder.materialStatus ?? 'Za naročit';
+      materialOrder.cancelledAt = null;
+      materialOrder.reopened = false;
+      await materialOrder.save();
+    } else {
+      await MaterialOrderModel.create({
+        projectId,
+        offerVersionId: offerId,
+        workOrderId: workOrder._id,
+        items: logisticsItems,
+        status: 'draft',
+        materialStatus: 'Za naročit',
+        technicianId: null,
+        technicianName: null,
+        reopened: false,
       });
     }
 
@@ -295,16 +319,14 @@ export async function cancelOfferConfirmation(req: Request, res: Response, next:
 
     const now = new Date();
 
-    await MaterialOrderModel.findOneAndUpdate(
+    await MaterialOrderModel.updateMany(
       { projectId, offerVersionId: confirmedOfferVersionId },
-      { status: 'cancelled', cancelledAt: now, reopened: false },
-      { new: true }
+      { status: 'cancelled', cancelledAt: now, reopened: false }
     );
 
-    await WorkOrderModel.findOneAndUpdate(
+    await WorkOrderModel.updateMany(
       { projectId, offerVersionId: confirmedOfferVersionId },
-      { status: 'cancelled', cancelledAt: now, reopened: false },
-      { new: true }
+      { status: 'cancelled', cancelledAt: now, reopened: false }
     );
 
     if (project) {
@@ -336,6 +358,8 @@ export async function getProjectLogistics(req: Request, res: Response, next: Nex
         confirmedOfferVersionId: null,
         offerVersions: [],
         offers: [],
+        materialOrders: [],
+        workOrders: [],
         materialOrder: null,
         workOrder: null,
         invoices: [],
@@ -348,7 +372,9 @@ export async function getProjectLogistics(req: Request, res: Response, next: Nex
       offers: snapshot.offerVersions,
       acceptedOfferId: snapshot.confirmedOfferVersionId,
       materialOrder: snapshot.materialOrder,
+      materialOrders: snapshot.materialOrders ?? [],
       workOrder: snapshot.workOrder,
+      workOrders: snapshot.workOrders ?? [],
       invoices: [],
       events: [],
     });
@@ -401,6 +427,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       }
 
       if (Object.keys(materialUpdates).length > 0) {
+        materialUpdates.workOrderId = workOrderId;
         await MaterialOrderModel.findOneAndUpdate(
           { _id: materialOrderId, projectId },
           { $set: materialUpdates },

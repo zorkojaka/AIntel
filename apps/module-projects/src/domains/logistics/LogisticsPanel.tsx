@@ -113,6 +113,7 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
   const [loading, setLoading] = useState(false);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
   const [workOrderForm, setWorkOrderForm] = useState<Partial<LogisticsWorkOrder>>({});
   const [materialOrderForm, setMaterialOrderForm] = useState<MaterialOrder | null>(null);
   const [emailTouched, setEmailTouched] = useState(false);
@@ -122,6 +123,27 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
   const [issuingOrder, setIssuingOrder] = useState(false);
 
   const hasConfirmed = useMemo(() => !!snapshot?.confirmedOfferVersionId, [snapshot]);
+  const workOrders = useMemo(
+    () => snapshot?.workOrders ?? (snapshot?.workOrder ? [snapshot.workOrder] : []),
+    [snapshot],
+  );
+  const materialOrders = useMemo(
+    () => snapshot?.materialOrders ?? (snapshot?.materialOrder ? [snapshot.materialOrder] : []),
+    [snapshot],
+  );
+  const selectedWorkOrder = useMemo(
+    () => workOrders.find((w) => w._id === selectedWorkOrderId) ?? workOrders[0] ?? null,
+    [selectedWorkOrderId, workOrders],
+  );
+  const selectedMaterialOrder = useMemo(
+    () =>
+      selectedWorkOrder
+        ? materialOrders.find((materialOrder) => materialOrder.workOrderId === selectedWorkOrder._id) ??
+          materialOrders[0] ??
+          null
+        : null,
+    [materialOrders, selectedWorkOrder],
+  );
 
   const fetchSnapshot = useCallback(async () => {
     setLoading(true);
@@ -145,17 +167,29 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
   }, [fetchSnapshot]);
 
   useEffect(() => {
-    if (snapshot?.workOrder) {
-      setWorkOrderForm({
-        ...snapshot.workOrder,
-        scheduledAt: snapshot.workOrder.scheduledAt ? formatDateTimeLocal(snapshot.workOrder.scheduledAt) : "",
-      });
+    if (workOrders.length === 0) {
+      setSelectedWorkOrderId(null);
+      return;
     }
-  }, [snapshot]);
+    if (!selectedWorkOrderId || !workOrders.some((order) => order._id === selectedWorkOrderId)) {
+      setSelectedWorkOrderId(workOrders[0]._id);
+    }
+  }, [selectedWorkOrderId, workOrders]);
 
   useEffect(() => {
-    setMaterialOrderForm(snapshot?.materialOrder ?? null);
-  }, [snapshot?.materialOrder]);
+    if (selectedWorkOrder) {
+      setWorkOrderForm({
+        ...selectedWorkOrder,
+        scheduledAt: selectedWorkOrder.scheduledAt ? formatDateTimeLocal(selectedWorkOrder.scheduledAt) : "",
+      });
+    } else {
+      setWorkOrderForm({});
+    }
+  }, [selectedWorkOrder]);
+
+  useEffect(() => {
+    setMaterialOrderForm(selectedMaterialOrder ?? null);
+  }, [selectedMaterialOrder]);
 
   useEffect(() => {
     if (!client) return;
@@ -179,13 +213,13 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
   }, [client, emailTouched, phoneTouched, locationTouched]);
 
   useEffect(() => {
-    const snapshotAddress = snapshot?.workOrder?.customerAddress;
+    const snapshotAddress = selectedWorkOrder?.customerAddress;
     const clientAddress = formatClientAddress(client ?? null);
     const desiredAddress = snapshotAddress || clientAddress;
     if (!locationTouched && isBlank(workOrderForm.location) && desiredAddress) {
       setWorkOrderForm((prev) => ({ ...prev, location: desiredAddress }));
     }
-  }, [client, snapshot?.workOrder?.customerAddress, locationTouched, workOrderForm.location]);
+  }, [client, selectedWorkOrder?.customerAddress, locationTouched, workOrderForm.location]);
 
   const handleConfirmOffer = async (offerId: string) => {
     setConfirmingId(offerId);
@@ -232,10 +266,12 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
   };
 
   const handleMaterialStatusChange = (status: MaterialStatus) => {
+    if (!materialOrderForm) return;
     setMaterialOrderForm((prev) => (prev ? { ...prev, materialStatus: status } : prev));
   };
 
   const handleMaterialNextStatus = async (nextStatus: MaterialStatus) => {
+    if (!materialOrderForm) return;
     setMaterialOrderForm((prev) => (prev ? { ...prev, materialStatus: nextStatus } : prev));
     await handleSaveWorkOrder({ materialStatus: nextStatus });
   };
@@ -254,14 +290,15 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
     materialOverrides?: Partial<MaterialOrder>,
     workOrderOverrides?: Partial<LogisticsWorkOrder>,
   ) => {
-    if (!snapshot?.workOrder) return false;
-    const currentMaterial = materialOrderForm ?? snapshot.materialOrder ?? null;
+    if (!selectedWorkOrder) return false;
+    const currentMaterial = materialOrderForm ?? selectedMaterialOrder ?? null;
     setSavingWorkOrder(true);
     try {
-      const response = await fetch(`/api/projects/${projectId}/work-orders/${snapshot.workOrder._id}`, {
+      const response = await fetch(`/api/projects/${projectId}/work-orders/${selectedWorkOrder._id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          workOrderId: selectedWorkOrder._id,
           scheduledAt: workOrderForm.scheduledAt ? new Date(workOrderForm.scheduledAt as string).toISOString() : null,
           technicianName: workOrderForm.technicianName ?? "",
           technicianId: workOrderForm.technicianId ?? "",
@@ -281,23 +318,48 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
       }
       const updated: LogisticsWorkOrder = payload.data;
       const mergedWorkOrder = { ...updated, ...(workOrderOverrides ?? {}) };
-      setSnapshot((prev) =>
-        prev
-          ? {
-              ...prev,
-              workOrder: mergedWorkOrder,
-              materialOrder:
-                currentMaterial || materialOverrides
-                  ? {
-                      ...(currentMaterial ?? prev.materialOrder ?? {}),
-                      ...(materialOverrides ?? {}),
-                    }
-                  : prev.materialOrder,
-            }
-          : prev,
-      );
-      if (materialOverrides) {
-        setMaterialOrderForm((prev) => (prev ? { ...prev, ...materialOverrides } : prev));
+      const mergedMaterial =
+        currentMaterial && currentMaterial._id
+          ? { ...currentMaterial, ...(materialOverrides ?? {}) }
+          : currentMaterial;
+      setSnapshot((prev) => {
+        if (!prev) return prev;
+
+        const previousWorkOrders = prev.workOrders?.length
+          ? prev.workOrders
+          : prev.workOrder
+            ? [prev.workOrder]
+            : [];
+        const hasWorkOrder = previousWorkOrders.some((workOrder) => workOrder._id === mergedWorkOrder._id);
+        const nextWorkOrders = hasWorkOrder
+          ? previousWorkOrders.map((workOrder) => (workOrder._id === mergedWorkOrder._id ? mergedWorkOrder : workOrder))
+          : [...previousWorkOrders, mergedWorkOrder];
+
+        const previousMaterialOrders = prev.materialOrders?.length
+          ? prev.materialOrders
+          : prev.materialOrder
+            ? [prev.materialOrder]
+            : [];
+        const nextMaterialOrders = mergedMaterial && mergedMaterial._id
+          ? previousMaterialOrders.some((materialOrder) => materialOrder._id === mergedMaterial._id)
+            ? previousMaterialOrders.map((materialOrder) =>
+                materialOrder._id === mergedMaterial._id ? mergedMaterial : materialOrder,
+              )
+            : [...previousMaterialOrders, mergedMaterial]
+          : previousMaterialOrders;
+
+        const selectedMaterial = nextMaterialOrders.find((order) => order.workOrderId === mergedWorkOrder._id) ?? null;
+
+        return {
+          ...prev,
+          workOrders: nextWorkOrders,
+          workOrder: mergedWorkOrder,
+          materialOrders: nextMaterialOrders,
+          materialOrder: selectedMaterial ?? nextMaterialOrders[0] ?? null,
+        };
+      });
+      if (mergedMaterial) {
+        setMaterialOrderForm((prev) => (prev ? { ...prev, ...(materialOverrides ?? {}), ...mergedMaterial } : mergedMaterial));
       }
       setWorkOrderForm({
         ...mergedWorkOrder,
@@ -314,20 +376,20 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
   };
 
   const effectiveMaterialStatus: MaterialStatus | null =
-    materialOrderForm?.materialStatus ?? snapshot?.materialOrder?.materialStatus ?? null;
-  const nextMaterialStatus = getNextMaterialStatus(materialOrderForm?.materialStatus ?? null);
+    materialOrderForm?.materialStatus ?? selectedMaterialOrder?.materialStatus ?? null;
+  const nextMaterialStatus = getNextMaterialStatus(effectiveMaterialStatus);
 
   const resolveField = (value?: string | null, fallback?: string | null) => (value ?? fallback ?? "").trim();
 
-  const resolvedCustomerName = resolveField(workOrderForm.customerName, snapshot?.workOrder?.customerName);
-  const resolvedCustomerAddress = resolveField(workOrderForm.customerAddress, snapshot?.workOrder?.customerAddress);
-  const resolvedCustomerEmail = resolveField(workOrderForm.customerEmail, snapshot?.workOrder?.customerEmail);
-  const resolvedCustomerPhone = resolveField(workOrderForm.customerPhone, snapshot?.workOrder?.customerPhone);
+  const resolvedCustomerName = resolveField(workOrderForm.customerName, selectedWorkOrder?.customerName);
+  const resolvedCustomerAddress = resolveField(workOrderForm.customerAddress, selectedWorkOrder?.customerAddress);
+  const resolvedCustomerEmail = resolveField(workOrderForm.customerEmail, selectedWorkOrder?.customerEmail);
+  const resolvedCustomerPhone = resolveField(workOrderForm.customerPhone, selectedWorkOrder?.customerPhone);
   const resolvedSchedule = resolveField(
     typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : undefined,
-    snapshot?.workOrder?.scheduledAt ? formatDateTimeLocal(snapshot.workOrder.scheduledAt) : undefined,
+    selectedWorkOrder?.scheduledAt ? formatDateTimeLocal(selectedWorkOrder.scheduledAt) : undefined,
   );
-  const resolvedTechnicianId = resolveField(workOrderForm.technicianId, snapshot?.workOrder?.technicianId);
+  const resolvedTechnicianId = resolveField(workOrderForm.technicianId, selectedWorkOrder?.technicianId);
 
   const canIssueOrder =
     effectiveMaterialStatus === "Pripravljeno" &&
@@ -339,7 +401,7 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
     resolvedTechnicianId;
 
   const handleIssueWorkOrder = async () => {
-    if (!canIssueOrder || issuingOrder) return;
+    if (!canIssueOrder || issuingOrder || !selectedWorkOrder) return;
     setIssuingOrder(true);
     setWorkOrderForm((prev) => ({ ...prev, status: "issued" }));
     const saved = await handleSaveWorkOrder(undefined, { status: "issued" });
@@ -502,7 +564,7 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
   };
 
   const headerWorkOrderStatus: WorkOrderStatus =
-    (workOrderForm.status as WorkOrderStatus) ?? (snapshot?.workOrder?.status as WorkOrderStatus) ?? "draft";
+    (workOrderForm.status as WorkOrderStatus) ?? (selectedWorkOrder?.status as WorkOrderStatus) ?? "draft";
 
   return (
     <div className="space-y-6">
@@ -629,12 +691,28 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
 
       <Card>
         <CardHeader className="flex flex-wrap items-center justify-between gap-4">
-          <CardTitle className="m-0">Delovni nalog</CardTitle>
-          {snapshot?.workOrder && (
-            <Select
-              value={headerWorkOrderStatus}
-              onValueChange={(value) => handleWorkOrderChange("status", value)}
-            >
+          <div className="flex flex-wrap items-center gap-3">
+            <CardTitle className="m-0">Delovni nalog</CardTitle>
+            {workOrders.length > 0 && (
+              <Select
+                value={selectedWorkOrder?._id ?? ""}
+                onValueChange={(id) => setSelectedWorkOrderId(id)}
+              >
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Izberi delovni nalog" />
+                </SelectTrigger>
+                <SelectContent>
+                  {workOrders.map((wo, index) => (
+                    <SelectItem key={wo._id} value={wo._id}>
+                      {wo.title || `Delovni nalog #${wo.sequence ?? index + 1}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+          {selectedWorkOrder && (
+            <Select value={headerWorkOrderStatus} onValueChange={(value) => handleWorkOrderChange("status", value)}>
               <SelectTrigger className="h-8 w-fit border border-input bg-background px-3 py-0 focus:ring-0">
                 <Badge variant="outline" className="uppercase text-xs tracking-wide px-3 py-1">
                   <SelectValue />
@@ -650,7 +728,7 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
             </Select>
           )}
         </CardHeader>
-        <CardContent>{renderWorkOrder(snapshot?.workOrder ?? null)}</CardContent>
+        <CardContent>{renderWorkOrder(selectedWorkOrder)}</CardContent>
       </Card>
     </div>
   );

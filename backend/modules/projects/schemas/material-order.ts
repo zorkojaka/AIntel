@@ -3,6 +3,7 @@ import { Schema, model, type Document } from 'mongoose';
 interface MaterialOrderDocument extends Document {
   projectId: string;
   offerVersionId: string;
+  workOrderId?: string;
   items: {
     id: string;
     productId: string | null;
@@ -35,6 +36,7 @@ const materialOrderSchema = new Schema<MaterialOrderDocument>(
   {
     projectId: { type: String, required: true, index: true },
     offerVersionId: { type: String, required: true, index: true },
+    workOrderId: { type: Schema.Types.ObjectId, ref: 'WorkOrder', required: false },
     items: { type: [materialItemSchema], default: [] },
     status: { type: String, enum: ['draft', 'ordered', 'received', 'cancelled'], default: 'draft' },
     materialStatus: {
