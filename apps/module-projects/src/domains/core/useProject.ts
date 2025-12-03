@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Template } from "../../components/TemplateEditor";
 import { ProjectDetails } from "../../types";
 
 export type UseProjectResult = {
