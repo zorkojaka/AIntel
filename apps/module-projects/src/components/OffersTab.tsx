@@ -37,7 +37,7 @@ const createEmptyItem = (): OfferLineItemForm => ({
   id: crypto.randomUUID(),
   productId: null,
   name: "",
-  quantity: 1,
+  quantity: 0,
   unit: "kos",
   unitPrice: 0,
   vatRate: 22,
@@ -46,6 +46,9 @@ const createEmptyItem = (): OfferLineItemForm => ({
   totalVat: 0,
   totalGross: 0,
 });
+
+const isEmptyOfferItem = (item: OfferLineItemForm) =>
+  !item.productId && (!item.name || item.name.trim() === "") && (!item.quantity || item.quantity === 0);
 
 const clampPositive = (value: unknown, fallback = 0) => {
   const parsed = Number(value);
@@ -103,7 +106,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
     setTitle("Ponudba");
     setPaymentTerms("");
     setIntroText("");
-    setItems([createEmptyItem()]);
+    setItems(ensureTrailingBlank([]));
     setActiveRowIndex(0);
     setGlobalDiscountPercent(0);
     setUseGlobalDiscount(false);
@@ -162,7 +165,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
         productId: item.productId ?? null,
       }));
 
-      setItems([...mapped, createEmptyItem()]);
+      setItems(ensureTrailingBlank([...mapped]));
     } catch (error) {
       console.error(error);
     }
@@ -219,13 +222,17 @@ export function OffersTab({ projectId }: OffersTabProps) {
   };
 
   const ensureTrailingBlank = (list: OfferLineItemForm[]) => {
-    const last = list[list.length - 1];
-    if (!last || isItemValid(last)) {
+    const trimmed = list.filter((item, index) => {
+      if (index === list.length - 1) return true;
+      return !isEmptyOfferItem(item);
+    });
+    const last = trimmed[trimmed.length - 1];
+    if (!last || !isEmptyOfferItem(last)) {
       const blank = createEmptyItem();
-      list.push(blank);
+      trimmed.push(blank);
       focusRowId.current = blank.id;
     }
-    return list;
+    return trimmed;
   };
 
   const updateItem = (id: string, changes: Partial<OfferLineItemForm>) => {
@@ -237,17 +244,15 @@ export function OffersTab({ projectId }: OffersTabProps) {
       const merged = { ...next[idx], ...changes };
       next[idx] = recalcItem(merged);
 
-      const last = next[next.length - 1];
-      const isLastFilled = last && isItemValid(last);
-      return isLastFilled ? [...next, createEmptyItem()] : next;
+      return ensureTrailingBlank(next);
     });
   };
 
   const deleteRow = (id: string) => {
     setItems((prev) => {
-      if (prev.length === 1) return [createEmptyItem()];
+      if (prev.length === 1) return ensureTrailingBlank([]);
       const filtered = prev.filter((item) => item.id !== id);
-      if (filtered.length === 0) return [createEmptyItem()];
+      if (filtered.length === 0) return ensureTrailingBlank([]);
       return ensureTrailingBlank(filtered);
     });
   };
@@ -309,7 +314,10 @@ export function OffersTab({ projectId }: OffersTabProps) {
     }, 300);
   }, [searchTerm, searchRowId]);
 
-  const validItems = useMemo(() => items.filter(isItemValid), [items]);
+  const validItems = useMemo(
+    () => items.filter((item) => !isEmptyOfferItem(item)).filter(isItemValid),
+    [items]
+  );
 
   const totals = useMemo(() => {
     const baseWithout = validItems.reduce(
@@ -405,6 +413,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
 
   const buildPayloadFromCurrentState = () => {
     const cleanItems = items
+      .filter((i) => !isEmptyOfferItem(i))
       .filter((i) => i.name.trim() !== "" && i.unitPrice > 0)
       .map((i) => ({
         id: i.id,

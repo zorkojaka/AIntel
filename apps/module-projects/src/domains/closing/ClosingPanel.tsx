@@ -1,84 +1,206 @@
-import { Button } from "../../components/ui/button";
+import { useMemo } from "react";
 import { Card } from "../../components/ui/card";
-import { Eye, FileText, Receipt } from "lucide-react";
-import { toast } from "sonner";
-import { TimelineFeed, TimelineEvent } from "../core/TimelineFeed";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
+import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
+import type { WorkOrder, WorkOrderItem } from "@aintel/shared/types/logistics";
 
 interface ClosingPanelProps {
-  events: TimelineEvent[];
-  onRefresh: () => void;
+  logistics?: ProjectLogistics | null;
 }
 
-export function ClosingPanel({ events, onRefresh }: ClosingPanelProps) {
+type AggregatedRow = {
+  key: string;
+  name: string;
+  unit: string;
+  offered: number;
+  executed: number;
+  difference: number;
+  type: "Osnovno" | "Dodatno" | "Manj";
+};
+
+const TYPE_ORDER: Record<AggregatedRow["type"], number> = {
+  Osnovno: 0,
+  Dodatno: 1,
+  Manj: 2,
+};
+
+const numberFormatter = new Intl.NumberFormat("sl-SI", {
+  maximumFractionDigits: 2,
+  minimumFractionDigits: 0,
+});
+
+function formatQuantity(value: number) {
+  return numberFormatter.format(value);
+}
+
+function buildAggregation(workOrders: WorkOrder[]): AggregatedRow[] {
+  const grouped = new Map<
+    string,
+    { name: string; unit: string; offered: number; executed: number; isExtraGroup: boolean }
+  >();
+
+  workOrders.forEach((order) => {
+    (order.items ?? []).forEach((item) => {
+      const offered = typeof item.offeredQuantity === "number" ? item.offeredQuantity : 0;
+      const executed = typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
+      const key =
+        item.offerItemId && item.offerItemId.length > 0
+          ? `offer:${item.offerItemId}`
+          : item.productId && item.productId.length > 0
+            ? `product:${item.productId}`
+            : `custom:${(item.name ?? "").trim()}::${(item.unit ?? "").trim()}`;
+      const current = grouped.get(key) ?? {
+        name: item.name ?? "",
+        unit: item.unit ?? "",
+        offered: 0,
+        executed: 0,
+        isExtraGroup: false,
+      };
+      grouped.set(key, {
+        name: current.name || item.name || "",
+        unit: current.unit || item.unit || "",
+        offered: current.offered + offered,
+        executed: current.executed + executed,
+        isExtraGroup:
+          current.isExtraGroup || !!item.isExtra || (item.offeredQuantity ?? 0) === 0,
+      });
+    });
+  });
+
+  return Array.from(grouped.entries())
+    .map(([key, entry]) => {
+      const difference = entry.executed - entry.offered;
+      let type: AggregatedRow["type"];
+      if (entry.isExtraGroup || entry.offered === 0) {
+        type = "Dodatno";
+      } else if (entry.executed < entry.offered) {
+        type = "Manj";
+      } else {
+        type = "Osnovno";
+      }
+      return {
+        key,
+        name: entry.name || "Neimenovana postavka",
+        unit: entry.unit || "-",
+        offered: entry.offered,
+        executed: entry.executed,
+        difference,
+        type,
+      };
+    })
+    .sort((a, b) => {
+      const typeDiff = TYPE_ORDER[a.type] - TYPE_ORDER[b.type];
+      if (typeDiff !== 0) return typeDiff;
+      return a.name.localeCompare(b.name, "sl-SI", { sensitivity: "base" });
+    });
+}
+
+function countExtras(items: WorkOrderItem[]) {
+  return items.filter((item) => item.isExtra || (item.offeredQuantity ?? 0) === 0).length;
+}
+
+function countUnderExecuted(items: WorkOrderItem[]) {
+  return items.filter(
+    (item) =>
+      typeof item.offeredQuantity === "number" &&
+      typeof item.executedQuantity === "number" &&
+      item.executedQuantity < item.offeredQuantity
+  ).length;
+}
+
+export function ClosingPanel({ logistics }: ClosingPanelProps) {
+  const workOrders = logistics?.workOrders ?? [];
+  const allItems = useMemo(
+    () => workOrders.flatMap((order) => order.items ?? []),
+    [workOrders]
+  );
+
+  const summary = useMemo(
+    () => ({
+      totalWorkOrders: workOrders.length,
+      totalItems: allItems.length,
+      totalExtras: countExtras(allItems),
+      totalLessExecuted: countUnderExecuted(allItems),
+    }),
+    [workOrders.length, allItems]
+  );
+
+  const aggregatedRows = useMemo(() => buildAggregation(workOrders), [workOrders]);
+
+  if (summary.totalWorkOrders === 0 || summary.totalItems === 0) {
+    return (
+      <Card className="p-6 text-center text-muted-foreground">
+        Zaključek še ni na voljo. Najprej dokončajte logistiko in izvedbo.
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <FileText className="w-5 h-5" />
-            <div>
-              <p className="m-0 font-medium">Ponudba</p>
-              <p className="text-sm text-muted-foreground m-0">v2 - potrjena</p>
-            </div>
-          </div>
-          <div className="mt-4 flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => toast.info("Pretvorjeno v delovni nalog")}>
-              Pretvori v DN
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => toast.info("Pretvorjeno v račun")}> 
-              Pretvori v račun
-            </Button>
-          </div>
+          <p className="text-sm text-muted-foreground">Št. delovnih nalogov</p>
+          <p className="text-2xl font-semibold">{summary.totalWorkOrders}</p>
         </Card>
         <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <Receipt className="w-5 h-5" />
-            <div>
-              <p className="m-0 font-medium">Naročilnica</p>
-              <p className="text-sm text-muted-foreground m-0">Aliansa d.o.o.</p>
-            </div>
-          </div>
-          <div className="mt-4 flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => toast.success("Naročilnica poslana")}>
-              Pošlji
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => toast.success("Prevzem potrjen")}>
-              Potrdi prevzem
-            </Button>
-          </div>
+          <p className="text-sm text-muted-foreground">Št. postavk skupaj</p>
+          <p className="text-2xl font-semibold">{summary.totalItems}</p>
         </Card>
         <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <FileText className="w-5 h-5" />
-            <div>
-              <p className="m-0 font-medium">Dobavnica</p>
-              <p className="text-sm text-muted-foreground m-0">Hotel Dolenjc</p>
-            </div>
-          </div>
-          <div className="mt-4 flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => toast.success("Dobavnica potrjena")}>
-              Potrdi
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => toast.info("Dobavnica poslana")}>
-              Pošlji
-            </Button>
-          </div>
+          <p className="text-sm text-muted-foreground">Št. dodatnih postavk</p>
+          <p className="text-2xl font-semibold">{summary.totalExtras}</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-sm text-muted-foreground">Št. postavk manj izvedenih</p>
+          <p className="text-2xl font-semibold">{summary.totalLessExecuted}</p>
         </Card>
       </div>
 
-      <div className="space-y-4">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h3 className="m-0">Zgodovina</h3>
-            <p className="text-sm text-muted-foreground m-0">Dogodki projekta in statusne spremembe</p>
-          </div>
-          <Button variant="outline" size="sm" onClick={onRefresh}>
-            <Eye className="w-4 h-4 mr-2" />
-            Osveži
-          </Button>
+      <Card className="p-4">
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold m-0">Predlog postavk za račun</h3>
+          <p className="text-sm text-muted-foreground m-0">
+            Predlog količin iz izvedenih del (brez cen).
+          </p>
         </div>
-        <TimelineFeed events={events} />
-      </div>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Naziv</TableHead>
+                <TableHead>Enota</TableHead>
+                <TableHead className="text-right">Ponujeno</TableHead>
+                <TableHead className="text-right">Izvedeno</TableHead>
+                <TableHead className="text-right">Razlika</TableHead>
+                <TableHead>Tip</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {aggregatedRows.map((row) => (
+                <TableRow key={row.key}>
+                  <TableCell className="font-medium">{row.name}</TableCell>
+                  <TableCell>{row.unit}</TableCell>
+                  <TableCell className="text-right">{formatQuantity(row.offered)}</TableCell>
+                  <TableCell className="text-right">{formatQuantity(row.executed)}</TableCell>
+                  <TableCell className="text-right">
+                    {row.difference > 0
+                      ? `+${formatQuantity(row.difference)}`
+                      : formatQuantity(row.difference)}
+                  </TableCell>
+                  <TableCell>{row.type}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
     </div>
   );
 }

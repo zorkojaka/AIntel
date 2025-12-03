@@ -34,6 +34,16 @@ export interface MaterialOrder {
 
 export type WorkOrderStatus = "draft" | "issued" | "in-progress" | "confirmed" | "completed";
 
+export interface WorkOrderItem extends LogisticsMaterialItem {
+  offerItemId?: string | null;
+  offeredQuantity: number;
+  plannedQuantity: number;
+  executedQuantity: number;
+  isExtra: boolean;
+  itemNote?: string | null;
+  isCompleted?: boolean;
+}
+
 export interface WorkOrder {
   _id: string;
   projectId: string;
@@ -41,7 +51,7 @@ export interface WorkOrder {
   sequence?: number | null;
   code?: string | null;
   title?: string | null;
-  items: LogisticsMaterialItem[];
+  items: WorkOrderItem[];
   status: WorkOrderStatus;
   scheduledAt: string | null;
   technicianName?: string;

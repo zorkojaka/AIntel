@@ -27,6 +27,7 @@ interface LogisticsPanelProps {
     postalCode?: string | null;
     postalCity?: string | null;
   } | null;
+  onWorkOrderUpdated?: (workOrder: LogisticsWorkOrder) => void;
 }
 
 const workOrderStatusOptions: WorkOrderStatus[] = ["draft", "issued", "in-progress", "confirmed", "completed"];
@@ -84,13 +85,6 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat("sl-SI", { style: "currency", currency: "EUR" }).format(value);
 }
 
-function formatDateTimeLocal(value: string | null | undefined) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return "";
-  return date.toISOString().slice(0, 16);
-}
-
 type LogisticsClient = NonNullable<LogisticsPanelProps["client"]>;
 
 function formatClientAddress(client?: LogisticsClient | null) {
@@ -114,7 +108,7 @@ function buildOfferLabel(offer: ProjectLogisticsSnapshot["offerVersions"][number
   return `${baseLabel}${totalLabel}`;
 }
 
-export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
+export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: LogisticsPanelProps) {
   const [snapshot, setSnapshot] = useState<ProjectLogisticsSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -236,7 +230,7 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
     if (selectedWorkOrder) {
       setWorkOrderForm({
         ...selectedWorkOrder,
-        scheduledAt: selectedWorkOrder.scheduledAt ? formatDateTimeLocal(selectedWorkOrder.scheduledAt) : "",
+        scheduledAt: selectedWorkOrder.scheduledAt ?? "",
       });
     } else {
       setWorkOrderForm({});
@@ -359,7 +353,7 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           workOrderId: selectedWorkOrder._id,
-          scheduledAt: workOrderForm.scheduledAt ? new Date(workOrderForm.scheduledAt as string).toISOString() : null,
+          scheduledAt: typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : null,
           technicianName: workOrderForm.technicianName ?? "",
           technicianId: workOrderForm.technicianId ?? "",
           location: workOrderForm.location ?? "",
@@ -423,8 +417,11 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
       }
       setWorkOrderForm({
         ...mergedWorkOrder,
-        scheduledAt: formatDateTimeLocal(mergedWorkOrder.scheduledAt),
+        scheduledAt: mergedWorkOrder.scheduledAt ?? "",
       });
+      if (onWorkOrderUpdated) {
+        onWorkOrderUpdated(mergedWorkOrder);
+      }
       toast.success("Delovni nalog posodobljen.");
       return true;
     } catch (error) {
@@ -447,7 +444,7 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
   const resolvedCustomerPhone = resolveField(workOrderForm.customerPhone, selectedWorkOrder?.customerPhone);
   const resolvedSchedule = resolveField(
     typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : undefined,
-    selectedWorkOrder?.scheduledAt ? formatDateTimeLocal(selectedWorkOrder.scheduledAt) : undefined,
+    selectedWorkOrder?.scheduledAt ?? undefined,
   );
   const resolvedTechnicianId = resolveField(workOrderForm.technicianId, selectedWorkOrder?.technicianId);
 
@@ -465,28 +462,10 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
     setIssuingOrder(true);
     setWorkOrderForm((prev) => ({ ...prev, status: "issued" }));
     const saved = await handleSaveWorkOrder(undefined, { status: "issued" });
-    if (!saved) {
-      setIssuingOrder(false);
-      return;
+    if (saved) {
+      toast.success("Delovni nalog izdan.");
     }
-    try {
-      const response = await fetch(`/api/projects/${projectId}/status`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "in-progress" }),
-      });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Status projekta ni bilo mogoče posodobiti.");
-        return;
-      }
-      toast.success("Nalog izdan in projekt v izvedbi.");
-      await fetchSnapshot();
-    } catch (error) {
-      toast.error("Status projekta ni bilo mogoče posodobiti.");
-    } finally {
-      setIssuingOrder(false);
-    }
+    setIssuingOrder(false);
   };
 
   const renderWorkOrder = (workOrder: LogisticsWorkOrder | null) => {
@@ -596,7 +575,7 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
             onClick={handleIssueWorkOrder}
             disabled={!canIssueOrder || savingWorkOrder || issuingOrder}
           >
-            {issuingOrder ? "Dokončujem..." : "Dokončaj naročilo"}
+            {issuingOrder ? "Izdajam..." : "Izdaj nalog"}
           </Button>
         </div>
         <div className="border rounded-[var(--radius-card)] bg-card overflow-hidden">
@@ -827,3 +806,4 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
     </div>
   );
 }
+

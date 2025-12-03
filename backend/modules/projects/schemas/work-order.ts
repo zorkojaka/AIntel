@@ -1,21 +1,30 @@
 import { Schema, model, type Document } from 'mongoose';
 
+interface WorkOrderItem {
+  id: string;
+  productId: string | null;
+  name: string;
+  quantity: number;
+  unit: string;
+  note?: string;
+  offerItemId?: string | null;
+  offeredQuantity: number;
+  plannedQuantity: number;
+  executedQuantity: number;
+  isExtra: boolean;
+  itemNote?: string | null;
+  isCompleted?: boolean;
+}
+
 interface WorkOrderDocument extends Document {
   projectId: string;
   offerVersionId: string;
   sequence?: number;
   code?: string;
   title?: string;
-  items: {
-    id: string;
-    productId: string | null;
-    name: string;
-    quantity: number;
-    unit: string;
-    note?: string;
-  }[];
+  items: WorkOrderItem[];
   status: 'draft' | 'issued' | 'in-progress' | 'confirmed' | 'completed';
-  scheduledAt: Date | null;
+  scheduledAt: string | null;
   technicianName?: string;
   technicianId?: string;
   location?: string;
@@ -29,7 +38,7 @@ interface WorkOrderDocument extends Document {
   executionNote?: string | null;
 }
 
-const workOrderItemSchema = new Schema(
+const workOrderItemSchema = new Schema<WorkOrderItem>(
   {
     id: { type: String, required: true },
     productId: { type: String, default: null },
@@ -37,6 +46,13 @@ const workOrderItemSchema = new Schema(
     quantity: { type: Number, required: true },
     unit: { type: String, required: true },
     note: { type: String },
+    offerItemId: { type: String, default: null },
+    offeredQuantity: { type: Number, required: true, default: 0 },
+    plannedQuantity: { type: Number, required: true, default: 0 },
+    executedQuantity: { type: Number, required: true, default: 0 },
+    isExtra: { type: Boolean, required: true, default: false },
+    itemNote: { type: String, default: null },
+    isCompleted: { type: Boolean, default: false },
   },
   { _id: false }
 );
@@ -54,7 +70,7 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
       enum: ['draft', 'issued', 'in-progress', 'confirmed', 'completed'],
       default: 'draft',
     },
-    scheduledAt: { type: Date, default: null },
+    scheduledAt: { type: String, default: null },
     technicianName: { type: String },
     technicianId: { type: String },
     location: { type: String },

@@ -6,7 +6,6 @@ import type { Item } from "../domains/requirements/ItemsTable";
 import { OfferVersion } from "../domains/offers/OfferVersionCard";
 import type { WorkOrder as LogisticsWorkOrder } from "@aintel/shared/types/logistics";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
-import type { TimelineEvent } from "../domains/core/TimelineFeed";
 import { Template } from "./TemplateEditor";
 import { renderTemplate, openPreview, downloadHTML } from "../domains/offers/TemplateRenderer";
 import { FileText, FolderOpen, Package, Wrench } from "lucide-react";
@@ -82,7 +81,6 @@ export function ProjectWorkspace({
     description: "",
     productId: "",
   });
-  const [timeline, setTimeline] = useState<TimelineEvent[]>(project?.timelineEvents ?? []);
   const [status, setStatus] = useState(project?.status ?? "draft");
   const [requirementsText, setRequirementsText] = useState(project?.requirementsText ?? "");
   const [requirements, setRequirements] = useState<RequirementRow[]>(() =>
@@ -217,7 +215,6 @@ export function ProjectWorkspace({
     setOffers(project.offers);
     setActiveOffer(null);
     setOfferItems([]);
-    setTimeline(project.timelineEvents);
     setStatus(project.status);
     setRequirements(Array.isArray(project.requirements) ? project.requirements : []);
     setRequirementsText(project.requirementsText ?? "");
@@ -317,7 +314,6 @@ export function ProjectWorkspace({
     }));
     setItems(updated.items);
     setOffers(updated.offers);
-    setTimeline(updated.timelineEvents);
     setStatus(updated.status);
     setRequirements(updated.requirements ?? []);
     setRequirementsText(updated.requirementsText ?? "");
@@ -826,7 +822,7 @@ export function ProjectWorkspace({
   };
 
   const handleWorkOrderUpdated = useCallback(
-    (updatedWorkOrder: LogisticsWorkOrder) => {
+    async (updatedWorkOrder: LogisticsWorkOrder) => {
       setProject((prev) => {
         const previousLogistics = prev.logistics ?? null;
         const existingWorkOrders = previousLogistics?.workOrders ?? [];
@@ -851,8 +847,9 @@ export function ProjectWorkspace({
           logistics: nextLogistics,
         };
       });
+      await refresh();
     },
-    [setProject]
+    [setProject, refresh]
   );
 
   const handleMarkOfferAsSelected = async (offerId: string) => {
@@ -1153,7 +1150,7 @@ export function ProjectWorkspace({
                 </TabsContent>
 
                 <TabsContent value="closing" className="mt-0 space-y-4">
-                  <ClosingPanel events={timeline} onRefresh={refresh} />
+                  <ClosingPanel logistics={project?.logistics} />
                 </TabsContent>
               </Tabs>
             </div>

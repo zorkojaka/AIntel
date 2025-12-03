@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import { Types } from 'mongoose';
 import type { MaterialOrder, ProjectLogisticsSnapshot, WorkOrder } from '../../../../shared/types/logistics';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { ProjectModel, addTimeline } from '../schemas/project';
@@ -56,28 +57,49 @@ function calculateOfferTotalsFromSnapshot(offer: {
 
 const MATERIAL_STATUS_VALUES = ['Za naročit', 'Naročeno', 'Prevzeto', 'Pripravljeno', 'Dostavljeno', 'Zmontirano'];
 
-function serializeDate(value: Date | string | null | undefined) {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.valueOf()) ? null : date.toISOString();
-}
-
 function mapOfferItemsToLogistics(items: OfferLineItem[]) {
-  return items.map((item) => ({
-    id: item.id,
-    productId: item.productId ?? null,
-    name: item.name,
-    quantity: item.quantity,
-    unit: item.unit,
-  }));
+  return items.map((item) => {
+    const note = (item as any).note;
+    return {
+      id: item.id,
+      productId: item.productId ?? null,
+      name: item.name,
+      quantity: item.quantity,
+      unit: item.unit,
+      note,
+    };
+  });
 }
 
 type LogisticsItems = ReturnType<typeof mapOfferItemsToLogistics>;
 
+function mapOfferItemsToWorkOrderItems(items: OfferLineItem[]) {
+  return items.map((item) => {
+    const quantity = typeof item.quantity === 'number' ? item.quantity : 0;
+    const generatedId = item.id ?? new Types.ObjectId().toString();
+    const note = (item as any).note ?? undefined;
+    return {
+      id: generatedId,
+      productId: item.productId ?? null,
+      name: item.name,
+      quantity,
+      unit: item.unit,
+      note,
+      offerItemId: item.id ?? null,
+      offeredQuantity: quantity,
+      plannedQuantity: quantity,
+      executedQuantity: quantity,
+      isExtra: false,
+      itemNote: null,
+      isCompleted: false,
+    };
+  });
+}
+
 async function ensureWorkOrderForOffer(params: {
   projectId: string;
   offerId: string;
-  items: LogisticsItems;
+  items: ReturnType<typeof mapOfferItemsToWorkOrderItems>;
   customerName: string;
   customerEmail: string;
   customerPhone: string;
@@ -170,15 +192,25 @@ function serializeMaterialOrder(order: any): MaterialOrder | null {
       quantity: item.quantity,
       unit: item.unit,
       note: item.note,
+      offerItemId: item.offerItemId ?? null,
+      offeredQuantity:
+        typeof item.offeredQuantity === 'number' ? item.offeredQuantity : Number(item.quantity) || 0,
+      plannedQuantity:
+        typeof item.plannedQuantity === 'number' ? item.plannedQuantity : Number(item.quantity) || 0,
+      executedQuantity:
+        typeof item.executedQuantity === 'number' ? item.executedQuantity : Number(item.quantity) || 0,
+      isExtra: !!item.isExtra,
+      itemNote: typeof item.itemNote === 'string' ? item.itemNote : null,
+      isCompleted: !!item.isCompleted,
     })),
     status: order.status,
     materialStatus: order.materialStatus ?? 'Za naročit',
     technicianId: order.technicianId ?? null,
     technicianName: order.technicianName ?? null,
-    cancelledAt: serializeDate(order.cancelledAt),
+    cancelledAt: order.cancelledAt ? new Date(order.cancelledAt).toISOString() : null,
     reopened: !!order.reopened,
-    createdAt: serializeDate(order.createdAt) ?? '',
-    updatedAt: serializeDate(order.updatedAt) ?? '',
+    createdAt: order.createdAt ? new Date(order.createdAt).toISOString() : '',
+    updatedAt: order.updatedAt ? new Date(order.updatedAt).toISOString() : '',
   };
 }
 
@@ -200,7 +232,7 @@ function serializeWorkOrder(order: any): WorkOrder | null {
       note: item.note,
     })),
     status: order.status,
-    scheduledAt: serializeDate(order.scheduledAt),
+    scheduledAt: order.scheduledAt ?? null,
     technicianName: order.technicianName,
     technicianId: order.technicianId,
     location: order.location,
@@ -210,10 +242,10 @@ function serializeWorkOrder(order: any): WorkOrder | null {
     customerPhone: order.customerPhone ?? '',
     customerAddress: order.customerAddress ?? '',
     executionNote: typeof order.executionNote === 'string' ? order.executionNote : null,
-    cancelledAt: serializeDate(order.cancelledAt),
+    cancelledAt: order.cancelledAt ? new Date(order.cancelledAt).toISOString() : null,
     reopened: !!order.reopened,
-    createdAt: serializeDate(order.createdAt) ?? '',
-    updatedAt: serializeDate(order.updatedAt) ?? '',
+    createdAt: order.createdAt ? new Date(order.createdAt).toISOString() : '',
+    updatedAt: order.updatedAt ? new Date(order.updatedAt).toISOString() : '',
   };
 }
 
@@ -317,7 +349,9 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       { new: true }
     );
 
-    const logisticsItems = mapOfferItemsToLogistics(offer.items || []);
+    const offerItems = offer.items || [];
+    const logisticsItems = mapOfferItemsToLogistics(offerItems);
+    const workOrderItems = mapOfferItemsToWorkOrderItems(offerItems);
     const customerName = project.customer?.name ?? projectClient?.name ?? '';
     const customerEmail = projectClient?.email ?? '';
     const customerPhone = projectClient?.phone ?? '';
@@ -326,7 +360,7 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
     const workOrder = await ensureWorkOrderForOffer({
       projectId,
       offerId,
-      items: logisticsItems,
+      items: workOrderItems,
       customerName,
       customerEmail,
       customerPhone,
@@ -483,7 +517,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     const updates: Record<string, unknown> = {};
 
     if ('scheduledAt' in payload) {
-      updates.scheduledAt = payload.scheduledAt ? new Date(payload.scheduledAt) : null;
+      updates.scheduledAt = typeof payload.scheduledAt === 'string' ? payload.scheduledAt : null;
     }
     if ('technicianName' in payload) updates.technicianName = payload.technicianName;
     if ('technicianId' in payload) updates.technicianId = payload.technicianId;
@@ -495,6 +529,76 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           ? payload.executionNote
           : payload.executionNote ?? null;
     }
+    if (Array.isArray(payload.items)) {
+      const currentItems =
+        Array.isArray(existing.items) && existing.items.length > 0
+          ? existing.items.map((item: any) => ({ ...(item.toObject ? item.toObject() : item) }))
+          : [];
+      const nextItems = [...currentItems];
+      const resolveItemId = (incoming: any) =>
+        typeof incoming.id === 'string'
+          ? incoming.id
+          : typeof incoming._id === 'string'
+            ? incoming._id
+            : null;
+      payload.items.forEach((incoming: any) => {
+        const targetId = resolveItemId(incoming);
+        if (targetId) {
+          const target = nextItems.find((item) => String(item.id) === targetId);
+          if (target) {
+            if (typeof incoming.name === 'string') target.name = incoming.name;
+            if (typeof incoming.unit === 'string') target.unit = incoming.unit;
+            if (typeof incoming.note === 'string' || incoming.note === null) target.note = incoming.note ?? '';
+            if (typeof incoming.itemNote === 'string' || incoming.itemNote === null) {
+              target.itemNote = incoming.itemNote ?? null;
+            }
+            if (typeof incoming.plannedQuantity === 'number') {
+              target.plannedQuantity = incoming.plannedQuantity;
+              target.quantity = incoming.plannedQuantity;
+            }
+            if (typeof incoming.executedQuantity === 'number') {
+              target.executedQuantity = incoming.executedQuantity;
+            }
+            if (typeof incoming.isExtra === 'boolean') {
+              target.isExtra = incoming.isExtra;
+            }
+            if (typeof incoming.isCompleted === 'boolean') {
+              target.isCompleted = incoming.isCompleted;
+            }
+            if (typeof incoming.offerItemId === 'string' || incoming.offerItemId === null) {
+              target.offerItemId = incoming.offerItemId ?? null;
+            }
+            return;
+          }
+        }
+        const planned = typeof incoming.plannedQuantity === 'number' ? incoming.plannedQuantity : 0;
+        const executed =
+          typeof incoming.executedQuantity === 'number' ? incoming.executedQuantity : planned;
+        const offered = typeof incoming.offeredQuantity === 'number' ? incoming.offeredQuantity : 0;
+          const newItemId =
+            typeof incoming.id === 'string'
+              ? incoming.id
+              : typeof incoming._id === 'string'
+                ? incoming._id
+                : `extra-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          nextItems.push({
+            id: newItemId,
+            productId: incoming.productId ?? null,
+            name: incoming.name ?? 'Dodatna postavka',
+            quantity: planned,
+            unit: incoming.unit ?? '',
+            note: incoming.note ?? '',
+            offerItemId: incoming.offerItemId ?? null,
+            offeredQuantity: offered,
+            plannedQuantity: planned,
+            executedQuantity: executed,
+            isExtra: incoming.isExtra !== undefined ? !!incoming.isExtra : true,
+            itemNote: typeof incoming.itemNote === 'string' ? incoming.itemNote : null,
+            isCompleted: typeof incoming.isCompleted === 'boolean' ? incoming.isCompleted : false,
+          });
+        });
+        updates.items = nextItems;
+      }
     if (
       payload.status === 'draft' ||
       payload.status === 'issued' ||
