@@ -11,8 +11,8 @@ export interface LogisticsMaterialItem {
 
 export type MaterialStatus =
   | "Preklicano"
-  | "Za naro?it"
-  | "Naro?eno"
+  | "Za naročit"
+  | "Naročeno"
   | "Prevzeto"
   | "Pripravljeno";
 

@@ -1,7 +1,7 @@
 import { Template } from "./components/TemplateEditor";
-import { Item } from "./components/ItemsTable";
-import { OfferVersion } from "./components/OfferVersionCard";
-import { WorkOrder } from "./components/WorkOrderCard";
+import { Item } from "./domains/requirements/ItemsTable";
+import { OfferVersion } from "./domains/offers/OfferVersionCard";
+import { WorkOrder } from "./domains/execution/WorkOrderCard";
 import { TimelineEvent } from "./components/TimelineFeed";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
 
