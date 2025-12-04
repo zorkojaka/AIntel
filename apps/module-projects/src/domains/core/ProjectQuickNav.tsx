@@ -31,6 +31,17 @@ export function ProjectQuickNav({ project, activeStep, onSelectStep }: ProjectQu
     <nav className="space-y-1">
       {steps.map((step) => {
         const isActive = step.key === activeStep;
+        const metaText = typeof step.meta === "string" ? step.meta.trim() : "";
+        const logisticsSummary = step.key === "logistics" ? step.logisticsSummary : undefined;
+        const circleClass =
+          logisticsSummary != null
+            ? logisticsSummary.done
+              ? statusStyles.done
+              : logisticsSummary.material.level === "none" && logisticsSummary.workOrder.level === "none"
+                ? statusStyles.pending
+                : statusStyles.inProgress
+            : statusStyles[step.status];
+
         return (
           <button
             key={step.key}
@@ -41,7 +52,7 @@ export function ProjectQuickNav({ project, activeStep, onSelectStep }: ProjectQu
             }`}
           >
             <span
-              className={`flex h-7 w-7 items-center justify-center rounded-full border border-white/40 shadow-sm ${statusStyles[step.status]} ${
+              className={`flex h-7 w-7 items-center justify-center rounded-full border border-white/40 shadow-sm ${circleClass} ${
                 isActive ? "ring-2 ring-primary/50" : ""
               }`}
             >
@@ -49,11 +60,18 @@ export function ProjectQuickNav({ project, activeStep, onSelectStep }: ProjectQu
             </span>
             <div className="flex-1">
               <div className="font-medium">{step.label}</div>
-              {step.meta && (
-                <div className={`text-xs ${isActive ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                  {step.meta}
+              {logisticsSummary ? (
+                <div className={`text-xs ${isActive ? "text-primary-foreground/80" : "text-muted-foreground"} space-y-0.5`}>
+                  <div>
+                    Material: <span className="font-medium">{logisticsSummary.material.label}</span>
+                  </div>
+                  <div>
+                    Nalog: <span className="font-medium">{logisticsSummary.workOrder.label}</span>
+                  </div>
                 </div>
-              )}
+              ) : metaText ? (
+                <div className={`text-xs ${isActive ? "text-primary-foreground/80" : "text-muted-foreground"}`}>{metaText}</div>
+              ) : null}
             </div>
           </button>
         );

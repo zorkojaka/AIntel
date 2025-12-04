@@ -67,7 +67,6 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [introText, setIntroText] = useState<string>("");
 
   const [currentOffer, setCurrentOffer] = useState<OfferVersion | null>(null);
-  const [activeRowIndex, setActiveRowIndex] = useState(0);
 
   const [globalDiscountPercent, setGlobalDiscountPercent] = useState<number>(0);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
@@ -89,8 +88,6 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [downloading, setDownloading] = useState(false);
   const [sending, setSending] = useState(false);
 
-  const nameInputs = useRef<Record<string, HTMLInputElement | null>>({});
-  const focusRowId = useRef<string | null>(null);
 
   const [versions, setVersions] = useState<OfferVersionSummary[]>([]);
   const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
@@ -101,7 +98,6 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     setPaymentTerms("");
     setIntroText("");
     setItems(ensureTrailingBlank([]));
-    setActiveRowIndex(0);
     setGlobalDiscountPercent(0);
     setUseGlobalDiscount(false);
     setUsePerItemDiscount(false);
@@ -268,7 +264,6 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     if (!last || !isEmptyOfferItem(last)) {
       const blank = createEmptyItem();
       trimmed.push(blank);
-      focusRowId.current = blank.id;
     }
     return trimmed;
   };
@@ -294,24 +289,6 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
       return ensureTrailingBlank(filtered);
     });
   };
-
-  useEffect(() => {
-    if (!focusRowId.current) return;
-    const target = nameInputs.current[focusRowId.current];
-    if (target) {
-      target.focus();
-      focusRowId.current = null;
-    }
-  }, [items]);
-
-  useEffect(() => {
-    const target = items[activeRowIndex];
-    if (!target) return;
-    const input = nameInputs.current[target.id];
-    if (input) {
-      input.focus();
-    }
-  }, [activeRowIndex, items]);
 
 
 
@@ -402,7 +379,6 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
       vatRate: product.vatRate ?? 22,
     });
 
-    setActiveRowIndex(rowIndex + 1);
   };
 
   const handleSelectCustomItem = (rowId: string) => {
@@ -747,8 +723,6 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
                   <PriceListProductAutocomplete
                     value={item.name}
                     placeholder="Naziv ali iskanje v ceniku"
-                    autoFocus={index === activeRowIndex}
-                    inputRef={(node) => (nameInputs.current[item.id] = node)}
                     inputClassName="text-left"
                     onChange={(name) => {
                       updateItem(item.id, { name, productId: null });

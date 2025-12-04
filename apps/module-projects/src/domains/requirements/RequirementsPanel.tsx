@@ -569,7 +569,7 @@ export function RequirementsPanel({
                 </div>
                 <div className="h-[340px] overflow-y-auto p-3 space-y-2">
                   {filteredCatalog.length === 0 && (
-                    <div className="text-center text-sm text-muted-foreground">Ni zadetkov</div>
+                    <div className="text-center text-sm text-muted-foreground">Ni zadetkov!!</div>
                   )}
                   {filteredCatalog.map((product) => (
                     <Card
