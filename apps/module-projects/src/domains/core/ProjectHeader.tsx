@@ -14,11 +14,11 @@ export type ProjectHeaderProps = {
 
 export function ProjectHeader({ project, status, onStatusChange, onBack, onRefresh }: ProjectHeaderProps) {
   return (
-    <div className="border-b bg-card sticky top-0 z-10">
+    <div className="border-b bg-card">
       <div className="max-w-[1280px] mx-auto px-6 py-4">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={onBack}>
+            <Button variant="ghost" size="icon" onClick={onBack} aria-label="Nazaj na projekte">
               <ArrowLeft className="w-4 h-4" />
             </Button>
             <div>
@@ -55,7 +55,8 @@ export function ProjectHeader({ project, status, onStatusChange, onBack, onRefre
               <p className="text-sm text-muted-foreground m-0">ID: {project.id}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={onRefresh}>
               <Save className="w-4 h-4 mr-2" />
               Osveži

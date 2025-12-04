@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Card } from "./ui/card";
@@ -8,7 +8,6 @@ import type { WorkOrder as LogisticsWorkOrder } from "@aintel/shared/types/logis
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import { Template } from "./TemplateEditor";
 import { renderTemplate, openPreview, downloadHTML } from "../domains/offers/TemplateRenderer";
-import { FileText, FolderOpen, Package, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectDetails, ProjectOffer, ProjectOfferItem, OfferCandidate } from "../types";
 import { fetchOfferCandidates, fetchProductsByCategories, fetchRequirementVariants, type ProductLookup } from "../api";
@@ -16,6 +15,8 @@ import type { ProjectRequirement } from "@aintel/shared/types/project";
 import { LogisticsPanel } from "../domains/logistics/LogisticsPanel";
 import { useProject } from "../domains/core/useProject";
 import { ProjectHeader } from "../domains/core/ProjectHeader";
+import { ProjectQuickNav } from "../domains/core/ProjectQuickNav";
+import type { StepKey } from "../domains/core/useProjectTimeline";
 import {
   RequirementsPanel,
   ItemFormState,
@@ -65,6 +66,7 @@ export function ProjectWorkspace({
 }: ProjectWorkspaceProps) {
   const { project, loading, error, refresh, setProject } = useProject(projectId, initialProject ?? null);
   const [activeTab, setActiveTab] = useState("items");
+  const [overrideStep, setOverrideStep] = useState<StepKey | null>(null);
   const [items, setItems] = useState<Item[]>(project?.items ?? []);
   const [offers, setOffers] = useState<OfferVersion[]>(project?.offers ?? []);
   const [activeOffer, setActiveOffer] = useState<ProjectOffer | null>(null);
@@ -124,6 +126,23 @@ export function ProjectWorkspace({
   const [variantLoading, setVariantLoading] = useState(false);
   const [selectedVariantSlug, setSelectedVariantSlug] = useState<string>(project?.requirementsTemplateVariantSlug ?? "");
   const showVariantWizard = variantOptions.length > 0 && !project?.requirementsTemplateVariantSlug;
+  const [offersRefreshKey, setOffersRefreshKey] = useState(0);
+  const invoiceSectionRef = useRef<HTMLDivElement | null>(null);
+  const stepByTab: Record<string, StepKey> = {
+    items: "requirements",
+    offers: "offers",
+    logistics: "logistics",
+    execution: "execution",
+    closing: "invoice",
+  };
+  const tabByStep: Record<StepKey, string> = {
+    requirements: "items",
+    offers: "offers",
+    logistics: "logistics",
+    execution: "execution",
+    invoice: "closing",
+  };
+  const activeQuickStep: StepKey = overrideStep ?? stepByTab[activeTab] ?? "requirements";
 
   const basePath = project ? `/api/projects/${project.id}` : "";
   const isExecutionPhase = status === "ordered" || status === "in-progress" || status === "completed";
@@ -253,6 +272,15 @@ export function ProjectWorkspace({
     };
     loadVariants();
   }, [project, selectedVariantSlug]);
+
+  useEffect(() => {
+    if (overrideStep === "invoice" && activeTab === "closing") {
+      return;
+    }
+    if (overrideStep !== null) {
+      setOverrideStep(null);
+    }
+  }, [activeTab, overrideStep]);
 
   useEffect(() => {
     if (!basePath) return;
@@ -809,6 +837,7 @@ export function ProjectWorkspace({
     if (updated) {
       toast.success("Ponudba potrjena! Ustvarjene naročilnice, delovni nalog in dobavnice.");
       setActiveTab("logistics");
+      setOffersRefreshKey((key) => key + 1);
     }
   };
 
@@ -818,7 +847,25 @@ export function ProjectWorkspace({
       body: JSON.stringify({ offerVersionId: offerId }),
     });
     applyProjectUpdate(updated);
-    if (updated) toast.info("Potrditev ponudbe preklicana");
+    if (updated) {
+      toast.info("Potrditev ponudbe preklicana");
+      setOffersRefreshKey((key) => key + 1);
+    }
+  };
+
+  const handleNavigateStep = (step: StepKey) => {
+    if (step === "invoice") {
+      setOverrideStep("invoice");
+    } else {
+      setOverrideStep(null);
+    }
+    const targetTab = tabByStep[step] ?? "items";
+    setActiveTab(targetTab);
+    if (step === "invoice") {
+      requestAnimationFrame(() => {
+        invoiceSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
   };
 
   const handleWorkOrderUpdated = useCallback(
@@ -1008,55 +1055,9 @@ export function ProjectWorkspace({
                 <p className="text-sm text-muted-foreground">{requirementsText}</p>
               </Card>
 
-              <Card className="p-4">
+                            <Card className="p-4">
                 <h4 className="mb-3 text-sm">Hitra navigacija</h4>
-                <nav className="space-y-1">
-                  <button
-                    onClick={() => setActiveTab("items")}
-                    className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                      activeTab === "items" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                    }`}
-                  >
-                    <FileText className="w-4 h-4" />
-                    Zahteve
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("offers")}
-                    className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                      activeTab === "offers" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                    }`}
-                  >
-                    <FileText className="w-4 h-4" />
-                    Ponudbe
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("logistics")}
-                    className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                      activeTab === "logistics" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                    }`}
-                  >
-                    <Package className="w-4 h-4" />
-                    Logistika
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("execution")}
-                    className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                      activeTab === "execution" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                    }`}
-                  >
-                    <Wrench className="w-4 h-4" />
-                    Izvedba
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("closing")}
-                    className={`w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors ${
-                      activeTab === "closing" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                    }`}
-                  >
-                    <FolderOpen className="w-4 h-4" />
-                    Zaključek
-                  </button>
-                </nav>
+                <ProjectQuickNav project={project} activeStep={activeQuickStep} onSelectStep={handleNavigateStep} />
               </Card>
             </div>
 
@@ -1067,7 +1068,7 @@ export function ProjectWorkspace({
                   <TabsTrigger value="offers">Ponudbe</TabsTrigger>
                   <TabsTrigger value="logistics">Logistika</TabsTrigger>
                   <TabsTrigger value="execution">Izvedba</TabsTrigger>
-                  <TabsTrigger value="closing">Zaključek</TabsTrigger>
+                  <TabsTrigger value="closing">Račun</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="items" className="mt-0 space-y-4">
@@ -1133,7 +1134,7 @@ export function ProjectWorkspace({
                 </TabsContent>
 
                 <TabsContent value="offers" className="mt-0 space-y-4">
-                  <OffersPanel project={project} refreshProject={refresh} />
+                  <OffersPanel project={project} refreshKey={offersRefreshKey} />
                 </TabsContent>
 
                 <TabsContent value="logistics" className="mt-0 space-y-6">
@@ -1150,7 +1151,9 @@ export function ProjectWorkspace({
                 </TabsContent>
 
                 <TabsContent value="closing" className="mt-0 space-y-4">
-                  <ClosingPanel logistics={project?.logistics} />
+                  <div ref={invoiceSectionRef}>
+                    <ClosingPanel logistics={project?.logistics} />
+                  </div>
                 </TabsContent>
               </Tabs>
             </div>

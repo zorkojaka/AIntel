@@ -245,6 +245,8 @@ export function ProjectsPage() {
       if (project.id === selectedProjectId) {
         setSelectedProjectId(null);
         setProjectDetails(null);
+        setTemplates([]);
+        setCurrentView("list");
       }
     } catch (error) {
       toast.error("Napaka pri brisanju projekta.");

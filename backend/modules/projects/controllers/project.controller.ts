@@ -19,6 +19,9 @@ import { generateRequirementsFromTemplates } from '../services/requirements-from
 import type { RequirementFieldType, RequirementFormulaConfig } from '../../shared/requirements.types';
 import { getOfferCandidatesFromRequirements } from '../services/offer-from-requirements';
 import { serializeProjectDetails } from '../services/project.service';
+import { OfferVersionModel } from '../schemas/offer-version';
+import { MaterialOrderModel } from '../schemas/material-order';
+import { WorkOrderModel } from '../schemas/work-order';
 
 function normalizeSlug(value: string) {
   return value
@@ -849,5 +852,10 @@ export async function deleteProject(req: Request, res: Response) {
   if (!deleted) {
     return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
   }
+  await Promise.all([
+    OfferVersionModel.deleteMany({ projectId: deleted.id }),
+    MaterialOrderModel.deleteMany({ projectId: deleted.id }),
+    WorkOrderModel.deleteMany({ projectId: deleted.id }),
+  ]);
   return res.success({ id: deleted.id });
 }

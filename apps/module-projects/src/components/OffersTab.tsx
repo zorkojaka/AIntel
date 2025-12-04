@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
@@ -17,6 +17,7 @@ import { Checkbox } from "./ui/checkbox";
 
 type OffersTabProps = {
   projectId: string;
+  refreshKey?: number;
 };
 
 type OfferLineItemForm = {
@@ -59,7 +60,7 @@ const clampPositive = (value: unknown, fallback = 0) => {
 const isItemValid = (item: OfferLineItem | OfferLineItemForm) =>
   item.name.trim() !== "" && item.unitPrice > 0;
 
-export function OffersTab({ projectId }: OffersTabProps) {
+export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [items, setItems] = useState<OfferLineItemForm[]>([createEmptyItem()]);
 
   const [title, setTitle] = useState("Ponudba");
@@ -101,7 +102,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
   const [versions, setVersions] = useState<OfferVersionSummary[]>([]);
   const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
 
-  const resetToEmptyOffer = () => {
+  const resetToEmptyOffer = useCallback(() => {
     setSelectedOfferId(null);
     setTitle("Ponudba");
     setPaymentTerms("");
@@ -119,9 +120,10 @@ export function OffersTab({ projectId }: OffersTabProps) {
     setVatAmount(0);
     setTotalNetAfterDiscount(0);
     setTotalGrossAfterDiscount(0);
-  };
+    setDiscountAmount(0);
+  }, []);
 
-  const loadOfferById = async (offerId: string) => {
+  const loadOfferById = useCallback(async (offerId: string) => {
     try {
       const response = await fetch(`/api/projects/${projectId}/offers/${offerId}`);
       const payload = await response.json();
@@ -169,32 +171,70 @@ export function OffersTab({ projectId }: OffersTabProps) {
     } catch (error) {
       console.error(error);
     }
-  };
+  }, [projectId]);
+
+  const refreshOffers = useCallback(
+    async (preferredId?: string | null, fallbackToLatest = true) => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/offers`);
+        const json = await res.json();
+        if (!json.success) return;
+
+        const list: OfferVersionSummary[] = json.data ?? [];
+        setVersions(list);
+
+        if (list.length === 0) {
+          resetToEmptyOffer();
+          return;
+        }
+
+        let nextId: string | null = null;
+
+        if (preferredId && list.some((entry) => entry._id === preferredId)) {
+          nextId = preferredId;
+        }
+
+        if (!nextId && fallbackToLatest && list.length > 0) {
+          nextId = list[list.length - 1]._id;
+        }
+
+        if (nextId) {
+          setSelectedOfferId(nextId);
+          await loadOfferById(nextId);
+        } else {
+          resetToEmptyOffer();
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    },
+    [loadOfferById, projectId, resetToEmptyOffer],
+  );
+
+  const selectedOfferIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedOfferIdRef.current = selectedOfferId;
+  }, [selectedOfferId]);
+
+  const previousProjectId = useRef<string | null>(null);
+  useEffect(() => {
+    const isProjectChange = previousProjectId.current !== projectId;
+    previousProjectId.current = projectId;
+    const preferredId = isProjectChange ? null : selectedOfferIdRef.current;
+    refreshOffers(preferredId, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, refreshKey, refreshOffers]);
 
   useEffect(() => {
-    async function loadVersions() {
-      const res = await fetch(`/api/projects/${projectId}/offers`);
-      const json = await res.json();
-      if (!json.success) return;
-
-      const list: OfferVersionSummary[] = json.data ?? [];
-      setVersions(list);
-
-      if (list.length === 0) {
-        setSelectedOfferId(null);
-        resetToEmptyOffer();
-        return;
-      }
-
-      // privzeto zadnja verzija
-      const last = list[list.length - 1];
-      setSelectedOfferId(last._id);
-      await loadOfferById(last._id);
-    }
-
-    loadVersions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    resetToEmptyOffer();
+    setVersions([]);
+    setCurrentOffer(null);
+    setSearchResults([]);
+    setSearchTerm("");
+    setSearchRowId(null);
+    setOverriddenVatIds(new Set());
   }, [projectId]);
+
 
   const recalcItem = (item: OfferLineItemForm): OfferLineItemForm => {
     const quantity = clampPositive(item.quantity, 1);
@@ -446,16 +486,6 @@ export function OffersTab({ projectId }: OffersTabProps) {
     };
   };
 
-  const reloadVersionsAndSelect = async (offerId: string) => {
-    const response = await fetch(`/api/projects/${projectId}/offers`);
-    const payload = await response.json();
-    if (!payload.success) return;
-    const list: OfferVersionSummary[] = payload.data ?? [];
-    setVersions(list);
-    setSelectedOfferId(offerId);
-    await loadOfferById(offerId);
-  };
-
   const handleSave = async () => {
     if (!validItems.length) {
       toast.error("Dodajte vsaj eno postavko z nazivom in ceno.");
@@ -483,7 +513,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
       }
 
       const created: OfferVersion = payload.data;
-      await reloadVersionsAndSelect(created._id);
+      await refreshOffers(created._id ?? selectedOfferId ?? null);
       toast.success("Ponudba shranjena.");
       return created;
     } catch (error) {
@@ -517,20 +547,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
     const payload = await response.json();
     if (!payload.success || !payload.data) return;
 
-    const listRes = await fetch(`/api/projects/${projectId}/offers`);
-    const listJson = await listRes.json();
-    if (!listJson.success) return;
-    const list: OfferVersionSummary[] = listJson.data ?? [];
-    setVersions(list);
-
-    if (list.length === 0) {
-      resetToEmptyOffer();
-      return;
-    }
-
-    const last = list[list.length - 1];
-    setSelectedOfferId(last._id);
-    await loadOfferById(last._id);
+    await refreshOffers(null);
   };
 
   const handleCloneVersion = async () => {
@@ -544,7 +561,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
     const json = await response.json();
     if (!json.success || !json.data) return;
     const created: OfferVersion = json.data;
-    await reloadVersionsAndSelect(created._id);
+    await refreshOffers(created._id ?? null);
   };
 
   const handleChangeVersion = async (value: string) => {
