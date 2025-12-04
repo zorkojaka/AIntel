@@ -9,11 +9,10 @@ import { toast } from "sonner";
 import type { OfferLineItem, OfferVersion, OfferVersionSummary } from "@aintel/shared/types/offers";
 import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
 
-import { Loader2, Plus, Search, Trash } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "./ui/command";
+import { Loader2, Plus, Trash } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
+import { PriceListProductAutocomplete } from "./PriceListProductAutocomplete";
 
 type OffersTabProps = {
   projectId: string;
@@ -90,12 +89,6 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [downloading, setDownloading] = useState(false);
   const [sending, setSending] = useState(false);
 
-  const [searchResults, setSearchResults] = useState<PriceListSearchItem[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchRowId, setSearchRowId] = useState<string | null>(null);
-  const [searching, setSearching] = useState(false);
-  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const nameInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const focusRowId = useRef<string | null>(null);
 
@@ -124,6 +117,8 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   }, []);
 
   const loadOfferById = useCallback(async (offerId: string) => {
+    if (!projectId) return;
+
     try {
       const response = await fetch(`/api/projects/${projectId}/offers/${offerId}`);
       const payload = await response.json();
@@ -175,6 +170,12 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
 
   const refreshOffers = useCallback(
     async (preferredId?: string | null, fallbackToLatest = true) => {
+      if (!projectId) {
+        setVersions([]);
+        resetToEmptyOffer();
+        return;
+      }
+
       try {
         const res = await fetch(`/api/projects/${projectId}/offers`);
         const json = await res.json();
@@ -229,9 +230,6 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     resetToEmptyOffer();
     setVersions([]);
     setCurrentOffer(null);
-    setSearchResults([]);
-    setSearchTerm("");
-    setSearchRowId(null);
     setOverriddenVatIds(new Set());
   }, [projectId]);
 
@@ -312,47 +310,10 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     const input = nameInputs.current[target.id];
     if (input) {
       input.focus();
-      setSearchRowId(target.id);
-      setSearchTerm(target.name);
     }
   }, [activeRowIndex, items]);
 
-  useEffect(() => {
-    if (!searchRowId) {
-      setSearchResults([]);
-      return;
-    }
 
-    if (searchDebounce.current) {
-      clearTimeout(searchDebounce.current);
-    }
-
-    if (!searchTerm.trim()) {
-      setSearchResults([]);
-      return;
-    }
-
-    searchDebounce.current = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const response = await fetch(
-          `/api/price-list/items/search?q=${encodeURIComponent(searchTerm.trim())}&limit=10`
-        );
-        const payload = await response.json();
-        if (!payload.success) {
-          toast.error(payload.error ?? "Napaka pri iskanju cenika.");
-          setSearchResults([]);
-          return;
-        }
-        setSearchResults(Array.isArray(payload.data) ? payload.data : []);
-      } catch (error) {
-        console.error(error);
-        toast.error("Iskanje v ceniku ni uspelo.");
-      } finally {
-        setSearching(false);
-      }
-    }, 300);
-  }, [searchTerm, searchRowId]);
 
   const validItems = useMemo(
     () => items.filter((item) => !isEmptyOfferItem(item)).filter(isItemValid),
@@ -432,14 +393,7 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     );
   };
 
-  const handleSelectProduct = (
-    rowId: string,
-    product: PriceListSearchItem,
-    rowIndex: number
-  ) => {
-    setSearchRowId(null);
-    setSearchResults([]);
-
+  const handleSelectProduct = (rowId: string, product: PriceListSearchItem, rowIndex: number) => {
     updateItem(rowId, {
       name: product.name,
       productId: product.id,
@@ -449,6 +403,10 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     });
 
     setActiveRowIndex(rowIndex + 1);
+  };
+
+  const handleSelectCustomItem = (rowId: string) => {
+    updateItem(rowId, { productId: null });
   };
 
   const buildPayloadFromCurrentState = () => {
@@ -786,95 +744,18 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
             {items.map((item, index) => (
               <TableRow key={item.id}>
                 <TableCell className="w-[42%] text-left pl-4 align-top">
-                  <Popover
-                    open={searchRowId === item.id}
-                    onOpenChange={(open) =>
-                      setSearchRowId(open ? item.id : null)
-                    }
-                  >
-                    <PopoverTrigger asChild>
-                      <Input
-                        ref={(node) => (nameInputs.current[item.id] = node)}
-                        value={item.name}
-                        placeholder="Naziv ali iskanje v ceniku"
-                        className="text-left justify-start"
-                        onChange={(event) => {
-                          updateItem(item.id, {
-                            name: event.target.value,
-                          });
-                          setSearchRowId(item.id);
-                          setSearchTerm(event.target.value);
-                        }}
-                        onFocus={() => {
-                          setSearchRowId(item.id);
-                          setSearchTerm(item.name);
-                        }}
-                        autoFocus={index === activeRowIndex}
-                      />
-                    </PopoverTrigger>
-                    <PopoverContent
-                      className="w-[320px] p-0"
-                      side="bottom"
-                      align="start"
-                    >
-                      <Command shouldFilter={false}>
-                        <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
-                          <Search className="h-4 w-4" />
-                          <span>Poišči v ceniku</span>
-                          {searching && (
-                            <Loader2 className="h-4 w-4 animate-spin ml-auto" />
-                          )}
-                        </div>
-                        <CommandInput
-                          placeholder="Vnesi naziv ali kodo"
-                          value={searchTerm}
-                          onValueChange={(value) => {
-                            setSearchTerm(value);
-                            setSearchRowId(item.id);
-                          }}
-                        />
-                        <CommandList>
-                          <CommandEmpty>
-                            Ni zadetkov v ceniku, nadaljujte z ročnim
-                            vnosom.
-                          </CommandEmpty>
-                          <CommandGroup>
-                            {searchResults.slice(0, 5).map((result) => (
-                              <CommandItem
-                                key={result.id}
-                                onSelect={() => {
-                                  handleSelectProduct(
-                                    item.id,
-                                    result,
-                                    index
-                                  );
-                                  setSearchRowId(null);
-                                }}
-                                className="flex flex-col items-start gap-1"
-                              >
-                                <div className="flex w-full justify-between">
-                                  <span className="font-medium">
-                                    {result.name}
-                                  </span>
-                                  <span className="text-muted-foreground">
-                                    {result.unitPrice.toLocaleString(
-                                      "sl-SI",
-                                      { minimumFractionDigits: 2 }
-                                    )}{" "}
-                                    €
-                                  </span>
-                                </div>
-                                <div className="text-xs text-muted-foreground w-full flex justify-between">
-                                  <span>{result.code ?? ""}</span>
-                                  <span>{result.unit ?? ""}</span>
-                                </div>
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                  <PriceListProductAutocomplete
+                    value={item.name}
+                    placeholder="Naziv ali iskanje v ceniku"
+                    autoFocus={index === activeRowIndex}
+                    inputRef={(node) => (nameInputs.current[item.id] = node)}
+                    inputClassName="text-left"
+                    onChange={(name) => {
+                      updateItem(item.id, { name, productId: null });
+                    }}
+                    onCustomSelected={() => handleSelectCustomItem(item.id)}
+                    onProductSelected={(product) => handleSelectProduct(item.id, product, index)}
+                  />
                 </TableCell>
 
                 <TableCell className="w-[10%] text-right align-top">

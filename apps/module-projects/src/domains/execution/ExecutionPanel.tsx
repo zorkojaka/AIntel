@@ -6,14 +6,12 @@ import { Textarea } from "../../components/ui/textarea";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Checkbox } from "../../components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "../../components/ui/command";
-import { Loader2, Search } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import type { MaterialOrder, WorkOrder, WorkOrderItem, WorkOrderStatus } from "@aintel/shared/types/logistics";
-import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
 import { SignaturePad } from "./SignaturePad";
+import { PriceListProductAutocomplete } from "../../components/PriceListProductAutocomplete";
 
 interface ExecutionPanelProps {
   projectId: string;
@@ -103,11 +101,6 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
   const materialOrders = logistics?.materialOrders ?? [];
   const [pendingWorkOrders, setPendingWorkOrders] = useState<Record<string, WorkOrderDraft>>({});
   const [completingId, setCompletingId] = useState<string | null>(null);
-  const [priceSearchRowId, setPriceSearchRowId] = useState<string | null>(null);
-  const [priceSearchTerm, setPriceSearchTerm] = useState("");
-  const [priceSearchResults, setPriceSearchResults] = useState<PriceListSearchItem[]>([]);
-  const [priceSearchLoading, setPriceSearchLoading] = useState(false);
-  const priceSearchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingWorkOrdersRef = useRef<Record<string, WorkOrderDraft>>({});
   useEffect(() => {
     pendingWorkOrdersRef.current = pendingWorkOrders;
@@ -236,58 +229,9 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
       items: [...getDraftValues(order).items, newItem],
     });
     setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
-    setPriceSearchRowId(id);
-    setPriceSearchTerm("");
   };
 
-  useEffect(() => {
-    if (priceSearchDebounce.current) {
-      clearTimeout(priceSearchDebounce.current);
-    }
-    if (!priceSearchRowId) {
-      setPriceSearchResults([]);
-      setPriceSearchLoading(false);
-      return;
-    }
-    if (!priceSearchTerm.trim()) {
-      setPriceSearchResults([]);
-      setPriceSearchLoading(false);
-      return;
-    }
-    priceSearchDebounce.current = setTimeout(async () => {
-      setPriceSearchLoading(true);
-      try {
-        const response = await fetch(
-          `/api/price-list/items/search?q=${encodeURIComponent(priceSearchTerm.trim())}&limit=10`
-        );
-        const payload = await response.json();
-        if (!payload.success) {
-          toast.error(payload.error ?? "Napaka pri iskanju cenika.");
-          setPriceSearchResults([]);
-          return;
-        }
-        const apiResults = Array.isArray(payload.data) ? payload.data : [];
-        const normalizedQuery = priceSearchTerm.trim().toLocaleLowerCase("sl-SI");
-        const filteredResults =
-          normalizedQuery.length === 0
-            ? apiResults
-            : apiResults.filter((item: PriceListSearchItem) =>
-                (item.name ?? "").toLocaleLowerCase("sl-SI").includes(normalizedQuery)
-              );
-        setPriceSearchResults(filteredResults);
-      } catch (error) {
-        console.error(error);
-        toast.error("Iskanje v ceniku ni uspelo.");
-      } finally {
-        setPriceSearchLoading(false);
-      }
-    }, 300);
-    return () => {
-      if (priceSearchDebounce.current) {
-        clearTimeout(priceSearchDebounce.current);
-      }
-    };
-  }, [priceSearchRowId, priceSearchTerm]);
+
 
   const buildItemPayload = (items: WorkOrder["items"]) =>
     items.map((item: WorkOrderItemDraft) => ({
@@ -540,92 +484,36 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                   <tr key={item.id} className="border-t">
                                     <td className="p-2 align-top">
                                       {isExtraEditable ? (
-                                        <Popover
-                                          open={priceSearchRowId === item.id}
-                                          onOpenChange={(open: boolean) => {
-                                            setPriceSearchRowId(open ? item.id : null);
-                                            setPriceSearchTerm(open ? item.name : "");
-                                          }}
-                                        >
-                                          <PopoverTrigger asChild>
+                                        <div>
+                                          <PriceListProductAutocomplete
+                                            value={item.name}
+                                            placeholder="Naziv ali iskanje v ceniku"
+                                            inputClassName="text-left"
+                                            onChange={(name) =>
+                                              applyItemChange(order, item.id, { name, productId: null })
+                                            }
+                                            onCustomSelected={() =>
+                                              applyItemChange(order, item.id, { productId: null })
+                                            }
+                                            onProductSelected={(product) =>
+                                              applyItemChange(order, item.id, {
+                                                name: product.name,
+                                                unit: product.unit ?? item.unit ?? "",
+                                                productId: product.id,
+                                              })
+                                            }
+                                          />
+                                          {!hasCenikProduct ? (
                                             <Input
-                                              value={item.name}
-                                              placeholder="Naziv ali iskanje v ceniku"
-                                              onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                                                const value = event.target.value;
-                                                applyItemChange(order, item.id, { name: value });
-                                                setPriceSearchRowId(item.id);
-                                                setPriceSearchTerm(value);
-                                              }}
-                                              onFocus={() => {
-                                                setPriceSearchRowId(item.id);
-                                                setPriceSearchTerm(item.name);
-                                              }}
+                                              value={item.unit ?? ""}
+                                              placeholder="Enota"
+                                              className="mt-2"
+                                              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                                                applyItemChange(order, item.id, { unit: event.target.value })
+                                              }
                                             />
-                                          </PopoverTrigger>
-                                          <PopoverContent className="w-[320px] p-0" side="bottom" align="start">
-                                            <Command shouldFilter={false}>
-                                              <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
-                                                <Search className="h-4 w-4" />
-                                                <span>Poi??i v ceniku</span>
-                                                {priceSearchLoading && (
-                                                  <Loader2 className="ml-auto h-4 w-4 animate-spin" />
-                                                )}
-                                              </div>
-                                              <CommandInput
-                                                placeholder="Vnesi naziv ali kodo"
-                                                value={priceSearchRowId === item.id ? priceSearchTerm : ""}
-                                                onValueChange={(value: string) => {
-                                                  setPriceSearchTerm(value);
-                                                  setPriceSearchRowId(item.id);
-                                                }}
-                                              />
-                                              <CommandList>
-                                                <CommandEmpty>Ni zadetkov v ceniku, nadaljujte ro?no.</CommandEmpty>
-                                                <CommandGroup>
-                                                  {priceSearchResults.slice(0, 5).map((result: PriceListSearchItem) => (
-                                                    <CommandItem
-                                                      key={result.id}
-                                                      onSelect={(_value: string) => {
-                                                        applyItemChange(order, item.id, {
-                                                          name: result.name,
-                                                          unit: result.unit ?? "kos",
-                                                          productId: result.id,
-                                                        });
-                                                        setPriceSearchRowId(null);
-                                                        setPriceSearchTerm("");
-                                                      }}
-                                                      className="flex flex-col items-start gap-1"
-                                                    >
-                                                      <span className="font-medium">
-                                                        {result.name || "Neimenovan produkt"}
-                                                      </span>
-                                                      {result.unit && (
-                                                        <span className="text-xs text-muted-foreground">
-                                                          {result.unit}
-                                                        </span>
-                                                      )}
-                                                    </CommandItem>
-                                                  ))}
-                                                </CommandGroup>
-                                              </CommandList>
-                                            </Command>
-                                          </PopoverContent>
-                                          <div className="mt-2">
-                                            {isExtraEditable && !hasCenikProduct ? (
-                                              <Input
-                                                value={item.unit ?? ""}
-                                                placeholder="Enota"
-                                                onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                                                  applyItemChange(order, item.id, { unit: event.target.value })
-                                                }
-                                                className="w-28"
-                                              />
-                                            ) : (
-                                              <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
-                                            )}
-                                          </div>
-                                        </Popover>
+                                          ) : null}
+                                        </div>
                                       ) : (
                                         <div>
                                           <p className="font-medium">{item.name || "-"}</p>

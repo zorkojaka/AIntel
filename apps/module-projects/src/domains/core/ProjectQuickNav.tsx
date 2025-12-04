@@ -9,9 +9,9 @@ type ProjectQuickNavProps = {
 };
 
 const statusStyles: Record<StepStatus, string> = {
-  done: "bg-emerald-100 text-emerald-700 border border-emerald-200",
-  inProgress: "bg-amber-100 text-amber-700 border border-amber-200",
-  pending: "bg-muted text-muted-foreground border border-muted-foreground/20",
+  done: "bg-emerald-500 text-white",
+  inProgress: "bg-amber-400 text-amber-950",
+  pending: "bg-gray-200 text-gray-600",
 };
 
 function StatusIcon({ status }: { status: StepStatus }) {
@@ -41,8 +41,9 @@ export function ProjectQuickNav({ project, activeStep, onSelectStep }: ProjectQu
             }`}
           >
             <span
-              className={`flex h-7 w-7 items-center justify-center rounded-full ${isActive ? "bg-primary-foreground/15" : statusStyles[step.status]
-                }`}
+              className={`flex h-7 w-7 items-center justify-center rounded-full border border-white/40 shadow-sm ${statusStyles[step.status]} ${
+                isActive ? "ring-2 ring-primary/50" : ""
+              }`}
             >
               <StatusIcon status={step.status} />
             </span>

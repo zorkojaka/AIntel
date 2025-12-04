@@ -852,10 +852,13 @@ export async function deleteProject(req: Request, res: Response) {
   if (!deleted) {
     return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
   }
-  await Promise.all([
-    OfferVersionModel.deleteMany({ projectId: deleted.id }),
-    MaterialOrderModel.deleteMany({ projectId: deleted.id }),
-    WorkOrderModel.deleteMany({ projectId: deleted.id }),
-  ]);
+  const projectKey = deleted.id ?? (deleted as { _id?: Types.ObjectId })._id?.toString();
+  if (projectKey) {
+    await Promise.all([
+      OfferVersionModel.deleteMany({ projectId: projectKey }),
+      MaterialOrderModel.deleteMany({ projectId: projectKey }),
+      WorkOrderModel.deleteMany({ projectId: projectKey }),
+    ]);
+  }
   return res.success({ id: deleted.id });
 }

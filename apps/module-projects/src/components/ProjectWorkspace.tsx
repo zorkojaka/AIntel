@@ -241,8 +241,13 @@ export function ProjectWorkspace({
   }, [project]);
 
   useEffect(() => {
-    setRequirements(Array.isArray(project.requirements) ? project.requirements : []);
-  }, [project.requirements]);
+    const currentProject = project;
+    if (!currentProject) {
+      setRequirements([]);
+      return;
+    }
+    setRequirements(Array.isArray(currentProject.requirements) ? currentProject.requirements : []);
+  }, [project]);
 
   useEffect(() => {
     const firstVat = offerItems[0]?.vatRate ?? 22;
@@ -349,7 +354,7 @@ export function ProjectWorkspace({
   };
 
   const validationIssues: string[] = [];
-  if (!project.customerDetail.name) validationIssues.push("Manjka podatek o stranki");
+  if (!project?.customerDetail?.name) validationIssues.push("Manjka podatek o stranki");
   if (items.length === 0) validationIssues.push("Dodajte vsaj eno postavko");
 
   const resetItemForm = () => {
@@ -650,15 +655,17 @@ export function ProjectWorkspace({
   };
 
   const applyRequirementsUpdate = async (next: RequirementRow[]) => {
+    const currentProject = project;
+    if (!currentProject) return;
     setRequirements(next);
     const updated = await onProjectUpdate(basePath, {
       method: "PUT",
       body: JSON.stringify({
-        title: project.title,
-        customer: project.customerDetail,
-        status: project.status,
+        title: currentProject.title,
+        customer: currentProject.customerDetail,
+        status: currentProject.status,
         requirements: next,
-        categories: project.categories ?? [],
+        categories: currentProject.categories ?? [],
         templates,
       }),
     });
@@ -666,7 +673,7 @@ export function ProjectWorkspace({
   };
 
   const addRequirementRow = async () => {
-    const defaultCategory = project.categories?.[0] ?? "";
+    const defaultCategory = project?.categories?.[0] ?? "";
     const next: RequirementRow[] = [
       ...(requirements ?? []),
       {
@@ -692,12 +699,13 @@ export function ProjectWorkspace({
   };
 
   const handleConfirmVariantSelection = async () => {
-    if (!selectedVariantSlug) return;
+    const currentProject = project;
+    if (!selectedVariantSlug || !currentProject) return;
     const payload = {
-      title: project.title,
-      customer: project.customerDetail,
-      status: project.status,
-      categories: project.categories ?? [],
+      title: currentProject.title,
+      customer: currentProject.customerDetail,
+      status: currentProject.status,
+      categories: currentProject.categories ?? [],
       requirementsTemplateVariantSlug: selectedVariantSlug,
     };
     const updated = await onProjectUpdate(basePath, {
@@ -708,9 +716,11 @@ export function ProjectWorkspace({
   };
 
   const handleGenerateOfferFromRequirements = async () => {
+    const currentProject = project;
+    if (!currentProject) return;
     setIsGeneratingOffer(true);
     try {
-      const candidatesResponse = await fetchOfferCandidates(project.id);
+      const candidatesResponse = await fetchOfferCandidates(currentProject.id);
       if (!candidatesResponse.length) {
         toast.error("Ni predlaganih postavk iz zahtev.");
         setOfferCandidates([]);
@@ -799,14 +809,16 @@ export function ProjectWorkspace({
   };
 
   const handleProceedToOffer = async () => {
+    const currentProject = project;
+    if (!currentProject) return;
     if (status === "draft" || (status as string) === "inquiry") {
       const updated = await onProjectUpdate(basePath, {
         method: "PUT",
         body: JSON.stringify({
-          title: project.title,
-          customer: project.customerDetail,
+          title: currentProject.title,
+          customer: currentProject.customerDetail,
           status: "offered",
-          categories: project.categories ?? [],
+          categories: currentProject.categories ?? [],
         }),
       });
       applyProjectUpdate(updated as ProjectDetails | null);
@@ -906,6 +918,8 @@ export function ProjectWorkspace({
   };
 
   const handleGeneratePDF = (offerId: string) => {
+    const currentProject = project;
+    if (!currentProject) return;
     const offer = offers.find((o) => o.id === offerId);
     if (!offer) return;
 
@@ -916,19 +930,19 @@ export function ProjectWorkspace({
     }
 
     const templateCustomer = {
-      name: project.customerDetail?.name ?? "",
-      taxId: project.customerDetail?.taxId ?? "",
-      address: project.customerDetail?.address ?? "",
-      paymentTerms: project.customerDetail?.paymentTerms ?? "",
+      name: currentProject.customerDetail?.name ?? "",
+      taxId: currentProject.customerDetail?.taxId ?? "",
+      address: currentProject.customerDetail?.address ?? "",
+      paymentTerms: currentProject.customerDetail?.paymentTerms ?? "",
     };
 
     const html = renderTemplate(defaultTemplate, {
       customer: templateCustomer,
-      project: {
-        id: project.id,
-        title: project.title,
-        description: requirementsText,
-      },
+        project: {
+          id: currentProject.id,
+          title: currentProject.title,
+          description: requirementsText,
+        },
       offer,
       items,
     });
@@ -938,6 +952,8 @@ export function ProjectWorkspace({
   };
 
   const handleDownloadPDF = (offerId: string) => {
+    const currentProject = project;
+    if (!currentProject) return;
     const offer = offers.find((o) => o.id === offerId);
     if (!offer) return;
 
@@ -948,24 +964,24 @@ export function ProjectWorkspace({
     }
 
     const templateCustomer = {
-      name: project.customerDetail?.name ?? "",
-      taxId: project.customerDetail?.taxId ?? "",
-      address: project.customerDetail?.address ?? "",
-      paymentTerms: project.customerDetail?.paymentTerms ?? "",
+      name: currentProject.customerDetail?.name ?? "",
+      taxId: currentProject.customerDetail?.taxId ?? "",
+      address: currentProject.customerDetail?.address ?? "",
+      paymentTerms: currentProject.customerDetail?.paymentTerms ?? "",
     };
 
     const html = renderTemplate(defaultTemplate, {
       customer: templateCustomer,
-      project: {
-        id: project.id,
-        title: project.title,
-        description: requirementsText,
-      },
+        project: {
+          id: currentProject.id,
+          title: currentProject.title,
+          description: requirementsText,
+        },
       offer,
       items,
     });
 
-    downloadHTML(html, `Ponudba-${project.id}-v${offer.version}.html`);
+    downloadHTML(html, `Ponudba-${currentProject.id}-v${offer.version}.html`);
     toast.success("Ponudba prenesena kot HTML");
   };
 

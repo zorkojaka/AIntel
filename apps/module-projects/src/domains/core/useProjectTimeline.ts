@@ -1,6 +1,8 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ProjectDetails } from "../../types";
 import type { WorkOrder, MaterialOrder } from "@aintel/shared/types/logistics";
+import type { OfferVersionSummary } from "@aintel/shared/types/offers";
+import { useQueryClient } from "@tanstack/react-query";
 
 export type StepStatus = "done" | "inProgress" | "pending";
 
@@ -56,6 +58,43 @@ function resolveClosingSummary(project?: ProjectDetails | null) {
 }
 
 export function useProjectTimeline(project?: ProjectDetails | null): TimelineStep[] {
+  const projectId = project?.id ?? null;
+  const [remoteOffers, setRemoteOffers] = useState<OfferVersionSummary[] | null>(null);
+
+  const offerSignal =
+    projectId && Array.isArray(project?.offerVersions)
+      ? project.offerVersions.map((offer: any) => `${offer._id || offer.id || offer.version}:${offer.status}`).join("|")
+      : projectId && Array.isArray(project?.offers)
+        ? project.offers.map((offer: any) => `${offer.id}:${offer.status}`).join("|")
+        : null;
+
+  useEffect(() => {
+    if (!projectId) {
+      setRemoteOffers(null);
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    const fetchOffers = async () => {
+      try {
+        const response = await fetch(`/api/projects/${projectId}/offers`, { signal: controller.signal });
+        const payload = await response.json();
+        if (!payload.success || cancelled) return;
+        setRemoteOffers(Array.isArray(payload.data) ? payload.data : []);
+      } catch (error) {
+        if ((error as DOMException)?.name === "AbortError") return;
+        if (!cancelled) {
+          setRemoteOffers(null);
+        }
+      }
+    };
+    fetchOffers();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [projectId, offerSignal]);
+
   return useMemo(() => {
     const basePath = project?.id ? `/projects/${project.id}` : "#";
 
@@ -63,9 +102,11 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const requirementsStatus: StepStatus = requirementCount > 0 ? "done" : "pending";
     const requirementsMeta = requirementCount > 0 ? `${requirementCount} zahtev` : undefined;
 
-    const offers = collectOffers(project);
-    const offerCount = offers.length;
-    const offerDone = offers.some((offer) => STATUS_DONE_VALUES.has(normalizeStatus(offer.status)));
+    const offersSource = remoteOffers ?? collectOffers(project);
+    const offerCount = offersSource.length;
+    const offerDone = offersSource.some((offer) =>
+      STATUS_DONE_VALUES.has(normalizeStatus((offer as any).status)),
+    );
     const offersStatus: StepStatus = offerDone ? "done" : offerCount > 0 ? "inProgress" : "pending";
     const offersMeta = offerCount > 0 ? `${offerCount} ponudb` : undefined;
 
@@ -108,5 +149,5 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
       { key: "execution", label: "Izvedba", status: executionStatus, meta: executionMeta, href: buildHref("execution") },
       { key: "invoice", label: "Račun", status: invoiceStatus, meta: invoiceMeta, href: buildHref("closing") },
     ];
-  }, [project]);
+  }, [project, remoteOffers]);
 }
