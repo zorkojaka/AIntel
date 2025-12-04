@@ -44,6 +44,11 @@ export interface WorkOrderItem extends LogisticsMaterialItem {
   isCompleted?: boolean;
 }
 
+export interface WorkLogEntry {
+  employeeId: string;
+  hours: number;
+}
+
 export interface WorkOrder {
   _id: string;
   projectId: string;
@@ -65,6 +70,7 @@ export interface WorkOrder {
   customerAddress?: string;
   reopened?: boolean;
   executionNote?: string | null;
+  workLogs?: WorkLogEntry[];
   createdAt: string;
   updatedAt: string;
 }

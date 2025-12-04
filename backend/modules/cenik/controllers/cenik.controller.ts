@@ -7,6 +7,7 @@ type ProductPayload = Pick<
   | 'ime'
   | 'categorySlugs'
   | 'isService'
+  | 'purchasePriceWithoutVat'
   | 'nabavnaCena'
   | 'prodajnaCena'
   | 'kratekOpis'
@@ -80,6 +81,7 @@ function buildPayload(body: Partial<ProductPayload>): ProductPayload {
     ime: castText(body.ime),
     categorySlugs: normalizeCategorySlugs(body.categorySlugs),
     isService: parseBoolean(body.isService),
+    purchasePriceWithoutVat: parsePrice(body.purchasePriceWithoutVat ?? body.nabavnaCena),
     nabavnaCena: parsePrice(body.nabavnaCena),
     prodajnaCena: parsePrice(body.prodajnaCena),
     kratekOpis: castText(body.kratekOpis),
@@ -99,6 +101,7 @@ function sanitizeProduct(product: ProductDocument): ProductResponse {
     ime: product.ime,
     categorySlugs: product.categorySlugs ?? [],
     isService: product.isService,
+    purchasePriceWithoutVat: product.purchasePriceWithoutVat ?? product.nabavnaCena,
     nabavnaCena: product.nabavnaCena,
     prodajnaCena: product.prodajnaCena,
     kratekOpis: product.kratekOpis ?? '',

@@ -96,6 +96,7 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
   } = useInvoiceVersions(projectId ?? null);
   const [draftVersion, setDraftVersion] = useState<InvoiceVersion | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     setDraftVersion(cloneVersion(activeVersion));
@@ -162,6 +163,26 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
 
   const handleClone = async () => {
     await cloneForEdit();
+  };
+
+  const handleDownload = async () => {
+    if (!draftVersion || draftVersion.status !== "issued" || !projectId) return;
+    try {
+      setDownloading(true);
+      const response = await fetch(`/api/projects/${projectId}/invoices/${draftVersion._id}/pdf`);
+      if (!response.ok) {
+        throw new Error("Ne morem pripraviti PDF dokumenta.");
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `racun-${projectId}-${draftVersion.versionNumber}.pdf`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } finally {
+      setDownloading(false);
+    }
   };
 
   if (!projectId) {
@@ -363,8 +384,12 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
           </div>
           <div className="flex flex-wrap gap-2 justify-between">
             <div className="flex gap-2">
-              <Button variant="outline" disabled>
-                Izvozi PDF
+              <Button
+                variant="outline"
+                disabled={draftVersion?.status !== "issued" || downloading}
+                onClick={handleDownload}
+              >
+                {downloading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Izvozi PDF
               </Button>
               <Button variant="outline" disabled>
                 Pošlji račun stranki
