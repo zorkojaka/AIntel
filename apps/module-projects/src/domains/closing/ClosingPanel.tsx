@@ -10,6 +10,7 @@ import {
 } from "../../components/ui/table";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import type { WorkOrder, WorkOrderItem } from "@aintel/shared/types/logistics";
+import { InvoiceVersionEditor } from "./components/InvoiceVersionEditor";
 
 interface ClosingPanelProps {
   logistics?: ProjectLogistics | null;
@@ -133,6 +134,11 @@ export function ClosingPanel({ logistics }: ClosingPanelProps) {
   );
 
   const aggregatedRows = useMemo(() => buildAggregation(workOrders), [workOrders]);
+  const derivedProjectId =
+    workOrders[0]?.projectId ??
+    logistics?.materialOrders?.[0]?.projectId ??
+    logistics?.workOrder?.projectId ??
+    null;
 
   if (summary.totalWorkOrders === 0 || summary.totalItems === 0) {
     return (
@@ -201,6 +207,7 @@ export function ClosingPanel({ logistics }: ClosingPanelProps) {
           </Table>
         </div>
       </Card>
+      <InvoiceVersionEditor projectId={derivedProjectId} />
     </div>
   );
 }

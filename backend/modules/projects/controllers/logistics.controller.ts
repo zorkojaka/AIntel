@@ -223,14 +223,32 @@ function serializeWorkOrder(order: any): WorkOrder | null {
     sequence: typeof order.sequence === 'number' ? order.sequence : null,
     code: order.code ?? null,
     title: order.title ?? null,
-    items: (order.items || []).map((item: any) => ({
-      id: item.id,
-      productId: item.productId ?? null,
-      name: item.name,
-      quantity: item.quantity,
-      unit: item.unit,
-      note: item.note,
-    })),
+      items: (order.items || []).map((item: any) => {
+        const fallbackQuantity = typeof item.quantity === 'number' ? item.quantity : 0;
+        return {
+          id: item.id,
+          productId: item.productId ?? null,
+          name: item.name,
+          quantity: fallbackQuantity,
+          unit: item.unit,
+          note: item.note ?? undefined,
+          offerItemId: item.offerItemId ?? null,
+          offeredQuantity:
+            typeof item.offeredQuantity === 'number' ? item.offeredQuantity : fallbackQuantity,
+          plannedQuantity:
+            typeof item.plannedQuantity === 'number' ? item.plannedQuantity : fallbackQuantity,
+          executedQuantity:
+            typeof item.executedQuantity === 'number' ? item.executedQuantity : fallbackQuantity,
+          isExtra: !!item.isExtra,
+          itemNote:
+            typeof item.itemNote === 'string'
+              ? item.itemNote
+              : item.itemNote === null
+                ? null
+                : undefined,
+          isCompleted: !!item.isCompleted,
+        };
+      }),
     status: order.status,
     scheduledAt: order.scheduledAt ?? null,
     technicianName: order.technicianName,

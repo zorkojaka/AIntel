@@ -26,6 +26,7 @@ import {
 } from '../controllers/offer-version.controller';
 import * as logisticsController from '../controllers/logistics.controller';
 import { cancelOfferConfirmation } from '../controllers/logistics.controller';
+import * as invoiceController from '../controllers/invoice.controller';
 
 const router = Router();
 
@@ -52,6 +53,11 @@ router.post('/:projectId/offers/:offerId/confirm', logisticsController.confirmOf
 router.post('/:projectId/logistics/cancel-confirmation', cancelOfferConfirmation);
 router.get('/:projectId/logistics', logisticsController.getProjectLogistics);
 router.put('/:projectId/work-orders/:workOrderId', logisticsController.updateWorkOrder);
+router.get('/:projectId/invoices', invoiceController.listInvoices);
+router.post('/:projectId/invoices/from-closing', invoiceController.createInvoice);
+router.patch('/:projectId/invoices/:versionId', invoiceController.updateInvoice);
+router.post('/:projectId/invoices/:versionId/issue', invoiceController.issueInvoice);
+router.post('/:projectId/invoices/:versionId/clone-for-edit', invoiceController.cloneInvoiceForEdit);
 router.post('/:id/deliveries/:deliveryId/receive', receiveDelivery);
 router.post('/:id/signature', saveSignature);
 

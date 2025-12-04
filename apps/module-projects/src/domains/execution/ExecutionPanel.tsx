@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
@@ -29,6 +29,52 @@ type WorkOrderDraft = {
 };
 
 type WorkOrderItemDraft = WorkOrderItem;
+
+function mergeDraftItems(
+  serverItems: WorkOrderItemDraft[],
+  previousItems: WorkOrderItemDraft[],
+): WorkOrderItemDraft[] {
+  if (previousItems.length === 0) {
+    return serverItems;
+  }
+  const previousById = new Map(previousItems.map((item) => [item.id, item]));
+  return serverItems.map((serverItem) => {
+    const previousItem = previousById.get(serverItem.id);
+    if (!previousItem) {
+      return serverItem;
+    }
+    return {
+      ...previousItem,
+      ...serverItem,
+      offeredQuantity:
+        typeof serverItem.offeredQuantity === "number"
+          ? serverItem.offeredQuantity
+          : previousItem.offeredQuantity,
+      plannedQuantity:
+        typeof serverItem.plannedQuantity === "number"
+          ? serverItem.plannedQuantity
+          : previousItem.plannedQuantity,
+      executedQuantity:
+        typeof serverItem.executedQuantity === "number"
+          ? serverItem.executedQuantity
+          : previousItem.executedQuantity,
+      itemNote:
+        serverItem.itemNote === null
+          ? null
+          : typeof serverItem.itemNote === "string"
+            ? serverItem.itemNote
+            : previousItem.itemNote,
+      isExtra:
+        typeof serverItem.isExtra === "boolean"
+          ? serverItem.isExtra
+          : previousItem.isExtra,
+      isCompleted:
+        typeof serverItem.isCompleted === "boolean"
+          ? serverItem.isCompleted
+          : previousItem.isCompleted,
+    };
+  });
+}
 
 const STATUS_OPTIONS: { value: WorkOrderStatus; label: string }[] = [
   { value: "draft", label: "V pripravi" },
@@ -67,7 +113,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
     pendingWorkOrdersRef.current = pendingWorkOrders;
   }, [pendingWorkOrders]);
   const [savingStates, setSavingStates] = useState<Record<string, "saving" | "saved" | "error">>({});
-  const saveTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [unsavedChanges, setUnsavedChanges] = useState<Record<string, boolean>>({});
 
   const workOrdersByStatus = useMemo(() => {
     const grouped: Record<WorkOrderStatus, WorkOrder[]> = {
@@ -189,6 +235,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
     updateDraft(order, {
       items: [...getDraftValues(order).items, newItem],
     });
+    setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
     setPriceSearchRowId(id);
     setPriceSearchTerm("");
   };
@@ -257,17 +304,8 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
       isCompleted: !!item.isCompleted,
     }));
 
-  const clearPendingSave = useCallback((orderId: string) => {
-    const timers = saveTimeoutsRef.current;
-    if (timers[orderId]) {
-      clearTimeout(timers[orderId]);
-      delete timers[orderId];
-    }
-  }, []);
-
   const saveWorkOrder = useCallback(
     async (orderId: string, overrides?: { status?: WorkOrderStatus }) => {
-      clearPendingSave(orderId);
       const order = workOrders.find((candidate) => candidate._id === orderId);
       if (!order) return false;
       const draft = getDraftValues(order);
@@ -290,14 +328,25 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
           return false;
         }
         const updated: WorkOrder = payload.data;
+        const updatedDraft = getInitialDraftValues(updated);
+        const mergedItems = mergeDraftItems(
+          updatedDraft.items ?? [],
+          (draft.items ?? []) as WorkOrderItemDraft[],
+        );
         setPendingWorkOrders((prev) => ({
           ...prev,
           [orderId]: {
-            status: updated.status,
-            executionNote: updated.executionNote ?? "",
-            items: getInitialDraftValues(updated).items,
+            status: updatedDraft.status,
+            executionNote: updatedDraft.executionNote,
+            items: mergedItems,
           },
         }));
+        setUnsavedChanges((prev) => {
+          if (!prev[orderId]) return prev;
+          const next = { ...prev };
+          delete next[orderId];
+          return next;
+        });
         onWorkOrderUpdated?.(updated);
         setSavingStates((prev) => ({ ...prev, [orderId]: "saved" }));
         setTimeout(() => {
@@ -316,28 +365,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
         return false;
       }
     },
-    [clearPendingSave, workOrders, projectId, onWorkOrderUpdated],
-  );
-
-  const saveWorkOrderRef = useRef(saveWorkOrder);
-  useEffect(() => {
-    saveWorkOrderRef.current = saveWorkOrder;
-  }, [saveWorkOrder]);
-
-  useEffect(() => {
-    return () => {
-      Object.values(saveTimeoutsRef.current).forEach((timer) => clearTimeout(timer));
-    };
-  }, []);
-
-  const queueWorkOrderSave = useCallback(
-    (orderId: string) => {
-      clearPendingSave(orderId);
-      saveTimeoutsRef.current[orderId] = setTimeout(() => {
-        saveWorkOrderRef.current?.(orderId);
-      }, 800);
-    },
-    [clearPendingSave],
+    [workOrders, projectId, onWorkOrderUpdated],
   );
 
   const handleCompleteWorkOrder = async (order: WorkOrder) => {
@@ -353,7 +381,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
 
   const applyDraftChange = (order: WorkOrder, values: Partial<{ status: WorkOrderStatus; executionNote: string }>) => {
     updateDraft(order, values);
-    queueWorkOrderSave(order._id);
+    setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
   };
 
   const applyItemChange = (
@@ -362,10 +390,10 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
     values: Partial<WorkOrder["items"][number]>
   ) => {
     updateDraftItem(order, itemId, values);
-    queueWorkOrderSave(order._id);
+    setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
   };
 
-  const renderItemStatusBadge = (item: WorkOrder["items"][number]) => {
+  const renderItemStatusBadge = (item: WorkOrderItemDraft) => {
     const offered = typeof item.offeredQuantity === "number" ? item.offeredQuantity : 0;
     const executed = typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
     if (item.isExtra || offered === 0) {
@@ -399,13 +427,14 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                 {entries.map((order) => {
                   const draft = getDraftValues(order);
                   const materialOrder = getMaterialForWorkOrder(materialOrders, order._id);
-                  const items = draft.items ?? [];
+                  const items: WorkOrderItemDraft[] = (draft.items ?? []) as WorkOrderItemDraft[];
                   const isOrderCompleted = (order.status ?? "draft") === "completed";
                   const allItemsCompleted =
-                    items.length > 0 && items.every((item) => !!item.isCompleted);
+                    items.length > 0 && items.every((item: WorkOrderItemDraft) => !!item.isCompleted);
                   const isCompletingOrder = completingId === order._id;
                   const savingState = savingStates[order._id];
                   const isSavingOrder = savingState === "saving";
+                  const orderHasUnsavedChanges = !!unsavedChanges[order._id];
                   return (
                     <div key={order._id} className="rounded-lg border p-4 space-y-4">
                       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -431,7 +460,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                           <label className="text-xs text-muted-foreground uppercase">Status delovnega naloga</label>
                           <Select
                             value={draft.status}
-                            onValueChange={(value) =>
+                            onValueChange={(value: string) =>
                               applyDraftChange(order, { status: value as WorkOrderStatus })
                             }
                           >
@@ -452,7 +481,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                         <label className="text-sm font-medium">Opombe ob izvedbi</label>
                         <Textarea
                           value={draft.executionNote}
-                          onChange={(event) => applyDraftChange(order, { executionNote: event.target.value })}
+                          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => applyDraftChange(order, { executionNote: event.target.value })}
                           placeholder="Opis dodatnih del, materiala ali opažanj na terenu."
                           rows={4}
                         />
@@ -513,7 +542,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                       {isExtraEditable ? (
                                         <Popover
                                           open={priceSearchRowId === item.id}
-                                          onOpenChange={(open) => {
+                                          onOpenChange={(open: boolean) => {
                                             setPriceSearchRowId(open ? item.id : null);
                                             setPriceSearchTerm(open ? item.name : "");
                                           }}
@@ -522,7 +551,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                             <Input
                                               value={item.name}
                                               placeholder="Naziv ali iskanje v ceniku"
-                                              onChange={(event) => {
+                                              onChange={(event: ChangeEvent<HTMLInputElement>) => {
                                                 const value = event.target.value;
                                                 applyItemChange(order, item.id, { name: value });
                                                 setPriceSearchRowId(item.id);
@@ -546,7 +575,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                               <CommandInput
                                                 placeholder="Vnesi naziv ali kodo"
                                                 value={priceSearchRowId === item.id ? priceSearchTerm : ""}
-                                                onValueChange={(value) => {
+                                                onValueChange={(value: string) => {
                                                   setPriceSearchTerm(value);
                                                   setPriceSearchRowId(item.id);
                                                 }}
@@ -554,10 +583,10 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                               <CommandList>
                                                 <CommandEmpty>Ni zadetkov v ceniku, nadaljujte ro?no.</CommandEmpty>
                                                 <CommandGroup>
-                                                  {priceSearchResults.slice(0, 5).map((result) => (
+                                                  {priceSearchResults.slice(0, 5).map((result: PriceListSearchItem) => (
                                                     <CommandItem
                                                       key={result.id}
-                                                      onSelect={() => {
+                                                      onSelect={(_value: string) => {
                                                         applyItemChange(order, item.id, {
                                                           name: result.name,
                                                           unit: result.unit ?? "kos",
@@ -587,7 +616,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                               <Input
                                                 value={item.unit ?? ""}
                                                 placeholder="Enota"
-                                                onChange={(event) =>
+                                                onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                                   applyItemChange(order, item.id, { unit: event.target.value })
                                                 }
                                                 className="w-28"
@@ -611,7 +640,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                       <Input
                                         type="number"
                                         value={item.executedQuantity ?? ""}
-                                        onChange={(event) =>
+                                        onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                           applyItemChange(order, item.id, {
                                             executedQuantity: Number(event.target.value),
                                           })
@@ -622,7 +651,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                     <td className="p-2 align-top">
                                       <Textarea
                                         value={item.itemNote ?? ""}
-                                        onChange={(event) =>
+                                        onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
                                           applyItemChange(order, item.id, { itemNote: event.target.value })
                                         }
                                         rows={2}
@@ -634,7 +663,9 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                       <Checkbox
                                         className="h-5 w-5"
                                         checked={isCompleted}
-                                        onChange={(event) => handleCompletionChange(event.target.checked)}
+                                        onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                                          handleCompletionChange(event.target.checked)
+                                        }
                                       />
                                     </td>
                                   </tr>
@@ -653,28 +684,43 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                               <span className="text-destructive">Shranjevanje ni uspelo.</span>
                             )}
                           </div>
-                          <Button
-                            variant="secondary"
-                            onClick={() => handleCompleteWorkOrder(order)}
-                            disabled={
-                              items.length === 0 ||
-                              !allItemsCompleted ||
-                              isOrderCompleted ||
-                              isCompletingOrder ||
-                              isSavingOrder
-                            }
-                          >
-                            {isOrderCompleted ? (
-                              "Delovni nalog je zaključen"
-                            ) : isCompletingOrder ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Zaključujem...
-                              </>
-                            ) : (
-                              "Zaključi delovni nalog"
-                            )}
-                          </Button>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              onClick={() => saveWorkOrder(order._id)}
+                              disabled={!orderHasUnsavedChanges || isSavingOrder || isCompletingOrder}
+                            >
+                              {isSavingOrder ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  Shranjujem...
+                                </>
+                              ) : (
+                                "Shrani delovni nalog"
+                              )}
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              onClick={() => handleCompleteWorkOrder(order)}
+                              disabled={
+                                items.length === 0 ||
+                                !allItemsCompleted ||
+                                isOrderCompleted ||
+                                isCompletingOrder ||
+                                isSavingOrder
+                              }
+                            >
+                              {isOrderCompleted ? (
+                                "Delovni nalog je zaključen"
+                              ) : isCompletingOrder ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  Zaključujem...
+                                </>
+                              ) : (
+                                "Zaključi delovni nalog"
+                              )}
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>

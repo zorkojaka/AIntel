@@ -137,6 +137,7 @@ export interface Project {
   timeline: TimelineEvent[];
   templates: ProjectTemplate[];
   categories: string[];
+  invoiceVersions?: any[];
 }
 
 export interface ProjectDocument extends Omit<Project, 'id'>, Document {
@@ -313,6 +314,7 @@ const ProjectSchema = new Schema<ProjectDocument>(
     templates: { type: [ProjectTemplateSchema], default: [] },
     categories: { type: [String], default: [] },
     offers: { type: [OfferSchema], default: [] },
+    invoiceVersions: { type: [Schema.Types.Mixed], default: [] },
   },
   { versionKey: false }
 );
