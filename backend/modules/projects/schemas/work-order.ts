@@ -16,6 +16,11 @@ interface WorkOrderItem {
   isCompleted?: boolean;
 }
 
+export interface WorkLogEntry {
+  employeeId: string;
+  hours: number;
+}
+
 interface WorkOrderDocument extends Document {
   projectId: string;
   offerVersionId: string;
@@ -36,6 +41,7 @@ interface WorkOrderDocument extends Document {
   cancelledAt?: Date | null;
   reopened?: boolean;
   executionNote?: string | null;
+  workLogs: WorkLogEntry[];
 }
 
 const workOrderItemSchema = new Schema<WorkOrderItem>(
@@ -53,6 +59,14 @@ const workOrderItemSchema = new Schema<WorkOrderItem>(
     isExtra: { type: Boolean, required: true, default: false },
     itemNote: { type: String, default: null },
     isCompleted: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
+const workLogSchema = new Schema<WorkLogEntry>(
+  {
+    employeeId: { type: String, required: true },
+    hours: { type: Number, required: true, default: 0 },
   },
   { _id: false }
 );
@@ -82,6 +96,7 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
     cancelledAt: { type: Date, default: null },
     reopened: { type: Boolean, default: false },
     executionNote: { type: String, default: null },
+    workLogs: { type: [workLogSchema], default: [] },
   },
   { timestamps: true }
 );

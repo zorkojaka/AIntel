@@ -17,7 +17,7 @@ function isDocument(project: ProjectInput): project is ProjectDocument {
 
 function toPlainProject(project: ProjectInput): Project {
   if (isDocument(project)) {
-    return project.toObject<Project>();
+    return (project as any).toObject ? (project as any).toObject() : (project as Project);
   }
   return project as Project;
 }

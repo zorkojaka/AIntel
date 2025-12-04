@@ -173,7 +173,7 @@ function updateOfferAmount(project: Project) {
 
 async function findProjectById(id: string) {
   const project =
-    (await ProjectModel.findOne({ id }).lean()) || (await ProjectModel.findById(id).lean<ProjectDocument>());
+    (await ProjectModel.findOne({ id }).lean()) || (await ProjectModel.findById(id).lean());
   return project ?? null;
 }
 

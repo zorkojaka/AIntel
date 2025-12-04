@@ -92,7 +92,7 @@ function selectActiveVersionId(versions: InvoiceVersion[]): string | null {
 }
 
 function serializeResponse(project: Project | ProjectDocument): InvoiceListResponse {
-  const plain = 'toObject' in project ? project.toObject<Project>() : (project as Project);
+  const plain = 'toObject' in project ? (project as any).toObject() : (project as Project);
   const versions = [...(plain.invoiceVersions ?? [])].sort((a, b) => a.versionNumber - b.versionNumber);
   return {
     versions,

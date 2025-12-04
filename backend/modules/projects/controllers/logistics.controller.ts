@@ -259,9 +259,18 @@ function serializeWorkOrder(order: any): WorkOrder | null {
     customerEmail: order.customerEmail ?? '',
     customerPhone: order.customerPhone ?? '',
     customerAddress: order.customerAddress ?? '',
-    executionNote: typeof order.executionNote === 'string' ? order.executionNote : null,
+    executionNote:
+      typeof order.executionNote === 'string'
+        ? order.executionNote
+        : order.executionNote === null
+          ? null
+          : undefined,
     cancelledAt: order.cancelledAt ? new Date(order.cancelledAt).toISOString() : null,
     reopened: !!order.reopened,
+    workLogs: (order.workLogs ?? []).map((log: any) => ({
+      employeeId: typeof log.employeeId === 'string' ? log.employeeId : '',
+      hours: typeof log.hours === 'number' ? log.hours : 0,
+    })),
     createdAt: order.createdAt ? new Date(order.createdAt).toISOString() : '',
     updatedAt: order.updatedAt ? new Date(order.updatedAt).toISOString() : '',
   };
@@ -559,6 +568,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           : typeof incoming._id === 'string'
             ? incoming._id
             : null;
+
       payload.items.forEach((incoming: any) => {
         const targetId = resolveItemId(incoming);
         if (targetId) {
@@ -590,33 +600,42 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           }
         }
         const planned = typeof incoming.plannedQuantity === 'number' ? incoming.plannedQuantity : 0;
-        const executed =
-          typeof incoming.executedQuantity === 'number' ? incoming.executedQuantity : planned;
+        const executed = typeof incoming.executedQuantity === 'number' ? incoming.executedQuantity : planned;
         const offered = typeof incoming.offeredQuantity === 'number' ? incoming.offeredQuantity : 0;
-          const newItemId =
-            typeof incoming.id === 'string'
-              ? incoming.id
-              : typeof incoming._id === 'string'
-                ? incoming._id
-                : `extra-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          nextItems.push({
-            id: newItemId,
-            productId: incoming.productId ?? null,
-            name: incoming.name ?? 'Dodatna postavka',
-            quantity: planned,
-            unit: incoming.unit ?? '',
-            note: incoming.note ?? '',
-            offerItemId: incoming.offerItemId ?? null,
-            offeredQuantity: offered,
-            plannedQuantity: planned,
-            executedQuantity: executed,
-            isExtra: incoming.isExtra !== undefined ? !!incoming.isExtra : true,
-            itemNote: typeof incoming.itemNote === 'string' ? incoming.itemNote : null,
-            isCompleted: typeof incoming.isCompleted === 'boolean' ? incoming.isCompleted : false,
-          });
+        const newItemId =
+          typeof incoming.id === 'string'
+            ? incoming.id
+            : typeof incoming._id === 'string'
+              ? incoming._id
+              : `extra-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        nextItems.push({
+          id: newItemId,
+          productId: incoming.productId ?? null,
+          name: incoming.name ?? 'Dodatna postavka',
+          quantity: planned,
+          unit: incoming.unit ?? '',
+          note: incoming.note ?? '',
+          offerItemId: incoming.offerItemId ?? null,
+          offeredQuantity: offered,
+          plannedQuantity: planned,
+          executedQuantity: executed,
+          isExtra: incoming.isExtra !== undefined ? !!incoming.isExtra : true,
+          itemNote: typeof incoming.itemNote === 'string' ? incoming.itemNote : null,
+          isCompleted: typeof incoming.isCompleted === 'boolean' ? incoming.isCompleted : false,
         });
-        updates.items = nextItems;
+      });
+
+      updates.items = nextItems;
+    }
+      if (Array.isArray(payload.workLogs)) {
+        updates.workLogs = payload.workLogs
+          .filter((log: any) => typeof log.employeeId === 'string' && log.employeeId.trim().length > 0)
+          .map((log: any) => ({
+            employeeId: String(log.employeeId),
+            hours: typeof log.hours === 'number' && Number.isFinite(log.hours) ? log.hours : 0,
+          }));
       }
+
     if (
       payload.status === 'draft' ||
       payload.status === 'issued' ||

@@ -4,7 +4,14 @@
     "module": "commonjs",
     "rootDir": "../",
     "outDir": "dist",
-    "strict": true,
-    "esModuleInterop": true
-  }
+    "strict": false,
+    "noImplicitAny": false,
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "typeRoots": ["./types", "../node_modules/@types"]
+  },
+  "include": ["./**/*.ts", "../shared/types/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }

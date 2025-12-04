@@ -6,6 +6,7 @@ import {
   issueInvoiceVersion,
   updateInvoiceVersion,
 } from '../services/invoice.service';
+import { generateInvoicePdf } from '../services/invoice-pdf.service';
 
 function getProjectId(req: Request) {
   return (req.params.projectId ?? req.params.id ?? '').trim();
@@ -62,6 +63,17 @@ export async function cloneInvoiceForEdit(req: Request, res: Response) {
   try {
     const payload = await cloneInvoiceVersion(getProjectId(req), getVersionId(req));
     return res.success(payload, 201);
+  } catch (error) {
+    return handleError(res, error);
+  }
+}
+
+export async function exportInvoicePdf(req: Request, res: Response) {
+  try {
+    const buffer = await generateInvoicePdf(getProjectId(req), getVersionId(req));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="invoice-${getVersionId(req)}.pdf"`);
+    return res.end(buffer);
   } catch (error) {
     return handleError(res, error);
   }
