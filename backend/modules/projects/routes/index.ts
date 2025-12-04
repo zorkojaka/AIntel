@@ -58,6 +58,7 @@ router.post('/:projectId/invoices/from-closing', invoiceController.createInvoice
 router.patch('/:projectId/invoices/:versionId', invoiceController.updateInvoice);
 router.post('/:projectId/invoices/:versionId/issue', invoiceController.issueInvoice);
 router.post('/:projectId/invoices/:versionId/clone-for-edit', invoiceController.cloneInvoiceForEdit);
+router.get('/:projectId/invoices/:versionId/pdf', invoiceController.exportInvoicePdf);
 router.post('/:id/deliveries/:deliveryId/receive', receiveDelivery);
 router.post('/:id/signature', saveSignature);
 

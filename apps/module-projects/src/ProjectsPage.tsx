@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ClientForm, ClientFormPayload, Client } from "@aintel/module-crm";
 import { useSettingsData } from "@aintel/module-settings";
-import { Settings, ArrowLeft, Plus, UserPlus } from "lucide-react";
+import { Settings, ArrowLeft, Plus, UserPlus, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectList } from "./components/ProjectList";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
@@ -11,6 +11,10 @@ import { Toaster } from "./components/ui/sonner";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Category, ProjectDetails, ProjectSummary } from "./types";
+import { FinanceDashboardPage } from "./domains/finance/FinanceDashboardPage";
+import { FinanceProjectsPage } from "./domains/finance/FinanceProjectsPage";
+import { FinanceEmployeesPage } from "./domains/finance/FinanceEmployeesPage";
+import { FinanceInvoicesPage } from "./domains/finance/FinanceInvoicesPage";
 import { NewProjectDialog } from "./components/NewProjectDialog";
 import { mapProject } from "./domains/core/useProject";
 
@@ -39,7 +43,7 @@ function toSummary(project: ProjectDetails): ProjectSummary {
 
 export function ProjectsPage() {
   const { settings: globalSettings } = useSettingsData({ applyTheme: false });
-  const [currentView, setCurrentView] = useState<"list" | "workspace" | "settings">("list");
+  const [currentView, setCurrentView] = useState<"list" | "workspace" | "settings" | "finance">("list");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
@@ -490,7 +494,11 @@ export function ProjectsPage() {
                   <UserPlus className="mr-2 h-4 w-4" />
                   Dodaj stranko
                 </Button>
-                <Button variant="outline" onClick={() => setCurrentView("settings")}>
+                <Button variant="secondary" onClick={() => setCurrentView("finance") }>
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  Finance
+                </Button>
+                <Button variant="outline" onClick={() => setCurrentView("settings")}> 
                   <Settings className="mr-2 h-4 w-4" />
                   Nastavitve
                 </Button>
@@ -516,6 +524,39 @@ export function ProjectsPage() {
           onBack={handleBackToList}
           onProjectUpdate={handleProjectUpdate}
         />
+      )}
+
+      {currentView === "finance" && (
+        <div className="min-h-screen bg-background p-6">
+          <div className="mx-auto max-w-[1280px] space-y-4">
+            <div className="mb-2">
+              <Button variant="ghost" onClick={() => setCurrentView("list")}> 
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Nazaj na projekte
+              </Button>
+            </div>
+            <Tabs defaultValue="dashboard">
+              <TabsList>
+                <TabsTrigger value="dashboard">Pregled</TabsTrigger>
+                <TabsTrigger value="projects">Projekti</TabsTrigger>
+                <TabsTrigger value="employees">Zaposleni</TabsTrigger>
+                <TabsTrigger value="invoices">Računi</TabsTrigger>
+              </TabsList>
+              <TabsContent value="dashboard" className="mt-4">
+                <FinanceDashboardPage />
+              </TabsContent>
+              <TabsContent value="projects" className="mt-4">
+                <FinanceProjectsPage />
+              </TabsContent>
+              <TabsContent value="employees" className="mt-4">
+                <FinanceEmployeesPage />
+              </TabsContent>
+              <TabsContent value="invoices" className="mt-4">
+                <FinanceInvoicesPage />
+              </TabsContent>
+            </Tabs>
+          </div>
+        </div>
       )}
 
       {currentView === "settings" && (

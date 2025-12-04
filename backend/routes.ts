@@ -8,6 +8,7 @@ import financeRoutes from './modules/finance/routes';
 import categoriesRoutes from './modules/categories/routes';
 import projectsRoutes from './modules/projects/routes';
 import requirementTemplatesRoutes from './modules/requirement-templates/routes';
+import employeesRoutes from './modules/employees/routes/employees.routes';
 
 const router = Router();
 
@@ -20,6 +21,7 @@ router.use('/finance', financeRoutes);
 router.use('/categories', categoriesRoutes);
 router.use('/projects', projectsRoutes);
 router.use('/requirement-templates', requirementTemplatesRoutes);
+router.use('/employees', employeesRoutes);
 
 router.get('/', (_req, res) => {
   res.success({ status: 'AIntel CORE backend pripravljen' });
