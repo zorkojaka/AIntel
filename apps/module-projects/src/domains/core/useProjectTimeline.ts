@@ -254,6 +254,13 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const logisticsMeta = `${materialSummary.label} · ${workOrderSummary.label}`;
 
     const issuedLikeWorkOrders = issuedWorkOrders;
+    const hasIssuedWorkOrders = issuedLikeWorkOrders.length > 0;
+    const completedIssuedWorkOrders = issuedLikeWorkOrders.filter((order) => {
+      const normalized = normalizeWorkOrderStatus(order.status);
+      return normalized === "completed" || normalized === "zakljucen";
+    });
+    const allIssuedWorkOrdersCompleted =
+      hasIssuedWorkOrders && completedIssuedWorkOrders.length === issuedLikeWorkOrders.length;
     const issuedItemEntries = issuedLikeWorkOrders.flatMap((order) =>
       (Array.isArray(order.items) ? order.items : []).map((item, index) => ({
         item,
@@ -281,9 +288,9 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const executionTotalCount = visibleItems.length;
     const executionCompletedCount = visibleItems.filter((item) => item?.isCompleted === true).length;
     const executionHasWorkOrders = executionTotalCount > 0;
-    const executionStatus: StepStatus = !executionHasWorkOrders
+    const executionStatus: StepStatus = !hasIssuedWorkOrders
       ? "pending"
-      : executionCompletedCount === executionTotalCount
+      : allIssuedWorkOrdersCompleted
         ? "done"
         : "inProgress";
     const executionMeta = executionHasWorkOrders

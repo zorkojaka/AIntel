@@ -15,6 +15,8 @@ import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { MaterialOrderCard, TechnicianOption } from "./MaterialOrderCard";
+import { useConfirmOffer } from "../core/useConfirmOffer";
+import { triggerProjectRefresh } from "../core/useProject";
 
 interface LogisticsPanelProps {
   projectId: string;
@@ -111,7 +113,6 @@ function buildOfferLabel(offer: ProjectLogisticsSnapshot["offerVersions"][number
 export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: LogisticsPanelProps) {
   const [snapshot, setSnapshot] = useState<ProjectLogisticsSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [selectedOfferVersionId, setSelectedOfferVersionId] = useState<string | null>(null);
   const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
@@ -271,23 +272,10 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
     }
   }, [client, selectedWorkOrder?.customerAddress, locationTouched, workOrderForm.location]);
 
-  const handleConfirmOffer = async (offerId: string) => {
-    setConfirmingId(offerId);
-    try {
-      const response = await fetch(`/api/projects/${projectId}/offers/${offerId}/confirm`, { method: "POST" });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Ponudbe ni mogoče potrditi.");
-        return;
-      }
-      toast.success("Ponudba potrjena.");
-      await fetchSnapshot();
-    } catch (error) {
-      toast.error("Ponudbe ni mogoče potrditi.");
-    } finally {
-      setConfirmingId(null);
-    }
-  };
+  const { confirmOffer, confirmingId } = useConfirmOffer({
+    projectId,
+    onConfirmed: fetchSnapshot,
+  });
 
   const handleCancelConfirmation = async (offerId: string) => {
     if (!window.confirm("Res želiš preklicati potrditev ponudbe?")) return;
@@ -304,7 +292,7 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
         return;
       }
       toast.success("Potrditev ponudbe je bila preklicana.");
-      await fetchSnapshot();
+      await Promise.allSettled([fetchSnapshot(), triggerProjectRefresh(projectId)]);
     } catch (error) {
       toast.error("Preklic potrditve ni uspel.");
     } finally {
@@ -422,6 +410,7 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
       if (onWorkOrderUpdated) {
         onWorkOrderUpdated(mergedWorkOrder);
       }
+      await triggerProjectRefresh(projectId);
       toast.success("Delovni nalog posodobljen.");
       return true;
     } catch (error) {
@@ -657,7 +646,7 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
                                 size="sm"
                                 variant="outline"
                                 disabled={confirmingId === offer._id}
-                                onClick={() => handleConfirmOffer(offer._id)}
+                                onClick={() => confirmOffer(offer._id)}
                               >
                                 {confirmingId === offer._id ? "Potrjujem..." : "Potrdi to verzijo"}
                               </Button>
@@ -676,7 +665,7 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => handleConfirmOffer(offer._id)}
+                                onClick={() => confirmOffer(offer._id)}
                                 disabled={confirmingId === offer._id}
                               >
                                 {confirmingId === offer._id ? "Potrjujem..." : "Ponovno potrdi verzijo"}

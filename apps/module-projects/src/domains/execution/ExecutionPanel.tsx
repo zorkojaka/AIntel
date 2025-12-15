@@ -12,6 +12,7 @@ import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import type { MaterialOrder, WorkOrder, WorkOrderItem, WorkOrderStatus } from "@aintel/shared/types/logistics";
 import { SignaturePad } from "./SignaturePad";
 import { PriceListProductAutocomplete } from "../../components/PriceListProductAutocomplete";
+import { triggerProjectRefresh } from "../core/useProject";
 
 interface ExecutionPanelProps {
   projectId: string;
@@ -290,6 +291,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
           return next;
         });
         onWorkOrderUpdated?.(updated);
+        await triggerProjectRefresh(projectId);
         setSavingStates((prev) => ({ ...prev, [orderId]: "saved" }));
         setTimeout(() => {
           setSavingStates((prev) => {

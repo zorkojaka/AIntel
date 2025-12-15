@@ -1,8 +1,11 @@
 import { NextFunction, Request, Response } from 'express';
 import { Types } from 'mongoose';
 import PDFDocument from 'pdfkit';
+import http from 'http';
+import https from 'https';
 import type { OfferLineItem, OfferStatus, OfferVersion } from '../../../../shared/types/offers';
 import { OfferVersionModel } from '../schemas/offer-version';
+import { ProductModel } from '../../cenik/product.model';
 
 function clampNumber(value: unknown, fallback = 0, min = 0) {
   const parsed = Number(value);
@@ -332,21 +335,43 @@ export async function deleteOfferVersion(req: Request, res: Response, next: Next
 
 export async function exportOfferPdf(req: Request, res: Response) {
   const { projectId, offerVersionId } = req.params;
-  const offer = await OfferVersionModel.findOne({ _id: offerVersionId, projectId }).lean();
-  if (!offer) {
-    return res.fail('Ponudba ni najdena.', 404);
-  }
+  const modeParam = typeof req.query.mode === 'string' ? req.query.mode.toLowerCase() : 'offer';
+  const mode: 'offer' | 'project' | 'both' =
+    modeParam === 'project' || modeParam === 'both' ? (modeParam as 'project' | 'both') : 'offer';
+  const includeOffer = mode === 'offer' || mode === 'both';
+  const includeProject = mode === 'project' || mode === 'both';
+
+  const offer = await OfferVersionModel.findOne({ _id: offerVersionId, projectId }).lean();
+  if (!offer) {
+    return res.fail('Ponudba ni najdena.', 404);
+  }
+
+  const doc = new PDFDocument({ size: 'A4', margin: 50 });
+  const chunks: Buffer[] = [];
+  doc.on('data', (chunk: unknown) => chunks.push(chunk as Buffer));
+  doc.on('end', () => {
+    const pdf = Buffer.concat(chunks);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="offer-${offer._id}.pdf"`);
+    res.send(pdf);
+  });
+
+  if (includeOffer) {
+    renderOfferSection(doc, offer);
+  }
+
+  if (includeProject) {
+    if (includeOffer) {
+      doc.addPage();
+    }
+    const projectEntries = await buildProjectEntries(offer);
+    await appendProjectSection(doc, projectEntries);
+  }
+
+  doc.end();
+}
 
-  const doc = new PDFDocument({ size: 'A4', margin: 50 });
-  const chunks: Buffer[] = [];
-  doc.on('data', (chunk: unknown) => chunks.push(chunk as Buffer));
-  doc.on('end', () => {
-    const pdf = Buffer.concat(chunks);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=\"offer-${offer._id}.pdf\"`);
-    res.send(pdf);
-  });
-
+function renderOfferSection(doc: PDFDocumentInstance, offer: OfferVersion) {
   doc.fontSize(18).text(offer.title || 'Ponudba', { align: 'left' });
   doc.moveDown();
   doc.fontSize(12).text(`Projekt: ${offer.projectId}`);
@@ -360,15 +385,13 @@ export async function exportOfferPdf(req: Request, res: Response) {
   doc.text('Postavke:', { underline: true });
   doc.moveDown(0.5);
 
-  offer.items.forEach((item: OfferLineItem) => {
+  (offer.items ?? []).forEach((item: OfferLineItem) => {
     doc.fontSize(12).text(`${item.name} (${item.quantity} ${item.unit})`);
     doc
       .fontSize(10)
       .fillColor('gray')
       .text(
-        `Cena: ${item.unitPrice.toFixed(2)} | DDV ${item.vatRate}% | Neto: ${item.totalNet.toFixed(
-          2
-        )} | Bruto: ${item.totalGross.toFixed(2)}`
+        `Cena: ${item.unitPrice.toFixed(2)} | DDV ${item.vatRate}% | Neto: ${item.totalNet.toFixed(2)} | Bruto: ${item.totalGross.toFixed(2)}`
       );
     doc.moveDown(0.5);
     doc.fillColor('black');
@@ -380,8 +403,130 @@ export async function exportOfferPdf(req: Request, res: Response) {
   doc.text(`DDV 9.5%: ${offer.totalVat95.toFixed(2)}`);
   doc.text(`DDV skupaj: ${offer.totalVat.toFixed(2)}`);
   doc.fontSize(14).text(`Skupaj z DDV: ${offer.totalGross.toFixed(2)}`, { align: 'left' });
+}
 
-  doc.end();
+type PDFDocumentInstance = InstanceType<typeof PDFDocument>;
+
+interface ProjectEntry {
+  title: string;
+  description?: string;
+  imageUrl?: string;
+  imageBuffer?: Buffer | null;
+}
+
+async function buildProjectEntries(offer: OfferVersion): Promise<ProjectEntry[]> {
+  const items = Array.isArray(offer.items) ? offer.items : [];
+  const uniqueIds = Array.from(
+    new Set(
+      items
+        .map((item) => (item.productId ? String(item.productId) : null))
+        .filter((value): value is string => !!value)
+    )
+  );
+
+  let productMap = new Map<string, any>();
+  if (uniqueIds.length > 0) {
+    const products = await ProductModel.find({ _id: { $in: uniqueIds } }).lean();
+    productMap = new Map(products.map((product) => [product._id.toString(), product]));
+  }
+
+  const seenProducts = new Set<string>();
+  const entries: ProjectEntry[] = [];
+
+  for (const item of items) {
+    const productId = item.productId ? String(item.productId) : null;
+    if (productId && productMap.has(productId)) {
+      if (seenProducts.has(productId)) {
+        continue;
+      }
+      const product = productMap.get(productId);
+      entries.push({
+        title: product?.ime || item.name,
+        description: sanitizeDescription(product?.dolgOpis || product?.kratekOpis || ''),
+        imageUrl: product?.povezavaDoSlike || undefined,
+      });
+      seenProducts.add(productId);
+    } else {
+      entries.push({
+        title: item.name,
+      });
+    }
+  }
+
+  return entries;
+}
+
+async function appendProjectSection(doc: PDFDocumentInstance, entries: ProjectEntry[]) {
+  const processed = await Promise.all(
+    entries.map(async (entry) => {
+      if (entry.imageUrl) {
+        entry.imageBuffer = await downloadImageBuffer(entry.imageUrl);
+      }
+      return entry;
+    })
+  );
+
+  doc.fontSize(18).text('Projekt', { align: 'left' });
+  doc.moveDown();
+
+  const usableWidth =
+    doc.page.width - (doc.page.margins?.left ?? 72) - (doc.page.margins?.right ?? 72);
+
+  processed.forEach((entry, index) => {
+    ensureSpace(doc, 200);
+    doc.fontSize(14).text(entry.title, { align: 'left' });
+    doc.moveDown(0.3);
+    if (entry.imageBuffer) {
+      doc.image(entry.imageBuffer, {
+        fit: [Math.min(usableWidth, 320), 220],
+      });
+      doc.moveDown(0.3);
+    }
+    if (entry.description) {
+      doc.fontSize(11).text(entry.description, { align: 'left' });
+      doc.moveDown(0.5);
+    } else {
+      doc.moveDown(0.5);
+    }
+    if (index < processed.length - 1) {
+      doc.moveDown(0.5);
+    }
+  });
+}
+
+function sanitizeDescription(value: string) {
+  if (!value) return '';
+  return value.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+async function downloadImageBuffer(url: string): Promise<Buffer | null> {
+  return new Promise((resolve) => {
+    try {
+      const client = url.startsWith('https') ? https : http;
+      client
+        .get(url, (response) => {
+          if (!response.statusCode || response.statusCode >= 400) {
+            response.resume();
+            resolve(null);
+            return;
+          }
+          const data: Buffer[] = [];
+          response.on('data', (chunk) => data.push(chunk as Buffer));
+          response.on('end', () => resolve(Buffer.concat(data)));
+        })
+        .on('error', () => resolve(null));
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function ensureSpace(doc: PDFDocumentInstance, requiredHeight: number) {
+  const bottom = doc.page.margins?.bottom ?? 72;
+  const availableHeight = doc.page.height - bottom;
+  if (doc.y + requiredHeight > availableHeight) {
+    doc.addPage();
+  }
 }
 
 export async function sendOfferVersionStub(req: Request, res: Response) {

@@ -12,6 +12,34 @@ export type UseProjectResult = {
   setProject: (updater: (prev: ProjectDetails) => ProjectDetails) => void;
 };
 
+type RefreshListener = () => Promise<void>;
+
+const projectRefreshListeners = new Map<string, Set<RefreshListener>>();
+
+export function registerProjectRefresh(projectId: string, listener: RefreshListener) {
+  if (!projectId || typeof listener !== "function") return;
+  const listeners = projectRefreshListeners.get(projectId) ?? new Set<RefreshListener>();
+  listeners.add(listener);
+  projectRefreshListeners.set(projectId, listeners);
+}
+
+export function unregisterProjectRefresh(projectId: string, listener: RefreshListener) {
+  if (!projectId) return;
+  const listeners = projectRefreshListeners.get(projectId);
+  if (!listeners) return;
+  listeners.delete(listener);
+  if (listeners.size === 0) {
+    projectRefreshListeners.delete(projectId);
+  }
+}
+
+export async function triggerProjectRefresh(projectId: string) {
+  const listeners = projectRefreshListeners.get(projectId);
+  if (!listeners || listeners.size === 0) return;
+  const callbacks = Array.from(listeners);
+  await Promise.allSettled(callbacks.map((callback) => callback()));
+}
+
 export function mapProject(data: any): ProjectDetails {
   const requirementsArray = Array.isArray(data.requirements) ? data.requirements : [];
   const requirementsText = !Array.isArray(data.requirements) && typeof data.requirements === "string"
@@ -114,6 +142,13 @@ export function useProject(projectId: string, initialProject?: ProjectDetails | 
   useEffect(() => {
     fetchProject();
   }, [fetchProject]);
+
+  useEffect(() => {
+    registerProjectRefresh(projectId, refresh);
+    return () => {
+      unregisterProjectRefresh(projectId, refresh);
+    };
+  }, [projectId, refresh]);
 
   return { project, loading, error, refresh, setProject };
 }

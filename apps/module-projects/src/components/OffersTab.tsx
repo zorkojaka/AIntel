@@ -8,11 +8,14 @@ import { toast } from "sonner";
 
 import type { OfferLineItem, OfferVersion, OfferVersionSummary } from "@aintel/shared/types/offers";
 import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
+import type { ProjectDetails } from "../types";
 
 import { Loader2, Plus, Trash } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { PriceListProductAutocomplete } from "./PriceListProductAutocomplete";
+import { mapProject, triggerProjectRefresh } from "../domains/core/useProject";
+import { useConfirmOffer } from "../domains/core/useConfirmOffer";
 
 type OffersTabProps = {
   projectId: string;
@@ -85,12 +88,13 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [vatAmount, setVatAmount] = useState<number>(0);
 
   const [saving, setSaving] = useState(false);
-  const [downloading, setDownloading] = useState(false);
+  const [downloadingMode, setDownloadingMode] = useState<"offer" | "project" | "both" | null>(null);
   const [sending, setSending] = useState(false);
-
+  const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
 
   const [versions, setVersions] = useState<OfferVersionSummary[]>([]);
   const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
+  const isDownloading = downloadingMode !== null;
 
   const resetToEmptyOffer = useCallback(() => {
     setSelectedOfferId(null);
@@ -213,6 +217,16 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     selectedOfferIdRef.current = selectedOfferId;
   }, [selectedOfferId]);
 
+  const refreshAfterConfirm = useCallback(async () => {
+    const preferredId = selectedOfferIdRef.current;
+    await refreshOffers(preferredId ?? null, true);
+  }, [refreshOffers]);
+
+  const { confirmOffer, confirmingId } = useConfirmOffer({
+    projectId,
+    onConfirmed: refreshAfterConfirm,
+  });
+
   const previousProjectId = useRef<string | null>(null);
   useEffect(() => {
     const isProjectChange = previousProjectId.current !== projectId;
@@ -227,6 +241,8 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     setVersions([]);
     setCurrentOffer(null);
     setOverriddenVatIds(new Set());
+    setProjectDetails(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
 
@@ -353,6 +369,48 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
       maximumFractionDigits: 2,
     })} €`;
 
+  const sanitizeFilenamePart = (value: string) =>
+    value
+      .replace(/[\\/:*?"<>|]+/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, prefix: string) => {
+    const identifierRaw =
+      (project?.projectNumber != null && `${project.projectNumber}`) ||
+      project?.code ||
+      project?.id ||
+      fallbackId ||
+      "";
+    const customerRaw =
+      project?.customerDetail?.name?.trim() ||
+      project?.customer?.trim() ||
+      "";
+
+    const identifier = sanitizeFilenamePart(identifierRaw);
+    const customer = sanitizeFilenamePart(customerRaw);
+
+  if (identifier && customer) {
+    return `${prefix} ${identifier} - ${customer}.pdf`;
+  }
+  if (identifier) {
+    return `${prefix} ${identifier}.pdf`;
+  }
+  if (fallbackId) {
+    return `${prefix} ${fallbackId}.pdf`;
+  }
+  return `${prefix}.pdf`;
+};
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleToggleGlobalDiscount = (checked: boolean) => {
     setUseGlobalDiscount(checked);
     if (!checked) {
@@ -448,6 +506,7 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
 
       const created: OfferVersion = payload.data;
       await refreshOffers(created._id ?? selectedOfferId ?? null);
+      await triggerProjectRefresh(projectId);
       toast.success("Ponudba shranjena.");
       return created;
     } catch (error) {
@@ -503,15 +562,55 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     await loadOfferById(value);
   };
 
-  const handleExportPdf = async () => {
-    setDownloading(true);
+  const fetchProjectDetails = useCallback(async () => {
+    if (!projectId) return null;
+    try {
+      const response = await fetch(`/api/projects/${projectId}`);
+      const result = await response.json();
+      if (!result.success || !result.data) {
+        return null;
+      }
+      const mapped = mapProject(result.data);
+      setProjectDetails(mapped);
+      return mapped;
+    } catch (error) {
+      console.error("Project fetch failed", error);
+      return null;
+    }
+  }, [projectId]);
+
+  const ensureProjectDetails = useCallback(async () => {
+    if (projectDetails) {
+      return projectDetails;
+    }
+    return fetchProjectDetails();
+  }, [fetchProjectDetails, projectDetails]);
+
+  const handleExportPdf = async (mode: "offer" | "project" | "both") => {
+    setDownloadingMode(mode);
     try {
       const saved = await ensureSavedOffer();
       if (!saved?._id) return;
-      const url = `/api/projects/${projectId}/offers/${saved._id}/pdf`;
-      window.open(url, "_blank");
+      const url = `/api/projects/${projectId}/offers/${saved._id}/pdf?mode=${mode}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error("PDF download failed");
+      }
+      const blob = await response.blob();
+      const details = await ensureProjectDetails();
+      const labelMap = {
+        offer: "Ponudba",
+        project: "Projekt",
+        both: "Ponudba+Projekt",
+      } as const;
+      const filename = buildPdfFilename(details, projectId, labelMap[mode]);
+      downloadBlob(blob, filename);
+      toast.success("PDF prenesen");
+    } catch (error) {
+      console.error(error);
+      toast.error("PDF ni bilo mogoce prenesti.");
     } finally {
-      setDownloading(false);
+      setDownloadingMode(null);
     }
   };
 
@@ -540,6 +639,19 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
       setSending(false);
     }
   };
+
+  const handleConfirmCurrentOffer = useCallback(async () => {
+    const saved = await ensureSavedOffer();
+    if (!saved?._id) return;
+    await confirmOffer(saved._id);
+  }, [ensureSavedOffer, confirmOffer]);
+
+  const currentStatus = (currentOffer?.status ?? "").toUpperCase();
+  const isCurrentAccepted = currentStatus === "ACCEPTED";
+  const isCurrentCancelled = currentStatus === "CANCELLED";
+  const canConfirmCurrentOffer =
+    !!currentOffer?._id && !isCurrentAccepted && !isCurrentCancelled;
+  const isConfirmingCurrentOffer = confirmingId !== null;
 
   return (
     <Card className="p-4 space-y-4">
@@ -882,11 +994,27 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
         </Button>
         <Button
           variant="outline"
-          onClick={handleExportPdf}
-          disabled={downloading}
+          onClick={() => handleExportPdf("offer")}
+          disabled={isDownloading}
         >
-          {downloading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Izvozi PDF
+          {downloadingMode === "offer" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Izvozi ponudbo
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => handleExportPdf("project")}
+          disabled={isDownloading}
+        >
+          {downloadingMode === "project" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Izvozi projekt
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => handleExportPdf("both")}
+          disabled={isDownloading}
+        >
+          {downloadingMode === "both" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Izvozi oboje
         </Button>
         <Button
           variant="outline"
@@ -895,6 +1023,16 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
         >
           {sending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Pošlji ponudbo stranki
+        </Button>
+        <Button
+          variant="outline"
+          onClick={handleConfirmCurrentOffer}
+          disabled={!canConfirmCurrentOffer || isConfirmingCurrentOffer}
+        >
+          {isConfirmingCurrentOffer && (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          )}
+          Potrdi ponudbo
         </Button>
       </div>
     </Card>

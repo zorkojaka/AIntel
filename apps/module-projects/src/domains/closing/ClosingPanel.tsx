@@ -150,25 +150,6 @@ export function ClosingPanel({ logistics }: ClosingPanelProps) {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="p-4">
-          <p className="text-sm text-muted-foreground">Št. delovnih nalogov</p>
-          <p className="text-2xl font-semibold">{summary.totalWorkOrders}</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-sm text-muted-foreground">Št. postavk skupaj</p>
-          <p className="text-2xl font-semibold">{summary.totalItems}</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-sm text-muted-foreground">Št. dodatnih postavk</p>
-          <p className="text-2xl font-semibold">{summary.totalExtras}</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-sm text-muted-foreground">Št. postavk manj izvedenih</p>
-          <p className="text-2xl font-semibold">{summary.totalLessExecuted}</p>
-        </Card>
-      </div>
-
       <Card className="p-4">
         <div className="mb-4">
           <h3 className="text-lg font-semibold m-0">Predlog postavk za račun</h3>

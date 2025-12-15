@@ -1,6 +1,8 @@
 import { Types } from 'mongoose';
 import { ProjectModel, type Project, type ProjectDocument } from '../schemas/project';
 import { WorkOrderModel } from '../schemas/work-order';
+import { OfferVersionModel } from '../schemas/offer-version';
+import type { OfferLineItem } from '../../../../shared/types/offers';
 
 type InvoiceStatus = 'draft' | 'issued';
 type InvoiceItemType = 'Osnovno' | 'Dodatno' | 'Manj';
@@ -100,8 +102,39 @@ function serializeResponse(project: Project | ProjectDocument): InvoiceListRespo
   };
 }
 
-async function aggregateClosingItems(projectId: string): Promise<InvoiceItemPayload[]> {
+async function buildConfirmedOfferIndex(project: ProjectDocument) {
+  const projectId = project.id;
+  const offerId = (project.confirmedOfferVersionId ?? '').trim();
+  if (!offerId) {
+    return {
+      itemsById: new Map<string, OfferLineItem>(),
+      itemsByProductId: new Map<string, OfferLineItem>(),
+    };
+  }
+  const offer = await OfferVersionModel.findOne({ _id: offerId, projectId }).lean();
+  if (!offer) {
+    return {
+      itemsById: new Map<string, OfferLineItem>(),
+      itemsByProductId: new Map<string, OfferLineItem>(),
+    };
+  }
+  const itemsById = new Map<string, OfferLineItem>();
+  const itemsByProductId = new Map<string, OfferLineItem>();
+  for (const item of offer.items ?? []) {
+    if (item?.id) {
+      itemsById.set(item.id, item);
+    }
+    if (item?.productId) {
+      itemsByProductId.set(item.productId, item);
+    }
+  }
+  return { itemsById, itemsByProductId };
+}
+
+async function aggregateClosingItems(project: ProjectDocument): Promise<InvoiceItemPayload[]> {
+  const projectId = project.id;
   const workOrders = await WorkOrderModel.find({ projectId }).lean();
+  const offerIndex = await buildConfirmedOfferIndex(project);
   const grouped = new Map<
     string,
     {
@@ -110,6 +143,8 @@ async function aggregateClosingItems(projectId: string): Promise<InvoiceItemPayl
       offered: number;
       executed: number;
       isExtra: boolean;
+      offerItemId?: string | null;
+      productId?: string | null;
     }
   >();
 
@@ -123,13 +158,27 @@ async function aggregateClosingItems(projectId: string): Promise<InvoiceItemPayl
           : item.productId && item.productId.length > 0
             ? `product:${item.productId}`
             : `custom:${sanitizeText(item.name, '')}:${sanitizeText(item.unit, '')}`;
-      const current = grouped.get(groupKey) ?? { name: sanitizeText(item.name, ''), unit: sanitizeText(item.unit, ''), offered: 0, executed: 0, isExtra: false };
+      const offerItemId = typeof item.offerItemId === 'string' && item.offerItemId.length > 0 ? item.offerItemId : null;
+      const productId = typeof item.productId === 'string' && item.productId.length > 0 ? item.productId : null;
+      const current =
+        grouped.get(groupKey) ??
+        {
+          name: sanitizeText(item.name, ''),
+          unit: sanitizeText(item.unit, ''),
+          offered: 0,
+          executed: 0,
+          isExtra: false,
+          offerItemId,
+          productId,
+        };
       grouped.set(groupKey, {
         name: sanitizeText(current.name || item.name, 'Neimenovana postavka'),
         unit: sanitizeText(current.unit || item.unit, ''),
         offered: current.offered + offered,
         executed: current.executed + executed,
         isExtra: current.isExtra || !!item.isExtra || offered === 0,
+        offerItemId: current.offerItemId ?? offerItemId,
+        productId: current.productId ?? productId,
       });
     });
   });
@@ -142,12 +191,18 @@ async function aggregateClosingItems(projectId: string): Promise<InvoiceItemPayl
     } else if (entry.executed < entry.offered) {
       type = 'Manj';
     }
+    const matchedOfferItem =
+      (entry.offerItemId && offerIndex.itemsById.get(entry.offerItemId)) ||
+      (entry.productId && offerIndex.itemsByProductId.get(entry.productId)) ||
+      null;
+    const unitPrice = matchedOfferItem ? toNumber(matchedOfferItem.unitPrice, 0) : 0;
+    const vatPercent = matchedOfferItem ? toNumber(matchedOfferItem.vatRate, 22) : 22;
     invoiceItems.push({
       name: entry.name || 'Neimenovana postavka',
       unit: entry.unit || '',
       quantity: entry.executed,
-      unitPrice: 0,
-      vatPercent: 22,
+      unitPrice,
+      vatPercent,
       type,
     });
   });
@@ -176,7 +231,7 @@ export async function getInvoiceVersions(projectId: string): Promise<InvoiceList
 
 export async function createInvoiceFromClosing(projectId: string): Promise<InvoiceListResponse> {
   const project = await findProjectOrFail(projectId);
-  const sourceItems = await aggregateClosingItems(projectId);
+  const sourceItems = await aggregateClosingItems(project);
   const { items, summary } = recalculateItems(sourceItems);
   const version: InvoiceVersion = {
     _id: new Types.ObjectId().toString(),
