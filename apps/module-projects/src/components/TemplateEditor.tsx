@@ -23,9 +23,10 @@ export interface Template {
 
 interface TemplateEditorProps {
   templates: Template[];
-  onSave: (template: Template) => void;
-  onDelete: (id: string) => void;
-  onSetDefault: (id: string) => void;
+  onSave: (template: Template) => Promise<boolean>;
+  onDelete: (id: string) => Promise<boolean>;
+  onSetDefault: (id: string) => Promise<boolean>;
+  disabled?: boolean;
 }
 
 const DEFAULT_OFFER_TEMPLATE = `<!DOCTYPE html>
@@ -86,7 +87,7 @@ const DEFAULT_OFFER_TEMPLATE = `<!DOCTYPE html>
       </tr>
     </thead>
     <tbody>
-      {{items}}
+      {{itemsHtml}}
     </tbody>
   </table>
 
@@ -122,7 +123,8 @@ const PLACEHOLDER_INFO = [
   { key: "{{offerVersion}}", desc: "Verzija ponudbe" },
   { key: "{{offerDate}}", desc: "Datum ponudbe" },
   { key: "{{offerAmount}}", desc: "Vrednost ponudbe" },
-  { key: "{{items}}", desc: "Tabela postavk (avtomatska)" },
+  { key: "{{itemsHtml}}", desc: "Tabela postavk (avtomatska)" },
+  { key: "{{items}}", desc: "Tabela postavk (zdruzljivost)" },
   { key: "{{totalNet}}", desc: "Neto znesek" },
   { key: "{{totalVAT}}", desc: "DDV znesek" },
   { key: "{{totalGross}}", desc: "Bruto znesek" },
@@ -132,7 +134,7 @@ const PLACEHOLDER_INFO = [
   { key: "{{milestones}}", desc: "Časovnica (AI)" },
 ];
 
-export function TemplateEditor({ templates, onSave, onDelete, onSetDefault }: TemplateEditorProps) {
+export function TemplateEditor({ templates, onSave, onDelete, onSetDefault, disabled = false }: TemplateEditorProps) {
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -142,7 +144,18 @@ export function TemplateEditor({ templates, onSave, onDelete, onSetDefault }: Te
     content: DEFAULT_OFFER_TEMPLATE,
   });
 
+  const ensureEnabled = (message?: string) => {
+    if (disabled) {
+      const text = message ?? "Izberi projekt, preden urejaš predloge.";
+      toast.error(text);
+      console.warn("[templates] Action blocked - missing project context.");
+      return false;
+    }
+    return true;
+  };
+
   const handleCreate = () => {
+    if (!ensureEnabled()) return;
     setFormData({
       name: "",
       description: "",
@@ -154,6 +167,7 @@ export function TemplateEditor({ templates, onSave, onDelete, onSetDefault }: Te
   };
 
   const handleEdit = (template: Template) => {
+    if (!ensureEnabled()) return;
     setFormData({
       name: template.name,
       description: template.description,
@@ -164,11 +178,12 @@ export function TemplateEditor({ templates, onSave, onDelete, onSetDefault }: Te
     setIsDialogOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name || !formData.content) {
       toast.error("Izpolnite vsa obvezna polja");
       return;
     }
+    if (!ensureEnabled()) return;
 
     const template: Template = {
       id: editingTemplate?.id || `tpl-${Date.now()}`,
@@ -181,12 +196,19 @@ export function TemplateEditor({ templates, onSave, onDelete, onSetDefault }: Te
       updatedAt: new Date().toISOString(),
     };
 
-    onSave(template);
+    const success = await onSave(template);
+    if (!success) {
+      toast.error("Predloge ni bilo mogoče shraniti.");
+      console.warn("[templates] Save failed", template.id);
+      return;
+    }
+
     setIsDialogOpen(false);
     toast.success(editingTemplate ? "Predloga posodobljena" : "Predloga ustvarjena");
   };
 
-  const handleDuplicate = (template: Template) => {
+  const handleDuplicate = async (template: Template) => {
+    if (!ensureEnabled()) return;
     const newTemplate: Template = {
       ...template,
       id: `tpl-${Date.now()}`,
@@ -195,7 +217,12 @@ export function TemplateEditor({ templates, onSave, onDelete, onSetDefault }: Te
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    onSave(newTemplate);
+    const success = await onSave(newTemplate);
+    if (!success) {
+      toast.error("Predloge ni bilo mogoče podvojiti.");
+      console.warn("[templates] Duplicate failed", template.id);
+      return;
+    }
     toast.success("Predloga podvojena");
   };
 
@@ -204,6 +231,31 @@ export function TemplateEditor({ templates, onSave, onDelete, onSetDefault }: Te
       ...formData,
       content: `${formData.content} ${placeholder}`,
     });
+  };
+
+  const handleDeleteTemplate = async (template: Template) => {
+    if (!ensureEnabled()) return;
+    if (!window.confirm("Ali ste prepričani, da želite izbrisati to predlogo?")) {
+      return;
+    }
+    const success = await onDelete(template.id);
+    if (!success) {
+      toast.error("Predloge ni bilo mogoče izbrisati.");
+      console.warn("[templates] Delete failed", template.id);
+      return;
+    }
+    toast.success("Predloga izbrisana");
+  };
+
+  const handleSetDefaultTemplate = async (template: Template) => {
+    if (!ensureEnabled()) return;
+    const success = await onSetDefault(template.id);
+    if (!success) {
+      toast.error("Privzete predloge ni bilo mogoče nastaviti.");
+      console.warn("[templates] Set default failed", template.id);
+      return;
+    }
+    toast.success("Privzeta predloga nastavljena");
   };
 
   return (
@@ -253,26 +305,27 @@ export function TemplateEditor({ templates, onSave, onDelete, onSetDefault }: Te
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => handleEdit(template)}>
+                <Button size="sm" variant="outline" onClick={() => handleEdit(template)} disabled={disabled}>
                   <Edit className="h-4 w-4" />
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => handleDuplicate(template)}>
+                <Button size="sm" variant="outline" onClick={() => handleDuplicate(template)} disabled={disabled}>
                   <Copy className="h-4 w-4" />
                 </Button>
                 {!template.isDefault && (
-                  <Button size="sm" variant="outline" onClick={() => onSetDefault(template.id)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleSetDefaultTemplate(template)}
+                    disabled={disabled}
+                  >
                     <FileText className="h-4 w-4" />
                   </Button>
                 )}
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => {
-                    if (confirm("Ali ste prepričani, da želite izbrisati to predlogo?")) {
-                      onDelete(template.id);
-                    }
-                  }}
-                  disabled={template.isDefault}
+                  onClick={() => handleDeleteTemplate(template)}
+                  disabled={template.isDefault || disabled}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>

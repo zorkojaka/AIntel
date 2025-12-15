@@ -260,6 +260,10 @@ export async function createProject(req: Request, res: Response) {
     categories,
   };
 
+  if (Array.isArray(project.templates) && project.templates.length > 0) {
+    console.warn('[templates] Project %s created with %d templates', project.id, project.templates.length);
+  }
+
   addTimeline(project, {
     type: 'edit',
     title: 'Projekt ustvarjen',
@@ -310,6 +314,7 @@ export async function updateProject(req: Request, res: Response) {
     }));
   }
   if (Array.isArray(req.body.templates)) {
+    console.warn('[templates] Updating templates for project %s (%d templates)', project.id, req.body.templates.length);
     project.templates = req.body.templates;
   }
   project.categories = sanitizeCategorySlugs(req.body.categories ?? project.categories);

@@ -6,6 +6,13 @@ import https from 'https';
 import type { OfferLineItem, OfferStatus, OfferVersion } from '../../../../shared/types/offers';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { ProductModel } from '../../cenik/product.model';
+import { ProjectModel, type ProjectDocument } from '../schemas/project';
+import { renderHtmlToPdf } from '../services/html-pdf.service';
+import {
+  buildOfferTemplateTokens,
+  getDefaultTemplate,
+  renderTemplateContent,
+} from '../services/template-render.service';
 
 function clampNumber(value: unknown, fallback = 0, min = 0) {
   const parsed = Number(value);
@@ -338,37 +345,70 @@ export async function exportOfferPdf(req: Request, res: Response) {
   const modeParam = typeof req.query.mode === 'string' ? req.query.mode.toLowerCase() : 'offer';
   const mode: 'offer' | 'project' | 'both' =
     modeParam === 'project' || modeParam === 'both' ? (modeParam as 'project' | 'both') : 'offer';
-  const includeOffer = mode === 'offer' || mode === 'both';
-  const includeProject = mode === 'project' || mode === 'both';
-
-  const offer = await OfferVersionModel.findOne({ _id: offerVersionId, projectId }).lean();
-  if (!offer) {
-    return res.fail('Ponudba ni najdena.', 404);
-  }
-
-  const doc = new PDFDocument({ size: 'A4', margin: 50 });
-  const chunks: Buffer[] = [];
-  doc.on('data', (chunk: unknown) => chunks.push(chunk as Buffer));
-  doc.on('end', () => {
-    const pdf = Buffer.concat(chunks);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="offer-${offer._id}.pdf"`);
-    res.send(pdf);
-  });
-
-  if (includeOffer) {
-    renderOfferSection(doc, offer);
-  }
-
-  if (includeProject) {
-    if (includeOffer) {
-      doc.addPage();
-    }
-    const projectEntries = await buildProjectEntries(offer);
-    await appendProjectSection(doc, projectEntries);
-  }
-
-  doc.end();
+  const includeOffer = mode === 'offer' || mode === 'both';
+  const includeProject = mode === 'project' || mode === 'both';
+
+  const offer = await OfferVersionModel.findOne({ _id: offerVersionId, projectId }).lean();
+  if (!offer) {
+    return res.fail('Ponudba ni najdena.', 404);
+  }
+
+  const canUseTemplate = includeOffer && !includeProject;
+  if (canUseTemplate) {
+    try {
+      const project = (await ProjectModel.findOne({ id: projectId }).lean()) as ProjectDocument | null;
+      const template = project ? getDefaultTemplate(project, 'offer') : null;
+      if (project && template) {
+        const tokens = buildOfferTemplateTokens(project, offer);
+        const html = renderTemplateContent(template.content, tokens);
+        const buffer = await renderHtmlToPdf(html);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="offer-${offer._id}.pdf"`);
+        res.end(buffer);
+        return;
+      }
+    } catch (error) {
+      console.error('Offer template render failed', error);
+    }
+  }
+
+  renderOfferPdfFallback(res, offer, includeOffer, includeProject);
+}
+
+function renderOfferPdfFallback(
+  res: Response,
+  offer: OfferVersion,
+  includeOffer: boolean,
+  includeProject: boolean,
+) {
+  const doc = new PDFDocument({ size: 'A4', margin: 50 });
+  const chunks: Buffer[] = [];
+  doc.on('data', (chunk: unknown) => chunks.push(chunk as Buffer));
+  doc.on('end', () => {
+    const pdf = Buffer.concat(chunks);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="offer-${offer._id}.pdf"`);
+    res.send(pdf);
+  });
+
+  (async () => {
+    if (includeOffer) {
+      renderOfferSection(doc, offer);
+    }
+
+    if (includeProject) {
+      if (includeOffer) {
+        doc.addPage();
+      }
+      const projectEntries = await buildProjectEntries(offer);
+      await appendProjectSection(doc, projectEntries);
+    }
+
+    doc.end();
+  })().catch((error) => {
+    console.error('Offer PDF fallback failed', error);
+    doc.end();
+  });
 }
 
 function renderOfferSection(doc: PDFDocumentInstance, offer: OfferVersion) {

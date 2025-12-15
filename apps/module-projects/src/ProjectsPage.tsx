@@ -428,43 +428,11 @@ export function ProjectsPage() {
     );
   };
 
-  const handleSaveTemplate = (template: Template) => {
-    setTemplates((prev) => {
-      const existing = prev.find((t) => t.id === template.id);
-      const nextTemplates = existing
-        ? prev.map((t) => (t.id === template.id ? template : t))
-        : [...prev, template];
-
-      setProjectDetails((detail) => (detail ? { ...detail, templates: nextTemplates } : detail));
-      return nextTemplates;
-    });
-  };
-
-  const handleDeleteTemplate = (id: string) => {
-    setTemplates((prev) => {
-      const nextTemplates = prev.filter((t) => t.id !== id);
-      setProjectDetails((detail) => (detail ? { ...detail, templates: nextTemplates } : detail));
-      return nextTemplates;
-    });
-    toast.success("Predloga izbrisana");
-  };
-
-  const handleSetDefaultTemplate = (id: string) => {
-    setTemplates((prev) => {
-      const nextTemplates = prev.map((t) => ({
-        ...t,
-        isDefault: t.id === id,
-      }));
-      setProjectDetails((detail) => (detail ? { ...detail, templates: nextTemplates } : detail));
-      return nextTemplates;
-    });
-    toast.success("Privzeta predloga nastavljena");
-  };
-
-  const handleProjectUpdate = async (path: string, options?: RequestInit) => {
-    const response = await fetch(path, {
-      ...options,
-      headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
+  const handleProjectUpdate = useCallback(
+    async (path: string, options?: RequestInit) => {
+      const response = await fetch(path, {
+        ...options,
+        headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
     });
     const result = await response.json();
     if (!result.success) {
@@ -476,7 +444,76 @@ export function ProjectsPage() {
     setProjects((prev) => prev.map((proj) => (proj.id === mapped.id ? toSummary(mapped) : proj)));
     setTemplates(mapped.templates);
     return mapped;
-  };
+    },
+    [setProjectDetails, setProjects, setTemplates],
+  );
+
+  const persistTemplates = useCallback(
+    async (nextTemplates: Template[], actionLabel: string) => {
+      if (!selectedProjectId || !projectDetails) {
+        console.warn("[templates] Missing project context for action %s", actionLabel);
+        toast.error("Najprej izberi projekt.");
+        return false;
+      }
+      const payload = {
+        title: projectDetails.title,
+        status: projectDetails.status,
+        customer: {
+          name: projectDetails.customerDetail?.name ?? projectDetails.customer ?? "Stranka",
+          taxId: projectDetails.customerDetail?.taxId ?? "",
+          address: projectDetails.customerDetail?.address ?? "",
+          paymentTerms: projectDetails.customerDetail?.paymentTerms ?? "",
+        },
+        templates: nextTemplates,
+      };
+      const updated = await handleProjectUpdate(`/api/projects/${selectedProjectId}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      if (!updated) {
+        console.warn("[templates] Failed to persist templates (%s) for project %s", actionLabel, selectedProjectId);
+        return false;
+      }
+      return true;
+    },
+    [handleProjectUpdate, projectDetails, selectedProjectId],
+  );
+
+  const handleSaveTemplate = useCallback(
+    async (template: Template) => {
+      const existing = templates.find((t) => t.id === template.id);
+      const nextTemplates = existing
+        ? templates.map((t) => (t.id === template.id ? template : t))
+        : [...templates, template];
+      return persistTemplates(nextTemplates, existing ? "update" : "create");
+    },
+    [persistTemplates, templates],
+  );
+
+  const handleDeleteTemplate = useCallback(
+    async (id: string) => {
+      const nextTemplates = templates.filter((t) => t.id !== id);
+      return persistTemplates(nextTemplates, "delete");
+    },
+    [persistTemplates, templates],
+  );
+
+  const handleSetDefaultTemplate = useCallback(
+    async (id: string) => {
+      const target = templates.find((t) => t.id === id);
+      if (!target) {
+        console.warn("[templates] Cannot set default, template not found", id);
+        return false;
+      }
+      const nextTemplates = templates.map((t) =>
+        t.category === target.category ? { ...t, isDefault: t.id === id } : t,
+      );
+      return persistTemplates(nextTemplates, "set-default");
+    },
+    [persistTemplates, templates],
+  );
+
+  const templateEditorDisabled = !selectedProjectId || !projectDetails;
 
   return (
     <>
@@ -580,6 +617,7 @@ export function ProjectsPage() {
                   onSave={handleSaveTemplate}
                   onDelete={handleDeleteTemplate}
                   onSetDefault={handleSetDefaultTemplate}
+                  disabled={templateEditorDisabled}
                 />
               </TabsContent>
               <TabsContent value="general" className="mt-6">
