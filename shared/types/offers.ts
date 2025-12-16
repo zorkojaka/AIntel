@@ -20,6 +20,7 @@ export interface OfferVersion {
   baseTitle: string;
   versionNumber: number;
   title: string;
+  documentNumber?: string | null;
   validUntil: string | null;
   paymentTerms: string | null;
   introText: string | null;
@@ -54,6 +55,7 @@ export interface OfferVersionSummary {
   baseTitle: string;
   versionNumber: number;
   title: string;
+  documentNumber?: string | null;
   status: OfferStatus;
   createdAt: string;
   totalGross: number;

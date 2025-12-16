@@ -13,6 +13,7 @@ import {
   getDefaultTemplate,
   renderTemplateContent,
 } from '../services/template-render.service';
+import { generateOfferDocumentNumber } from '../services/document-numbering.service';
 
 function clampNumber(value: unknown, fallback = 0, min = 0) {
   const parsed = Number(value);
@@ -209,6 +210,13 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
       updatedAt: now.toISOString(),
     };
 
+    try {
+      const numbering = await generateOfferDocumentNumber(now);
+      payload.documentNumber = numbering.number;
+    } catch (numberingError) {
+      console.error('Failed to generate document number for offer', numberingError);
+    }
+
     const created = await OfferVersionModel.create(payload);
     const plain = created.toObject();
     return res.success(serializeOffer(plain as OfferVersion));
@@ -240,6 +248,7 @@ export async function listOffersForProject(req: Request, res: Response, next: Ne
       baseTitle: o.baseTitle,
       versionNumber: o.versionNumber,
       title: o.title,
+      documentNumber: o.documentNumber ?? null,
       status: o.status,
       createdAt: o.createdAt ? new Date(o.createdAt).toISOString() : '',
       totalGross: o.totalGrossAfterDiscount ?? o.totalWithVat ?? o.totalGross ?? 0,

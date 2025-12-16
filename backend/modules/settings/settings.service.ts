@@ -7,10 +7,18 @@ import {
   NoteDefaultsByDoc,
   DocumentTypeKey,
   LegacyOfferClause,
+  DocumentNumberingSettings,
+  DocumentNumberingConfig,
 } from './Settings';
+import {
+  buildPatternFromPrefix,
+  DEFAULT_OFFER_NUMBER_PATTERN,
+  ensureOfferNumberingConfig,
+} from './document-numbering.util';
 
 export type SettingsUpdate = Partial<Omit<Settings, 'documentPrefix'>> & {
   documentPrefix?: Partial<DocumentPrefix>;
+  documentNumbering?: DocumentNumberingSettings;
 };
 
 const DOCUMENT_TYPE_KEYS: DocumentTypeKey[] = [
@@ -40,6 +48,12 @@ const DEFAULT_SETTINGS: Settings = {
     order: 'NOR-',
     deliveryNote: 'DOB-',
     workOrder: 'DEL-',
+  },
+  documentNumbering: {
+    offer: {
+      pattern: DEFAULT_OFFER_NUMBER_PATTERN,
+      reset: 'yearly',
+    },
   },
   iban: '',
   vatId: '',
@@ -213,6 +227,28 @@ function sanitizeString(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value.trim() : fallback;
 }
 
+function normalizeDocumentNumbering(
+  input: DocumentNumberingSettings | undefined,
+  base: Settings,
+  documentPrefix: DocumentPrefix
+): DocumentNumberingSettings {
+  const target: DocumentNumberingSettings = {};
+  if (input?.offer) {
+    target.offer = ensureOfferNumberingConfig(input.offer);
+    return target;
+  }
+  if (base.documentNumbering?.offer) {
+    target.offer = ensureOfferNumberingConfig(base.documentNumbering.offer);
+    return target;
+  }
+  const fallbackPattern = buildPatternFromPrefix(documentPrefix.offer);
+  target.offer = ensureOfferNumberingConfig({
+    pattern: fallbackPattern,
+    reset: 'yearly',
+  });
+  return target;
+}
+
 function sanitizeSettings(payload: SettingsUpdate, baseOverride?: Settings): Settings {
   const base = baseOverride ?? cachedSettings ?? DEFAULT_SETTINGS;
   const legacySource = (payload.offerClauses ?? base.offerClauses ?? []) as LegacyOfferClause[];
@@ -228,6 +264,8 @@ function sanitizeSettings(payload: SettingsUpdate, baseOverride?: Settings): Set
     legacyDefaults
   );
 
+  const documentPrefix = normalizePrefix(payload.documentPrefix);
+
   return {
     companyName: sanitizeString(payload.companyName, base.companyName),
     address: sanitizeString(payload.address, base.address),
@@ -239,7 +277,7 @@ function sanitizeSettings(payload: SettingsUpdate, baseOverride?: Settings): Set
     website: sanitizeString(payload.website, base.website ?? ''),
     logoUrl: sanitizeString(payload.logoUrl, base.logoUrl ?? ''),
     primaryColor: sanitizeString(payload.primaryColor, base.primaryColor ?? DEFAULT_SETTINGS.primaryColor),
-    documentPrefix: normalizePrefix(payload.documentPrefix),
+    documentPrefix,
     defaultPaymentTerms: sanitizeString(payload.defaultPaymentTerms, base.defaultPaymentTerms ?? ''),
     disclaimer: sanitizeString(payload.disclaimer, base.disclaimer ?? ''),
     iban: sanitizeString(payload.iban, base.iban ?? ''),
@@ -247,6 +285,7 @@ function sanitizeSettings(payload: SettingsUpdate, baseOverride?: Settings): Set
     directorName: sanitizeString(payload.directorName, base.directorName ?? ''),
     notes,
     noteDefaultsByDoc: noteDefaults,
+    documentNumbering: normalizeDocumentNumbering(payload.documentNumbering, base, documentPrefix),
     offerClauses: [],
   };
 }

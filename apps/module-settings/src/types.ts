@@ -29,6 +29,19 @@ export interface NoteDto {
 
 export type NotesDefaultsByDoc = Record<DocumentTypeKey, string[]>;
 
+export type DocumentNumberingReset = 'never' | 'yearly';
+
+export interface DocumentNumberingConfig {
+  pattern: string;
+  reset?: DocumentNumberingReset;
+  yearOverride?: number | null;
+  seqOverride?: number | null;
+}
+
+export interface DocumentNumberingDto {
+  offer?: DocumentNumberingConfig;
+}
+
 export interface SettingsDto {
   companyName: string;
   address: string;
@@ -41,6 +54,7 @@ export interface SettingsDto {
   logoUrl?: string;
   primaryColor?: string;
   documentPrefix: DocumentPrefix;
+  documentNumbering?: DocumentNumberingDto;
   iban?: string;
   vatId?: string;
   directorName?: string;
@@ -105,6 +119,8 @@ export interface OfferPdfPreviewPayload {
     settings: PdfDocumentSettingsDto;
     generatedNumber: string;
     previewSequence: number;
+    numberingPattern: string;
+    numberingExample: string;
   };
   offer: {
     _id: string;

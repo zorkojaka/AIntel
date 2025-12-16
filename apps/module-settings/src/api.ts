@@ -11,6 +11,8 @@ import {
 } from './types';
 import type { RequirementTemplateGroup, RequirementTemplateVariant, OfferGenerationRule } from '@aintel/shared/types/project';
 
+const DEFAULT_NUMBER_PATTERN = 'PONUDBA-{YYYY}-{SEQ:000}';
+
 const DOCUMENT_TYPE_KEYS: DocumentTypeKey[] = [
   'offer',
   'invoice',
@@ -68,6 +70,30 @@ function mergeNoteDefaults(partial: NotesDefaultsByDoc | undefined, notes: NoteD
   return base;
 }
 
+function buildPatternFromPrefix(prefix?: string) {
+  const value = typeof prefix === 'string' ? prefix.trim() : '';
+  if (!value) {
+    return DEFAULT_NUMBER_PATTERN;
+  }
+  const suffix = value.endsWith('-') ? '' : '-';
+  return `${value}${suffix}{YYYY}-{SEQ:000}`;
+}
+
+function mergeDocumentNumbering(
+  partial: SettingsDto['documentNumbering'] | undefined,
+  documentPrefix: SettingsDto['documentPrefix']
+): SettingsDto['documentNumbering'] {
+  const offerConfig = partial?.offer;
+  return {
+    offer: {
+      pattern: offerConfig?.pattern?.trim() || buildPatternFromPrefix(documentPrefix.offer),
+      reset: offerConfig?.reset ?? 'yearly',
+      yearOverride: offerConfig?.yearOverride ?? null,
+      seqOverride: offerConfig?.seqOverride ?? null,
+    },
+  };
+}
+
 export const DEFAULT_SETTINGS: SettingsDto = {
   companyName: 'Vase podjetje d.o.o.',
   address: 'Glavna cesta 1',
@@ -85,6 +111,14 @@ export const DEFAULT_SETTINGS: SettingsDto = {
     order: 'NOR-',
     deliveryNote: 'DOB-',
     workOrder: 'DEL-',
+  },
+  documentNumbering: {
+    offer: {
+      pattern: DEFAULT_NUMBER_PATTERN,
+      reset: 'yearly',
+      yearOverride: null,
+      seqOverride: null,
+    },
   },
   iban: 'SI56 0201 2003 4567 890',
   vatId: 'SI12345678',
@@ -111,6 +145,7 @@ function mergeWithDefaults(partial?: Partial<SettingsDto>): SettingsDto {
 
   const notes = normalizeNotesList(partial?.notes ?? DEFAULT_SETTINGS.notes);
   const noteDefaults = mergeNoteDefaults(partial?.noteDefaultsByDoc, notes);
+  const documentNumbering = mergeDocumentNumbering(partial?.documentNumbering, documentPrefix);
 
   return {
     ...DEFAULT_SETTINGS,
@@ -118,6 +153,7 @@ function mergeWithDefaults(partial?: Partial<SettingsDto>): SettingsDto {
     documentPrefix,
     notes,
     noteDefaultsByDoc: noteDefaults,
+    documentNumbering,
   };
 }
 

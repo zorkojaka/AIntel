@@ -1,9 +1,8 @@
 import React, { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Button, Card, ColorPicker, DataTable, FileUpload, Input, Textarea } from '@aintel/ui';
-import { applySettingsTheme, DOCUMENT_PREFIX_LABELS, saveSettings } from './api';
+import { Button, Card, ColorPicker, FileUpload, Input, Textarea } from '@aintel/ui';
+import { applySettingsTheme, saveSettings } from './api';
 import { useSettingsData } from './hooks/useSettings';
 import {
-  DocumentPrefixKey,
   DocumentTypeKey,
   NoteDto,
   NoteCategory,
@@ -16,8 +15,6 @@ interface StatusBanner {
 }
 
 type FormSaveScope = 'company' | 'documents';
-
-const prefixKeys: DocumentPrefixKey[] = ['offer', 'invoice', 'order', 'deliveryNote', 'workOrder'];
 
 type DocumentTabKey = DocumentTypeKey;
 
@@ -81,12 +78,46 @@ const dummyProject = {
 
 type DummyProject = typeof dummyProject;
 
+const DEFAULT_NUMBER_PATTERN = 'PONUDBA-{YYYY}-{SEQ:000}';
+const NUMBER_TOKEN_REGEX = /\{([^}]+)\}/g;
+
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result ?? ''));
     reader.onerror = () => reject(new Error('Datoteke ni mogoče prebrati.'));
     reader.readAsDataURL(file);
+  });
+}
+
+function formatNumberPreview(pattern: string, sequence = 1, referenceDate: Date = new Date()) {
+  const safePattern = pattern?.trim() || DEFAULT_NUMBER_PATTERN;
+  const date = referenceDate instanceof Date && !Number.isNaN(referenceDate.valueOf()) ? referenceDate : new Date();
+  const year = date.getFullYear();
+  const shortYear = String(year).slice(-2).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const seqValue = Math.max(0, sequence);
+
+  return safePattern.replace(NUMBER_TOKEN_REGEX, (match, raw) => {
+    const token = String(raw ?? '').trim().toUpperCase();
+    switch (token) {
+      case 'YYYY':
+        return String(year);
+      case 'YY':
+        return shortYear;
+      case 'MM':
+        return month;
+      case 'DD':
+        return day;
+      default:
+        if (token.startsWith('SEQ')) {
+          const paddingMatch = token.match(/SEQ:(0{1,6})/);
+          const padding = paddingMatch?.[1] ?? '000';
+          return String(seqValue).padStart(padding.length, '0');
+        }
+        return match;
+    }
   });
 }
 
@@ -102,15 +133,8 @@ export const SettingsPage: React.FC = () => {
     setForm(settings);
   }, [settings]);
 
-  const prefixTable = useMemo(
-    () =>
-      prefixKeys.map((key) => ({
-        id: key,
-        dokument: DOCUMENT_PREFIX_LABELS[key],
-        prefix: form.documentPrefix[key]
-      })),
-    [form.documentPrefix]
-  );
+  const offerNumberPattern = form.documentNumbering?.offer?.pattern ?? DEFAULT_NUMBER_PATTERN;
+  const offerNumberExample = useMemo(() => formatNumberPreview(offerNumberPattern, 1), [offerNumberPattern]);
 
   const totalPreview = useMemo(
     () => dummyProject.items.reduce((sum, item) => sum + item.quantity * item.price, 0),
@@ -130,13 +154,19 @@ export const SettingsPage: React.FC = () => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handlePrefixChange = (key: DocumentPrefixKey, value: string) => {
+  const handleOfferPatternChange = (value: string) => {
+    const nextValue = value.slice(0, 80);
     setForm((prev) => ({
       ...prev,
-      documentPrefix: {
-        ...prev.documentPrefix,
-        [key]: value
-      }
+      documentNumbering: {
+        ...prev.documentNumbering,
+        offer: {
+          pattern: nextValue,
+          reset: prev.documentNumbering?.offer?.reset ?? 'yearly',
+          yearOverride: prev.documentNumbering?.offer?.yearOverride ?? null,
+          seqOverride: prev.documentNumbering?.offer?.seqOverride ?? null,
+        },
+      },
     }));
   };
 
@@ -209,12 +239,6 @@ export const SettingsPage: React.FC = () => {
   const companySaving = savingScope === 'company';
   const documentSaving = savingScope === 'documents';
   const activeDocumentMeta = documentTabs.find((tab) => tab.key === activeDocumentTab) ?? documentTabs[0];
-  const offerPrefixKeys = useMemo<DocumentPrefixKey[]>(() => ['offer'], []);
-  const offerPrefixTable = useMemo(
-    () => prefixTable.filter((row) => row.id === 'offer'),
-    [prefixTable]
-  );
-
   useEffect(() => {
     if (activeDocumentTab !== 'offer') {
       setPreviewVisible(false);
@@ -296,7 +320,6 @@ export const SettingsPage: React.FC = () => {
             activeDocumentKey={activeDocumentTab}
             activeDocumentLabel={activeDocumentMeta?.label ?? 'Dokument'}
             handleFieldChange={handleFieldChange}
-            handlePrefixChange={handlePrefixChange}
             handleNotesChange={handleNotesChange}
             handleNoteDefaultsChange={handleNoteDefaultsChange}
             handleSubmit={handleDocumentSubmit}
@@ -304,8 +327,9 @@ export const SettingsPage: React.FC = () => {
             loading={loading}
             previewVisible={previewVisible}
             onTogglePreview={() => setPreviewVisible((prev) => !prev)}
-            prefixKeys={offerPrefixKeys}
-            prefixTable={offerPrefixTable}
+            offerNumberPattern={offerNumberPattern}
+            offerNumberExample={offerNumberExample}
+            onOfferPatternChange={handleOfferPatternChange}
             totalPreview={totalPreview}
             dummyProject={dummyProject}
           />
@@ -452,7 +476,6 @@ interface DocumentSettingsSectionProps {
     field: K,
     value: Omit<SettingsDto, 'documentPrefix'>[K]
   ) => void;
-  handlePrefixChange: (key: DocumentPrefixKey, value: string) => void;
   handleNotesChange: (notes: NoteDto[]) => void;
   handleNoteDefaultsChange: (docKey: DocumentTabKey, defaults: string[]) => void;
   handleSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
@@ -460,8 +483,9 @@ interface DocumentSettingsSectionProps {
   loading: boolean;
   previewVisible: boolean;
   onTogglePreview: () => void;
-  prefixKeys: DocumentPrefixKey[];
-  prefixTable: { id: DocumentPrefixKey; dokument: string; prefix: string }[];
+  offerNumberPattern: string;
+  offerNumberExample: string;
+  onOfferPatternChange: (value: string) => void;
   totalPreview: number;
   dummyProject: DummyProject;
 }
@@ -474,7 +498,6 @@ const DocumentSettingsSection: React.FC<DocumentSettingsSectionProps> = ({
   activeDocumentKey,
   activeDocumentLabel,
   handleFieldChange,
-  handlePrefixChange,
   handleNotesChange,
   handleNoteDefaultsChange,
   handleSubmit,
@@ -482,8 +505,9 @@ const DocumentSettingsSection: React.FC<DocumentSettingsSectionProps> = ({
   loading,
   previewVisible,
   onTogglePreview,
-  prefixKeys,
-  prefixTable,
+  offerNumberPattern,
+  offerNumberExample,
+  onOfferPatternChange,
   totalPreview,
   dummyProject,
 }) => {
@@ -491,6 +515,7 @@ const DocumentSettingsSection: React.FC<DocumentSettingsSectionProps> = ({
     field: 'email' | 'phone' | 'website' | 'vatId' | 'iban';
     value: string;
   } | null>(null);
+  const [showNumberingHelp, setShowNumberingHelp] = useState(false);
 
   const openHotspot = (field: 'email' | 'phone' | 'website' | 'vatId' | 'iban', value?: string | null) => {
     setEditingField({ field, value: value ?? '' });
@@ -640,27 +665,44 @@ const DocumentSettingsSection: React.FC<DocumentSettingsSectionProps> = ({
   return (
     <div className="space-y-6">
       <form className="space-y-6" onSubmit={handleSubmit}>
-        <Card title="Prefixi dokumentov">
-          <div className="grid gap-4 md:grid-cols-2">
-            {prefixKeys.map((key) => (
-              <Input
-                key={key}
-                label={`${DOCUMENT_PREFIX_LABELS[key]} prefix`}
-                value={form.documentPrefix[key]}
-                onChange={(event) => handlePrefixChange(key, event.target.value)}
-              />
-            ))}
-          </div>
-          <div className="mt-4">
-            <DataTable
-              columns={[
-                { header: 'Dokument', accessor: 'dokument' },
-                { header: 'Prefix', accessor: 'prefix' },
-              ]}
-              data={prefixTable}
+        {activeDocumentKey === 'offer' && (
+          <div className="space-y-3 rounded-md border border-border bg-muted/30 p-4">
+            <label className="text-sm font-medium text-foreground">Številčenje ponudbe</label>
+            <Textarea
+              rows={2}
+              className="min-h-[48px] w-full resize-none font-mono text-base leading-relaxed"
+              value={offerNumberPattern}
+              onChange={(event) => onOfferPatternChange(event.target.value)}
+              placeholder="PONUDBA-{YYYY}-{SEQ:000}"
             />
+            <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <span>Podprti tokeni: {'{YYYY}, {YY}, {MM}, {DD}, {SEQ:000}'}</span>
+                <button
+                  type="button"
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-[11px] text-foreground transition hover:bg-background"
+                  onClick={() => setShowNumberingHelp((prev) => !prev)}
+                  aria-label="Pomoč pri številčenju"
+                >
+                  ?
+                </button>
+              </div>
+              <span className="rounded-full border border-border bg-background px-3 py-1 font-mono text-[11px] text-foreground">
+                Primer: {offerNumberExample}
+              </span>
+            </div>
+            {showNumberingHelp && (
+              <div className="rounded-md border border-dashed border-border bg-background/70 p-3 text-xs text-muted-foreground">
+                <p className="font-semibold text-foreground">Primeri:</p>
+                <ul className="list-disc space-y-1 pl-4">
+                  <li>PONUDBA-{`{YYYY}`}-{`{SEQ:000}`} → PONUDBA-2025-001</li>
+                  <li>O-{`{YY}`}{`{MM}`}-{`{SEQ:0000}`} → O-2512-0001</li>
+                  <li>PRJ-{`{SEQ:000}`} → PRJ-001</li>
+                </ul>
+              </div>
+            )}
           </div>
-        </Card>
+        )}
 
         <NotesManager
           notes={sortedNotes}
@@ -684,14 +726,19 @@ const DocumentSettingsSection: React.FC<DocumentSettingsSectionProps> = ({
         <Card title="PDF predogled">
           <div className="overflow-auto rounded-md border border-border bg-slate-50 p-4">
             <div className="mx-auto w-[794px] bg-white p-8 shadow-sm">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center md:justify-start">
+              <div className="flex items-start justify-between gap-8">
+                <div
+                  className="flex items-center justify-center rounded-md border border-border bg-white"
+                  style={{ width: 180, height: 80 }}
+                >
                   {form.logoUrl ? (
-                    <img src={form.logoUrl} alt="Logotip v predogledu" className="h-16 w-16 object-contain" />
+                    <img
+                      src={form.logoUrl}
+                      alt="Logotip v predogledu"
+                      className="h-full w-full object-contain"
+                    />
                   ) : (
-                    <div className="flex h-16 w-16 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground">
-                      Logo
-                    </div>
+                    <div className="text-xs text-muted-foreground">Logo</div>
                   )}
                 </div>
                 <div className="text-right text-sm">
@@ -723,7 +770,7 @@ const DocumentSettingsSection: React.FC<DocumentSettingsSectionProps> = ({
                   </div>
                   <div className="mt-2 space-y-1">
                     <p>
-                      <span className="text-muted-foreground">Št.:</span> {`${form.documentPrefix.offer}2025-001`}
+                      <span className="text-muted-foreground">Št.:</span> {offerNumberExample}
                     </p>
                     <p>
                       <span className="text-muted-foreground">Datum:</span> 12. 02. 2025
@@ -787,12 +834,12 @@ const DocumentSettingsSection: React.FC<DocumentSettingsSectionProps> = ({
 
               {previewCommentBlock}
 
-              <div className="mt-8 grid gap-6 md:grid-cols-2">
-                <div className="space-y-3 text-sm">
-                  <p className="font-semibold text-foreground">Podpis</p>
-                  <div className="space-y-1 text-muted-foreground">
+              <div className="mt-8 flex justify-end">
+                <div className="w-[45%] min-w-[280px] space-y-3 text-sm">
+                  <p className="font-semibold text-foreground text-right">Podpis</p>
+                  <div className="text-right text-muted-foreground">
                     <p>Direktor: {form.directorName || 'Dodajte direktorja v nastavitvah podjetja.'}</p>
-                    <div className="mt-4 h-10 border-b border-dashed border-border" />
+                    <div className="mt-6 border-b border-border" />
                   </div>
                 </div>
               </div>

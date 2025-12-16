@@ -53,8 +53,16 @@ const DEFAULT_OFFER_TEMPLATE = `<!DOCTYPE html>
 </head>
 <body>
   <div class="header">
-    <h1>Ponudba #{{offerVersion}}</h1>
-    <p>{{projectTitle}}</p>
+    <div class="logo-box">
+      <span>LOGO</span>
+    </div>
+    <div class="company-info">
+      <h1>Ponudba #{{offerVersion}}</h1>
+      <p class="company-name">Va?e podjetje d.o.o.</p>
+      <p>Glavna cesta 1</p>
+      <p>1000 Ljubljana</p>
+      <p class="project-title">{{projectTitle}}</p>
+    </div>
   </div>
 
   <div class="info-grid">
@@ -110,6 +118,14 @@ const DEFAULT_OFFER_TEMPLATE = `<!DOCTYPE html>
   </div>
 
   {{commentBlock}}
+
+  <div class="signature-wrap">
+    <div class="signature-box">
+      <p class="signature-title">Podpis</p>
+      <p class="signature-director">Direktor: Janez Novak</p>
+      <div class="signature-line"></div>
+    </div>
+  </div>
 
   <div class="footer">
     <p>Plačilni pogoji: {{paymentTerms}}</p>

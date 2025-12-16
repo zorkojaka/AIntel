@@ -32,6 +32,7 @@ const OfferVersionSchema = new Schema<OfferVersionDocument>(
     baseTitle: { type: String, required: true },
     versionNumber: { type: Number, required: true },
     title: { type: String, required: true },
+    documentNumber: { type: String, default: null },
     validUntil: { type: Date, default: null },
     paymentTerms: { type: String, default: null },
     introText: { type: String, default: null },

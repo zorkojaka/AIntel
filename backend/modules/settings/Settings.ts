@@ -38,6 +38,19 @@ export interface LegacyOfferClause {
   sortOrder?: number;
 }
 
+export type DocumentNumberingReset = 'never' | 'yearly';
+
+export interface DocumentNumberingConfig {
+  pattern: string;
+  reset?: DocumentNumberingReset;
+  yearOverride?: number | null;
+  seqOverride?: number | null;
+}
+
+export interface DocumentNumberingSettings {
+  offer?: DocumentNumberingConfig;
+}
+
 export interface Settings {
   companyName: string;
   address: string;
@@ -50,6 +63,7 @@ export interface Settings {
   logoUrl?: string;
   primaryColor?: string;
   documentPrefix: DocumentPrefix;
+  documentNumbering?: DocumentNumberingSettings;
   iban?: string;
   vatId?: string;
   directorName?: string;
@@ -116,6 +130,23 @@ const noteDefaultsShape: Record<DocumentTypeKey, { type: [StringConstructor]; de
   creditNote: { type: [String], default: [] }
 };
 
+const DocumentNumberingConfigSchema = new Schema<DocumentNumberingConfig>(
+  {
+    pattern: { type: String, required: true, default: 'PONUDBA-{YYYY}-{SEQ:000}' },
+    reset: { type: String, enum: ['never', 'yearly'], default: 'yearly' },
+    yearOverride: { type: Number },
+    seqOverride: { type: Number },
+  },
+  { _id: false }
+);
+
+const DocumentNumberingSchema = new Schema<DocumentNumberingSettings>(
+  {
+    offer: { type: DocumentNumberingConfigSchema, default: undefined },
+  },
+  { _id: false }
+);
+
 const SettingsSchema = new Schema<SettingsDocument>(
   {
     key: { type: String, required: true, unique: true, default: 'global' },
@@ -130,6 +161,7 @@ const SettingsSchema = new Schema<SettingsDocument>(
     logoUrl: { type: String },
     primaryColor: { type: String, default: '#0f62fe' },
     documentPrefix: { type: DocumentPrefixSchema, default: {} },
+    documentNumbering: { type: DocumentNumberingSchema, default: undefined },
     iban: { type: String },
     vatId: { type: String },
     directorName: { type: String },

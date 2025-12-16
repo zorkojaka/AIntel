@@ -6,7 +6,7 @@ import {
   getOfferPdfOverride,
   getPdfDocumentSettings,
 } from './pdf-settings.service';
-import type { PdfDocumentSettings } from '../schemas/pdf-settings';
+import { getOfferNumberingConfig, formatOfferNumberExample } from './document-numbering.service';
 
 interface PreviewProjectInfo {
   id: string;
@@ -24,6 +24,8 @@ export interface OfferPdfPreviewPayload {
     settings: Awaited<ReturnType<typeof getPdfDocumentSettings>>;
     generatedNumber: string;
     previewSequence: number;
+    numberingPattern: string;
+    numberingExample: string;
   };
   offer: OfferVersion;
   project?: PreviewProjectInfo | null;
@@ -113,25 +115,6 @@ function buildDemoOffer(): OfferVersion {
   } as OfferVersion;
 }
 
-function formatDocumentNumber(settings: PdfDocumentSettings, createdAt?: string | Date | null) {
-  const rule = settings.numberingRule;
-  const date = createdAt ? new Date(createdAt) : new Date();
-  const year = Number.isFinite(date.getFullYear()) ? date.getFullYear() : new Date().getFullYear();
-  const shortYear = String(year).slice(-2);
-  const sequence = Math.max(1, rule.nextSequence ?? 1);
-  const paddedSeq = sequence.toString().padStart(Math.max(1, rule.padding ?? 3), '0');
-
-  switch (rule.formatPreset) {
-    case 'PREFIX-YY-SEQ':
-      return `${rule.prefix}${shortYear}-${paddedSeq}`;
-    case 'PREFIX-SEQ':
-      return `${rule.prefix}${paddedSeq}`;
-    case 'PREFIX-YYYY-SEQ':
-    default:
-      return `${rule.prefix}${year}-${paddedSeq}`;
-  }
-}
-
 function serializeOffer(offer: any): OfferVersion {
   return {
     ...offer,
@@ -147,9 +130,10 @@ export async function buildOfferPdfPreviewPayload(
   options?: PreviewOptions,
 ): Promise<OfferPdfPreviewPayload> {
   const docType = options?.docType ?? 'OFFER';
-  const [company, documentSettings] = await Promise.all([
+  const [company, documentSettings, numberingConfig] = await Promise.all([
     getCompanySettings(),
     getPdfDocumentSettings(docType),
+    getOfferNumberingConfig(),
   ]);
 
   const offerDoc = await OfferVersionModel.findById(offerVersionId).lean();
@@ -187,8 +171,16 @@ export async function buildOfferPdfPreviewPayload(
   }
 
   const overrides = await getOfferPdfOverride(offer._id?.toString?.() ?? offer._id);
+  const fallbackCreatedAt = offer.createdAt ? new Date(offer.createdAt) : new Date();
+  const numberingExample = formatOfferNumberExample(numberingConfig.pattern, new Date(), 1, numberingConfig.yearOverride);
+  const fallbackNumber = formatOfferNumberExample(
+    numberingConfig.pattern,
+    fallbackCreatedAt,
+    1,
+    numberingConfig.yearOverride
+  );
   const generatedNumber =
-    overrides?.documentNumberOverride ?? formatDocumentNumber(documentSettings, offer.createdAt);
+    overrides?.documentNumberOverride ?? offer.documentNumber ?? fallbackNumber;
 
   const offerWithTexts: OfferVersion = {
     ...offer,
@@ -201,6 +193,8 @@ export async function buildOfferPdfPreviewPayload(
       settings: documentSettings,
       generatedNumber,
       previewSequence: documentSettings.numberingRule.nextSequence,
+      numberingPattern: numberingConfig.pattern,
+      numberingExample,
     },
     offer: offerWithTexts,
     project,
