@@ -23,6 +23,7 @@ export interface OfferVersion {
   validUntil: string | null;
   paymentTerms: string | null;
   introText: string | null;
+  comment?: string | null;
   items: OfferLineItem[];
   totalNet: number;
   totalVat22: number;

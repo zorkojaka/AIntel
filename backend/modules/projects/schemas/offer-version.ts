@@ -35,6 +35,7 @@ const OfferVersionSchema = new Schema<OfferVersionDocument>(
     validUntil: { type: Date, default: null },
     paymentTerms: { type: String, default: null },
     introText: { type: String, default: null },
+    comment: { type: String, default: null },
     items: { type: [OfferLineItemSchema], default: [] },
     totalNet: { type: Number, required: true, default: 0 },
     totalVat22: { type: Number, required: true, default: 0 },

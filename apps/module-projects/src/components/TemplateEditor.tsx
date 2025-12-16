@@ -45,6 +45,9 @@ const DEFAULT_OFFER_TEMPLATE = `<!DOCTYPE html>
     .totals { margin-top: 30px; text-align: right; }
     .totals .row { display: flex; justify-content: flex-end; gap: 100px; padding: 8px 0; }
     .totals .total { font-weight: bold; font-size: 18px; color: #2563EB; }
+    .comment-block { margin-top: 24px; padding: 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb; }
+    .comment-block h4 { margin: 0 0 8px 0; font-size: 14px; color: #1f2937; }
+    .comment-text { font-size: 14px; color: #4b5563; line-height: 1.6; }
     .footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px; }
   </style>
 </head>
@@ -94,17 +97,19 @@ const DEFAULT_OFFER_TEMPLATE = `<!DOCTYPE html>
   <div class="totals">
     <div class="row">
       <span>Neto znesek:</span>
-      <span>€ {{totalNet}}</span>
+      <span>? {{totalNet}}</span>
     </div>
     <div class="row">
       <span>DDV:</span>
-      <span>€ {{totalVAT}}</span>
+      <span>? {{totalVAT}}</span>
     </div>
     <div class="row total">
       <span>Skupaj z DDV:</span>
-      <span>€ {{totalGross}}</span>
+      <span>? {{totalGross}}</span>
     </div>
   </div>
+
+  {{commentBlock}}
 
   <div class="footer">
     <p>Plačilni pogoji: {{paymentTerms}}</p>

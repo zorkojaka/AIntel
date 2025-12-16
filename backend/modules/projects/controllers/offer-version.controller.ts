@@ -141,6 +141,7 @@ function serializeOffer(offer: OfferVersion) {
     baseAfterDiscount: offer.baseAfterDiscount ?? offer.totalNetAfterDiscount ?? 0,
     vatAmount: offer.vatAmount ?? offer.totalVat ?? 0,
     totalWithVat: offer.totalWithVat ?? offer.totalGrossAfterDiscount ?? offer.totalGross ?? 0,
+    comment: offer.comment ?? null,
   } as OfferVersion;
 }
 
@@ -182,6 +183,7 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
       validUntil: validUntil ? validUntil.toISOString() : null,
       paymentTerms: normalizeText(body?.paymentTerms) || null,
       introText: normalizeText(body?.introText) || null,
+      comment: normalizeText(body?.comment) || null,
       items,
       totalNet: totals.totalNet,
       totalVat22: totals.totalVat22,
@@ -291,6 +293,8 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
     existing.validUntil = body.validUntil ? new Date(body.validUntil).toISOString() : existing.validUntil;
     existing.paymentTerms = body.paymentTerms ?? existing.paymentTerms ?? null;
     existing.introText = body.introText ?? existing.introText ?? null;
+    const normalizedComment = normalizeText(body?.comment, existing.comment ?? '');
+    existing.comment = normalizedComment || null;
     existing.items = items;
     existing.totalNet = totals.totalNet;
     existing.totalVat22 = totals.totalVat22;
@@ -443,6 +447,22 @@ function renderOfferSection(doc: PDFDocumentInstance, offer: OfferVersion) {
   doc.text(`DDV 9.5%: ${offer.totalVat95.toFixed(2)}`);
   doc.text(`DDV skupaj: ${offer.totalVat.toFixed(2)}`);
   doc.fontSize(14).text(`Skupaj z DDV: ${offer.totalGross.toFixed(2)}`, { align: 'left' });
+
+  const usableWidth =
+    doc.page.width - (doc.page.margins?.left ?? 72) - (doc.page.margins?.right ?? 72);
+  const commentText = offer.comment ? offer.comment.trim() : '';
+  if (commentText) {
+    doc.moveDown();
+    doc.fontSize(12).text('Komentar', { underline: true });
+    doc.moveDown(0.3);
+    doc
+      .fontSize(10)
+      .text(commentText, {
+        width: usableWidth,
+        align: 'left',
+      });
+    doc.moveDown();
+  }
 }
 
 type PDFDocumentInstance = InstanceType<typeof PDFDocument>;

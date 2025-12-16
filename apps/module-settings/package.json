@@ -16,7 +16,9 @@
   "types": "./src/index.ts",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "prebuild": "pnpm run check-encoding",
+    "build": "vite build",
+    "check-encoding": "node ./scripts/check-encoding.cjs"
   },
   "dependencies": {
     "@aintel/theme": "*",

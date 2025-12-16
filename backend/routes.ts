@@ -9,6 +9,8 @@ import categoriesRoutes from './modules/categories/routes';
 import projectsRoutes from './modules/projects/routes';
 import requirementTemplatesRoutes from './modules/requirement-templates/routes';
 import employeesRoutes from './modules/employees/routes/employees.routes';
+import pdfSettingsRoutes from './modules/projects/routes/pdf-settings.routes';
+import offerPreviewRoutes from './modules/projects/routes/offer-preview.routes';
 
 const router = Router();
 
@@ -17,11 +19,13 @@ router.use('/crm', crmRoutes);
 router.use('/cenik', cenikRoutes);
 router.use('/price-list', priceListRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/settings', pdfSettingsRoutes);
 router.use('/finance', financeRoutes);
 router.use('/categories', categoriesRoutes);
 router.use('/projects', projectsRoutes);
 router.use('/requirement-templates', requirementTemplatesRoutes);
 router.use('/employees', employeesRoutes);
+router.use('/offers', offerPreviewRoutes);
 
 router.get('/', (_req, res) => {
   res.success({ status: 'AIntel CORE backend pripravljen' });

@@ -28,6 +28,19 @@ const numberFormatter = new Intl.NumberFormat('sl-SI', {
 const escapeHtml = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+const formatMultilineHtml = (value?: string | null) =>
+  value ? escapeHtml(value).replace(/\r?\n/g, '<br />') : '';
+
+const buildCommentBlockHtml = (commentHtml: string) => {
+  if (!commentHtml) {
+    return '';
+  }
+  return `<div class="comment-block">
+  <h4>Komentar</h4>
+  <div class="comment-text">${commentHtml}</div>
+</div>`;
+};
+
 const tokenRegex = /{{\s*([\w.]+)\s*}}/g;
 
 export function renderTemplateContent(content: string, tokens: Record<string, string>) {
@@ -129,6 +142,9 @@ export function buildOfferTemplateTokens(project: ProjectDocument, offer: OfferV
     total: formatCurrency(item.totalGross),
   }));
 
+  const commentHtml = formatMultilineHtml(offer.comment ?? '');
+  const commentBlock = buildCommentBlockHtml(commentHtml);
+
   return {
     ...base,
     offerVersion: offer.versionNumber != null ? `${offer.versionNumber}` : '',
@@ -139,6 +155,8 @@ export function buildOfferTemplateTokens(project: ProjectDocument, offer: OfferV
       offer.totalGrossAfterDiscount ?? offer.totalWithVat ?? offer.totalGross ?? 0
     ),
     paymentTerms: offer.paymentTerms ?? base.paymentTerms,
+    comment: commentHtml,
+    commentBlock,
     itemsHtml: buildItemsHtml(items),
     items: buildItemsHtml(items),
   };
@@ -173,6 +191,7 @@ export type OfferVersionForTemplate = {
   versionNumber?: number;
   createdAt?: string | Date;
   updatedAt?: string | Date;
+  comment?: string | null;
   totalNet?: number;
   totalNetAfterDiscount?: number;
   totalVat?: number;

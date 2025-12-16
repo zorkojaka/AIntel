@@ -13,6 +13,7 @@ import type { ProjectDetails } from "../types";
 import { Loader2, Plus, Trash } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
+import { Textarea } from "./ui/textarea";
 import { PriceListProductAutocomplete } from "./PriceListProductAutocomplete";
 import { mapProject, triggerProjectRefresh } from "../domains/core/useProject";
 import { useConfirmOffer } from "../domains/core/useConfirmOffer";
@@ -68,6 +69,7 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [title, setTitle] = useState("Ponudba");
   const [paymentTerms, setPaymentTerms] = useState<string>("");
   const [introText, setIntroText] = useState<string>("");
+  const [comment, setComment] = useState<string>("");
 
   const [currentOffer, setCurrentOffer] = useState<OfferVersion | null>(null);
 
@@ -101,6 +103,7 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     setTitle("Ponudba");
     setPaymentTerms("");
     setIntroText("");
+    setComment("");
     setItems(ensureTrailingBlank([]));
     setGlobalDiscountPercent(0);
     setUseGlobalDiscount(false);
@@ -129,6 +132,7 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
       setTitle(offer.baseTitle || "Ponudba");
       setPaymentTerms(offer.paymentTerms ?? "");
       setIntroText(offer.introText ?? "");
+      setComment(offer.comment ?? "");
 
       setUseGlobalDiscount(offer.useGlobalDiscount ?? false);
       setUsePerItemDiscount(offer.usePerItemDiscount ?? false);
@@ -468,6 +472,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       validUntil: null,
       paymentTerms,
       introText,
+      comment,
       items: cleanItems,
       // kompatibilnost s starimi polji
       discountPercent: effectiveGlobalPercent,
@@ -787,15 +792,27 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
             placeholder="Npr. 30 dni"
           />
         </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Uvodno besedilo</label>
-          <Input
-            value={introText}
-            onChange={(event) => setIntroText(event.target.value)}
-            placeholder="Kratek opis ali opombe"
-          />
-        </div>
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Uvodno besedilo</label>
+        <Input
+          value={introText}
+          onChange={(event) => setIntroText(event.target.value)}
+          placeholder="Kratek opis ali opombe"
+        />
       </div>
+      <div className="md:col-span-3 space-y-2">
+        <label className="text-sm font-medium">Komentar (vidno na PDF)</label>
+        <Textarea
+          value={comment}
+          onChange={(event) => setComment(event.target.value)}
+          placeholder="Dodatne informacije za prikaz v PDF-ju"
+          rows={3}
+        />
+        <p className="text-xs text-muted-foreground">
+          Komentar se prikaže v PDF-ju pod izračunom in nad podpisom.
+        </p>
+      </div>
+    </div>
 
       {/* TABELA POSTAVK */}
       <div className="bg-card rounded-[var(--radius-card)] border overflow-hidden">

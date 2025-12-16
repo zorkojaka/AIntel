@@ -8,16 +8,56 @@ export interface DocumentPrefix {
   workOrder: string;
 }
 
+export type DocumentTypeKey =
+  | 'offer'
+  | 'invoice'
+  | 'workOrder'
+  | 'materialOrder'
+  | 'deliveryNote'
+  | 'workOrderConfirmation'
+  | 'creditNote';
+
+export type NoteCategory = 'payment' | 'delivery' | 'note' | 'costs';
+
+export interface Note {
+  id: string;
+  title: string;
+  text: string;
+  category: NoteCategory;
+  sortOrder: number;
+}
+
+export type NoteDefaultsByDoc = Record<DocumentTypeKey, string[]>;
+
+export interface LegacyOfferClause {
+  id: string;
+  title: string;
+  text: string;
+  category: NoteCategory;
+  isDefault?: boolean;
+  sortOrder?: number;
+}
+
 export interface Settings {
   companyName: string;
   address: string;
+  postalCode?: string;
+  city?: string;
+  country?: string;
   email?: string;
   phone?: string;
+  website?: string;
   logoUrl?: string;
   primaryColor?: string;
   documentPrefix: DocumentPrefix;
+  iban?: string;
+  vatId?: string;
+  directorName?: string;
+  notes: Note[];
+  noteDefaultsByDoc: NoteDefaultsByDoc;
   defaultPaymentTerms?: string;
   disclaimer?: string;
+  offerClauses?: LegacyOfferClause[];
 }
 
 export interface SettingsDocument extends Document, Settings {
@@ -35,18 +75,80 @@ const DocumentPrefixSchema = new Schema<DocumentPrefix>(
   { _id: false }
 );
 
+const NoteSchema = new Schema<Note>(
+  {
+    id: { type: String, required: true },
+    title: { type: String, required: true },
+    text: { type: String, required: true },
+    category: {
+      type: String,
+      enum: ['payment', 'delivery', 'note', 'costs'],
+      default: 'note'
+    },
+    sortOrder: { type: Number, default: 0 }
+  },
+  { _id: false }
+);
+
+const LegacyClauseSchema = new Schema<LegacyOfferClause>(
+  {
+    id: { type: String, required: true },
+    title: { type: String, required: true },
+    text: { type: String, required: true },
+    category: {
+      type: String,
+      enum: ['payment', 'delivery', 'note', 'costs'],
+      default: 'note'
+    },
+    sortOrder: { type: Number, default: 0 },
+    isDefault: { type: Boolean, default: false }
+  },
+  { _id: false }
+);
+
+const noteDefaultsShape: Record<DocumentTypeKey, { type: [StringConstructor]; default: string[] }> = {
+  offer: { type: [String], default: [] },
+  invoice: { type: [String], default: [] },
+  workOrder: { type: [String], default: [] },
+  materialOrder: { type: [String], default: [] },
+  deliveryNote: { type: [String], default: [] },
+  workOrderConfirmation: { type: [String], default: [] },
+  creditNote: { type: [String], default: [] }
+};
+
 const SettingsSchema = new Schema<SettingsDocument>(
   {
     key: { type: String, required: true, unique: true, default: 'global' },
     companyName: { type: String, required: true, default: '' },
     address: { type: String, required: true, default: '' },
+    postalCode: { type: String },
+    city: { type: String },
+    country: { type: String },
     email: { type: String },
     phone: { type: String },
+    website: { type: String },
     logoUrl: { type: String },
     primaryColor: { type: String, default: '#0f62fe' },
     documentPrefix: { type: DocumentPrefixSchema, default: {} },
+    iban: { type: String },
+    vatId: { type: String },
+    directorName: { type: String },
+    notes: { type: [NoteSchema], default: [] },
+    noteDefaultsByDoc: {
+      type: new Schema<NoteDefaultsByDoc>(noteDefaultsShape, { _id: false }),
+      default: () => ({
+        offer: [],
+        invoice: [],
+        workOrder: [],
+        materialOrder: [],
+        deliveryNote: [],
+        workOrderConfirmation: [],
+        creditNote: []
+      })
+    },
     defaultPaymentTerms: { type: String },
-    disclaimer: { type: String }
+    disclaimer: { type: String },
+    offerClauses: { type: [LegacyClauseSchema], default: [] }
   },
   {
     timestamps: true,
