@@ -6,7 +6,21 @@ import {
   getOfferPdfOverride,
   getPdfDocumentSettings,
 } from './pdf-settings.service';
-import { getOfferNumberingConfig, formatOfferNumberExample } from './document-numbering.service';
+import {
+  DocumentNumberingKind,
+  getDocumentNumberingConfig,
+  formatNumberExample,
+} from './document-numbering.service';
+import {
+  renderCreditNotePdf,
+  renderDeliveryNotePdf,
+  renderInvoicePdf,
+  renderOfferPdf,
+  renderPurchaseOrderPdf,
+  renderWorkOrderConfirmationPdf,
+  renderWorkOrderPdf,
+  type DocumentPreviewContext,
+} from './document-renderers';
 
 interface PreviewProjectInfo {
   id: string;
@@ -37,11 +51,31 @@ export interface OfferPdfPreviewPayload {
     documentNumberOverride?: string;
     documentNumberReason?: string;
   } | null;
+  docType: DocumentNumberingKind;
+  html: string;
 }
 
 interface PreviewOptions {
   docType?: string;
   allowDemo?: boolean;
+}
+
+const DOC_RENDERERS: Record<DocumentNumberingKind, (context: DocumentPreviewContext) => string> = {
+  OFFER: renderOfferPdf,
+  INVOICE: renderInvoicePdf,
+  PURCHASE_ORDER: renderPurchaseOrderPdf,
+  DELIVERY_NOTE: renderDeliveryNotePdf,
+  WORK_ORDER: renderWorkOrderPdf,
+  WORK_ORDER_CONFIRMATION: renderWorkOrderConfirmationPdf,
+  CREDIT_NOTE: renderCreditNotePdf,
+};
+
+function normalizeDocType(input?: string): DocumentNumberingKind {
+  const value = (input ?? 'OFFER').toUpperCase();
+  if (value in DOC_RENDERERS) {
+    return value as DocumentNumberingKind;
+  }
+  return 'OFFER';
 }
 
 const DEMO_ITEMS: OfferLineItem[] = [
@@ -129,11 +163,11 @@ export async function buildOfferPdfPreviewPayload(
   offerVersionId: string,
   options?: PreviewOptions,
 ): Promise<OfferPdfPreviewPayload> {
-  const docType = options?.docType ?? 'OFFER';
+  const docType = normalizeDocType(options?.docType);
   const [company, documentSettings, numberingConfig] = await Promise.all([
     getCompanySettings(),
     getPdfDocumentSettings(docType),
-    getOfferNumberingConfig(),
+    getDocumentNumberingConfig(docType),
   ]);
 
   const offerDoc = await OfferVersionModel.findById(offerVersionId).lean();
@@ -172,12 +206,13 @@ export async function buildOfferPdfPreviewPayload(
 
   const overrides = await getOfferPdfOverride(offer._id?.toString?.() ?? offer._id);
   const fallbackCreatedAt = offer.createdAt ? new Date(offer.createdAt) : new Date();
-  const numberingExample = formatOfferNumberExample(numberingConfig.pattern, new Date(), 1, numberingConfig.yearOverride);
-  const fallbackNumber = formatOfferNumberExample(
+  const numberingExample = formatNumberExample(numberingConfig.pattern, new Date(), 1, numberingConfig.yearOverride, docType);
+  const fallbackNumber = formatNumberExample(
     numberingConfig.pattern,
     fallbackCreatedAt,
     1,
-    numberingConfig.yearOverride
+    numberingConfig.yearOverride,
+    docType,
   );
   const generatedNumber =
     overrides?.documentNumberOverride ?? offer.documentNumber ?? fallbackNumber;
@@ -186,6 +221,51 @@ export async function buildOfferPdfPreviewPayload(
     ...offer,
     paymentTerms: overrides?.paymentTerms ?? offer.paymentTerms ?? documentSettings.defaultTexts.paymentTerms ?? '',
   };
+
+  const items = (offerWithTexts.items ?? []).map((item) => ({
+    name: item.name,
+    quantity: item.quantity,
+    unit: item.unit,
+    unitPrice: item.unitPrice,
+    total: item.totalGross ?? item.totalNet ?? item.totalVat ?? 0,
+    vatPercent: item.vatRate ?? 22,
+  }));
+
+  const notes: string[] = [];
+  if (documentSettings.defaultTexts.paymentTerms) {
+    notes.push(documentSettings.defaultTexts.paymentTerms);
+  }
+  if (documentSettings.defaultTexts.disclaimer) {
+    notes.push(documentSettings.defaultTexts.disclaimer);
+  }
+
+  const renderer = DOC_RENDERERS[docType] ?? renderOfferPdf;
+  const context: DocumentPreviewContext = {
+    docType,
+    documentNumber: generatedNumber,
+    issueDate: new Date().toLocaleDateString('sl-SI'),
+    company,
+    customer: project
+      ? { name: project.customerName, address: project.customerAddress, taxId: project.customerTaxId }
+      : undefined,
+    projectTitle: project?.title ?? offerWithTexts.title ?? 'Projekt',
+    items,
+    totals: {
+      subtotal: offerWithTexts.totalNet ?? 0,
+      vat: offerWithTexts.totalVat ?? 0,
+      total: offerWithTexts.totalGross ?? 0,
+      discount: offerWithTexts.discountAmount ?? 0,
+      dueDays: docType === 'INVOICE' ? 15 : undefined,
+    },
+    notes,
+    comment: docType === 'OFFER' ? offerWithTexts.comment ?? null : null,
+    referenceNumber: docType === 'CREDIT_NOTE' ? generatedNumber.replace('DOBROPIS', 'RACUN') : null,
+    tasks: docType === 'WORK_ORDER' || docType === 'WORK_ORDER_CONFIRMATION'
+      ? items.map((item) => ({ label: item.name, status: docType === 'WORK_ORDER' ? 'in-progress' : 'done' }))
+      : undefined,
+  };
+
+  const html = renderer(context);
 
   return {
     company,
@@ -208,5 +288,7 @@ export async function buildOfferPdfPreviewPayload(
           documentNumberReason: overrides.documentNumberReason,
         }
       : null,
+    docType,
+    html,
   };
 }

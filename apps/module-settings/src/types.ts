@@ -40,6 +40,12 @@ export interface DocumentNumberingConfig {
 
 export interface DocumentNumberingDto {
   offer?: DocumentNumberingConfig;
+  invoice?: DocumentNumberingConfig;
+  workOrder?: DocumentNumberingConfig;
+  materialOrder?: DocumentNumberingConfig;
+  deliveryNote?: DocumentNumberingConfig;
+  workOrderConfirmation?: DocumentNumberingConfig;
+  creditNote?: DocumentNumberingConfig;
 }
 
 export interface SettingsDto {
@@ -153,4 +159,6 @@ export interface OfferPdfPreviewPayload {
     documentNumberOverride?: string;
     documentNumberReason?: string;
   } | null;
+  docType: 'OFFER' | 'INVOICE' | 'PURCHASE_ORDER' | 'DELIVERY_NOTE' | 'WORK_ORDER' | 'WORK_ORDER_CONFIRMATION' | 'CREDIT_NOTE';
+  html: string;
 }

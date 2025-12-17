@@ -19,11 +19,41 @@ function validatePayload(body: unknown): SettingsUpdate {
     typeof payload.documentNumbering === 'object' && payload.documentNumbering !== null
       ? (payload.documentNumbering as Record<string, unknown>)
       : undefined;
-  const numberingOffer =
-    numberingRaw && typeof numberingRaw.offer === 'object' && numberingRaw.offer !== null
-      ? (numberingRaw.offer as Record<string, unknown>)
-      : undefined;
-  const resetValue = typeof numberingOffer?.reset === 'string' ? numberingOffer.reset : undefined;
+
+  const parseNumberingConfig = (raw?: Record<string, unknown> | null) => {
+    if (!raw) return null;
+    const resetValue = typeof raw.reset === 'string' ? raw.reset : undefined;
+    const pattern = pickString(raw.pattern);
+    const yearOverride = typeof raw.yearOverride === 'number' ? raw.yearOverride : undefined;
+    const seqOverride = typeof raw.seqOverride === 'number' ? raw.seqOverride : undefined;
+
+    if (!pattern && !yearOverride && !seqOverride && !resetValue) return null;
+    return {
+      pattern,
+      reset: resetValue === 'never' ? 'never' : resetValue === 'yearly' ? 'yearly' : undefined,
+      yearOverride,
+      seqOverride,
+    };
+  };
+
+  const numbering: Record<string, unknown> = {};
+  const numberingEntries: Array<[string, string]> = [
+    ['offer', 'offer'],
+    ['invoice', 'invoice'],
+    ['materialOrder', 'materialOrder'],
+    ['deliveryNote', 'deliveryNote'],
+    ['workOrder', 'workOrder'],
+    ['workOrderConfirmation', 'workOrderConfirmation'],
+    ['creditNote', 'creditNote'],
+  ];
+
+  numberingEntries.forEach(([key, source]) => {
+    const rawConfig = numberingRaw && typeof numberingRaw[source] === 'object' ? numberingRaw[source] : null;
+    const parsed = parseNumberingConfig(rawConfig as Record<string, unknown> | null);
+    if (parsed) {
+      numbering[key] = parsed;
+    }
+  });
 
   return {
     companyName: pickString(payload.companyName),
@@ -55,16 +85,7 @@ function validatePayload(body: unknown): SettingsUpdate {
           workOrder: pickString(documentPrefix.workOrder),
         }
       : undefined,
-    documentNumbering: numberingOffer
-      ? {
-          offer: {
-            pattern: pickString(numberingOffer.pattern),
-            reset: resetValue === 'never' ? 'never' : resetValue === 'yearly' ? 'yearly' : undefined,
-            yearOverride: typeof numberingOffer.yearOverride === 'number' ? numberingOffer.yearOverride : undefined,
-            seqOverride: typeof numberingOffer.seqOverride === 'number' ? numberingOffer.seqOverride : undefined,
-          },
-        }
-      : undefined,
+    documentNumbering: Object.keys(numbering).length ? (numbering as SettingsUpdate['documentNumbering']) : undefined,
   };
 }
 

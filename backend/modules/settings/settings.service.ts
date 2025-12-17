@@ -13,7 +13,14 @@ import {
 import {
   buildPatternFromPrefix,
   DEFAULT_OFFER_NUMBER_PATTERN,
-  ensureOfferNumberingConfig,
+  DEFAULT_DELIVERY_NOTE_PATTERN,
+  DEFAULT_INVOICE_NUMBER_PATTERN,
+  DEFAULT_PURCHASE_ORDER_PATTERN,
+  DEFAULT_WORK_ORDER_PATTERN,
+  DEFAULT_WORK_ORDER_CONFIRMATION_PATTERN,
+  DEFAULT_CREDIT_NOTE_PATTERN,
+  getDefaultPattern,
+  ensureDocumentNumberingConfig,
 } from './document-numbering.util';
 
 export type SettingsUpdate = Partial<Omit<Settings, 'documentPrefix'>> & {
@@ -52,6 +59,30 @@ const DEFAULT_SETTINGS: Settings = {
   documentNumbering: {
     offer: {
       pattern: DEFAULT_OFFER_NUMBER_PATTERN,
+      reset: 'yearly',
+    },
+    invoice: {
+      pattern: DEFAULT_INVOICE_NUMBER_PATTERN,
+      reset: 'yearly',
+    },
+    materialOrder: {
+      pattern: DEFAULT_PURCHASE_ORDER_PATTERN,
+      reset: 'yearly',
+    },
+    deliveryNote: {
+      pattern: DEFAULT_DELIVERY_NOTE_PATTERN,
+      reset: 'yearly',
+    },
+    workOrder: {
+      pattern: DEFAULT_WORK_ORDER_PATTERN,
+      reset: 'yearly',
+    },
+    workOrderConfirmation: {
+      pattern: DEFAULT_WORK_ORDER_CONFIRMATION_PATTERN,
+      reset: 'yearly',
+    },
+    creditNote: {
+      pattern: DEFAULT_CREDIT_NOTE_PATTERN,
       reset: 'yearly',
     },
   },
@@ -233,19 +264,35 @@ function normalizeDocumentNumbering(
   documentPrefix: DocumentPrefix
 ): DocumentNumberingSettings {
   const target: DocumentNumberingSettings = {};
-  if (input?.offer) {
-    target.offer = ensureOfferNumberingConfig(input.offer);
-    return target;
-  }
-  if (base.documentNumbering?.offer) {
-    target.offer = ensureOfferNumberingConfig(base.documentNumbering.offer);
-    return target;
-  }
-  const fallbackPattern = buildPatternFromPrefix(documentPrefix.offer);
-  target.offer = ensureOfferNumberingConfig({
-    pattern: fallbackPattern,
-    reset: 'yearly',
+  const resolvePattern = (docType: DocumentTypeKey) => {
+    switch (docType) {
+      case 'offer':
+        return buildPatternFromPrefix(documentPrefix.offer);
+      case 'invoice':
+        return buildPatternFromPrefix(documentPrefix.invoice);
+      case 'materialOrder':
+        return buildPatternFromPrefix(documentPrefix.order);
+      case 'deliveryNote':
+        return buildPatternFromPrefix(documentPrefix.deliveryNote);
+      case 'workOrder':
+        return buildPatternFromPrefix(documentPrefix.workOrder);
+      default:
+        return getDefaultPattern(docType);
+    }
+  };
+
+  DOCUMENT_TYPE_KEYS.forEach((docType) => {
+    const provided = input?.[docType];
+    const baseConfig = base.documentNumbering?.[docType];
+    const fallbackPattern = resolvePattern(docType);
+    const normalized = ensureDocumentNumberingConfig(docType, {
+      ...(provided ?? baseConfig ?? {}),
+      pattern: provided?.pattern ?? baseConfig?.pattern ?? fallbackPattern,
+      reset: provided?.reset ?? baseConfig?.reset ?? 'yearly',
+    });
+    target[docType] = normalized;
   });
+
   return target;
 }
 
