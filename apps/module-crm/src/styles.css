@@ -110,19 +110,24 @@
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: var(--space-lg);
-  z-index: 50;
+  z-index: 60;
+  pointer-events: auto;
 }
 
 .client-modal__dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   background: var(--color-surface);
   border-radius: var(--radius-soft);
-  width: min(580px, 100%);
+  width: min(580px, calc(100% - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
   padding: var(--space-lg);
   box-shadow: 0 20px 40px rgba(15, 23, 42, 0.25);
+  z-index: 61;
 }
 
 .client-modal__header {

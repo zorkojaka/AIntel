@@ -3,9 +3,9 @@ import { OffersTab } from "../../components/OffersTab";
 
 interface OffersPanelProps {
   project: ProjectDetails;
-  refreshProject: () => Promise<void>;
+  refreshKey?: number;
 }
 
-export function OffersPanel({ project }: OffersPanelProps) {
-  return <OffersTab projectId={project.id} />;
+export function OffersPanel({ project, refreshKey }: OffersPanelProps) {
+  return <OffersTab projectId={project.id} refreshKey={refreshKey} />;
 }

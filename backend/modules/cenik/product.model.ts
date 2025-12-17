@@ -6,6 +6,7 @@ export interface ProductDocument extends Document {
   categorySlugs: string[];
   categorySlug?: string;
   categories?: string[];
+  purchasePriceWithoutVat: number;
   nabavnaCena: number;
   prodajnaCena: number;
   kratekOpis?: string;
@@ -28,6 +29,7 @@ const ProductSchema = new Schema<ProductDocument>(
     categorySlugs: { type: [String], default: [] },
     categorySlug: { type: String, trim: true, lowercase: true },
     categories: { type: [String], default: [] },
+    purchasePriceWithoutVat: { type: Number, required: true, min: 0, default: 0 },
     nabavnaCena: { type: Number, required: true, min: 0, default: 0 },
     prodajnaCena: { type: Number, required: true, min: 0, default: 0 },
     kratekOpis: { type: String, trim: true, default: '' },

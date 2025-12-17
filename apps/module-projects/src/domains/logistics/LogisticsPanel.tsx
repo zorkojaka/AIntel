@@ -15,6 +15,8 @@ import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { MaterialOrderCard, TechnicianOption } from "./MaterialOrderCard";
+import { useConfirmOffer } from "../core/useConfirmOffer";
+import { triggerProjectRefresh } from "../core/useProject";
 
 interface LogisticsPanelProps {
   projectId: string;
@@ -27,6 +29,7 @@ interface LogisticsPanelProps {
     postalCode?: string | null;
     postalCity?: string | null;
   } | null;
+  onWorkOrderUpdated?: (workOrder: LogisticsWorkOrder) => void;
 }
 
 const workOrderStatusOptions: WorkOrderStatus[] = ["draft", "issued", "in-progress", "confirmed", "completed"];
@@ -84,13 +87,6 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat("sl-SI", { style: "currency", currency: "EUR" }).format(value);
 }
 
-function formatDateTimeLocal(value: string | null | undefined) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return "";
-  return date.toISOString().slice(0, 16);
-}
-
 type LogisticsClient = NonNullable<LogisticsPanelProps["client"]>;
 
 function formatClientAddress(client?: LogisticsClient | null) {
@@ -108,11 +104,18 @@ function isBlank(value?: string | null) {
   return !value || value.trim().length === 0;
 }
 
-export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
+function buildOfferLabel(offer: ProjectLogisticsSnapshot["offerVersions"][number]) {
+  const baseLabel = offer.title || `Verzija ${offer.versionNumber}`;
+  const totalLabel = typeof offer.totalWithVat === "number" ? ` • ${formatCurrency(offer.totalWithVat)}` : "";
+  return `${baseLabel}${totalLabel}`;
+}
+
+export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: LogisticsPanelProps) {
   const [snapshot, setSnapshot] = useState<ProjectLogisticsSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [selectedOfferVersionId, setSelectedOfferVersionId] = useState<string | null>(null);
+  const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
   const [workOrderForm, setWorkOrderForm] = useState<Partial<LogisticsWorkOrder>>({});
   const [materialOrderForm, setMaterialOrderForm] = useState<MaterialOrder | null>(null);
   const [emailTouched, setEmailTouched] = useState(false);
@@ -122,6 +125,61 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
   const [issuingOrder, setIssuingOrder] = useState(false);
 
   const hasConfirmed = useMemo(() => !!snapshot?.confirmedOfferVersionId, [snapshot]);
+  const confirmedOffers = useMemo(
+    () => (snapshot?.offerVersions ?? []).filter((offer) => (offer.status ?? "").toUpperCase() === "ACCEPTED"),
+    [snapshot?.offerVersions],
+  );
+  const offerSelectionOptions = useMemo(
+    () =>
+      confirmedOffers.map((offer) => ({
+        value: offer._id,
+        label: buildOfferLabel(offer),
+      })),
+    [confirmedOffers],
+  );
+  const workOrders = useMemo(
+    () => snapshot?.workOrders ?? (snapshot?.workOrder ? [snapshot.workOrder] : []),
+    [snapshot],
+  );
+  const materialOrders = useMemo(
+    () => snapshot?.materialOrders ?? (snapshot?.materialOrder ? [snapshot.materialOrder] : []),
+    [snapshot],
+  );
+  const filteredWorkOrders = useMemo(
+    () =>
+      workOrders.filter((workOrder) =>
+        selectedOfferVersionId ? workOrder.offerVersionId === selectedOfferVersionId : true,
+      ),
+    [selectedOfferVersionId, workOrders],
+  );
+  const filteredMaterialOrders = useMemo(
+    () =>
+      materialOrders.filter((materialOrder) =>
+        selectedOfferVersionId ? materialOrder.offerVersionId === selectedOfferVersionId : true,
+      ),
+    [materialOrders, selectedOfferVersionId],
+  );
+  const selectedWorkOrder = useMemo(
+    () => filteredWorkOrders.find((w) => w._id === selectedWorkOrderId) ?? filteredWorkOrders[0] ?? null,
+    [filteredWorkOrders, selectedWorkOrderId],
+  );
+  const selectedMaterialOrder = useMemo(
+    () =>
+      selectedWorkOrder
+        ? filteredMaterialOrders.find((materialOrder) => materialOrder.workOrderId === selectedWorkOrder._id) ??
+          filteredMaterialOrders[0] ??
+          null
+        : filteredMaterialOrders[0] ?? null,
+    [filteredMaterialOrders, selectedWorkOrder],
+  );
+  const selectedOffer = useMemo(
+    () =>
+      confirmedOffers.find((offer) => offer._id === selectedOfferVersionId) ??
+      confirmedOffers[0] ??
+      null,
+    [confirmedOffers, selectedOfferVersionId],
+  );
+  const selectedOfferLabel = selectedOffer ? buildOfferLabel(selectedOffer) : null;
 
   const fetchSnapshot = useCallback(async () => {
     setLoading(true);
@@ -145,17 +203,44 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
   }, [fetchSnapshot]);
 
   useEffect(() => {
-    if (snapshot?.workOrder) {
-      setWorkOrderForm({
-        ...snapshot.workOrder,
-        scheduledAt: snapshot.workOrder.scheduledAt ? formatDateTimeLocal(snapshot.workOrder.scheduledAt) : "",
-      });
+    if (confirmedOffers.length === 0) {
+      if (selectedOfferVersionId !== null) {
+        setSelectedOfferVersionId(null);
+      }
+      return;
     }
-  }, [snapshot]);
+    if (
+      !selectedOfferVersionId ||
+      !confirmedOffers.some((offer) => offer._id === selectedOfferVersionId)
+    ) {
+      setSelectedOfferVersionId(confirmedOffers[0]._id);
+    }
+  }, [confirmedOffers, selectedOfferVersionId]);
 
   useEffect(() => {
-    setMaterialOrderForm(snapshot?.materialOrder ?? null);
-  }, [snapshot?.materialOrder]);
+    if (filteredWorkOrders.length === 0) {
+      setSelectedWorkOrderId(null);
+      return;
+    }
+    if (!selectedWorkOrderId || !filteredWorkOrders.some((order) => order._id === selectedWorkOrderId)) {
+      setSelectedWorkOrderId(filteredWorkOrders[0]._id);
+    }
+  }, [filteredWorkOrders, selectedWorkOrderId]);
+
+  useEffect(() => {
+    if (selectedWorkOrder) {
+      setWorkOrderForm({
+        ...selectedWorkOrder,
+        scheduledAt: selectedWorkOrder.scheduledAt ?? "",
+      });
+    } else {
+      setWorkOrderForm({});
+    }
+  }, [selectedWorkOrder]);
+
+  useEffect(() => {
+    setMaterialOrderForm(selectedMaterialOrder ?? null);
+  }, [selectedMaterialOrder]);
 
   useEffect(() => {
     if (!client) return;
@@ -179,44 +264,35 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
   }, [client, emailTouched, phoneTouched, locationTouched]);
 
   useEffect(() => {
-    const snapshotAddress = snapshot?.workOrder?.customerAddress;
+    const snapshotAddress = selectedWorkOrder?.customerAddress;
     const clientAddress = formatClientAddress(client ?? null);
     const desiredAddress = snapshotAddress || clientAddress;
     if (!locationTouched && isBlank(workOrderForm.location) && desiredAddress) {
       setWorkOrderForm((prev) => ({ ...prev, location: desiredAddress }));
     }
-  }, [client, snapshot?.workOrder?.customerAddress, locationTouched, workOrderForm.location]);
+  }, [client, selectedWorkOrder?.customerAddress, locationTouched, workOrderForm.location]);
 
-  const handleConfirmOffer = async (offerId: string) => {
-    setConfirmingId(offerId);
-    try {
-      const response = await fetch(`/api/projects/${projectId}/offers/${offerId}/confirm`, { method: "POST" });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Ponudbe ni mogoče potrditi.");
-        return;
-      }
-      toast.success("Ponudba potrjena.");
-      await fetchSnapshot();
-    } catch (error) {
-      toast.error("Ponudbe ni mogoče potrditi.");
-    } finally {
-      setConfirmingId(null);
-    }
-  };
+  const { confirmOffer, confirmingId } = useConfirmOffer({
+    projectId,
+    onConfirmed: fetchSnapshot,
+  });
 
-  const handleCancelConfirmation = async () => {
+  const handleCancelConfirmation = async (offerId: string) => {
     if (!window.confirm("Res želiš preklicati potrditev ponudbe?")) return;
     setCancelling(true);
     try {
-      const response = await fetch(`/api/projects/${projectId}/logistics/cancel-confirmation`, { method: "POST" });
+      const response = await fetch(`/api/projects/${projectId}/logistics/cancel-confirmation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ offerVersionId: offerId }),
+      });
       const payload = await response.json();
       if (!payload.success) {
         toast.error(payload.error ?? "Preklic potrditve ni uspel.");
         return;
       }
       toast.success("Potrditev ponudbe je bila preklicana.");
-      await fetchSnapshot();
+      await Promise.allSettled([fetchSnapshot(), triggerProjectRefresh(projectId)]);
     } catch (error) {
       toast.error("Preklic potrditve ni uspel.");
     } finally {
@@ -232,10 +308,12 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
   };
 
   const handleMaterialStatusChange = (status: MaterialStatus) => {
+    if (!materialOrderForm) return;
     setMaterialOrderForm((prev) => (prev ? { ...prev, materialStatus: status } : prev));
   };
 
   const handleMaterialNextStatus = async (nextStatus: MaterialStatus) => {
+    if (!materialOrderForm) return;
     setMaterialOrderForm((prev) => (prev ? { ...prev, materialStatus: nextStatus } : prev));
     await handleSaveWorkOrder({ materialStatus: nextStatus });
   };
@@ -254,15 +332,16 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
     materialOverrides?: Partial<MaterialOrder>,
     workOrderOverrides?: Partial<LogisticsWorkOrder>,
   ) => {
-    if (!snapshot?.workOrder) return false;
-    const currentMaterial = materialOrderForm ?? snapshot.materialOrder ?? null;
+    if (!selectedWorkOrder) return false;
+    const currentMaterial = materialOrderForm ?? selectedMaterialOrder ?? null;
     setSavingWorkOrder(true);
     try {
-      const response = await fetch(`/api/projects/${projectId}/work-orders/${snapshot.workOrder._id}`, {
+      const response = await fetch(`/api/projects/${projectId}/work-orders/${selectedWorkOrder._id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          scheduledAt: workOrderForm.scheduledAt ? new Date(workOrderForm.scheduledAt as string).toISOString() : null,
+          workOrderId: selectedWorkOrder._id,
+          scheduledAt: typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : null,
           technicianName: workOrderForm.technicianName ?? "",
           technicianId: workOrderForm.technicianId ?? "",
           location: workOrderForm.location ?? "",
@@ -281,28 +360,57 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
       }
       const updated: LogisticsWorkOrder = payload.data;
       const mergedWorkOrder = { ...updated, ...(workOrderOverrides ?? {}) };
-      setSnapshot((prev) =>
-        prev
-          ? {
-              ...prev,
-              workOrder: mergedWorkOrder,
-              materialOrder:
-                currentMaterial || materialOverrides
-                  ? {
-                      ...(currentMaterial ?? prev.materialOrder ?? {}),
-                      ...(materialOverrides ?? {}),
-                    }
-                  : prev.materialOrder,
-            }
-          : prev,
-      );
-      if (materialOverrides) {
-        setMaterialOrderForm((prev) => (prev ? { ...prev, ...materialOverrides } : prev));
+      const mergedMaterial =
+        currentMaterial && currentMaterial._id
+          ? { ...currentMaterial, ...(materialOverrides ?? {}) }
+          : currentMaterial;
+      setSnapshot((prev) => {
+        if (!prev) return prev;
+
+        const previousWorkOrders = prev.workOrders?.length
+          ? prev.workOrders
+          : prev.workOrder
+            ? [prev.workOrder]
+            : [];
+        const hasWorkOrder = previousWorkOrders.some((workOrder) => workOrder._id === mergedWorkOrder._id);
+        const nextWorkOrders = hasWorkOrder
+          ? previousWorkOrders.map((workOrder) => (workOrder._id === mergedWorkOrder._id ? mergedWorkOrder : workOrder))
+          : [...previousWorkOrders, mergedWorkOrder];
+
+        const previousMaterialOrders = prev.materialOrders?.length
+          ? prev.materialOrders
+          : prev.materialOrder
+            ? [prev.materialOrder]
+            : [];
+        const nextMaterialOrders = mergedMaterial && mergedMaterial._id
+          ? previousMaterialOrders.some((materialOrder) => materialOrder._id === mergedMaterial._id)
+            ? previousMaterialOrders.map((materialOrder) =>
+                materialOrder._id === mergedMaterial._id ? mergedMaterial : materialOrder,
+              )
+            : [...previousMaterialOrders, mergedMaterial]
+          : previousMaterialOrders;
+
+        const selectedMaterial = nextMaterialOrders.find((order) => order.workOrderId === mergedWorkOrder._id) ?? null;
+
+        return {
+          ...prev,
+          workOrders: nextWorkOrders,
+          workOrder: mergedWorkOrder,
+          materialOrders: nextMaterialOrders,
+          materialOrder: selectedMaterial ?? nextMaterialOrders[0] ?? null,
+        };
+      });
+      if (mergedMaterial) {
+        setMaterialOrderForm((prev) => (prev ? { ...prev, ...(materialOverrides ?? {}), ...mergedMaterial } : mergedMaterial));
       }
       setWorkOrderForm({
         ...mergedWorkOrder,
-        scheduledAt: formatDateTimeLocal(mergedWorkOrder.scheduledAt),
+        scheduledAt: mergedWorkOrder.scheduledAt ?? "",
       });
+      if (onWorkOrderUpdated) {
+        onWorkOrderUpdated(mergedWorkOrder);
+      }
+      await triggerProjectRefresh(projectId);
       toast.success("Delovni nalog posodobljen.");
       return true;
     } catch (error) {
@@ -314,20 +422,20 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
   };
 
   const effectiveMaterialStatus: MaterialStatus | null =
-    materialOrderForm?.materialStatus ?? snapshot?.materialOrder?.materialStatus ?? null;
-  const nextMaterialStatus = getNextMaterialStatus(materialOrderForm?.materialStatus ?? null);
+    materialOrderForm?.materialStatus ?? selectedMaterialOrder?.materialStatus ?? null;
+  const nextMaterialStatus = getNextMaterialStatus(effectiveMaterialStatus);
 
   const resolveField = (value?: string | null, fallback?: string | null) => (value ?? fallback ?? "").trim();
 
-  const resolvedCustomerName = resolveField(workOrderForm.customerName, snapshot?.workOrder?.customerName);
-  const resolvedCustomerAddress = resolveField(workOrderForm.customerAddress, snapshot?.workOrder?.customerAddress);
-  const resolvedCustomerEmail = resolveField(workOrderForm.customerEmail, snapshot?.workOrder?.customerEmail);
-  const resolvedCustomerPhone = resolveField(workOrderForm.customerPhone, snapshot?.workOrder?.customerPhone);
+  const resolvedCustomerName = resolveField(workOrderForm.customerName, selectedWorkOrder?.customerName);
+  const resolvedCustomerAddress = resolveField(workOrderForm.customerAddress, selectedWorkOrder?.customerAddress);
+  const resolvedCustomerEmail = resolveField(workOrderForm.customerEmail, selectedWorkOrder?.customerEmail);
+  const resolvedCustomerPhone = resolveField(workOrderForm.customerPhone, selectedWorkOrder?.customerPhone);
   const resolvedSchedule = resolveField(
     typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : undefined,
-    snapshot?.workOrder?.scheduledAt ? formatDateTimeLocal(snapshot.workOrder.scheduledAt) : undefined,
+    selectedWorkOrder?.scheduledAt ?? undefined,
   );
-  const resolvedTechnicianId = resolveField(workOrderForm.technicianId, snapshot?.workOrder?.technicianId);
+  const resolvedTechnicianId = resolveField(workOrderForm.technicianId, selectedWorkOrder?.technicianId);
 
   const canIssueOrder =
     effectiveMaterialStatus === "Pripravljeno" &&
@@ -339,32 +447,14 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
     resolvedTechnicianId;
 
   const handleIssueWorkOrder = async () => {
-    if (!canIssueOrder || issuingOrder) return;
+    if (!canIssueOrder || issuingOrder || !selectedWorkOrder) return;
     setIssuingOrder(true);
     setWorkOrderForm((prev) => ({ ...prev, status: "issued" }));
     const saved = await handleSaveWorkOrder(undefined, { status: "issued" });
-    if (!saved) {
-      setIssuingOrder(false);
-      return;
+    if (saved) {
+      toast.success("Delovni nalog izdan.");
     }
-    try {
-      const response = await fetch(`/api/projects/${projectId}/status`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "in-progress" }),
-      });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Status projekta ni bilo mogoče posodobiti.");
-        return;
-      }
-      toast.success("Nalog izdan in projekt v izvedbi.");
-      await fetchSnapshot();
-    } catch (error) {
-      toast.error("Status projekta ni bilo mogoče posodobiti.");
-    } finally {
-      setIssuingOrder(false);
-    }
+    setIssuingOrder(false);
   };
 
   const renderWorkOrder = (workOrder: LogisticsWorkOrder | null) => {
@@ -474,7 +564,7 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
             onClick={handleIssueWorkOrder}
             disabled={!canIssueOrder || savingWorkOrder || issuingOrder}
           >
-            {issuingOrder ? "Dokončujem..." : "Dokončaj naročilo"}
+            {issuingOrder ? "Izdajam..." : "Izdaj nalog"}
           </Button>
         </div>
         <div className="border rounded-[var(--radius-card)] bg-card overflow-hidden">
@@ -501,8 +591,11 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
     );
   };
 
+  const shouldShowOfferSelector = confirmedOffers.length > 0;
+  const shouldRenderOfferDropdown = confirmedOffers.length > 1;
+
   const headerWorkOrderStatus: WorkOrderStatus =
-    (workOrderForm.status as WorkOrderStatus) ?? (snapshot?.workOrder?.status as WorkOrderStatus) ?? "draft";
+    (workOrderForm.status as WorkOrderStatus) ?? (selectedWorkOrder?.status as WorkOrderStatus) ?? "draft";
 
   return (
     <div className="space-y-6">
@@ -553,7 +646,7 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
                                 size="sm"
                                 variant="outline"
                                 disabled={confirmingId === offer._id}
-                                onClick={() => handleConfirmOffer(offer._id)}
+                                onClick={() => confirmOffer(offer._id)}
                               >
                                 {confirmingId === offer._id ? "Potrjujem..." : "Potrdi to verzijo"}
                               </Button>
@@ -562,7 +655,7 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
                               <Button
                                 size="sm"
                                 variant="destructive"
-                                onClick={handleCancelConfirmation}
+                                onClick={() => handleCancelConfirmation(offer._id)}
                                 disabled={cancelling}
                               >
                                 {cancelling ? "Preklicujem..." : "Prekliči potrditev"}
@@ -572,7 +665,7 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => handleConfirmOffer(offer._id)}
+                                onClick={() => confirmOffer(offer._id)}
                                 disabled={confirmingId === offer._id}
                               >
                                 {confirmingId === offer._id ? "Potrjujem..." : "Ponovno potrdi verzijo"}
@@ -592,66 +685,114 @@ export function LogisticsPanel({ projectId, client }: LogisticsPanelProps) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex flex-wrap items-center justify-between gap-4">
-          <CardTitle className="m-0">Naročilo za material</CardTitle>
-          {materialOrderForm && (
-            <Select
-              value={materialOrderForm.materialStatus ?? "Za naročit"}
-              onValueChange={(value) => handleMaterialStatusChange(value as MaterialStatus)}
-            >
-              <SelectTrigger className="h-8 w-fit border border-input bg-background px-3 py-0 focus:ring-0">
-                <Badge variant="outline" className="uppercase text-xs tracking-wide px-3 py-1">
-                  <SelectValue />
+      <div className="space-y-6 rounded-[var(--radius-card)] border border-border/60 bg-card/30 p-4">
+        {shouldShowOfferSelector && (
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase text-muted-foreground">Logistika za ponudbo</p>
+              <p className="text-base font-semibold">{selectedOfferLabel ?? "Izberi potrjeno ponudbo"}</p>
+            </div>
+            {shouldRenderOfferDropdown ? (
+              <Select value={selectedOfferVersionId ?? ""} onValueChange={(value) => setSelectedOfferVersionId(value)}>
+                <SelectTrigger className="w-[260px]">
+                  <SelectValue placeholder="Izberi potrjeno ponudbo" />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {offerSelectionOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              selectedOfferLabel && (
+                <Badge variant="outline" className="px-3 py-1 text-sm font-medium">
+                  {selectedOfferLabel}
                 </Badge>
-              </SelectTrigger>
-              <SelectContent align="end">
-                {materialStatusOptions.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {status}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </CardHeader>
-        <CardContent>
-          <MaterialOrderCard
-            materialOrder={materialOrderForm}
-            technicians={technicians}
-            nextStatus={nextMaterialStatus}
-            onTechnicianSelect={handleMaterialTechnicianSelect}
-            onAdvanceStatus={handleMaterialNextStatus}
-            savingWorkOrder={savingWorkOrder}
-          />
-        </CardContent>
-      </Card>
+              )
+            )}
+          </div>
+        )}
 
-      <Card>
-        <CardHeader className="flex flex-wrap items-center justify-between gap-4">
-          <CardTitle className="m-0">Delovni nalog</CardTitle>
-          {snapshot?.workOrder && (
-            <Select
-              value={headerWorkOrderStatus}
-              onValueChange={(value) => handleWorkOrderChange("status", value)}
-            >
-              <SelectTrigger className="h-8 w-fit border border-input bg-background px-3 py-0 focus:ring-0">
-                <Badge variant="outline" className="uppercase text-xs tracking-wide px-3 py-1">
-                  <SelectValue />
-                </Badge>
-              </SelectTrigger>
-              <SelectContent align="end">
-                {workOrderStatusOptions.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {workOrderStatusLabels[status]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </CardHeader>
-        <CardContent>{renderWorkOrder(snapshot?.workOrder ?? null)}</CardContent>
-      </Card>
+        <Card>
+          <CardHeader className="flex flex-wrap items-center justify-between gap-4">
+            <CardTitle className="m-0">Naročilo za material</CardTitle>
+            {materialOrderForm && (
+              <Select
+                value={materialOrderForm.materialStatus ?? "Za naročit"}
+                onValueChange={(value) => handleMaterialStatusChange(value as MaterialStatus)}
+              >
+                <SelectTrigger className="h-8 w-fit border border-input bg-background px-3 py-0 focus:ring-0">
+                  <Badge variant="outline" className="uppercase text-xs tracking-wide px-3 py-1">
+                    <SelectValue />
+                  </Badge>
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {materialStatusOptions.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </CardHeader>
+          <CardContent>
+            <MaterialOrderCard
+              materialOrder={materialOrderForm}
+              technicians={technicians}
+              nextStatus={nextMaterialStatus}
+              onTechnicianSelect={handleMaterialTechnicianSelect}
+              onAdvanceStatus={handleMaterialNextStatus}
+              savingWorkOrder={savingWorkOrder}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <CardTitle className="m-0">Delovni nalog</CardTitle>
+              {filteredWorkOrders.length > 0 && (
+                <Select
+                  value={selectedWorkOrder?._id ?? ""}
+                  onValueChange={(id) => setSelectedWorkOrderId(id)}
+                >
+                  <SelectTrigger className="w-[220px]">
+                    <SelectValue placeholder="Izberi delovni nalog" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredWorkOrders.map((wo, index) => (
+                      <SelectItem key={wo._id} value={wo._id}>
+                        {wo.title || `Delovni nalog #${wo.sequence ?? index + 1}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            {selectedWorkOrder && (
+              <Select value={headerWorkOrderStatus} onValueChange={(value) => handleWorkOrderChange("status", value)}>
+                <SelectTrigger className="h-8 w-fit border border-input bg-background px-3 py-0 focus:ring-0">
+                  <Badge variant="outline" className="uppercase text-xs tracking-wide px-3 py-1">
+                    <SelectValue />
+                  </Badge>
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {workOrderStatusOptions.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {workOrderStatusLabels[status]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </CardHeader>
+          <CardContent>{renderWorkOrder(selectedWorkOrder)}</CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
+

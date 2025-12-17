@@ -1,35 +1,70 @@
 import { Request, Response } from 'express';
 import { getSettings, updateSettings, SettingsUpdate, ensureSettingsDocument } from '../settings.service';
 
+function pickString(value: unknown) {
+  return typeof value === 'string' ? value : undefined;
+}
+
 function validatePayload(body: unknown): SettingsUpdate {
   if (typeof body !== 'object' || body === null) {
     return {};
   }
   const payload = body as Record<string, unknown>;
-  const documentPrefix = typeof payload.documentPrefix === 'object' && payload.documentPrefix !== null
-    ? (payload.documentPrefix as Record<string, unknown>)
-    : undefined;
+  const documentPrefix =
+    typeof payload.documentPrefix === 'object' && payload.documentPrefix !== null
+      ? (payload.documentPrefix as Record<string, unknown>)
+      : undefined;
+
+  const numberingRaw =
+    typeof payload.documentNumbering === 'object' && payload.documentNumbering !== null
+      ? (payload.documentNumbering as Record<string, unknown>)
+      : undefined;
+  const numberingOffer =
+    numberingRaw && typeof numberingRaw.offer === 'object' && numberingRaw.offer !== null
+      ? (numberingRaw.offer as Record<string, unknown>)
+      : undefined;
+  const resetValue = typeof numberingOffer?.reset === 'string' ? numberingOffer.reset : undefined;
 
   return {
-    companyName: typeof payload.companyName === 'string' ? payload.companyName : undefined,
-    address: typeof payload.address === 'string' ? payload.address : undefined,
-    email: typeof payload.email === 'string' ? payload.email : undefined,
-    phone: typeof payload.phone === 'string' ? payload.phone : undefined,
-    logoUrl: typeof payload.logoUrl === 'string' ? payload.logoUrl : undefined,
-    primaryColor: typeof payload.primaryColor === 'string' ? payload.primaryColor : undefined,
-    defaultPaymentTerms:
-      typeof payload.defaultPaymentTerms === 'string' ? payload.defaultPaymentTerms : undefined,
-    disclaimer: typeof payload.disclaimer === 'string' ? payload.disclaimer : undefined,
+    companyName: pickString(payload.companyName),
+    address: pickString(payload.address),
+    postalCode: pickString(payload.postalCode),
+    city: pickString(payload.city),
+    country: pickString(payload.country),
+    email: pickString(payload.email),
+    phone: pickString(payload.phone),
+    website: pickString(payload.website),
+    logoUrl: pickString(payload.logoUrl),
+    primaryColor: pickString(payload.primaryColor),
+    defaultPaymentTerms: pickString(payload.defaultPaymentTerms),
+    disclaimer: pickString(payload.disclaimer),
+    iban: pickString(payload.iban),
+    vatId: pickString(payload.vatId),
+    directorName: pickString(payload.directorName),
+    notes: Array.isArray(payload.notes) ? (payload.notes as SettingsUpdate['notes']) : undefined,
+    noteDefaultsByDoc:
+      typeof payload.noteDefaultsByDoc === 'object' && payload.noteDefaultsByDoc !== null
+        ? (payload.noteDefaultsByDoc as SettingsUpdate['noteDefaultsByDoc'])
+        : undefined,
     documentPrefix: documentPrefix
       ? {
-          offer: typeof documentPrefix.offer === 'string' ? documentPrefix.offer : undefined,
-          invoice: typeof documentPrefix.invoice === 'string' ? documentPrefix.invoice : undefined,
-          order: typeof documentPrefix.order === 'string' ? documentPrefix.order : undefined,
-          deliveryNote:
-            typeof documentPrefix.deliveryNote === 'string' ? documentPrefix.deliveryNote : undefined,
-          workOrder: typeof documentPrefix.workOrder === 'string' ? documentPrefix.workOrder : undefined
+          offer: pickString(documentPrefix.offer),
+          invoice: pickString(documentPrefix.invoice),
+          order: pickString(documentPrefix.order),
+          deliveryNote: pickString(documentPrefix.deliveryNote),
+          workOrder: pickString(documentPrefix.workOrder),
         }
-      : undefined
+      : undefined,
+    documentNumbering: numberingOffer
+      ? {
+          offer: {
+            pattern: pickString(numberingOffer.pattern),
+            reset: resetValue === 'never' ? 'never' : resetValue === 'yearly' ? 'yearly' : undefined,
+            yearOverride: typeof numberingOffer.yearOverride === 'number' ? numberingOffer.yearOverride : undefined,
+            seqOverride: typeof numberingOffer.seqOverride === 'number' ? numberingOffer.seqOverride : undefined,
+          },
+        }
+      : undefined,
   };
 }
 

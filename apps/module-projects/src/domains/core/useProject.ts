@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Template } from "../../components/TemplateEditor";
 import { ProjectDetails } from "../../types";
+import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 
 export type UseProjectResult = {
   project: ProjectDetails | null;
@@ -10,6 +11,34 @@ export type UseProjectResult = {
   refresh: () => Promise<void>;
   setProject: (updater: (prev: ProjectDetails) => ProjectDetails) => void;
 };
+
+type RefreshListener = () => Promise<void>;
+
+const projectRefreshListeners = new Map<string, Set<RefreshListener>>();
+
+export function registerProjectRefresh(projectId: string, listener: RefreshListener) {
+  if (!projectId || typeof listener !== "function") return;
+  const listeners = projectRefreshListeners.get(projectId) ?? new Set<RefreshListener>();
+  listeners.add(listener);
+  projectRefreshListeners.set(projectId, listeners);
+}
+
+export function unregisterProjectRefresh(projectId: string, listener: RefreshListener) {
+  if (!projectId) return;
+  const listeners = projectRefreshListeners.get(projectId);
+  if (!listeners) return;
+  listeners.delete(listener);
+  if (listeners.size === 0) {
+    projectRefreshListeners.delete(projectId);
+  }
+}
+
+export async function triggerProjectRefresh(projectId: string) {
+  const listeners = projectRefreshListeners.get(projectId);
+  if (!listeners || listeners.size === 0) return;
+  const callbacks = Array.from(listeners);
+  await Promise.allSettled(callbacks.map((callback) => callback()));
+}
 
 export function mapProject(data: any): ProjectDetails {
   const requirementsArray = Array.isArray(data.requirements) ? data.requirements : [];
@@ -36,7 +65,30 @@ export function mapProject(data: any): ProjectDetails {
     templates: data.templates ?? [],
     categories: Array.isArray(data.categories) ? data.categories : [],
     requirementsTemplateVariantSlug: data.requirementsTemplateVariantSlug,
+    logistics: (data.logistics as ProjectLogistics | null) ?? null,
   };
+}
+
+async function fetchProjectLogistics(projectId: string): Promise<ProjectLogistics | null> {
+  try {
+    const response = await fetch(`/api/projects/${projectId}/logistics`);
+    const payload = await response.json();
+    if (!payload.success || !payload.data) {
+      return null;
+    }
+    const data = payload.data as any;
+    return {
+      workOrders: data.workOrders ?? [],
+      materialOrders: data.materialOrders ?? [],
+      materialOrder: data.materialOrder ?? null,
+      workOrder: data.workOrder ?? null,
+      acceptedOfferId: data.acceptedOfferId ?? null,
+      confirmedOfferVersionId: data.confirmedOfferVersionId ?? null,
+      offerVersions: data.offerVersions ?? [],
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function useProject(projectId: string, initialProject?: ProjectDetails | null): UseProjectResult {
@@ -58,7 +110,12 @@ export function useProject(projectId: string, initialProject?: ProjectDetails | 
         return;
       }
       const mapped = mapProject(result.data);
-      setProjectState(mapped);
+      const logistics = await fetchProjectLogistics(projectId);
+      const combined: ProjectDetails = {
+        ...mapped,
+        logistics: logistics ?? mapped.logistics ?? null,
+      };
+      setProjectState(combined);
     } catch (err) {
       const error = err instanceof Error ? err : new Error("Napaka pri nalaganju projekta.");
       setError(error);
@@ -85,6 +142,13 @@ export function useProject(projectId: string, initialProject?: ProjectDetails | 
   useEffect(() => {
     fetchProject();
   }, [fetchProject]);
+
+  useEffect(() => {
+    registerProjectRefresh(projectId, refresh);
+    return () => {
+      unregisterProjectRefresh(projectId, refresh);
+    };
+  }, [projectId, refresh]);
 
   return { project, loading, error, refresh, setProject };
 }

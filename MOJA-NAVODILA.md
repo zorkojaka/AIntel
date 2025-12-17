@@ -33,6 +33,9 @@ git push --set-upstream origin faza-3-nastavitve
 
 > Staro vejo lahko pustiš kot arhiv faze ali izbrišeš.
 
+### 🔄 6. Prenesi najnovejšo kodo iz gita od faze
+git pull origin faza
+
 
 
 ## 🚀 Zagon aplikacije (lokalno)

@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
-import type { ProjectLogisticsSnapshot } from '../../../../shared/types/logistics';
+import { Types } from 'mongoose';
+import type { MaterialOrder, ProjectLogisticsSnapshot, WorkOrder } from '../../../../shared/types/logistics';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { ProjectModel, addTimeline } from '../schemas/project';
 import { MaterialOrderModel } from '../schemas/material-order';
@@ -56,28 +57,134 @@ function calculateOfferTotalsFromSnapshot(offer: {
 
 const MATERIAL_STATUS_VALUES = ['Za naročit', 'Naročeno', 'Prevzeto', 'Pripravljeno', 'Dostavljeno', 'Zmontirano'];
 
-function serializeDate(value: Date | string | null | undefined) {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.valueOf()) ? null : date.toISOString();
-}
-
 function mapOfferItemsToLogistics(items: OfferLineItem[]) {
-  return items.map((item) => ({
-    id: item.id,
-    productId: item.productId ?? null,
-    name: item.name,
-    quantity: item.quantity,
-    unit: item.unit,
-  }));
+  return items.map((item) => {
+    const note = (item as any).note;
+    return {
+      id: item.id,
+      productId: item.productId ?? null,
+      name: item.name,
+      quantity: item.quantity,
+      unit: item.unit,
+      note,
+    };
+  });
 }
 
-function serializeMaterialOrder(order: any) {
+type LogisticsItems = ReturnType<typeof mapOfferItemsToLogistics>;
+
+function mapOfferItemsToWorkOrderItems(items: OfferLineItem[]) {
+  return items.map((item) => {
+    const quantity = typeof item.quantity === 'number' ? item.quantity : 0;
+    const generatedId = item.id ?? new Types.ObjectId().toString();
+    const note = (item as any).note ?? undefined;
+    return {
+      id: generatedId,
+      productId: item.productId ?? null,
+      name: item.name,
+      quantity,
+      unit: item.unit,
+      note,
+      offerItemId: item.id ?? null,
+      offeredQuantity: quantity,
+      plannedQuantity: quantity,
+      executedQuantity: quantity,
+      isExtra: false,
+      itemNote: null,
+      isCompleted: false,
+    };
+  });
+}
+
+async function ensureWorkOrderForOffer(params: {
+  projectId: string;
+  offerId: string;
+  items: ReturnType<typeof mapOfferItemsToWorkOrderItems>;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  customerAddress: string;
+}) {
+  const { projectId, offerId, items, customerName, customerEmail, customerPhone, customerAddress } = params;
+  let workOrder = await WorkOrderModel.findOne({ projectId, offerVersionId: offerId }).sort({ sequence: 1, createdAt: 1 });
+
+  if (workOrder) {
+    if ((workOrder as any).status === 'cancelled') {
+      (workOrder as any).status = 'draft';
+    }
+    workOrder.items = items;
+    workOrder.cancelledAt = null;
+    workOrder.reopened = false;
+    workOrder.customerName = customerName;
+    workOrder.customerEmail = customerEmail;
+    workOrder.customerPhone = customerPhone;
+    workOrder.customerAddress = customerAddress;
+    if (typeof workOrder.sequence !== 'number') {
+      workOrder.sequence = 1;
+    }
+    await workOrder.save();
+    return workOrder;
+  }
+
+  return WorkOrderModel.create({
+    projectId,
+    offerVersionId: offerId,
+    sequence: 1,
+    items,
+    status: 'draft',
+    reopened: false,
+    scheduledAt: null,
+    customerName,
+    customerEmail,
+    customerPhone,
+    customerAddress,
+  });
+}
+
+async function ensureMaterialOrderForOffer(params: {
+  projectId: string;
+  offerId: string;
+  workOrderId: string;
+  items: LogisticsItems;
+}) {
+  const { projectId, offerId, items, workOrderId } = params;
+  let materialOrder =
+    (await MaterialOrderModel.findOne({ projectId, offerVersionId: offerId, workOrderId }).sort({ createdAt: 1 })) ||
+    (await MaterialOrderModel.findOne({ projectId, offerVersionId: offerId }).sort({ createdAt: 1 }));
+
+  if (materialOrder) {
+    if (materialOrder.status === 'cancelled') {
+      materialOrder.status = 'draft';
+    }
+    materialOrder.items = items;
+    materialOrder.workOrderId = workOrderId;
+    materialOrder.materialStatus = materialOrder.materialStatus ?? 'Za naročit';
+    materialOrder.cancelledAt = null;
+    materialOrder.reopened = false;
+    await materialOrder.save();
+    return materialOrder;
+  }
+
+  return MaterialOrderModel.create({
+    projectId,
+    offerVersionId: offerId,
+    workOrderId,
+    items,
+    status: 'draft',
+    materialStatus: 'Za naročit',
+    technicianId: null,
+    technicianName: null,
+    reopened: false,
+  });
+}
+
+function serializeMaterialOrder(order: any): MaterialOrder | null {
   if (!order) return null;
   return {
     _id: String(order._id),
     projectId: order.projectId,
     offerVersionId: order.offerVersionId,
+    workOrderId: order.workOrderId ? String(order.workOrderId) : undefined,
     items: (order.items || []).map((item: any) => ({
       id: item.id,
       productId: item.productId ?? null,
@@ -85,34 +192,65 @@ function serializeMaterialOrder(order: any) {
       quantity: item.quantity,
       unit: item.unit,
       note: item.note,
+      offerItemId: item.offerItemId ?? null,
+      offeredQuantity:
+        typeof item.offeredQuantity === 'number' ? item.offeredQuantity : Number(item.quantity) || 0,
+      plannedQuantity:
+        typeof item.plannedQuantity === 'number' ? item.plannedQuantity : Number(item.quantity) || 0,
+      executedQuantity:
+        typeof item.executedQuantity === 'number' ? item.executedQuantity : Number(item.quantity) || 0,
+      isExtra: !!item.isExtra,
+      itemNote: typeof item.itemNote === 'string' ? item.itemNote : null,
+      isCompleted: !!item.isCompleted,
     })),
     status: order.status,
     materialStatus: order.materialStatus ?? 'Za naročit',
     technicianId: order.technicianId ?? null,
     technicianName: order.technicianName ?? null,
-    cancelledAt: serializeDate(order.cancelledAt),
+    cancelledAt: order.cancelledAt ? new Date(order.cancelledAt).toISOString() : null,
     reopened: !!order.reopened,
-    createdAt: serializeDate(order.createdAt) ?? '',
-    updatedAt: serializeDate(order.updatedAt) ?? '',
+    createdAt: order.createdAt ? new Date(order.createdAt).toISOString() : '',
+    updatedAt: order.updatedAt ? new Date(order.updatedAt).toISOString() : '',
   };
 }
 
-function serializeWorkOrder(order: any) {
+function serializeWorkOrder(order: any): WorkOrder | null {
   if (!order) return null;
   return {
     _id: String(order._id),
     projectId: order.projectId,
     offerVersionId: order.offerVersionId,
-    items: (order.items || []).map((item: any) => ({
-      id: item.id,
-      productId: item.productId ?? null,
-      name: item.name,
-      quantity: item.quantity,
-      unit: item.unit,
-      note: item.note,
-    })),
+    sequence: typeof order.sequence === 'number' ? order.sequence : null,
+    code: order.code ?? null,
+    title: order.title ?? null,
+      items: (order.items || []).map((item: any) => {
+        const fallbackQuantity = typeof item.quantity === 'number' ? item.quantity : 0;
+        return {
+          id: item.id,
+          productId: item.productId ?? null,
+          name: item.name,
+          quantity: fallbackQuantity,
+          unit: item.unit,
+          note: item.note ?? undefined,
+          offerItemId: item.offerItemId ?? null,
+          offeredQuantity:
+            typeof item.offeredQuantity === 'number' ? item.offeredQuantity : fallbackQuantity,
+          plannedQuantity:
+            typeof item.plannedQuantity === 'number' ? item.plannedQuantity : fallbackQuantity,
+          executedQuantity:
+            typeof item.executedQuantity === 'number' ? item.executedQuantity : fallbackQuantity,
+          isExtra: !!item.isExtra,
+          itemNote:
+            typeof item.itemNote === 'string'
+              ? item.itemNote
+              : item.itemNote === null
+                ? null
+                : undefined,
+          isCompleted: !!item.isCompleted,
+        };
+      }),
     status: order.status,
-    scheduledAt: serializeDate(order.scheduledAt),
+    scheduledAt: order.scheduledAt ?? null,
     technicianName: order.technicianName,
     technicianId: order.technicianId,
     location: order.location,
@@ -121,10 +259,20 @@ function serializeWorkOrder(order: any) {
     customerEmail: order.customerEmail ?? '',
     customerPhone: order.customerPhone ?? '',
     customerAddress: order.customerAddress ?? '',
-    cancelledAt: serializeDate(order.cancelledAt),
+    executionNote:
+      typeof order.executionNote === 'string'
+        ? order.executionNote
+        : order.executionNote === null
+          ? null
+          : undefined,
+    cancelledAt: order.cancelledAt ? new Date(order.cancelledAt).toISOString() : null,
     reopened: !!order.reopened,
-    createdAt: serializeDate(order.createdAt) ?? '',
-    updatedAt: serializeDate(order.updatedAt) ?? '',
+    workLogs: (order.workLogs ?? []).map((log: any) => ({
+      employeeId: typeof log.employeeId === 'string' ? log.employeeId : '',
+      hours: typeof log.hours === 'number' ? log.hours : 0,
+    })),
+    createdAt: order.createdAt ? new Date(order.createdAt).toISOString() : '',
+    updatedAt: order.updatedAt ? new Date(order.updatedAt).toISOString() : '',
   };
 }
 
@@ -133,15 +281,26 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
   if (!project) return null;
 
   const offerVersions = await OfferVersionModel.find({ projectId }).sort({ versionNumber: 1 }).lean();
-  const confirmedOfferVersionId = project.confirmedOfferVersionId ?? null;
+  const fallbackConfirmedOfferId =
+    project.confirmedOfferVersionId ??
+    (offerVersions.find((offer) => (offer.status ?? '').toLowerCase() === 'accepted')?._id ?? null);
+  const confirmedOfferVersionId = fallbackConfirmedOfferId ? String(fallbackConfirmedOfferId) : null;
 
-  const materialOrder = confirmedOfferVersionId
-    ? await MaterialOrderModel.findOne({ projectId, offerVersionId: confirmedOfferVersionId }).lean()
-    : await MaterialOrderModel.findOne({ projectId }).sort({ updatedAt: -1 }).lean();
+  const materialOrderQuery = {
+    projectId,
+    status: { $ne: 'cancelled' },
+    cancelledAt: null,
+  };
 
-  const workOrder = confirmedOfferVersionId
-    ? await WorkOrderModel.findOne({ projectId, offerVersionId: confirmedOfferVersionId }).lean()
-    : await WorkOrderModel.findOne({ projectId }).sort({ updatedAt: -1 }).lean();
+  const workOrderQuery = {
+    projectId,
+    cancelledAt: null,
+  };
+
+  const [materialOrderDocs, workOrderDocs] = await Promise.all([
+    MaterialOrderModel.find(materialOrderQuery).sort({ createdAt: 1 }).lean(),
+    WorkOrderModel.find(workOrderQuery).sort({ sequence: 1, createdAt: 1 }).lean(),
+  ]);
 
   const resolveTotalWithVat = (offer: any) => {
     const sumFromItems =
@@ -155,6 +314,13 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
     );
   };
 
+  const serializedMaterialOrders: MaterialOrder[] = materialOrderDocs
+    .map(serializeMaterialOrder)
+    .filter((order): order is MaterialOrder => order !== null);
+  const serializedWorkOrders: WorkOrder[] = workOrderDocs
+    .map(serializeWorkOrder)
+    .filter((order): order is WorkOrder => order !== null);
+
   return {
     projectId,
     confirmedOfferVersionId,
@@ -165,8 +331,18 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
       status: offer.status,
       totalWithVat: resolveTotalWithVat(offer),
     })),
-    materialOrder: serializeMaterialOrder(materialOrder),
-    workOrder: serializeWorkOrder(workOrder),
+    materialOrders: serializedMaterialOrders,
+    workOrders: serializedWorkOrders,
+    materialOrder: confirmedOfferVersionId
+      ? serializedMaterialOrders.find((order) => order.offerVersionId === confirmedOfferVersionId) ??
+        serializedMaterialOrders[0] ??
+        null
+      : serializedMaterialOrders[0] ?? null,
+    workOrder: confirmedOfferVersionId
+      ? serializedWorkOrders.find((order) => order.offerVersionId === confirmedOfferVersionId) ??
+        serializedWorkOrders[0] ??
+        null
+      : serializedWorkOrders[0] ?? null,
   };
 }
 
@@ -200,56 +376,30 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       { new: true }
     );
 
-    const logisticsItems = mapOfferItemsToLogistics(offer.items || []);
+    const offerItems = offer.items || [];
+    const logisticsItems = mapOfferItemsToLogistics(offerItems);
+    const workOrderItems = mapOfferItemsToWorkOrderItems(offerItems);
     const customerName = project.customer?.name ?? projectClient?.name ?? '';
     const customerEmail = projectClient?.email ?? '';
     const customerPhone = projectClient?.phone ?? '';
     const customerAddress = formatClientAddress(projectClient, project.customer?.address ?? '');
 
-    const materialOrder = await MaterialOrderModel.findOne({ projectId, offerVersionId: offerId });
-    if (materialOrder) {
-      materialOrder.items = logisticsItems;
-      materialOrder.materialStatus = materialOrder.materialStatus ?? 'Za naročit';
-      materialOrder.cancelledAt = null;
-      materialOrder.reopened = false;
-      await materialOrder.save();
-    } else {
-      await MaterialOrderModel.create({
-        projectId,
-        offerVersionId: offerId,
-        items: logisticsItems,
-        status: 'draft',
-        materialStatus: 'Za naročit',
-        technicianId: null,
-        technicianName: null,
-        reopened: false,
-      });
-    }
+    const workOrder = await ensureWorkOrderForOffer({
+      projectId,
+      offerId,
+      items: workOrderItems,
+      customerName,
+      customerEmail,
+      customerPhone,
+      customerAddress,
+    });
 
-    const workOrder = await WorkOrderModel.findOne({ projectId, offerVersionId: offerId });
-    if (workOrder) {
-      workOrder.items = logisticsItems;
-      workOrder.cancelledAt = null;
-      workOrder.reopened = false;
-      workOrder.customerName = customerName;
-      workOrder.customerEmail = customerEmail;
-      workOrder.customerPhone = customerPhone;
-      workOrder.customerAddress = customerAddress;
-      await workOrder.save();
-    } else {
-      await WorkOrderModel.create({
-        projectId,
-        offerVersionId: offerId,
-        items: logisticsItems,
-        status: 'draft',
-        reopened: false,
-        scheduledAt: null,
-        customerName,
-        customerEmail,
-        customerPhone,
-        customerAddress,
-      });
-    }
+    await ensureMaterialOrderForOffer({
+      projectId,
+      offerId,
+      workOrderId: String(workOrder._id),
+      items: logisticsItems,
+    });
 
     if (updatedProject) {
       addTimeline(updatedProject, {
@@ -273,50 +423,71 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
 export async function cancelOfferConfirmation(req: Request, res: Response, next: NextFunction) {
   try {
     const { projectId } = req.params;
-
     const project = await ProjectModel.findOne({ id: projectId });
-    if (!project || !project.confirmedOfferVersionId) {
+    if (!project) {
+      return res.fail('Projekt ni najden.', 404);
+    }
+
+    const query = req.query as Record<string, unknown>;
+    const candidateOfferIds: Array<string | undefined> = [
+      typeof req.body?.offerVersionId === 'string' ? req.body.offerVersionId.trim() : undefined,
+      typeof req.body?.offerId === 'string' ? req.body.offerId.trim() : undefined,
+      typeof query.offerVersionId === 'string' ? (query.offerVersionId as string).trim() : undefined,
+      typeof query.offerId === 'string' ? (query.offerId as string).trim() : undefined,
+    ];
+    const requestedOfferId = candidateOfferIds.find((value) => value && value.length > 0) ?? null;
+    const targetOfferId = requestedOfferId ?? project.confirmedOfferVersionId ?? null;
+
+    if (!targetOfferId) {
       return res.fail('Ni potrjene ponudbe za preklic.', 400);
     }
 
-    const projectClient = await resolveProjectClient(project);
-    const confirmedOfferVersionId = project.confirmedOfferVersionId;
-    project.confirmedOfferVersionId = null;
-    if (project.status !== 'completed') {
-      project.status = 'offered';
+    const offer = await OfferVersionModel.findOne({ _id: targetOfferId, projectId });
+    if (!offer) {
+      return res.fail('Ponudba ni najdena.', 404);
     }
-    await project.save();
 
-    const offer = await OfferVersionModel.findOneAndUpdate(
-      { _id: confirmedOfferVersionId, projectId },
-      { status: 'cancelled' },
-      { new: true }
-    );
-
+    const projectClient = await resolveProjectClient(project);
     const now = new Date();
 
-    await MaterialOrderModel.findOneAndUpdate(
-      { projectId, offerVersionId: confirmedOfferVersionId },
-      { status: 'cancelled', cancelledAt: now, reopened: false },
-      { new: true }
-    );
+    offer.status = 'cancelled';
+    await offer.save();
 
-    await WorkOrderModel.findOneAndUpdate(
-      { projectId, offerVersionId: confirmedOfferVersionId },
-      { status: 'cancelled', cancelledAt: now, reopened: false },
-      { new: true }
-    );
+    const replacementConfirmedOffer = await OfferVersionModel.findOne({
+      projectId,
+      status: 'accepted',
+      _id: { $ne: targetOfferId },
+    })
+      .sort({ updatedAt: -1 })
+      .lean();
 
-    if (project) {
-      addTimeline(project, {
-        type: 'offer',
-        title: 'Potrditev ponudbe preklicana',
-        description: `Verzija ${(offer && (offer as any).title) || confirmedOfferVersionId}`,
-        timestamp: now.toISOString(),
-        user: 'system',
-      });
-      await project.save();
+    if (project.confirmedOfferVersionId === targetOfferId) {
+      project.confirmedOfferVersionId = replacementConfirmedOffer ? String(replacementConfirmedOffer._id) : null;
     }
+
+    if (project.status !== 'completed' && !replacementConfirmedOffer) {
+      project.status = 'offered';
+    }
+
+    await MaterialOrderModel.updateMany(
+      { projectId, offerVersionId: targetOfferId },
+      { status: 'cancelled', cancelledAt: now, reopened: false }
+    );
+
+    await WorkOrderModel.updateMany(
+      { projectId, offerVersionId: targetOfferId },
+      { status: 'cancelled', cancelledAt: now, reopened: false }
+    );
+
+    addTimeline(project, {
+      type: 'offer',
+      title: 'Potrditev ponudbe preklicana',
+      description: `Verzija ${offer.title || offer.baseTitle || targetOfferId}`,
+      timestamp: now.toISOString(),
+      user: 'system',
+    });
+
+    await project.save();
 
     const payload = await serializeProjectDetails(project, projectClient);
     return res.success(payload);
@@ -336,6 +507,8 @@ export async function getProjectLogistics(req: Request, res: Response, next: Nex
         confirmedOfferVersionId: null,
         offerVersions: [],
         offers: [],
+        materialOrders: [],
+        workOrders: [],
         materialOrder: null,
         workOrder: null,
         invoices: [],
@@ -348,7 +521,9 @@ export async function getProjectLogistics(req: Request, res: Response, next: Nex
       offers: snapshot.offerVersions,
       acceptedOfferId: snapshot.confirmedOfferVersionId,
       materialOrder: snapshot.materialOrder,
+      materialOrders: snapshot.materialOrders ?? [],
       workOrder: snapshot.workOrder,
+      workOrders: snapshot.workOrders ?? [],
       invoices: [],
       events: [],
     });
@@ -369,12 +544,98 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     const updates: Record<string, unknown> = {};
 
     if ('scheduledAt' in payload) {
-      updates.scheduledAt = payload.scheduledAt ? new Date(payload.scheduledAt) : null;
+      updates.scheduledAt = typeof payload.scheduledAt === 'string' ? payload.scheduledAt : null;
     }
     if ('technicianName' in payload) updates.technicianName = payload.technicianName;
     if ('technicianId' in payload) updates.technicianId = payload.technicianId;
     if ('location' in payload) updates.location = payload.location;
     if ('notes' in payload) updates.notes = payload.notes;
+    if ('executionNote' in payload) {
+      updates.executionNote =
+        typeof payload.executionNote === 'string' && payload.executionNote.trim().length > 0
+          ? payload.executionNote
+          : payload.executionNote ?? null;
+    }
+    if (Array.isArray(payload.items)) {
+      const currentItems =
+        Array.isArray(existing.items) && existing.items.length > 0
+          ? existing.items.map((item: any) => ({ ...(item.toObject ? item.toObject() : item) }))
+          : [];
+      const nextItems = [...currentItems];
+      const resolveItemId = (incoming: any) =>
+        typeof incoming.id === 'string'
+          ? incoming.id
+          : typeof incoming._id === 'string'
+            ? incoming._id
+            : null;
+
+      payload.items.forEach((incoming: any) => {
+        const targetId = resolveItemId(incoming);
+        if (targetId) {
+          const target = nextItems.find((item) => String(item.id) === targetId);
+          if (target) {
+            if (typeof incoming.name === 'string') target.name = incoming.name;
+            if (typeof incoming.unit === 'string') target.unit = incoming.unit;
+            if (typeof incoming.note === 'string' || incoming.note === null) target.note = incoming.note ?? '';
+            if (typeof incoming.itemNote === 'string' || incoming.itemNote === null) {
+              target.itemNote = incoming.itemNote ?? null;
+            }
+            if (typeof incoming.plannedQuantity === 'number') {
+              target.plannedQuantity = incoming.plannedQuantity;
+              target.quantity = incoming.plannedQuantity;
+            }
+            if (typeof incoming.executedQuantity === 'number') {
+              target.executedQuantity = incoming.executedQuantity;
+            }
+            if (typeof incoming.isExtra === 'boolean') {
+              target.isExtra = incoming.isExtra;
+            }
+            if (typeof incoming.isCompleted === 'boolean') {
+              target.isCompleted = incoming.isCompleted;
+            }
+            if (typeof incoming.offerItemId === 'string' || incoming.offerItemId === null) {
+              target.offerItemId = incoming.offerItemId ?? null;
+            }
+            return;
+          }
+        }
+        const planned = typeof incoming.plannedQuantity === 'number' ? incoming.plannedQuantity : 0;
+        const executed = typeof incoming.executedQuantity === 'number' ? incoming.executedQuantity : planned;
+        const offered = typeof incoming.offeredQuantity === 'number' ? incoming.offeredQuantity : 0;
+        const newItemId =
+          typeof incoming.id === 'string'
+            ? incoming.id
+            : typeof incoming._id === 'string'
+              ? incoming._id
+              : `extra-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        nextItems.push({
+          id: newItemId,
+          productId: incoming.productId ?? null,
+          name: incoming.name ?? 'Dodatna postavka',
+          quantity: planned,
+          unit: incoming.unit ?? '',
+          note: incoming.note ?? '',
+          offerItemId: incoming.offerItemId ?? null,
+          offeredQuantity: offered,
+          plannedQuantity: planned,
+          executedQuantity: executed,
+          isExtra: incoming.isExtra !== undefined ? !!incoming.isExtra : true,
+          itemNote: typeof incoming.itemNote === 'string' ? incoming.itemNote : null,
+          isCompleted: typeof incoming.isCompleted === 'boolean' ? incoming.isCompleted : false,
+        });
+      });
+
+      updates.items = nextItems;
+    }
+      if (Array.isArray(payload.workLogs)) {
+        updates.workLogs = payload.workLogs
+          .filter((log: any) => typeof log.employeeId === 'string' && log.employeeId.trim().length > 0)
+          .map((log: any) => ({
+            employeeId: String(log.employeeId),
+            hours: typeof log.hours === 'number' && Number.isFinite(log.hours) ? log.hours : 0,
+          }));
+      }
+
     if (
       payload.status === 'draft' ||
       payload.status === 'issued' ||
@@ -401,6 +662,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       }
 
       if (Object.keys(materialUpdates).length > 0) {
+        materialUpdates.workOrderId = workOrderId;
         await MaterialOrderModel.findOneAndUpdate(
           { _id: materialOrderId, projectId },
           { $set: materialUpdates },

@@ -19,6 +19,9 @@ import { generateRequirementsFromTemplates } from '../services/requirements-from
 import type { RequirementFieldType, RequirementFormulaConfig } from '../../shared/requirements.types';
 import { getOfferCandidatesFromRequirements } from '../services/offer-from-requirements';
 import { serializeProjectDetails } from '../services/project.service';
+import { OfferVersionModel } from '../schemas/offer-version';
+import { MaterialOrderModel } from '../schemas/material-order';
+import { WorkOrderModel } from '../schemas/work-order';
 
 function normalizeSlug(value: string) {
   return value
@@ -170,7 +173,7 @@ function updateOfferAmount(project: Project) {
 
 async function findProjectById(id: string) {
   const project =
-    (await ProjectModel.findOne({ id }).lean()) || (await ProjectModel.findById(id).lean<ProjectDocument>());
+    (await ProjectModel.findOne({ id }).lean()) || (await ProjectModel.findById(id).lean());
   return project ?? null;
 }
 
@@ -257,6 +260,10 @@ export async function createProject(req: Request, res: Response) {
     categories,
   };
 
+  if (Array.isArray(project.templates) && project.templates.length > 0) {
+    console.warn('[templates] Project %s created with %d templates', project.id, project.templates.length);
+  }
+
   addTimeline(project, {
     type: 'edit',
     title: 'Projekt ustvarjen',
@@ -307,6 +314,7 @@ export async function updateProject(req: Request, res: Response) {
     }));
   }
   if (Array.isArray(req.body.templates)) {
+    console.warn('[templates] Updating templates for project %s (%d templates)', project.id, req.body.templates.length);
     project.templates = req.body.templates;
   }
   project.categories = sanitizeCategorySlugs(req.body.categories ?? project.categories);
@@ -848,6 +856,14 @@ export async function deleteProject(req: Request, res: Response) {
   const deleted = await ProjectModel.findOneAndDelete({ id: req.params.id }).lean();
   if (!deleted) {
     return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+  }
+  const projectKey = deleted.id ?? (deleted as { _id?: Types.ObjectId })._id?.toString();
+  if (projectKey) {
+    await Promise.all([
+      OfferVersionModel.deleteMany({ projectId: projectKey }),
+      MaterialOrderModel.deleteMany({ projectId: projectKey }),
+      WorkOrderModel.deleteMany({ projectId: projectKey }),
+    ]);
   }
   return res.success({ id: deleted.id });
 }

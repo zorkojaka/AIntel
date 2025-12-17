@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ClientForm, ClientFormPayload, Client } from "@aintel/module-crm";
 import { useSettingsData } from "@aintel/module-settings";
-import { Settings, ArrowLeft, Plus, UserPlus } from "lucide-react";
+import { Settings, ArrowLeft, Plus, UserPlus, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectList } from "./components/ProjectList";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
@@ -11,6 +11,10 @@ import { Toaster } from "./components/ui/sonner";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Category, ProjectDetails, ProjectSummary } from "./types";
+import { FinanceDashboardPage } from "./domains/finance/FinanceDashboardPage";
+import { FinanceProjectsPage } from "./domains/finance/FinanceProjectsPage";
+import { FinanceEmployeesPage } from "./domains/finance/FinanceEmployeesPage";
+import { FinanceInvoicesPage } from "./domains/finance/FinanceInvoicesPage";
 import { NewProjectDialog } from "./components/NewProjectDialog";
 import { mapProject } from "./domains/core/useProject";
 
@@ -39,7 +43,7 @@ function toSummary(project: ProjectDetails): ProjectSummary {
 
 export function ProjectsPage() {
   const { settings: globalSettings } = useSettingsData({ applyTheme: false });
-  const [currentView, setCurrentView] = useState<"list" | "workspace" | "settings">("list");
+  const [currentView, setCurrentView] = useState<"list" | "workspace" | "settings" | "finance">("list");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
@@ -245,6 +249,8 @@ export function ProjectsPage() {
       if (project.id === selectedProjectId) {
         setSelectedProjectId(null);
         setProjectDetails(null);
+        setTemplates([]);
+        setCurrentView("list");
       }
     } catch (error) {
       toast.error("Napaka pri brisanju projekta.");
@@ -422,43 +428,11 @@ export function ProjectsPage() {
     );
   };
 
-  const handleSaveTemplate = (template: Template) => {
-    setTemplates((prev) => {
-      const existing = prev.find((t) => t.id === template.id);
-      const nextTemplates = existing
-        ? prev.map((t) => (t.id === template.id ? template : t))
-        : [...prev, template];
-
-      setProjectDetails((detail) => (detail ? { ...detail, templates: nextTemplates } : detail));
-      return nextTemplates;
-    });
-  };
-
-  const handleDeleteTemplate = (id: string) => {
-    setTemplates((prev) => {
-      const nextTemplates = prev.filter((t) => t.id !== id);
-      setProjectDetails((detail) => (detail ? { ...detail, templates: nextTemplates } : detail));
-      return nextTemplates;
-    });
-    toast.success("Predloga izbrisana");
-  };
-
-  const handleSetDefaultTemplate = (id: string) => {
-    setTemplates((prev) => {
-      const nextTemplates = prev.map((t) => ({
-        ...t,
-        isDefault: t.id === id,
-      }));
-      setProjectDetails((detail) => (detail ? { ...detail, templates: nextTemplates } : detail));
-      return nextTemplates;
-    });
-    toast.success("Privzeta predloga nastavljena");
-  };
-
-  const handleProjectUpdate = async (path: string, options?: RequestInit) => {
-    const response = await fetch(path, {
-      ...options,
-      headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
+  const handleProjectUpdate = useCallback(
+    async (path: string, options?: RequestInit) => {
+      const response = await fetch(path, {
+        ...options,
+        headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
     });
     const result = await response.json();
     if (!result.success) {
@@ -470,7 +444,76 @@ export function ProjectsPage() {
     setProjects((prev) => prev.map((proj) => (proj.id === mapped.id ? toSummary(mapped) : proj)));
     setTemplates(mapped.templates);
     return mapped;
-  };
+    },
+    [setProjectDetails, setProjects, setTemplates],
+  );
+
+  const persistTemplates = useCallback(
+    async (nextTemplates: Template[], actionLabel: string) => {
+      if (!selectedProjectId || !projectDetails) {
+        console.warn("[templates] Missing project context for action %s", actionLabel);
+        toast.error("Najprej izberi projekt.");
+        return false;
+      }
+      const payload = {
+        title: projectDetails.title,
+        status: projectDetails.status,
+        customer: {
+          name: projectDetails.customerDetail?.name ?? projectDetails.customer ?? "Stranka",
+          taxId: projectDetails.customerDetail?.taxId ?? "",
+          address: projectDetails.customerDetail?.address ?? "",
+          paymentTerms: projectDetails.customerDetail?.paymentTerms ?? "",
+        },
+        templates: nextTemplates,
+      };
+      const updated = await handleProjectUpdate(`/api/projects/${selectedProjectId}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      if (!updated) {
+        console.warn("[templates] Failed to persist templates (%s) for project %s", actionLabel, selectedProjectId);
+        return false;
+      }
+      return true;
+    },
+    [handleProjectUpdate, projectDetails, selectedProjectId],
+  );
+
+  const handleSaveTemplate = useCallback(
+    async (template: Template) => {
+      const existing = templates.find((t) => t.id === template.id);
+      const nextTemplates = existing
+        ? templates.map((t) => (t.id === template.id ? template : t))
+        : [...templates, template];
+      return persistTemplates(nextTemplates, existing ? "update" : "create");
+    },
+    [persistTemplates, templates],
+  );
+
+  const handleDeleteTemplate = useCallback(
+    async (id: string) => {
+      const nextTemplates = templates.filter((t) => t.id !== id);
+      return persistTemplates(nextTemplates, "delete");
+    },
+    [persistTemplates, templates],
+  );
+
+  const handleSetDefaultTemplate = useCallback(
+    async (id: string) => {
+      const target = templates.find((t) => t.id === id);
+      if (!target) {
+        console.warn("[templates] Cannot set default, template not found", id);
+        return false;
+      }
+      const nextTemplates = templates.map((t) =>
+        t.category === target.category ? { ...t, isDefault: t.id === id } : t,
+      );
+      return persistTemplates(nextTemplates, "set-default");
+    },
+    [persistTemplates, templates],
+  );
+
+  const templateEditorDisabled = !selectedProjectId || !projectDetails;
 
   return (
     <>
@@ -488,7 +531,11 @@ export function ProjectsPage() {
                   <UserPlus className="mr-2 h-4 w-4" />
                   Dodaj stranko
                 </Button>
-                <Button variant="outline" onClick={() => setCurrentView("settings")}>
+                <Button variant="secondary" onClick={() => setCurrentView("finance") }>
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  Finance
+                </Button>
+                <Button variant="outline" onClick={() => setCurrentView("settings")}> 
                   <Settings className="mr-2 h-4 w-4" />
                   Nastavitve
                 </Button>
@@ -516,6 +563,39 @@ export function ProjectsPage() {
         />
       )}
 
+      {currentView === "finance" && (
+        <div className="min-h-screen bg-background p-6">
+          <div className="mx-auto max-w-[1280px] space-y-4">
+            <div className="mb-2">
+              <Button variant="ghost" onClick={() => setCurrentView("list")}> 
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Nazaj na projekte
+              </Button>
+            </div>
+            <Tabs defaultValue="dashboard">
+              <TabsList>
+                <TabsTrigger value="dashboard">Pregled</TabsTrigger>
+                <TabsTrigger value="projects">Projekti</TabsTrigger>
+                <TabsTrigger value="employees">Zaposleni</TabsTrigger>
+                <TabsTrigger value="invoices">Računi</TabsTrigger>
+              </TabsList>
+              <TabsContent value="dashboard" className="mt-4">
+                <FinanceDashboardPage />
+              </TabsContent>
+              <TabsContent value="projects" className="mt-4">
+                <FinanceProjectsPage />
+              </TabsContent>
+              <TabsContent value="employees" className="mt-4">
+                <FinanceEmployeesPage />
+              </TabsContent>
+              <TabsContent value="invoices" className="mt-4">
+                <FinanceInvoicesPage />
+              </TabsContent>
+            </Tabs>
+          </div>
+        </div>
+      )}
+
       {currentView === "settings" && (
         <div className="min-h-screen bg-background p-6">
           <div className="mx-auto max-w-[1280px]">
@@ -537,6 +617,7 @@ export function ProjectsPage() {
                   onSave={handleSaveTemplate}
                   onDelete={handleDeleteTemplate}
                   onSetDefault={handleSetDefaultTemplate}
+                  disabled={templateEditorDisabled}
                 />
               </TabsContent>
               <TabsContent value="general" className="mt-6">

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
@@ -8,15 +8,19 @@ import { toast } from "sonner";
 
 import type { OfferLineItem, OfferVersion, OfferVersionSummary } from "@aintel/shared/types/offers";
 import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
+import type { ProjectDetails } from "../types";
 
-import { Loader2, Plus, Search, Trash } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "./ui/command";
+import { Loader2, Plus, Trash } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
+import { Textarea } from "./ui/textarea";
+import { PriceListProductAutocomplete } from "./PriceListProductAutocomplete";
+import { mapProject, triggerProjectRefresh } from "../domains/core/useProject";
+import { useConfirmOffer } from "../domains/core/useConfirmOffer";
 
 type OffersTabProps = {
   projectId: string;
+  refreshKey?: number;
 };
 
 type OfferLineItemForm = {
@@ -37,7 +41,7 @@ const createEmptyItem = (): OfferLineItemForm => ({
   id: crypto.randomUUID(),
   productId: null,
   name: "",
-  quantity: 1,
+  quantity: 0,
   unit: "kos",
   unitPrice: 0,
   vatRate: 22,
@@ -46,6 +50,9 @@ const createEmptyItem = (): OfferLineItemForm => ({
   totalVat: 0,
   totalGross: 0,
 });
+
+const isEmptyOfferItem = (item: OfferLineItemForm) =>
+  !item.productId && (!item.name || item.name.trim() === "") && (!item.quantity || item.quantity === 0);
 
 const clampPositive = (value: unknown, fallback = 0) => {
   const parsed = Number(value);
@@ -56,15 +63,15 @@ const clampPositive = (value: unknown, fallback = 0) => {
 const isItemValid = (item: OfferLineItem | OfferLineItemForm) =>
   item.name.trim() !== "" && item.unitPrice > 0;
 
-export function OffersTab({ projectId }: OffersTabProps) {
+export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [items, setItems] = useState<OfferLineItemForm[]>([createEmptyItem()]);
 
   const [title, setTitle] = useState("Ponudba");
   const [paymentTerms, setPaymentTerms] = useState<string>("");
   const [introText, setIntroText] = useState<string>("");
+  const [comment, setComment] = useState<string>("");
 
   const [currentOffer, setCurrentOffer] = useState<OfferVersion | null>(null);
-  const [activeRowIndex, setActiveRowIndex] = useState(0);
 
   const [globalDiscountPercent, setGlobalDiscountPercent] = useState<number>(0);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
@@ -83,28 +90,21 @@ export function OffersTab({ projectId }: OffersTabProps) {
   const [vatAmount, setVatAmount] = useState<number>(0);
 
   const [saving, setSaving] = useState(false);
-  const [downloading, setDownloading] = useState(false);
+  const [downloadingMode, setDownloadingMode] = useState<"offer" | "project" | "both" | null>(null);
   const [sending, setSending] = useState(false);
-
-  const [searchResults, setSearchResults] = useState<PriceListSearchItem[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchRowId, setSearchRowId] = useState<string | null>(null);
-  const [searching, setSearching] = useState(false);
-  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const nameInputs = useRef<Record<string, HTMLInputElement | null>>({});
-  const focusRowId = useRef<string | null>(null);
+  const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
 
   const [versions, setVersions] = useState<OfferVersionSummary[]>([]);
   const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
+  const isDownloading = downloadingMode !== null;
 
-  const resetToEmptyOffer = () => {
+  const resetToEmptyOffer = useCallback(() => {
     setSelectedOfferId(null);
     setTitle("Ponudba");
     setPaymentTerms("");
     setIntroText("");
-    setItems([createEmptyItem()]);
-    setActiveRowIndex(0);
+    setComment("");
+    setItems(ensureTrailingBlank([]));
     setGlobalDiscountPercent(0);
     setUseGlobalDiscount(false);
     setUsePerItemDiscount(false);
@@ -116,9 +116,12 @@ export function OffersTab({ projectId }: OffersTabProps) {
     setVatAmount(0);
     setTotalNetAfterDiscount(0);
     setTotalGrossAfterDiscount(0);
-  };
+    setDiscountAmount(0);
+  }, []);
 
-  const loadOfferById = async (offerId: string) => {
+  const loadOfferById = useCallback(async (offerId: string) => {
+    if (!projectId) return;
+
     try {
       const response = await fetch(`/api/projects/${projectId}/offers/${offerId}`);
       const payload = await response.json();
@@ -129,6 +132,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
       setTitle(offer.baseTitle || "Ponudba");
       setPaymentTerms(offer.paymentTerms ?? "");
       setIntroText(offer.introText ?? "");
+      setComment(offer.comment ?? "");
 
       setUseGlobalDiscount(offer.useGlobalDiscount ?? false);
       setUsePerItemDiscount(offer.usePerItemDiscount ?? false);
@@ -162,36 +166,89 @@ export function OffersTab({ projectId }: OffersTabProps) {
         productId: item.productId ?? null,
       }));
 
-      setItems([...mapped, createEmptyItem()]);
+      setItems(ensureTrailingBlank([...mapped]));
     } catch (error) {
       console.error(error);
     }
-  };
+  }, [projectId]);
 
-  useEffect(() => {
-    async function loadVersions() {
-      const res = await fetch(`/api/projects/${projectId}/offers`);
-      const json = await res.json();
-      if (!json.success) return;
-
-      const list: OfferVersionSummary[] = json.data ?? [];
-      setVersions(list);
-
-      if (list.length === 0) {
-        setSelectedOfferId(null);
+  const refreshOffers = useCallback(
+    async (preferredId?: string | null, fallbackToLatest = true) => {
+      if (!projectId) {
+        setVersions([]);
         resetToEmptyOffer();
         return;
       }
 
-      // privzeto zadnja verzija
-      const last = list[list.length - 1];
-      setSelectedOfferId(last._id);
-      await loadOfferById(last._id);
-    }
+      try {
+        const res = await fetch(`/api/projects/${projectId}/offers`);
+        const json = await res.json();
+        if (!json.success) return;
 
-    loadVersions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        const list: OfferVersionSummary[] = json.data ?? [];
+        setVersions(list);
+
+        if (list.length === 0) {
+          resetToEmptyOffer();
+          return;
+        }
+
+        let nextId: string | null = null;
+
+        if (preferredId && list.some((entry) => entry._id === preferredId)) {
+          nextId = preferredId;
+        }
+
+        if (!nextId && fallbackToLatest && list.length > 0) {
+          nextId = list[list.length - 1]._id;
+        }
+
+        if (nextId) {
+          setSelectedOfferId(nextId);
+          await loadOfferById(nextId);
+        } else {
+          resetToEmptyOffer();
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    },
+    [loadOfferById, projectId, resetToEmptyOffer],
+  );
+
+  const selectedOfferIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedOfferIdRef.current = selectedOfferId;
+  }, [selectedOfferId]);
+
+  const refreshAfterConfirm = useCallback(async () => {
+    const preferredId = selectedOfferIdRef.current;
+    await refreshOffers(preferredId ?? null, true);
+  }, [refreshOffers]);
+
+  const { confirmOffer, confirmingId } = useConfirmOffer({
+    projectId,
+    onConfirmed: refreshAfterConfirm,
+  });
+
+  const previousProjectId = useRef<string | null>(null);
+  useEffect(() => {
+    const isProjectChange = previousProjectId.current !== projectId;
+    previousProjectId.current = projectId;
+    const preferredId = isProjectChange ? null : selectedOfferIdRef.current;
+    refreshOffers(preferredId, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, refreshKey, refreshOffers]);
+
+  useEffect(() => {
+    resetToEmptyOffer();
+    setVersions([]);
+    setCurrentOffer(null);
+    setOverriddenVatIds(new Set());
+    setProjectDetails(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
 
   const recalcItem = (item: OfferLineItemForm): OfferLineItemForm => {
     const quantity = clampPositive(item.quantity, 1);
@@ -219,13 +276,16 @@ export function OffersTab({ projectId }: OffersTabProps) {
   };
 
   const ensureTrailingBlank = (list: OfferLineItemForm[]) => {
-    const last = list[list.length - 1];
-    if (!last || isItemValid(last)) {
+    const trimmed = list.filter((item, index) => {
+      if (index === list.length - 1) return true;
+      return !isEmptyOfferItem(item);
+    });
+    const last = trimmed[trimmed.length - 1];
+    if (!last || !isEmptyOfferItem(last)) {
       const blank = createEmptyItem();
-      list.push(blank);
-      focusRowId.current = blank.id;
+      trimmed.push(blank);
     }
-    return list;
+    return trimmed;
   };
 
   const updateItem = (id: string, changes: Partial<OfferLineItemForm>) => {
@@ -237,79 +297,25 @@ export function OffersTab({ projectId }: OffersTabProps) {
       const merged = { ...next[idx], ...changes };
       next[idx] = recalcItem(merged);
 
-      const last = next[next.length - 1];
-      const isLastFilled = last && isItemValid(last);
-      return isLastFilled ? [...next, createEmptyItem()] : next;
+      return ensureTrailingBlank(next);
     });
   };
 
   const deleteRow = (id: string) => {
     setItems((prev) => {
-      if (prev.length === 1) return [createEmptyItem()];
+      if (prev.length === 1) return ensureTrailingBlank([]);
       const filtered = prev.filter((item) => item.id !== id);
-      if (filtered.length === 0) return [createEmptyItem()];
+      if (filtered.length === 0) return ensureTrailingBlank([]);
       return ensureTrailingBlank(filtered);
     });
   };
 
-  useEffect(() => {
-    if (!focusRowId.current) return;
-    const target = nameInputs.current[focusRowId.current];
-    if (target) {
-      target.focus();
-      focusRowId.current = null;
-    }
-  }, [items]);
 
-  useEffect(() => {
-    const target = items[activeRowIndex];
-    if (!target) return;
-    const input = nameInputs.current[target.id];
-    if (input) {
-      input.focus();
-      setSearchRowId(target.id);
-      setSearchTerm(target.name);
-    }
-  }, [activeRowIndex, items]);
 
-  useEffect(() => {
-    if (!searchRowId) {
-      setSearchResults([]);
-      return;
-    }
-
-    if (searchDebounce.current) {
-      clearTimeout(searchDebounce.current);
-    }
-
-    if (!searchTerm.trim()) {
-      setSearchResults([]);
-      return;
-    }
-
-    searchDebounce.current = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const response = await fetch(
-          `/api/price-list/items/search?q=${encodeURIComponent(searchTerm.trim())}&limit=10`
-        );
-        const payload = await response.json();
-        if (!payload.success) {
-          toast.error(payload.error ?? "Napaka pri iskanju cenika.");
-          setSearchResults([]);
-          return;
-        }
-        setSearchResults(Array.isArray(payload.data) ? payload.data : []);
-      } catch (error) {
-        console.error(error);
-        toast.error("Iskanje v ceniku ni uspelo.");
-      } finally {
-        setSearching(false);
-      }
-    }, 300);
-  }, [searchTerm, searchRowId]);
-
-  const validItems = useMemo(() => items.filter(isItemValid), [items]);
+  const validItems = useMemo(
+    () => items.filter((item) => !isEmptyOfferItem(item)).filter(isItemValid),
+    [items]
+  );
 
   const totals = useMemo(() => {
     const baseWithout = validItems.reduce(
@@ -367,6 +373,48 @@ export function OffersTab({ projectId }: OffersTabProps) {
       maximumFractionDigits: 2,
     })} €`;
 
+  const sanitizeFilenamePart = (value: string) =>
+    value
+      .replace(/[\\/:*?"<>|]+/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, prefix: string) => {
+    const identifierRaw =
+      (project?.projectNumber != null && `${project.projectNumber}`) ||
+      project?.code ||
+      project?.id ||
+      fallbackId ||
+      "";
+    const customerRaw =
+      project?.customerDetail?.name?.trim() ||
+      project?.customer?.trim() ||
+      "";
+
+    const identifier = sanitizeFilenamePart(identifierRaw);
+    const customer = sanitizeFilenamePart(customerRaw);
+
+  if (identifier && customer) {
+    return `${prefix} ${identifier} - ${customer}.pdf`;
+  }
+  if (identifier) {
+    return `${prefix} ${identifier}.pdf`;
+  }
+  if (fallbackId) {
+    return `${prefix} ${fallbackId}.pdf`;
+  }
+  return `${prefix}.pdf`;
+};
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleToggleGlobalDiscount = (checked: boolean) => {
     setUseGlobalDiscount(checked);
     if (!checked) {
@@ -384,14 +432,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
     );
   };
 
-  const handleSelectProduct = (
-    rowId: string,
-    product: PriceListSearchItem,
-    rowIndex: number
-  ) => {
-    setSearchRowId(null);
-    setSearchResults([]);
-
+  const handleSelectProduct = (rowId: string, product: PriceListSearchItem, rowIndex: number) => {
     updateItem(rowId, {
       name: product.name,
       productId: product.id,
@@ -400,11 +441,15 @@ export function OffersTab({ projectId }: OffersTabProps) {
       vatRate: product.vatRate ?? 22,
     });
 
-    setActiveRowIndex(rowIndex + 1);
+  };
+
+  const handleSelectCustomItem = (rowId: string) => {
+    updateItem(rowId, { productId: null });
   };
 
   const buildPayloadFromCurrentState = () => {
     const cleanItems = items
+      .filter((i) => !isEmptyOfferItem(i))
       .filter((i) => i.name.trim() !== "" && i.unitPrice > 0)
       .map((i) => ({
         id: i.id,
@@ -427,6 +472,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
       validUntil: null,
       paymentTerms,
       introText,
+      comment,
       items: cleanItems,
       // kompatibilnost s starimi polji
       discountPercent: effectiveGlobalPercent,
@@ -435,16 +481,6 @@ export function OffersTab({ projectId }: OffersTabProps) {
       usePerItemDiscount,
       vatMode,
     };
-  };
-
-  const reloadVersionsAndSelect = async (offerId: string) => {
-    const response = await fetch(`/api/projects/${projectId}/offers`);
-    const payload = await response.json();
-    if (!payload.success) return;
-    const list: OfferVersionSummary[] = payload.data ?? [];
-    setVersions(list);
-    setSelectedOfferId(offerId);
-    await loadOfferById(offerId);
   };
 
   const handleSave = async () => {
@@ -474,7 +510,8 @@ export function OffersTab({ projectId }: OffersTabProps) {
       }
 
       const created: OfferVersion = payload.data;
-      await reloadVersionsAndSelect(created._id);
+      await refreshOffers(created._id ?? selectedOfferId ?? null);
+      await triggerProjectRefresh(projectId);
       toast.success("Ponudba shranjena.");
       return created;
     } catch (error) {
@@ -508,20 +545,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
     const payload = await response.json();
     if (!payload.success || !payload.data) return;
 
-    const listRes = await fetch(`/api/projects/${projectId}/offers`);
-    const listJson = await listRes.json();
-    if (!listJson.success) return;
-    const list: OfferVersionSummary[] = listJson.data ?? [];
-    setVersions(list);
-
-    if (list.length === 0) {
-      resetToEmptyOffer();
-      return;
-    }
-
-    const last = list[list.length - 1];
-    setSelectedOfferId(last._id);
-    await loadOfferById(last._id);
+    await refreshOffers(null);
   };
 
   const handleCloneVersion = async () => {
@@ -535,7 +559,7 @@ export function OffersTab({ projectId }: OffersTabProps) {
     const json = await response.json();
     if (!json.success || !json.data) return;
     const created: OfferVersion = json.data;
-    await reloadVersionsAndSelect(created._id);
+    await refreshOffers(created._id ?? null);
   };
 
   const handleChangeVersion = async (value: string) => {
@@ -543,15 +567,55 @@ export function OffersTab({ projectId }: OffersTabProps) {
     await loadOfferById(value);
   };
 
-  const handleExportPdf = async () => {
-    setDownloading(true);
+  const fetchProjectDetails = useCallback(async () => {
+    if (!projectId) return null;
+    try {
+      const response = await fetch(`/api/projects/${projectId}`);
+      const result = await response.json();
+      if (!result.success || !result.data) {
+        return null;
+      }
+      const mapped = mapProject(result.data);
+      setProjectDetails(mapped);
+      return mapped;
+    } catch (error) {
+      console.error("Project fetch failed", error);
+      return null;
+    }
+  }, [projectId]);
+
+  const ensureProjectDetails = useCallback(async () => {
+    if (projectDetails) {
+      return projectDetails;
+    }
+    return fetchProjectDetails();
+  }, [fetchProjectDetails, projectDetails]);
+
+  const handleExportPdf = async (mode: "offer" | "project" | "both") => {
+    setDownloadingMode(mode);
     try {
       const saved = await ensureSavedOffer();
       if (!saved?._id) return;
-      const url = `/api/projects/${projectId}/offers/${saved._id}/pdf`;
-      window.open(url, "_blank");
+      const url = `/api/projects/${projectId}/offers/${saved._id}/pdf?mode=${mode}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error("PDF download failed");
+      }
+      const blob = await response.blob();
+      const details = await ensureProjectDetails();
+      const labelMap = {
+        offer: "Ponudba",
+        project: "Projekt",
+        both: "Ponudba+Projekt",
+      } as const;
+      const filename = buildPdfFilename(details, projectId, labelMap[mode]);
+      downloadBlob(blob, filename);
+      toast.success("PDF prenesen");
+    } catch (error) {
+      console.error(error);
+      toast.error("PDF ni bilo mogoce prenesti.");
     } finally {
-      setDownloading(false);
+      setDownloadingMode(null);
     }
   };
 
@@ -580,6 +644,19 @@ export function OffersTab({ projectId }: OffersTabProps) {
       setSending(false);
     }
   };
+
+  const handleConfirmCurrentOffer = useCallback(async () => {
+    const saved = await ensureSavedOffer();
+    if (!saved?._id) return;
+    await confirmOffer(saved._id);
+  }, [ensureSavedOffer, confirmOffer]);
+
+  const currentStatus = (currentOffer?.status ?? "").toUpperCase();
+  const isCurrentAccepted = currentStatus === "ACCEPTED";
+  const isCurrentCancelled = currentStatus === "CANCELLED";
+  const canConfirmCurrentOffer =
+    !!currentOffer?._id && !isCurrentAccepted && !isCurrentCancelled;
+  const isConfirmingCurrentOffer = confirmingId !== null;
 
   return (
     <Card className="p-4 space-y-4">
@@ -715,15 +792,27 @@ export function OffersTab({ projectId }: OffersTabProps) {
             placeholder="Npr. 30 dni"
           />
         </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Uvodno besedilo</label>
-          <Input
-            value={introText}
-            onChange={(event) => setIntroText(event.target.value)}
-            placeholder="Kratek opis ali opombe"
-          />
-        </div>
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Uvodno besedilo</label>
+        <Input
+          value={introText}
+          onChange={(event) => setIntroText(event.target.value)}
+          placeholder="Kratek opis ali opombe"
+        />
       </div>
+      <div className="md:col-span-3 space-y-2">
+        <label className="text-sm font-medium">Komentar (vidno na PDF)</label>
+        <Textarea
+          value={comment}
+          onChange={(event) => setComment(event.target.value)}
+          placeholder="Dodatne informacije za prikaz v PDF-ju"
+          rows={3}
+        />
+        <p className="text-xs text-muted-foreground">
+          Komentar se prikaže v PDF-ju pod izračunom in nad podpisom.
+        </p>
+      </div>
+    </div>
 
       {/* TABELA POSTAVK */}
       <div className="bg-card rounded-[var(--radius-card)] border overflow-hidden">
@@ -760,95 +849,16 @@ export function OffersTab({ projectId }: OffersTabProps) {
             {items.map((item, index) => (
               <TableRow key={item.id}>
                 <TableCell className="w-[42%] text-left pl-4 align-top">
-                  <Popover
-                    open={searchRowId === item.id}
-                    onOpenChange={(open) =>
-                      setSearchRowId(open ? item.id : null)
-                    }
-                  >
-                    <PopoverTrigger asChild>
-                      <Input
-                        ref={(node) => (nameInputs.current[item.id] = node)}
-                        value={item.name}
-                        placeholder="Naziv ali iskanje v ceniku"
-                        className="text-left justify-start"
-                        onChange={(event) => {
-                          updateItem(item.id, {
-                            name: event.target.value,
-                          });
-                          setSearchRowId(item.id);
-                          setSearchTerm(event.target.value);
-                        }}
-                        onFocus={() => {
-                          setSearchRowId(item.id);
-                          setSearchTerm(item.name);
-                        }}
-                        autoFocus={index === activeRowIndex}
-                      />
-                    </PopoverTrigger>
-                    <PopoverContent
-                      className="w-[320px] p-0"
-                      side="bottom"
-                      align="start"
-                    >
-                      <Command shouldFilter={false}>
-                        <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
-                          <Search className="h-4 w-4" />
-                          <span>Poišči v ceniku</span>
-                          {searching && (
-                            <Loader2 className="h-4 w-4 animate-spin ml-auto" />
-                          )}
-                        </div>
-                        <CommandInput
-                          placeholder="Vnesi naziv ali kodo"
-                          value={searchTerm}
-                          onValueChange={(value) => {
-                            setSearchTerm(value);
-                            setSearchRowId(item.id);
-                          }}
-                        />
-                        <CommandList>
-                          <CommandEmpty>
-                            Ni zadetkov v ceniku, nadaljujte z ročnim
-                            vnosom.
-                          </CommandEmpty>
-                          <CommandGroup>
-                            {searchResults.slice(0, 5).map((result) => (
-                              <CommandItem
-                                key={result.id}
-                                onSelect={() => {
-                                  handleSelectProduct(
-                                    item.id,
-                                    result,
-                                    index
-                                  );
-                                  setSearchRowId(null);
-                                }}
-                                className="flex flex-col items-start gap-1"
-                              >
-                                <div className="flex w-full justify-between">
-                                  <span className="font-medium">
-                                    {result.name}
-                                  </span>
-                                  <span className="text-muted-foreground">
-                                    {result.unitPrice.toLocaleString(
-                                      "sl-SI",
-                                      { minimumFractionDigits: 2 }
-                                    )}{" "}
-                                    €
-                                  </span>
-                                </div>
-                                <div className="text-xs text-muted-foreground w-full flex justify-between">
-                                  <span>{result.code ?? ""}</span>
-                                  <span>{result.unit ?? ""}</span>
-                                </div>
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                  <PriceListProductAutocomplete
+                    value={item.name}
+                    placeholder="Naziv ali iskanje v ceniku"
+                    inputClassName="text-left"
+                    onChange={(name) => {
+                      updateItem(item.id, { name, productId: null });
+                    }}
+                    onCustomSelected={() => handleSelectCustomItem(item.id)}
+                    onProductSelected={(product) => handleSelectProduct(item.id, product, index)}
+                  />
                 </TableCell>
 
                 <TableCell className="w-[10%] text-right align-top">
@@ -1001,11 +1011,27 @@ export function OffersTab({ projectId }: OffersTabProps) {
         </Button>
         <Button
           variant="outline"
-          onClick={handleExportPdf}
-          disabled={downloading}
+          onClick={() => handleExportPdf("offer")}
+          disabled={isDownloading}
         >
-          {downloading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Izvozi PDF
+          {downloadingMode === "offer" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Izvozi ponudbo
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => handleExportPdf("project")}
+          disabled={isDownloading}
+        >
+          {downloadingMode === "project" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Izvozi projekt
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => handleExportPdf("both")}
+          disabled={isDownloading}
+        >
+          {downloadingMode === "both" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Izvozi oboje
         </Button>
         <Button
           variant="outline"
@@ -1014,6 +1040,16 @@ export function OffersTab({ projectId }: OffersTabProps) {
         >
           {sending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Pošlji ponudbo stranki
+        </Button>
+        <Button
+          variant="outline"
+          onClick={handleConfirmCurrentOffer}
+          disabled={!canConfirmCurrentOffer || isConfirmingCurrentOffer}
+        >
+          {isConfirmingCurrentOffer && (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          )}
+          Potrdi ponudbo
         </Button>
       </div>
     </Card>
