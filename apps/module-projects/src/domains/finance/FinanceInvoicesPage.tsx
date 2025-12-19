@@ -1,20 +1,22 @@
 import { Card } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { useFinanceInvoices } from "./hooks/useFinanceAnalytics";
+import { downloadPdf } from "../../api";
+import { toast } from "sonner";
 
 export function FinanceInvoicesPage() {
   const { data, isLoading } = useFinanceInvoices();
 
   const handleDownload = async (invoice: any) => {
-    const response = await fetch(`/api/projects/${invoice.projectId}/invoices/${invoice.invoiceId}/pdf`);
-    if (!response.ok) return;
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `racun-${invoice.projectId}-${invoice.invoiceId}.pdf`;
-    link.click();
-    window.URL.revokeObjectURL(url);
+    if (!invoice?.projectId || !invoice?.invoiceId) return;
+    try {
+      const filename = `racun-${invoice.projectId}-${invoice.invoiceId}.pdf`;
+      await downloadPdf(`/api/projects/${invoice.projectId}/invoices/${invoice.invoiceId}/pdf`, filename);
+      toast.success("Račun prenesen.");
+    } catch (error) {
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : "Prenos računa ni uspel.");
+    }
   };
 
   return (
@@ -40,7 +42,7 @@ export function FinanceInvoicesPage() {
                 <td className="py-2">{invoice.totalWithVat?.toFixed(2)} €</td>
                 <td className="py-2">
                   <Button size="sm" variant="outline" onClick={() => handleDownload(invoice)} disabled={!invoice.pdfAvailable}>
-                    Prenesi
+                    Prenesi PDF
                   </Button>
                 </td>
               </tr>

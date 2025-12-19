@@ -24,6 +24,8 @@ import {
   InvoiceVersion,
   InvoiceSummary,
 } from "../hooks/useInvoiceVersions";
+import { downloadPdf } from "../../../api";
+import { toast } from "sonner";
 
 interface InvoiceVersionEditorProps {
   projectId?: string | null;
@@ -166,20 +168,15 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
   };
 
   const handleDownload = async () => {
-    if (!draftVersion || draftVersion.status !== "issued" || !projectId) return;
+    if (!draftVersion || !projectId) return;
     try {
       setDownloading(true);
-      const response = await fetch(`/api/projects/${projectId}/invoices/${draftVersion._id}/pdf`);
-      if (!response.ok) {
-        throw new Error("Ne morem pripraviti PDF dokumenta.");
-      }
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `racun-${projectId}-${draftVersion.versionNumber}.pdf`;
-      link.click();
-      window.URL.revokeObjectURL(url);
+      const filename = `racun-${projectId}-${draftVersion.versionNumber ?? draftVersion._id}.pdf`;
+      await downloadPdf(`/api/projects/${projectId}/invoices/${draftVersion._id}/pdf`, filename);
+      toast.success("Račun prenesen.");
+    } catch (error) {
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : "Prenos računa ni uspel.");
     } finally {
       setDownloading(false);
     }
@@ -384,13 +381,9 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
           </div>
           <div className="flex flex-wrap gap-2 justify-between">
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                disabled={draftVersion?.status !== "issued" || downloading}
-                onClick={handleDownload}
-              >
-                {downloading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Izvozi PDF
-              </Button>
+                <Button variant="outline" disabled={!draftVersion || downloading} onClick={handleDownload}>
+                  {downloading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Prenesi PDF
+                </Button>
               <Button variant="outline" disabled>
                 Pošlji račun stranki
               </Button>

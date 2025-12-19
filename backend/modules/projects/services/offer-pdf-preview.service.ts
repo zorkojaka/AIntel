@@ -13,16 +13,8 @@ import {
   getDocumentNumberingConfig,
   formatNumberExample,
 } from './document-numbering.service';
-import {
-  renderCreditNotePdf,
-  renderDeliveryNotePdf,
-  renderInvoicePdf,
-  renderOfferPdf,
-  renderPurchaseOrderPdf,
-  renderWorkOrderConfirmationPdf,
-  renderWorkOrderPdf,
-  type DocumentPreviewContext,
-} from './document-renderers';
+import { renderDocumentHtml, type DocumentPreviewContext } from './document-renderers';
+import { renderHtmlToPdf } from './html-pdf.service';
 
 interface PreviewProjectInfo {
   id: string;
@@ -70,15 +62,15 @@ export type CompanyProfile = CompanySettingsResult & {
   website?: string;
 };
 
-const DOC_RENDERERS: Record<DocumentNumberingKind, (context: DocumentPreviewContext) => string> = {
-  OFFER: renderOfferPdf,
-  INVOICE: renderInvoicePdf,
-  PURCHASE_ORDER: renderPurchaseOrderPdf,
-  DELIVERY_NOTE: renderDeliveryNotePdf,
-  WORK_ORDER: renderWorkOrderPdf,
-  WORK_ORDER_CONFIRMATION: renderWorkOrderConfirmationPdf,
-  CREDIT_NOTE: renderCreditNotePdf,
-};
+const SUPPORTED_DOC_TYPES: DocumentNumberingKind[] = [
+  'OFFER',
+  'INVOICE',
+  'PURCHASE_ORDER',
+  'DELIVERY_NOTE',
+  'WORK_ORDER',
+  'WORK_ORDER_CONFIRMATION',
+  'CREDIT_NOTE',
+];
 
 const DOC_KIND_TO_SETTINGS_KEY: Record<DocumentNumberingKind, DocumentTypeKey> = {
   OFFER: 'offer',
@@ -92,10 +84,7 @@ const DOC_KIND_TO_SETTINGS_KEY: Record<DocumentNumberingKind, DocumentTypeKey> =
 
 function normalizeDocType(input?: string): DocumentNumberingKind {
   const value = (input ?? 'OFFER').toUpperCase();
-  if (value in DOC_RENDERERS) {
-    return value as DocumentNumberingKind;
-  }
-  return 'OFFER';
+  return SUPPORTED_DOC_TYPES.includes(value as DocumentNumberingKind) ? (value as DocumentNumberingKind) : 'OFFER';
 }
 
 function buildCompanyProfile(company: CompanySettingsResult, settings: GlobalSettingsResult): CompanyProfile {
@@ -333,7 +322,6 @@ export async function buildOfferPdfPreviewPayload(
     disclaimer: overrides?.disclaimer ?? null,
   });
 
-  const renderer = DOC_RENDERERS[docType] ?? renderOfferPdf;
   const context: DocumentPreviewContext = {
     docType,
     documentNumber: generatedNumber,
@@ -361,7 +349,7 @@ export async function buildOfferPdfPreviewPayload(
       : undefined,
   };
 
-  const html = renderer(context);
+  const html = renderDocumentHtml(context);
 
   return {
     company,
@@ -387,4 +375,13 @@ export async function buildOfferPdfPreviewPayload(
     docType,
     html,
   };
+}
+
+export async function generateOfferDocumentPdf(
+  offerVersionId: string,
+  docType: DocumentNumberingKind,
+  options?: Omit<PreviewOptions, 'docType'>,
+) {
+  const payload = await buildOfferPdfPreviewPayload(offerVersionId, { ...(options ?? {}), docType });
+  return renderHtmlToPdf(payload.html);
 }

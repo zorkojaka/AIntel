@@ -48,3 +48,24 @@ export async function fetchProductsByCategories(categorySlugs: string[]): Promis
     categorySlugs: p.categorySlugs ?? [],
   }));
 }
+
+export async function downloadPdf(url: string, filename: string, init?: RequestInit) {
+  const response = await fetch(url, init);
+  if (!response.ok) {
+    let message = 'Ne morem prenesti PDF-ja.';
+    try {
+      const text = await response.text();
+      message = text || message;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+  const blob = await response.blob();
+  const objectUrl = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  anchor.click();
+  window.URL.revokeObjectURL(objectUrl);
+}
