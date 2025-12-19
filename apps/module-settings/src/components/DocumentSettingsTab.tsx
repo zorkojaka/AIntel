@@ -15,8 +15,6 @@ interface DocumentSettingsTabProps {
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   saving: boolean;
   loading: boolean;
-  previewVisible: boolean;
-  onTogglePreview: () => void;
   preview: React.ReactNode;
 }
 
@@ -47,8 +45,6 @@ export const DocumentSettingsTab: React.FC<DocumentSettingsTabProps> = ({
   onSubmit,
   saving,
   loading,
-  previewVisible,
-  onTogglePreview,
   preview,
 }) => {
   const [showNumberingHelp, setShowNumberingHelp] = useState(false);
@@ -114,13 +110,10 @@ export const DocumentSettingsTab: React.FC<DocumentSettingsTabProps> = ({
           <Button type="submit" disabled={saving || loading}>
             {saving ? 'Shranjujem ...' : 'Shrani dokument'}
           </Button>
-          <Button type="button" variant="ghost" onClick={onTogglePreview}>
-            {previewVisible ? 'Skrij PDF predogled' : 'Predogled PDF'}
-          </Button>
         </div>
       </form>
 
-      {previewVisible && preview}
+      {preview}
     </div>
   );
 };

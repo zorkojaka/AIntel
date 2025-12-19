@@ -6,6 +6,8 @@ import {
   getOfferPdfOverride,
   getPdfDocumentSettings,
 } from './pdf-settings.service';
+import { getSettings } from '../../settings/settings.service';
+import type { DocumentTypeKey, Note } from '../../settings/Settings';
 import {
   DocumentNumberingKind,
   getDocumentNumberingConfig,
@@ -20,6 +22,7 @@ import {
   renderWorkOrderConfirmationPdf,
   renderWorkOrderPdf,
   type DocumentPreviewContext,
+  type PreviewTask,
 } from './document-renderers';
 
 interface PreviewProjectInfo {
@@ -70,12 +73,95 @@ const DOC_RENDERERS: Record<DocumentNumberingKind, (context: DocumentPreviewCont
   CREDIT_NOTE: renderCreditNotePdf,
 };
 
-function normalizeDocType(input?: string): DocumentNumberingKind {
-  const value = (input ?? 'OFFER').toUpperCase();
-  if (value in DOC_RENDERERS) {
-    return value as DocumentNumberingKind;
+interface NormalizedDocType {
+  value: DocumentNumberingKind;
+  requested: string;
+  isSupported: boolean;
+}
+
+function normalizeDocType(input?: string): NormalizedDocType {
+  const requested = (input ?? 'OFFER').toUpperCase();
+  if (requested in DOC_RENDERERS) {
+    return {
+      value: requested as DocumentNumberingKind,
+      requested,
+      isSupported: true,
+    };
   }
-  return 'OFFER';
+
+  return {
+    value: 'OFFER',
+    requested,
+    isSupported: requested === 'OFFER',
+  };
+}
+
+const DOC_TYPE_TO_SETTINGS_KEY: Record<DocumentNumberingKind, DocumentTypeKey> = {
+  OFFER: 'offer',
+  INVOICE: 'invoice',
+  PURCHASE_ORDER: 'materialOrder',
+  DELIVERY_NOTE: 'deliveryNote',
+  WORK_ORDER: 'workOrder',
+  WORK_ORDER_CONFIRMATION: 'workOrderConfirmation',
+  CREDIT_NOTE: 'creditNote',
+};
+
+function formatCompanyAddress(settings: Awaited<ReturnType<typeof getSettings>>) {
+  const lineTwo = [settings.postalCode, settings.city].filter(Boolean).join(' ').trim();
+  const parts = [settings.address, lineTwo || '', settings.country ?? '']
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter((value) => value);
+  return parts.join(', ');
+}
+
+function mergeCompanyBranding(
+  company: Awaited<ReturnType<typeof getCompanySettings>>,
+  settings: Awaited<ReturnType<typeof getSettings>>,
+) {
+  return {
+    ...company,
+    companyName: settings.companyName || company.companyName,
+    address: formatCompanyAddress(settings) || company.address,
+    email: settings.email || company.email,
+    phone: settings.phone || company.phone,
+    vatId: settings.vatId || company.vatId,
+    iban: settings.iban || company.iban,
+    directorName: settings.directorName || company.directorName,
+    logoUrl: settings.logoUrl || company.logoUrl,
+  };
+}
+
+function collectDocumentNotes(
+  docType: DocumentNumberingKind,
+  settings: Awaited<ReturnType<typeof getSettings>>,
+  documentSettings: Awaited<ReturnType<typeof getPdfDocumentSettings>>,
+) {
+  const docKey = DOC_TYPE_TO_SETTINGS_KEY[docType] ?? 'offer';
+  const defaults = settings.noteDefaultsByDoc?.[docKey] ?? [];
+  const noteMap = new Map<string, string>(
+    (settings.notes ?? []).map((note: Note) => [note.id, note.text]),
+  );
+  const orderedNotes: string[] = [];
+  const seen = new Set<string>();
+  defaults.forEach((noteId) => {
+    const text = noteMap.get(noteId);
+    if (!text) return;
+    const trimmed = text.trim();
+    if (!trimmed || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    orderedNotes.push(trimmed);
+  });
+  const paymentTerms = documentSettings.defaultTexts.paymentTerms?.trim();
+  if (paymentTerms && !seen.has(paymentTerms)) {
+    seen.add(paymentTerms);
+    orderedNotes.push(paymentTerms);
+  }
+  const disclaimer = documentSettings.defaultTexts.disclaimer?.trim();
+  if (disclaimer && !seen.has(disclaimer)) {
+    seen.add(disclaimer);
+    orderedNotes.push(disclaimer);
+  }
+  return orderedNotes;
 }
 
 const DEMO_ITEMS: OfferLineItem[] = [
@@ -105,6 +191,20 @@ const DEMO_ITEMS: OfferLineItem[] = [
     totalGross: 439.2,
     discountPercent: 0,
   },
+];
+
+const DEMO_WORK_ORDER_TASKS: PreviewTask[] = [
+  { label: 'Montaza kamere', status: 'in-progress' },
+  { label: 'Test signalnih poti', status: 'todo' },
+  { label: 'Konfiguracija snemalnika', status: 'todo' },
+  { label: 'Predaja uporabniku', status: 'todo' },
+];
+
+const DEMO_WORK_ORDER_CONFIRMATION_TASKS: PreviewTask[] = [
+  { label: 'Montaza kamere', status: 'done' },
+  { label: 'Test signalnih poti', status: 'done' },
+  { label: 'Konfiguracija snemalnika', status: 'done' },
+  { label: 'Predaja uporabniku', status: 'done' },
 ];
 
 function buildDemoOffer(): OfferVersion {
@@ -159,19 +259,71 @@ function serializeOffer(offer: any): OfferVersion {
   } as OfferVersion;
 }
 
+function buildUnsupportedPreviewHtml(requestedDocType: string) {
+  const label = requestedDocType || 'ta dokument';
+  return `<!doctype html>
+  <html lang="sl">
+    <head>
+      <meta charset="UTF-8" />
+      <style>
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #f8fafc; color: #111827; margin: 0; padding: 24px; }
+        .card { max-width: 720px; margin: 64px auto; background: #fff; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); padding: 32px; text-align: center; }
+        h1 { margin-bottom: 12px; }
+        p { margin: 0; color: #6b7280; }
+      </style>
+      <title>Predogled ni na voljo</title>
+    </head>
+    <body>
+      <div class="card">
+        <h1>Predogled ni na voljo</h1>
+        <p>Predogled se še ni implementiran za dokument <strong>${label}</strong>.</p>
+      </div>
+    </body>
+  </html>`;
+}
+
+function getDemoTasks(docType: DocumentNumberingKind, allowDemo: boolean): PreviewTask[] | undefined {
+  if (!allowDemo) {
+    return undefined;
+  }
+  if (docType === 'WORK_ORDER') {
+    return DEMO_WORK_ORDER_TASKS;
+  }
+  if (docType === 'WORK_ORDER_CONFIRMATION') {
+    return DEMO_WORK_ORDER_CONFIRMATION_TASKS;
+  }
+  return undefined;
+}
+
 export async function buildOfferPdfPreviewPayload(
   offerVersionId: string,
   options?: PreviewOptions,
 ): Promise<OfferPdfPreviewPayload> {
-  const docType = normalizeDocType(options?.docType);
-  const [company, documentSettings, numberingConfig] = await Promise.all([
+  const docTypeInfo = normalizeDocType(options?.docType);
+  const docType = docTypeInfo.value;
+  const allowDemo = Boolean(options?.allowDemo);
+  const [rawCompany, documentSettings, numberingConfig, globalSettings] = await Promise.all([
     getCompanySettings(),
     getPdfDocumentSettings(docType),
     getDocumentNumberingConfig(docType),
+    getSettings(),
   ]);
+  const company = mergeCompanyBranding(rawCompany, globalSettings);
 
-  const offerDoc = await OfferVersionModel.findById(offerVersionId).lean();
-  let offer: OfferVersion | null = offerDoc ? serializeOffer(offerDoc) : null;
+  let offerDoc: OfferVersion | null = null;
+  try {
+    const rawDoc = await OfferVersionModel.findById(offerVersionId).lean();
+    offerDoc = rawDoc ? serializeOffer(rawDoc) : null;
+  } catch (error) {
+    if ((error as Error)?.name !== 'CastError') {
+      throw error;
+    }
+    if (!allowDemo) {
+      throw new Error('Ponudba ni najdena.');
+    }
+  }
+
+  let offer: OfferVersion | null = offerDoc;
   let project: PreviewProjectInfo | null = null;
 
   if (offerDoc) {
@@ -187,7 +339,7 @@ export async function buildOfferPdfPreviewPayload(
         customerTaxId: projectDoc.customer?.taxId ?? '',
       };
     }
-  } else if (options?.allowDemo) {
+  } else if (allowDemo) {
     offer = buildDemoOffer();
     project = {
       id: 'PRJ-000',
@@ -222,7 +374,9 @@ export async function buildOfferPdfPreviewPayload(
     paymentTerms: overrides?.paymentTerms ?? offer.paymentTerms ?? documentSettings.defaultTexts.paymentTerms ?? '',
   };
 
-  const items = (offerWithTexts.items ?? []).map((item) => ({
+  const items = (offerWithTexts.items ?? []).map((item, index) => ({
+    code: item.productId ?? `ITEM-${String(index + 1).padStart(2, '0')}`,
+    description: item.name,
     name: item.name,
     quantity: item.quantity,
     unit: item.unit,
@@ -231,20 +385,24 @@ export async function buildOfferPdfPreviewPayload(
     vatPercent: item.vatRate ?? 22,
   }));
 
-  const notes: string[] = [];
-  if (documentSettings.defaultTexts.paymentTerms) {
-    notes.push(documentSettings.defaultTexts.paymentTerms);
-  }
-  if (documentSettings.defaultTexts.disclaimer) {
-    notes.push(documentSettings.defaultTexts.disclaimer);
-  }
+  const notes = collectDocumentNotes(docType, globalSettings, documentSettings);
 
   const renderer = DOC_RENDERERS[docType] ?? renderOfferPdf;
+  const demoTasks = getDemoTasks(docType, allowDemo);
+  const fallbackTasks: PreviewTask[] | undefined =
+    docType === 'WORK_ORDER' || docType === 'WORK_ORDER_CONFIRMATION'
+      ? items.map<PreviewTask>((item) => ({
+          label: item.name,
+          status: docType === 'WORK_ORDER' ? 'in-progress' : 'done',
+        }))
+      : undefined;
   const context: DocumentPreviewContext = {
     docType,
     documentNumber: generatedNumber,
     issueDate: new Date().toLocaleDateString('sl-SI'),
     company,
+    companyWebsite: globalSettings.website?.trim() || undefined,
+    companyPrimaryColor: globalSettings.primaryColor || undefined,
     customer: project
       ? { name: project.customerName, address: project.customerAddress, taxId: project.customerTaxId }
       : undefined,
@@ -260,12 +418,10 @@ export async function buildOfferPdfPreviewPayload(
     notes,
     comment: docType === 'OFFER' ? offerWithTexts.comment ?? null : null,
     referenceNumber: docType === 'CREDIT_NOTE' ? generatedNumber.replace('DOBROPIS', 'RACUN') : null,
-    tasks: docType === 'WORK_ORDER' || docType === 'WORK_ORDER_CONFIRMATION'
-      ? items.map((item) => ({ label: item.name, status: docType === 'WORK_ORDER' ? 'in-progress' : 'done' }))
-      : undefined,
+    tasks: demoTasks ?? fallbackTasks,
   };
 
-  const html = renderer(context);
+  const html = docTypeInfo.isSupported ? renderer(context) : buildUnsupportedPreviewHtml(docTypeInfo.requested);
 
   return {
     company,
