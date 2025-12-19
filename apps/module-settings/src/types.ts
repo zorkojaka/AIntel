@@ -86,6 +86,8 @@ export interface PdfCompanySettingsDto {
   directorName?: string;
   logoUrl?: string;
   logoAssetId?: string;
+  primaryColor?: string;
+  website?: string;
 }
 
 export type PdfFormatPreset = 'PREFIX-YYYY-SEQ' | 'PREFIX-YY-SEQ' | 'PREFIX-SEQ';

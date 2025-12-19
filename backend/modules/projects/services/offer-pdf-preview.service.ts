@@ -1,6 +1,8 @@
 import type { OfferLineItem, OfferVersion } from '../../../../shared/types/offers';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { ProjectModel } from '../schemas/project';
+import { getSettings } from '../../settings/settings.service';
+import type { DocumentTypeKey } from '../../settings/Settings';
 import {
   getCompanySettings,
   getOfferPdfOverride,
@@ -33,7 +35,7 @@ interface PreviewProjectInfo {
 }
 
 export interface OfferPdfPreviewPayload {
-  company: Awaited<ReturnType<typeof getCompanySettings>>;
+  company: CompanyProfile;
   document: {
     settings: Awaited<ReturnType<typeof getPdfDocumentSettings>>;
     generatedNumber: string;
@@ -60,6 +62,14 @@ interface PreviewOptions {
   allowDemo?: boolean;
 }
 
+type CompanySettingsResult = Awaited<ReturnType<typeof getCompanySettings>>;
+type GlobalSettingsResult = Awaited<ReturnType<typeof getSettings>>;
+
+export type CompanyProfile = CompanySettingsResult & {
+  primaryColor?: string;
+  website?: string;
+};
+
 const DOC_RENDERERS: Record<DocumentNumberingKind, (context: DocumentPreviewContext) => string> = {
   OFFER: renderOfferPdf,
   INVOICE: renderInvoicePdf,
@@ -70,12 +80,74 @@ const DOC_RENDERERS: Record<DocumentNumberingKind, (context: DocumentPreviewCont
   CREDIT_NOTE: renderCreditNotePdf,
 };
 
+const DOC_KIND_TO_SETTINGS_KEY: Record<DocumentNumberingKind, DocumentTypeKey> = {
+  OFFER: 'offer',
+  INVOICE: 'invoice',
+  PURCHASE_ORDER: 'materialOrder',
+  DELIVERY_NOTE: 'deliveryNote',
+  WORK_ORDER: 'workOrder',
+  WORK_ORDER_CONFIRMATION: 'workOrderConfirmation',
+  CREDIT_NOTE: 'creditNote',
+};
+
 function normalizeDocType(input?: string): DocumentNumberingKind {
   const value = (input ?? 'OFFER').toUpperCase();
   if (value in DOC_RENDERERS) {
     return value as DocumentNumberingKind;
   }
   return 'OFFER';
+}
+
+function buildCompanyProfile(company: CompanySettingsResult, settings: GlobalSettingsResult): CompanyProfile {
+  const addressParts = [
+    settings.address,
+    [settings.postalCode, settings.city].filter(Boolean).join(' ').trim(),
+    settings.country,
+  ]
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter((value) => !!value);
+
+  return {
+    ...company,
+    companyName: settings.companyName || company.companyName,
+    address: addressParts.length ? addressParts.join('\n') : company.address,
+    email: settings.email || company.email,
+    phone: settings.phone || company.phone,
+    vatId: settings.vatId || company.vatId,
+    iban: settings.iban || company.iban,
+    directorName: settings.directorName || company.directorName,
+    logoUrl: settings.logoUrl || company.logoUrl,
+    primaryColor: settings.primaryColor || company.primaryColor || '#0f62fe',
+    website: settings.website || undefined,
+  };
+}
+
+function buildSelectedNotes(
+  settings: GlobalSettingsResult,
+  docType: DocumentNumberingKind,
+  pdfSettings: Awaited<ReturnType<typeof getPdfDocumentSettings>>,
+  overrides?: { paymentTerms?: string | null; disclaimer?: string | null },
+) {
+  const settingsKey = DOC_KIND_TO_SETTINGS_KEY[docType] ?? 'offer';
+  const selectedIds = settings.noteDefaultsByDoc?.[settingsKey] ?? [];
+  const noteLookup = new Map((settings.notes ?? []).map((note) => [note.id, note]));
+
+  const selectedNotes = selectedIds
+    .map((id) => noteLookup.get(id))
+    .filter((note): note is GlobalSettingsResult['notes'][number] => !!note)
+    .map((note) => note.text?.trim() || note.title?.trim() || '')
+    .filter((text): text is string => !!text);
+
+  const payments = overrides?.paymentTerms ?? pdfSettings.defaultTexts.paymentTerms;
+  const disclaimer = overrides?.disclaimer ?? pdfSettings.defaultTexts.disclaimer;
+  if (payments) {
+    selectedNotes.push(payments);
+  }
+  if (disclaimer) {
+    selectedNotes.push(disclaimer);
+  }
+
+  return selectedNotes;
 }
 
 const DEMO_ITEMS: OfferLineItem[] = [
@@ -164,11 +236,13 @@ export async function buildOfferPdfPreviewPayload(
   options?: PreviewOptions,
 ): Promise<OfferPdfPreviewPayload> {
   const docType = normalizeDocType(options?.docType);
-  const [company, documentSettings, numberingConfig] = await Promise.all([
+  const [company, documentSettings, numberingConfig, globalSettings] = await Promise.all([
     getCompanySettings(),
     getPdfDocumentSettings(docType),
     getDocumentNumberingConfig(docType),
+    getSettings(),
   ]);
+  let companyProfile = buildCompanyProfile(company, globalSettings);
 
   const offerDoc = await OfferVersionModel.findById(offerVersionId).lean();
   let offer: OfferVersion | null = offerDoc ? serializeOffer(offerDoc) : null;
@@ -221,6 +295,11 @@ export async function buildOfferPdfPreviewPayload(
     ...offer,
     paymentTerms: overrides?.paymentTerms ?? offer.paymentTerms ?? documentSettings.defaultTexts.paymentTerms ?? '',
   };
+  companyProfile = {
+    ...companyProfile,
+    email: overrides?.companyEmail ?? companyProfile.email,
+    phone: overrides?.companyPhone ?? companyProfile.phone,
+  };
 
   const items = (offerWithTexts.items ?? []).map((item) => ({
     name: item.name,
@@ -231,24 +310,23 @@ export async function buildOfferPdfPreviewPayload(
     vatPercent: item.vatRate ?? 22,
   }));
 
-  const notes: string[] = [];
-  if (documentSettings.defaultTexts.paymentTerms) {
-    notes.push(documentSettings.defaultTexts.paymentTerms);
-  }
-  if (documentSettings.defaultTexts.disclaimer) {
-    notes.push(documentSettings.defaultTexts.disclaimer);
-  }
+  const notes = buildSelectedNotes(globalSettings, docType, documentSettings, {
+    paymentTerms: overrides?.paymentTerms ?? offerWithTexts.paymentTerms,
+    disclaimer: overrides?.disclaimer ?? null,
+  });
 
   const renderer = DOC_RENDERERS[docType] ?? renderOfferPdf;
   const context: DocumentPreviewContext = {
     docType,
     documentNumber: generatedNumber,
     issueDate: new Date().toLocaleDateString('sl-SI'),
-    company,
+    company: companyProfile,
     customer: project
       ? { name: project.customerName, address: project.customerAddress, taxId: project.customerTaxId }
       : undefined,
     projectTitle: project?.title ?? offerWithTexts.title ?? 'Projekt',
+    validUntil: offerWithTexts.validUntil ?? null,
+    paymentTerms: offerWithTexts.paymentTerms ?? documentSettings.defaultTexts.paymentTerms ?? null,
     items,
     totals: {
       subtotal: offerWithTexts.totalNet ?? 0,

@@ -33,7 +33,9 @@ export interface DocumentPreviewContext {
   docType: DocumentNumberingKind;
   documentNumber: string;
   issueDate: string;
-  company: PdfCompanySettings;
+  validUntil?: string | null;
+  paymentTerms?: string | null;
+  company: PdfCompanySettings & { primaryColor?: string; website?: string };
   customer?: PreviewCustomerInfo | null;
   projectTitle?: string;
   items?: PreviewItem[];
@@ -47,10 +49,14 @@ export interface DocumentPreviewContext {
 const baseStyles = `
   * { box-sizing: border-box; }
   body { font-family: 'Inter', system-ui, -apple-system, sans-serif; color: #111827; background: #f8fafc; margin: 0; padding: 0; }
-  .page { width: 794px; margin: 24px auto; background: #fff; padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); border-radius: 12px; }
+  @page { margin: 24px; }
+  .page { width: 794px; min-height: 1122px; margin: 0 auto; background: #fff; padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); border-radius: 12px; display:flex; flex-direction:column; }
   h1, h2, h3, h4 { margin: 0; }
   .muted { color: #6b7280; }
-  table { width: 100%; border-collapse: collapse; }
+  table { width: 100%; border-collapse: collapse; page-break-inside:auto; }
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
   th, td { padding: 8px 10px; text-align: left; border: 1px solid #e5e7eb; font-size: 13px; }
   th { background: #f3f4f6; font-weight: 600; }
   .totals { width: 320px; margin-left: auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
@@ -62,7 +68,40 @@ const baseStyles = `
   .tasks { margin-top: 12px; }
   .task { padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
   .badge { display: inline-flex; padding: 4px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca; font-size: 12px; }
+  .offer-preview { display:flex; flex-direction:column; gap:24px; flex:1; }
+  .offer-header { display:flex; justify-content:space-between; align-items:flex-start; gap:32px; break-inside:avoid; }
+  .offer-logo { width:180px; height:80px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .offer-logo img { max-width:100%; max-height:100%; object-fit:contain; }
+  .offer-company { text-align:right; font-size:13px; color:#475569; }
+  .offer-company p { margin:4px 0; }
+  .offer-company-name { font-size:22px; font-weight:600; margin-bottom:4px; }
+  .offer-meta-grid { display:grid; gap:24px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); break-inside:avoid; }
+  .offer-card { border:1px solid #e2e8f0; border-radius:14px; padding:16px; background:#fff; break-inside:avoid; }
+  .offer-card.primary { border-color: rgba(59,130,246,0.35); background: #f8fafc; }
+  .offer-card h4 { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:#475569; margin-bottom:8px; }
+  .offer-card p { margin:4px 0; font-size:13px; }
+  .offer-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:12px; break-inside:auto; }
+  .offer-table th { background:#f1f5f9; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:0.05em; color:#475569; }
+  .offer-table th, .offer-table td { border:1px solid #e2e8f0; padding:10px 12px; }
+  .offer-table td { color:#0f172a; }
+  .offer-comment { margin-top:16px; border-radius:12px; border:1px solid rgba(148,163,184,0.5); padding:14px 18px; background:#f8fafc; break-inside:avoid; }
+  .offer-comment h4 { font-size:14px; font-weight:600; margin-bottom:6px; color:#0f172a; }
+  .offer-comment p { margin:0; color:#475569; }
+  .offer-signature { width:45%; min-width:280px; margin-left:auto; text-align:right; color:#475569; break-inside:avoid; }
+  .offer-signature-line { border-bottom:1px solid #cbd5e1; margin-top:24px; height:1px; }
+  .offer-notes { margin-top:24px; break-inside:avoid; }
+  .offer-notes ul { margin:8px 0 0; padding-left:20px; }
+  .offer-notes li { font-size:12px; color:#475569; margin-bottom:4px; }
+  .offer-footer { border-top:1px solid #e2e8f0; margin-top:auto; padding-top:12px; display:flex; flex-direction:column; gap:4px; break-inside:avoid; }
+  .offer-contact-line { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; font-size:12px; color:#475569; }
+  .offer-dot { color:#cbd5e1; margin:0 6px; }
 `;
+
+const currencyFormatter = new Intl.NumberFormat('sl-SI', { style: 'currency', currency: 'EUR' });
+
+function formatCurrency(value?: number) {
+  return currencyFormatter.format(Number(value ?? 0));
+}
 
 function wrapDocument(title: string, body: string) {
   return `<!doctype html>
@@ -144,56 +183,165 @@ export function buildSignatureBlock(options?: { leftLabel?: string; rightLabel?:
 }
 
 export function renderOfferPdf(context: DocumentPreviewContext) {
-  const header = buildHeaderHtml(context.company, {
-    title: 'Ponudba',
-    documentNumber: context.documentNumber,
-    issueDate: context.issueDate,
-    customer: context.customer,
-    projectTitle: context.projectTitle,
-  });
+  const brandColor = context.company.primaryColor || '#0f62fe';
+  const logoBlock = context.company.logoUrl
+    ? `<img src="${context.company.logoUrl}" alt="Logotip podjetja" />`
+    : `<span class="muted">Logo</span>`;
+
+  const addressLines = (context.company.address ?? '')
+    .split(/\n|,\s*/)
+    .map((line) => line.trim())
+    .filter((line) => !!line);
+  const addressHtml = addressLines.length
+    ? addressLines.map((line) => `<p>${line}</p>`).join('')
+    : `<p>${context.company.address ?? ''}</p>`;
+
+  const contactItems = [
+    context.company.email ? `<span>${context.company.email}</span>` : null,
+    context.company.phone ? `<span>${context.company.phone}</span>` : null,
+    context.company.website ? `<span>${context.company.website}</span>` : null,
+  ].filter(Boolean) as string[];
+  const financeItems = [
+    context.company.vatId ? `<span>DDV: ${context.company.vatId}</span>` : null,
+    context.company.iban ? `<span>IBAN: ${context.company.iban}</span>` : null,
+  ].filter(Boolean) as string[];
+  const contactLine = contactItems.length
+    ? `<div class="offer-contact-line">${contactItems.join('<span class="offer-dot">?</span>')}</div>`
+    : '';
+  const financeLine = financeItems.length
+    ? `<div class="offer-contact-line">${financeItems.join('<span class="offer-dot">?</span>')}</div>`
+    : '';
+
+  const customerLines = context.customer
+    ? [
+        context.customer.taxId ? `<p>Dav?na: ${context.customer.taxId}</p>` : '',
+        context.customer.name ? `<p>${context.customer.name}</p>` : '',
+        context.customer.address
+          ? context.customer.address
+              .split(/\n|,\s*/)
+              .map((line) => `<p>${line.trim()}</p>`)
+              .join('')
+          : '',
+      ].join('')
+    : `<p class="muted">Podatki o stranki se prika?ejo ob izdaji realne ponudbe.</p>`;
+
+  const metaRows = [
+    `<p><span class="muted">Dokument:</span> Ponudba</p>`,
+    `<p><span class="muted">?t.:</span> ${context.documentNumber}</p>`,
+    `<p><span class="muted">Datum:</span> ${context.issueDate}</p>`,
+  ];
+  if (context.validUntil) {
+    metaRows.push(`<p><span class="muted">Veljavnost:</span> ${new Date(context.validUntil).toLocaleDateString('sl-SI')}</p>`);
+  }
+  if (context.paymentTerms) {
+    metaRows.push(`<p><span class="muted">Rok pla?ila:</span> ${context.paymentTerms}</p>`);
+  }
 
   const rows = (context.items ?? []).map((item) => {
     const unitPrice = item.unitPrice ?? 0;
     const total = item.total ?? unitPrice * item.quantity;
     return `<tr>
-        <td>${item.name}</td>
-        <td style="text-align:right;">${item.quantity}</td>
-        <td style="text-align:right;">${unitPrice.toFixed(2)} €</td>
-        <td style="text-align:right;">${total.toFixed(2)} €</td>
-      </tr>`;
+      <td>${item.name}</td>
+      <td style="text-align:right;">${item.quantity}</td>
+      <td style="text-align:right;">${formatCurrency(unitPrice)}</td>
+      <td style="text-align:right;">${formatCurrency(total)}</td>
+    </tr>`;
   });
+  const itemsRows = rows.length
+    ? rows.join('')
+    : `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">Ni postavk za prikaz.</td></tr>`;
 
-  const totals = context.totals;
-  const totalsBlock = totals
-    ? `<div class="totals">
-        <div class="totals-row"><span>Skupaj brez DDV</span><span>${(totals.subtotal ?? 0).toFixed(2)} €</span></div>
-        <div class="totals-row"><span>Popust</span><span>${(totals.discount ?? 0).toFixed(2)} €</span></div>
-        <div class="totals-row"><span>DDV</span><span>${(totals.vat ?? 0).toFixed(2)} €</span></div>
-        <div class="totals-row"><span>Skupaj z DDV</span><span>${(totals.total ?? 0).toFixed(2)} €</span></div>
-      </div>`
-    : '';
+  const totals = context.totals ?? {};
+  const totalRows = [
+    { label: 'Skupaj brez DDV', value: totals.subtotal ?? 0 },
+    { label: 'Popust', value: totals.discount ?? 0 },
+    { label: 'DDV', value: totals.vat ?? 0 },
+    { label: 'Skupaj z DDV', value: totals.total ?? totals.subtotal ?? 0 },
+  ]
+    .map(
+      (row) => `<tr>
+        <td colspan="3" style="text-align:right; font-weight:600;">${row.label}</td>
+        <td style="text-align:right; font-weight:600;">${formatCurrency(row.value)}</td>
+      </tr>`,
+    )
+    .join('');
 
   const commentBlock = context.comment
-    ? `<div class="notes" style="background:#fff7ed;border-color:#fed7aa;">
-        <strong>Komentar</strong>
-        <p class="muted" style="margin-top:6px;">${context.comment}</p>
+    ? `<div class="offer-comment">
+        <h4>Komentar</h4>
+        <p>${context.comment}</p>
       </div>`
     : '';
 
-  const body = `${header}
-    <h3 style="margin-top:16px;">Predmet</h3>
-    <p class="muted">${context.projectTitle ?? 'Predmet ponudbe'}</p>
-    <table style="margin-top:12px;">
-      <thead>
-        <tr><th>Postavka</th><th style="text-align:right;">Kolicina</th><th style="text-align:right;">Cena</th><th style="text-align:right;">Znesek</th></tr>
-      </thead>
-      <tbody>${rows.join('')}</tbody>
-    </table>
-    ${totalsBlock}
-    ${commentBlock}
-    ${buildNotesBlockHtml(context.notes)}
-    ${buildSignatureBlock({ leftLabel: 'Ponudnik', rightLabel: 'Naročnik' })}
-    ${buildFooterHtml(context.company)}`;
+  const notesBlock =
+    context.notes && context.notes.length
+      ? `<div class="offer-notes">
+          <p style="font-weight:600;">Opombe</p>
+          <ul>${context.notes.map((note) => `<li>${note}</li>`).join('')}</ul>
+        </div>`
+      : '';
+
+  const signatureName = context.company.directorName
+    ? `Direktor: ${context.company.directorName}`
+    : 'Dodajte direktorja v nastavitvah podjetja.';
+  const customerSubtitle = context.customer?.name
+    ? `${context.customer.name}${context.customer.address ? ` ? ${context.customer.address}` : ''}`
+    : 'Podrobnosti projekta bodo dodane ob izvozu.';
+
+  const body = `<div class="offer-preview">
+      <div class="offer-header">
+        <div class="offer-logo">${logoBlock}</div>
+        <div class="offer-company">
+          <p class="offer-company-name" style="color:${brandColor};">${context.company.companyName}</p>
+          <p class="muted" style="font-size:10px;margin:0;">NEW-TEMPLATE-RENDERER</p>
+          ${addressHtml}
+        </div>
+      </div>
+
+      <div class="offer-meta-grid">
+        <div class="offer-card primary">
+          <h4>Stranka</h4>
+          ${customerLines}
+        </div>
+        <div class="offer-card">
+          <h4>Dokument</h4>
+          ${metaRows.join('')}
+        </div>
+      </div>
+
+      <div>
+        <h3 style="font-size:18px; font-weight:600; margin-bottom:4px;">${context.projectTitle ?? 'Predmet ponudbe'}</h3>
+        <p class="muted">${customerSubtitle}</p>
+      </div>
+
+      <table class="offer-table">
+        <thead>
+          <tr>
+            <th>Postavka</th>
+            <th style="text-align:right;">Koli?ina</th>
+            <th style="text-align:right;">Cena</th>
+            <th style="text-align:right;">Znesek</th>
+          </tr>
+        </thead>
+        <tbody>${itemsRows}</tbody>
+        <tfoot>${totalRows}</tfoot>
+      </table>
+
+      ${commentBlock}
+
+      <div class="offer-signature">
+        <p style="font-weight:600;">Podpis</p>
+        <p>${signatureName}</p>
+        <div class="offer-signature-line"></div>
+      </div>
+
+      ${notesBlock}
+
+      <div class="offer-footer">
+        ${contactLine}
+        ${financeLine}
+      </div>
+    </div>`;
 
   return wrapDocument('Ponudba', body);
 }
