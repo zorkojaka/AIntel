@@ -17,6 +17,8 @@ import { Textarea } from "./ui/textarea";
 import { PriceListProductAutocomplete } from "./PriceListProductAutocomplete";
 import { mapProject, triggerProjectRefresh } from "../domains/core/useProject";
 import { useConfirmOffer } from "../domains/core/useConfirmOffer";
+import { downloadPdf } from "../api";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 
 type OffersTabProps = {
   projectId: string;
@@ -63,6 +65,24 @@ const clampPositive = (value: unknown, fallback = 0) => {
 const isItemValid = (item: OfferLineItem | OfferLineItemForm) =>
   item.name.trim() !== "" && item.unitPrice > 0;
 
+type SecondaryDocType = 'PURCHASE_ORDER' | 'DELIVERY_NOTE' | 'WORK_ORDER' | 'WORK_ORDER_CONFIRMATION' | 'CREDIT_NOTE';
+
+const SECONDARY_DOC_OPTIONS: { value: SecondaryDocType; label: string }[] = [
+  { value: 'PURCHASE_ORDER', label: 'Naročilnica' },
+  { value: 'DELIVERY_NOTE', label: 'Dobavnica' },
+  { value: 'WORK_ORDER', label: 'Delovni nalog' },
+  { value: 'WORK_ORDER_CONFIRMATION', label: 'Potrdilo izvedbe' },
+  { value: 'CREDIT_NOTE', label: 'Dobropis' },
+];
+
+const SECONDARY_DOC_PREFIX: Record<SecondaryDocType, string> = {
+  PURCHASE_ORDER: 'Narocilo',
+  DELIVERY_NOTE: 'Dobavnica',
+  WORK_ORDER: 'Delovni nalog',
+  WORK_ORDER_CONFIRMATION: 'Potrdilo',
+  CREDIT_NOTE: 'Dobropis',
+};
+
 export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [items, setItems] = useState<OfferLineItemForm[]>([createEmptyItem()]);
 
@@ -97,6 +117,7 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [versions, setVersions] = useState<OfferVersionSummary[]>([]);
   const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
   const isDownloading = downloadingMode !== null;
+  const [secondaryDownload, setSecondaryDownload] = useState<SecondaryDocType | null>(null);
 
   const resetToEmptyOffer = useCallback(() => {
     setSelectedOfferId(null);
@@ -406,15 +427,6 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
   return `${prefix}.pdf`;
 };
 
-  const downloadBlob = (blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
-
   const handleToggleGlobalDiscount = (checked: boolean) => {
     setUseGlobalDiscount(checked);
     if (!checked) {
@@ -597,11 +609,6 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       const saved = await ensureSavedOffer();
       if (!saved?._id) return;
       const url = `/api/projects/${projectId}/offers/${saved._id}/pdf?mode=${mode}`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error("PDF download failed");
-      }
-      const blob = await response.blob();
       const details = await ensureProjectDetails();
       const labelMap = {
         offer: "Ponudba",
@@ -609,13 +616,31 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         both: "Ponudba+Projekt",
       } as const;
       const filename = buildPdfFilename(details, projectId, labelMap[mode]);
-      downloadBlob(blob, filename);
+      await downloadPdf(url, filename);
       toast.success("PDF prenesen");
     } catch (error) {
       console.error(error);
       toast.error("PDF ni bilo mogoce prenesti.");
     } finally {
       setDownloadingMode(null);
+    }
+  };
+
+  const handleExportDocument = async (docType: SecondaryDocType) => {
+    setSecondaryDownload(docType);
+    try {
+      const saved = await ensureSavedOffer();
+      if (!saved?._id) return;
+      const url = `/api/projects/${projectId}/offers/${saved._id}/pdf?docType=${docType}`;
+      const details = await ensureProjectDetails();
+      const filename = buildPdfFilename(details, projectId, SECONDARY_DOC_PREFIX[docType]);
+      await downloadPdf(url, filename);
+      toast.success("PDF prenesen");
+    } catch (error) {
+      console.error(error);
+      toast.error("PDF ni bilo mogoče prenesti.");
+    } finally {
+      setSecondaryDownload(null);
     }
   };
 
@@ -1015,8 +1040,28 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           disabled={isDownloading}
         >
           {downloadingMode === "offer" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Izvozi ponudbo
+          Prenesi PDF
         </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" disabled={isDownloading || secondaryDownload !== null}>
+              {secondaryDownload && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Drugi dokumenti
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {SECONDARY_DOC_OPTIONS.map((option) => (
+              <DropdownMenuItem
+                key={option.value}
+                onClick={() => handleExportDocument(option.value)}
+                disabled={secondaryDownload !== null && secondaryDownload !== option.value}
+              >
+                {secondaryDownload === option.value && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {option.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           variant="outline"
           onClick={() => handleExportPdf("project")}

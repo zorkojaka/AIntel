@@ -7,8 +7,8 @@ import type { OfferLineItem, OfferStatus, OfferVersion } from '../../../../share
 import { OfferVersionModel } from '../schemas/offer-version';
 import { ProductModel } from '../../cenik/product.model';
 import { renderHtmlToPdf } from '../services/html-pdf.service';
-import { buildOfferPdfPreviewPayload } from '../services/offer-pdf-preview.service';
-import { generateOfferDocumentNumber } from '../services/document-numbering.service';
+import { generateOfferDocumentPdf } from '../services/offer-pdf-preview.service';
+import { generateOfferDocumentNumber, type DocumentNumberingKind } from '../services/document-numbering.service';
 
 function clampNumber(value: unknown, fallback = 0, min = 0) {
   const parsed = Number(value);
@@ -20,6 +20,36 @@ function normalizeText(value: unknown, fallback = '') {
   if (typeof value === 'string') return value.normalize('NFC').trim();
   if (value === undefined || value === null) return fallback;
   return String(value).normalize('NFC').trim();
+}
+
+const EXPORTABLE_DOC_TYPES: DocumentNumberingKind[] = [
+  'OFFER',
+  'PURCHASE_ORDER',
+  'DELIVERY_NOTE',
+  'WORK_ORDER',
+  'WORK_ORDER_CONFIRMATION',
+  'CREDIT_NOTE',
+];
+
+const DOC_TYPE_SLUGS: Partial<Record<DocumentNumberingKind, string>> = {
+  OFFER: 'offer',
+  PURCHASE_ORDER: 'purchase-order',
+  DELIVERY_NOTE: 'delivery-note',
+  WORK_ORDER: 'work-order',
+  WORK_ORDER_CONFIRMATION: 'work-order-confirmation',
+  CREDIT_NOTE: 'credit-note',
+};
+
+function parseOfferDocType(value?: string | string[]): DocumentNumberingKind {
+  if (Array.isArray(value)) value = value[0];
+  const normalized = typeof value === 'string' ? value.toUpperCase() : 'OFFER';
+  return EXPORTABLE_DOC_TYPES.includes(normalized as DocumentNumberingKind)
+    ? (normalized as DocumentNumberingKind)
+    : 'OFFER';
+}
+
+function getDocTypeSlug(docType: DocumentNumberingKind) {
+  return DOC_TYPE_SLUGS[docType] ?? 'offer';
 }
 
 function sanitizeLineItem(raw: unknown): OfferLineItem | null {
@@ -355,24 +385,33 @@ export async function exportOfferPdf(req: Request, res: Response) {
     modeParam === 'project' || modeParam === 'both' ? (modeParam as 'project' | 'both') : 'offer';
   const includeOffer = mode === 'offer' || mode === 'both';
   const includeProject = mode === 'project' || mode === 'both';
+  const docType = parseOfferDocType(req.query.docType);
 
   const offer = await OfferVersionModel.findOne({ _id: offerVersionId, projectId }).lean();
   if (!offer) {
     return res.fail('Ponudba ni najdena.', 404);
   }
 
+  if (docType !== 'OFFER' && includeProject) {
+    return res.fail('Ta dokument ne podpira kombiniranega izvoza.', 400);
+  }
+
+  if (!includeOffer) {
+    return res.fail('Ta dokument ni na voljo za izvoz brez ponudbe.', 400);
+  }
+
   if (includeOffer && !includeProject) {
-    console.log('OFFER EXPORT: NEW renderer', { projectId, offerVersionId });
+    console.log('DOCUMENT EXPORT: renderer', { projectId, offerVersionId, docType });
     try {
-      const previewPayload = await buildOfferPdfPreviewPayload(offerVersionId, { docType: 'OFFER' });
-      const buffer = await renderHtmlToPdf(previewPayload.html);
+      const buffer = await generateOfferDocumentPdf(offerVersionId, docType);
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="offer-${offer._id}.pdf"`);
+      const slug = getDocTypeSlug(docType);
+      res.setHeader('Content-Disposition', `attachment; filename="${slug}-${offer._id}.pdf"`);
       res.end(buffer);
       return;
     } catch (error) {
-      console.error('Offer renderer failed', error);
-      res.fail('Izvoz ponudbe ni uspel. Poskusite znova.', 500);
+      console.error('Document renderer failed', error);
+      res.fail('Izvoz dokumenta ni uspel. Poskusite znova.', 500);
       return;
     }
   }

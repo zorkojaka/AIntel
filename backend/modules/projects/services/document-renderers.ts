@@ -29,11 +29,22 @@ export interface PreviewTask {
   status?: 'todo' | 'done' | 'in-progress';
 }
 
+export interface PaymentInfoContext {
+  recipient?: string;
+  iban?: string;
+  amount?: number;
+  reference?: string;
+  purpose?: string;
+  qrCodeDataUri?: string | null;
+  notice?: string | null;
+}
+
 export interface DocumentPreviewContext {
   docType: DocumentNumberingKind;
   documentNumber: string;
   issueDate: string;
   validUntil?: string | null;
+  dueDate?: string | null;
   paymentTerms?: string | null;
   company: PdfCompanySettings & { primaryColor?: string; website?: string };
   customer?: PreviewCustomerInfo | null;
@@ -44,6 +55,7 @@ export interface DocumentPreviewContext {
   comment?: string | null;
   referenceNumber?: string | null;
   tasks?: PreviewTask[];
+  paymentInfo?: PaymentInfoContext | null;
 }
 
 const baseStyles = `
@@ -92,9 +104,6 @@ const baseStyles = `
   .offer-notes ul { margin:8px 0 0; padding-left:20px; }
   .offer-notes li { font-size:12px; color:#475569; margin-bottom:4px; }
   .offer-bottom { margin-top:auto; display:flex; flex-direction:column; gap:20px; }
-  .offer-signature { max-width:280px; margin-left:auto; text-align:right; color:#475569; break-inside:avoid; font-size:11px; padding-top:18px; }
-  .offer-signature p { margin:4px 0; }
-  .offer-signature-line { border-bottom:1px solid #cbd5e1; margin-top:18px; margin-left:auto; width:220px; }
   .offer-footer { border-top:1px solid #e2e8f0; margin-top:0; padding-top:16px; display:flex; flex-direction:column; gap:4px; break-inside:avoid; }
   .offer-contact-line { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; font-size:12px; color:#475569; }
   .offer-dot { color:#cbd5e1; margin:0 4px; }
@@ -185,7 +194,47 @@ export function buildSignatureBlock(options?: { leftLabel?: string; rightLabel?:
     </div>`;
 }
 
-export function renderOfferPdf(context: DocumentPreviewContext) {
+function buildCustomerLines(context: DocumentPreviewContext, emptyText: string) {
+  if (!context.customer) {
+    return `<p class="muted">${emptyText}</p>`;
+  }
+
+  const parts = [
+    context.customer.taxId ? `<p>Davčna: ${context.customer.taxId}</p>` : '',
+    context.customer.name ? `<p>${context.customer.name}</p>` : '',
+    context.customer.address
+      ? context.customer.address
+          .split(/\n|,\s*/)
+          .map((line) => `<p>${line.trim()}</p>`)
+          .join('')
+      : '',
+  ];
+  return parts.join('');
+}
+
+function buildNotesList(notes?: string[]) {
+  if (!notes || notes.length === 0) return '';
+  return `<div class="offer-notes">
+      <p style="font-weight:600;">Opombe</p>
+      <ul>${notes.map((note) => `<li>${note}</li>`).join('')}</ul>
+    </div>`;
+}
+
+interface DocumentShellOptions {
+  docLabel: string;
+  pageTitle: string;
+  customerEmptyText: string;
+  projectTitleFallback: string;
+  metaExtras?: string[];
+  tableHeadRows: string;
+  tableBodyRows: string;
+  tableFooterRows?: string;
+  commentBlock?: string;
+  notesBlock?: string;
+  extraSections?: string;
+}
+
+function buildStandardDocument(context: DocumentPreviewContext, options: DocumentShellOptions) {
   const brandColor = context.company.primaryColor || '#0f62fe';
   const logoBlock = context.company.logoUrl
     ? `<img src="${context.company.logoUrl}" alt="Logotip podjetja" />`
@@ -212,31 +261,67 @@ export function renderOfferPdf(context: DocumentPreviewContext) {
   const contactLine = contactItems.length ? `<div class="offer-contact-line">${contactItems.join(dotSeparator)}</div>` : '';
   const financeLine = financeItems.length ? `<div class="offer-contact-line">${financeItems.join(dotSeparator)}</div>` : '';
 
-  const customerLines = context.customer
-    ? [
-        context.customer.taxId ? `<p>Davčna: ${context.customer.taxId}</p>` : '',
-        context.customer.name ? `<p>${context.customer.name}</p>` : '',
-        context.customer.address
-          ? context.customer.address
-              .split(/\n|,\s*/)
-              .map((line) => `<p>${line.trim()}</p>`)
-              .join('')
-          : '',
-      ].join('')
-    : `<p class="muted">Podatki o stranki se prikažejo ob izdaji realne ponudbe.</p>`;
-
+  const customerLines = buildCustomerLines(context, options.customerEmptyText);
   const metaRows = [
-    `<p><span class="muted">Dokument:</span> Ponudba</p>`,
+    `<p><span class="muted">Dokument:</span> ${options.docLabel}</p>`,
     `<p><span class="muted">Št.:</span> ${context.documentNumber}</p>`,
     `<p><span class="muted">Datum:</span> ${context.issueDate}</p>`,
-  ];
-  if (context.validUntil) {
-    metaRows.push(`<p><span class="muted">Veljavnost:</span> ${new Date(context.validUntil).toLocaleDateString('sl-SI')}</p>`);
-  }
-  if (context.paymentTerms) {
-    metaRows.push(`<p><span class="muted">Rok plačila:</span> ${context.paymentTerms}</p>`);
-  }
+    ...(options.metaExtras ?? []),
+  ].join('');
 
+  const tableFooter = options.tableFooterRows ? `<tfoot>${options.tableFooterRows}</tfoot>` : '';
+  const commentBlock = options.commentBlock ?? '';
+  const notesBlock = options.notesBlock ?? '';
+  const extraSections = options.extraSections ?? '';
+
+  const body = `<div class="offer-preview">
+      <div class="offer-content">
+        <div class="offer-header">
+          <div class="offer-logo">${logoBlock}</div>
+          <div class="offer-company">
+            <p class="offer-company-name" style="color:${brandColor};">${context.company.companyName}</p>
+            ${addressHtml}
+          </div>
+        </div>
+
+        <div class="offer-meta-grid">
+          <div class="offer-card">
+            <h4>Stranka</h4>
+            ${customerLines}
+          </div>
+          <div class="offer-card">
+            <h4>Dokument</h4>
+            ${metaRows}
+          </div>
+        </div>
+
+        <div class="offer-project-title">
+          <h3 style="font-size:18px; font-weight:600; margin-bottom:4px;">${context.projectTitle ?? options.projectTitleFallback}</h3>
+        </div>
+
+        <table class="offer-table">
+          <thead>${options.tableHeadRows}</thead>
+          <tbody>${options.tableBodyRows}</tbody>
+          ${tableFooter}
+        </table>
+
+        ${commentBlock}
+        ${notesBlock}
+        ${extraSections}
+
+        <div class="offer-bottom">
+          <div class="offer-footer">
+            ${contactLine}
+            ${financeLine}
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  return wrapDocument(options.pageTitle, body);
+}
+
+export function renderOfferPdf(context: DocumentPreviewContext) {
   const rows = (context.items ?? []).map((item) => {
     const unitPrice = item.unitPrice ?? 0;
     const total = item.total ?? unitPrice * item.quantity;
@@ -273,247 +358,228 @@ export function renderOfferPdf(context: DocumentPreviewContext) {
       </div>`
     : '';
 
-  const notesBlock =
-    context.notes && context.notes.length
-      ? `<div class="offer-notes">
-          <p style="font-weight:600;">Opombe</p>
-          <ul>${context.notes.map((note) => `<li>${note}</li>`).join('')}</ul>
-        </div>`
-      : '';
+  const notesBlock = buildNotesList(context.notes);
+  const metaExtras: string[] = [];
+  if (context.validUntil) {
+    metaExtras.push(`<p><span class="muted">Veljavnost:</span> ${new Date(context.validUntil).toLocaleDateString('sl-SI')}</p>`);
+  }
+  if (context.paymentTerms) {
+    metaExtras.push(`<p><span class="muted">Rok plačila:</span> ${context.paymentTerms}</p>`);
+  }
 
-  const signatureName = context.company.directorName
-    ? `Direktor: ${context.company.directorName}`
-    : 'Dodajte direktorja v nastavitvah podjetja.';
-
-  const body = `<div class="offer-preview">
-      <div class="offer-content">
-        <div class="offer-header">
-          <div class="offer-logo">${logoBlock}</div>
-          <div class="offer-company">
-            <p class="offer-company-name" style="color:${brandColor};">${context.company.companyName}</p>
-            ${addressHtml}
-          </div>
-        </div>
-
-        <div class="offer-meta-grid">
-          <div class="offer-card">
-            <h4>Stranka</h4>
-            ${customerLines}
-          </div>
-          <div class="offer-card">
-            <h4>Dokument</h4>
-            ${metaRows.join('')}
-          </div>
-        </div>
-
-        <div class="offer-project-title">
-          <h3 style="font-size:18px; font-weight:600; margin-bottom:4px;">${context.projectTitle ?? 'Predmet ponudbe'}</h3>
-        </div>
-
-        <table class="offer-table">
-          <thead>
-            <tr>
-              <th>Postavka</th>
-              <th style="text-align:right;">Količina</th>
-              <th style="text-align:right;">Cena</th>
-              <th style="text-align:right;">Znesek</th>
-            </tr>
-          </thead>
-          <tbody>${itemsRows}</tbody>
-          <tfoot>${totalRows}</tfoot>
-        </table>
-
-        ${commentBlock}
-        ${notesBlock}
-
-        <div class="offer-bottom">
-          <div class="offer-signature">
-            <p style="font-weight:600;">Podpis</p>
-            <p>${signatureName}</p>
-            <div class="offer-signature-line"></div>
-          </div>
-
-          <div class="offer-footer">
-            ${contactLine}
-            ${financeLine}
-          </div>
-        </div>
-      </div>
-    </div>`;
-
-  return wrapDocument('Ponudba', body);
+  return buildStandardDocument(context, {
+    docLabel: 'Ponudba',
+    pageTitle: 'Ponudba',
+    projectTitleFallback: 'Predmet ponudbe',
+    customerEmptyText: 'Podatki o stranki se prikažejo ob izdaji realne ponudbe.',
+    metaExtras,
+    tableHeadRows: `<tr>
+        <th>Postavka</th>
+        <th style="text-align:right;">Količina</th>
+        <th style="text-align:right;">Cena</th>
+        <th style="text-align:right;">Znesek</th>
+      </tr>`,
+    tableBodyRows: itemsRows,
+    tableFooterRows: totalRows,
+    commentBlock,
+    notesBlock,
+  });
 }
 
 export function renderInvoicePdf(context: DocumentPreviewContext) {
-  const header = buildHeaderHtml(context.company, {
-    title: 'Racun',
-    documentNumber: context.documentNumber,
-    issueDate: context.issueDate,
-    customer: context.customer,
-    projectTitle: context.projectTitle,
-  });
-
   const rows = (context.items ?? []).map((item) => {
     const unitPrice = item.unitPrice ?? 0;
     const total = item.total ?? unitPrice * item.quantity;
     return `<tr>
-        <td>${item.name}</td>
-        <td style="text-align:right;">${item.quantity}</td>
-        <td style="text-align:right;">${unitPrice.toFixed(2)} €</td>
-        <td style="text-align:right;">${(item.vatPercent ?? 22)}%</td>
-        <td style="text-align:right;">${total.toFixed(2)} €</td>
-      </tr>`;
+      <td>${item.name}</td>
+      <td style="text-align:right;">${item.quantity}</td>
+      <td style="text-align:right;">${item.unit ?? ''}</td>
+      <td style="text-align:right;">${formatCurrency(unitPrice)}</td>
+      <td style="text-align:right;">${(item.vatPercent ?? 22)}%</td>
+      <td style="text-align:right;">${formatCurrency(total)}</td>
+    </tr>`;
   });
+  const itemsRows = rows.length
+    ? rows.join('')
+    : `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">Ni postavk za prikaz.</td></tr>`;
 
-  const totals = context.totals;
-  const totalsBlock = totals
-    ? `<div class="totals">
-        <div class="totals-row"><span>Osnova</span><span>${(totals.subtotal ?? 0).toFixed(2)} €</span></div>
-        <div class="totals-row"><span>DDV</span><span>${(totals.vat ?? 0).toFixed(2)} €</span></div>
-        <div class="totals-row"><span>Skupaj</span><span>${(totals.total ?? 0).toFixed(2)} €</span></div>
-        ${totals.dueDays ? `<div class="totals-row"><span>Rok placila</span><span>${totals.dueDays} dni</span></div>` : ''}
+  const totals = context.totals ?? {};
+  const totalRows = [
+    { label: 'Osnova brez DDV', value: totals.subtotal ?? 0 },
+    ...(totals.discount && totals.discount > 0 ? [{ label: 'Popust', value: totals.discount }] : []),
+    { label: 'DDV', value: totals.vat ?? 0 },
+    { label: 'Skupaj z DDV', value: totals.total ?? totals.subtotal ?? 0 },
+  ]
+    .map(
+      (row) => `<tr>
+        <td colspan="5" style="text-align:right; font-weight:600;">${row.label}</td>
+        <td style="text-align:right; font-weight:600;">${formatCurrency(row.value)}</td>
+      </tr>`,
+    )
+    .join('');
+
+  const commentBlock = context.comment
+    ? `<div class="offer-comment">
+        <h4>Komentar</h4>
+        <p>${context.comment}</p>
       </div>`
     : '';
 
-  const body = `${header}
-    <h3 style="margin-top:16px;">Postavke</h3>
-    <table style="margin-top:12px;">
-      <thead>
-        <tr><th>Postavka</th><th style="text-align:right;">Kolicina</th><th style="text-align:right;">Cena</th><th style="text-align:right;">DDV</th><th style="text-align:right;">Znesek</th></tr>
-      </thead>
-      <tbody>${rows.join('')}</tbody>
-    </table>
-    ${totalsBlock}
-    ${buildNotesBlockHtml(context.notes)}
-    ${buildSignatureBlock({ leftLabel: 'Izdal', rightLabel: 'Placnik' })}
-    ${buildFooterHtml(context.company)}`;
+  const notesBlock = buildNotesList(context.notes);
+  const metaExtras: string[] = [];
+  if (context.dueDate) {
+    metaExtras.push(`<p><span class="muted">Rok plačila:</span> ${context.dueDate}</p>`);
+  } else if (context.totals?.dueDays) {
+    metaExtras.push(`<p><span class="muted">Rok plačila:</span> ${context.totals.dueDays} dni</p>`);
+  }
 
-  return wrapDocument('Racun', body);
+  return buildStandardDocument(context, {
+    docLabel: 'Račun',
+    pageTitle: 'Racun',
+    projectTitleFallback: 'Račun',
+    customerEmptyText: 'Podatki o stranki se prikažejo ob izdaji računa.',
+    metaExtras,
+    tableHeadRows: `<tr>
+        <th>Postavka</th>
+        <th style="text-align:right;">Količina</th>
+        <th style="text-align:right;">EM</th>
+        <th style="text-align:right;">Cena</th>
+        <th style="text-align:right;">DDV</th>
+        <th style="text-align:right;">Znesek</th>
+      </tr>`,
+    tableBodyRows: itemsRows,
+    tableFooterRows: totalRows,
+    commentBlock,
+    notesBlock,
+  });
 }
 
 export function renderPurchaseOrderPdf(context: DocumentPreviewContext) {
-  const header = buildHeaderHtml(context.company, {
-    title: 'Narocilo',
-    documentNumber: context.documentNumber,
-    issueDate: context.issueDate,
-    customer: context.customer,
-    projectTitle: context.projectTitle,
-  });
-
   const rows = (context.items ?? []).map(
-    (item) => `<tr><td>${item.name}</td><td style="text-align:right;">${item.quantity}</td><td>${item.unit ?? ''}</td></tr>`
+    (item) => `<tr>
+        <td>${item.name}</td>
+        <td style="text-align:right;">${item.quantity}</td>
+        <td style="text-align:right;">${item.unit ?? ''}</td>
+      </tr>`
   );
+  const itemsRows = rows.length
+    ? rows.join('')
+    : `<tr><td colspan="3" style="text-align:center; color:#94a3b8;">Ni postavk za prikaz.</td></tr>`;
+  const notesBlock = buildNotesList(context.notes);
 
-  const body = `${header}
-    <h3 style="margin-top:16px;">Naročene kolicine</h3>
-    <table style="margin-top:12px;">
-      <thead>
-        <tr><th>Postavka</th><th style="text-align:right;">Kolicina</th><th>EM</th></tr>
-      </thead>
-      <tbody>${rows.join('')}</tbody>
-    </table>
-    ${buildNotesBlockHtml(context.notes)}
-    ${buildSignatureBlock({ leftLabel: 'Naročil', rightLabel: 'Dobavitelj' })}
-    ${buildFooterHtml(context.company)}`;
-
-  return wrapDocument('Narocilo', body);
+  return buildStandardDocument(context, {
+    docLabel: 'Naročilnica',
+    pageTitle: 'Narocilo',
+    projectTitleFallback: 'Naročilo',
+    customerEmptyText: 'Podatki o stranki se prikažejo ob izdaji naročilnice.',
+    tableHeadRows: `<tr>
+        <th>Postavka</th>
+        <th style="text-align:right;">Količina</th>
+        <th style="text-align:right;">Enota</th>
+      </tr>`,
+    tableBodyRows: itemsRows,
+    notesBlock,
+  });
 }
 
 export function renderDeliveryNotePdf(context: DocumentPreviewContext) {
-  const header = buildHeaderHtml(context.company, {
-    title: 'Dobavnica',
-    documentNumber: context.documentNumber,
-    issueDate: context.issueDate,
-    customer: context.customer,
-    projectTitle: context.projectTitle,
-  });
-
   const rows = (context.items ?? []).map(
-    (item) => `<tr><td>${item.name}</td><td style="text-align:right;">${item.quantity}</td><td>${item.unit ?? ''}</td></tr>`
+    (item) => `<tr>
+        <td>${item.name}</td>
+        <td style="text-align:right;">${item.quantity}</td>
+        <td style="text-align:right;">${item.unit ?? ''}</td>
+      </tr>`
   );
+  const itemsRows = rows.length
+    ? rows.join('')
+    : `<tr><td colspan="3" style="text-align:center; color:#94a3b8;">Ni postavk za prikaz.</td></tr>`;
+  const notesBlock = buildNotesList(context.notes);
+  const extraSections = buildSignatureBlock({ leftLabel: 'Izročil', rightLabel: 'Prevzel' });
 
-  const body = `${header}
-    <h3 style="margin-top:16px;">Dobavljeno</h3>
-    <table style="margin-top:12px;">
-      <thead>
-        <tr><th>Postavka</th><th style="text-align:right;">Kolicina</th><th>EM</th></tr>
-      </thead>
-      <tbody>${rows.join('')}</tbody>
-    </table>
-    ${buildNotesBlockHtml(context.notes)}
-    ${buildSignatureBlock({ leftLabel: 'Oddal', rightLabel: 'Prevzel' })}
-    ${buildFooterHtml(context.company)}`;
-
-  return wrapDocument('Dobavnica', body);
+  return buildStandardDocument(context, {
+    docLabel: 'Dobavnica',
+    pageTitle: 'Dobavnica',
+    projectTitleFallback: 'Dobavnica',
+    customerEmptyText: 'Podatki o stranki se prikažejo ob izdaji dobavnice.',
+    tableHeadRows: `<tr>
+        <th>Postavka</th>
+        <th style="text-align:right;">Količina</th>
+        <th style="text-align:right;">Enota</th>
+      </tr>`,
+    tableBodyRows: itemsRows,
+    notesBlock,
+    extraSections,
+  });
 }
 
 export function renderWorkOrderPdf(context: DocumentPreviewContext) {
-  const header = buildHeaderHtml(context.company, {
-    title: 'Delovni nalog',
-    documentNumber: context.documentNumber,
-    issueDate: context.issueDate,
-    customer: context.customer,
-    projectTitle: context.projectTitle,
-  });
-
   const tasks = context.tasks ?? (context.items ?? []).map((item) => ({ label: item.name, status: 'todo' as const }));
-  const taskList = tasks
-    .map(
-      (task) =>
-        `<div class="task"><input type="checkbox" ${task.status === 'done' ? 'checked' : ''} /><span>${task.label}</span><span class="badge">${task.status ?? 'todo'}</span></div>`
-    )
-    .join('');
+  const rows = tasks.map(
+    (task) => `<tr>
+        <td>${task.label}</td>
+        <td style="text-align:right;">${task.status ?? ''}</td>
+      </tr>`
+  );
+  const itemsRows = rows.length
+    ? rows.join('')
+    : `<tr><td colspan="2" style="text-align:center; color:#94a3b8;">Ni nalog za prikaz.</td></tr>`;
+  const notesBlock = buildNotesList(context.notes);
+  const commentBlock = context.comment
+    ? `<div class="offer-comment">
+        <h4>Izvedba</h4>
+        <p>${context.comment}</p>
+      </div>`
+    : '';
 
-  const body = `${header}
-    <div class="tasks">
-      <h3>Naloge</h3>
-      ${taskList}
-    </div>
-    ${buildNotesBlockHtml(context.notes)}
-    ${buildSignatureBlock({ leftLabel: 'Tehnik', rightLabel: 'Stranka' })}
-    ${buildFooterHtml(context.company)}`;
-
-  return wrapDocument('Delovni nalog', body);
+  return buildStandardDocument(context, {
+    docLabel: 'Delovni nalog',
+    pageTitle: 'Delovni nalog',
+    projectTitleFallback: 'Delovni nalog',
+    customerEmptyText: 'Podatki o stranki se prikažejo ob izdaji naloga.',
+    tableHeadRows: `<tr>
+        <th>Naloga</th>
+        <th style="text-align:right;">Status</th>
+      </tr>`,
+    tableBodyRows: itemsRows,
+    commentBlock,
+    notesBlock,
+  });
 }
 
 export function renderWorkOrderConfirmationPdf(context: DocumentPreviewContext) {
-  const header = buildHeaderHtml(context.company, {
-    title: 'Potrdilo delovnega naloga',
-    documentNumber: context.documentNumber,
-    issueDate: context.issueDate,
-    customer: context.customer,
-    projectTitle: context.projectTitle,
-  });
-
   const tasks = context.tasks ?? (context.items ?? []).map((item) => ({ label: item.name, status: 'done' as const }));
-  const taskList = tasks
-    .map(
-      (task) =>
-        `<div class="task" style="border-color:#d1fae5;background:#ecfdf3;"><span style="width:12px;height:12px;border-radius:50%;background:#22c55e;display:inline-block;"></span><span>${task.label}</span><span class="badge">${task.status ?? 'done'}</span></div>`
-    )
-    .join('');
+  const rows = tasks.map(
+    (task) => `<tr>
+        <td>${task.label}</td>
+        <td style="text-align:right;">${task.status ?? ''}</td>
+      </tr>`
+  );
+  const itemsRows = rows.length
+    ? rows.join('')
+    : `<tr><td colspan="2" style="text-align:center; color:#94a3b8;">Ni nalog za prikaz.</td></tr>`;
+  const notesBlock = buildNotesList(context.notes);
+  const confirmationText = `<div class="offer-comment">
+      <h4>Potrditev izvedbe</h4>
+      <p>Dela so bila izvedena skladno z dogovorjenimi specifikacijami.</p>
+    </div>`;
+  const extraSections = `${confirmationText}${buildSignatureBlock({ leftLabel: 'Izvajalec', rightLabel: 'Naročnik' })}`;
 
-  const body = `${header}
-    <div class="tasks">
-      <h3>Izvedene naloge</h3>
-      ${taskList}
-    </div>
-    ${buildNotesBlockHtml(context.notes)}
-    ${buildSignatureBlock({ leftLabel: 'Izvajalec', rightLabel: 'Naročnik' })}
-    ${buildFooterHtml(context.company)}`;
-
-  return wrapDocument('Potrdilo delovnega naloga', body);
+  return buildStandardDocument(context, {
+    docLabel: 'Potrdilo del. naloga',
+    pageTitle: 'Potrdilo delovnega naloga',
+    projectTitleFallback: 'Potrdilo delovnega naloga',
+    customerEmptyText: 'Podatki o stranki se prikažejo ob izdaji potrdila.',
+    tableHeadRows: `<tr>
+        <th>Naloga</th>
+        <th style="text-align:right;">Status</th>
+      </tr>`,
+    tableBodyRows: itemsRows,
+    notesBlock,
+    extraSections,
+  });
 }
 
 export function renderCreditNotePdf(context: DocumentPreviewContext) {
-  const header = buildHeaderHtml(context.company, {
-    title: 'Dobropis',
-    documentNumber: context.documentNumber,
-    issueDate: context.issueDate,
-    customer: context.customer,
-    projectTitle: context.projectTitle,
-  });
-
   const rows = (context.items ?? []).map((item) => {
     const unitPrice = -(item.unitPrice ?? 0);
     const total = -(item.total ?? (item.unitPrice ?? 0) * item.quantity);
@@ -525,31 +591,62 @@ export function renderCreditNotePdf(context: DocumentPreviewContext) {
       </tr>`;
   });
 
-  const totals = context.totals;
-  const totalsBlock = totals
-    ? `<div class="totals">
-        <div class="totals-row"><span>Osnova</span><span>${(-1 * (totals.subtotal ?? 0)).toFixed(2)} €</span></div>
-        <div class="totals-row"><span>DDV</span><span>${(-1 * (totals.vat ?? 0)).toFixed(2)} €</span></div>
-        <div class="totals-row"><span>Skupaj</span><span>${(-1 * (totals.total ?? 0)).toFixed(2)} €</span></div>
+  const itemsRows = rows.length
+    ? rows.join('')
+    : `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">Ni postavk za prikaz.</td></tr>`;
+
+  const totals = context.totals ?? {};
+  const totalRows = [
+    { label: 'Osnova brez DDV', value: -(totals.subtotal ?? 0) },
+    { label: 'DDV', value: -(totals.vat ?? 0) },
+    { label: 'Skupaj z DDV', value: -(totals.total ?? 0) },
+  ]
+    .map(
+      (row) => `<tr>
+        <td colspan="3" style="text-align:right; font-weight:600;">${row.label}</td>
+        <td style="text-align:right; font-weight:600;">${formatCurrency(row.value)}</td>
+      </tr>`,
+    )
+    .join('');
+
+  const referenceBlock = context.referenceNumber
+    ? `<div class="offer-comment">
+        <h4>Referenca računa</h4>
+        <p>${context.referenceNumber}</p>
       </div>`
     : '';
+  const notesBlock = buildNotesList(context.notes);
 
-  const reference = context.referenceNumber
-    ? `<div class="notes"><strong>Referenca racuna</strong><p class="muted">${context.referenceNumber}</p></div>`
-    : '';
+  return buildStandardDocument(context, {
+    docLabel: 'Dobropis',
+    pageTitle: 'Dobropis',
+    projectTitleFallback: 'Dobropis',
+    customerEmptyText: 'Podatki o stranki se prikažejo ob izdaji dobropisa.',
+    metaExtras: context.paymentTerms ? [`<p><span class="muted">Rok plačila:</span> ${context.paymentTerms}</p>`] : [],
+    tableHeadRows: `<tr>
+        <th>Postavka</th>
+        <th style="text-align:right;">Količina</th>
+        <th style="text-align:right;">Cena</th>
+        <th style="text-align:right;">Znesek</th>
+      </tr>`,
+    tableBodyRows: itemsRows,
+    tableFooterRows: totalRows,
+    commentBlock: referenceBlock,
+    notesBlock,
+  });
+}
 
-  const body = `${header}
-    ${reference}
-    <table style="margin-top:12px;">
-      <thead>
-        <tr><th>Postavka</th><th style="text-align:right;">Kolicina</th><th style="text-align:right;">Cena</th><th style="text-align:right;">Znesek</th></tr>
-      </thead>
-      <tbody>${rows.join('')}</tbody>
-    </table>
-    ${totalsBlock}
-    ${buildNotesBlockHtml(context.notes)}
-    ${buildSignatureBlock({ leftLabel: 'Izdal', rightLabel: 'Prejel' })}
-    ${buildFooterHtml(context.company)}`;
+const DOC_RENDERERS: Record<DocumentNumberingKind, (context: DocumentPreviewContext) => string> = {
+  OFFER: renderOfferPdf,
+  INVOICE: renderInvoicePdf,
+  PURCHASE_ORDER: renderPurchaseOrderPdf,
+  DELIVERY_NOTE: renderDeliveryNotePdf,
+  WORK_ORDER: renderWorkOrderPdf,
+  WORK_ORDER_CONFIRMATION: renderWorkOrderConfirmationPdf,
+  CREDIT_NOTE: renderCreditNotePdf,
+};
 
-  return wrapDocument('Dobropis', body);
+export function renderDocumentHtml(context: DocumentPreviewContext) {
+  const renderer = DOC_RENDERERS[context.docType] ?? renderOfferPdf;
+  return renderer(context);
 }

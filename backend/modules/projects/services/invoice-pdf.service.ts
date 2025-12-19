@@ -2,8 +2,9 @@ import QRCode from 'qrcode';
 import type { Types } from 'mongoose';
 import { ProjectModel, type ProjectDocument } from '../schemas/project';
 import { renderHtmlToPdf } from './html-pdf.service';
-import { renderInvoicePdf, type DocumentPreviewContext } from './document-renderers';
+import { renderDocumentHtml, type DocumentPreviewContext } from './document-renderers';
 import { getCompanySettings, getPdfDocumentSettings } from './pdf-settings.service';
+import { getSettings } from '../../settings/settings.service';
 
 export interface InvoiceVersion {
   _id: string;
@@ -40,13 +41,10 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
   if (!invoice) {
     throw new Error('Verzija računa ni najdena.');
   }
-  if (invoice.status !== 'issued') {
-    throw new Error('Račun še ni izdan.');
-  }
-
-  const [company, documentSettings] = await Promise.all([
+  const [company, documentSettings, globalSettings] = await Promise.all([
     getCompanySettings(),
     getPdfDocumentSettings('INVOICE'),
+    getSettings(),
   ]);
 
   const documentNumber = invoice.invoiceNumber ?? `${project.id}-${invoice.versionNumber}`;
@@ -91,10 +89,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
       }
     : undefined;
 
-  const companyProfile = {
-    ...company,
-    primaryColor: (company as any).primaryColor ?? '#0f62fe',
-  };
+  const companyProfile = buildCompanyProfile(company, globalSettings);
 
   const context = {
     docType: 'INVOICE',
@@ -111,7 +106,14 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
     paymentInfo,
   } as DocumentPreviewContext;
 
-  const html = renderInvoicePdf(context);
+  console.log('INVOICE EXPORT renderer', {
+    projectId,
+    invoiceVersionId,
+    hasLogo: !!companyProfile.logoUrl,
+    companyName: companyProfile.companyName,
+  });
+
+  const html = renderDocumentHtml(context);
   return renderHtmlToPdf(html);
 }
 
@@ -203,4 +205,31 @@ function buildUpnQrPayload(seed: PaymentSeed) {
     seed.purpose ?? '',
   ];
   return lines.join('\n');
+}
+
+function buildCompanyProfile(
+  company: Awaited<ReturnType<typeof getCompanySettings>>,
+  settings: Awaited<ReturnType<typeof getSettings>>,
+) {
+  const addressParts = [
+    settings.address,
+    [settings.postalCode, settings.city].filter(Boolean).join(' ').trim(),
+    settings.country,
+  ]
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter((value) => !!value);
+
+  return {
+    ...company,
+    companyName: settings.companyName || company.companyName,
+    address: addressParts.length ? addressParts.join('\n') : company.address,
+    email: settings.email || company.email,
+    phone: settings.phone || company.phone,
+    vatId: settings.vatId || company.vatId,
+    iban: settings.iban || company.iban,
+    directorName: settings.directorName || company.directorName,
+    logoUrl: settings.logoUrl || company.logoUrl,
+    primaryColor: settings.primaryColor || company.primaryColor || '#0f62fe',
+    website: settings.website || company.website,
+  };
 }
