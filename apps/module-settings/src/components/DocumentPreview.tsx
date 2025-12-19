@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Card } from '@aintel/ui';
-import { fetchOfferPdfPreview } from '../api';
-import type { OfferPdfPreviewPayload } from '../types';
+import type { ApiEnvelope, OfferPdfPreviewPayload } from '../types';
 
 interface DocumentPreviewProps {
   docType: OfferPdfPreviewPayload['docType'];
@@ -15,21 +14,58 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({ docType, visib
 
   useEffect(() => {
     if (!visible) return;
-    setLoading(true);
-    setError('');
-    fetchOfferPdfPreview('demo', { allowDemo: true, docType })
-      .then((payload) => {
+    const controller = new AbortController();
+    let mounted = true;
+
+    const loadPreview = async () => {
+      setLoading(true);
+      setError('');
+      setHtml('');
+      const params = new URLSearchParams({
+        docType,
+        allowDemo: '1',
+        ts: Date.now().toString(),
+      });
+      try {
+        const response = await fetch(`/api/offers/demo/pdf-preview?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error('Predogled ni na voljo.');
+        }
+        const payload = (await response.json()) as ApiEnvelope<OfferPdfPreviewPayload>;
+        if (!payload?.success || !payload.data) {
+          throw new Error(payload?.error ?? 'Predogled ni na voljo.');
+        }
         const parser = typeof DOMParser !== 'undefined' ? new DOMParser() : null;
         if (parser) {
-          const parsed = parser.parseFromString(payload.html, 'text/html');
+          const parsed = parser.parseFromString(payload.data.html, 'text/html');
           const styleBlock = parsed.querySelector('style')?.outerHTML ?? '';
-          setHtml(`${styleBlock}${parsed.body.innerHTML || payload.html}`);
+          if (mounted) {
+            setHtml(`${styleBlock}${parsed.body.innerHTML || payload.data.html}`);
+          }
           return;
         }
-        setHtml(payload.html);
-      })
-      .catch(() => setError('Predogled ni na voljo.'))
-      .finally(() => setLoading(false));
+        if (mounted) {
+          setHtml(payload.data.html);
+        }
+      } catch (previewError) {
+        if (!controller.signal.aborted && mounted) {
+          setError(previewError instanceof Error ? previewError.message : 'Predogled ni na voljo.');
+        }
+      } finally {
+        if (!controller.signal.aborted && mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadPreview();
+
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
   }, [docType, visible]);
 
   if (!visible) return null;

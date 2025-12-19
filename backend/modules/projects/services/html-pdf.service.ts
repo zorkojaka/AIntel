@@ -47,6 +47,7 @@ void ensureRenderer().catch(() => {
 export interface HtmlPdfOptions {
   format?: string;
   printBackground?: boolean;
+  preferCSSPageSize?: boolean;
   margin?: {
     top?: string;
     bottom?: string;
@@ -59,6 +60,7 @@ const DEFAULT_OPTIONS: HtmlPdfOptions = {
   format: 'A4',
   printBackground: true,
   margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
+  preferCSSPageSize: true,
 };
 
 export async function renderHtmlToPdf(html: string, options: HtmlPdfOptions = {}): Promise<Buffer> {

@@ -3,7 +3,6 @@ import { Button, Card, ColorPicker, FileUpload, Input } from '@aintel/ui';
 import { applySettingsTheme, saveSettings } from './api';
 import { DocumentPreview } from './components/DocumentPreview';
 import { DocumentSettingsTab } from './components/DocumentSettingsTab';
-import { OfferPreview } from './components/OfferPreview';
 import { useSettingsData } from './hooks/useSettings';
 import {
   DocumentTypeKey,
@@ -74,17 +73,6 @@ const sanitizeNoteDefaults = (
 
   return result;
 };
-
-const dummyProject = {
-  title: 'Pametna razsvetljava - ponudba',
-  description: 'Zamenjava svetil in integracija pametnega krmiljenja.',
-  items: [
-    { name: 'LED panel 60x60', quantity: 12, price: 85 },
-    { name: 'Monta za in konfiguracija', quantity: 8, price: 45 }
-  ]
-};
-
-type DummyProject = typeof dummyProject;
 
 const DEFAULT_NUMBER_PATTERNS: Record<DocumentTabKey, string> = {
   offer: 'PONUDBA-{YYYY}-{SEQ:000}',
@@ -180,34 +168,10 @@ export const SettingsPage: React.FC = () => {
   const activeNumberPattern = numberPatterns[activeDocumentTab];
   const activeNumberExample = numberExamples[activeDocumentTab];
 
-  const totalPreview = useMemo(
-    () => dummyProject.items.reduce((sum, item) => sum + item.quantity * item.price, 0),
-    []
-  );
-
   const notes = form.notes ?? [];
   const noteDefaultsByDoc = useMemo(
     () => sanitizeNoteDefaults(form.noteDefaultsByDoc, notes),
     [form.noteDefaultsByDoc, notes]
-  );
-
-  const offerDefaultNotes = useMemo(() => {
-    const defaults = noteDefaultsByDoc.offer ?? [];
-    const map = new Map(notes.map((note) => [note.id, note]));
-    return defaults
-      .map((id) => map.get(id))
-      .filter((note): note is NoteDto => Boolean(note));
-  }, [noteDefaultsByDoc, notes]);
-
-  const addressLines = useMemo(
-    () =>
-      [
-        form.address,
-        [form.postalCode, form.city].filter(Boolean).join(' ').trim(),
-      ]
-        .map((line) => line?.trim())
-        .filter((line) => !!line),
-    [form.address, form.postalCode, form.city]
   );
 
   const handleFieldChange = <K extends keyof Omit<SettingsDto, 'documentPrefix'>>(
@@ -386,21 +350,7 @@ export const SettingsPage: React.FC = () => {
             loading={loading}
             previewVisible={previewVisible}
             onTogglePreview={() => setPreviewVisible((prev) => !prev)}
-            preview={
-              activeDocumentTab === 'offer' ? (
-                <OfferPreview
-                  form={form}
-                  addressLines={addressLines}
-                  offerNumberExample={activeNumberExample}
-                  dummyProject={dummyProject}
-                  totalPreview={totalPreview}
-                  offerDefaultNotes={offerDefaultNotes}
-                  onUpdateField={(field, value) => handleFieldChange(field, value)}
-                />
-              ) : (
-                <DocumentPreview docType={DOCUMENT_PREVIEW_TYPES[activeDocumentTab]} visible={previewVisible} />
-              )
-            }
+            preview={<DocumentPreview docType={DOCUMENT_PREVIEW_TYPES[activeDocumentTab]} visible={previewVisible} />}
           />
         ) : (
           <Card title={activeDocumentMeta?.label ?? 'Dokument'}>

@@ -236,6 +236,7 @@ export async function buildOfferPdfPreviewPayload(
   options?: PreviewOptions,
 ): Promise<OfferPdfPreviewPayload> {
   const docType = normalizeDocType(options?.docType);
+  const isDemoRequest = offerVersionId === 'demo';
   const [company, documentSettings, numberingConfig, globalSettings] = await Promise.all([
     getCompanySettings(),
     getPdfDocumentSettings(docType),
@@ -244,24 +245,13 @@ export async function buildOfferPdfPreviewPayload(
   ]);
   let companyProfile = buildCompanyProfile(company, globalSettings);
 
-  const offerDoc = await OfferVersionModel.findById(offerVersionId).lean();
-  let offer: OfferVersion | null = offerDoc ? serializeOffer(offerDoc) : null;
+  let offer: OfferVersion | null = null;
   let project: PreviewProjectInfo | null = null;
 
-  if (offerDoc) {
-    const projectDoc = await ProjectModel.findOne({ id: offerDoc.projectId }).lean();
-    if (projectDoc) {
-      project = {
-        id: projectDoc.id,
-        code: projectDoc.code,
-        projectNumber: projectDoc.projectNumber,
-        title: projectDoc.title,
-        customerName: projectDoc.customer?.name ?? '',
-        customerAddress: projectDoc.customer?.address ?? '',
-        customerTaxId: projectDoc.customer?.taxId ?? '',
-      };
+  if (isDemoRequest) {
+    if (!options?.allowDemo) {
+      throw new Error('Demo predogled ni omogočen.');
     }
-  } else if (options?.allowDemo) {
     offer = buildDemoOffer();
     project = {
       id: 'PRJ-000',
@@ -272,6 +262,34 @@ export async function buildOfferPdfPreviewPayload(
       customerAddress: 'Glavna cesta 1, Ljubljana',
       customerTaxId: 'SI12345678',
     };
+  } else {
+    const offerDoc = await OfferVersionModel.findById(offerVersionId).lean();
+    if (offerDoc) {
+      offer = serializeOffer(offerDoc);
+      const projectDoc = await ProjectModel.findOne({ id: offerDoc.projectId }).lean();
+      if (projectDoc) {
+        project = {
+          id: projectDoc.id,
+          code: projectDoc.code,
+          projectNumber: projectDoc.projectNumber,
+          title: projectDoc.title,
+          customerName: projectDoc.customer?.name ?? '',
+          customerAddress: projectDoc.customer?.address ?? '',
+          customerTaxId: projectDoc.customer?.taxId ?? '',
+        };
+      }
+    } else if (options?.allowDemo) {
+      offer = buildDemoOffer();
+      project = {
+        id: 'PRJ-000',
+        code: 'PRJ-000',
+        projectNumber: 0,
+        title: 'Demo projekt',
+        customerName: 'Demo naročnik',
+        customerAddress: 'Glavna cesta 1, Ljubljana',
+        customerTaxId: 'SI12345678',
+      };
+    }
   }
 
   if (!offer) {

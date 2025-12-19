@@ -48,9 +48,9 @@ export interface DocumentPreviewContext {
 
 const baseStyles = `
   * { box-sizing: border-box; }
-  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; color: #111827; background: #f8fafc; margin: 0; padding: 0; }
-  @page { margin: 24px; }
-  .page { width: 794px; min-height: 1122px; margin: 0 auto; background: #fff; padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); border-radius: 12px; display:flex; flex-direction:column; }
+  html, body { font-family: 'Inter', system-ui, -apple-system, sans-serif; color: #111827; background: #fff; margin: 0; padding: 0; }
+  @page { margin: 24px; background: #fff; }
+  .page { width: 794px; min-height: 1122px; margin: 0 auto; background: #fff; padding: 48px; display:flex; flex-direction:column; }
   h1, h2, h3, h4 { margin: 0; }
   .muted { color: #6b7280; }
   table { width: 100%; border-collapse: collapse; page-break-inside:auto; }
@@ -68,33 +68,36 @@ const baseStyles = `
   .tasks { margin-top: 12px; }
   .task { padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
   .badge { display: inline-flex; padding: 4px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca; font-size: 12px; }
-  .offer-preview { display:flex; flex-direction:column; gap:24px; flex:1; }
-  .offer-header { display:flex; justify-content:space-between; align-items:flex-start; gap:32px; break-inside:avoid; }
-  .offer-logo { width:180px; height:80px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .offer-preview { display:flex; flex-direction:column; gap:24px; flex:1; min-height:100%; }
+  .offer-header { display:flex; justify-content:space-between; align-items:flex-start; gap:32px; break-inside:avoid; padding:12px 0 20px; }
+  .offer-logo { width:180px; height:80px; display:flex; align-items:center; justify-content:flex-start; overflow:hidden; border:none; background:none; padding:12px 0; }
   .offer-logo img { max-width:100%; max-height:100%; object-fit:contain; }
-  .offer-company { text-align:right; font-size:13px; color:#475569; }
-  .offer-company p { margin:4px 0; }
+  .offer-company { text-align:right; font-size:13px; color:#475569; line-height:1.35; }
+  .offer-company p { margin:2px 0; }
   .offer-company-name { font-size:22px; font-weight:600; margin-bottom:4px; }
   .offer-meta-grid { display:grid; gap:24px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); break-inside:avoid; }
   .offer-card { border:1px solid #e2e8f0; border-radius:14px; padding:16px; background:#fff; break-inside:avoid; }
-  .offer-card.primary { border-color: rgba(59,130,246,0.35); background: #f8fafc; }
   .offer-card h4 { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:#475569; margin-bottom:8px; }
   .offer-card p { margin:4px 0; font-size:13px; }
+  .offer-content { display:flex; flex-direction:column; flex:1; min-height:100%; padding-bottom:32px; }
   .offer-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:12px; break-inside:auto; }
   .offer-table th { background:#f1f5f9; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:0.05em; color:#475569; }
   .offer-table th, .offer-table td { border:1px solid #e2e8f0; padding:10px 12px; }
   .offer-table td { color:#0f172a; }
+  .offer-project-title { margin-top:28px; }
   .offer-comment { margin-top:16px; border-radius:12px; border:1px solid rgba(148,163,184,0.5); padding:14px 18px; background:#f8fafc; break-inside:avoid; }
   .offer-comment h4 { font-size:14px; font-weight:600; margin-bottom:6px; color:#0f172a; }
   .offer-comment p { margin:0; color:#475569; }
-  .offer-signature { width:45%; min-width:280px; margin-left:auto; text-align:right; color:#475569; break-inside:avoid; }
-  .offer-signature-line { border-bottom:1px solid #cbd5e1; margin-top:24px; height:1px; }
-  .offer-notes { margin-top:24px; break-inside:avoid; }
+  .offer-notes { margin-top:16px; break-inside:avoid; }
   .offer-notes ul { margin:8px 0 0; padding-left:20px; }
   .offer-notes li { font-size:12px; color:#475569; margin-bottom:4px; }
-  .offer-footer { border-top:1px solid #e2e8f0; margin-top:auto; padding-top:12px; display:flex; flex-direction:column; gap:4px; break-inside:avoid; }
-  .offer-contact-line { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; font-size:12px; color:#475569; }
-  .offer-dot { color:#cbd5e1; margin:0 6px; }
+  .offer-bottom { margin-top:auto; display:flex; flex-direction:column; gap:20px; }
+  .offer-signature { max-width:280px; margin-left:auto; text-align:right; color:#475569; break-inside:avoid; font-size:11px; padding-top:18px; }
+  .offer-signature p { margin:4px 0; }
+  .offer-signature-line { border-bottom:1px solid #cbd5e1; margin-top:18px; margin-left:auto; width:220px; }
+  .offer-footer { border-top:1px solid #e2e8f0; margin-top:0; padding-top:16px; display:flex; flex-direction:column; gap:4px; break-inside:avoid; }
+  .offer-contact-line { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; font-size:12px; color:#475569; }
+  .offer-dot { color:#cbd5e1; margin:0 4px; }
 `;
 
 const currencyFormatter = new Intl.NumberFormat('sl-SI', { style: 'currency', currency: 'EUR' });
@@ -205,16 +208,13 @@ export function renderOfferPdf(context: DocumentPreviewContext) {
     context.company.vatId ? `<span>DDV: ${context.company.vatId}</span>` : null,
     context.company.iban ? `<span>IBAN: ${context.company.iban}</span>` : null,
   ].filter(Boolean) as string[];
-  const contactLine = contactItems.length
-    ? `<div class="offer-contact-line">${contactItems.join('<span class="offer-dot">?</span>')}</div>`
-    : '';
-  const financeLine = financeItems.length
-    ? `<div class="offer-contact-line">${financeItems.join('<span class="offer-dot">?</span>')}</div>`
-    : '';
+  const dotSeparator = '<span class="offer-dot">&bull;</span>';
+  const contactLine = contactItems.length ? `<div class="offer-contact-line">${contactItems.join(dotSeparator)}</div>` : '';
+  const financeLine = financeItems.length ? `<div class="offer-contact-line">${financeItems.join(dotSeparator)}</div>` : '';
 
   const customerLines = context.customer
     ? [
-        context.customer.taxId ? `<p>Dav?na: ${context.customer.taxId}</p>` : '',
+        context.customer.taxId ? `<p>Davčna: ${context.customer.taxId}</p>` : '',
         context.customer.name ? `<p>${context.customer.name}</p>` : '',
         context.customer.address
           ? context.customer.address
@@ -223,18 +223,18 @@ export function renderOfferPdf(context: DocumentPreviewContext) {
               .join('')
           : '',
       ].join('')
-    : `<p class="muted">Podatki o stranki se prika?ejo ob izdaji realne ponudbe.</p>`;
+    : `<p class="muted">Podatki o stranki se prikažejo ob izdaji realne ponudbe.</p>`;
 
   const metaRows = [
     `<p><span class="muted">Dokument:</span> Ponudba</p>`,
-    `<p><span class="muted">?t.:</span> ${context.documentNumber}</p>`,
+    `<p><span class="muted">Št.:</span> ${context.documentNumber}</p>`,
     `<p><span class="muted">Datum:</span> ${context.issueDate}</p>`,
   ];
   if (context.validUntil) {
     metaRows.push(`<p><span class="muted">Veljavnost:</span> ${new Date(context.validUntil).toLocaleDateString('sl-SI')}</p>`);
   }
   if (context.paymentTerms) {
-    metaRows.push(`<p><span class="muted">Rok pla?ila:</span> ${context.paymentTerms}</p>`);
+    metaRows.push(`<p><span class="muted">Rok plačila:</span> ${context.paymentTerms}</p>`);
   }
 
   const rows = (context.items ?? []).map((item) => {
@@ -284,62 +284,60 @@ export function renderOfferPdf(context: DocumentPreviewContext) {
   const signatureName = context.company.directorName
     ? `Direktor: ${context.company.directorName}`
     : 'Dodajte direktorja v nastavitvah podjetja.';
-  const customerSubtitle = context.customer?.name
-    ? `${context.customer.name}${context.customer.address ? ` ? ${context.customer.address}` : ''}`
-    : 'Podrobnosti projekta bodo dodane ob izvozu.';
 
   const body = `<div class="offer-preview">
-      <div class="offer-header">
-        <div class="offer-logo">${logoBlock}</div>
-        <div class="offer-company">
-          <p class="offer-company-name" style="color:${brandColor};">${context.company.companyName}</p>
-          <p class="muted" style="font-size:10px;margin:0;">NEW-TEMPLATE-RENDERER</p>
-          ${addressHtml}
+      <div class="offer-content">
+        <div class="offer-header">
+          <div class="offer-logo">${logoBlock}</div>
+          <div class="offer-company">
+            <p class="offer-company-name" style="color:${brandColor};">${context.company.companyName}</p>
+            ${addressHtml}
+          </div>
         </div>
-      </div>
 
-      <div class="offer-meta-grid">
-        <div class="offer-card primary">
-          <h4>Stranka</h4>
-          ${customerLines}
+        <div class="offer-meta-grid">
+          <div class="offer-card">
+            <h4>Stranka</h4>
+            ${customerLines}
+          </div>
+          <div class="offer-card">
+            <h4>Dokument</h4>
+            ${metaRows.join('')}
+          </div>
         </div>
-        <div class="offer-card">
-          <h4>Dokument</h4>
-          ${metaRows.join('')}
+
+        <div class="offer-project-title">
+          <h3 style="font-size:18px; font-weight:600; margin-bottom:4px;">${context.projectTitle ?? 'Predmet ponudbe'}</h3>
         </div>
-      </div>
 
-      <div>
-        <h3 style="font-size:18px; font-weight:600; margin-bottom:4px;">${context.projectTitle ?? 'Predmet ponudbe'}</h3>
-        <p class="muted">${customerSubtitle}</p>
-      </div>
+        <table class="offer-table">
+          <thead>
+            <tr>
+              <th>Postavka</th>
+              <th style="text-align:right;">Količina</th>
+              <th style="text-align:right;">Cena</th>
+              <th style="text-align:right;">Znesek</th>
+            </tr>
+          </thead>
+          <tbody>${itemsRows}</tbody>
+          <tfoot>${totalRows}</tfoot>
+        </table>
 
-      <table class="offer-table">
-        <thead>
-          <tr>
-            <th>Postavka</th>
-            <th style="text-align:right;">Koli?ina</th>
-            <th style="text-align:right;">Cena</th>
-            <th style="text-align:right;">Znesek</th>
-          </tr>
-        </thead>
-        <tbody>${itemsRows}</tbody>
-        <tfoot>${totalRows}</tfoot>
-      </table>
+        ${commentBlock}
+        ${notesBlock}
 
-      ${commentBlock}
+        <div class="offer-bottom">
+          <div class="offer-signature">
+            <p style="font-weight:600;">Podpis</p>
+            <p>${signatureName}</p>
+            <div class="offer-signature-line"></div>
+          </div>
 
-      <div class="offer-signature">
-        <p style="font-weight:600;">Podpis</p>
-        <p>${signatureName}</p>
-        <div class="offer-signature-line"></div>
-      </div>
-
-      ${notesBlock}
-
-      <div class="offer-footer">
-        ${contactLine}
-        ${financeLine}
+          <div class="offer-footer">
+            ${contactLine}
+            ${financeLine}
+          </div>
+        </div>
       </div>
     </div>`;
 
