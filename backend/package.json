@@ -8,14 +8,17 @@
     "dev": "ts-node-dev --respawn --transpile-only server.ts",
     "build": "tsc",
     "seed:cenik": "ts-node scripts/seed-cenik.ts",
-    "seed:settings": "ts-node scripts/seed-settings.ts"
+    "seed:settings": "ts-node scripts/seed-settings.ts",
+    "pdf:smoke": "ts-node --transpile-only scripts/pdf-smoke.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.18.2",
     "mongoose": "^7.5.0",
-    "pdfkit": "^0.15.0"
+    "pdfkit": "^0.15.0",
+    "playwright": "^1.57.0",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@types/cors": "^2.8.18",

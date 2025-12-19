@@ -1,6 +1,22 @@
-import type { DocumentNumberingConfig } from './Settings';
+import type { DocumentNumberingConfig, DocumentTypeKey } from './Settings';
 
 export const DEFAULT_OFFER_NUMBER_PATTERN = 'PONUDBA-{YYYY}-{SEQ:000}';
+export const DEFAULT_INVOICE_NUMBER_PATTERN = 'RACUN-{YYYY}-{SEQ:000}';
+export const DEFAULT_PURCHASE_ORDER_PATTERN = 'NAROCILO-{YYYY}-{SEQ:000}';
+export const DEFAULT_DELIVERY_NOTE_PATTERN = 'DOBAVNICA-{YYYY}-{SEQ:000}';
+export const DEFAULT_WORK_ORDER_PATTERN = 'DELO-{YYYY}-{SEQ:000}';
+export const DEFAULT_WORK_ORDER_CONFIRMATION_PATTERN = 'POTRDILO-{YYYY}-{SEQ:000}';
+export const DEFAULT_CREDIT_NOTE_PATTERN = 'DOBROPIS-{YYYY}-{SEQ:000}';
+
+const DEFAULT_PATTERNS: Record<DocumentTypeKey, string> = {
+  offer: DEFAULT_OFFER_NUMBER_PATTERN,
+  invoice: DEFAULT_INVOICE_NUMBER_PATTERN,
+  materialOrder: DEFAULT_PURCHASE_ORDER_PATTERN,
+  deliveryNote: DEFAULT_DELIVERY_NOTE_PATTERN,
+  workOrder: DEFAULT_WORK_ORDER_PATTERN,
+  workOrderConfirmation: DEFAULT_WORK_ORDER_CONFIRMATION_PATTERN,
+  creditNote: DEFAULT_CREDIT_NOTE_PATTERN,
+};
 const TOKEN_REGEX = /\{([^}]+)\}/g;
 const MAX_PATTERN_LENGTH = 80;
 
@@ -13,6 +29,10 @@ function normalizeSeqToken(token: string) {
     return '{SEQ:000}';
   }
   return `{SEQ:${paddingRaw}}`;
+}
+
+export function getDefaultPattern(docType: DocumentTypeKey): string {
+  return DEFAULT_PATTERNS[docType] ?? DEFAULT_OFFER_NUMBER_PATTERN;
 }
 
 export function normalizeNumberPattern(input?: string | null, fallback = DEFAULT_OFFER_NUMBER_PATTERN) {
@@ -111,8 +131,12 @@ export function formatDocumentNumber(
   });
 }
 
-export function ensureOfferNumberingConfig(config?: DocumentNumberingConfig | null): DocumentNumberingConfig {
-  const pattern = normalizeNumberPattern(config?.pattern);
+export function ensureDocumentNumberingConfig(
+  docType: DocumentTypeKey,
+  config?: DocumentNumberingConfig | null,
+): DocumentNumberingConfig {
+  const fallback = getDefaultPattern(docType);
+  const pattern = normalizeNumberPattern(config?.pattern, fallback);
   const reset = config?.reset === 'never' ? 'never' : 'yearly';
   const safeYearOverride =
     typeof config?.yearOverride === 'number' && Number.isFinite(config.yearOverride) ? config.yearOverride : undefined;
@@ -128,3 +152,6 @@ export function ensureOfferNumberingConfig(config?: DocumentNumberingConfig | nu
     seqOverride: safeSeqOverride,
   };
 }
+
+export const ensureOfferNumberingConfig = (config?: DocumentNumberingConfig | null) =>
+  ensureDocumentNumberingConfig('offer', config);

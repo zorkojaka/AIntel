@@ -1,6 +1,13 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
-export type PdfDocumentType = 'OFFER';
+export type PdfDocumentType =
+  | 'OFFER'
+  | 'INVOICE'
+  | 'PURCHASE_ORDER'
+  | 'DELIVERY_NOTE'
+  | 'WORK_ORDER'
+  | 'WORK_ORDER_CONFIRMATION'
+  | 'CREDIT_NOTE';
 
 export interface PdfCompanySettings {
   companyName: string;

@@ -6,13 +6,8 @@ import https from 'https';
 import type { OfferLineItem, OfferStatus, OfferVersion } from '../../../../shared/types/offers';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { ProductModel } from '../../cenik/product.model';
-import { ProjectModel, type ProjectDocument } from '../schemas/project';
 import { renderHtmlToPdf } from '../services/html-pdf.service';
-import {
-  buildOfferTemplateTokens,
-  getDefaultTemplate,
-  renderTemplateContent,
-} from '../services/template-render.service';
+import { buildOfferPdfPreviewPayload } from '../services/offer-pdf-preview.service';
 import { generateOfferDocumentNumber } from '../services/document-numbering.service';
 
 function clampNumber(value: unknown, fallback = 0, min = 0) {
@@ -366,22 +361,19 @@ export async function exportOfferPdf(req: Request, res: Response) {
     return res.fail('Ponudba ni najdena.', 404);
   }
 
-  const canUseTemplate = includeOffer && !includeProject;
-  if (canUseTemplate) {
+  if (includeOffer && !includeProject) {
+    console.log('OFFER EXPORT: NEW renderer', { projectId, offerVersionId });
     try {
-      const project = (await ProjectModel.findOne({ id: projectId }).lean()) as ProjectDocument | null;
-      const template = project ? getDefaultTemplate(project, 'offer') : null;
-      if (project && template) {
-        const tokens = buildOfferTemplateTokens(project, offer);
-        const html = renderTemplateContent(template.content, tokens);
-        const buffer = await renderHtmlToPdf(html);
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="offer-${offer._id}.pdf"`);
-        res.end(buffer);
-        return;
-      }
+      const previewPayload = await buildOfferPdfPreviewPayload(offerVersionId, { docType: 'OFFER' });
+      const buffer = await renderHtmlToPdf(previewPayload.html);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="offer-${offer._id}.pdf"`);
+      res.end(buffer);
+      return;
     } catch (error) {
-      console.error('Offer template render failed', error);
+      console.error('Offer renderer failed', error);
+      res.fail('Izvoz ponudbe ni uspel. Poskusite znova.', 500);
+      return;
     }
   }
 

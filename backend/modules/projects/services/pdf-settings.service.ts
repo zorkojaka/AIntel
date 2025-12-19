@@ -9,7 +9,73 @@ import {
   PdfDocumentType,
 } from '../schemas/pdf-settings';
 
-const ALLOWED_DOC_TYPES: PdfDocumentType[] = ['OFFER'];
+const ALLOWED_DOC_TYPES: PdfDocumentType[] = [
+  'OFFER',
+  'INVOICE',
+  'PURCHASE_ORDER',
+  'DELIVERY_NOTE',
+  'WORK_ORDER',
+  'WORK_ORDER_CONFIRMATION',
+  'CREDIT_NOTE',
+];
+
+const DOC_DEFAULTS: Record<PdfDocumentType, PdfDocumentSettings> = {
+  OFFER: DEFAULT_DOCUMENT_SETTINGS,
+  INVOICE: {
+    ...DEFAULT_DOCUMENT_SETTINGS,
+    docType: 'INVOICE',
+    numberingRule: { ...DEFAULT_DOCUMENT_SETTINGS.numberingRule, prefix: 'RAC' },
+    defaultTexts: {
+      paymentTerms: 'Placilo v 8 dneh po izstavitvi racuna.',
+      disclaimer: 'Racun je izdan na podlagi izvedenih storitev.',
+    },
+  },
+  PURCHASE_ORDER: {
+    ...DEFAULT_DOCUMENT_SETTINGS,
+    docType: 'PURCHASE_ORDER',
+    numberingRule: { ...DEFAULT_DOCUMENT_SETTINGS.numberingRule, prefix: 'NOR' },
+    defaultTexts: {
+      paymentTerms: '',
+      disclaimer: 'Narocilo velja ob pisni potrditvi.',
+    },
+  },
+  DELIVERY_NOTE: {
+    ...DEFAULT_DOCUMENT_SETTINGS,
+    docType: 'DELIVERY_NOTE',
+    numberingRule: { ...DEFAULT_DOCUMENT_SETTINGS.numberingRule, prefix: 'DOB' },
+    defaultTexts: {
+      paymentTerms: '',
+      disclaimer: 'Prevzem potrjuje kolicine brez cen.',
+    },
+  },
+  WORK_ORDER: {
+    ...DEFAULT_DOCUMENT_SETTINGS,
+    docType: 'WORK_ORDER',
+    numberingRule: { ...DEFAULT_DOCUMENT_SETTINGS.numberingRule, prefix: 'DEL' },
+    defaultTexts: {
+      paymentTerms: '',
+      disclaimer: 'Delovni nalog zajema dogovorjene naloge.',
+    },
+  },
+  WORK_ORDER_CONFIRMATION: {
+    ...DEFAULT_DOCUMENT_SETTINGS,
+    docType: 'WORK_ORDER_CONFIRMATION',
+    numberingRule: { ...DEFAULT_DOCUMENT_SETTINGS.numberingRule, prefix: 'POT' },
+    defaultTexts: {
+      paymentTerms: '',
+      disclaimer: 'Potrdilo delovnega naloga potrjuje izvedbo.',
+    },
+  },
+  CREDIT_NOTE: {
+    ...DEFAULT_DOCUMENT_SETTINGS,
+    docType: 'CREDIT_NOTE',
+    numberingRule: { ...DEFAULT_DOCUMENT_SETTINGS.numberingRule, prefix: 'DOBR' },
+    defaultTexts: {
+      paymentTerms: '',
+      disclaimer: 'Dobropis zmanjsuje znesek izdanega racuna.',
+    },
+  },
+};
 
 function normalizeString(value: unknown) {
   if (typeof value === 'string') {
@@ -104,18 +170,18 @@ export async function getPdfDocumentSettings(docType?: string) {
   const normalizedType = ensureDocType(docType);
   const existing =
     (await PdfDocumentSettingsModel.findOne({ docType: normalizedType }).lean()) ??
-    (await PdfDocumentSettingsModel.create({ ...DEFAULT_DOCUMENT_SETTINGS, docType: normalizedType }).then((doc) => doc.toObject()));
+    (await PdfDocumentSettingsModel.create({ ...DOC_DEFAULTS[normalizedType], docType: normalizedType }).then((doc) => doc.toObject()));
 
   return {
-    ...DEFAULT_DOCUMENT_SETTINGS,
+    ...DOC_DEFAULTS[normalizedType],
     ...existing,
     docType: normalizedType,
     numberingRule: {
-      ...DEFAULT_DOCUMENT_SETTINGS.numberingRule,
+      ...DOC_DEFAULTS[normalizedType].numberingRule,
       ...(existing.numberingRule ?? {}),
     },
     defaultTexts: {
-      ...DEFAULT_DOCUMENT_SETTINGS.defaultTexts,
+      ...DOC_DEFAULTS[normalizedType].defaultTexts,
       ...(existing.defaultTexts ?? {}),
     },
   };
@@ -126,15 +192,15 @@ export async function updatePdfDocumentSettings(docType: string | undefined, pay
   const sanitized = sanitizeDocumentPayload(payload);
   const doc =
     (await PdfDocumentSettingsModel.findOne({ docType: normalizedType })) ??
-    new PdfDocumentSettingsModel({ ...DEFAULT_DOCUMENT_SETTINGS, docType: normalizedType });
+    new PdfDocumentSettingsModel({ ...DOC_DEFAULTS[normalizedType], docType: normalizedType });
 
   doc.numberingRule = {
-    ...(doc.numberingRule ?? DEFAULT_DOCUMENT_SETTINGS.numberingRule),
+    ...(doc.numberingRule ?? DOC_DEFAULTS[normalizedType].numberingRule),
     ...(sanitized.numberingRule ?? {}),
   };
 
   doc.defaultTexts = {
-    ...(doc.defaultTexts ?? DEFAULT_DOCUMENT_SETTINGS.defaultTexts),
+    ...(doc.defaultTexts ?? DOC_DEFAULTS[normalizedType].defaultTexts),
     ...(sanitized.defaultTexts ?? {}),
   };
 

@@ -12,6 +12,15 @@ import {
 import type { RequirementTemplateGroup, RequirementTemplateVariant, OfferGenerationRule } from '@aintel/shared/types/project';
 
 const DEFAULT_NUMBER_PATTERN = 'PONUDBA-{YYYY}-{SEQ:000}';
+const DEFAULT_PATTERNS: Record<DocumentTypeKey, string> = {
+  offer: DEFAULT_NUMBER_PATTERN,
+  invoice: 'RACUN-{YYYY}-{SEQ:000}',
+  materialOrder: 'NAROCILO-{YYYY}-{SEQ:000}',
+  deliveryNote: 'DOBAVNICA-{YYYY}-{SEQ:000}',
+  workOrder: 'DELO-{YYYY}-{SEQ:000}',
+  workOrderConfirmation: 'POTRDILO-{YYYY}-{SEQ:000}',
+  creditNote: 'DOBROPIS-{YYYY}-{SEQ:000}',
+};
 
 const DOCUMENT_TYPE_KEYS: DocumentTypeKey[] = [
   'offer',
@@ -83,15 +92,34 @@ function mergeDocumentNumbering(
   partial: SettingsDto['documentNumbering'] | undefined,
   documentPrefix: SettingsDto['documentPrefix']
 ): SettingsDto['documentNumbering'] {
-  const offerConfig = partial?.offer;
-  return {
-    offer: {
-      pattern: offerConfig?.pattern?.trim() || buildPatternFromPrefix(documentPrefix.offer),
-      reset: offerConfig?.reset ?? 'yearly',
-      yearOverride: offerConfig?.yearOverride ?? null,
-      seqOverride: offerConfig?.seqOverride ?? null,
-    },
+  const resolvePattern = (docType: DocumentTypeKey) => {
+    switch (docType) {
+      case 'offer':
+        return buildPatternFromPrefix(documentPrefix.offer);
+      case 'invoice':
+        return buildPatternFromPrefix(documentPrefix.invoice);
+      case 'materialOrder':
+        return buildPatternFromPrefix(documentPrefix.order);
+      case 'deliveryNote':
+        return buildPatternFromPrefix(documentPrefix.deliveryNote);
+      case 'workOrder':
+        return buildPatternFromPrefix(documentPrefix.workOrder);
+      default:
+        return DEFAULT_PATTERNS[docType] ?? DEFAULT_NUMBER_PATTERN;
+    }
   };
+
+  const result = {} as SettingsDto['documentNumbering'];
+  DOCUMENT_TYPE_KEYS.forEach((docType) => {
+    const raw = partial?.[docType];
+    result[docType] = {
+      pattern: raw?.pattern?.trim() || resolvePattern(docType),
+      reset: raw?.reset ?? 'yearly',
+      yearOverride: raw?.yearOverride ?? null,
+      seqOverride: raw?.seqOverride ?? null,
+    };
+  });
+  return result;
 }
 
 export const DEFAULT_SETTINGS: SettingsDto = {
@@ -114,7 +142,43 @@ export const DEFAULT_SETTINGS: SettingsDto = {
   },
   documentNumbering: {
     offer: {
-      pattern: DEFAULT_NUMBER_PATTERN,
+      pattern: DEFAULT_PATTERNS.offer,
+      reset: 'yearly',
+      yearOverride: null,
+      seqOverride: null,
+    },
+    invoice: {
+      pattern: DEFAULT_PATTERNS.invoice,
+      reset: 'yearly',
+      yearOverride: null,
+      seqOverride: null,
+    },
+    materialOrder: {
+      pattern: DEFAULT_PATTERNS.materialOrder,
+      reset: 'yearly',
+      yearOverride: null,
+      seqOverride: null,
+    },
+    deliveryNote: {
+      pattern: DEFAULT_PATTERNS.deliveryNote,
+      reset: 'yearly',
+      yearOverride: null,
+      seqOverride: null,
+    },
+    workOrder: {
+      pattern: DEFAULT_PATTERNS.workOrder,
+      reset: 'yearly',
+      yearOverride: null,
+      seqOverride: null,
+    },
+    workOrderConfirmation: {
+      pattern: DEFAULT_PATTERNS.workOrderConfirmation,
+      reset: 'yearly',
+      yearOverride: null,
+      seqOverride: null,
+    },
+    creditNote: {
+      pattern: DEFAULT_PATTERNS.creditNote,
       reset: 'yearly',
       yearOverride: null,
       seqOverride: null,

@@ -61,8 +61,12 @@ export async function getOfferPdfPreviewController(req: Request, res: Response, 
     const allowDemo =
       req.query.fallback === 'demo' ||
       req.query.allowDemo === '1' ||
-      req.query.allowDemo === 'true' ||
-      offerVersionId === 'demo';
+      req.query.allowDemo === 'true';
+
+    if (offerVersionId === 'demo' && !allowDemo) {
+      return res.fail('Demo predogled ni omogočen.', 400);
+    }
+
     const payload = await buildOfferPdfPreviewPayload(offerVersionId, { docType, allowDemo });
     res.success(payload);
   } catch (error) {

@@ -49,6 +49,12 @@ export interface DocumentNumberingConfig {
 
 export interface DocumentNumberingSettings {
   offer?: DocumentNumberingConfig;
+  invoice?: DocumentNumberingConfig;
+  materialOrder?: DocumentNumberingConfig;
+  deliveryNote?: DocumentNumberingConfig;
+  workOrder?: DocumentNumberingConfig;
+  workOrderConfirmation?: DocumentNumberingConfig;
+  creditNote?: DocumentNumberingConfig;
 }
 
 export interface Settings {
@@ -143,6 +149,12 @@ const DocumentNumberingConfigSchema = new Schema<DocumentNumberingConfig>(
 const DocumentNumberingSchema = new Schema<DocumentNumberingSettings>(
   {
     offer: { type: DocumentNumberingConfigSchema, default: undefined },
+    invoice: { type: DocumentNumberingConfigSchema, default: undefined },
+    materialOrder: { type: DocumentNumberingConfigSchema, default: undefined },
+    deliveryNote: { type: DocumentNumberingConfigSchema, default: undefined },
+    workOrder: { type: DocumentNumberingConfigSchema, default: undefined },
+    workOrderConfirmation: { type: DocumentNumberingConfigSchema, default: undefined },
+    creditNote: { type: DocumentNumberingConfigSchema, default: undefined },
   },
   { _id: false }
 );
