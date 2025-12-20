@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Button } from "./ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Card } from "./ui/card";
-import type { Item } from "../domains/requirements/ItemsTable";
 import { OfferVersion } from "../domains/offers/OfferVersionCard";
 import type { WorkOrder as LogisticsWorkOrder } from "@aintel/shared/types/logistics";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
@@ -42,6 +41,7 @@ const ARROW_CUT_PX = 12;
 const ARROW_OVERLAP_PX = 12;
 const ARROW_RIGHT_PADDING_PX = 16;
 type WorkspaceTabValue = "items" | "offers" | "logistics" | "execution" | "closing";
+type WorkspaceCSSVars = CSSProperties & { "--brand-color"?: string };
 const STEP_ORDER: StepKey[] = ["requirements", "offers", "logistics", "execution", "invoice"];
 const STEP_BY_TAB: Record<WorkspaceTabValue, StepKey> = {
   items: "requirements",
@@ -62,16 +62,14 @@ const buildArrowClipPath = (isLast: boolean) =>
   isLast
     ? "polygon(0 0, 100% 0, 100% 100%, 0 100%)"
     : `polygon(0 0, calc(100% - ${ARROW_CUT_PX}px) 0, 100% 50%, calc(100% - ${ARROW_CUT_PX}px) 100%, 0 100%)`;
-import {
-  RequirementsPanel,
-  ItemFormState,
-  RequirementRow,
-  CatalogProduct,
-  CatalogTarget,
-} from "../domains/requirements/RequirementsPanel";
+import { RequirementsPanel, RequirementRow } from "../domains/requirements/RequirementsPanel";
 import { OffersPanel } from "../domains/offers/OffersPanel";
 import { ExecutionPanel } from "../domains/execution/ExecutionPanel";
 import { ClosingPanel } from "../domains/closing/ClosingPanel";
+
+const serializeRequirements = (list: RequirementRow[] | null | undefined) => JSON.stringify(list ?? []);
+const areRequirementListsEqual = (a?: RequirementRow[], b?: RequirementRow[]) =>
+  serializeRequirements(a) === serializeRequirements(b);
 
 type ProjectCrmClient = {
   name?: string | null;
@@ -114,7 +112,6 @@ export function ProjectWorkspace({
   const { project, loading, error, refresh, setProject } = useProject(projectId, initialProject ?? null);
   const [activeTab, setActiveTab] = useState<WorkspaceTabValue>("items");
   const [overrideStep, setOverrideStep] = useState<StepKey | null>(null);
-  const [items, setItems] = useState<Item[]>(project?.items ?? []);
   const [offers, setOffers] = useState<OfferVersion[]>(project?.offers ?? []);
   const [activeOffer, setActiveOffer] = useState<ProjectOffer | null>(null);
   const [offerItems, setOfferItems] = useState<ProjectOfferItem[]>([]);
@@ -135,32 +132,12 @@ export function ProjectWorkspace({
   const [requirements, setRequirements] = useState<RequirementRow[]>(() =>
     Array.isArray(project?.requirements) ? project.requirements : []
   );
-  const [isItemDialogOpen, setItemDialogOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<Item | null>(null);
-  const [itemContext, setItemContext] = useState<"project" | "offer">("project");
-  const [itemForm, setItemForm] = useState<ItemFormState>({
-    name: "",
-    sku: "",
-    unit: "kos",
-    quantity: 1,
-    price: 0,
-    discount: 0,
-    vatRate: 22,
-    description: "",
-    category: "material",
-  });
-  const [isCatalogDialogOpen, setCatalogDialogOpen] = useState(false);
-  const [catalogItems, setCatalogItems] = useState<CatalogProduct[]>([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const [catalogSearch, setCatalogSearch] = useState("");
-  const [selectedCatalogProduct, setSelectedCatalogProduct] = useState<CatalogProduct | null>(null);
-  const [catalogQuantity, setCatalogQuantity] = useState(1);
-  const [catalogDiscount, setCatalogDiscount] = useState(0);
-  const [catalogVatRate, setCatalogVatRate] = useState(22);
-  const [catalogUnit, setCatalogUnit] = useState("kos");
-  const [catalogTarget, setCatalogTarget] = useState<CatalogTarget>("project");
-  const [isSavingItem, setIsSavingItem] = useState(false);
-  const [isAddingFromCatalog, setIsAddingFromCatalog] = useState(false);
+  const [savedRequirements, setSavedRequirements] = useState<RequirementRow[]>(() =>
+    Array.isArray(project?.requirements) ? project.requirements : []
+  );
+  const [savedRequirementsText, setSavedRequirementsText] = useState(project?.requirementsText ?? "");
+  const [isSavingRequirements, setIsSavingRequirements] = useState(false);
+  const [isProceedingToOffers, setIsProceedingToOffers] = useState(false);
   const [isOfferLoading, setIsOfferLoading] = useState(false);
   const [offerVatRate, setOfferVatRate] = useState<number>(22);
   const [globalDiscount, setGlobalDiscount] = useState<number>(0);
@@ -213,7 +190,12 @@ export function ProjectWorkspace({
     const trimmed = brandColor?.trim();
     return trimmed && trimmed.length > 0 ? trimmed : "#22c55e";
   }, [brandColor]);
-  const workspaceCssVars = useMemo(() => ({ ["--brand-color" as const]: brandAccentColor }), [brandAccentColor]);
+  const workspaceCssVars = useMemo<WorkspaceCSSVars>(() => ({ "--brand-color": brandAccentColor }), [brandAccentColor]);
+  const isRequirementsDirty = useMemo(
+    () =>
+      !areRequirementListsEqual(requirements, savedRequirements) || requirementsText !== savedRequirementsText,
+    [requirements, savedRequirements, requirementsText, savedRequirementsText],
+  );
 
   useEffect(() => {
     if (!project) return undefined;
@@ -289,24 +271,29 @@ export function ProjectWorkspace({
   );
 
   useEffect(() => {
-    if (!project) return;
-    setItems(project.items);
+    if (!project) {
+      setOffers([]);
+      setActiveOffer(null);
+      setOfferItems([]);
+      setStatus("draft");
+      setRequirements([]);
+      setSavedRequirements([]);
+      setRequirementsText("");
+      setSavedRequirementsText("");
+      setSelectedVariantSlug("");
+      return;
+    }
+    const incomingRequirements = Array.isArray(project.requirements) ? project.requirements : [];
+    const incomingRequirementsText = project.requirementsText ?? "";
     setOffers(project.offers);
     setActiveOffer(null);
     setOfferItems([]);
     setStatus(project.status);
-    setRequirements(Array.isArray(project.requirements) ? project.requirements : []);
-    setRequirementsText(project.requirementsText ?? "");
+    setRequirements(incomingRequirements);
+    setSavedRequirements(incomingRequirements);
+    setRequirementsText(incomingRequirementsText);
+    setSavedRequirementsText(incomingRequirementsText);
     setSelectedVariantSlug(project.requirementsTemplateVariantSlug ?? "");
-  }, [project]);
-
-  useEffect(() => {
-    const currentProject = project;
-    if (!currentProject) {
-      setRequirements([]);
-      return;
-    }
-    setRequirements(Array.isArray(currentProject.requirements) ? currentProject.requirements : []);
   }, [project]);
 
   useEffect(() => {
@@ -354,50 +341,6 @@ export function ProjectWorkspace({
     }
   }, [activeTab, activeOffer, fetchActiveOffer, isOfferLoading]);
 
-  const fetchCatalogItems = useCallback(async () => {
-    if (!project) return;
-    setCatalogLoading(true);
-    try {
-      const slugParam = project.categories?.filter(Boolean).join(",");
-      const query = slugParam ? `?suggestForCategories=${encodeURIComponent(slugParam)}` : "";
-      const response = await fetch(`/api/cenik/products${query}`);
-      const payload = await response.json();
-      if (!payload.success) {
-        throw new Error(payload.error ?? "Napaka pri nalaganju cenika");
-      }
-      const mapped: CatalogProduct[] = (payload.data ?? []).map((product: any) => ({
-        id: product._id ?? product.id,
-        name: product.ime ?? product.name ?? "Neimenovan produkt",
-        category: product.kategorija,
-        price: Number(product.prodajnaCena ?? 0),
-        description: product.kratekOpis ?? product.dolgOpis ?? "",
-        supplier: product.dobavitelj ?? "",
-      }));
-      setCatalogItems(mapped);
-    } catch (error) {
-      console.error(error);
-      toast.error("Cenika ni mogoče naložiti. Poskusite znova.");
-    } finally {
-      setCatalogLoading(false);
-    }
-  }, [project]);
-
-  useEffect(() => {
-    if (!isCatalogDialogOpen) return;
-    if (catalogItems.length > 0 || catalogLoading) return;
-    fetchCatalogItems();
-  }, [isCatalogDialogOpen, catalogItems.length, catalogLoading, fetchCatalogItems]);
-
-  const filteredCatalog = useMemo(() => {
-    const term = catalogSearch.trim().toLowerCase();
-    if (!term) return catalogItems;
-    return catalogItems.filter(
-      (product) =>
-        product.name.toLowerCase().includes(term) ||
-        (product.category ? product.category.toLowerCase().includes(term) : false)
-    );
-  }, [catalogItems, catalogSearch]);
-
   const applyProjectUpdate = (updated: ProjectDetails | null) => {
     if (!updated) return;
     setProject((prev) => ({
@@ -405,176 +348,75 @@ export function ProjectWorkspace({
       ...updated,
       logistics: updated.logistics ?? prev.logistics ?? null,
     }));
-    setItems(updated.items);
     setOffers(updated.offers);
     setStatus(updated.status);
-    setRequirements(updated.requirements ?? []);
-    setRequirementsText(updated.requirementsText ?? "");
+    const normalizedRequirements = updated.requirements ?? [];
+    const normalizedRequirementsText = updated.requirementsText ?? "";
+    setRequirements(normalizedRequirements);
+    setSavedRequirements(normalizedRequirements);
+    setRequirementsText(normalizedRequirementsText);
+    setSavedRequirementsText(normalizedRequirementsText);
     setSelectedVariantSlug(updated.requirementsTemplateVariantSlug ?? "");
   };
 
+  const saveRequirementsChanges = useCallback(async () => {
+    if (!project || !basePath) return false;
+    setIsSavingRequirements(true);
+    try {
+      const payload = {
+        title: project.title,
+        customer: project.customerDetail,
+        status: project.status,
+        requirements,
+        requirementsText,
+        categories: project.categories ?? [],
+        templates,
+      };
+      const updated = await onProjectUpdate(basePath, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      applyProjectUpdate(updated as ProjectDetails | null);
+      if (!updated) {
+        setSavedRequirements(requirements);
+        setSavedRequirementsText(requirementsText);
+      }
+      await refreshAfterMutation();
+      return true;
+    } catch (error) {
+      console.error(error);
+      toast.error("Napaka pri shranjevanju zahtev.");
+      return false;
+    } finally {
+      setIsSavingRequirements(false);
+    }
+  }, [
+    applyProjectUpdate,
+    basePath,
+    onProjectUpdate,
+    project,
+    refreshAfterMutation,
+    requirements,
+    requirementsText,
+    templates,
+  ]);
+
+  const handleSaveRequirements = useCallback(async () => {
+    if (!isRequirementsDirty || isSavingRequirements) return;
+    await saveRequirementsChanges();
+  }, [isRequirementsDirty, isSavingRequirements, saveRequirementsChanges]);
+
   const validationIssues: string[] = [];
   if (!project?.customerDetail?.name) validationIssues.push("Manjka podatek o stranki");
-  if (items.length === 0) validationIssues.push("Dodajte vsaj eno postavko");
-
-  const resetItemForm = () => {
-    setItemForm({
-      name: "",
-      sku: "",
-      unit: "kos",
-      quantity: 1,
-      price: 0,
-      discount: 0,
-      vatRate: 22,
-      description: "",
-      category: "material",
-    });
-    setEditingItem(null);
-  };
-
-  const handleAddItem = () => {
-    resetItemForm();
-    setItemContext("project");
-    setItemDialogOpen(true);
-  };
-
-  
-
-  const handleEditItem = (item: Item) => {
-    setEditingItem(item);
-    setItemForm({
-      name: item.name,
-      sku: item.sku,
-      unit: item.unit,
-      quantity: item.quantity,
-      price: item.price,
-      discount: item.discount,
-      vatRate: item.vatRate,
-      description: item.description ?? "",
-      category: item.category ?? "material",
-    });
-    setItemContext("project");
-    setItemDialogOpen(true);
-  };
-
-  
-
-  const handleDeleteItem = async (id: string) => {
-    const updated = await onProjectUpdate(`${basePath}/items/${id}`, { method: "DELETE" });
-    applyProjectUpdate(updated);
-    if (updated) toast.success("Postavka izbrisana");
-  };
+  const projectItems = Array.isArray(project?.items) ? project.items : [];
+  const projectItemsCount = projectItems.length;
+  if (projectItemsCount === 0) validationIssues.push("Dodajte vsaj eno postavko");
 
   const handleDeleteOfferItem = async (id: string) => {
     const next = offerItems.filter((item) => item.id !== id);
     const updated = await persistOfferItems(next);
     if (updated) {
       toast.success("Postavka ponudbe izbrisana");
-    }
-  };
-
-  const handleSaveItem = async () => {
-    // Modal-based add/edit ni v uporabi za offer kontekst; ohranimo le project branch
-    setIsSavingItem(true);
-    const payload = {
-      ...itemForm,
-      quantity: Number(itemForm.quantity),
-      price: Number(itemForm.price),
-      discount: Number(itemForm.discount),
-      vatRate: Number(itemForm.vatRate),
-    };
-    const url = editingItem && itemContext === "project" ? `${basePath}/items/${editingItem.id}` : `${basePath}/items`;
-    const method = editingItem && itemContext === "project" ? "PUT" : "POST";
-    const updated = await onProjectUpdate(url, {
-      method,
-      body: JSON.stringify(payload),
-    });
-    setIsSavingItem(false);
-    applyProjectUpdate(updated as ProjectDetails | null);
-    if (updated) {
-      toast.success(editingItem ? "Postavka posodobljena" : "Postavka dodana");
-      setItemDialogOpen(false);
-      resetItemForm();
-    }
-  };
-
-  const openCatalog = (target: CatalogTarget) => {
-    setCatalogTarget(target);
-    setCatalogDialogOpen(true);
-    setSelectedCatalogProduct(null);
-    setCatalogQuantity(1);
-    setCatalogDiscount(0);
-    setCatalogVatRate(22);
-    setCatalogUnit("kos");
-  };
-
-  const handleAddFromCatalog = async () => {
-    if (!selectedCatalogProduct) {
-      toast.error("Izberite produkt iz cenika.");
-      return;
-    }
-    console.debug("catalogTarget on confirm:", catalogTarget);
-    setIsAddingFromCatalog(true);
-    let updated: ProjectDetails | ProjectOffer | null = null;
-
-    if (catalogTarget === "project") {
-      const newProjectItem: Item = {
-        id: `item-${Date.now()}`,
-        name: selectedCatalogProduct.name,
-        sku: selectedCatalogProduct.id,
-        unit: catalogUnit,
-        quantity: catalogQuantity,
-        price: selectedCatalogProduct.price,
-        discount: catalogDiscount,
-        vatRate: catalogVatRate,
-        total:
-          catalogQuantity *
-          selectedCatalogProduct.price *
-          (1 - catalogDiscount / 100) *
-          (1 + catalogVatRate / 100),
-        description: selectedCatalogProduct.description ?? "",
-        category: "material",
-      };
-
-      updated = await onProjectUpdate(`${basePath}/items`, {
-        method: "POST",
-        body: JSON.stringify(newProjectItem),
-      });
-    } else {
-      if (!activeOffer) {
-        setIsAddingFromCatalog(false);
-        toast.error("Ponudba ni naložena.");
-        return;
-      }
-      const newOfferItem = buildOfferItem({
-        id: `offer-item-${Date.now()}`,
-        productId: selectedCatalogProduct.id,
-        name: selectedCatalogProduct.name,
-        sku: selectedCatalogProduct.id,
-        unit: catalogUnit,
-        quantity: catalogQuantity,
-        price: selectedCatalogProduct.price,
-        discount: catalogDiscount,
-        vatRate: catalogVatRate,
-        description: selectedCatalogProduct.description ?? "",
-      });
-      updated = await persistOfferItems([...(offerItems ?? []), newOfferItem]);
-    }
-
-    setIsAddingFromCatalog(false);
-    if (catalogTarget === "project") {
-      applyProjectUpdate(updated as ProjectDetails | null);
-      if (updated) {
-        toast.success(`Dodana projektna postavka ${selectedCatalogProduct.name}`);
-        setCatalogDialogOpen(false);
-        setSelectedCatalogProduct(null);
-      }
-    } else if (updated && "label" in updated) {
-      toast.success(`Dodana postavka v ponudbo: ${selectedCatalogProduct.name}`);
-      setCatalogDialogOpen(false);
-      setSelectedCatalogProduct(null);
-      setActiveOffer(updated as ProjectOffer);
-      setOfferItems((updated as ProjectOffer).items ?? []);
     }
   };
 
@@ -634,17 +476,6 @@ export function ProjectWorkspace({
     return (requirements ?? []).find(
       (req) => req.templateRowId === templateId || req.id === templateId
     );
-  };
-
-  const handleProjectItemFieldChange = async (id: string, changes: Partial<Item>) => {
-    const current = items.find((item) => item.id === id);
-    if (!current) return;
-    const payload = { ...current, ...changes };
-    const updated = await onProjectUpdate(`${basePath}/items/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    });
-    applyProjectUpdate(updated);
   };
 
   const handleOfferItemFieldChange = async (id: string, changes: Partial<ProjectOfferItem>) => {
@@ -714,29 +545,10 @@ export function ProjectWorkspace({
     await persistOfferItems(updatedItems);
   };
 
-  const applyRequirementsUpdate = async (next: RequirementRow[]) => {
-    const currentProject = project;
-    if (!currentProject) return;
-    setRequirements(next);
-    const updated = await onProjectUpdate(basePath, {
-      method: "PUT",
-      body: JSON.stringify({
-        title: currentProject.title,
-        customer: currentProject.customerDetail,
-        status: currentProject.status,
-        requirements: next,
-        categories: currentProject.categories ?? [],
-        templates,
-      }),
-    });
-    applyProjectUpdate(updated as ProjectDetails | null);
-    await refreshAfterMutation();
-  };
-
-  const addRequirementRow = async () => {
+  const addRequirementRow = () => {
     const defaultCategory = project?.categories?.[0] ?? "";
-    const next: RequirementRow[] = [
-      ...(requirements ?? []),
+    setRequirements((prev) => [
+      ...(prev ?? []),
       {
         id: crypto.randomUUID(),
         label: "",
@@ -745,18 +557,15 @@ export function ProjectWorkspace({
         value: "",
         fieldType: "text",
       },
-    ];
-    await applyRequirementsUpdate(next);
+    ]);
   };
 
-  const updateRequirementRow = async (id: string, changes: Partial<RequirementRow>) => {
-    const next = (requirements ?? []).map((row) => (row.id === id ? { ...row, ...changes } : row));
-    await applyRequirementsUpdate(next);
+  const updateRequirementRow = (id: string, changes: Partial<RequirementRow>) => {
+    setRequirements((prev) => (prev ?? []).map((row) => (row.id === id ? { ...row, ...changes } : row)));
   };
 
-  const deleteRequirementRow = async (id: string) => {
-    const next = (requirements ?? []).filter((row) => row.id !== id);
-    await applyRequirementsUpdate(next);
+  const deleteRequirementRow = (id: string) => {
+    setRequirements((prev) => (prev ?? []).filter((row) => row.id !== id));
   };
 
   const handleConfirmVariantSelection = async () => {
@@ -899,23 +708,34 @@ export function ProjectWorkspace({
   const handleProceedToOffer = async () => {
     const currentProject = project;
     if (!currentProject) return;
-    if (status === "draft" || (status as string) === "inquiry") {
-      const updated = await onProjectUpdate(basePath, {
-        method: "PUT",
-        body: JSON.stringify({
-          title: currentProject.title,
-          customer: currentProject.customerDetail,
-          status: "offered",
-          categories: currentProject.categories ?? [],
-        }),
-      });
-      applyProjectUpdate(updated as ProjectDetails | null);
-      setStatus("offered");
-      await refreshAfterMutation();
+    setIsProceedingToOffers(true);
+    try {
+      if (isRequirementsDirty) {
+        const saved = await saveRequirementsChanges();
+        if (!saved) {
+          return;
+        }
+      }
+      if (status === "draft" || (status as string) === "inquiry") {
+        const updated = await onProjectUpdate(basePath, {
+          method: "PUT",
+          body: JSON.stringify({
+            title: currentProject.title,
+            customer: currentProject.customerDetail,
+            status: "offered",
+            categories: currentProject.categories ?? [],
+          }),
+        });
+        applyProjectUpdate(updated as ProjectDetails | null);
+        setStatus("offered");
+        await refreshAfterMutation();
+      }
+      setActiveTab("offers");
+      await handleGenerateOfferFromRequirements();
+      setIsGenerateModalOpen(true);
+    } finally {
+      setIsProceedingToOffers(false);
     }
-    setActiveTab("offers");
-    await handleGenerateOfferFromRequirements();
-    setIsGenerateModalOpen(true);
   };
 
   const handleCreateOffer = async () => {
@@ -1239,13 +1059,11 @@ export function ProjectWorkspace({
                     updateRequirementRow={updateRequirementRow}
                     deleteRequirementRow={deleteRequirementRow}
                     addRequirementRow={addRequirementRow}
+                    onSaveRequirements={handleSaveRequirements}
+                    canSaveRequirements={isRequirementsDirty}
+                    savingRequirements={isSavingRequirements}
+                    proceedingToOffer={isProceedingToOffers}
                     handleProceedToOffer={handleProceedToOffer}
-                    isExecutionPhase={isExecutionPhase}
-                    items={items}
-                    handleProjectItemFieldChange={handleProjectItemFieldChange}
-                    openCatalog={openCatalog}
-                    handleAddItem={handleAddItem}
-                    handleDeleteItem={handleDeleteItem}
                     isGenerateModalOpen={isGenerateModalOpen}
                     setIsGenerateModalOpen={setIsGenerateModalOpen}
                     offerCandidates={offerCandidates}
@@ -1254,34 +1072,6 @@ export function ProjectWorkspace({
                     toggleCandidateSelection={toggleCandidateSelection}
                     setCandidateSelections={setCandidateSelections}
                     handleConfirmOfferFromRequirements={handleConfirmOfferFromRequirements}
-                    isItemDialogOpen={isItemDialogOpen}
-                    setItemDialogOpen={setItemDialogOpen}
-                    resetItemForm={resetItemForm}
-                    editingItem={editingItem}
-                    itemForm={itemForm}
-                    setItemForm={setItemForm}
-                    itemContext={itemContext}
-                    setItemContext={setItemContext}
-                    isSavingItem={isSavingItem}
-                    handleSaveItem={handleSaveItem}
-                    isCatalogDialogOpen={isCatalogDialogOpen}
-                    setCatalogDialogOpen={setCatalogDialogOpen}
-                    filteredCatalog={filteredCatalog}
-                    catalogSearch={catalogSearch}
-                    setCatalogSearch={setCatalogSearch}
-                    selectedCatalogProduct={selectedCatalogProduct}
-                    setSelectedCatalogProduct={setSelectedCatalogProduct}
-                    catalogQuantity={catalogQuantity}
-                    setCatalogQuantity={setCatalogQuantity}
-                    catalogDiscount={catalogDiscount}
-                    setCatalogDiscount={setCatalogDiscount}
-                    catalogVatRate={catalogVatRate}
-                    setCatalogVatRate={setCatalogVatRate}
-                    catalogUnit={catalogUnit}
-                    setCatalogUnit={setCatalogUnit}
-                    handleAddFromCatalog={handleAddFromCatalog}
-                    isAddingFromCatalog={isAddingFromCatalog}
-                    catalogLoading={catalogLoading}
                   />
                 </TabsContent>
 

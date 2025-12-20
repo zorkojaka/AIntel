@@ -1,53 +1,17 @@
 import type { Dispatch, SetStateAction } from "react";
 import { Card } from "../../components/ui/card";
-import { Tabs, TabsContent } from "../../components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Button } from "../../components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Textarea } from "../../components/ui/textarea";
 import { Input } from "../../components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
-import { Label } from "../../components/ui/label";
-import { ItemsTable, Item } from "./ItemsTable";
-import {
-  Loader2,
-  RefreshCcw,
-  Search,
-  Sparkles,
-} from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../components/ui/dropdown-menu";
-import { toast } from "sonner";
 import { OfferCandidate, ProjectDetails } from "../../types";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
-import { ProductLookup } from "../../api";
 import { ValidationBanner } from "../core/ValidationBanner";
-import { openPreview } from "../offers/TemplateRenderer";
-
-export type ItemFormState = {
-  name: string;
-  sku: string;
-  unit: string;
-  quantity: number;
-  price: number;
-  discount: number;
-  vatRate: number;
-  description: string;
-  category: Item["category"];
-};
+import { Loader2 } from "lucide-react";
 
 export type RequirementRow = ProjectRequirement;
-
-export type CatalogProduct = {
-  id: string;
-  name: string;
-  category?: string;
-  price: number;
-  description?: string;
-  supplier?: string;
-  categorySlugs?: string[];
-};
-
-export type CatalogTarget = "project" | "offer";
 
 interface RequirementsPanelProps {
   project: ProjectDetails;
@@ -64,13 +28,11 @@ interface RequirementsPanelProps {
   updateRequirementRow: (id: string, changes: Partial<RequirementRow>) => void;
   deleteRequirementRow: (id: string) => void;
   addRequirementRow: () => void;
+  onSaveRequirements: () => Promise<void> | void;
+  canSaveRequirements: boolean;
+  savingRequirements: boolean;
+  proceedingToOffer: boolean;
   handleProceedToOffer: () => Promise<void> | void;
-  isExecutionPhase: boolean;
-  items: Item[];
-  handleProjectItemFieldChange: (id: string, changes: Partial<Item>) => Promise<void> | void;
-  openCatalog: (target: CatalogTarget) => void;
-  handleAddItem: () => void;
-  handleDeleteItem: (id: string) => void;
   isGenerateModalOpen: boolean;
   setIsGenerateModalOpen: (open: boolean) => void;
   offerCandidates: OfferCandidate[];
@@ -81,34 +43,6 @@ interface RequirementsPanelProps {
     SetStateAction<Record<string, { productId?: string; quantity: number; include: boolean }>>
   >;
   handleConfirmOfferFromRequirements: () => Promise<void>;
-  isItemDialogOpen: boolean;
-  setItemDialogOpen: (open: boolean) => void;
-  resetItemForm: () => void;
-  editingItem: Item | null;
-  itemForm: ItemFormState;
-  setItemForm: Dispatch<SetStateAction<ItemFormState>>;
-  itemContext: CatalogTarget;
-  setItemContext: (context: CatalogTarget) => void;
-  isSavingItem: boolean;
-  handleSaveItem: () => Promise<void>;
-  isCatalogDialogOpen: boolean;
-  setCatalogDialogOpen: (open: boolean) => void;
-  filteredCatalog: CatalogProduct[];
-  catalogSearch: string;
-  setCatalogSearch: (value: string) => void;
-  selectedCatalogProduct: CatalogProduct | null;
-  setSelectedCatalogProduct: (product: CatalogProduct | null) => void;
-  catalogQuantity: number;
-  setCatalogQuantity: (value: number) => void;
-  catalogDiscount: number;
-  setCatalogDiscount: (value: number) => void;
-  catalogVatRate: number;
-  setCatalogVatRate: (value: number) => void;
-  catalogUnit: string;
-  setCatalogUnit: (value: string) => void;
-  handleAddFromCatalog: () => Promise<void>;
-  isAddingFromCatalog: boolean;
-  catalogLoading: boolean;
 }
 
 export function RequirementsPanel({
@@ -126,13 +60,11 @@ export function RequirementsPanel({
   updateRequirementRow,
   deleteRequirementRow,
   addRequirementRow,
+  onSaveRequirements,
+  canSaveRequirements,
+  savingRequirements,
+  proceedingToOffer,
   handleProceedToOffer,
-  isExecutionPhase,
-  items,
-  handleProjectItemFieldChange,
-  openCatalog,
-  handleAddItem,
-  handleDeleteItem,
   isGenerateModalOpen,
   setIsGenerateModalOpen,
   offerCandidates,
@@ -141,34 +73,6 @@ export function RequirementsPanel({
   toggleCandidateSelection,
   setCandidateSelections,
   handleConfirmOfferFromRequirements,
-  isItemDialogOpen,
-  setItemDialogOpen,
-  resetItemForm,
-  editingItem,
-  itemForm,
-  setItemForm,
-  itemContext,
-  setItemContext,
-  isSavingItem,
-  handleSaveItem,
-  isCatalogDialogOpen,
-  setCatalogDialogOpen,
-  filteredCatalog,
-  catalogSearch,
-  setCatalogSearch,
-  selectedCatalogProduct,
-  setSelectedCatalogProduct,
-  catalogQuantity,
-  setCatalogQuantity,
-  catalogDiscount,
-  setCatalogDiscount,
-  catalogVatRate,
-  setCatalogVatRate,
-  catalogUnit,
-  setCatalogUnit,
-  handleAddFromCatalog,
-  isAddingFromCatalog,
-  catalogLoading,
 }: RequirementsPanelProps) {
   const customerName = project.customerDetail?.name || project.customer;
 
@@ -299,33 +203,27 @@ export function RequirementsPanel({
             </TableBody>
           </Table>
         </div>
-        <Button variant="outline" onClick={addRequirementRow}>
-          Dodaj zahtevo
-        </Button>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Button variant="outline" onClick={addRequirementRow}>
+            Dodaj zahtevo
+          </Button>
+          <Button
+            onClick={onSaveRequirements}
+            disabled={!canSaveRequirements || savingRequirements}
+            variant="secondary"
+          >
+            {savingRequirements ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Shrani zahteve
+          </Button>
+        </div>
       </div>
 
       <div className="flex justify-end">
-        <Button onClick={handleProceedToOffer}>Pripravi ponudbo</Button>
+        <Button onClick={handleProceedToOffer} disabled={savingRequirements || proceedingToOffer}>
+          {savingRequirements || proceedingToOffer ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          Pripravi ponudbo
+        </Button>
       </div>
-
-      {!isExecutionPhase ? (
-        <Card className="p-4 text-sm text-muted-foreground">
-          Tehnične postavke bodo na voljo, ko bo ponudba sprejeta in bo projekt v izvedbi.
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          <h3 className="text-lg font-semibold">Tehnične postavke</h3>
-          <ItemsTable
-            items={items}
-            onEditField={handleProjectItemFieldChange}
-            onAddFromCatalog={() => openCatalog("project")}
-            onAddCustom={handleAddItem}
-            onDelete={handleDeleteItem}
-            showDraftRow={false}
-            showDiscount
-          />
-        </div>
-      )}
 
       <Dialog open={isGenerateModalOpen} onOpenChange={(open) => setIsGenerateModalOpen(open)}>
         <DialogContent className="sm:max-w-3xl">
@@ -438,258 +336,6 @@ export function RequirementsPanel({
           </div>
         </DialogContent>
       </Dialog>
-
-      <Dialog
-        open={isItemDialogOpen}
-        onOpenChange={(open) => {
-          setItemDialogOpen(open);
-          if (!open) {
-            resetItemForm();
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>{editingItem ? "Uredi postavko" : "Dodaj postavko"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Naziv</Label>
-                <Input value={itemForm.name} onChange={(e) => setItemForm((prev) => ({ ...prev, name: e.target.value }))} />
-              </div>
-              <div>
-                <Label>SKU</Label>
-                <Input value={itemForm.sku} onChange={(e) => setItemForm((prev) => ({ ...prev, sku: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label>Enota</Label>
-                <Input value={itemForm.unit} onChange={(e) => setItemForm((prev) => ({ ...prev, unit: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Kategorija</Label>
-                <Select
-                  value={itemForm.category ?? "material"}
-                  onValueChange={(value) => setItemForm((prev) => ({ ...prev, category: value as Item["category"] }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="material">Material</SelectItem>
-                    <SelectItem value="labor">Delo</SelectItem>
-                    <SelectItem value="other">Drugo</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>DDV %</Label>
-                <Input
-                  type="number"
-                  value={itemForm.vatRate}
-                  onChange={(e) => setItemForm((prev) => ({ ...prev, vatRate: Number(e.target.value) }))}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-4 gap-4">
-              <div>
-                <Label>Količina</Label>
-                <Input
-                  type="number"
-                  value={itemForm.quantity}
-                  onChange={(e) => setItemForm((prev) => ({ ...prev, quantity: Number(e.target.value) }))}
-                />
-              </div>
-              <div>
-                <Label>Cena</Label>
-                <Input
-                  type="number"
-                  value={itemForm.price}
-                  onChange={(e) => setItemForm((prev) => ({ ...prev, price: Number(e.target.value) }))}
-                />
-              </div>
-              <div>
-                <Label>Popust %</Label>
-                <Input
-                  type="number"
-                  value={itemForm.discount}
-                  onChange={(e) => setItemForm((prev) => ({ ...prev, discount: Number(e.target.value) }))}
-                />
-              </div>
-              <div>
-                <Label>Opis</Label>
-                <Input value={itemForm.description} onChange={(e) => setItemForm((prev) => ({ ...prev, description: e.target.value }))} />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setItemDialogOpen(false)}>
-                Prekliči
-              </Button>
-              <Button onClick={handleSaveItem} disabled={isSavingItem}>
-                {isSavingItem ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                Shrani
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isCatalogDialogOpen} onOpenChange={setCatalogDialogOpen}>
-        <DialogContent className="sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Dodaj iz cenika</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  placeholder="Išči po nazivu ali kategoriji"
-                  value={catalogSearch}
-                  onChange={(event) => setCatalogSearch(event.target.value)}
-                />
-              </div>
-              <Button variant="outline" onClick={openPreviewCatalogInfo}>
-                <Sparkles className="mr-2 h-4 w-4" />
-                Predlogi AI (v pripravi)
-              </Button>
-              <Button variant="ghost" size="icon" onClick={() => setCatalogDialogOpen(false)}>
-                <RefreshCcw className={`h-4 w-4 ${catalogLoading ? "animate-spin" : ""}`} />
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-[2fr_1fr] gap-4">
-              <div className="rounded border border-border">
-                <div className="flex items-center justify-between border-b border-border px-3 py-2 text-sm text-muted-foreground">
-                  <span>Rezultati</span>
-                  <span>{filteredCatalog.length} produktov</span>
-                </div>
-                <div className="h-[340px] overflow-y-auto p-3 space-y-2">
-                  {filteredCatalog.length === 0 && (
-                    <div className="text-center text-sm text-muted-foreground">Ni zadetkov!!</div>
-                  )}
-                  {filteredCatalog.map((product) => (
-                    <Card
-                      key={product.id}
-                      className={`cursor-pointer border ${
-                        selectedCatalogProduct?.id === product.id ? "border-primary" : "border-border"
-                      }`}
-                      onClick={() => setSelectedCatalogProduct(product)}
-                    >
-                      <div className="p-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="font-semibold">{product.name}</div>
-                            <div className="text-sm text-muted-foreground">{product.category}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-semibold">€ {product.price.toFixed(2)}</div>
-                            <div className="text-xs text-muted-foreground">{product.supplier || "-"}</div>
-                          </div>
-                        </div>
-                        {product.description && (
-                          <p className="mt-2 text-sm text-muted-foreground">{product.description}</p>
-                        )}
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <div className="text-sm text-muted-foreground">Stranka</div>
-                  <div className="font-semibold">{customerName || "-"}</div>
-                  <div className="text-sm text-muted-foreground">{project.customerDetail?.address || "-"}</div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Produkt</Label>
-                  <Input value={selectedCatalogProduct?.name ?? "Izberi produkt"} readOnly />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Količina</Label>
-                    <Input
-                      type="number"
-                      value={catalogQuantity}
-                      onChange={(event) => setCatalogQuantity(Number(event.target.value) || 1)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Popust %</Label>
-                    <Input
-                      type="number"
-                      value={catalogDiscount}
-                      onChange={(event) => setCatalogDiscount(Number(event.target.value) || 0)}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>DDV %</Label>
-                    <Input
-                      type="number"
-                      value={catalogVatRate}
-                      onChange={(event) => setCatalogVatRate(Number(event.target.value) || 0)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Enota</Label>
-                    <Input value={catalogUnit} onChange={(event) => setCatalogUnit(event.target.value || "kos")} />
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button className="flex-1" onClick={handleAddFromCatalog} disabled={isAddingFromCatalog}>
-                    {isAddingFromCatalog ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    Dodaj v zahteve
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline">Dodaj v</Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => openCatalog("project")}>Zahteve</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => openCatalog("offer")}>Ponudbo</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </>
   );
-}
-
-function openPreviewCatalogInfo() {
-  openPreview(`
-    <div style="font-family: Inter, sans-serif; padding: 24px; max-width: 720px; margin: 0 auto;">
-      <h2 style="margin-top: 0;">Predlogi iz AI</h2>
-      <p style="color: #6b7280;">Na podlagi zahtev bomo predlagali elemente iz cenika.</p>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px;">
-        <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;">
-          <div style="font-weight: 600;">Video nadzor paket S</div>
-          <div style="color: #6b7280;">4x kamera 2MP, NVR 1TB, montaža</div>
-          <div style="margin-top: 8px; font-weight: 600;">€ 1.240,00</div>
-        </div>
-        <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;">
-          <div style="font-weight: 600;">Alarm paket M</div>
-          <div style="color: #6b7280;">8 con, tipkovnica, GSM modul, montaža</div>
-          <div style="margin-top: 8px; font-weight: 600;">€ 890,00</div>
-        </div>
-      </div>
-      <p style="color: #6b7280; margin-top: 16px;">
-        V naslednji verziji bomo ponudili realne predloge na podlagi zahtev stranke.
-      </p>
-    </div>
-  `);
-  toast.info("Predlogi AI so v pripravi");
 }
