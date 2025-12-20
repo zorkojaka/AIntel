@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Template } from "../../components/TemplateEditor";
 import { ProjectDetails } from "../../types";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 

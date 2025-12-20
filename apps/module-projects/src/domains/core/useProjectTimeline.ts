@@ -78,6 +78,8 @@ const MATERIAL_STATUS_LOOKUP: Record<string, MaterialTimelineStatus> = Object.en
   return acc;
 }, {});
 
+const USE_REMOTE_OFFERS = false;
+
 function stripDiacritics(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
@@ -88,11 +90,7 @@ function normalizeMaterialStatusValue(value?: string | null) {
 }
 
 function resolveMaterialStatusKey(order: MaterialOrder): MaterialTimelineStatus | null {
-  const candidates = [
-    order.materialStatus as string | undefined,
-    (order as any)?.materialStatus as string | undefined,
-    (order as any)?.status as string | undefined,
-  ];
+  const candidates = [order.materialStatus as string | undefined, (order as any)?.status as string | undefined];
   for (const candidate of candidates) {
     const normalized = normalizeMaterialStatusValue(candidate);
     if (!normalized) continue;
@@ -143,13 +141,240 @@ function resolveClosingSummary(project?: ProjectDetails | null) {
   return (project as any)?.closingSummary ?? (project?.logistics as any)?.closingSummary ?? null;
 }
 
+function getWorkOrderIdentifier(order: WorkOrder, fallbackIndex: number) {
+  const rawId = (order as any)?._id ?? (order as any)?.id;
+  if (rawId) {
+    return String(rawId);
+  }
+  return `work-order-${fallbackIndex}`;
+}
+
+function isWorkOrderIssuedLike(status?: WorkOrderStatus | string | null) {
+  const normalized = normalizeStatus(status);
+  return normalized === "issued" || normalized === "in-progress" || normalized === "confirmed" || normalized === "completed";
+}
+
+function isWorkOrderCompletedLike(status?: WorkOrderStatus | string | null) {
+  const normalized = normalizeStatus(status);
+  return normalized === "completed" || normalized === "zakljucen";
+}
+
+function buildRequirementsStep(project: ProjectDetails | null | undefined, basePath: string) {
+  const requirementCount = Array.isArray(project?.requirements) ? project.requirements.length : 0;
+  const requirementsDone = requirementCount > 0;
+  const requirementsStatus: StepStatus = requirementsDone ? "done" : "inProgress";
+  const requirementsMeta = requirementCount > 0 ? `${requirementCount} zahtev` : undefined;
+
+  return {
+    step: {
+      key: "requirements",
+      label: "Zahteve",
+      status: requirementsStatus,
+      meta: requirementsMeta,
+      href: `${basePath}/requirements`,
+    } satisfies TimelineStep,
+    requirementsDone,
+  };
+}
+
+function buildOffersStep(
+  project: ProjectDetails | null | undefined,
+  basePath: string,
+  offersSource: OfferVersionSummary[],
+  requirementsDone: boolean,
+) {
+  const offerCount = offersSource.length;
+  const isConfirmedByLogistics = Boolean(
+    (project as any)?.logistics?.confirmedOfferVersionId || (project as any)?.logistics?.acceptedOfferId,
+  );
+  const offerDone =
+    isConfirmedByLogistics || offersSource.some((offer) => STATUS_DONE_VALUES.has(normalizeStatus((offer as any).status)));
+  const shouldHighlightOffers = requirementsDone && !offerDone;
+  const offersStatus: StepStatus = offerDone ? "done" : shouldHighlightOffers ? "inProgress" : "pending";
+  const offersMeta = offerCount > 0 ? `${offerCount} ponudb` : undefined;
+
+  return {
+    step: {
+      key: "offers",
+      label: "Ponudbe",
+      status: offersStatus,
+      meta: offersMeta,
+      href: `${basePath}/offers`,
+    } satisfies TimelineStep,
+    offerDone,
+  };
+}
+
+function summarizeMaterialOrders(materialOrders: MaterialOrder[]): { label: string; level: MaterialSummaryLevel } {
+  const highestStatus = materialOrders.reduce<MaterialTimelineStatus | null>((currentHighest, order) => {
+    const statusKey = resolveMaterialStatusKey(order);
+    if (!statusKey) return currentHighest;
+    if (!currentHighest) return statusKey;
+    const currentIndex = MATERIAL_STATUS_PRIORITY.indexOf(currentHighest);
+    const candidateIndex = MATERIAL_STATUS_PRIORITY.indexOf(statusKey);
+    return candidateIndex > currentIndex ? statusKey : currentHighest;
+  }, null);
+
+  if (!highestStatus) {
+    return { label: "Ni naročil", level: "none" };
+  }
+  return {
+    label: MATERIAL_STATUS_LABELS[highestStatus],
+    level: MATERIAL_STATUS_LEVELS[highestStatus],
+  };
+}
+
+function summarizeWorkOrders(workOrders: WorkOrder[], issuedCount: number) {
+  if (workOrders.length === 0) {
+    return { label: "Ni ustvarjen", level: "none" as WorkOrderSummaryLevel };
+  }
+
+  const allCompleted = workOrders.every((order) => isWorkOrderCompletedLike(order.status));
+  if (allCompleted) {
+    return { label: "Zaključen", level: "completed" as WorkOrderSummaryLevel };
+  }
+  if (issuedCount > 0) {
+    return { label: "Izdan", level: "issued" as WorkOrderSummaryLevel };
+  }
+  return { label: "V pripravi", level: "draft" as WorkOrderSummaryLevel };
+}
+
+function buildLogisticsStep(
+  basePath: string,
+  materialOrders: MaterialOrder[],
+  workOrders: WorkOrder[],
+  issuedWorkOrders: WorkOrder[],
+) {
+  const issuedCount = issuedWorkOrders.length;
+  const materialSummary = summarizeMaterialOrders(materialOrders);
+  const workOrderSummary = summarizeWorkOrders(workOrders, issuedCount);
+  const logisticsDone = issuedCount > 0;
+  const hasActivity = materialSummary.level !== "none" || workOrderSummary.level !== "none";
+  const logisticsStatus: StepStatus = logisticsDone ? "done" : hasActivity ? "inProgress" : "pending";
+  const logisticsSummary: LogisticsSummary = {
+    material: materialSummary,
+    workOrder: workOrderSummary,
+    done: logisticsDone,
+  };
+  const logisticsMeta = `${materialSummary.label} · ${workOrderSummary.label}`;
+
+  return {
+    step: {
+      key: "logistics",
+      label: "Priprava",
+      status: logisticsStatus,
+      meta: logisticsMeta,
+      logisticsSummary,
+      href: `${basePath}/logistics`,
+    } satisfies TimelineStep,
+    logisticsDone,
+  };
+}
+
+function buildExecutionStep(basePath: string, issuedWorkOrders: WorkOrder[]) {
+  const hasIssuedWorkOrders = issuedWorkOrders.length > 0;
+  const completedIssuedWorkOrders = issuedWorkOrders.filter((order) => isWorkOrderCompletedLike(order.status));
+  const allIssuedWorkOrdersCompleted = hasIssuedWorkOrders && completedIssuedWorkOrders.length === issuedWorkOrders.length;
+
+  const issuedItemEntries = issuedWorkOrders.flatMap((order, orderIndex) =>
+    (Array.isArray(order.items) ? order.items : []).map((item, index) => ({
+      item,
+      key:
+        (item as any)?.id ??
+        (item as any)?._id ??
+        `${getWorkOrderIdentifier(order, orderIndex)}-${index}`,
+    })),
+  );
+
+  const visibleItemsMap = new Map<string, WorkOrder["items"][number]>();
+  for (const entry of issuedItemEntries) {
+    const current = entry.item;
+    if (!current) continue;
+    const isDeleted =
+      (current as any).isDeleted === true ||
+      (current as any)._deleted === true ||
+      (current as any).hidden === true ||
+      (current as any).isHidden === true;
+    if (isDeleted) continue;
+    if (!visibleItemsMap.has(entry.key)) {
+      visibleItemsMap.set(entry.key, current);
+    }
+  }
+
+  const visibleItems = Array.from(visibleItemsMap.values());
+  const executionTotalCount = visibleItems.length;
+  const executionCompletedCount = visibleItems.filter((item) => item?.isCompleted === true).length;
+  const executionHasWorkOrders = executionTotalCount > 0;
+  const executionStatus: StepStatus = !hasIssuedWorkOrders
+    ? "pending"
+    : allIssuedWorkOrdersCompleted
+      ? "done"
+      : "inProgress";
+  const executionMeta = executionHasWorkOrders
+    ? `Zaključeno ${executionCompletedCount} / ${executionTotalCount}`
+    : "Ni izdanih nalogov";
+  const executionSummary: ExecutionSummary = {
+    hasWorkOrders: executionHasWorkOrders,
+    totalCount: executionTotalCount,
+    issuedCount: issuedWorkOrders.length,
+    completedCount: executionCompletedCount,
+  };
+
+  return {
+    step: {
+      key: "execution",
+      label: "Izvedba",
+      status: executionStatus,
+      meta: executionMeta,
+      executionSummary,
+      href: `${basePath}/execution`,
+    } satisfies TimelineStep,
+    executionComplete: hasIssuedWorkOrders && allIssuedWorkOrdersCompleted,
+  };
+}
+
+function buildInvoiceStep(
+  basePath: string,
+  closingSummary: any,
+  invoiceVersions: any[],
+  executionComplete: boolean,
+) {
+  const issuedInvoice = invoiceVersions.some((invoice) => STATUS_DONE_VALUES.has(normalizeStatus(invoice.status)));
+  let invoiceStatus: StepStatus = "pending";
+  let invoiceMeta: string | undefined;
+
+  const invoiceDraftExists = closingSummary || invoiceVersions.length > 0;
+
+  if (issuedInvoice) {
+    invoiceStatus = "done";
+    invoiceMeta = "Račun izdan";
+  } else if (executionComplete) {
+    invoiceStatus = "inProgress";
+    invoiceMeta = invoiceDraftExists ? "Osnutek" : "Pripravljeno za izdajo";
+  } else {
+    invoiceStatus = "pending";
+    invoiceMeta = invoiceDraftExists ? "Osnutek" : undefined;
+  }
+
+  return {
+    step: {
+      key: "invoice",
+      label: "Račun",
+      status: invoiceStatus,
+      meta: invoiceMeta,
+      href: `${basePath}/closing`,
+    } satisfies TimelineStep,
+  };
+}
+
 export function useProjectTimeline(project?: ProjectDetails | null): TimelineStep[] {
   const projectId = project?.id ?? null;
   const [remoteOffers, setRemoteOffers] = useState<OfferVersionSummary[] | null>(null);
 
+  const projectOfferVersions = Array.isArray((project as any)?.offerVersions) ? (project as any).offerVersions : [];
   const offerSignal =
-    projectId && Array.isArray(project?.offerVersions)
-      ? project.offerVersions.map((offer: any) => `${offer._id || offer.id || offer.version}:${offer.status}`).join("|")
+    projectId && projectOfferVersions.length > 0
+      ? projectOfferVersions.map((offer: any) => `${offer._id || offer.id || offer.version}:${offer.status}`).join("|")
       : projectId && Array.isArray(project?.offers)
         ? project.offers.map((offer: any) => `${offer.id}:${offer.status}`).join("|")
         : null;
@@ -167,8 +392,7 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
       : null;
 
   useEffect(() => {
-    if (!projectId) {
-      setRemoteOffers(null);
+    if (!USE_REMOTE_OFFERS || !projectId) {
       return;
     }
     let cancelled = false;
@@ -198,179 +422,34 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const basePath = project?.id ? `/projects/${project.id}` : "#";
     const forceCompleted = project?.status === "completed";
 
-    const requirementCount = Array.isArray(project?.requirements) ? project!.requirements!.length : 0;
-    const requirementsDone = requirementCount > 0;
-    let requirementsStatus: StepStatus = requirementsDone ? "done" : "inProgress";
-    const requirementsMeta = requirementCount > 0 ? `${requirementCount} zahtev` : undefined;
-
-    const offersSource = remoteOffers ?? collectOffers(project);
-    const offerCount = offersSource.length;
-    const offerDone = offersSource.some((offer) =>
-      STATUS_DONE_VALUES.has(normalizeStatus((offer as any).status)),
-    );
-    const shouldHighlightOffers = requirementsDone && !offerDone;
-    let offersStatus: StepStatus = offerDone ? "done" : shouldHighlightOffers ? "inProgress" : "pending";
-    const offersMeta = offerCount > 0 ? `${offerCount} ponudb` : undefined;
-
+  const offersSource = USE_REMOTE_OFFERS ? remoteOffers ?? collectOffers(project) : collectOffers(project);
+    const requirementsInfo = buildRequirementsStep(project, basePath);
+    const offersInfo = buildOffersStep(project, basePath, offersSource, requirementsInfo.requirementsDone);
     const workOrders = collectWorkOrders(project);
     const materialOrders = collectMaterialOrders(project);
-    const normalizeWorkOrderStatus = (status?: WorkOrderStatus | string | null) => normalizeStatus(status);
-    const isIssuedStatus = (status?: WorkOrderStatus | string | null) => {
-      const normalized = normalizeWorkOrderStatus(status);
-      return normalized === "issued" || normalized === "in-progress" || normalized === "confirmed" || normalized === "completed";
-    };
-    const totalWorkOrders = workOrders.length;
-    const issuedWorkOrders = workOrders.filter((order) => isIssuedStatus(order.status));
-    const issuedCount = issuedWorkOrders.length;
-    const materialSummary = (() => {
-      const highestStatus = materialOrders.reduce<MaterialTimelineStatus | null>(
-        (currentHighest, order) => {
-          const statusKey = resolveMaterialStatusKey(order);
-          if (!statusKey) return currentHighest;
-          if (!currentHighest) return statusKey;
-          const currentIndex = MATERIAL_STATUS_PRIORITY.indexOf(currentHighest);
-          const candidateIndex = MATERIAL_STATUS_PRIORITY.indexOf(statusKey);
-          return candidateIndex > currentIndex ? statusKey : currentHighest;
-        },
-        null,
-      );
-      if (!highestStatus) {
-        return { label: "Ni naročil", level: "none" as MaterialSummaryLevel };
-      }
-      return {
-        label: MATERIAL_STATUS_LABELS[highestStatus],
-        level: MATERIAL_STATUS_LEVELS[highestStatus],
-      };
-    })();
-    const workOrderSummary = (() => {
-      if (totalWorkOrders === 0) {
-        return { label: "Ni ustvarjen", level: "none" as WorkOrderSummaryLevel };
-      }
-      const allCompleted = workOrders.every(
-        (order) => normalizeWorkOrderStatus(order.status) === "completed",
-      );
-      if (allCompleted && totalWorkOrders > 0) {
-        return { label: "Zaključen", level: "completed" as WorkOrderSummaryLevel };
-      }
-      if (issuedCount > 0) {
-        return { label: "Izdan", level: "issued" as WorkOrderSummaryLevel };
-      }
-      return { label: "V pripravi", level: "draft" as WorkOrderSummaryLevel };
-    })();
-    const logisticsDone = issuedCount > 0;
-    const hasActivity =
-      materialSummary.level !== "none" || workOrderSummary.level !== "none";
-    let logisticsStatus: StepStatus = logisticsDone ? "done" : hasActivity ? "inProgress" : "pending";
-    const logisticsSummary: LogisticsSummary = {
-      material: materialSummary,
-      workOrder: workOrderSummary,
-      done: logisticsDone,
-    };
-    const logisticsMeta = `${materialSummary.label} · ${workOrderSummary.label}`;
-
-    const issuedLikeWorkOrders = issuedWorkOrders;
-    const hasIssuedWorkOrders = issuedLikeWorkOrders.length > 0;
-    const completedIssuedWorkOrders = issuedLikeWorkOrders.filter((order) => {
-      const normalized = normalizeWorkOrderStatus(order.status);
-      return normalized === "completed" || normalized === "zakljucen";
-    });
-    const allIssuedWorkOrdersCompleted =
-      hasIssuedWorkOrders && completedIssuedWorkOrders.length === issuedLikeWorkOrders.length;
-    const issuedItemEntries = issuedLikeWorkOrders.flatMap((order) =>
-      (Array.isArray(order.items) ? order.items : []).map((item, index) => ({
-        item,
-        key:
-          (item as any)?.id ??
-          (item as any)?._id ??
-          `${order._id ?? order.id ?? "order"}-${index}`,
-      })),
-    );
-    const visibleItemsMap = new Map<string, WorkOrder["items"][number]>();
-    for (const entry of issuedItemEntries) {
-      const current = entry.item;
-      if (!current) continue;
-      const isDeleted =
-        (current as any).isDeleted === true ||
-        (current as any)._deleted === true ||
-        (current as any).hidden === true ||
-        (current as any).isHidden === true;
-      if (isDeleted) continue;
-      if (!visibleItemsMap.has(entry.key)) {
-        visibleItemsMap.set(entry.key, current);
-      }
-    }
-    const visibleItems = Array.from(visibleItemsMap.values());
-    const executionTotalCount = visibleItems.length;
-    const executionCompletedCount = visibleItems.filter((item) => item?.isCompleted === true).length;
-    const executionHasWorkOrders = executionTotalCount > 0;
-    let executionStatus: StepStatus = !hasIssuedWorkOrders
-      ? "pending"
-      : allIssuedWorkOrdersCompleted
-        ? "done"
-        : "inProgress";
-    const executionMeta = executionHasWorkOrders
-      ? `Zaključeno ${executionCompletedCount} / ${executionTotalCount}`
-      : "Ni izdanih nalogov";
-    const executionSummary: ExecutionSummary = {
-      hasWorkOrders: executionHasWorkOrders,
-      totalCount: executionTotalCount,
-      issuedCount: issuedLikeWorkOrders.length,
-      completedCount: executionCompletedCount,
-    };
-
     const closingSummary = resolveClosingSummary(project);
     const invoiceVersions = collectInvoiceVersions(project);
-    const issuedInvoice = invoiceVersions.some((invoice) => STATUS_DONE_VALUES.has(normalizeStatus(invoice.status)));
-
-    let invoiceStatus: StepStatus = "pending";
-    let invoiceMeta: string | undefined;
-
-    const invoiceDraftExists = closingSummary || invoiceVersions.length > 0;
-    const executionComplete = hasIssuedWorkOrders && allIssuedWorkOrdersCompleted;
-
-    if (issuedInvoice) {
-      invoiceStatus = "done";
-      invoiceMeta = "Ra?un izdan";
-    } else if (executionComplete) {
-      invoiceStatus = "inProgress";
-      invoiceMeta = invoiceDraftExists ? "Osnutek" : "Pripravljeno za izdajo";
-    } else {
-      invoiceStatus = "pending";
-      invoiceMeta = invoiceDraftExists ? "Osnutek" : undefined;
-    }
+    const issuedWorkOrders = workOrders.filter((order) => isWorkOrderIssuedLike(order.status));
+    const logisticsInfo = buildLogisticsStep(basePath, materialOrders, workOrders, issuedWorkOrders);
+    const executionInfo = buildExecutionStep(basePath, issuedWorkOrders);
+    const invoiceInfo = buildInvoiceStep(basePath, closingSummary, invoiceVersions, executionInfo.executionComplete);
 
     if (forceCompleted) {
-      requirementsStatus = "done";
-      offersStatus = "done";
-      logisticsStatus = "done";
-      logisticsSummary.done = true;
-      executionStatus = "done";
-      invoiceStatus = "done";
-      invoiceMeta = invoiceMeta ?? "Ra?un izdan";
+      requirementsInfo.step.status = "done";
+      offersInfo.step.status = "done";
+      logisticsInfo.step.status = "done";
+      logisticsInfo.step.logisticsSummary!.done = true;
+      executionInfo.step.status = "done";
+      invoiceInfo.step.status = "done";
+      invoiceInfo.step.meta = invoiceInfo.step.meta ?? "Račun izdan";
     }
 
-    const buildHref = (segment: string) => `${basePath}/${segment}`;
-
     return [
-      { key: "requirements", label: "Zahteve", status: requirementsStatus, meta: requirementsMeta, href: buildHref("requirements") },
-      { key: "offers", label: "Ponudbe", status: offersStatus, meta: offersMeta, href: buildHref("offers") },
-      {
-        key: "logistics",
-        label: "Priprava",
-        status: logisticsStatus,
-        meta: logisticsMeta,
-        logisticsSummary,
-        href: buildHref("logistics"),
-      },
-      {
-        key: "execution",
-        label: "Izvedba",
-        status: executionStatus,
-        meta: executionMeta,
-        executionSummary,
-        href: buildHref("execution"),
-      },
-      { key: "invoice", label: "Račun", status: invoiceStatus, meta: invoiceMeta, href: buildHref("closing") },
+      requirementsInfo.step,
+      offersInfo.step,
+      logisticsInfo.step,
+      executionInfo.step,
+      invoiceInfo.step,
     ];
   }, [project, remoteOffers]);
 }

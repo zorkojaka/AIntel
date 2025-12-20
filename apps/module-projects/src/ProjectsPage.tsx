@@ -2,19 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ClientForm, ClientFormPayload, Client } from "@aintel/module-crm";
 import { useSettingsData } from "@aintel/module-settings";
-import { Settings, ArrowLeft, Plus, UserPlus, BarChart3 } from "lucide-react";
+import { Plus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectList } from "./components/ProjectList";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
-import { TemplateEditor, Template } from "./components/TemplateEditor";
 import { Toaster } from "./components/ui/sonner";
 import { Button } from "./components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
-import { Category, ProjectDetails, ProjectSummary } from "./types";
-import { FinanceDashboardPage } from "./domains/finance/FinanceDashboardPage";
-import { FinanceProjectsPage } from "./domains/finance/FinanceProjectsPage";
-import { FinanceEmployeesPage } from "./domains/finance/FinanceEmployeesPage";
-import { FinanceInvoicesPage } from "./domains/finance/FinanceInvoicesPage";
+import { Category, ProjectDetails, ProjectSummary, Template, ProjectStatus } from "./types";
 import { NewProjectDialog } from "./components/NewProjectDialog";
 import { mapProject } from "./domains/core/useProject";
 
@@ -43,7 +37,7 @@ function toSummary(project: ProjectDetails): ProjectSummary {
 
 export function ProjectsPage() {
   const { settings: globalSettings } = useSettingsData({ applyTheme: false });
-  const [currentView, setCurrentView] = useState<"list" | "workspace" | "settings" | "finance">("list");
+  const [currentView, setCurrentView] = useState<"list" | "workspace">("list");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
@@ -448,73 +442,6 @@ export function ProjectsPage() {
     [setProjectDetails, setProjects, setTemplates],
   );
 
-  const persistTemplates = useCallback(
-    async (nextTemplates: Template[], actionLabel: string) => {
-      if (!selectedProjectId || !projectDetails) {
-        console.warn("[templates] Missing project context for action %s", actionLabel);
-        toast.error("Najprej izberi projekt.");
-        return false;
-      }
-      const payload = {
-        title: projectDetails.title,
-        status: projectDetails.status,
-        customer: {
-          name: projectDetails.customerDetail?.name ?? projectDetails.customer ?? "Stranka",
-          taxId: projectDetails.customerDetail?.taxId ?? "",
-          address: projectDetails.customerDetail?.address ?? "",
-          paymentTerms: projectDetails.customerDetail?.paymentTerms ?? "",
-        },
-        templates: nextTemplates,
-      };
-      const updated = await handleProjectUpdate(`/api/projects/${selectedProjectId}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
-      if (!updated) {
-        console.warn("[templates] Failed to persist templates (%s) for project %s", actionLabel, selectedProjectId);
-        return false;
-      }
-      return true;
-    },
-    [handleProjectUpdate, projectDetails, selectedProjectId],
-  );
-
-  const handleSaveTemplate = useCallback(
-    async (template: Template) => {
-      const existing = templates.find((t) => t.id === template.id);
-      const nextTemplates = existing
-        ? templates.map((t) => (t.id === template.id ? template : t))
-        : [...templates, template];
-      return persistTemplates(nextTemplates, existing ? "update" : "create");
-    },
-    [persistTemplates, templates],
-  );
-
-  const handleDeleteTemplate = useCallback(
-    async (id: string) => {
-      const nextTemplates = templates.filter((t) => t.id !== id);
-      return persistTemplates(nextTemplates, "delete");
-    },
-    [persistTemplates, templates],
-  );
-
-  const handleSetDefaultTemplate = useCallback(
-    async (id: string) => {
-      const target = templates.find((t) => t.id === id);
-      if (!target) {
-        console.warn("[templates] Cannot set default, template not found", id);
-        return false;
-      }
-      const nextTemplates = templates.map((t) =>
-        t.category === target.category ? { ...t, isDefault: t.id === id } : t,
-      );
-      return persistTemplates(nextTemplates, "set-default");
-    },
-    [persistTemplates, templates],
-  );
-
-  const templateEditorDisabled = !selectedProjectId || !projectDetails;
-
   return (
     <>
       {currentView === "list" && (
@@ -530,14 +457,6 @@ export function ProjectsPage() {
                 <Button variant="ghost" onClick={handleAddClient}>
                   <UserPlus className="mr-2 h-4 w-4" />
                   Dodaj stranko
-                </Button>
-                <Button variant="secondary" onClick={() => setCurrentView("finance") }>
-                  <BarChart3 className="mr-2 h-4 w-4" />
-                  Finance
-                </Button>
-                <Button variant="outline" onClick={() => setCurrentView("settings")}> 
-                  <Settings className="mr-2 h-4 w-4" />
-                  Nastavitve
                 </Button>
               </div>
             </div>
@@ -564,77 +483,6 @@ export function ProjectsPage() {
         />
       )}
 
-      {currentView === "finance" && (
-        <div className="min-h-screen bg-background p-6">
-          <div className="mx-auto max-w-[1280px] space-y-4">
-            <div className="mb-2">
-              <Button variant="ghost" onClick={() => setCurrentView("list")}> 
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Nazaj na projekte
-              </Button>
-            </div>
-            <Tabs defaultValue="dashboard">
-              <TabsList>
-                <TabsTrigger value="dashboard">Pregled</TabsTrigger>
-                <TabsTrigger value="projects">Projekti</TabsTrigger>
-                <TabsTrigger value="employees">Zaposleni</TabsTrigger>
-                <TabsTrigger value="invoices">Računi</TabsTrigger>
-              </TabsList>
-              <TabsContent value="dashboard" className="mt-4">
-                <FinanceDashboardPage />
-              </TabsContent>
-              <TabsContent value="projects" className="mt-4">
-                <FinanceProjectsPage />
-              </TabsContent>
-              <TabsContent value="employees" className="mt-4">
-                <FinanceEmployeesPage />
-              </TabsContent>
-              <TabsContent value="invoices" className="mt-4">
-                <FinanceInvoicesPage />
-              </TabsContent>
-            </Tabs>
-          </div>
-        </div>
-      )}
-
-      {currentView === "settings" && (
-        <div className="min-h-screen bg-background p-6">
-          <div className="mx-auto max-w-[1280px]">
-            <div className="mb-6">
-              <Button variant="ghost" onClick={() => setCurrentView("list")}>
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Nazaj na projekte
-              </Button>
-            </div>
-            <Tabs defaultValue="templates">
-              <TabsList>
-                <TabsTrigger value="templates">PDF Predloge</TabsTrigger>
-                <TabsTrigger value="general">Splošno</TabsTrigger>
-                <TabsTrigger value="integrations">Integracije</TabsTrigger>
-              </TabsList>
-              <TabsContent value="templates" className="mt-6">
-                <TemplateEditor
-                  templates={templates}
-                  onSave={handleSaveTemplate}
-                  onDelete={handleDeleteTemplate}
-                  onSetDefault={handleSetDefaultTemplate}
-                  disabled={templateEditorDisabled}
-                />
-              </TabsContent>
-              <TabsContent value="general" className="mt-6">
-                <div className="py-12 text-center text-muted-foreground">
-                  Nastavitve bodo na voljo v naslednji iteraciji.
-                </div>
-              </TabsContent>
-              <TabsContent value="integrations" className="mt-6">
-                <div className="py-12 text-center text-muted-foreground">
-                  Integracije bodo na voljo v naslednji iteraciji.
-                </div>
-              </TabsContent>
-            </Tabs>
-          </div>
-        </div>
-      )}
 
       <NewProjectDialog
         open={isNewProjectDialogOpen}

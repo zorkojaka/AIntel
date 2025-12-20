@@ -1,9 +1,19 @@
-import { Template } from "./components/TemplateEditor";
 import { Item } from "./domains/requirements/ItemsTable";
 import { OfferVersion } from "./domains/offers/OfferVersionCard";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import { TimelineEvent } from "./domains/core/TimelineFeed";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
+
+export interface Template {
+  id: string;
+  name: string;
+  description: string;
+  category: "offer" | "invoice" | "work-order";
+  content: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface Category {
   id: string;
@@ -22,6 +32,7 @@ export type ProjectStatus =
   | "invoiced";
 
 export interface ProjectCustomer {
+  id?: string;
   name: string;
   taxId?: string;
   address?: string;
