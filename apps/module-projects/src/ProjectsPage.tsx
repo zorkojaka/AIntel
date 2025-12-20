@@ -560,6 +560,7 @@ export function ProjectsPage() {
           templates={templates}
           onBack={handleBackToList}
           onProjectUpdate={handleProjectUpdate}
+          brandColor={globalSettings?.primaryColor}
         />
       )}
 

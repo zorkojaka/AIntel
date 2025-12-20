@@ -1,11 +1,12 @@
 import { CheckCircle2, Circle, Dot } from "lucide-react";
 import type { ProjectDetails } from "../../types";
-import { useProjectTimeline, StepKey, StepStatus } from "./useProjectTimeline";
+import { useProjectTimeline, StepKey, StepStatus, type TimelineStep } from "./useProjectTimeline";
 
 type ProjectQuickNavProps = {
   project: ProjectDetails;
   activeStep: StepKey;
   onSelectStep: (key: StepKey) => void;
+  steps?: TimelineStep[];
 };
 
 const statusStyles: Record<StepStatus, string> = {
@@ -24,8 +25,9 @@ function StatusIcon({ status }: { status: StepStatus }) {
   return <Circle className="h-3.5 w-3.5" />;
 }
 
-export function ProjectQuickNav({ project, activeStep, onSelectStep }: ProjectQuickNavProps) {
-  const steps = useProjectTimeline(project);
+export function ProjectQuickNav({ project, activeStep, onSelectStep, steps: stepsOverride }: ProjectQuickNavProps) {
+  const localSteps = useProjectTimeline(project);
+  const steps = stepsOverride ?? localSteps;
 
   return (
     <nav className="space-y-1">

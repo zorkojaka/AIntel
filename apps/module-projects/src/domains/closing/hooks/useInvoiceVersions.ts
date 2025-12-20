@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import type { ProjectStatus } from "../../../types";
 
-export type InvoiceStatus = "draft" | "issued";
+export type InvoiceStatus = "draft" | "issued" | "cancelled";
 
 export interface InvoiceItem {
   id: string;
@@ -35,6 +36,8 @@ export interface InvoiceVersion {
 interface InvoiceApiResponse {
   versions: InvoiceVersion[];
   activeVersionId: string | null;
+  updatedVersion?: InvoiceVersion;
+  projectStatus?: ProjectStatus;
 }
 
 async function requestInvoiceApi(projectId: string, path: string, options?: RequestInit) {
@@ -100,8 +103,11 @@ export function useInvoiceVersions(projectId?: string | null) {
   }, [fetchVersions]);
 
   const runAction = useCallback(
-    async (action: () => Promise<InvoiceApiResponse>, successMessage?: string) => {
-      if (!projectId) return false;
+    async (
+      action: () => Promise<InvoiceApiResponse>,
+      successMessage?: string,
+    ): Promise<InvoiceApiResponse | null> => {
+      if (!projectId) return null;
       setSaving(true);
       try {
         const data = await action();
@@ -109,11 +115,11 @@ export function useInvoiceVersions(projectId?: string | null) {
         if (successMessage) {
           toast.success(successMessage);
         }
-        return true;
+        return data;
       } catch (error) {
         const message = error instanceof Error ? error.message : "Dejanje ni uspelo.";
         toast.error(message);
-        return false;
+        return null;
       } finally {
         setSaving(false);
       }
@@ -130,11 +136,11 @@ export function useInvoiceVersions(projectId?: string | null) {
   }, [projectId, runAction]);
 
   const saveDraft = useCallback(
-    async (items: InvoiceItem[]) => {
+    async (items: InvoiceItem[]): Promise<boolean> => {
       if (!projectId || !resolveActiveVersion || resolveActiveVersion.status !== "draft") {
         return false;
       }
-      return runAction(
+      const result = await runAction(
         () =>
           requestInvoiceApi(projectId, `/invoices/${resolveActiveVersion._id}`, {
             method: "PATCH",
@@ -142,19 +148,21 @@ export function useInvoiceVersions(projectId?: string | null) {
           }),
         "Račun shranjen.",
       );
+      return Boolean(result);
     },
     [projectId, resolveActiveVersion, runAction],
   );
 
-  const issue = useCallback(async () => {
-    if (!projectId || !resolveActiveVersion || resolveActiveVersion.status !== "draft") return;
-    await runAction(
+  const issue = useCallback(async (): Promise<InvoiceVersion | null> => {
+    if (!projectId || !resolveActiveVersion || resolveActiveVersion.status !== "draft") return null;
+    const result = await runAction(
       () =>
         requestInvoiceApi(projectId, `/invoices/${resolveActiveVersion._id}/issue`, {
           method: "POST",
         }),
       "Račun izdan.",
     );
+    return result?.updatedVersion ?? resolveActiveVersion ?? null;
   }, [projectId, resolveActiveVersion, runAction]);
 
   const cloneForEdit = useCallback(async () => {
@@ -181,4 +189,3 @@ export function useInvoiceVersions(projectId?: string | null) {
     cloneForEdit,
   };
 }
-

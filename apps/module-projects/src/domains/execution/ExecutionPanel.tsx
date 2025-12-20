@@ -12,7 +12,8 @@ import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import type { MaterialOrder, WorkOrder, WorkOrderItem, WorkOrderStatus } from "@aintel/shared/types/logistics";
 import { SignaturePad } from "./SignaturePad";
 import { PriceListProductAutocomplete } from "../../components/PriceListProductAutocomplete";
-import { triggerProjectRefresh } from "../core/useProject";
+import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
+import { downloadPdf } from "../../api";
 
 interface ExecutionPanelProps {
   projectId: string;
@@ -100,10 +101,12 @@ function getMaterialForWorkOrder(materialOrders: MaterialOrder[], workOrderId: s
 export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOrderUpdated }: ExecutionPanelProps) {
   const workOrders = logistics?.workOrders ?? [];
   const materialOrders = logistics?.materialOrders ?? [];
+  const refreshAfterMutation = useProjectMutationRefresh(projectId);
   const [pendingWorkOrders, setPendingWorkOrders] = useState<Record<string, WorkOrderDraft>>({});
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [savingStates, setSavingStates] = useState<Record<string, "saving" | "saved" | "error">>({});
   const [unsavedChanges, setUnsavedChanges] = useState<Record<string, boolean>>({});
+  const [downloadingWorkOrderId, setDownloadingWorkOrderId] = useState<string | null>(null);
 
   const workOrdersByStatus = useMemo(() => {
     const grouped: Record<WorkOrderStatus, WorkOrder[]> = {
@@ -291,7 +294,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
           return next;
         });
         onWorkOrderUpdated?.(updated);
-        await triggerProjectRefresh(projectId);
+        await refreshAfterMutation();
         setSavingStates((prev) => ({ ...prev, [orderId]: "saved" }));
         setTimeout(() => {
           setSavingStates((prev) => {
@@ -309,7 +312,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
         return false;
       }
     },
-    [workOrders, projectId, onWorkOrderUpdated, getDraftValues],
+    [workOrders, projectId, onWorkOrderUpdated, getDraftValues, refreshAfterMutation],
   );
 
   const handleCompleteWorkOrder = async (order: WorkOrder) => {
@@ -321,6 +324,21 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
       toast.error("Delovnega naloga ni mogoče zaključiti.");
     }
     setCompletingId(null);
+  };
+
+  const handleDownloadWorkOrder = async (order: WorkOrder | null) => {
+    if (!order?._id) return;
+    setDownloadingWorkOrderId(order._id);
+    try {
+      const filename = `delovni-nalog-${order._id}.pdf`;
+      await downloadPdf(`/api/projects/${projectId}/work-orders/${order._id}/pdf?docType=WORK_ORDER`, filename);
+      toast.success("Delovni nalog prenesen.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Prenos delovnega naloga ni uspel.");
+    } finally {
+      setDownloadingWorkOrderId(null);
+    }
   };
 
   const applyDraftChange = (order: WorkOrder, values: Partial<{ status: WorkOrderStatus; executionNote: string }>) => {
@@ -572,11 +590,25 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                               <span className="text-destructive">Shranjevanje ni uspelo.</span>
                             )}
                           </div>
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              onClick={() => saveWorkOrder(order._id)}
-                              disabled={!orderHasUnsavedChanges || isSavingOrder || isCompletingOrder}
-                            >
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => handleDownloadWorkOrder(order)}
+                            disabled={!order._id || downloadingWorkOrderId === order._id}
+                          >
+                            {downloadingWorkOrderId === order._id ? (
+                              <span className="flex items-center gap-2">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Prenos...
+                              </span>
+                            ) : (
+                              "Prenesi delovni nalog"
+                            )}
+                          </Button>
+                          <Button
+                            onClick={() => saveWorkOrder(order._id)}
+                            disabled={!orderHasUnsavedChanges || isSavingOrder || isCompletingOrder}
+                          >
                               {isSavingOrder ? (
                                 <>
                                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

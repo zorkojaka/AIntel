@@ -16,7 +16,9 @@ import { Textarea } from "../../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { MaterialOrderCard, TechnicianOption } from "./MaterialOrderCard";
 import { useConfirmOffer } from "../core/useConfirmOffer";
-import { triggerProjectRefresh } from "../core/useProject";
+import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
+import { downloadPdf } from "../../api";
+import { Loader2 } from "lucide-react";
 
 interface LogisticsPanelProps {
   projectId: string;
@@ -123,6 +125,8 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
   const [locationTouched, setLocationTouched] = useState(false);
   const [savingWorkOrder, setSavingWorkOrder] = useState(false);
   const [issuingOrder, setIssuingOrder] = useState(false);
+  const [materialDownloading, setMaterialDownloading] = useState<"PURCHASE_ORDER" | "DELIVERY_NOTE" | null>(null);
+  const [workOrderDownloading, setWorkOrderDownloading] = useState<"WORK_ORDER" | "WORK_ORDER_CONFIRMATION" | null>(null);
 
   const hasConfirmed = useMemo(() => !!snapshot?.confirmedOfferVersionId, [snapshot]);
   const confirmedOffers = useMemo(
@@ -272,6 +276,7 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
     }
   }, [client, selectedWorkOrder?.customerAddress, locationTouched, workOrderForm.location]);
 
+  const refreshAfterMutation = useProjectMutationRefresh(projectId);
   const { confirmOffer, confirmingId } = useConfirmOffer({
     projectId,
     onConfirmed: fetchSnapshot,
@@ -292,7 +297,7 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
         return;
       }
       toast.success("Potrditev ponudbe je bila preklicana.");
-      await Promise.allSettled([fetchSnapshot(), triggerProjectRefresh(projectId)]);
+      await refreshAfterMutation(fetchSnapshot);
     } catch (error) {
       toast.error("Preklic potrditve ni uspel.");
     } finally {
@@ -326,6 +331,48 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
         setMaterialOrderForm((prev) => (prev ? { ...prev, technicianId: id, technicianName: name } : prev)),
       technicians,
     );
+  };
+
+  const handleDownloadMaterialPdf = async (docType: "PURCHASE_ORDER" | "DELIVERY_NOTE") => {
+    const target = materialOrderForm ?? selectedMaterialOrder ?? null;
+    if (!target?._id) {
+      toast.error("Naročilo še ni pripravljeno za izvoz.");
+      return;
+    }
+    setMaterialDownloading(docType);
+    try {
+      const url = `/api/projects/${projectId}/material-orders/${target._id}/pdf?docType=${docType}`;
+      const prefix = docType === "DELIVERY_NOTE" ? "dobavnica" : "narocilo";
+      const filename = `${prefix}-${projectId}-${target._id}.pdf`;
+      await downloadPdf(url, filename);
+      toast.success("PDF prenesen.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Prenos PDF ni uspel.");
+    } finally {
+      setMaterialDownloading(null);
+    }
+  };
+
+  const handleDownloadWorkOrderPdf = async (docType: "WORK_ORDER" | "WORK_ORDER_CONFIRMATION") => {
+    const target = selectedWorkOrder ?? null;
+    if (!target?._id) {
+      toast.error("Delovni nalog ni izbran.");
+      return;
+    }
+    setWorkOrderDownloading(docType);
+    try {
+      const url = `/api/projects/${projectId}/work-orders/${target._id}/pdf?docType=${docType}`;
+      const prefix = docType === "WORK_ORDER_CONFIRMATION" ? "potrdilo" : "delovni-nalog";
+      const filename = `${prefix}-${projectId}-${target._id}.pdf`;
+      await downloadPdf(url, filename);
+      toast.success("PDF prenesen.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Prenos PDF ni uspel.");
+    } finally {
+      setWorkOrderDownloading(null);
+    }
   };
 
   const handleSaveWorkOrder = async (
@@ -410,7 +457,7 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
       if (onWorkOrderUpdated) {
         onWorkOrderUpdated(mergedWorkOrder);
       }
-      await triggerProjectRefresh(projectId);
+      await refreshAfterMutation(fetchSnapshot);
       toast.success("Delovni nalog posodobljen.");
       return true;
     } catch (error) {
@@ -556,14 +603,10 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
           />
         </div>
         <div className="flex justify-end gap-2">
-          <Button onClick={() => handleSaveWorkOrder()} disabled={savingWorkOrder}>
-            {savingWorkOrder ? "Shranjujem..." : "Shrani delovni nalog"}
+          <Button variant="outline" onClick={() => handleSaveWorkOrder()} disabled={savingWorkOrder}>
+            {savingWorkOrder ? "Shranjujem..." : "Shrani podatke"}
           </Button>
-          <Button
-            variant="outline"
-            onClick={handleIssueWorkOrder}
-            disabled={!canIssueOrder || savingWorkOrder || issuingOrder}
-          >
+          <Button onClick={handleIssueWorkOrder} disabled={!canIssueOrder || savingWorkOrder || issuingOrder}>
             {issuingOrder ? "Izdajam..." : "Izdaj nalog"}
           </Button>
         </div>
@@ -596,6 +639,8 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
 
   const headerWorkOrderStatus: WorkOrderStatus =
     (workOrderForm.status as WorkOrderStatus) ?? (selectedWorkOrder?.status as WorkOrderStatus) ?? "draft";
+  const canDownloadMaterialPdf = !!(materialOrderForm ?? selectedMaterialOrder ?? null)?._id;
+  const canDownloadWorkOrderPdf = !!selectedWorkOrder?._id;
 
   return (
     <div className="space-y-6">
@@ -689,7 +734,7 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
         {shouldShowOfferSelector && (
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="text-xs font-medium uppercase text-muted-foreground">Logistika za ponudbo</p>
+              <p className="text-xs font-medium uppercase text-muted-foreground">Priprava za ponudbo</p>
               <p className="text-base font-semibold">{selectedOfferLabel ?? "Izberi potrjeno ponudbo"}</p>
             </div>
             {shouldRenderOfferDropdown ? (
@@ -716,29 +761,57 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
         )}
 
         <Card>
-          <CardHeader className="flex flex-wrap items-center justify-between gap-4">
-            <CardTitle className="m-0">Naročilo za material</CardTitle>
+          <CardHeader className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Material</p>
+              <CardTitle className="mt-1">Naročilo za material</CardTitle>
+              <p className="text-sm text-muted-foreground">Upravljaj status naročila in spremljaj pripravo materiala.</p>
+            </div>
             {materialOrderForm && (
-              <Select
-                value={materialOrderForm.materialStatus ?? "Za naročit"}
-                onValueChange={(value) => handleMaterialStatusChange(value as MaterialStatus)}
-              >
-                <SelectTrigger className="h-8 w-fit border border-input bg-background px-3 py-0 focus:ring-0">
-                  <Badge variant="outline" className="uppercase text-xs tracking-wide px-3 py-1">
+              <div className="flex flex-col gap-1 text-right">
+                <span className="text-xs uppercase text-muted-foreground">Status naročila</span>
+                <Select
+                  value={materialOrderForm.materialStatus ?? "Za naročit"}
+                  onValueChange={(value) => handleMaterialStatusChange(value as MaterialStatus)}
+                >
+                  <SelectTrigger className="h-10 w-[200px] border border-input bg-background focus:ring-0">
                     <SelectValue />
-                  </Badge>
-                </SelectTrigger>
-                <SelectContent align="end">
-                  {materialStatusOptions.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {status}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    {materialStatusOptions.map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {status}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             )}
           </CardHeader>
           <CardContent>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">PDF izvozi</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDownloadMaterialPdf("PURCHASE_ORDER")}
+                  disabled={!canDownloadMaterialPdf || (materialDownloading !== null && materialDownloading !== "PURCHASE_ORDER")}
+                >
+                  {materialDownloading === "PURCHASE_ORDER" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Prenesi naročilnico
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDownloadMaterialPdf("DELIVERY_NOTE")}
+                  disabled={!canDownloadMaterialPdf || (materialDownloading !== null && materialDownloading !== "DELIVERY_NOTE")}
+                >
+                  {materialDownloading === "DELIVERY_NOTE" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Prenesi dobavnico
+                </Button>
+              </div>
+            </div>
             <MaterialOrderCard
               materialOrder={materialOrderForm}
               technicians={technicians}
@@ -751,15 +824,35 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <CardTitle className="m-0">Delovni nalog</CardTitle>
-              {filteredWorkOrders.length > 0 && (
-                <Select
-                  value={selectedWorkOrder?._id ?? ""}
-                  onValueChange={(id) => setSelectedWorkOrderId(id)}
-                >
-                  <SelectTrigger className="w-[220px]">
+          <CardHeader className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Izvedba</p>
+              <CardTitle className="mt-1">Delovni nalog</CardTitle>
+              <p className="text-sm text-muted-foreground">Dodeli ekipo, spremljaj napredek in izvozi PDF.</p>
+            </div>
+            {selectedWorkOrder && (
+              <div className="flex flex-col gap-1 text-right">
+                <span className="text-xs uppercase text-muted-foreground">Status naloga</span>
+                <Select value={headerWorkOrderStatus} onValueChange={(value) => handleWorkOrderChange("status", value)}>
+                  <SelectTrigger className="h-10 w-[200px] border border-input bg-background focus:ring-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    {workOrderStatusOptions.map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {workOrderStatusLabels[status]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {filteredWorkOrders.length > 0 ? (
+                <Select value={selectedWorkOrder?._id ?? ""} onValueChange={(id) => setSelectedWorkOrderId(id)}>
+                  <SelectTrigger className="w-[260px]">
                     <SelectValue placeholder="Izberi delovni nalog" />
                   </SelectTrigger>
                   <SelectContent>
@@ -770,29 +863,38 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
                     ))}
                   </SelectContent>
                 </Select>
+              ) : (
+                <span className="text-sm text-muted-foreground">Delovni nalog še ni ustvarjen.</span>
+              )}
+              {selectedWorkOrder && (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDownloadWorkOrderPdf("WORK_ORDER")}
+                    disabled={!canDownloadWorkOrderPdf || (workOrderDownloading !== null && workOrderDownloading !== "WORK_ORDER")}
+                  >
+                    {workOrderDownloading === "WORK_ORDER" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    Prenesi nalog
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDownloadWorkOrderPdf("WORK_ORDER_CONFIRMATION")}
+                    disabled={
+                      !canDownloadWorkOrderPdf || (workOrderDownloading !== null && workOrderDownloading !== "WORK_ORDER_CONFIRMATION")
+                    }
+                  >
+                    {workOrderDownloading === "WORK_ORDER_CONFIRMATION" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    Potrditev izvedbe
+                  </Button>
+                </div>
               )}
             </div>
-            {selectedWorkOrder && (
-              <Select value={headerWorkOrderStatus} onValueChange={(value) => handleWorkOrderChange("status", value)}>
-                <SelectTrigger className="h-8 w-fit border border-input bg-background px-3 py-0 focus:ring-0">
-                  <Badge variant="outline" className="uppercase text-xs tracking-wide px-3 py-1">
-                    <SelectValue />
-                  </Badge>
-                </SelectTrigger>
-                <SelectContent align="end">
-                  {workOrderStatusOptions.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {workOrderStatusLabels[status]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </CardHeader>
-          <CardContent>{renderWorkOrder(selectedWorkOrder)}</CardContent>
+            {renderWorkOrder(selectedWorkOrder)}
+          </CardContent>
         </Card>
       </div>
     </div>
   );
 }
-

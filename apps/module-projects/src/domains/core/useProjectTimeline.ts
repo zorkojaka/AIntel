@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import type { ProjectDetails } from "../../types";
 import type { MaterialOrder, WorkOrder, WorkOrderStatus } from "@aintel/shared/types/logistics";
 import type { OfferVersionSummary } from "@aintel/shared/types/offers";
-import { useQueryClient } from "@tanstack/react-query";
 
 export type StepStatus = "done" | "inProgress" | "pending";
 
@@ -154,6 +153,18 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
       : projectId && Array.isArray(project?.offers)
         ? project.offers.map((offer: any) => `${offer.id}:${offer.status}`).join("|")
         : null;
+  const logisticsOfferSignal =
+    projectId && project?.logistics
+      ? [
+          project.logistics.confirmedOfferVersionId ?? "",
+          project.logistics.acceptedOfferId ?? "",
+          Array.isArray((project.logistics as any)?.offerVersions)
+            ? (project.logistics as any).offerVersions
+                .map((offer: any) => `${offer._id || offer.id || offer.version}:${offer.status}`)
+                .join("|")
+            : "",
+        ].join("|")
+      : null;
 
   useEffect(() => {
     if (!projectId) {
@@ -175,18 +186,21 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
         }
       }
     };
+    setRemoteOffers(null);
     fetchOffers();
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [projectId, offerSignal]);
+  }, [projectId, offerSignal, logisticsOfferSignal]);
 
   return useMemo(() => {
     const basePath = project?.id ? `/projects/${project.id}` : "#";
+    const forceCompleted = project?.status === "completed";
 
     const requirementCount = Array.isArray(project?.requirements) ? project!.requirements!.length : 0;
-    const requirementsStatus: StepStatus = requirementCount > 0 ? "done" : "pending";
+    const requirementsDone = requirementCount > 0;
+    let requirementsStatus: StepStatus = requirementsDone ? "done" : "inProgress";
     const requirementsMeta = requirementCount > 0 ? `${requirementCount} zahtev` : undefined;
 
     const offersSource = remoteOffers ?? collectOffers(project);
@@ -194,7 +208,8 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const offerDone = offersSource.some((offer) =>
       STATUS_DONE_VALUES.has(normalizeStatus((offer as any).status)),
     );
-    const offersStatus: StepStatus = offerDone ? "done" : offerCount > 0 ? "inProgress" : "pending";
+    const shouldHighlightOffers = requirementsDone && !offerDone;
+    let offersStatus: StepStatus = offerDone ? "done" : shouldHighlightOffers ? "inProgress" : "pending";
     const offersMeta = offerCount > 0 ? `${offerCount} ponudb` : undefined;
 
     const workOrders = collectWorkOrders(project);
@@ -245,7 +260,7 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const logisticsDone = issuedCount > 0;
     const hasActivity =
       materialSummary.level !== "none" || workOrderSummary.level !== "none";
-    const logisticsStatus: StepStatus = logisticsDone ? "done" : hasActivity ? "inProgress" : "pending";
+    let logisticsStatus: StepStatus = logisticsDone ? "done" : hasActivity ? "inProgress" : "pending";
     const logisticsSummary: LogisticsSummary = {
       material: materialSummary,
       workOrder: workOrderSummary,
@@ -288,7 +303,7 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const executionTotalCount = visibleItems.length;
     const executionCompletedCount = visibleItems.filter((item) => item?.isCompleted === true).length;
     const executionHasWorkOrders = executionTotalCount > 0;
-    const executionStatus: StepStatus = !hasIssuedWorkOrders
+    let executionStatus: StepStatus = !hasIssuedWorkOrders
       ? "pending"
       : allIssuedWorkOrdersCompleted
         ? "done"
@@ -310,14 +325,28 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     let invoiceStatus: StepStatus = "pending";
     let invoiceMeta: string | undefined;
 
+    const invoiceDraftExists = closingSummary || invoiceVersions.length > 0;
+    const executionComplete = hasIssuedWorkOrders && allIssuedWorkOrdersCompleted;
+
     if (issuedInvoice) {
       invoiceStatus = "done";
-      invoiceMeta = "Račun izdan";
-    } else if (closingSummary || invoiceVersions.length > 0) {
+      invoiceMeta = "Ra?un izdan";
+    } else if (executionComplete) {
       invoiceStatus = "inProgress";
-      invoiceMeta = invoiceVersions.length > 0 ? "Osnutek" : undefined;
+      invoiceMeta = invoiceDraftExists ? "Osnutek" : "Pripravljeno za izdajo";
     } else {
       invoiceStatus = "pending";
+      invoiceMeta = invoiceDraftExists ? "Osnutek" : undefined;
+    }
+
+    if (forceCompleted) {
+      requirementsStatus = "done";
+      offersStatus = "done";
+      logisticsStatus = "done";
+      logisticsSummary.done = true;
+      executionStatus = "done";
+      invoiceStatus = "done";
+      invoiceMeta = invoiceMeta ?? "Ra?un izdan";
     }
 
     const buildHref = (segment: string) => `${basePath}/${segment}`;
@@ -327,7 +356,7 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
       { key: "offers", label: "Ponudbe", status: offersStatus, meta: offersMeta, href: buildHref("offers") },
       {
         key: "logistics",
-        label: "Logistika",
+        label: "Priprava",
         status: logisticsStatus,
         meta: logisticsMeta,
         logisticsSummary,
