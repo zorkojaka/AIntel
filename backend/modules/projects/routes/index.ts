@@ -53,6 +53,8 @@ router.post('/:projectId/offers/:offerId/confirm', logisticsController.confirmOf
 router.post('/:projectId/logistics/cancel-confirmation', cancelOfferConfirmation);
 router.get('/:projectId/logistics', logisticsController.getProjectLogistics);
 router.put('/:projectId/work-orders/:workOrderId', logisticsController.updateWorkOrder);
+router.get('/:projectId/work-orders/:workOrderId/pdf', logisticsController.exportWorkOrderPdf);
+router.get('/:projectId/material-orders/:materialOrderId/pdf', logisticsController.exportMaterialOrderPdf);
 router.get('/:projectId/invoices', invoiceController.listInvoices);
 router.post('/:projectId/invoices/from-closing', invoiceController.createInvoice);
 router.patch('/:projectId/invoices/:versionId', invoiceController.updateInvoice);

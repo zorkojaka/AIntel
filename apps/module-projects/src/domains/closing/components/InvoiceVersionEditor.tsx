@@ -26,12 +26,18 @@ import {
 } from "../hooks/useInvoiceVersions";
 import { downloadPdf } from "../../../api";
 import { toast } from "sonner";
+import { useProjectMutationRefresh } from "../../core/useProjectMutationRefresh";
 
 interface InvoiceVersionEditorProps {
   projectId?: string | null;
 }
 
 const TYPE_OPTIONS: InvoiceItem["type"][] = ["Osnovno", "Dodatno", "Manj"];
+const STATUS_LABELS: Record<InvoiceVersion["status"], string> = {
+  draft: "osnutek",
+  issued: "izdano",
+  cancelled: "preklicano",
+};
 
 const numberFormatter = new Intl.NumberFormat("sl-SI", {
   minimumFractionDigits: 2,
@@ -96,9 +102,11 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
     issue,
     cloneForEdit,
   } = useInvoiceVersions(projectId ?? null);
+  const refreshAfterMutation = useProjectMutationRefresh(projectId);
   const [draftVersion, setDraftVersion] = useState<InvoiceVersion | null>(null);
   const [dirty, setDirty] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [creditDownloading, setCreditDownloading] = useState(false);
 
   useEffect(() => {
     setDraftVersion(cloneVersion(activeVersion));
@@ -160,7 +168,13 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
       const saved = await handleSave();
       if (!saved) return;
     }
-    await issue();
+    const issuedVersion = await issue();
+    if (!issuedVersion) {
+      return;
+    }
+    setDraftVersion(cloneVersion(issuedVersion));
+    setDirty(false);
+    await refreshAfterMutation();
   };
 
   const handleClone = async () => {
@@ -179,6 +193,21 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
       toast.error(error instanceof Error ? error.message : "Prenos računa ni uspel.");
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleDownloadCreditNote = async () => {
+    if (!draftVersion || !projectId) return;
+    try {
+      setCreditDownloading(true);
+      const filename = `dobropis-${projectId}-${draftVersion.versionNumber ?? draftVersion._id}.pdf`;
+      await downloadPdf(`/api/projects/${projectId}/invoices/${draftVersion._id}/pdf?docType=CREDIT_NOTE`, filename);
+      toast.success("Dobropis prenesen.");
+    } catch (error) {
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : "Prenos dobropisa ni uspel.");
+    } finally {
+      setCreditDownloading(false);
     }
   };
 
@@ -217,7 +246,7 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
                 <SelectContent>
                   {versions.map((version) => (
                     <SelectItem key={version._id} value={version._id}>
-                      Račun_{version.versionNumber} – {version.status === "draft" ? "osnutek" : "izdano"}
+                      Račun_{version.versionNumber} – {STATUS_LABELS[version.status]}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -244,10 +273,7 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-sm text-muted-foreground">
-              Status:{" "}
-              <span className="font-medium text-foreground">
-                {draftVersion.status === "draft" ? "osnutek" : "izdano"}
-              </span>
+              Status: <span className="font-medium text-foreground">{STATUS_LABELS[draftVersion.status]}</span>
             </div>
             {canEdit && (
               <Button variant="outline" size="sm" onClick={handleAddItem}>
@@ -381,9 +407,16 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
           </div>
           <div className="flex flex-wrap gap-2 justify-between">
             <div className="flex gap-2">
-                <Button variant="outline" disabled={!draftVersion || downloading} onClick={handleDownload}>
-                  {downloading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Prenesi PDF
-                </Button>
+              <Button variant="outline" disabled={!draftVersion || downloading} onClick={handleDownload}>
+                {downloading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Prenesi PDF
+              </Button>
+              <Button
+                variant="outline"
+                disabled={!draftVersion || creditDownloading}
+                onClick={handleDownloadCreditNote}
+              >
+                {creditDownloading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Prenesi dobropis
+              </Button>
               <Button variant="outline" disabled>
                 Pošlji račun stranki
               </Button>

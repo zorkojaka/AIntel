@@ -5,6 +5,7 @@ import { renderHtmlToPdf } from './html-pdf.service';
 import { renderDocumentHtml, type DocumentPreviewContext } from './document-renderers';
 import { getCompanySettings, getPdfDocumentSettings } from './pdf-settings.service';
 import { getSettings } from '../../settings/settings.service';
+import type { DocumentNumberingKind } from './document-numbering.service';
 
 export interface InvoiceVersion {
   _id: string;
@@ -30,7 +31,10 @@ export interface InvoiceVersion {
   invoiceNumber?: string;
 }
 
-export async function generateInvoicePdf(projectId: string, invoiceVersionId: string) {
+type InvoiceDocType = Extract<DocumentNumberingKind, 'INVOICE' | 'CREDIT_NOTE'>;
+
+export async function generateInvoicePdf(projectId: string, invoiceVersionId: string, options?: { docType?: InvoiceDocType }) {
+  const docType: InvoiceDocType = options?.docType === 'CREDIT_NOTE' ? 'CREDIT_NOTE' : 'INVOICE';
   const project = (await ProjectModel.findOne({ id: projectId }).lean()) as ProjectDocument | null;
   if (!project) {
     throw new Error('Projekt ni najden.');
@@ -43,7 +47,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
   }
   const [company, documentSettings, globalSettings] = await Promise.all([
     getCompanySettings(),
-    getPdfDocumentSettings('INVOICE'),
+    getPdfDocumentSettings(docType),
     getSettings(),
   ]);
 
@@ -92,7 +96,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
   const companyProfile = buildCompanyProfile(company, globalSettings);
 
   const context = {
-    docType: 'INVOICE',
+    docType,
     documentNumber,
     issueDate: formatDate(issueDate),
     dueDate,
@@ -104,6 +108,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
     notes,
     paymentTerms: project.customer?.paymentTerms ?? documentSettings.defaultTexts.paymentTerms ?? null,
     paymentInfo,
+    referenceNumber: docType === 'CREDIT_NOTE' ? documentNumber : null,
   } as DocumentPreviewContext;
 
   console.log('INVOICE EXPORT renderer', {
@@ -111,6 +116,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
     invoiceVersionId,
     hasLogo: !!companyProfile.logoUrl,
     companyName: companyProfile.companyName,
+    docType,
   });
 
   const html = renderDocumentHtml(context);

@@ -184,9 +184,10 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
 
   return useMemo(() => {
     const basePath = project?.id ? `/projects/${project.id}` : "#";
+    const forceCompleted = project?.status === "completed";
 
     const requirementCount = Array.isArray(project?.requirements) ? project!.requirements!.length : 0;
-    const requirementsStatus: StepStatus = requirementCount > 0 ? "done" : "pending";
+    let requirementsStatus: StepStatus = requirementCount > 0 ? "done" : "pending";
     const requirementsMeta = requirementCount > 0 ? `${requirementCount} zahtev` : undefined;
 
     const offersSource = remoteOffers ?? collectOffers(project);
@@ -194,7 +195,7 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const offerDone = offersSource.some((offer) =>
       STATUS_DONE_VALUES.has(normalizeStatus((offer as any).status)),
     );
-    const offersStatus: StepStatus = offerDone ? "done" : offerCount > 0 ? "inProgress" : "pending";
+    let offersStatus: StepStatus = offerDone ? "done" : offerCount > 0 ? "inProgress" : "pending";
     const offersMeta = offerCount > 0 ? `${offerCount} ponudb` : undefined;
 
     const workOrders = collectWorkOrders(project);
@@ -245,7 +246,7 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const logisticsDone = issuedCount > 0;
     const hasActivity =
       materialSummary.level !== "none" || workOrderSummary.level !== "none";
-    const logisticsStatus: StepStatus = logisticsDone ? "done" : hasActivity ? "inProgress" : "pending";
+    let logisticsStatus: StepStatus = logisticsDone ? "done" : hasActivity ? "inProgress" : "pending";
     const logisticsSummary: LogisticsSummary = {
       material: materialSummary,
       workOrder: workOrderSummary,
@@ -288,7 +289,7 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const executionTotalCount = visibleItems.length;
     const executionCompletedCount = visibleItems.filter((item) => item?.isCompleted === true).length;
     const executionHasWorkOrders = executionTotalCount > 0;
-    const executionStatus: StepStatus = !hasIssuedWorkOrders
+    let executionStatus: StepStatus = !hasIssuedWorkOrders
       ? "pending"
       : allIssuedWorkOrdersCompleted
         ? "done"
@@ -310,14 +311,28 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     let invoiceStatus: StepStatus = "pending";
     let invoiceMeta: string | undefined;
 
+    const invoiceDraftExists = closingSummary || invoiceVersions.length > 0;
+    const executionComplete = hasIssuedWorkOrders && allIssuedWorkOrdersCompleted;
+
     if (issuedInvoice) {
       invoiceStatus = "done";
-      invoiceMeta = "Račun izdan";
-    } else if (closingSummary || invoiceVersions.length > 0) {
+      invoiceMeta = "Ra?un izdan";
+    } else if (executionComplete) {
       invoiceStatus = "inProgress";
-      invoiceMeta = invoiceVersions.length > 0 ? "Osnutek" : undefined;
+      invoiceMeta = invoiceDraftExists ? "Osnutek" : "Pripravljeno za izdajo";
     } else {
       invoiceStatus = "pending";
+      invoiceMeta = invoiceDraftExists ? "Osnutek" : undefined;
+    }
+
+    if (forceCompleted) {
+      requirementsStatus = "done";
+      offersStatus = "done";
+      logisticsStatus = "done";
+      logisticsSummary.done = true;
+      executionStatus = "done";
+      invoiceStatus = "done";
+      invoiceMeta = invoiceMeta ?? "Ra?un izdan";
     }
 
     const buildHref = (segment: string) => `${basePath}/${segment}`;
@@ -327,7 +342,7 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
       { key: "offers", label: "Ponudbe", status: offersStatus, meta: offersMeta, href: buildHref("offers") },
       {
         key: "logistics",
-        label: "Logistika",
+        label: "Priprava",
         status: logisticsStatus,
         meta: logisticsMeta,
         logisticsSummary,

@@ -16,7 +16,27 @@ import { LogisticsPanel } from "../domains/logistics/LogisticsPanel";
 import { useProject } from "../domains/core/useProject";
 import { ProjectHeader } from "../domains/core/ProjectHeader";
 import { ProjectQuickNav } from "../domains/core/ProjectQuickNav";
-import type { StepKey } from "../domains/core/useProjectTimeline";
+import { useProjectTimeline, type StepKey, type StepStatus, type TimelineStep } from "../domains/core/useProjectTimeline";
+
+const TAB_PHASE_STYLES: Record<"done" | "active" | "future", { container: string; label: string; iconColor: string }> = {
+  done: {
+    container: "bg-emerald-500 text-white hover:bg-emerald-500 data-[state=active]:bg-emerald-500",
+    label: "text-white",
+    iconColor: "text-white/80",
+  },
+  active: {
+    container:
+      "bg-amber-500 text-white shadow-sm data-[state=active]:bg-amber-500 hover:bg-amber-500 focus-visible:ring-2 focus-visible:ring-amber-400",
+    label: "text-white",
+    iconColor: "text-white/80",
+  },
+  future: {
+    container:
+      "bg-background text-muted-foreground border border-muted/60 hover:bg-muted/40 data-[state=active]:bg-muted/40",
+    label: "text-muted-foreground",
+    iconColor: "text-muted-foreground",
+  },
+};
 import {
   RequirementsPanel,
   ItemFormState,
@@ -142,6 +162,14 @@ export function ProjectWorkspace({
     execution: "execution",
     invoice: "closing",
   };
+  const timelineSteps = useProjectTimeline(project);
+  const timelineStepByKey = useMemo(() => {
+    const map = {} as Partial<Record<StepKey, TimelineStep>>;
+    timelineSteps.forEach((step) => {
+      map[step.key] = step;
+    });
+    return map;
+  }, [timelineSteps]);
   const activeQuickStep: StepKey = overrideStep ?? stepByTab[activeTab] ?? "requirements";
 
   const basePath = project ? `/api/projects/${project.id}` : "";
@@ -1073,18 +1101,56 @@ export function ProjectWorkspace({
 
                             <Card className="p-4">
                 <h4 className="mb-3 text-sm">Hitra navigacija</h4>
-                <ProjectQuickNav project={project} activeStep={activeQuickStep} onSelectStep={handleNavigateStep} />
+                <ProjectQuickNav
+                  project={project}
+                  steps={timelineSteps}
+                  activeStep={activeQuickStep}
+                  onSelectStep={handleNavigateStep}
+                />
               </Card>
             </div>
 
             <div className="col-span-9">
               <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                <TabsList>
-                  <TabsTrigger value="items">Zahteve</TabsTrigger>
-                  <TabsTrigger value="offers">Ponudbe</TabsTrigger>
-                  <TabsTrigger value="logistics">Logistika</TabsTrigger>
-                  <TabsTrigger value="execution">Izvedba</TabsTrigger>
-                  <TabsTrigger value="closing">Račun</TabsTrigger>
+                <TabsList className="flex w-full overflow-hidden bg-muted/10 p-0">
+                  {[
+                    { value: "items", label: "Zahteve" },
+                    { value: "offers", label: "Ponudbe" },
+                    { value: "logistics", label: "Priprava" },
+                    { value: "execution", label: "Izvedba" },
+                    { value: "closing", label: "Račun" },
+                  ].map((tab, index, tabsArr) => {
+                    const stepKey = stepByTab[tab.value];
+                    const stepStatus: StepStatus = stepKey ? timelineStepByKey[stepKey]?.status ?? "pending" : "pending";
+                    const phase = stepStatus === "done" ? "done" : stepStatus === "inProgress" ? "active" : "future";
+                    const styles = TAB_PHASE_STYLES[phase];
+                    const icon = phase === "done" ? "✓" : phase === "active" ? "•" : "";
+                    const overlap = 36;
+                    const clipPath = index === tabsArr.length - 1 ? "polygon(0 0, 100% 0, 100% 100%, 0 100%)" : "polygon(0 0, calc(100% - 32px) 0, 100% 50%, calc(100% - 32px) 100%, 0 100%)";
+                    const roundedClass =
+                      index === 0 ? "rounded-l-md" : index === tabsArr.length - 1 ? "rounded-r-md" : "";
+                    return (
+                      <TabsTrigger
+                        key={tab.value}
+                        value={tab.value}
+                        style={{
+                          clipPath,
+                          marginInlineStart: index === 0 ? 0 : -overlap,
+                          zIndex: tabsArr.length - index,
+                        }}
+                        className={`relative flex flex-1 items-center gap-2 pl-5 pr-12 py-3 text-sm font-semibold uppercase tracking-wide transition overflow-hidden ${roundedClass} ${styles.container}`}
+                      >
+                        <span className={`inline-flex items-center gap-1 ${styles.label} relative z-10`}>
+                          {tab.label}
+                          {icon && (
+                            <span className={`text-xs opacity-70 ${styles.iconColor}`} aria-hidden>
+                              {icon}
+                            </span>
+                          )}
+                        </span>
+                      </TabsTrigger>
+                    );
+                  })}
                 </TabsList>
 
                 <TabsContent value="items" className="mt-0 space-y-4">
@@ -1181,4 +1247,3 @@ export function ProjectWorkspace({
 
   return renderContent();
 }
-

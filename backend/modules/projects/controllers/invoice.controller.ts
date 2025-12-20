@@ -70,12 +70,14 @@ export async function cloneInvoiceForEdit(req: Request, res: Response) {
 
 export async function exportInvoicePdf(req: Request, res: Response) {
   try {
-    const buffer = await generateInvoicePdf(getProjectId(req), getVersionId(req));
+    const requestedType = typeof req.query.docType === 'string' ? req.query.docType.toUpperCase() : 'INVOICE';
+    const docType = requestedType === 'CREDIT_NOTE' ? 'CREDIT_NOTE' : 'INVOICE';
+    const buffer = await generateInvoicePdf(getProjectId(req), getVersionId(req), { docType });
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="invoice-${getVersionId(req)}.pdf"`);
+    const slug = docType === 'CREDIT_NOTE' ? 'credit-note' : 'invoice';
+    res.setHeader('Content-Disposition', `attachment; filename="${slug}-${getVersionId(req)}.pdf"`);
     return res.end(buffer);
   } catch (error) {
     return handleError(res, error);
   }
 }
-

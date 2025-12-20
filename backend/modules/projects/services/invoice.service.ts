@@ -1,10 +1,15 @@
 import { Types } from 'mongoose';
-import { ProjectModel, type Project, type ProjectDocument } from '../schemas/project';
+import { ProjectModel, type Project, type ProjectDocument, addTimeline, type ProjectStatus } from '../schemas/project';
 import { WorkOrderModel } from '../schemas/work-order';
 import { OfferVersionModel } from '../schemas/offer-version';
 import type { OfferLineItem } from '../../../../shared/types/offers';
+import {
+  financeEntries,
+  nextFinanceId,
+  type FinanceEntry,
+} from '../../finance/schemas/financeEntry';
 
-type InvoiceStatus = 'draft' | 'issued';
+type InvoiceStatus = 'draft' | 'issued' | 'cancelled';
 type InvoiceItemType = 'Osnovno' | 'Dodatno' | 'Manj';
 
 interface InvoiceItem {
@@ -49,6 +54,8 @@ interface InvoiceVersion {
 interface InvoiceListResponse {
   versions: InvoiceVersion[];
   activeVersionId: string | null;
+  updatedVersion?: InvoiceVersion;
+  projectStatus?: ProjectStatus;
 }
 
 function round(value: number) {
@@ -100,6 +107,10 @@ function serializeResponse(project: Project | ProjectDocument): InvoiceListRespo
     versions,
     activeVersionId: selectActiveVersionId(versions),
   };
+}
+
+function findDraftVersion(project: ProjectDocument): InvoiceVersion | null {
+  return (project.invoiceVersions ?? []).find((version) => version.status === 'draft') ?? null;
 }
 
 async function buildConfirmedOfferIndex(project: ProjectDocument) {
@@ -231,6 +242,10 @@ export async function getInvoiceVersions(projectId: string): Promise<InvoiceList
 
 export async function createInvoiceFromClosing(projectId: string): Promise<InvoiceListResponse> {
   const project = await findProjectOrFail(projectId);
+  const existingDraft = findDraftVersion(project);
+  if (existingDraft) {
+    return buildInvoiceResponse(project, { activeVersionId: existingDraft._id, updatedVersionId: existingDraft._id });
+  }
   const sourceItems = await aggregateClosingItems(project);
   const { items, summary } = recalculateItems(sourceItems);
   const version: InvoiceVersion = {
@@ -243,8 +258,9 @@ export async function createInvoiceFromClosing(projectId: string): Promise<Invoi
     summary,
   };
   project.invoiceVersions = [...(project.invoiceVersions ?? []), version];
+  markInvoiceVersionsModified(project);
   await project.save();
-  return serializeResponse(project);
+  return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id });
 }
 
 export async function updateInvoiceVersion(projectId: string, versionId: string, payload: { items: InvoiceItemPayload[] }): Promise<InvoiceListResponse> {
@@ -257,6 +273,7 @@ export async function updateInvoiceVersion(projectId: string, versionId: string,
   const { items, summary } = recalculateItems(inputItems);
   version.items = items;
   version.summary = summary;
+  markInvoiceVersionsModified(project);
   await project.save();
   return serializeResponse(project);
 }
@@ -264,18 +281,77 @@ export async function updateInvoiceVersion(projectId: string, versionId: string,
 export async function issueInvoiceVersion(projectId: string, versionId: string): Promise<InvoiceListResponse> {
   const project = await findProjectOrFail(projectId);
   const version = ensureInvoiceVersion(project, versionId);
+  const previousStatus = version.status;
   if (version.status === 'issued') {
-    throw new Error('Verzija je že izdana.');
+    console.log('[invoice] issue skipped', {
+      projectId,
+      invoiceVersionId: versionId,
+      previousStatus,
+      nextStatus: version.status,
+      financeEntryCreated: false,
+      reason: 'already-issued',
+    });
+    return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id, includeProjectStatus: true });
   }
+  (project.invoiceVersions ?? []).forEach((entry) => {
+    if (entry._id !== version._id && entry.status === 'issued') {
+      entry.status = 'cancelled';
+    }
+  });
   version.status = 'issued';
   version.issuedAt = new Date().toISOString();
+  markInvoiceVersionsModified(project);
+  let financeEntryCreated = false;
+  try {
+    financeEntryCreated = recordFinanceEntryForInvoice(project, version);
+  } catch (error) {
+    console.error('[invoice] finance-entry failed', {
+      projectId,
+      invoiceVersionId: versionId,
+      error,
+    });
+  }
+  if (project.status !== 'completed') {
+    const executionCompleted = await hasCompletedExecution(project.id);
+    if (executionCompleted) {
+      project.status = 'completed';
+      addTimeline(project, {
+        type: 'status-change',
+        title: 'Status spremenjen',
+        description: "Projekt prešel v fazo 'Zaključen' po izdaji računa",
+        timestamp: new Date().toISOString(),
+        user: 'system',
+      });
+    }
+  }
+
   await project.save();
-  return serializeResponse(project);
+  console.log('[invoice] issue success', {
+    projectId,
+    invoiceVersionId: versionId,
+    previousStatus,
+    nextStatus: version.status,
+    financeEntryCreated,
+  });
+  return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id, includeProjectStatus: true });
 }
 
 export async function cloneInvoiceVersion(projectId: string, versionId: string): Promise<InvoiceListResponse> {
   const project = await findProjectOrFail(projectId);
   const version = ensureInvoiceVersion(project, versionId);
+  const existingDraft = findDraftVersion(project);
+  if (existingDraft) {
+    return buildInvoiceResponse(project, { activeVersionId: existingDraft._id, updatedVersionId: existingDraft._id });
+  }
+  if (version.status !== 'issued') {
+    return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id });
+  }
+  (project.invoiceVersions ?? []).forEach((entry) => {
+    if (entry._id !== version._id && entry.status === 'issued') {
+      entry.status = 'cancelled';
+    }
+  });
+  version.status = 'cancelled';
   const clonedItems = (version.items ?? []).map((item) => ({ ...item }));
   const clone: InvoiceVersion = {
     _id: new Types.ObjectId().toString(),
@@ -287,8 +363,9 @@ export async function cloneInvoiceVersion(projectId: string, versionId: string):
     summary: { ...version.summary },
   };
   project.invoiceVersions = [...(project.invoiceVersions ?? []), clone];
+  markInvoiceVersionsModified(project);
   await project.save();
-  return serializeResponse(project);
+  return buildInvoiceResponse(project, { activeVersionId: clone._id, updatedVersionId: clone._id });
 }
 function recalculateItems(items: InvoiceItemPayload[]) {
   const updatedItems: InvoiceItem[] = items.map((item) => {
@@ -327,4 +404,93 @@ function recalculateItems(items: InvoiceItemPayload[]) {
       totalWithVat,
     },
   };
+}
+
+interface InvoiceResponseOverrides {
+  activeVersionId?: string | null;
+  updatedVersionId?: string | null;
+  includeProjectStatus?: boolean;
+}
+
+function buildInvoiceResponse(project: ProjectDocument, overrides: InvoiceResponseOverrides = {}): InvoiceListResponse {
+  const response = serializeResponse(project);
+  const payload: InvoiceListResponse = { ...response };
+  if (overrides.activeVersionId !== undefined) {
+    payload.activeVersionId = overrides.activeVersionId;
+  }
+  if (overrides.updatedVersionId) {
+    const located =
+      payload.versions.find((entry) => entry._id === overrides.updatedVersionId) ??
+      (project.invoiceVersions ?? []).find((entry) => entry._id === overrides.updatedVersionId);
+    if (located) {
+      payload.updatedVersion = JSON.parse(JSON.stringify(located)) as InvoiceVersion;
+    }
+  }
+  if (overrides.includeProjectStatus) {
+    payload.projectStatus = project.status;
+  }
+  return payload;
+}
+
+function markInvoiceVersionsModified(project: ProjectDocument) {
+  if (typeof project.markModified === 'function') {
+    project.markModified('invoiceVersions');
+  }
+}
+
+function recordFinanceEntryForInvoice(project: ProjectDocument, version: InvoiceVersion) {
+  if (!version.issuedAt) {
+    return false;
+  }
+  const existingEntry = financeEntries.find((entry) => entry.id_racuna === version._id);
+  if (existingEntry) {
+    return false;
+  }
+
+  const summary = version.summary ?? {
+    baseWithoutVat: 0,
+    discountedBase: 0,
+    vatAmount: 0,
+    totalWithVat: 0,
+  };
+  const netAmount = summary.baseWithoutVat ?? summary.discountedBase ?? 0;
+  const entry: FinanceEntry = {
+    id: nextFinanceId(),
+    id_projekta: project.id,
+    id_racuna: version._id,
+    datum_izdaje: new Date(version.issuedAt).toISOString().slice(0, 10),
+    znesek_skupaj: summary.totalWithVat ?? 0,
+    ddv: summary.vatAmount ?? 0,
+    znesek_brez_ddv: netAmount,
+    nabavna_vrednost: 0,
+    dobicek: netAmount,
+    stranka: project.customer?.name ?? 'Stranka',
+    artikli: (version.items ?? []).map((item) => ({
+      naziv: item.name,
+      kolicina: item.quantity,
+      cena_nabavna: 0,
+      cena_prodajna: item.totalWithVat ?? item.totalWithoutVat ?? 0,
+    })),
+    kategorija_prihodka: 'storitev',
+    oznaka: 'čaka na plačilo',
+  };
+  financeEntries.push(entry);
+  return true;
+}
+
+function normalizeWorkOrderStatus(value: unknown) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+async function hasCompletedExecution(projectId: string) {
+  const workOrders = await WorkOrderModel.find({ projectId }).lean();
+  if (!workOrders.length) {
+    return false;
+  }
+  const issuedLikeStatuses = new Set(['issued', 'in-progress', 'confirmed', 'completed']);
+  const issuedOrders = workOrders.filter((order) => issuedLikeStatuses.has(normalizeWorkOrderStatus((order as any)?.status)));
+  if (!issuedOrders.length) {
+    return false;
+  }
+  return issuedOrders.every((order) => normalizeWorkOrderStatus((order as any)?.status) === 'completed');
 }

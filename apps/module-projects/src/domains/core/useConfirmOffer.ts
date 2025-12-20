@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { triggerProjectRefresh } from "./useProject";
+import { useProjectMutationRefresh } from "./useProjectMutationRefresh";
 
 interface UseConfirmOfferOptions {
   projectId?: string | null;
@@ -15,6 +15,7 @@ interface UseConfirmOfferResult {
 
 export function useConfirmOffer({ projectId, onConfirmed }: UseConfirmOfferOptions): UseConfirmOfferResult {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const refreshAfterMutation = useProjectMutationRefresh(projectId);
 
   const confirmOffer = useCallback(
     async (offerId?: string | null) => {
@@ -28,10 +29,7 @@ export function useConfirmOffer({ projectId, onConfirmed }: UseConfirmOfferOptio
           return false;
         }
         toast.success("Ponudba potrjena.");
-        await Promise.allSettled([
-          onConfirmed?.(),
-          triggerProjectRefresh(projectId),
-        ]);
+        await refreshAfterMutation(onConfirmed);
         return true;
       } catch (error) {
         toast.error("Ponudbe ni mogoče potrditi.");
@@ -40,7 +38,7 @@ export function useConfirmOffer({ projectId, onConfirmed }: UseConfirmOfferOptio
         setConfirmingId(null);
       }
     },
-    [projectId, onConfirmed],
+    [projectId, onConfirmed, refreshAfterMutation],
   );
 
   return {

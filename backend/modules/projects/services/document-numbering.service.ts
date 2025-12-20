@@ -1,3 +1,4 @@
+import type { PipelineStage } from 'mongoose';
 import { DocumentCounterModel } from '../../settings/document-counter.model';
 import { getSettings } from '../../settings/settings.service';
 import {
@@ -73,12 +74,22 @@ export async function generateDocumentNumber(docType: DocumentNumberingKind, ref
   const counterKey = resolveCounterKey(config, docType, effectiveYear);
   const baseSequence = resolveInitialSequence(config);
 
+  const updatePipeline: PipelineStage[] = [
+    {
+      $set: {
+        value: {
+          $add: [
+            { $ifNull: ['$value', baseSequence - 1] },
+            1,
+          ],
+        },
+      },
+    },
+  ];
+
   const counter = await DocumentCounterModel.findOneAndUpdate(
     { _id: counterKey },
-    {
-      $setOnInsert: { value: baseSequence - 1 },
-      $inc: { value: 1 },
-    },
+    updatePipeline as any,
     { new: true, upsert: true }
   ).lean();
 

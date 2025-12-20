@@ -7,6 +7,10 @@ import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
 import type { OfferLineItem } from '../../../../shared/types/offers';
 import { formatClientAddress, resolveProjectClient, serializeProjectDetails } from '../services/project.service';
+import {
+  generateMaterialOrderDocumentPdf,
+  generateWorkOrderDocumentPdf,
+} from '../services/project-document-pdf.service';
 
 function calculateOfferTotalsFromSnapshot(offer: {
   items: OfferLineItem[];
@@ -674,5 +678,47 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     return res.success(serializeWorkOrder(updated));
   } catch (err) {
     next(err);
+  }
+}
+
+function parseMaterialDocType(value?: string | string[] | null): 'PURCHASE_ORDER' | 'DELIVERY_NOTE' {
+  const normalized = Array.isArray(value) ? value[0] : value;
+  if (typeof normalized === 'string' && normalized.toUpperCase() === 'DELIVERY_NOTE') {
+    return 'DELIVERY_NOTE';
+  }
+  return 'PURCHASE_ORDER';
+}
+
+function parseWorkDocType(value?: string | string[] | null): 'WORK_ORDER' | 'WORK_ORDER_CONFIRMATION' {
+  const normalized = Array.isArray(value) ? value[0] : value;
+  if (typeof normalized === 'string' && normalized.toUpperCase() === 'WORK_ORDER_CONFIRMATION') {
+    return 'WORK_ORDER_CONFIRMATION';
+  }
+  return 'WORK_ORDER';
+}
+
+export async function exportMaterialOrderPdf(req: Request, res: Response, next: NextFunction) {
+  try {
+    const docType = parseMaterialDocType(req.query.docType);
+    const buffer = await generateMaterialOrderDocumentPdf(req.params.projectId, req.params.materialOrderId, docType);
+    res.setHeader('Content-Type', 'application/pdf');
+    const slug = docType === 'DELIVERY_NOTE' ? 'delivery-note' : 'purchase-order';
+    res.setHeader('Content-Disposition', `attachment; filename="${slug}-${req.params.materialOrderId}.pdf"`);
+    res.end(buffer);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function exportWorkOrderPdf(req: Request, res: Response, next: NextFunction) {
+  try {
+    const docType = parseWorkDocType(req.query.docType);
+    const buffer = await generateWorkOrderDocumentPdf(req.params.projectId, req.params.workOrderId, docType);
+    res.setHeader('Content-Type', 'application/pdf');
+    const slug = docType === 'WORK_ORDER_CONFIRMATION' ? 'work-order-confirmation' : 'work-order';
+    res.setHeader('Content-Disposition', `attachment; filename="${slug}-${req.params.workOrderId}.pdf"`);
+    res.end(buffer);
+  } catch (error) {
+    next(error);
   }
 }
