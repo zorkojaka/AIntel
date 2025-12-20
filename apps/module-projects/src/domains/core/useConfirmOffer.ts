@@ -29,6 +29,7 @@ export function useConfirmOffer({ projectId, onConfirmed }: UseConfirmOfferOptio
           return false;
         }
         toast.success("Ponudba potrjena.");
+        console.debug("[projects] CONFIRM_OFFER success -> refreshing project", { projectId, offerId });
         await refreshAfterMutation(onConfirmed);
         return true;
       } catch (error) {

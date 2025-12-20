@@ -15,10 +15,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
 import { PriceListProductAutocomplete } from "./PriceListProductAutocomplete";
-import { mapProject, triggerProjectRefresh } from "../domains/core/useProject";
+import { mapProject } from "../domains/core/useProject";
 import { useConfirmOffer } from "../domains/core/useConfirmOffer";
 import { downloadPdf } from "../api";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
+import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
 
 type OffersTabProps = {
   projectId: string;
@@ -139,6 +140,8 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     setTotalGrossAfterDiscount(0);
     setDiscountAmount(0);
   }, []);
+
+  const refreshAfterMutation = useProjectMutationRefresh(projectId);
 
   const loadOfferById = useCallback(async (offerId: string) => {
     if (!projectId) return;
@@ -522,8 +525,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       }
 
       const created: OfferVersion = payload.data;
-      await refreshOffers(created._id ?? selectedOfferId ?? null);
-      await triggerProjectRefresh(projectId);
+      await refreshAfterMutation(() => refreshOffers(created._id ?? selectedOfferId ?? null));
       toast.success("Ponudba shranjena.");
       return created;
     } catch (error) {

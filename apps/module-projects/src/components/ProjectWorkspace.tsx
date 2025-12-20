@@ -17,6 +17,7 @@ import { useProject } from "../domains/core/useProject";
 import { ProjectHeader } from "../domains/core/ProjectHeader";
 import { ProjectQuickNav } from "../domains/core/ProjectQuickNav";
 import { useProjectTimeline, type StepKey, type StepStatus, type TimelineStep } from "../domains/core/useProjectTimeline";
+import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
 
 const TAB_PHASE_STYLES: Record<"done" | "active" | "future", { container: string; label: string; iconColor: string }> = {
   done: {
@@ -37,6 +38,30 @@ const TAB_PHASE_STYLES: Record<"done" | "active" | "future", { container: string
     iconColor: "text-muted-foreground",
   },
 };
+const ARROW_CUT_PX = 12;
+const ARROW_OVERLAP_PX = 12;
+const ARROW_RIGHT_PADDING_PX = 16;
+type WorkspaceTabValue = "items" | "offers" | "logistics" | "execution" | "closing";
+const STEP_ORDER: StepKey[] = ["requirements", "offers", "logistics", "execution", "invoice"];
+const STEP_BY_TAB: Record<WorkspaceTabValue, StepKey> = {
+  items: "requirements",
+  offers: "offers",
+  logistics: "logistics",
+  execution: "execution",
+  closing: "invoice",
+};
+const TAB_BY_STEP: Record<StepKey, WorkspaceTabValue> = {
+  requirements: "items",
+  offers: "offers",
+  logistics: "logistics",
+  execution: "execution",
+  invoice: "closing",
+};
+
+const buildArrowClipPath = (isLast: boolean) =>
+  isLast
+    ? "polygon(0 0, 100% 0, 100% 100%, 0 100%)"
+    : `polygon(0 0, calc(100% - ${ARROW_CUT_PX}px) 0, 100% 50%, calc(100% - ${ARROW_CUT_PX}px) 100%, 0 100%)`;
 import {
   RequirementsPanel,
   ItemFormState,
@@ -75,6 +100,7 @@ interface ProjectWorkspaceProps {
   templates: Template[];
   onBack: () => void;
   onProjectUpdate: (path: string, options?: RequestInit) => Promise<ProjectDetails | null>;
+  brandColor?: string | null;
 }
 
 export function ProjectWorkspace({
@@ -83,9 +109,10 @@ export function ProjectWorkspace({
   templates,
   onBack,
   onProjectUpdate,
+  brandColor,
 }: ProjectWorkspaceProps) {
   const { project, loading, error, refresh, setProject } = useProject(projectId, initialProject ?? null);
-  const [activeTab, setActiveTab] = useState("items");
+  const [activeTab, setActiveTab] = useState<WorkspaceTabValue>("items");
   const [overrideStep, setOverrideStep] = useState<StepKey | null>(null);
   const [items, setItems] = useState<Item[]>(project?.items ?? []);
   const [offers, setOffers] = useState<OfferVersion[]>(project?.offers ?? []);
@@ -148,21 +175,14 @@ export function ProjectWorkspace({
   const showVariantWizard = variantOptions.length > 0 && !project?.requirementsTemplateVariantSlug;
   const [offersRefreshKey, setOffersRefreshKey] = useState(0);
   const invoiceSectionRef = useRef<HTMLDivElement | null>(null);
-  const stepByTab: Record<string, StepKey> = {
-    items: "requirements",
-    offers: "offers",
-    logistics: "logistics",
-    execution: "execution",
-    closing: "invoice",
-  };
-  const tabByStep: Record<StepKey, string> = {
-    requirements: "items",
-    offers: "offers",
-    logistics: "logistics",
-    execution: "execution",
-    invoice: "closing",
-  };
   const timelineSteps = useProjectTimeline(project);
+  const tabsConfig: { value: WorkspaceTabValue; label: string }[] = [
+    { value: "items", label: "Zahteve" },
+    { value: "offers", label: "Ponudbe" },
+    { value: "logistics", label: "Priprava" },
+    { value: "execution", label: "Izvedba" },
+    { value: "closing", label: "Račun" },
+  ];
   const timelineStepByKey = useMemo(() => {
     const map = {} as Partial<Record<StepKey, TimelineStep>>;
     timelineSteps.forEach((step) => {
@@ -170,7 +190,13 @@ export function ProjectWorkspace({
     });
     return map;
   }, [timelineSteps]);
-  const activeQuickStep: StepKey = overrideStep ?? stepByTab[activeTab] ?? "requirements";
+  const activeQuickStep: StepKey = overrideStep ?? STEP_BY_TAB[activeTab] ?? "requirements";
+  const activePhaseStepKey = useMemo<StepKey | null>(() => {
+    const activeStep = timelineSteps.find((step) => step.status === "inProgress");
+    return activeStep?.key ?? null;
+  }, [timelineSteps]);
+  const hasInitializedActiveTabRef = useRef(false);
+  const prevActivePhaseStepRef = useRef<StepKey | null>(null);
 
   const basePath = project ? `/api/projects/${project.id}` : "";
   const isExecutionPhase = status === "ordered" || status === "in-progress" || status === "completed";
@@ -182,6 +208,12 @@ export function ProjectWorkspace({
     formatClientAddress(displayedClient) || project?.customerDetail.address || "-";
   const infoCardEmail = crmClient?.email ?? project?.customerDetail.email ?? "-";
   const infoCardPhone = crmClient?.phone ?? project?.customerDetail.phone ?? "-";
+  const refreshAfterMutation = useProjectMutationRefresh(project?.id ?? projectId);
+  const brandAccentColor = useMemo(() => {
+    const trimmed = brandColor?.trim();
+    return trimmed && trimmed.length > 0 ? trimmed : "#22c55e";
+  }, [brandColor]);
+  const workspaceCssVars = useMemo(() => ({ ["--brand-color" as const]: brandAccentColor }), [brandAccentColor]);
 
   useEffect(() => {
     if (!project) return undefined;
@@ -698,6 +730,7 @@ export function ProjectWorkspace({
       }),
     });
     applyProjectUpdate(updated as ProjectDetails | null);
+    await refreshAfterMutation();
   };
 
   const addRequirementRow = async () => {
@@ -741,6 +774,7 @@ export function ProjectWorkspace({
       body: JSON.stringify(payload),
     });
     applyProjectUpdate(updated as ProjectDetails | null);
+    await refreshAfterMutation();
   };
 
   const handleGenerateOfferFromRequirements = async () => {
@@ -835,6 +869,32 @@ export function ProjectWorkspace({
       [ruleId]: { ...(prev[ruleId] ?? { quantity: 1 }), include },
     }));
   };
+  useEffect(() => {
+    setActiveTab("items");
+    hasInitializedActiveTabRef.current = false;
+    prevActivePhaseStepRef.current = null;
+  }, [project?.id]);
+  useEffect(() => {
+    if (!activePhaseStepKey) {
+      prevActivePhaseStepRef.current = null;
+      return;
+    }
+    const targetTab = TAB_BY_STEP[activePhaseStepKey] ?? "items";
+    if (!hasInitializedActiveTabRef.current) {
+      setActiveTab(targetTab);
+      hasInitializedActiveTabRef.current = true;
+    } else {
+      const previousKey = prevActivePhaseStepRef.current;
+      if (previousKey) {
+        const prevIndex = STEP_ORDER.indexOf(previousKey);
+        const nextIndex = STEP_ORDER.indexOf(activePhaseStepKey);
+        if (prevIndex !== -1 && nextIndex !== -1 && nextIndex > prevIndex) {
+          setActiveTab(targetTab);
+        }
+      }
+    }
+    prevActivePhaseStepRef.current = activePhaseStepKey;
+  }, [activePhaseStepKey]);
 
   const handleProceedToOffer = async () => {
     const currentProject = project;
@@ -851,6 +911,7 @@ export function ProjectWorkspace({
       });
       applyProjectUpdate(updated as ProjectDetails | null);
       setStatus("offered");
+      await refreshAfterMutation();
     }
     setActiveTab("offers");
     await handleGenerateOfferFromRequirements();
@@ -899,7 +960,7 @@ export function ProjectWorkspace({
     } else {
       setOverrideStep(null);
     }
-    const targetTab = tabByStep[step] ?? "items";
+    const targetTab = TAB_BY_STEP[step] ?? "items";
     setActiveTab(targetTab);
     if (step === "invoice") {
       requestAnimationFrame(() => {
@@ -1033,12 +1094,16 @@ export function ProjectWorkspace({
 
   const renderContent = () => {
     if (loading) {
-      return <div className="min-h-screen bg-background p-6">Nalaganje...</div>;
+      return (
+        <div className="min-h-screen bg-background p-6" style={workspaceCssVars}>
+          Nalaganje...
+        </div>
+      );
     }
 
     if (error) {
       return (
-        <div className="min-h-screen bg-background p-6">
+        <div className="min-h-screen bg-background p-6" style={workspaceCssVars}>
           <p className="text-destructive">Napaka pri nalaganju projekta.</p>
         </div>
       );
@@ -1046,14 +1111,14 @@ export function ProjectWorkspace({
 
     if (!project) {
       return (
-        <div className="min-h-screen bg-background p-6">
+        <div className="min-h-screen bg-background p-6" style={workspaceCssVars}>
           <p className="text-muted-foreground">Projekt ni na voljo.</p>
         </div>
       );
     }
 
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background" style={workspaceCssVars}>
         <ProjectHeader
           project={project}
           status={status}
@@ -1111,34 +1176,39 @@ export function ProjectWorkspace({
             </div>
 
             <div className="col-span-9">
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+              <Tabs
+                value={activeTab}
+                onValueChange={(value) => setActiveTab((value as WorkspaceTabValue) ?? "items")}
+                className="space-y-6"
+              >
                 <TabsList className="flex w-full overflow-hidden bg-muted/10 p-0">
-                  {[
-                    { value: "items", label: "Zahteve" },
-                    { value: "offers", label: "Ponudbe" },
-                    { value: "logistics", label: "Priprava" },
-                    { value: "execution", label: "Izvedba" },
-                    { value: "closing", label: "Račun" },
-                  ].map((tab, index, tabsArr) => {
-                    const stepKey = stepByTab[tab.value];
+                  {tabsConfig.map((tab, index, tabsArr) => {
+                    const stepKey = STEP_BY_TAB[tab.value];
                     const stepStatus: StepStatus = stepKey ? timelineStepByKey[stepKey]?.status ?? "pending" : "pending";
                     const phase = stepStatus === "done" ? "done" : stepStatus === "inProgress" ? "active" : "future";
                     const styles = TAB_PHASE_STYLES[phase];
                     const icon = phase === "done" ? "✓" : phase === "active" ? "•" : "";
-                    const overlap = 36;
-                    const clipPath = index === tabsArr.length - 1 ? "polygon(0 0, 100% 0, 100% 100%, 0 100%)" : "polygon(0 0, calc(100% - 32px) 0, 100% 50%, calc(100% - 32px) 100%, 0 100%)";
+                    const isLast = index === tabsArr.length - 1;
+                    const clipPath = buildArrowClipPath(isLast);
                     const roundedClass =
-                      index === 0 ? "rounded-l-md" : index === tabsArr.length - 1 ? "rounded-r-md" : "";
+                      index === 0 ? "rounded-l-md" : isLast ? "rounded-r-md" : "";
+                    const isActiveTab = activeTab === tab.value;
                     return (
                       <TabsTrigger
                         key={tab.value}
                         value={tab.value}
                         style={{
                           clipPath,
-                          marginInlineStart: index === 0 ? 0 : -overlap,
+                          marginInlineStart: index === 0 ? 0 : -ARROW_OVERLAP_PX,
                           zIndex: tabsArr.length - index,
+                          paddingRight: `${ARROW_RIGHT_PADDING_PX}px`,
+                          boxShadow: isActiveTab
+                            ? "inset 0 4px 0 0 var(--brand-color), inset 0 -2px 0 0 var(--brand-color)"
+                            : undefined,
+                          borderWidth: isActiveTab ? 0 : undefined,
+                          borderStyle: isActiveTab ? "none" : undefined,
                         }}
-                        className={`relative flex flex-1 items-center gap-2 pl-5 pr-12 py-3 text-sm font-semibold uppercase tracking-wide transition overflow-hidden ${roundedClass} ${styles.container}`}
+                        className={`relative flex flex-1 items-center gap-2 pl-5 py-3 text-sm font-semibold uppercase tracking-wide transition overflow-hidden ${roundedClass} ${styles.container}`}
                       >
                         <span className={`inline-flex items-center gap-1 ${styles.label} relative z-10`}>
                           {tab.label}

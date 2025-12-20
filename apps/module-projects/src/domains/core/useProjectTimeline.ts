@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import type { ProjectDetails } from "../../types";
 import type { MaterialOrder, WorkOrder, WorkOrderStatus } from "@aintel/shared/types/logistics";
 import type { OfferVersionSummary } from "@aintel/shared/types/offers";
-import { useQueryClient } from "@tanstack/react-query";
 
 export type StepStatus = "done" | "inProgress" | "pending";
 
@@ -154,6 +153,18 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
       : projectId && Array.isArray(project?.offers)
         ? project.offers.map((offer: any) => `${offer.id}:${offer.status}`).join("|")
         : null;
+  const logisticsOfferSignal =
+    projectId && project?.logistics
+      ? [
+          project.logistics.confirmedOfferVersionId ?? "",
+          project.logistics.acceptedOfferId ?? "",
+          Array.isArray((project.logistics as any)?.offerVersions)
+            ? (project.logistics as any).offerVersions
+                .map((offer: any) => `${offer._id || offer.id || offer.version}:${offer.status}`)
+                .join("|")
+            : "",
+        ].join("|")
+      : null;
 
   useEffect(() => {
     if (!projectId) {
@@ -175,19 +186,21 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
         }
       }
     };
+    setRemoteOffers(null);
     fetchOffers();
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [projectId, offerSignal]);
+  }, [projectId, offerSignal, logisticsOfferSignal]);
 
   return useMemo(() => {
     const basePath = project?.id ? `/projects/${project.id}` : "#";
     const forceCompleted = project?.status === "completed";
 
     const requirementCount = Array.isArray(project?.requirements) ? project!.requirements!.length : 0;
-    let requirementsStatus: StepStatus = requirementCount > 0 ? "done" : "pending";
+    const requirementsDone = requirementCount > 0;
+    let requirementsStatus: StepStatus = requirementsDone ? "done" : "inProgress";
     const requirementsMeta = requirementCount > 0 ? `${requirementCount} zahtev` : undefined;
 
     const offersSource = remoteOffers ?? collectOffers(project);
@@ -195,7 +208,8 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const offerDone = offersSource.some((offer) =>
       STATUS_DONE_VALUES.has(normalizeStatus((offer as any).status)),
     );
-    let offersStatus: StepStatus = offerDone ? "done" : offerCount > 0 ? "inProgress" : "pending";
+    const shouldHighlightOffers = requirementsDone && !offerDone;
+    let offersStatus: StepStatus = offerDone ? "done" : shouldHighlightOffers ? "inProgress" : "pending";
     const offersMeta = offerCount > 0 ? `${offerCount} ponudb` : undefined;
 
     const workOrders = collectWorkOrders(project);
