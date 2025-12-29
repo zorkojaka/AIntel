@@ -5,6 +5,7 @@ import {
   getMonthlySummary,
   getProjectsSummary,
 } from '../services/finance-analytics.service';
+import { resolveTenantId } from '../../../utils/tenant';
 
 function parseDate(value?: string) {
   if (!value) return undefined;
@@ -17,17 +18,17 @@ function buildRange(req: Request) {
 }
 
 export async function projectsSummary(req: Request, res: Response) {
-  const data = await getProjectsSummary(buildRange(req));
+  const data = await getProjectsSummary(buildRange(req), resolveTenantId(req));
   return res.success(data);
 }
 
 export async function monthlySummary(req: Request, res: Response) {
-  const data = await getMonthlySummary(buildRange(req));
+  const data = await getMonthlySummary(buildRange(req), resolveTenantId(req));
   return res.success(data);
 }
 
 export async function employeesSummary(req: Request, res: Response) {
-  const data = await getEmployeesSummary(buildRange(req));
+  const data = await getEmployeesSummary(buildRange(req), resolveTenantId(req));
   return res.success(data);
 }
 

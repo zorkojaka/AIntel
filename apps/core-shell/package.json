@@ -13,7 +13,9 @@
     "@aintel/module-cenik": "*",
     "@aintel/module-settings": "*",
     "@aintel/module-finance": "*",
+    "@aintel/module-employees": "*",
     "@aintel/theme": "*",
+    "lucide-react": "^0.471.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },
