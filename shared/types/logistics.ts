@@ -61,6 +61,7 @@ export interface WorkOrder {
   scheduledAt: string | null;
   technicianName?: string;
   technicianId?: string;
+  assignedEmployeeIds?: string[];
   location?: string;
   notes?: string;
   cancelledAt?: string | null;

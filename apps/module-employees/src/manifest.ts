@@ -4,7 +4,7 @@ export const manifest = {
   version: '0.1.0',
   navItems: [
     {
-      label: 'Zaposleni',
+      label: 'ZAPOSLENI',
       path: '/employees',
       icon: 'users',
     },

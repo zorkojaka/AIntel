@@ -52,6 +52,8 @@ export function mapProject(data: any): ProjectDetails {
     offerAmount: data.offerAmount ?? 0,
     invoiceAmount: data.invoiceAmount ?? 0,
     createdAt: data.createdAt,
+    salesUserId: data.salesUserId ?? null,
+    assignedEmployeeIds: Array.isArray(data.assignedEmployeeIds) ? data.assignedEmployeeIds : [],
     customerDetail: data.customer ?? { name: data.customer ?? "" },
     requirements: requirementsArray,
     requirementsText,

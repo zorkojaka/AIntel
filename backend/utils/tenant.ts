@@ -10,7 +10,8 @@ export function resolveTenantId(req: Request): string | null {
   const requestTenant = (req as any)?.tenantId as string | undefined;
   if (requestTenant) return requestTenant;
 
-  return null;
+  // MVP single-tenant default.
+  return 'inteligent';
 }
 
 export function resolveActorId(req: Request): string | null {

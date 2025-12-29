@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import type { OfferLineItem, OfferVersion, OfferVersionSummary } from "@aintel/shared/types/offers";
 import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
 import type { ProjectDetails } from "../types";
+import type { User } from "@aintel/shared/types/user";
+import type { Employee } from "@aintel/shared/types/employee";
 
 import { Loader2, Plus, Trash } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
@@ -20,6 +22,7 @@ import { useConfirmOffer } from "../domains/core/useConfirmOffer";
 import { downloadPdf } from "../api";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
+import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 
 type OffersTabProps = {
   projectId: string;
@@ -114,6 +117,11 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [downloadingMode, setDownloadingMode] = useState<"offer" | "project" | "both" | null>(null);
   const [sending, setSending] = useState(false);
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [salesUserId, setSalesUserId] = useState("");
+  const [assignedEmployeeIds, setAssignedEmployeeIds] = useState<string[]>([]);
+  const [assignmentsSaving, setAssignmentsSaving] = useState(false);
 
   const [versions, setVersions] = useState<OfferVersionSummary[]>([]);
   const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
@@ -142,6 +150,33 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   }, []);
 
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
+
+  useEffect(() => {
+    if (!projectId) return;
+    let alive = true;
+    const fetchAssignmentsData = async () => {
+      try {
+        const headers = buildTenantHeaders();
+        const [usersRes, employeesRes] = await Promise.all([
+          fetch("/api/users", { headers }),
+          fetch("/api/employees", { headers }),
+        ]);
+        const usersPayload = await usersRes.json();
+        const employeesPayload = await employeesRes.json();
+        if (!alive) return;
+        setUsers(Array.isArray(usersPayload?.data) ? usersPayload.data : []);
+        setEmployees(Array.isArray(employeesPayload?.data) ? employeesPayload.data : []);
+      } catch {
+        if (!alive) return;
+        setUsers([]);
+        setEmployees([]);
+      }
+    };
+    fetchAssignmentsData();
+    return () => {
+      alive = false;
+    };
+  }, [projectId]);
 
   const loadOfferById = useCallback(async (offerId: string) => {
     if (!projectId) return;
@@ -591,6 +626,8 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       }
       const mapped = mapProject(result.data);
       setProjectDetails(mapped);
+      setSalesUserId(mapped.salesUserId ?? "");
+      setAssignedEmployeeIds(Array.isArray(mapped.assignedEmployeeIds) ? mapped.assignedEmployeeIds : []);
       return mapped;
     } catch (error) {
       console.error("Project fetch failed", error);
@@ -604,6 +641,48 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     }
     return fetchProjectDetails();
   }, [fetchProjectDetails, projectDetails]);
+
+  const saveAssignments = async (nextSalesUserId: string | null, nextEmployeeIds: string[]) => {
+    if (!projectId) return;
+    setAssignmentsSaving(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/assignments`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          salesUserId: nextSalesUserId,
+          assignedEmployeeIds: nextEmployeeIds,
+        }),
+      });
+      const payload = await response.json();
+      if (!payload.success) {
+        toast.error(payload.error ?? "Posodobitev dodelitev ni uspela.");
+        return;
+      }
+      const mapped = mapProject(payload.data);
+      setProjectDetails(mapped);
+      await refreshAfterMutation(fetchProjectDetails);
+    } catch (error) {
+      console.error(error);
+      toast.error("Posodobitev dodelitev ni uspela.");
+    } finally {
+      setAssignmentsSaving(false);
+    }
+  };
+
+  const handleSalesUserChange = async (value: string) => {
+    const normalized = value === 'none' ? '' : value;
+    setSalesUserId(normalized);
+    await saveAssignments(normalized ? normalized : null, assignedEmployeeIds);
+  };
+
+  const toggleAssignedEmployee = async (employeeId: string) => {
+    const next = assignedEmployeeIds.includes(employeeId)
+      ? assignedEmployeeIds.filter((id) => id !== employeeId)
+      : [...assignedEmployeeIds, employeeId];
+    setAssignedEmployeeIds(next);
+    await saveAssignments(salesUserId ? salesUserId : null, next);
+  };
 
   const handleExportPdf = async (mode: "offer" | "project" | "both") => {
     setDownloadingMode(mode);
@@ -803,6 +882,45 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
 
       {/* HEADER POLJA */}
       <div className="grid gap-3 md:grid-cols-3">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Prodajnik</label>
+          <Select value={salesUserId || 'none'} onValueChange={handleSalesUserChange}>
+            <SelectTrigger>
+              <SelectValue placeholder="Izberi prodajnika" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Brez</SelectItem>
+              {users.map((user) => (
+                <SelectItem key={user.id} value={user.id}>
+                  {user.name} {user.email ? `(${user.email})` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {assignmentsSaving ? (
+            <p className="text-xs text-muted-foreground">Shranjujem dodelitve...</p>
+          ) : null}
+        </div>
+        <div className="space-y-2 md:col-span-2">
+          <label className="text-sm font-medium">Ekipa</label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {employees.filter((employee) => employee.active).length === 0 ? (
+              <p className="text-sm text-muted-foreground">Ni zaposlenih.</p>
+            ) : (
+              employees
+                .filter((employee) => employee.active)
+                .map((employee) => (
+                <label key={employee.id} className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Checkbox
+                    checked={assignedEmployeeIds.includes(employee.id)}
+                    onChange={() => toggleAssignedEmployee(employee.id)}
+                  />
+                  {employee.name}
+                </label>
+              ))
+            )}
+          </div>
+        </div>
         <div className="space-y-2">
           <label className="text-sm font-medium">Naziv ponudbe</label>
           <Input

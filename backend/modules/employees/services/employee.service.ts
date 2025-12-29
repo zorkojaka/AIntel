@@ -8,6 +8,14 @@ export function sanitizeEmployee(doc: EmployeeDocument) {
     tenantId: plain.tenantId,
     name: plain.name,
     company: plain.company ?? '',
+    phone: plain.phone ?? '',
+    email: plain.email ?? '',
+    address: plain.address ?? '',
+    employmentStartDate: plain.employmentStartDate ? new Date(plain.employmentStartDate).toISOString() : null,
+    contractType: plain.contractType ?? null,
+    shirtSize: plain.shirtSize ?? null,
+    shoeSize: plain.shoeSize ?? null,
+    notes: plain.notes ?? '',
     hourRateWithoutVat: plain.hourRateWithoutVat ?? 0,
     active: !!plain.active,
     deletedAt: plain.deletedAt ? new Date(plain.deletedAt).toISOString() : null,
@@ -22,6 +30,14 @@ function toEmployeeUpdate(payload: Partial<EmployeeDocument>) {
 
   if (payload.name !== undefined) update.name = payload.name;
   if (payload.company !== undefined) update.company = payload.company;
+  if (payload.phone !== undefined) update.phone = payload.phone;
+  if (payload.email !== undefined) update.email = payload.email;
+  if (payload.address !== undefined) update.address = payload.address;
+  if (payload.employmentStartDate !== undefined) update.employmentStartDate = payload.employmentStartDate;
+  if (payload.contractType !== undefined) update.contractType = payload.contractType;
+  if (payload.shirtSize !== undefined) update.shirtSize = payload.shirtSize;
+  if (payload.shoeSize !== undefined) update.shoeSize = payload.shoeSize as any;
+  if (payload.notes !== undefined) update.notes = payload.notes;
   if (payload.hourRateWithoutVat !== undefined) {
     const parsedRate = Number(payload.hourRateWithoutVat);
     update.hourRateWithoutVat = parsedRate;
@@ -49,6 +65,14 @@ export async function createEmployee(tenantId: string, payload: Partial<Employee
     tenantId,
     name: payload.name,
     company: payload.company ?? '',
+    phone: payload.phone ?? '',
+    email: payload.email ?? '',
+    address: payload.address ?? '',
+    employmentStartDate: payload.employmentStartDate ?? null,
+    contractType: payload.contractType ?? null,
+    shirtSize: payload.shirtSize ?? null,
+    shoeSize: payload.shoeSize ?? null,
+    notes: payload.notes ?? '',
     hourRateWithoutVat: safeRate,
     active: payload.active !== undefined ? !!payload.active : true,
   });

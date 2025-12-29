@@ -3,6 +3,14 @@ export interface Employee {
   tenantId: string;
   name: string;
   company?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  employmentStartDate?: string | null;
+  contractType?: string | null;
+  shirtSize?: string | null;
+  shoeSize?: number | null;
+  notes?: string;
   hourRateWithoutVat: number;
   active: boolean;
   deletedAt?: string | null;

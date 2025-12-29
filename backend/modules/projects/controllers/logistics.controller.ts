@@ -1,10 +1,12 @@
 import { NextFunction, Request, Response } from 'express';
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import type { MaterialOrder, ProjectLogisticsSnapshot, WorkOrder } from '../../../../shared/types/logistics';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { ProjectModel, addTimeline } from '../schemas/project';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
+import { resolveTenantId } from '../../../utils/tenant';
+import { EmployeeModel } from '../../employees/schemas/employee';
 import type { OfferLineItem } from '../../../../shared/types/offers';
 import { formatClientAddress, resolveProjectClient, serializeProjectDetails } from '../services/project.service';
 import {
@@ -257,6 +259,9 @@ function serializeWorkOrder(order: any): WorkOrder | null {
     scheduledAt: order.scheduledAt ?? null,
     technicianName: order.technicianName,
     technicianId: order.technicianId,
+    assignedEmployeeIds: Array.isArray(order.assignedEmployeeIds)
+      ? order.assignedEmployeeIds.map((id: any) => String(id))
+      : [],
     location: order.location,
     notes: order.notes,
     customerName: order.customerName ?? '',
@@ -544,6 +549,11 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       return res.fail('Delovni nalog ni najden.', 404);
     }
 
+    const tenantId = resolveTenantId(req);
+    if (!tenantId) {
+      return res.fail('TenantId ni podan.', 400);
+    }
+
     const payload = req.body ?? {};
     const updates: Record<string, unknown> = {};
 
@@ -552,6 +562,23 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     }
     if ('technicianName' in payload) updates.technicianName = payload.technicianName;
     if ('technicianId' in payload) updates.technicianId = payload.technicianId;
+    if ('assignedEmployeeIds' in payload) {
+      if (!Array.isArray(payload.assignedEmployeeIds)) {
+        return res.fail('Neveljaven seznam zaposlenih.', 400);
+      }
+      const ids = payload.assignedEmployeeIds.map((value: any) => String(value)).filter((value: string) => value.length > 0);
+      const invalid = ids.find((id: string) => !mongoose.isValidObjectId(id));
+      if (invalid) {
+        return res.fail('Neveljaven zaposleni.', 400);
+      }
+      if (ids.length > 0) {
+        const matches = await EmployeeModel.find({ _id: { $in: ids }, tenantId }).select('_id').lean();
+        if (matches.length !== ids.length) {
+          return res.fail('Zaposleni ne pripadajo tenantu.', 400);
+        }
+      }
+      updates.assignedEmployeeIds = ids;
+    }
     if ('location' in payload) updates.location = payload.location;
     if ('notes' in payload) updates.notes = payload.notes;
     if ('executionNote' in payload) {

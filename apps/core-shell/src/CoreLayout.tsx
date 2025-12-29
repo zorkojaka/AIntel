@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users } from 'lucide-react';
+import { FolderKanban, List, Settings, User, Users, Wallet } from 'lucide-react';
 import './CoreLayout.css';
 
 type ModuleNavItem = {
@@ -19,16 +19,28 @@ interface CoreLayoutProps {
   modules: ModuleManifest[];
   activeModule: string;
   onModuleChange: (moduleId: string) => void;
+  logoUrl?: string | null;
 }
 
 const iconMap: Record<string, React.ReactNode> = {
   users: <Users size={16} />,
+  user: <User size={16} />,
+  'folder-kanban': <FolderKanban size={16} />,
+  list: <List size={16} />,
+  wallet: <Wallet size={16} />,
+  settings: <Settings size={16} />,
 };
 
-const CoreLayout: React.FC<CoreLayoutProps> = ({ children, modules, activeModule, onModuleChange }) => (
+const CoreLayout: React.FC<CoreLayoutProps> = ({
+  children,
+  modules,
+  activeModule,
+  onModuleChange,
+  logoUrl,
+}) => (
   <div className="core-shell">
     <aside className="core-shell__sidebar">
-      <h2>AIntel</h2>
+      {logoUrl ? <img src={logoUrl} alt="Logo podjetja" className="core-shell__logo" /> : <h2>AIntel</h2>}
       <ul>
         {modules.map((item) => {
           const navItem = item.navItems[0];

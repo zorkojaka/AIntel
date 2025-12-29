@@ -4,6 +4,14 @@ export interface EmployeeDocument extends Document {
   tenantId: string;
   name: string;
   company?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  employmentStartDate?: Date | null;
+  contractType?: string | null;
+  shirtSize?: string | null;
+  shoeSize?: number | null;
+  notes?: string;
   hourRateWithoutVat: number;
   active: boolean;
   deletedAt?: Date | null;
@@ -17,6 +25,14 @@ const EmployeeSchema = new Schema<EmployeeDocument>(
     tenantId: { type: String, required: true, index: true, trim: true },
     name: { type: String, required: true, trim: true },
     company: { type: String, trim: true, default: '' },
+    phone: { type: String, trim: true, default: '' },
+    email: { type: String, trim: true, lowercase: true, default: '' },
+    address: { type: String, trim: true, default: '' },
+    employmentStartDate: { type: Date, default: null },
+    contractType: { type: String, trim: true, default: null },
+    shirtSize: { type: String, trim: true, default: null },
+    shoeSize: { type: Number, default: null },
+    notes: { type: String, trim: true, default: '' },
     hourRateWithoutVat: { type: Number, required: true, default: 0, min: 0 },
     active: { type: Boolean, required: true, default: true },
     deletedAt: { type: Date, default: null },

@@ -54,6 +54,8 @@ export interface ProjectSummary {
   createdAt: string;
   categories: string[];
   requirementsTemplateVariantSlug?: string;
+  salesUserId?: string | null;
+  assignedEmployeeIds?: string[];
 }
 
 export interface PurchaseOrder {

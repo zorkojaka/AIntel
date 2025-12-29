@@ -5,7 +5,8 @@ export const manifest = {
   navItems: [
     {
       label: 'CENIK',
-      path: '/cenik'
+      path: '/cenik',
+      icon: 'list'
     }
   ],
   routes: ['/cenik']

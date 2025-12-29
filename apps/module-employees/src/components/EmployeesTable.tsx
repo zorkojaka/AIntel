@@ -1,13 +1,16 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import type { Employee } from '../types';
+import type { User } from '@aintel/shared/types/user';
 
 interface EmployeesTableProps {
-  employees: Employee[];
+  employees: Array<Employee & { user?: User | null }>;
   onEdit: (employee: Employee) => void;
   onDelete: (employee: Employee) => void;
+  onSetAccess: (employee: Employee) => void;
+  onRemoveAccess: (employee: Employee & { user?: User | null }) => void;
 }
 
-export function EmployeesTable({ employees, onEdit, onDelete }: EmployeesTableProps) {
+export function EmployeesTable({ employees, onEdit, onDelete, onSetAccess, onRemoveAccess }: EmployeesTableProps) {
   if (!employees.length) {
     return (
       <div className="rounded-lg border border-dashed border-slate-200 bg-white p-6 text-center text-slate-500">
@@ -23,7 +26,12 @@ export function EmployeesTable({ employees, onEdit, onDelete }: EmployeesTablePr
           <tr>
             <th>Ime</th>
             <th>Podjetje</th>
+            <th>Email</th>
+            <th>Telefon</th>
             <th>Urna postavka (brez DDV)</th>
+            <th>Email za prijavo</th>
+            <th>Vloge</th>
+            <th>Dostop</th>
             <th>Aktiven</th>
             <th className="text-right">Akcije</th>
           </tr>
@@ -32,8 +40,13 @@ export function EmployeesTable({ employees, onEdit, onDelete }: EmployeesTablePr
           {employees.map((employee) => (
             <tr key={employee.id}>
               <td className="font-medium text-slate-900">{employee.name}</td>
-              <td className="text-slate-600">{employee.company || '—'}</td>
-              <td className="text-slate-900">{employee.hourRateWithoutVat.toFixed(2)} €</td>
+              <td className="text-slate-600">{employee.company || '-'}</td>
+              <td className="text-slate-600">{employee.email || '-'}</td>
+              <td className="text-slate-600">{employee.phone || '-'}</td>
+              <td className="text-slate-900">{employee.hourRateWithoutVat.toFixed(2)}</td>
+              <td className="text-slate-600">{employee.user?.email ?? '-'}</td>
+              <td className="text-slate-600">{employee.user?.roles?.length ? employee.user.roles.join(', ') : '-'}</td>
+              <td className="text-slate-600">{employee.user ? 'Ima dostop' : 'Brez dostopa'}</td>
               <td>
                 <span
                   className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
@@ -62,7 +75,22 @@ export function EmployeesTable({ employees, onEdit, onDelete }: EmployeesTablePr
                     className="inline-flex items-center gap-2 rounded-lg border border-rose-100 bg-rose-50 px-3 py-1.5 text-rose-700 shadow-sm transition hover:-translate-y-[1px] hover:border-rose-200 hover:bg-rose-100 hover:shadow"
                   >
                     <Trash2 size={16} />
-                    Izbriši
+                    Izbrisi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSetAccess(employee)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-slate-700 shadow-sm transition hover:-translate-y-[1px] hover:border-slate-300 hover:shadow"
+                  >
+                    Nastavi dostop
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveAccess(employee)}
+                    disabled={!employee.user}
+                    className="inline-flex items-center gap-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-1.5 text-amber-700 shadow-sm transition hover:-translate-y-[1px] hover:border-amber-200 hover:bg-amber-100 hover:shadow disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Odstrani dostop
                   </button>
                 </div>
               </td>

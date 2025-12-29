@@ -1,18 +1,12 @@
 import type { Employee, EmployeePayload } from '../types';
+import { buildTenantHeaders, getTenantId as getSharedTenantId } from '@aintel/shared/utils/tenant';
 
 const API_PREFIX = '/api/employees';
-const DEFAULT_TENANT = import.meta.env.VITE_TENANT_ID || 'demo-tenant';
-
-function tenantHeaders() {
-  return {
-    'x-tenant-id': DEFAULT_TENANT,
-  } as Record<string, string>;
-}
 
 function buildHeaders(extra?: Record<string, string>) {
   return {
     'Content-Type': 'application/json',
-    ...tenantHeaders(),
+    ...buildTenantHeaders(),
     ...(extra ?? {}),
   };
 }
@@ -60,5 +54,5 @@ export async function deleteEmployee(id: string): Promise<void> {
 }
 
 export function getTenantId() {
-  return DEFAULT_TENANT;
+  return getSharedTenantId();
 }

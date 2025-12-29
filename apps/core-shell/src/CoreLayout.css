@@ -12,6 +12,14 @@
   background: var(--color-surface);
 }
 
+.core-shell__logo {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  max-height: 48px;
+  object-fit: contain;
+}
+
 .core-shell__content {
   padding: var(--space-lg);
 }

@@ -5,7 +5,8 @@ export const manifest = {
   navItems: [
     {
       label: 'STRANKE',
-      path: '/crm'
+      path: '/crm',
+      icon: 'users'
     }
   ],
   routes: ['/crm']

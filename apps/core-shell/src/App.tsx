@@ -3,7 +3,7 @@ import CoreLayout from './CoreLayout';
 import { CRMPage } from '@aintel/module-crm';
 import { ProjectsPage } from '@aintel/module-projects';
 import { CenikPage } from '@aintel/module-cenik';
-import { SettingsPage } from '@aintel/module-settings';
+import { SettingsPage, fetchSettings } from '@aintel/module-settings';
 import { FinancePage } from '@aintel/module-finance';
 import { EmployeesPage } from '@aintel/module-employees';
 import { manifest as crmManifest } from '@aintel/module-crm';
@@ -13,7 +13,14 @@ import { manifest as financeManifest } from '@aintel/module-finance';
 import { manifest as settingsManifest } from '@aintel/module-settings';
 import { manifest as employeesManifest } from '@aintel/module-employees';
 
-const modules = [crmManifest, projectsManifest, cenikManifest, financeManifest, employeesManifest, settingsManifest];
+const modules = [
+  crmManifest,
+  projectsManifest,
+  cenikManifest,
+  financeManifest,
+  employeesManifest,
+  settingsManifest,
+];
 
 type ModuleId = (typeof modules)[number]['id'];
 
@@ -34,6 +41,7 @@ const moduleComponents: Record<ModuleId, React.ReactNode> = {
 function App() {
   const initialModule = useMemo(() => getModuleIdFromPath(window.location.pathname), []);
   const [activeModule, setActiveModule] = useState<ModuleId>(initialModule);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -41,6 +49,20 @@ function App() {
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    fetchSettings()
+      .then((settings) => {
+        if (alive) {
+          setLogoUrl(settings.logoUrl?.trim() || null);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -59,7 +81,12 @@ function App() {
   };
 
   return (
-    <CoreLayout activeModule={activeModule} onModuleChange={handleModuleChange} modules={modules}>
+    <CoreLayout
+      activeModule={activeModule}
+      onModuleChange={handleModuleChange}
+      modules={modules}
+      logoUrl={logoUrl}
+    >
       {moduleComponents[activeModule]}
     </CoreLayout>
   );

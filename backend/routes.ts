@@ -9,6 +9,7 @@ import categoriesRoutes from './modules/categories/routes';
 import projectsRoutes from './modules/projects/routes';
 import requirementTemplatesRoutes from './modules/requirement-templates/routes';
 import employeesRoutes from './modules/employees/routes/employees.routes';
+import usersRoutes from './modules/users/routes/users.routes';
 import pdfSettingsRoutes from './modules/projects/routes/pdf-settings.routes';
 import offerPreviewRoutes from './modules/projects/routes/offer-preview.routes';
 
@@ -25,6 +26,7 @@ router.use('/categories', categoriesRoutes);
 router.use('/projects', projectsRoutes);
 router.use('/requirement-templates', requirementTemplatesRoutes);
 router.use('/employees', employeesRoutes);
+router.use('/users', usersRoutes);
 router.use('/offers', offerPreviewRoutes);
 
 router.get('/', (_req, res) => {
