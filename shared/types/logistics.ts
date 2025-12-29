@@ -24,8 +24,7 @@ export interface MaterialOrder {
   items: LogisticsMaterialItem[];
   status: "draft" | "ordered" | "received" | "cancelled";
   materialStatus: MaterialStatus;
-  technicianId?: string | null;
-  technicianName?: string | null;
+  assignedEmployeeIds?: string[];
   cancelledAt?: string | null;
   reopened?: boolean;
   createdAt: string;
@@ -59,8 +58,6 @@ export interface WorkOrder {
   items: WorkOrderItem[];
   status: WorkOrderStatus;
   scheduledAt: string | null;
-  technicianName?: string;
-  technicianId?: string;
   assignedEmployeeIds?: string[];
   location?: string;
   notes?: string;

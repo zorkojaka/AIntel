@@ -1,4 +1,4 @@
-import { Schema, model, type Document } from 'mongoose';
+import { Schema, Types, model, type Document } from 'mongoose';
 
 interface MaterialOrderDocument extends Document {
   projectId: string;
@@ -12,10 +12,9 @@ interface MaterialOrderDocument extends Document {
     unit: string;
     note?: string;
   }[];
+  assignedEmployeeIds?: Array<Types.ObjectId>;
   status: 'draft' | 'ordered' | 'received' | 'cancelled';
   materialStatus: 'Za naročit' | 'Naročeno' | 'Prevzeto' | 'Pripravljeno' | 'Dostavljeno' | 'Zmontirano';
-  technicianId?: string | null;
-  technicianName?: string | null;
   cancelledAt?: Date | null;
   reopened?: boolean;
 }
@@ -38,14 +37,13 @@ const materialOrderSchema = new Schema<MaterialOrderDocument>(
     offerVersionId: { type: String, required: true, index: true },
     workOrderId: { type: Schema.Types.ObjectId, ref: 'WorkOrder', required: false },
     items: { type: [materialItemSchema], default: [] },
+    assignedEmployeeIds: { type: [Schema.Types.ObjectId], ref: 'Employee', default: [] },
     status: { type: String, enum: ['draft', 'ordered', 'received', 'cancelled'], default: 'draft' },
     materialStatus: {
       type: String,
       enum: ['Za naročit', 'Naročeno', 'Prevzeto', 'Pripravljeno', 'Dostavljeno', 'Zmontirano'],
       default: 'Za naročit',
     },
-    technicianId: { type: String, default: null },
-    technicianName: { type: String, default: null },
     cancelledAt: { type: Date, default: null },
     reopened: { type: Boolean, default: false },
   },

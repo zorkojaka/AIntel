@@ -1,33 +1,18 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { Employee, EmployeePayload } from '../types';
-import type { User } from '@aintel/shared/types/user';
-import { fetchUsers, getEmployeeUser } from '../api/users';
-
-interface AccessPayload {
-  enabled: boolean;
-  mode: 'existing' | 'new';
-  selectedUserId: string | null;
-  roles: string[];
-  newUser: {
-    email: string;
-    roles: string[];
-    active: boolean;
-  } | null;
-  previousUserId: string | null;
-}
 
 interface EmployeeFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (payload: EmployeePayload, access: AccessPayload) => Promise<void>;
+  onSubmit: (payload: EmployeePayload) => Promise<void>;
   initialData?: Employee | null;
   submitting?: boolean;
 }
 
 const contractTypeOptions = ['zaposlitvena', 'podjemna', 's.p.', 'student', 'zunanji'] as const;
 const shirtSizeOptions = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'] as const;
-const roleOptions = ['admin', 'sales', 'ops', 'technician', 'finance', 'manager'] as const;
+const roleOptions = ['admin', 'manager', 'sales', 'technician', 'ops', 'finance'] as const;
 
 export function EmployeeFormDialog({
   open,
@@ -48,15 +33,7 @@ export function EmployeeFormDialog({
   const [notes, setNotes] = useState('');
   const [hourRateWithoutVat, setHourRateWithoutVat] = useState('0');
   const [active, setActive] = useState(true);
-  const [accessEnabled, setAccessEnabled] = useState(false);
-  const [accessMode, setAccessMode] = useState<'existing' | 'new'>('existing');
-  const [userSearch, setUserSearch] = useState('');
-  const [users, setUsers] = useState<User[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState('');
   const [roles, setRoles] = useState<string[]>([]);
-  const [newUserEmail, setNewUserEmail] = useState('');
-  const [newUserActive, setNewUserActive] = useState(true);
-  const [initialUserId, setInitialUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -73,6 +50,7 @@ export function EmployeeFormDialog({
       setNotes(initialData.notes ?? '');
       setHourRateWithoutVat(String(initialData.hourRateWithoutVat ?? 0));
       setActive(initialData.active ?? true);
+      setRoles(initialData.roles ?? []);
       setError(null);
     } else {
       setName('');
@@ -87,78 +65,10 @@ export function EmployeeFormDialog({
       setNotes('');
       setHourRateWithoutVat('0');
       setActive(true);
+      setRoles([]);
       setError(null);
     }
   }, [initialData, open]);
-
-  useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    if (initialData?.id) {
-      getEmployeeUser(initialData.id)
-        .then((user) => {
-          if (!alive) return;
-          const userId = user?.id ?? '';
-          setSelectedUserId(userId);
-          setInitialUserId(userId || null);
-          setAccessEnabled(!!userId);
-          setAccessMode('existing');
-          setRoles(user?.roles ?? []);
-        })
-        .catch(() => {
-          if (!alive) return;
-          setSelectedUserId('');
-          setInitialUserId(null);
-          setAccessEnabled(false);
-          setRoles([]);
-        });
-    } else {
-      setSelectedUserId('');
-      setInitialUserId(null);
-      setAccessEnabled(false);
-      setRoles([]);
-    }
-    setAccessMode('existing');
-    setNewUserEmail('');
-    setNewUserActive(true);
-    return () => {
-      alive = false;
-    };
-  }, [initialData?.id, open]);
-
-  useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    const timer = setTimeout(() => {
-      fetchUsers({ search: userSearch })
-        .then((data) => {
-          if (!alive) return;
-          setUsers(data);
-        })
-        .catch(() => {
-          if (!alive) return;
-          setUsers([]);
-        });
-    }, 200);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
-  }, [open, userSearch]);
-
-  useEffect(() => {
-    if (!selectedUserId) return;
-    const selected = users.find((user) => user.id === selectedUserId);
-    if (selected?.roles) {
-      setRoles(selected.roles);
-    }
-  }, [selectedUserId, users]);
-
-  const selectedUserLabel = useMemo(() => {
-    const match = users.find((user) => user.id === selectedUserId);
-    if (!match) return '';
-    return match.email ? `${match.name} (${match.email})` : match.name;
-  }, [selectedUserId, users]);
 
   const toggleRole = (role: string) => {
     setRoles((prev) => (prev.includes(role) ? prev.filter((item) => item !== role) : [...prev, role]));
@@ -191,40 +101,22 @@ export function EmployeeFormDialog({
       setError('Stevilka cevljev ni veljavna.');
       return;
     }
-    if (accessEnabled && accessMode === 'new') {
-      const trimmedNewEmail = newUserEmail.trim();
-      if (!trimmedNewEmail || !trimmedNewEmail.includes('@')) {
-        setError('Email za uporabnika ni veljaven.');
-        return;
-      }
-    }
 
-    await onSubmit(
-      {
-        name: trimmedName,
-        company: company.trim(),
-        phone: trimmedPhone || undefined,
-        email: trimmedEmail || undefined,
-        address: trimmedAddress || undefined,
-        employmentStartDate: employmentStartDate ? employmentStartDate : null,
-        contractType: contractType || null,
-        shirtSize: shirtSize || null,
-        shoeSize: parsedShoeSize,
-        notes: trimmedNotes || undefined,
-        hourRateWithoutVat: parsedRate,
-        active,
-      },
-      {
-        enabled: accessEnabled,
-        mode: accessMode,
-        selectedUserId: selectedUserId || null,
-        roles,
-        newUser: accessEnabled && accessMode === 'new'
-          ? { email: newUserEmail.trim(), roles, active: newUserActive }
-          : null,
-        previousUserId: initialUserId,
-      }
-    );
+    await onSubmit({
+      name: trimmedName,
+      company: company.trim(),
+      phone: trimmedPhone || undefined,
+      email: trimmedEmail || undefined,
+      roles,
+      address: trimmedAddress || undefined,
+      employmentStartDate: employmentStartDate ? employmentStartDate : null,
+      contractType: contractType || null,
+      shirtSize: shirtSize || null,
+      shoeSize: parsedShoeSize,
+      notes: trimmedNotes || undefined,
+      hourRateWithoutVat: parsedRate,
+      active,
+    });
   };
 
   return (
@@ -401,105 +293,23 @@ export function EmployeeFormDialog({
             </div>
 
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">Access & Roles</p>
-                  <p className="text-xs text-slate-500">Upravljanje dostopa do aplikacije.</p>
-                </div>
-                <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={accessEnabled}
-                    onChange={(event) => setAccessEnabled(event.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
-                  />
-                  Ima dostop
-                </label>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Vloge</p>
+                <p className="text-xs text-slate-500">Dostopne vloge za zaposlenega.</p>
               </div>
-
-              {accessEnabled ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-4 text-sm">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        checked={accessMode === 'existing'}
-                        onChange={() => setAccessMode('existing')}
-                        className="h-4 w-4 border-slate-300 text-primary focus:ring-primary"
-                      />
-                      Povezi obstojecega uporabnika
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        checked={accessMode === 'new'}
-                        onChange={() => setAccessMode('new')}
-                        className="h-4 w-4 border-slate-300 text-primary focus:ring-primary"
-                      />
-                      Ustvari novega uporabnika
-                    </label>
-                  </div>
-
-                  {accessMode === 'existing' ? (
-                    <div className="space-y-2">
-                      <input
-                        placeholder="Isci uporabnika..."
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                        value={userSearch}
-                        onChange={(event) => setUserSearch(event.target.value)}
-                      />
-                      <select
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                        value={selectedUserId}
-                        onChange={(event) => setSelectedUserId(event.target.value)}
-                      >
-                        <option value="">Izberi uporabnika</option>
-                        {users.map((user) => (
-                          <option key={user.id} value={user.id}>
-                            {user.name} {user.email ? `(${user.email})` : ''}
-                          </option>
-                        ))}
-                      </select>
-                      {selectedUserLabel ? <p className="text-xs text-slate-500">Izbran: {selectedUserLabel}</p> : null}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <input
-                        placeholder="Email uporabnika"
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                        value={newUserEmail}
-                        onChange={(event) => setNewUserEmail(event.target.value)}
-                      />
-                      <label className="flex items-center gap-2 text-sm text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={newUserActive}
-                          onChange={(event) => setNewUserActive(event.target.checked)}
-                          className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
-                        />
-                        Aktiven uporabnik
-                      </label>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-slate-700">Vloge</p>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {roleOptions.map((role) => (
-                        <label key={role} className="flex items-center gap-2 text-sm text-slate-600">
-                          <input
-                            type="checkbox"
-                            checked={roles.includes(role)}
-                            onChange={() => toggleRole(role)}
-                            className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
-                          />
-                          {role}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
+              <div className="grid gap-2 sm:grid-cols-2">
+                {roleOptions.map((role) => (
+                  <label key={role} className="flex items-center gap-2 text-sm text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={roles.includes(role)}
+                      onChange={() => toggleRole(role)}
+                      className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                    />
+                    {role}
+                  </label>
+                ))}
+              </div>
             </div>
 
             <label className="flex items-center gap-3 text-sm font-medium text-slate-700">

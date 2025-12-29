@@ -10,10 +10,10 @@ import {
   softDeleteEmployee,
   updateEmployee,
 } from '../services/employee.service';
-import { getUserByEmployeeId } from '../../users/services/user.service';
 
 const contractTypes = ['zaposlitvena', 'podjemna', 's.p.', 'student', 'zunanji'] as const;
 const shirtSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'] as const;
+const roleOptions = ['admin', 'manager', 'sales', 'technician', 'ops', 'finance'] as const;
 
 function parseBooleanFlag(value?: string | string[]) {
   if (Array.isArray(value)) return value.some((item) => ['1', 'true', 'yes'].includes(String(item).toLowerCase()));
@@ -38,6 +38,13 @@ function isValidNumber(value: unknown) {
   if (value === null || value === undefined || value === '') return true;
   const parsed = Number(value);
   return Number.isFinite(parsed);
+}
+
+function normalizeRoles(value: unknown) {
+  if (!Array.isArray(value)) return null;
+  const allowed = new Set<string>(roleOptions as readonly string[]);
+  const roles = value.map((role) => String(role)).filter((role) => allowed.has(role));
+  return roles;
 }
 
 export async function getEmployees(req: Request, res: Response) {
@@ -80,6 +87,13 @@ export async function postEmployee(req: Request, res: Response) {
   if (!isValidNumber(req.body.shoeSize)) {
     return res.fail('Stevilka cevljev ni veljavna.', 400);
   }
+  if (req.body.roles !== undefined) {
+    const roles = normalizeRoles(req.body.roles);
+    if (!roles) {
+      return res.fail('Vloge niso veljavne.', 400);
+    }
+    req.body.roles = roles;
+  }
 
   await assertCan('create', (req as any).user, { tenantId });
   const employee = await createEmployee(tenantId, req.body);
@@ -109,6 +123,13 @@ export async function patchEmployee(req: Request, res: Response) {
   }
   if (!isValidNumber(req.body.shoeSize)) {
     return res.fail('Stevilka cevljev ni veljavna.', 400);
+  }
+  if (req.body.roles !== undefined) {
+    const roles = normalizeRoles(req.body.roles);
+    if (!roles) {
+      return res.fail('Vloge niso veljavne.', 400);
+    }
+    req.body.roles = roles;
   }
 
   await assertCan('update', (req as any).user, { tenantId, employeeId: req.params.id });
@@ -146,16 +167,4 @@ export async function removeEmployee(req: Request, res: Response) {
     return res.fail('Zaposleni ni najden.', 404);
   }
   return res.success({ success: true });
-}
-
-export async function getEmployeeUser(req: Request, res: Response) {
-  const tenantId = resolveTenantId(req);
-  if (!tenantId) {
-    return res.fail('TenantId ni podan.', 400);
-  }
-
-  await assertCan('read', (req as any).user, { tenantId, employeeId: req.params.id });
-
-  const user = await getUserByEmployeeId(tenantId, req.params.id);
-  return res.success(user ?? null);
 }

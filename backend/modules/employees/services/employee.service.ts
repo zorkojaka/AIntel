@@ -10,6 +10,7 @@ export function sanitizeEmployee(doc: EmployeeDocument) {
     company: plain.company ?? '',
     phone: plain.phone ?? '',
     email: plain.email ?? '',
+    roles: Array.isArray(plain.roles) ? plain.roles : [],
     address: plain.address ?? '',
     employmentStartDate: plain.employmentStartDate ? new Date(plain.employmentStartDate).toISOString() : null,
     contractType: plain.contractType ?? null,
@@ -32,6 +33,9 @@ function toEmployeeUpdate(payload: Partial<EmployeeDocument>) {
   if (payload.company !== undefined) update.company = payload.company;
   if (payload.phone !== undefined) update.phone = payload.phone;
   if (payload.email !== undefined) update.email = payload.email;
+  if (payload.roles !== undefined) {
+    update.roles = Array.isArray(payload.roles) ? payload.roles : [];
+  }
   if (payload.address !== undefined) update.address = payload.address;
   if (payload.employmentStartDate !== undefined) update.employmentStartDate = payload.employmentStartDate;
   if (payload.contractType !== undefined) update.contractType = payload.contractType;
@@ -67,6 +71,7 @@ export async function createEmployee(tenantId: string, payload: Partial<Employee
     company: payload.company ?? '',
     phone: payload.phone ?? '',
     email: payload.email ?? '',
+    roles: Array.isArray(payload.roles) ? payload.roles : [],
     address: payload.address ?? '',
     employmentStartDate: payload.employmentStartDate ?? null,
     contractType: payload.contractType ?? null,

@@ -1,12 +1,10 @@
 import type { Employee, EmployeePayload } from '../types';
-import { buildTenantHeaders, getTenantId as getSharedTenantId } from '@aintel/shared/utils/tenant';
 
 const API_PREFIX = '/api/employees';
 
 function buildHeaders(extra?: Record<string, string>) {
   return {
     'Content-Type': 'application/json',
-    ...buildTenantHeaders(),
     ...(extra ?? {}),
   };
 }
@@ -53,6 +51,3 @@ export async function deleteEmployee(id: string): Promise<void> {
   await handleResponse(response);
 }
 
-export function getTenantId() {
-  return getSharedTenantId();
-}

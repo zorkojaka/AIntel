@@ -9,6 +9,7 @@
     "build": "tsc",
     "seed:cenik": "ts-node scripts/seed-cenik.ts",
     "seed:settings": "ts-node scripts/seed-settings.ts",
+    "migrate:employee-roles": "ts-node scripts/migrate-employee-roles.ts",
     "pdf:smoke": "ts-node --transpile-only scripts/pdf-smoke.ts"
   },
   "dependencies": {

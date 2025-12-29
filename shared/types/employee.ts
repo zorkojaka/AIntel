@@ -5,6 +5,7 @@ export interface Employee {
   company?: string;
   phone?: string;
   email?: string;
+  roles?: string[];
   address?: string;
   employmentStartDate?: string | null;
   contractType?: string | null;

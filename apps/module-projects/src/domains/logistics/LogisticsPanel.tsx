@@ -336,6 +336,19 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
     });
   };
 
+  const toggleMaterialAssignedEmployee = async (employeeId: string) => {
+    const currentMaterial = materialOrderForm ?? selectedMaterialOrder;
+    if (!currentMaterial) return;
+    const current = Array.isArray(currentMaterial.assignedEmployeeIds) ? currentMaterial.assignedEmployeeIds : [];
+    const next = current.includes(employeeId)
+      ? current.filter((id) => id !== employeeId)
+      : [...current, employeeId];
+    setMaterialOrderForm((prev) =>
+      prev ? { ...prev, assignedEmployeeIds: next } : { ...currentMaterial, assignedEmployeeIds: next },
+    );
+    await handleSaveWorkOrder({ _id: currentMaterial._id, assignedEmployeeIds: next });
+  };
+
   const handleMaterialStatusChange = (status: MaterialStatus) => {
     if (!materialOrderForm) return;
     setMaterialOrderForm((prev) => (prev ? { ...prev, materialStatus: status } : prev));
@@ -409,6 +422,11 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
           status: workOrderOverrides?.status ?? workOrderForm.status ?? undefined,
           materialOrderId: materialOverrides?._id ?? currentMaterial?._id ?? null,
           materialStatus: materialOverrides?.materialStatus ?? currentMaterial?.materialStatus ?? undefined,
+          materialAssignedEmployeeIds: Array.isArray(materialOverrides?.assignedEmployeeIds)
+            ? materialOverrides?.assignedEmployeeIds
+            : Array.isArray(currentMaterial?.assignedEmployeeIds)
+              ? currentMaterial?.assignedEmployeeIds
+              : undefined,
         }),
       });
       const payload = await response.json();
@@ -524,6 +542,7 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
     const customerAddress = workOrder.customerAddress || formatClientAddress(client ?? null) || "";
     const customerEmail = workOrder.customerEmail || client?.email || "";
     const customerPhone = workOrder.customerPhone || client?.phone || "";
+    const canDownloadWorkOrderPdf = !!workOrder?._id;
     return (
       <div className="space-y-5">
         <div className="grid gap-4 md:grid-cols-2">
@@ -599,14 +618,6 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
             rows={3}
           />
         </div>
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => handleSaveWorkOrder()} disabled={savingWorkOrder}>
-            {savingWorkOrder ? "Shranjujem..." : "Shrani podatke"}
-          </Button>
-          <Button onClick={handleIssueWorkOrder} disabled={!canIssueOrder || savingWorkOrder || issuingOrder}>
-            {issuingOrder ? "Izdajam..." : "Izdaj nalog"}
-          </Button>
-        </div>
         <div className="border rounded-[var(--radius-card)] bg-card overflow-hidden">
           <Table>
             <TableHeader>
@@ -627,6 +638,38 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
             </TableBody>
           </Table>
         </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleDownloadWorkOrderPdf("WORK_ORDER")}
+              disabled={!canDownloadWorkOrderPdf || (workOrderDownloading !== null && workOrderDownloading !== "WORK_ORDER")}
+            >
+              {workOrderDownloading === "WORK_ORDER" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Prenesi nalog
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleDownloadWorkOrderPdf("WORK_ORDER_CONFIRMATION")}
+              disabled={
+                !canDownloadWorkOrderPdf || (workOrderDownloading !== null && workOrderDownloading !== "WORK_ORDER_CONFIRMATION")
+              }
+            >
+              {workOrderDownloading === "WORK_ORDER_CONFIRMATION" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Potrditev izvedbe
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => handleSaveWorkOrder()} disabled={savingWorkOrder}>
+              {savingWorkOrder ? "Shranjujem..." : "Shrani podatke"}
+            </Button>
+            <Button onClick={handleIssueWorkOrder} disabled={!canIssueOrder || savingWorkOrder || issuingOrder}>
+              {issuingOrder ? "Izdajam..." : "Izdaj nalog"}
+            </Button>
+          </div>
+        </div>
       </div>
     );
   };
@@ -637,7 +680,6 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
   const headerWorkOrderStatus: WorkOrderStatus =
     (workOrderForm.status as WorkOrderStatus) ?? (selectedWorkOrder?.status as WorkOrderStatus) ?? "draft";
   const canDownloadMaterialPdf = !!(materialOrderForm ?? selectedMaterialOrder ?? null)?._id;
-  const canDownloadWorkOrderPdf = !!selectedWorkOrder?._id;
 
   return (
     <div className="space-y-6">
@@ -786,34 +828,24 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
             )}
           </CardHeader>
           <CardContent>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-muted-foreground">PDF izvozi</p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDownloadMaterialPdf("PURCHASE_ORDER")}
-                  disabled={!canDownloadMaterialPdf || (materialDownloading !== null && materialDownloading !== "PURCHASE_ORDER")}
-                >
-                  {materialDownloading === "PURCHASE_ORDER" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Prenesi naročilnico
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDownloadMaterialPdf("DELIVERY_NOTE")}
-                  disabled={!canDownloadMaterialPdf || (materialDownloading !== null && materialDownloading !== "DELIVERY_NOTE")}
-                >
-                  {materialDownloading === "DELIVERY_NOTE" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Prenesi dobavnico
-                </Button>
-              </div>
-            </div>
             <MaterialOrderCard
               materialOrder={materialOrderForm}
               nextStatus={nextMaterialStatus}
               onAdvanceStatus={handleMaterialNextStatus}
               savingWorkOrder={savingWorkOrder}
+              employees={employees}
+              assignedEmployeeIds={
+                Array.isArray(materialOrderForm?.assignedEmployeeIds)
+                  ? materialOrderForm.assignedEmployeeIds
+                  : Array.isArray(selectedMaterialOrder?.assignedEmployeeIds)
+                    ? selectedMaterialOrder.assignedEmployeeIds
+                    : []
+              }
+              onToggleAssignedEmployee={toggleMaterialAssignedEmployee}
+              onDownloadPurchaseOrder={() => handleDownloadMaterialPdf("PURCHASE_ORDER")}
+              onDownloadDeliveryNote={() => handleDownloadMaterialPdf("DELIVERY_NOTE")}
+              canDownloadPdf={canDownloadMaterialPdf}
+              downloadingPdf={materialDownloading}
             />
           </CardContent>
         </Card>
@@ -861,30 +893,6 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
               ) : (
                 <span className="text-sm text-muted-foreground">Delovni nalog še ni ustvarjen.</span>
               )}
-              {selectedWorkOrder && (
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDownloadWorkOrderPdf("WORK_ORDER")}
-                    disabled={!canDownloadWorkOrderPdf || (workOrderDownloading !== null && workOrderDownloading !== "WORK_ORDER")}
-                  >
-                    {workOrderDownloading === "WORK_ORDER" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    Prenesi nalog
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDownloadWorkOrderPdf("WORK_ORDER_CONFIRMATION")}
-                    disabled={
-                      !canDownloadWorkOrderPdf || (workOrderDownloading !== null && workOrderDownloading !== "WORK_ORDER_CONFIRMATION")
-                    }
-                  >
-                    {workOrderDownloading === "WORK_ORDER_CONFIRMATION" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    Potrditev izvedbe
-                  </Button>
-                </div>
-              )}
             </div>
             {renderWorkOrder(selectedWorkOrder)}
           </CardContent>
@@ -893,3 +901,4 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
     </div>
   );
 }
+

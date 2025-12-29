@@ -7,6 +7,7 @@ export interface EmployeePayload {
   company?: string;
   phone?: string;
   email?: string;
+  roles?: string[];
   address?: string;
   employmentStartDate?: string | null;
   contractType?: string | null;

@@ -6,6 +6,7 @@ export interface EmployeeDocument extends Document {
   company?: string;
   phone?: string;
   email?: string;
+  roles?: string[];
   address?: string;
   employmentStartDate?: Date | null;
   contractType?: string | null;
@@ -27,6 +28,11 @@ const EmployeeSchema = new Schema<EmployeeDocument>(
     company: { type: String, trim: true, default: '' },
     phone: { type: String, trim: true, default: '' },
     email: { type: String, trim: true, lowercase: true, default: '' },
+    roles: {
+      type: [String],
+      enum: ['admin', 'manager', 'sales', 'technician', 'ops', 'finance'],
+      default: [],
+    },
     address: { type: String, trim: true, default: '' },
     employmentStartDate: { type: Date, default: null },
     contractType: { type: String, trim: true, default: null },

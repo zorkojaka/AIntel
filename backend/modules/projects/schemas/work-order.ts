@@ -30,8 +30,6 @@ interface WorkOrderDocument extends Document {
   items: WorkOrderItem[];
   status: 'draft' | 'issued' | 'in-progress' | 'confirmed' | 'completed';
   scheduledAt: string | null;
-  technicianName?: string;
-  technicianId?: string;
   assignedEmployeeIds?: string[];
   location?: string;
   notes?: string;
@@ -86,8 +84,6 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
       default: 'draft',
     },
     scheduledAt: { type: String, default: null },
-    technicianName: { type: String },
-    technicianId: { type: String },
     assignedEmployeeIds: { type: [Schema.Types.ObjectId], default: [] },
     location: { type: String },
     notes: { type: String },

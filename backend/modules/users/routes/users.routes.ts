@@ -3,6 +3,7 @@ import { getUsers, patchUser, postUser, removeUser } from '../controllers/users.
 
 const router = Router();
 
+// Legacy endpoints: employees are the source of truth for access roles.
 router.get('/', getUsers);
 router.post('/', postUser);
 router.patch('/:id', patchUser);
