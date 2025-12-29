@@ -7,6 +7,7 @@ import type {
   WorkOrder as LogisticsWorkOrder,
   WorkOrderStatus,
 } from "@aintel/shared/types/logistics";
+import type { Employee } from "@aintel/shared/types/employee";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Badge } from "../../components/ui/badge";
@@ -14,11 +15,13 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { MaterialOrderCard, TechnicianOption } from "./MaterialOrderCard";
+import { MaterialOrderCard } from "./MaterialOrderCard";
 import { useConfirmOffer } from "../core/useConfirmOffer";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
 import { Loader2 } from "lucide-react";
+import { Checkbox } from "../../components/ui/checkbox";
+import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 
 interface LogisticsPanelProps {
   projectId: string;
@@ -51,11 +54,6 @@ const STATUS_LABELS: Record<string, string> = {
   REJECTED: "Zavrnjeno",
 };
 
-const technicians: TechnicianOption[] = [
-  { id: "tech-1", name: "Tehnik 1" },
-  { id: "tech-2", name: "Tehnik 2" },
-];
-
 const materialStatusOptions: MaterialStatus[] = [
   "Za naročit",
   "Naročeno",
@@ -73,16 +71,6 @@ function getNextMaterialStatus(current?: MaterialStatus | null) {
     return null;
   }
   return materialStatusSequence[index + 1];
-}
-
-function selectTechnician(
-  id: string,
-  update: (payload: { id: string; name: string }) => void,
-  technicianList: TechnicianOption[],
-) {
-  const selected = technicianList.find((tech) => tech.id === id);
-  if (!selected) return;
-  update({ id: selected.id, name: selected.name });
 }
 
 function formatCurrency(value: number) {
@@ -120,6 +108,7 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
   const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
   const [workOrderForm, setWorkOrderForm] = useState<Partial<LogisticsWorkOrder>>({});
   const [materialOrderForm, setMaterialOrderForm] = useState<MaterialOrder | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [emailTouched, setEmailTouched] = useState(false);
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [locationTouched, setLocationTouched] = useState(false);
@@ -207,6 +196,28 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
   }, [fetchSnapshot]);
 
   useEffect(() => {
+    if (!projectId) return;
+    let alive = true;
+    const fetchEmployees = async () => {
+      try {
+        const response = await fetch("/api/employees", {
+          headers: buildTenantHeaders(),
+        });
+        const payload = await response.json();
+        if (!alive) return;
+        setEmployees(Array.isArray(payload?.data) ? payload.data : []);
+      } catch {
+        if (!alive) return;
+        setEmployees([]);
+      }
+    };
+    fetchEmployees();
+    return () => {
+      alive = false;
+    };
+  }, [projectId]);
+
+  useEffect(() => {
     if (confirmedOffers.length === 0) {
       if (selectedOfferVersionId !== null) {
         setSelectedOfferVersionId(null);
@@ -236,6 +247,9 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
       setWorkOrderForm({
         ...selectedWorkOrder,
         scheduledAt: selectedWorkOrder.scheduledAt ?? "",
+        assignedEmployeeIds: Array.isArray(selectedWorkOrder.assignedEmployeeIds)
+          ? selectedWorkOrder.assignedEmployeeIds
+          : [],
       });
     } else {
       setWorkOrderForm({});
@@ -312,6 +326,29 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
     setWorkOrderForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const toggleAssignedEmployee = (employeeId: string) => {
+    setWorkOrderForm((prev) => {
+      const current = Array.isArray(prev.assignedEmployeeIds) ? prev.assignedEmployeeIds : [];
+      const next = current.includes(employeeId)
+        ? current.filter((id) => id !== employeeId)
+        : [...current, employeeId];
+      return { ...prev, assignedEmployeeIds: next };
+    });
+  };
+
+  const toggleMaterialAssignedEmployee = async (employeeId: string) => {
+    const currentMaterial = materialOrderForm ?? selectedMaterialOrder;
+    if (!currentMaterial) return;
+    const current = Array.isArray(currentMaterial.assignedEmployeeIds) ? currentMaterial.assignedEmployeeIds : [];
+    const next = current.includes(employeeId)
+      ? current.filter((id) => id !== employeeId)
+      : [...current, employeeId];
+    setMaterialOrderForm((prev) =>
+      prev ? { ...prev, assignedEmployeeIds: next } : { ...currentMaterial, assignedEmployeeIds: next },
+    );
+    await handleSaveWorkOrder({ _id: currentMaterial._id, assignedEmployeeIds: next });
+  };
+
   const handleMaterialStatusChange = (status: MaterialStatus) => {
     if (!materialOrderForm) return;
     setMaterialOrderForm((prev) => (prev ? { ...prev, materialStatus: status } : prev));
@@ -321,16 +358,6 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
     if (!materialOrderForm) return;
     setMaterialOrderForm((prev) => (prev ? { ...prev, materialStatus: nextStatus } : prev));
     await handleSaveWorkOrder({ materialStatus: nextStatus });
-  };
-
-  const handleMaterialTechnicianSelect = (technicianId: string) => {
-    if (!technicianId || !materialOrderForm) return;
-    selectTechnician(
-      technicianId,
-      ({ id, name }) =>
-        setMaterialOrderForm((prev) => (prev ? { ...prev, technicianId: id, technicianName: name } : prev)),
-      technicians,
-    );
   };
 
   const handleDownloadMaterialPdf = async (docType: "PURCHASE_ORDER" | "DELIVERY_NOTE") => {
@@ -389,15 +416,17 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
         body: JSON.stringify({
           workOrderId: selectedWorkOrder._id,
           scheduledAt: typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : null,
-          technicianName: workOrderForm.technicianName ?? "",
-          technicianId: workOrderForm.technicianId ?? "",
+          assignedEmployeeIds: Array.isArray(workOrderForm.assignedEmployeeIds) ? workOrderForm.assignedEmployeeIds : [],
           location: workOrderForm.location ?? "",
           notes: workOrderForm.notes ?? "",
           status: workOrderOverrides?.status ?? workOrderForm.status ?? undefined,
           materialOrderId: materialOverrides?._id ?? currentMaterial?._id ?? null,
           materialStatus: materialOverrides?.materialStatus ?? currentMaterial?.materialStatus ?? undefined,
-          materialTechnicianId: materialOverrides?.technicianId ?? currentMaterial?.technicianId ?? null,
-          materialTechnicianName: materialOverrides?.technicianName ?? currentMaterial?.technicianName ?? null,
+          materialAssignedEmployeeIds: Array.isArray(materialOverrides?.assignedEmployeeIds)
+            ? materialOverrides?.assignedEmployeeIds
+            : Array.isArray(currentMaterial?.assignedEmployeeIds)
+              ? currentMaterial?.assignedEmployeeIds
+              : undefined,
         }),
       });
       const payload = await response.json();
@@ -477,12 +506,12 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
   const resolvedCustomerName = resolveField(workOrderForm.customerName, selectedWorkOrder?.customerName);
   const resolvedCustomerAddress = resolveField(workOrderForm.customerAddress, selectedWorkOrder?.customerAddress);
   const resolvedCustomerEmail = resolveField(workOrderForm.customerEmail, selectedWorkOrder?.customerEmail);
-  const resolvedCustomerPhone = resolveField(workOrderForm.customerPhone, selectedWorkOrder?.customerPhone);
-  const resolvedSchedule = resolveField(
-    typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : undefined,
-    selectedWorkOrder?.scheduledAt ?? undefined,
-  );
-  const resolvedTechnicianId = resolveField(workOrderForm.technicianId, selectedWorkOrder?.technicianId);
+    const resolvedCustomerPhone = resolveField(workOrderForm.customerPhone, selectedWorkOrder?.customerPhone);
+    const resolvedSchedule = resolveField(
+      typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : undefined,
+      selectedWorkOrder?.scheduledAt ?? undefined,
+    );
+  const hasAssignedTeam = (workOrderForm.assignedEmployeeIds ?? selectedWorkOrder?.assignedEmployeeIds ?? []).length > 0;
 
   const canIssueOrder =
     effectiveMaterialStatus === "Pripravljeno" &&
@@ -491,7 +520,7 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
     resolvedCustomerEmail &&
     resolvedCustomerPhone &&
     resolvedSchedule &&
-    resolvedTechnicianId;
+    hasAssignedTeam;
 
   const handleIssueWorkOrder = async () => {
     if (!canIssueOrder || issuingOrder || !selectedWorkOrder) return;
@@ -513,9 +542,7 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
     const customerAddress = workOrder.customerAddress || formatClientAddress(client ?? null) || "";
     const customerEmail = workOrder.customerEmail || client?.email || "";
     const customerPhone = workOrder.customerPhone || client?.phone || "";
-    const technicianValue: string | undefined =
-      workOrderForm.technicianId ?? workOrder.technicianId ?? undefined;
-
+    const canDownloadWorkOrderPdf = !!workOrder?._id;
     return (
       <div className="space-y-5">
         <div className="grid gap-4 md:grid-cols-2">
@@ -555,35 +582,24 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Tehnik</label>
-              <Select
-                value={technicianValue}
-                onValueChange={(id) =>
-                  selectTechnician(
-                    id,
-                    ({ id: technicianId, name }) =>
-                      setWorkOrderForm((prev) => ({
-                        ...prev,
-                        technicianId,
-                        technicianName: name,
-                      })),
-                    technicians,
-                  )
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Izberi tehnika" />
-                </SelectTrigger>
-                <SelectContent>
-                  {technicians
-                    .filter((technician) => technician.id.trim().length > 0)
-                    .map((technician) => (
-                      <SelectItem key={technician.id} value={technician.id}>
-                        {technician.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+              <label className="text-sm font-medium">Tehniki (ekipa)</label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {employees.filter((employee) => employee.active).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Ni zaposlenih.</p>
+                ) : (
+                  employees
+                    .filter((employee) => employee.active)
+                    .map((employee) => (
+                    <label key={employee.id} className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Checkbox
+                        checked={(workOrderForm.assignedEmployeeIds ?? []).includes(employee.id)}
+                        onChange={() => toggleAssignedEmployee(employee.id)}
+                      />
+                      {employee.name}
+                    </label>
+                  ))
+                )}
+              </div>
             </div>
             <div className="space-y-1">
               <label className="text-sm font-medium">Status materiala</label>
@@ -601,14 +617,6 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
             placeholder="Navodila za tehnika"
             rows={3}
           />
-        </div>
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => handleSaveWorkOrder()} disabled={savingWorkOrder}>
-            {savingWorkOrder ? "Shranjujem..." : "Shrani podatke"}
-          </Button>
-          <Button onClick={handleIssueWorkOrder} disabled={!canIssueOrder || savingWorkOrder || issuingOrder}>
-            {issuingOrder ? "Izdajam..." : "Izdaj nalog"}
-          </Button>
         </div>
         <div className="border rounded-[var(--radius-card)] bg-card overflow-hidden">
           <Table>
@@ -630,6 +638,38 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
             </TableBody>
           </Table>
         </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleDownloadWorkOrderPdf("WORK_ORDER")}
+              disabled={!canDownloadWorkOrderPdf || (workOrderDownloading !== null && workOrderDownloading !== "WORK_ORDER")}
+            >
+              {workOrderDownloading === "WORK_ORDER" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Prenesi nalog
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleDownloadWorkOrderPdf("WORK_ORDER_CONFIRMATION")}
+              disabled={
+                !canDownloadWorkOrderPdf || (workOrderDownloading !== null && workOrderDownloading !== "WORK_ORDER_CONFIRMATION")
+              }
+            >
+              {workOrderDownloading === "WORK_ORDER_CONFIRMATION" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Potrditev izvedbe
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => handleSaveWorkOrder()} disabled={savingWorkOrder}>
+              {savingWorkOrder ? "Shranjujem..." : "Shrani podatke"}
+            </Button>
+            <Button onClick={handleIssueWorkOrder} disabled={!canIssueOrder || savingWorkOrder || issuingOrder}>
+              {issuingOrder ? "Izdajam..." : "Izdaj nalog"}
+            </Button>
+          </div>
+        </div>
       </div>
     );
   };
@@ -640,7 +680,6 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
   const headerWorkOrderStatus: WorkOrderStatus =
     (workOrderForm.status as WorkOrderStatus) ?? (selectedWorkOrder?.status as WorkOrderStatus) ?? "draft";
   const canDownloadMaterialPdf = !!(materialOrderForm ?? selectedMaterialOrder ?? null)?._id;
-  const canDownloadWorkOrderPdf = !!selectedWorkOrder?._id;
 
   return (
     <div className="space-y-6">
@@ -789,36 +828,24 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
             )}
           </CardHeader>
           <CardContent>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-muted-foreground">PDF izvozi</p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDownloadMaterialPdf("PURCHASE_ORDER")}
-                  disabled={!canDownloadMaterialPdf || (materialDownloading !== null && materialDownloading !== "PURCHASE_ORDER")}
-                >
-                  {materialDownloading === "PURCHASE_ORDER" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Prenesi naročilnico
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDownloadMaterialPdf("DELIVERY_NOTE")}
-                  disabled={!canDownloadMaterialPdf || (materialDownloading !== null && materialDownloading !== "DELIVERY_NOTE")}
-                >
-                  {materialDownloading === "DELIVERY_NOTE" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Prenesi dobavnico
-                </Button>
-              </div>
-            </div>
             <MaterialOrderCard
               materialOrder={materialOrderForm}
-              technicians={technicians}
               nextStatus={nextMaterialStatus}
-              onTechnicianSelect={handleMaterialTechnicianSelect}
               onAdvanceStatus={handleMaterialNextStatus}
               savingWorkOrder={savingWorkOrder}
+              employees={employees}
+              assignedEmployeeIds={
+                Array.isArray(materialOrderForm?.assignedEmployeeIds)
+                  ? materialOrderForm.assignedEmployeeIds
+                  : Array.isArray(selectedMaterialOrder?.assignedEmployeeIds)
+                    ? selectedMaterialOrder.assignedEmployeeIds
+                    : []
+              }
+              onToggleAssignedEmployee={toggleMaterialAssignedEmployee}
+              onDownloadPurchaseOrder={() => handleDownloadMaterialPdf("PURCHASE_ORDER")}
+              onDownloadDeliveryNote={() => handleDownloadMaterialPdf("DELIVERY_NOTE")}
+              canDownloadPdf={canDownloadMaterialPdf}
+              downloadingPdf={materialDownloading}
             />
           </CardContent>
         </Card>
@@ -866,30 +893,6 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
               ) : (
                 <span className="text-sm text-muted-foreground">Delovni nalog še ni ustvarjen.</span>
               )}
-              {selectedWorkOrder && (
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDownloadWorkOrderPdf("WORK_ORDER")}
-                    disabled={!canDownloadWorkOrderPdf || (workOrderDownloading !== null && workOrderDownloading !== "WORK_ORDER")}
-                  >
-                    {workOrderDownloading === "WORK_ORDER" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    Prenesi nalog
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDownloadWorkOrderPdf("WORK_ORDER_CONFIRMATION")}
-                    disabled={
-                      !canDownloadWorkOrderPdf || (workOrderDownloading !== null && workOrderDownloading !== "WORK_ORDER_CONFIRMATION")
-                    }
-                  >
-                    {workOrderDownloading === "WORK_ORDER_CONFIRMATION" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    Potrditev izvedbe
-                  </Button>
-                </div>
-              )}
             </div>
             {renderWorkOrder(selectedWorkOrder)}
           </CardContent>
@@ -898,3 +901,4 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
     </div>
   );
 }
+

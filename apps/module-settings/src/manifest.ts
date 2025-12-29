@@ -5,7 +5,8 @@ export const manifest = {
   navItems: [
     {
       label: 'NASTAVITVE',
-      path: '/nastavitve'
+      path: '/nastavitve',
+      icon: 'settings'
     }
   ],
   routes: ['/nastavitve']

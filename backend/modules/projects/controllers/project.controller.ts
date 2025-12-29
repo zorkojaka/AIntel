@@ -14,7 +14,7 @@ import {
   generateProjectIdentifiers,
   summarizeProject,
 } from '../schemas/project';
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import { generateRequirementsFromTemplates } from '../services/requirements-from-templates';
 import type { RequirementFieldType, RequirementFormulaConfig } from '../../shared/requirements.types';
 import { getOfferCandidatesFromRequirements } from '../services/offer-from-requirements';
@@ -22,6 +22,9 @@ import { serializeProjectDetails } from '../services/project.service';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
+import { resolveTenantId } from '../../../utils/tenant';
+import { UserModel } from '../../users/schemas/user';
+import { EmployeeModel } from '../../employees/schemas/employee';
 
 function normalizeSlug(value: string) {
   return value
@@ -192,9 +195,70 @@ function buildDefaultOffer(): ProjectOffer {
   };
 }
 
+function normalizeIdArray(value: unknown): string[] | null {
+  if (value === null) return [];
+  if (!Array.isArray(value)) return null;
+  const ids = value.map((item) => String(item)).filter((item) => item.length > 0);
+  return Array.from(new Set(ids));
+}
+
+async function validateUsersAndEmployees(tenantId: string, salesUserId?: string | null, employeeIds?: string[]) {
+  if (salesUserId) {
+    if (!mongoose.isValidObjectId(salesUserId)) {
+      return 'Neveljaven uporabnik.';
+    }
+    const exists = await UserModel.findOne({ _id: salesUserId, tenantId }).lean();
+    if (!exists) {
+      return 'Uporabnik ne pripada tenantu.';
+    }
+  }
+
+  if (employeeIds && employeeIds.length > 0) {
+    const invalid = employeeIds.find((id) => !mongoose.isValidObjectId(id));
+    if (invalid) {
+      return 'Neveljaven zaposleni.';
+    }
+    const matches = await EmployeeModel.find({ _id: { $in: employeeIds }, tenantId }).select('_id').lean();
+    if (matches.length !== employeeIds.length) {
+      return 'Zaposleni ne pripadajo tenantu.';
+    }
+  }
+
+  return null;
+}
+
 export async function listProjects(_req: Request, res: Response) {
   const all = await ProjectModel.find().lean();
   return res.success(all.map(summarizeProject));
+}
+
+export async function updateProjectAssignments(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const tenantId = resolveTenantId(req);
+  if (!tenantId) return res.fail('TenantId ni podan.', 400);
+
+  const salesUserId =
+    req.body?.salesUserId === null || req.body?.salesUserId === undefined
+      ? null
+      : String(req.body.salesUserId);
+  const assignedEmployeeIds = normalizeIdArray(req.body?.assignedEmployeeIds);
+  if (assignedEmployeeIds === null) {
+    return res.fail('Neveljaven seznam zaposlenih.', 400);
+  }
+
+  const validationError = await validateUsersAndEmployees(tenantId, salesUserId ?? undefined, assignedEmployeeIds ?? []);
+  if (validationError) {
+    return res.fail(validationError, 400);
+  }
+
+  project.salesUserId = salesUserId;
+  project.assignedEmployeeIds = assignedEmployeeIds ?? [];
+
+  await project.save();
+
+  return res.success(await responseProject(project.toObject()));
 }
 
 export async function getProject(req: Request, res: Response) {

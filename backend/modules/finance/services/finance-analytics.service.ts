@@ -1,7 +1,8 @@
+import { FilterQuery } from 'mongoose';
 import { ProjectModel } from '../../projects/schemas/project';
 import { WorkOrderModel } from '../../projects/schemas/work-order';
 import { ProductModel } from '../../cenik/product.model';
-import { EmployeeModel } from '../../employees/schemas/employee';
+import { EmployeeModel, type EmployeeDocument } from '../../employees/schemas/employee';
 
 type DateRange = { from?: Date; to?: Date };
 
@@ -51,12 +52,17 @@ function getRevenueFromInvoice(invoice: InvoiceVersion) {
   return { revenueWithVat, revenueWithoutVat };
 }
 
-export async function getProjectsSummary(range: DateRange) {
+export async function getProjectsSummary(range: DateRange, tenantId?: string | null) {
+  const employeeFilter: FilterQuery<EmployeeDocument> = { deletedAt: null };
+  if (tenantId) {
+    employeeFilter.tenantId = tenantId;
+  }
+
   const [projects, workOrders, products, employees] = await Promise.all([
     ProjectModel.find().lean(),
     WorkOrderModel.find().lean(),
     ProductModel.find().lean(),
-    EmployeeModel.find().lean(),
+    EmployeeModel.find(employeeFilter).lean(),
   ]);
 
   const productPriceMap = new Map<string, number>();
@@ -139,8 +145,8 @@ export async function getProjectsSummary(range: DateRange) {
   });
 }
 
-export async function getMonthlySummary(range: DateRange) {
-  const projects = await getProjectsSummary(range);
+export async function getMonthlySummary(range: DateRange, tenantId?: string | null) {
+  const projects = await getProjectsSummary(range, tenantId);
   const buckets = new Map<string, any>();
 
   projects.forEach((project) => {
@@ -166,8 +172,14 @@ export async function getMonthlySummary(range: DateRange) {
   return Array.from(buckets.values());
 }
 
-export async function getEmployeesSummary(range: DateRange) {
-  const [workOrders, employees] = await Promise.all([WorkOrderModel.find().lean(), EmployeeModel.find().lean()]);
+export async function getEmployeesSummary(range: DateRange, tenantId?: string | null) {
+  const employeeFilter: FilterQuery<EmployeeDocument> = { deletedAt: null };
+  if (tenantId) employeeFilter.tenantId = tenantId;
+
+  const [workOrders, employees] = await Promise.all([
+    WorkOrderModel.find().lean(),
+    EmployeeModel.find(employeeFilter).lean(),
+  ]);
 
   const employeeMap = new Map<string, { name: string; rate: number }>();
   employees.forEach((employee: any) => {

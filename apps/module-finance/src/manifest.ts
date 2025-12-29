@@ -6,6 +6,7 @@ export const manifest = {
     {
       label: 'FINANCE',
       path: '/finance',
+      icon: 'wallet',
     },
   ],
   routes: ['/finance'],

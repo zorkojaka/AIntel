@@ -13,6 +13,7 @@ import {
   updateStatus,
   updateProject,
   getOfferCandidates,
+  updateProjectAssignments,
 } from '../controllers/project.controller';
 import {
   exportOfferPdf,
@@ -33,6 +34,7 @@ const router = Router();
 router.get('/', listProjects);
 router.post('/', createProject);
 router.get('/:id', getProject);
+router.patch('/:id/assignments', updateProjectAssignments);
 router.post('/:id/status', updateStatus);
 router.put('/:id', updateProject);
 router.delete('/:id', deleteProject);

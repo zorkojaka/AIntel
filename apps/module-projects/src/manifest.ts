@@ -6,6 +6,7 @@ export const manifest = {
     {
       label: "PROJEKTI",
       path: "/projects",
+      icon: "folder-kanban",
     },
   ],
   routes: ["/projects"],

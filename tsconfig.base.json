@@ -22,6 +22,8 @@
       "@aintel/module-projects/*": ["apps/module-projects/src/*"],
       "@aintel/module-settings": ["apps/module-settings/src"],
       "@aintel/module-settings/*": ["apps/module-settings/src/*"],
+      "@aintel/module-employees": ["apps/module-employees/src"],
+      "@aintel/module-employees/*": ["apps/module-employees/src/*"],
       "@aintel/shared": ["shared"],
       "@aintel/shared/*": ["shared/*"],
       "@aintel/core-shell": ["apps/core-shell/src"],

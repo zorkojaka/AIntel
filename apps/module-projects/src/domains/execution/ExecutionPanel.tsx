@@ -1,4 +1,4 @@
-import { type ChangeEvent, useCallback, useMemo, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
@@ -14,6 +14,8 @@ import { SignaturePad } from "./SignaturePad";
 import { PriceListProductAutocomplete } from "../../components/PriceListProductAutocomplete";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
+import type { Employee } from "@aintel/shared/types/employee";
+import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 
 interface ExecutionPanelProps {
   projectId: string;
@@ -107,6 +109,26 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
   const [savingStates, setSavingStates] = useState<Record<string, "saving" | "saved" | "error">>({});
   const [unsavedChanges, setUnsavedChanges] = useState<Record<string, boolean>>({});
   const [downloadingWorkOrderId, setDownloadingWorkOrderId] = useState<string | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    const fetchEmployees = async () => {
+      try {
+        const response = await fetch("/api/employees", { headers: buildTenantHeaders() });
+        const payload = await response.json();
+        if (!alive) return;
+        setEmployees(Array.isArray(payload?.data) ? payload.data : []);
+      } catch {
+        if (!alive) return;
+        setEmployees([]);
+      }
+    };
+    fetchEmployees();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const workOrdersByStatus = useMemo(() => {
     const grouped: Record<WorkOrderStatus, WorkOrder[]> = {
@@ -125,6 +147,16 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
     });
     return grouped;
   }, [workOrders]);
+
+  const employeeNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    employees.forEach((employee) => {
+      if (employee.active) {
+        map.set(employee.id, employee.name);
+      }
+    });
+    return map;
+  }, [employees]);
 
   const getInitialDraftValues = (order: WorkOrder) => ({
     status: order.status,
@@ -397,6 +429,10 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                   const savingState = savingStates[order._id];
                   const isSavingOrder = savingState === "saving";
                   const orderHasUnsavedChanges = !!unsavedChanges[order._id];
+                  const assignedTeam =
+                    order.assignedEmployeeIds
+                      ?.map((id) => employeeNameById.get(id))
+                      .filter((name): name is string => !!name) ?? [];
                   return (
                     <div key={order._id} className="rounded-lg border p-4 space-y-4">
                       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -408,7 +444,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                         </div>
                         <div className="text-sm text-muted-foreground text-right space-y-1">
                           <div>{formatDateTime(order.scheduledAt)}</div>
-                          <div>{order.technicianName || "Ni dodeljenega tehnika"}</div>
+                          <div>{assignedTeam.length > 0 ? assignedTeam.join(", ") : "Ni dodeljene ekipe"}</div>
                         </div>
                       </div>
                       <div className="grid gap-4 md:grid-cols-2">

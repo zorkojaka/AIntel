@@ -67,6 +67,7 @@ pnpm --filter @aintel/module-crm build
 pnpm --filter @aintel/module-projects build
 pnpm --filter @aintel/module-cenik build
 pnpm --filter @aintel/module-settings build
+pnpm --filter @aintel/module-employees build
 pnpm --filter @aintel/core-shell dev
 
 posamezno:

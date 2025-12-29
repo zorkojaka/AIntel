@@ -12,6 +12,14 @@
   background: var(--color-surface);
 }
 
+.core-shell__logo {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  max-height: 48px;
+  object-fit: contain;
+}
+
 .core-shell__content {
   padding: var(--space-lg);
 }
@@ -27,7 +35,9 @@
 }
 
 .core-shell__sidebar button {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-soft);
@@ -46,4 +56,10 @@
 .core-shell__sidebar button[data-active="true"] {
   background: var(--color-primary);
   color: #fff;
+}
+
+.core-shell__nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }

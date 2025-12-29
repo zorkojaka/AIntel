@@ -1,10 +1,12 @@
 import { NextFunction, Request, Response } from 'express';
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import type { MaterialOrder, ProjectLogisticsSnapshot, WorkOrder } from '../../../../shared/types/logistics';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { ProjectModel, addTimeline } from '../schemas/project';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
+import { resolveTenantId } from '../../../utils/tenant';
+import { EmployeeModel } from '../../employees/schemas/employee';
 import type { OfferLineItem } from '../../../../shared/types/offers';
 import { formatClientAddress, resolveProjectClient, serializeProjectDetails } from '../services/project.service';
 import {
@@ -176,8 +178,6 @@ async function ensureMaterialOrderForOffer(params: {
     items,
     status: 'draft',
     materialStatus: 'Za naročit',
-    technicianId: null,
-    technicianName: null,
     reopened: false,
   });
 }
@@ -209,8 +209,9 @@ function serializeMaterialOrder(order: any): MaterialOrder | null {
     })),
     status: order.status,
     materialStatus: order.materialStatus ?? 'Za naročit',
-    technicianId: order.technicianId ?? null,
-    technicianName: order.technicianName ?? null,
+    assignedEmployeeIds: Array.isArray(order.assignedEmployeeIds)
+      ? order.assignedEmployeeIds.map((id: any) => String(id))
+      : [],
     cancelledAt: order.cancelledAt ? new Date(order.cancelledAt).toISOString() : null,
     reopened: !!order.reopened,
     createdAt: order.createdAt ? new Date(order.createdAt).toISOString() : '',
@@ -255,8 +256,9 @@ function serializeWorkOrder(order: any): WorkOrder | null {
       }),
     status: order.status,
     scheduledAt: order.scheduledAt ?? null,
-    technicianName: order.technicianName,
-    technicianId: order.technicianId,
+    assignedEmployeeIds: Array.isArray(order.assignedEmployeeIds)
+      ? order.assignedEmployeeIds.map((id: any) => String(id))
+      : [],
     location: order.location,
     notes: order.notes,
     customerName: order.customerName ?? '',
@@ -544,14 +546,44 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       return res.fail('Delovni nalog ni najden.', 404);
     }
 
+    const tenantId = resolveTenantId(req);
+    if (!tenantId) {
+      return res.fail('TenantId ni podan.', 400);
+    }
+
     const payload = req.body ?? {};
+    const resolveAssignedEmployeeIds = async (value: unknown) => {
+      if (!Array.isArray(value)) {
+        return { error: 'Neveljaven seznam zaposlenih.' };
+      }
+      const ids = value.map((entry) => String(entry)).filter((entry) => entry.length > 0);
+      const invalid = ids.find((id) => !mongoose.isValidObjectId(id));
+      if (invalid) {
+        return { error: 'Neveljaven zaposleni.' };
+      }
+      if (ids.length > 0) {
+        const matches = await EmployeeModel.find({ _id: { $in: ids }, tenantId }).select('_id').lean();
+        if (matches.length !== ids.length) {
+          return { error: 'Zaposleni ne pripadajo tenantu.' };
+        }
+      }
+      return { ids };
+    };
     const updates: Record<string, unknown> = {};
 
     if ('scheduledAt' in payload) {
       updates.scheduledAt = typeof payload.scheduledAt === 'string' ? payload.scheduledAt : null;
     }
-    if ('technicianName' in payload) updates.technicianName = payload.technicianName;
-    if ('technicianId' in payload) updates.technicianId = payload.technicianId;
+    if ('technicianName' in payload || 'technicianId' in payload) {
+      console.warn('Ignoring legacy technician fields on work order update.');
+    }
+    if ('assignedEmployeeIds' in payload) {
+      const resolved = await resolveAssignedEmployeeIds(payload.assignedEmployeeIds);
+      if ('error' in resolved) {
+        return res.fail(resolved.error, 400);
+      }
+      updates.assignedEmployeeIds = resolved.ids;
+    }
     if ('location' in payload) updates.location = payload.location;
     if ('notes' in payload) updates.notes = payload.notes;
     if ('executionNote' in payload) {
@@ -658,11 +690,15 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       if (typeof payload.materialStatus === 'string' && MATERIAL_STATUS_VALUES.includes(payload.materialStatus)) {
         materialUpdates.materialStatus = payload.materialStatus;
       }
-      if ('materialTechnicianId' in payload) {
-        materialUpdates.technicianId = payload.materialTechnicianId ?? null;
+      if ('materialAssignedEmployeeIds' in payload) {
+        const resolved = await resolveAssignedEmployeeIds(payload.materialAssignedEmployeeIds);
+        if ('error' in resolved) {
+          return res.fail(resolved.error, 400);
+        }
+        materialUpdates.assignedEmployeeIds = resolved.ids;
       }
-      if ('materialTechnicianName' in payload) {
-        materialUpdates.technicianName = payload.materialTechnicianName ?? null;
+      if ('materialTechnicianId' in payload || 'materialTechnicianName' in payload) {
+        console.warn('Ignoring legacy material technician fields on work order update.');
       }
 
       if (Object.keys(materialUpdates).length > 0) {
@@ -722,3 +758,4 @@ export async function exportWorkOrderPdf(req: Request, res: Response, next: Next
     next(error);
   }
 }
+
