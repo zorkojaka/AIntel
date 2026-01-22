@@ -12,7 +12,7 @@ interface EmployeeFormDialogProps {
 
 const contractTypeOptions = ['zaposlitvena', 'podjemna', 's.p.', 'student', 'zunanji'] as const;
 const shirtSizeOptions = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'] as const;
-const roleOptions = ['admin', 'manager', 'sales', 'technician', 'ops', 'finance'] as const;
+const roleOptions = ['ADMIN', 'SALES', 'EXECUTION', 'FINANCE'] as const;
 
 export function EmployeeFormDialog({
   open,

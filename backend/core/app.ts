@@ -1,4 +1,5 @@
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import express from 'express';
 import routes from '../routes';
 import { responseHelpers } from './response';
@@ -9,8 +10,9 @@ import { isMongoConnected } from '../db/mongo';
 export function createApp() {
   const app = express();
 
-  app.use(cors());
+  app.use(cors({ origin: true, credentials: true }));
   app.use(express.json());
+  app.use(cookieParser());
   app.use(responseHelpers);
   app.use(normalizePayload);
 

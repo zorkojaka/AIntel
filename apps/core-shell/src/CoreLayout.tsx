@@ -20,6 +20,7 @@ interface CoreLayoutProps {
   activeModule: string;
   onModuleChange: (moduleId: string) => void;
   logoUrl?: string | null;
+  onLogout?: () => void;
 }
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -37,6 +38,7 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
   activeModule,
   onModuleChange,
   logoUrl,
+  onLogout,
 }) => (
   <div className="core-shell">
     <aside className="core-shell__sidebar">
@@ -55,6 +57,11 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
           );
         })}
       </ul>
+      {onLogout ? (
+        <button type="button" className="core-shell__logout" onClick={onLogout}>
+          Odjava
+        </button>
+      ) : null}
     </aside>
     <main className="core-shell__content">{children}</main>
   </div>

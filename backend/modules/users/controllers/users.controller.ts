@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { resolveActorId, resolveTenantId } from '../../../utils/tenant';
-import { assertCan, roleKeys } from '../services/authorization';
+import { normalizeRoleList } from '../../../utils/roles';
+import { assertCan } from '../services/authorization';
 import {
   createUser,
   hardDeleteUser,
@@ -23,12 +24,6 @@ function normalizeEmail(value: unknown) {
 function normalizeName(value: unknown) {
   if (typeof value !== 'string') return '';
   return value.trim();
-}
-
-function normalizeRoles(value: unknown) {
-  if (!Array.isArray(value)) return undefined;
-  const roles = value.map((role) => String(role));
-  return roles;
 }
 
 export async function getUsers(req: Request, res: Response) {
@@ -59,8 +54,8 @@ export async function postUser(req: Request, res: Response) {
     return res.fail('Ime uporabnika je obvezno.', 400);
   }
 
-  const roles = normalizeRoles(req.body?.roles);
-  if (roles && roles.some((role) => !roleKeys.includes(role as any))) {
+  const roles = req.body?.roles !== undefined ? normalizeRoleList(req.body?.roles) : undefined;
+  if (roles === null) {
     return res.fail('Neveljavna vloga.', 400);
   }
 
@@ -109,12 +104,9 @@ export async function patchUser(req: Request, res: Response) {
     update.name = name;
   }
   if (req.body?.roles !== undefined) {
-    const roles = normalizeRoles(req.body?.roles);
+    const roles = normalizeRoleList(req.body?.roles);
     if (!roles) {
       return res.fail('Vloge morajo biti seznam.', 400);
-    }
-    if (roles.some((role) => !roleKeys.includes(role as any))) {
-      return res.fail('Neveljavna vloga.', 400);
     }
     update.roles = roles;
   }

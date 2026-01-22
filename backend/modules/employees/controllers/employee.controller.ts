@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { resolveActorId, resolveTenantId } from '../../../utils/tenant';
+import { normalizeRoleList } from '../../../utils/roles';
 import {
   assertCan,
 } from '../services/authorization';
@@ -13,8 +14,6 @@ import {
 
 const contractTypes = ['zaposlitvena', 'podjemna', 's.p.', 'student', 'zunanji'] as const;
 const shirtSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'] as const;
-const roleOptions = ['admin', 'manager', 'sales', 'technician', 'ops', 'finance'] as const;
-
 function parseBooleanFlag(value?: string | string[]) {
   if (Array.isArray(value)) return value.some((item) => ['1', 'true', 'yes'].includes(String(item).toLowerCase()));
   if (value === undefined) return false;
@@ -38,13 +37,6 @@ function isValidNumber(value: unknown) {
   if (value === null || value === undefined || value === '') return true;
   const parsed = Number(value);
   return Number.isFinite(parsed);
-}
-
-function normalizeRoles(value: unknown) {
-  if (!Array.isArray(value)) return null;
-  const allowed = new Set<string>(roleOptions as readonly string[]);
-  const roles = value.map((role) => String(role)).filter((role) => allowed.has(role));
-  return roles;
 }
 
 export async function getEmployees(req: Request, res: Response) {
@@ -88,7 +80,7 @@ export async function postEmployee(req: Request, res: Response) {
     return res.fail('Stevilka cevljev ni veljavna.', 400);
   }
   if (req.body.roles !== undefined) {
-    const roles = normalizeRoles(req.body.roles);
+    const roles = normalizeRoleList(req.body.roles);
     if (!roles) {
       return res.fail('Vloge niso veljavne.', 400);
     }
@@ -125,7 +117,7 @@ export async function patchEmployee(req: Request, res: Response) {
     return res.fail('Stevilka cevljev ni veljavna.', 400);
   }
   if (req.body.roles !== undefined) {
-    const roles = normalizeRoles(req.body.roles);
+    const roles = normalizeRoleList(req.body.roles);
     if (!roles) {
       return res.fail('Vloge niso veljavne.', 400);
     }
