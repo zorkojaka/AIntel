@@ -356,6 +356,14 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
 
   const handleMaterialNextStatus = async (nextStatus: MaterialStatus) => {
     if (!materialOrderForm) return;
+    const missingCount = (materialOrderForm.items ?? []).filter((item) => {
+      const deliveredQty = typeof item.deliveredQty === "number" ? item.deliveredQty : 0;
+      return item.quantity - deliveredQty > 0;
+    }).length;
+    if (missingCount > 0) {
+      const proceed = window.confirm("Nekaj materiala manjka. Vseeno nadaljujem?");
+      if (!proceed) return;
+    }
     setMaterialOrderForm((prev) => (prev ? { ...prev, materialStatus: nextStatus } : prev));
     await handleSaveWorkOrder({ materialStatus: nextStatus });
   };
@@ -426,6 +434,11 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
             ? materialOverrides?.assignedEmployeeIds
             : Array.isArray(currentMaterial?.assignedEmployeeIds)
               ? currentMaterial?.assignedEmployeeIds
+              : undefined,
+          materialItems: Array.isArray(materialOverrides?.items)
+            ? materialOverrides?.items
+            : Array.isArray(currentMaterial?.items)
+              ? currentMaterial?.items
               : undefined,
         }),
       });
@@ -674,6 +687,20 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
     );
   };
 
+  const updateDeliveredQty = async (itemId: string, deliveredQty: number, shouldSave: boolean) => {
+    const currentMaterial = materialOrderForm ?? selectedMaterialOrder ?? null;
+    if (!currentMaterial) return;
+    const nextItems = (currentMaterial.items ?? []).map((item) => {
+      if (item.id !== itemId) return item;
+      const clamped = Math.max(0, Math.min(item.quantity, deliveredQty));
+      return { ...item, deliveredQty: clamped };
+    });
+    setMaterialOrderForm((prev) => (prev ? { ...prev, items: nextItems } : prev));
+    if (shouldSave) {
+      await handleSaveWorkOrder({ _id: currentMaterial._id, items: nextItems });
+    }
+  };
+
   const shouldShowOfferSelector = confirmedOffers.length > 0;
   const shouldRenderOfferDropdown = confirmedOffers.length > 1;
 
@@ -844,6 +871,12 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
               onToggleAssignedEmployee={toggleMaterialAssignedEmployee}
               onDownloadPurchaseOrder={() => handleDownloadMaterialPdf("PURCHASE_ORDER")}
               onDownloadDeliveryNote={() => handleDownloadMaterialPdf("DELIVERY_NOTE")}
+              onDeliveredQtyChange={(itemId, deliveredQty) => {
+                void updateDeliveredQty(itemId, deliveredQty, false);
+              }}
+              onDeliveredQtyCommit={(itemId, deliveredQty) => {
+                void updateDeliveredQty(itemId, deliveredQty, true);
+              }}
               canDownloadPdf={canDownloadMaterialPdf}
               downloadingPdf={materialDownloading}
             />
