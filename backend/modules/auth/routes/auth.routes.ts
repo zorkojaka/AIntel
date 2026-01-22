@@ -13,17 +13,24 @@ import { ROLE_ADMIN } from '../../../utils/roles';
 
 const router = Router();
 
+function blockNonPost(req: Request, res: Response, next: () => void) {
+  if (req.method === 'POST') {
+    return next();
+  }
+  return (res as any).fail('Metoda ni dovoljena.', 405);
+}
+
+router.use('/login', blockNonPost);
 router.post('/login', login);
-router.all('/login', (_req, res) => res.fail('Metoda ni dovoljena.', 405));
+router.use('/logout', blockNonPost);
 router.post('/logout', logout);
-router.all('/logout', (_req, res) => res.fail('Metoda ni dovoljena.', 405));
 router.get('/me', requireAuth, me);
 router.post('/invite', requireAuth, requireRoles([ROLE_ADMIN]), invite);
+router.use('/accept-invite', blockNonPost);
 router.post('/accept-invite', acceptInvite);
-router.all('/accept-invite', (_req, res) => res.fail('Metoda ni dovoljena.', 405));
+router.use('/request-password-reset', blockNonPost);
 router.post('/request-password-reset', requestPasswordReset);
-router.all('/request-password-reset', (_req, res) => res.fail('Metoda ni dovoljena.', 405));
+router.use('/reset-password', blockNonPost);
 router.post('/reset-password', resetPassword);
-router.all('/reset-password', (_req, res) => res.fail('Metoda ni dovoljena.', 405));
 
 export default router;

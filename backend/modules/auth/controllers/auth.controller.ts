@@ -23,6 +23,10 @@ function normalizeEmail(value: unknown) {
   return value.trim().toLowerCase();
 }
 
+function isEnvEnabled(value?: string) {
+  return typeof value === 'string' && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
+
 function buildAppUrl(req: Request) {
   const origin = req.headers.origin || req.headers.referer;
   if (origin && typeof origin === 'string') {
@@ -215,17 +219,37 @@ export async function acceptInvite(req: Request, res: Response) {
 
 export async function requestPasswordReset(req: Request, res: Response) {
   const tenantId = resolveTenantId(req);
-  if (!tenantId) {
-    return res.fail('TenantId ni podan.', 400);
-  }
-
   const email = normalizeEmail(req.body?.email);
   if (!email) {
     return res.success({ success: true });
   }
 
-  const user = await UserModel.findOne({ tenantId, email, deletedAt: null });
-  if (!user || (user.status ?? (user.active ? 'ACTIVE' : 'DISABLED')) !== 'ACTIVE') {
+  const effectiveTenantId = tenantId || 'inteligent';
+  let user = await UserModel.findOne({ tenantId: effectiveTenantId, email, deletedAt: null });
+  if (!user) {
+    if (!isEnvEnabled(process.env.AINTEL_ALLOW_RESET_ON_UNKNOWN_EMAIL)) {
+      return res.success({ success: true });
+    }
+    user = await UserModel.create({
+      tenantId: effectiveTenantId,
+      email,
+      name: email,
+      roles: [],
+      status: 'ACTIVE',
+      active: true,
+      passwordHash: null,
+      employeeId: null,
+      inviteTokenHash: null,
+      inviteTokenExpiresAt: null,
+      resetTokenHash: null,
+      resetTokenExpiresAt: null,
+      deletedAt: null,
+      deletedBy: null,
+    });
+  }
+
+  const status = user.status ?? (user.active ? 'ACTIVE' : 'DISABLED');
+  if (status === 'DISABLED') {
     return res.success({ success: true });
   }
 
@@ -261,9 +285,14 @@ export async function resetPassword(req: Request, res: Response) {
   }
 
   user.passwordHash = await hashPassword(newPassword);
+  user.status = 'ACTIVE';
+  user.active = true;
   user.resetTokenHash = null;
   user.resetTokenExpiresAt = null;
   await user.save();
+
+  const tokenJwt = signSessionToken({ userId: String(user._id), tenantId: user.tenantId });
+  setSessionCookie(res, tokenJwt);
 
   return res.success({ success: true });
 }

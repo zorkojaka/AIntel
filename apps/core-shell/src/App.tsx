@@ -14,6 +14,8 @@ import { manifest as settingsManifest } from '@aintel/module-settings';
 import { manifest as employeesManifest } from '@aintel/module-employees';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { LoginPage } from './auth/LoginPage';
+import { ResetRequestPage } from './auth/ResetRequestPage';
+import { ResetPasswordPage } from './auth/ResetPasswordPage';
 
 const modules = [
   crmManifest,
@@ -86,20 +88,24 @@ function AppContent() {
     };
   }, []);
 
+  const isAuthRoute = ['login', 'forgot-password', 'reset-password'].some((path) =>
+    window.location.pathname.startsWith(`/${path}`),
+  );
+
   useEffect(() => {
     if (status !== 'unauthenticated') {
       return;
     }
-    if (!window.location.pathname.startsWith('/login')) {
+    if (!isAuthRoute) {
       window.history.replaceState({ moduleId: 'login' }, '', '/login');
     }
-  }, [status]);
+  }, [isAuthRoute, status]);
 
   useEffect(() => {
     if (status !== 'authenticated') {
       return;
     }
-    if (window.location.pathname.startsWith('/login')) {
+    if (isAuthRoute) {
       const nextModule = modules.find((module) => hasAccess(module.id as ModuleId, roles));
       const navPath = nextModule?.navItems?.[0]?.path;
       if (navPath) {
@@ -120,7 +126,6 @@ function AppContent() {
   }, [activeModule, status]);
 
   const availableModules = modules.filter((module) => hasAccess(module.id as ModuleId, roles));
-  const isLoginRoute = window.location.pathname.startsWith('/login');
 
   const handleModuleChange = (moduleId: ModuleId) => {
     if (!hasAccess(moduleId, roles)) {
@@ -137,7 +142,13 @@ function AppContent() {
     return <div className="auth-page">Nalagam...</div>;
   }
 
-  if (status === 'unauthenticated' || isLoginRoute) {
+  if (status === 'unauthenticated' || isAuthRoute) {
+    if (window.location.pathname.startsWith('/forgot-password')) {
+      return <ResetRequestPage />;
+    }
+    if (window.location.pathname.startsWith('/reset-password')) {
+      return <ResetPasswordPage />;
+    }
     return <LoginPage />;
   }
 
