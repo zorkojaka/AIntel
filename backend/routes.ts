@@ -12,16 +12,11 @@ import employeesRoutes from './modules/employees/routes/employees.routes';
 import usersRoutes from './modules/users/routes/users.routes';
 import pdfSettingsRoutes from './modules/projects/routes/pdf-settings.routes';
 import offerPreviewRoutes from './modules/projects/routes/offer-preview.routes';
-import authRoutes from './modules/auth/routes/auth.routes';
 import employeeProfilesRoutes from './modules/employee-profiles/routes/employee-profiles.routes';
-import { requireAuth, requireRoles } from './middlewares/auth';
+import { requireRoles } from './middlewares/auth';
 import { ROLE_ADMIN } from './utils/roles';
 
 const router = Router();
-
-router.use('/auth', authRoutes);
-
-router.use(requireAuth);
 
 router.use('/dashboard', dashboardRoutes);
 router.use('/crm', crmRoutes);

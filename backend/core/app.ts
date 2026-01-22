@@ -2,6 +2,8 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import express from 'express';
 import routes from '../routes';
+import authRoutes from '../modules/auth/routes/auth.routes';
+import { requireAuth } from '../middlewares/auth';
 import { responseHelpers } from './response';
 import { normalizePayload } from './middleware/normalizePayload';
 import { errorHandler } from './errorHandler';
@@ -20,7 +22,12 @@ export function createApp() {
     res.success({ connected: isMongoConnected() });
   });
 
-  app.use('/api', routes);
+  app.get('/api/health', (_req, res) => {
+    res.success({ connected: isMongoConnected() });
+  });
+
+  app.use('/api/auth', authRoutes);
+  app.use('/api', requireAuth, routes);
   app.use(errorHandler);
 
   return app;
