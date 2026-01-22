@@ -5,7 +5,7 @@ import { OfferVersionModel } from '../schemas/offer-version';
 import { ProjectModel, addTimeline } from '../schemas/project';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
-import { resolveTenantId } from '../../../utils/tenant';
+import { resolveActorId, resolveTenantId } from '../../../utils/tenant';
 import { EmployeeModel } from '../../employees/schemas/employee';
 import type { OfferLineItem } from '../../../../shared/types/offers';
 import { formatClientAddress, resolveProjectClient, serializeProjectDetails } from '../services/project.service';
@@ -71,6 +71,7 @@ function mapOfferItemsToLogistics(items: OfferLineItem[]) {
       productId: item.productId ?? null,
       name: item.name,
       quantity: item.quantity,
+      deliveredQty: 0,
       unit: item.unit,
       note,
     };
@@ -162,7 +163,13 @@ async function ensureMaterialOrderForOffer(params: {
     if (materialOrder.status === 'cancelled') {
       materialOrder.status = 'draft';
     }
-    materialOrder.items = items;
+    const existingDelivered = new Map(
+      (materialOrder.items ?? []).map((item: any) => [String(item.id), item.deliveredQty])
+    );
+    materialOrder.items = items.map((item) => ({
+      ...item,
+      deliveredQty: typeof existingDelivered.get(item.id) === 'number' ? existingDelivered.get(item.id) : 0,
+    }));
     materialOrder.workOrderId = workOrderId;
     materialOrder.materialStatus = materialOrder.materialStatus ?? 'Za naročit';
     materialOrder.cancelledAt = null;
@@ -194,6 +201,7 @@ function serializeMaterialOrder(order: any): MaterialOrder | null {
       productId: item.productId ?? null,
       name: item.name,
       quantity: item.quantity,
+      deliveredQty: typeof item.deliveredQty === 'number' ? item.deliveredQty : 0,
       unit: item.unit,
       note: item.note,
       offerItemId: item.offerItemId ?? null,
@@ -682,11 +690,11 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       updates.status = payload.status;
     }
 
-    const updated = await WorkOrderModel.findOneAndUpdate({ _id: workOrderId, projectId }, { $set: updates }, { new: true });
+  const updated = await WorkOrderModel.findOneAndUpdate({ _id: workOrderId, projectId }, { $set: updates }, { new: true });
 
-    const materialOrderId = typeof payload.materialOrderId === 'string' ? payload.materialOrderId : null;
-    if (materialOrderId) {
-      const materialUpdates: Record<string, unknown> = {};
+  const materialOrderId = typeof payload.materialOrderId === 'string' ? payload.materialOrderId : null;
+  if (materialOrderId) {
+    const materialUpdates: Record<string, unknown> = {};
       if (typeof payload.materialStatus === 'string' && MATERIAL_STATUS_VALUES.includes(payload.materialStatus)) {
         materialUpdates.materialStatus = payload.materialStatus;
       }
@@ -708,6 +716,64 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           { $set: materialUpdates },
           { new: false }
         );
+      }
+    }
+
+    if (Array.isArray(payload.materialItems)) {
+      const materialOrder = await MaterialOrderModel.findOne({ _id: materialOrderId, projectId });
+      if (materialOrder) {
+        const incomingItems = payload.materialItems as Array<{ id?: string; deliveredQty?: number }>;
+        const deliveredById = new Map(
+          incomingItems
+            .map((item) => ({
+              id: typeof item.id === 'string' ? item.id : null,
+              deliveredQty: typeof item.deliveredQty === 'number' ? item.deliveredQty : null,
+            }))
+            .filter((item) => item.id && item.deliveredQty !== null)
+            .map((item) => [item.id as string, item.deliveredQty as number])
+        );
+
+        const changes: Array<{ itemId: string; before: number; after: number }> = [];
+        const nextItems = (materialOrder.items ?? []).map((item: any) => {
+          const id = String(item.id);
+          if (!deliveredById.has(id)) return item;
+          const orderedQty = typeof item.quantity === 'number' ? item.quantity : 0;
+          const rawDelivered = deliveredById.get(id) ?? 0;
+          const clamped = Math.max(0, Math.min(orderedQty, rawDelivered));
+          const before = typeof item.deliveredQty === 'number' ? item.deliveredQty : 0;
+          if (before !== clamped) {
+            changes.push({ itemId: id, before, after: clamped });
+          }
+          return { ...item, deliveredQty: clamped };
+        });
+
+        if (changes.length > 0) {
+          materialOrder.items = nextItems;
+          await materialOrder.save();
+
+          const project = await ProjectModel.findOne({ id: projectId });
+          if (project) {
+            const actorEmployeeId = resolveActorId(req);
+            changes.forEach((change) => {
+              addTimeline(project, {
+                type: 'edit',
+                title: 'MATERIAL_DELIVERED_QTY_UPDATED',
+                description: 'Material delivered quantity updated.',
+                timestamp: new Date().toISOString(),
+                user: 'system',
+                metadata: {
+                  actorEmployeeId: actorEmployeeId ?? '',
+                  projectId,
+                  materialOrderId,
+                  itemId: change.itemId,
+                  before: String(change.before),
+                  after: String(change.after),
+                },
+              });
+            });
+            await project.save();
+          }
+        }
       }
     }
 

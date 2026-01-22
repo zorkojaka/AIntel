@@ -5,6 +5,7 @@ export interface LogisticsMaterialItem {
   productId: string | null;
   name: string;
   quantity: number;
+  deliveredQty?: number;
   unit: string;
   note?: string;
 }
