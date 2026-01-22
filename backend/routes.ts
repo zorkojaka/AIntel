@@ -12,6 +12,9 @@ import employeesRoutes from './modules/employees/routes/employees.routes';
 import usersRoutes from './modules/users/routes/users.routes';
 import pdfSettingsRoutes from './modules/projects/routes/pdf-settings.routes';
 import offerPreviewRoutes from './modules/projects/routes/offer-preview.routes';
+import employeeProfilesRoutes from './modules/employee-profiles/routes/employee-profiles.routes';
+import { requireRoles } from './middlewares/auth';
+import { ROLE_ADMIN } from './utils/roles';
 
 const router = Router();
 
@@ -25,8 +28,9 @@ router.use('/finance', financeRoutes);
 router.use('/categories', categoriesRoutes);
 router.use('/projects', projectsRoutes);
 router.use('/requirement-templates', requirementTemplatesRoutes);
-router.use('/employees', employeesRoutes);
-router.use('/users', usersRoutes);
+router.use('/employees', requireRoles([ROLE_ADMIN]), employeesRoutes);
+router.use('/users', requireRoles([ROLE_ADMIN]), usersRoutes);
+router.use('/employee-profiles', requireRoles([ROLE_ADMIN]), employeeProfilesRoutes);
 router.use('/offers', offerPreviewRoutes);
 
 router.get('/', (_req, res) => {

@@ -45,12 +45,15 @@ declare module 'mongoose' {
     }
     const models: Record<string, any>;
     function model<T = any>(name: string, schema?: any): any;
+    function isValidObjectId(value: any): boolean;
     namespace Types {
       class ObjectId {
         constructor(value?: any);
         toString(): string;
       }
     }
+    type FilterQuery<T = any> = any;
+    type PipelineStage = any;
     type Document = any;
     type Model<T = any> = any;
     function connect(uri: string, options?: any): any;
@@ -62,15 +65,38 @@ declare module 'mongoose' {
   const model: typeof mongoose.model;
   const Types: typeof mongoose.Types;
   const models: typeof mongoose.models;
+  const isValidObjectId: typeof mongoose.isValidObjectId;
+  type FilterQuery<T = any> = any;
+  type PipelineStage = any;
   type Document = any;
   type Model<T = any> = any;
-  export { Schema, model, Types, models, Document, Model };
+  export { Schema, model, Types, models, Document, Model, isValidObjectId, FilterQuery, PipelineStage };
   export = mongoose;
 }
 
 declare module 'pdfkit' {
   const PDFDocument: any;
   export default PDFDocument;
+}
+
+declare module 'bcryptjs' {
+  const bcrypt: any;
+  export default bcrypt;
+}
+
+declare module 'cookie-parser' {
+  const fn: any;
+  export default fn;
+}
+
+declare module 'jsonwebtoken' {
+  const jwt: any;
+  export default jwt;
+}
+
+declare module 'qrcode' {
+  const qrcode: any;
+  export default qrcode;
 }
 
 declare module 'dotenv' {

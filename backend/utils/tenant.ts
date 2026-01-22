@@ -7,6 +7,9 @@ export function resolveTenantId(req: Request): string | null {
   const userTenant = (req as any)?.user?.tenantId as string | undefined;
   if (userTenant) return userTenant;
 
+  const contextTenant = (req as any)?.context?.tenantId as string | undefined;
+  if (contextTenant) return contextTenant;
+
   const requestTenant = (req as any)?.tenantId as string | undefined;
   if (requestTenant) return requestTenant;
 

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { resolveActorId, resolveTenantId } from '../../../utils/tenant';
-import { assertCan, roleKeys } from '../services/authorization';
+import { normalizeRoleList } from '../../../utils/roles';
+import { assertCan } from '../services/authorization';
 import {
   createUser,
   hardDeleteUser,
@@ -8,6 +9,8 @@ import {
   softDeleteUser,
   updateUser,
 } from '../services/user.service';
+import { EmployeeModel } from '../../employees/schemas/employee';
+import { UserModel } from '../schemas/user';
 
 function parseBooleanFlag(value?: string | string[]) {
   if (Array.isArray(value)) return value.some((item) => ['1', 'true', 'yes'].includes(String(item).toLowerCase()));
@@ -23,12 +26,6 @@ function normalizeEmail(value: unknown) {
 function normalizeName(value: unknown) {
   if (typeof value !== 'string') return '';
   return value.trim();
-}
-
-function normalizeRoles(value: unknown) {
-  if (!Array.isArray(value)) return undefined;
-  const roles = value.map((role) => String(role));
-  return roles;
 }
 
 export async function getUsers(req: Request, res: Response) {
@@ -59,8 +56,8 @@ export async function postUser(req: Request, res: Response) {
     return res.fail('Ime uporabnika je obvezno.', 400);
   }
 
-  const roles = normalizeRoles(req.body?.roles);
-  if (roles && roles.some((role) => !roleKeys.includes(role as any))) {
+  const roles = req.body?.roles !== undefined ? normalizeRoleList(req.body?.roles) : undefined;
+  if (roles === null) {
     return res.fail('Neveljavna vloga.', 400);
   }
 
@@ -70,21 +67,38 @@ export async function postUser(req: Request, res: Response) {
 
   await assertCan('create', (req as any).user, { tenantId });
 
-  try {
-    const user = await createUser(tenantId, {
-      email,
-      name,
-      roles,
-      active: req.body?.active,
-      employeeId: req.body?.employeeId ?? null,
-    } as any);
-    return res.success(user, 201);
-  } catch (error: any) {
-    if (error?.code === 11000) {
-      return res.fail('Email je ze v uporabi.', 409);
-    }
-    throw error;
+  let employeeId = typeof req.body?.employeeId === 'string' ? req.body.employeeId : null;
+  const createEmployee = !!req.body?.createEmployee;
+  const employeeName = typeof req.body?.employeeName === 'string' ? req.body.employeeName.trim() : '';
+
+  if (!employeeId && createEmployee) {
+    const createdEmployee = await EmployeeModel.create({
+      tenantId,
+      name: employeeName || name || email,
+      roles: roles ?? [],
+    });
+    employeeId = String(createdEmployee._id);
   }
+
+  if (employeeId) {
+    const employee = await EmployeeModel.findOne({ _id: employeeId, tenantId, deletedAt: null });
+    if (!employee) {
+      return res.fail('Zaposleni ni najden.', 404);
+    }
+    if (roles) {
+      employee.roles = roles;
+      await employee.save();
+    }
+  }
+
+  const existing = await createOrUpdateUser(tenantId, {
+    email,
+    name,
+    roles,
+    active: req.body?.active,
+    employeeId,
+  });
+  return res.success({ userId: existing.id }, existing.created ? 201 : 200);
 }
 
 export async function patchUser(req: Request, res: Response) {
@@ -109,12 +123,9 @@ export async function patchUser(req: Request, res: Response) {
     update.name = name;
   }
   if (req.body?.roles !== undefined) {
-    const roles = normalizeRoles(req.body?.roles);
+    const roles = normalizeRoleList(req.body?.roles);
     if (!roles) {
       return res.fail('Vloge morajo biti seznam.', 400);
-    }
-    if (roles.some((role) => !roleKeys.includes(role as any))) {
-      return res.fail('Neveljavna vloga.', 400);
     }
     update.roles = roles;
   }
@@ -142,6 +153,55 @@ export async function patchUser(req: Request, res: Response) {
     }
     throw error;
   }
+}
+
+async function createOrUpdateUser(
+  tenantId: string,
+  payload: {
+    email: string;
+    name: string;
+    roles?: string[];
+    active?: boolean;
+    employeeId?: string | null;
+  },
+) {
+  const existing = await UserModel.findOne({ tenantId, email: payload.email, deletedAt: null });
+  if (!existing) {
+    const created = await UserModel.create({
+      tenantId,
+      email: payload.email,
+      name: payload.name,
+      roles: payload.roles ?? [],
+      status: 'ACTIVE',
+      active: payload.active ?? true,
+      employeeId: payload.employeeId ?? null,
+      passwordHash: null,
+      inviteTokenHash: null,
+      inviteTokenExpiresAt: null,
+      resetTokenHash: null,
+      resetTokenExpiresAt: null,
+      deletedAt: null,
+      deletedBy: null,
+    });
+    return { id: String(created._id), created: true };
+  }
+
+  existing.name = payload.name;
+  existing.roles = payload.roles ?? existing.roles ?? [];
+  existing.active = payload.active ?? existing.active;
+  existing.employeeId = payload.employeeId ?? existing.employeeId ?? null;
+  existing.status = 'ACTIVE';
+  if (existing.passwordHash === undefined) {
+    existing.passwordHash = null;
+  }
+  existing.inviteTokenHash = null;
+  existing.inviteTokenExpiresAt = null;
+  existing.resetTokenHash = null;
+  existing.resetTokenExpiresAt = null;
+  existing.deletedAt = null;
+  existing.deletedBy = null;
+  await existing.save();
+  return { id: String(existing._id), created: false };
 }
 
 export async function removeUser(req: Request, res: Response) {

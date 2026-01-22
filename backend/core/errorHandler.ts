@@ -13,5 +13,13 @@ export function errorHandler(err: unknown, req: Request, res: Response, next: Ne
     ? (err as any).message
     : 'Prišlo je do napake';
 
-  return res.fail(message, typeof statusCode === 'number' ? statusCode : 500);
+  const code = typeof statusCode === 'number' ? statusCode : 500;
+  if (typeof (res as any).fail === 'function') {
+    return (res as any).fail(message, code);
+  }
+  return res.status(code).json({
+    success: false,
+    data: null,
+    error: typeof message === 'string' ? message : 'Prišlo je do napake',
+  });
 }

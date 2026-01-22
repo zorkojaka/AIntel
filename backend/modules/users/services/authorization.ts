@@ -1,4 +1,4 @@
-export const roleKeys = ['admin', 'sales', 'ops', 'technician', 'finance', 'manager'] as const;
+export const roleKeys = ['ADMIN', 'SALES', 'EXECUTION', 'FINANCE'] as const;
 
 export type RoleKey = (typeof roleKeys)[number];
 
