@@ -1,0 +1,7 @@
+flowchart TB
+  User[Visitor] --> Browser[Browser]
+  Browser -->|loads| Index[index.html]
+  Index -->|styles| CSS[assets/style.css]
+  Index -->|submits form| PHP[send.php]
+  PHP -->|sends email| Email[(Mail server)]
+  Index -->|optional analytics| GA4[(Google Analytics 4)]
