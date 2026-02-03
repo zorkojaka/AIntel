@@ -1,7 +1,7 @@
 {
   "meta": {
     "source": "aa_api",
-    "generatedAt": "2026-02-02T21:55:10.405Z",
+    "generatedAt": "2026-02-03T07:37:38.948Z",
     "schema": "aintel-product-v1"
   },
   "products": [
@@ -10357,7 +10357,7 @@
       "prodajnaCena": 39,
       "purchasePriceWithoutVat": 29.64,
       "kratekOpis": "Cloud Easy Smart PoE mrežno stikalo, PoE prenos do 250 m, 4+2 vrata; skupna moč PoE 60 W, Hi-PoE; Downlink: 4 x 10/100 Mbps RJ45 PoE vrata, Uplink: 2 x 10/100 Mbps Ethernet vrata; mrežno stikalo nima vgrajenega ventilatorja FANLESS upravljanje prek Wi-Tek Cloud sistema in vzdrževanje prek mobilne aplikacije.",
-      "dolgOpis": "Cloud Easy Smart PoE mrežno stikalo, PoE prenos do 250 m, 4+2 vrata; skupna moč PoE 60 W, Hi-PoE; Downlink: 4 x 10/100 Mbps RJ45 PoE vrata, Uplink: 2 x 10/100 Mbps Ethernet vrata; mrežno stikalo nima vgrajenega ventilatorja FANLESS upravljanje prek Wi-Tek Cloud sistema in vzdrževanje prek mobilne aplikacije. NADOMEŠČA WI-PS205.\n\nTECH SPECS\nInterface: 4x10/100 Base-T\nCloud management: Wi-Tek Cloud\nUplink: 2x10/100 Base-T\nManufacturer: Wi-Tek\nRoaming: Smart",
+      "dolgOpis": "Cloud Easy Smart PoE mrežno stikalo, PoE prenos do 250 m, 4+2 vrata; skupna moč PoE 60 W, Hi-PoE; Downlink: 4 x 10/100 Mbps RJ45 PoE vrata, Uplink: 2 x 10/100 Mbps Ethernet vrata; mrežno stikalo nima vgrajenega ventilatorja FANLESS upravljanje prek Wi-Tek Cloud sistema in vzdrževanje prek mobilne aplikacije. NADOMEŠČA WI-PS205.\n\nTECH SPECS\nInterface: 4x10/100 Base-T\nCloud management: Wi-Tek Cloud\nManufacturer: Wi-Tek\nUplink: 2x10/100 Base-T\nRoaming: Smart",
       "povezavaDoSlike": "https://b2b.alarmautomatika.com/catalog/images/largearticle/WI-PCES206.jpg",
       "povezavaDoProdukta": "https://b2b.alarmautomatika.com/si",
       "proizvajalec": "Wi-Tek",
@@ -10541,7 +10541,7 @@
       "prodajnaCena": 389,
       "purchasePriceWithoutVat": 295.64,
       "kratekOpis": "* 16GE+2SFP Full Giga 802.",
-      "dolgOpis": "* 16GE+2SFP Full Giga 802.3af/at L2 upravljano stikalo PoE s 16 vrati PoE\r\n* Podpira moč PoE do 30 W za vsaka vrata\r\n* Podpira PD-je, združljive s PoE IEEE 802.3af/at\r\n* Notranji napajalnik 350 W\r\n* Načini upravljanja WEB/CLI, SNMP, RMON prinašajo številne funkcije upravljanja\r\n* Podpora za QVLAN, QoS in vohljanje IGMP optimizira glasovne in video aplikacije\n\nTECH SPECS\nUplink: 2x 10/100/1000 Base-X\nConsole port: RJ45\nCloud management: Wi-Tek Cloud\nRoaming: L2\nInterface: 16x10/100/1000 Base-T\nManufacturer: Wi-Tek\nPoE Budget: 370W",
+      "dolgOpis": "* 16GE+2SFP Full Giga 802.3af/at L2 upravljano stikalo PoE s 16 vrati PoE\r\n* Podpira moč PoE do 30 W za vsaka vrata\r\n* Podpira PD-je, združljive s PoE IEEE 802.3af/at\r\n* Notranji napajalnik 350 W\r\n* Načini upravljanja WEB/CLI, SNMP, RMON prinašajo številne funkcije upravljanja\r\n* Podpora za QVLAN, QoS in vohljanje IGMP optimizira glasovne in video aplikacije\n\nTECH SPECS\nUplink: 2x 10/100/1000 Base-X\nConsole port: RJ45\nCloud management: Wi-Tek Cloud\nInterface: 16x10/100/1000 Base-T\nRoaming: L2\nManufacturer: Wi-Tek\nPoE Budget: 370W",
       "povezavaDoSlike": "https://b2b.alarmautomatika.com/catalog/images/largearticle/WI-PMS318GF.jpg",
       "povezavaDoProdukta": "https://b2b.alarmautomatika.com/si",
       "proizvajalec": "Wi-Tek",
