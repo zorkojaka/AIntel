@@ -11,7 +11,8 @@
     "seed:settings": "ts-node scripts/seed-settings.ts",
     "migrate:employee-roles": "ts-node scripts/migrate-employee-roles.ts",
     "dev:create-admin": "ts-node --transpile-only scripts/devCreateAdmin.ts",
-    "pdf:smoke": "ts-node --transpile-only scripts/pdf-smoke.ts"
+    "pdf:smoke": "ts-node --transpile-only scripts/pdf-smoke.ts",
+    "db:reset-aa": "ts-node scripts/reset_and_import_aa_api_products.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

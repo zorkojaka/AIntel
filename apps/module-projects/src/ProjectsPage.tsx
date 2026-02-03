@@ -12,13 +12,6 @@ import { Category, ProjectDetails, ProjectSummary, Template, ProjectStatus } fro
 import { NewProjectDialog } from "./components/NewProjectDialog";
 import { mapProject } from "./domains/core/useProject";
 
-const slugify = (value?: string) =>
-  (value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
 const API_PREFIX = "/api/projects";
 
 function toSummary(project: ProjectDetails): ProjectSummary {
@@ -108,25 +101,16 @@ export function ProjectsPage() {
   const fetchCategories = useCallback(async () => {
     setCategoriesLoading(true);
     try {
-      const response = await fetch("/api/categories");
+      const response = await fetch("/api/categories/project-options");
       const result = await response.json();
-      if (!result.success) {
-        toast.error(result.error ?? "Napaka pri nalaganju kategorij.");
-        return;
-      }
-      const normalized = (result.data ?? []).map((category: any) => {
-        const slug = category.slug || slugify(category.name ?? category.id ?? category._id);
-        return {
-          id: category.id ?? category._id ?? slug,
-          name: category.name ?? slug ?? "Nepoznana kategorija",
-          slug,
-          color: category.color,
-          order: typeof category.order === "number" ? category.order : undefined,
-        };
-      });
+      const normalized = (result?.options ?? []).map((option: any) => ({
+        id: option.slug,
+        name: option.label ?? option.slug,
+        slug: option.slug
+      }));
       setCategories(sortCategories(normalized));
     } catch (error) {
-      toast.error("Kategorij ni mogoče pridobiti.");
+      toast.error("Kategorij ni mogo??e pridobiti.");
     } finally {
       setCategoriesLoading(false);
     }

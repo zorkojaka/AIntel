@@ -110,11 +110,15 @@ export function ProjectList({
                     <span>{project.title}</span>
                     {project.categories && project.categories.length > 0 && (
                       <div className="flex flex-wrap gap-1">
-                        {project.categories.map((categoryId) => (
-                          <Badge key={`${project.id}-${categoryId}`} variant="outline">
-                            {categoryLookup.get(categoryId) ?? "Neznano"}
-                          </Badge>
-                        ))}
+                        {project.categories.map((categoryId) => {
+                          const label = categoryLookup.get(categoryId);
+                          if (!label) return null;
+                          return (
+                            <Badge key={`${project.id}-${categoryId}`} variant="outline">
+                              {label}
+                            </Badge>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
