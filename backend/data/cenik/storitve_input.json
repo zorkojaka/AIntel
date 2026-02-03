@@ -1,0 +1,112 @@
+[
+  {
+    "ime": "Montaža in konfiguracija senzorja za okna\nV sodelovanju z AlarmAutomatika",
+    "cena": "29,00€",
+    "slugs": "Ajax,alarm"
+  },
+  {
+    "ime": "Zagon in konfiguracija Ajax centrale\nV sodelovanju z AlarmAutomatika",
+    "cena": "99,00€",
+    "slugs": "Ajax,alarm"
+  },
+  {
+    "ime": "Zagon in konfiguracija Fibra centrale\nV sodelovanju z AlarmAutomatika",
+    "cena": "199,00€",
+    "slugs": "Ajax,alarm"
+  },
+  {
+    "ime": "Konfiguracija alarmne naprave\nV sodelovanju z AlarmAutomatika",
+    "cena": "20,00€",
+    "slugs": "Ajax,alarm"
+  },
+  {
+    "ime": "Zagon in konfiguracija REO snemalnika\nV sodelovanju z AlarmAutomatika",
+    "cena": "75,00€",
+    "slugs": "Reolink"
+  },
+  {
+    "ime": "Montaža in konfiguracija samostojne kamere\nV sodelovanju z AlarmAutomatika",
+    "cena": "72,00€",
+    "slugs": "Reolink"
+  },
+  {
+    "ime": "Konfiguracija REOLINK kamere\nV sodelovanju z AlarmAutomatika",
+    "cena": "42,00€",
+    "slugs": "Reolink"
+  },
+  {
+    "ime": "Montaža in konfiguracija REO domofona",
+    "cena": "75,00€",
+    "slugs": "Reolink,domofon"
+  },
+  {
+    "ime": "Montaža in konfiguracija domofonske enote",
+    "cena": "85,00€",
+    "slugs": "Domofon"
+  },
+  {
+    "ime": "Izrez odprtine za vgradni domofon",
+    "cena": "45,00€",
+    "slugs": "Domofon"
+  },
+  {
+    "ime": "Montaža in vezava tipkovnice/čitalca",
+    "cena": "55,00€",
+    "slugs": "Domofon"
+  },
+  {
+    "ime": "Montaža in vezava električne ključavnice",
+    "cena": "65,00€",
+    "slugs": "Domofon"
+  },
+  {
+    "ime": "Remontaža Blebox modula",
+    "cena": "30,00€",
+    "slugs": "Blebox,Smarthome"
+  },
+  {
+    "ime": "Montaža in konfiguracija pametnega modula",
+    "cena": "45,00€",
+    "slugs": "Blebox,Smarthome"
+  },
+  {
+    "ime": "Montaža in konfiguracija SaunaBox/GateBoxPro",
+    "cena": "75,00€",
+    "slugs": "Blebox,Smarthome"
+  },
+  {
+    "ime": "Montaža pametnega modula",
+    "cena": "35,00€",
+    "slugs": "Blebox,Smarthome"
+  },
+  {
+    "ime": "Konfiguracija pametnega modula",
+    "cena": "25,00€",
+    "slugs": "Blebox,Smarthome"
+  },
+  {
+    "ime": "Namestitev aplikacije in prikaz uporabe",
+    "cena": "25,00€",
+    "slugs": "Blebox,Smarthome"
+  },
+  {
+    "ime": "Montaža luči",
+    "cena": "24,00€",
+    "slugs": "Elektro"
+  },
+  {
+    "ime": "Montaža vtičnice",
+    "cena": "13,00€",
+    "slugs": "Elektro"
+  },
+  {
+    "ime": "Montaža stikala",
+    "cena": "13,00€",
+    "slugs": "Elektro"
+  },
+  {
+    "ime": "Demontaža električne naprave",
+    "cena": "20,00€",
+    "slugs": "Elektro"
+  }
+]
