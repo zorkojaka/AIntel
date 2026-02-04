@@ -61,11 +61,11 @@ pnpm install
 pnpm --filter aintel-backend build
 pnpm --filter @aintel/core-shell build
 pnpm --filter @aintel/module-crm build
-pnpm --filter @aintel/module-projects build
+pnppnpm --filter @aintel/core-shell devm --filter @aintel/module-projects build
 pnpm --filter @aintel/module-cenik build
 pnpm --filter @aintel/module-settings build
 pnpm --filter @aintel/module-employees build
-pnpm --filter @aintel/core-shell dev
+
 
 
 ### run in terminal /BACKEND da se naložijo iz gita aa_api_produktion.json 
@@ -73,4 +73,7 @@ npm run db:reset-aa
 CONFIRM_RESET=YES npm run db:reset-aa
 
 
-
+cd backend
+pnpm run db:sync-services
+pnpm run db:sync-aa
+pnpm run db:sync-all

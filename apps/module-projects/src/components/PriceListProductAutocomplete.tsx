@@ -109,14 +109,14 @@ export function PriceListProductAutocomplete({
     const timeoutId = window.setTimeout(async () => {
       try {
         const response = await fetch(
-          `/api/price-list/items/search?q=${encodeURIComponent(trimmed)}&limit=10`,
+          `/api/price-list/items/search?q=${encodeURIComponent(trimmed)}`,
           { signal: controller.signal },
         );
         const payload = await response.json();
         if (!payload.success || !Array.isArray(payload.data)) {
           setResults([]);
         } else {
-          setResults(payload.data.slice(0, 10));
+          setResults(payload.data);
         }
       } catch (error) {
         if ((error as DOMException)?.name !== "AbortError") {
@@ -225,7 +225,7 @@ export function PriceListProductAutocomplete({
                     <div className="px-3 py-2 text-xs text-muted-foreground">Ni zadetkov.</div>
                   )}
                   {!loading &&
-                    results.slice(0, 10).map((product) => (
+                    results.map((product) => (
                       <button
                         key={product.id}
                         type="button"

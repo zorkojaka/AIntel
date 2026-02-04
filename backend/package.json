@@ -12,7 +12,10 @@
     "migrate:employee-roles": "ts-node scripts/migrate-employee-roles.ts",
     "dev:create-admin": "ts-node --transpile-only scripts/devCreateAdmin.ts",
     "pdf:smoke": "ts-node --transpile-only scripts/pdf-smoke.ts",
-    "db:reset-aa": "ts-node scripts/reset_and_import_aa_api_products.ts"
+    "db:reset-aa": "ts-node scripts/reset_and_import_aa_api_products.ts",
+    "db:sync-aa": "ts-node scripts/sync-products.ts --source aa_api --input data/cenik/aa_api_produkti.json",
+    "db:sync-services": "ts-node scripts/sync-products.ts --source services_sheet --input data/cenik/custom_storitve.json",
+    "db:sync-all": "ts-node scripts/sync-products.ts --source aa_api --input data/cenik/aa_api_produkti.json && ts-node scripts/sync-products.ts --source services_sheet --input data/cenik/custom_storitve.json"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

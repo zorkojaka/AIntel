@@ -737,9 +737,8 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         const nextItems = (materialOrder.items ?? []).map((item: any) => {
           const id = String(item.id);
           if (!deliveredById.has(id)) return item;
-          const orderedQty = typeof item.quantity === 'number' ? item.quantity : 0;
           const rawDelivered = deliveredById.get(id) ?? 0;
-          const clamped = Math.max(0, Math.min(orderedQty, rawDelivered));
+          const clamped = Math.max(0, rawDelivered);
           const before = typeof item.deliveredQty === 'number' ? item.deliveredQty : 0;
           if (before !== clamped) {
             changes.push({ itemId: id, before, after: clamped });

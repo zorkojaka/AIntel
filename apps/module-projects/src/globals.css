@@ -2,6 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+.price-input-no-spinner::-webkit-outer-spin-button,
+.price-input-no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.price-input-no-spinner {
+  -moz-appearance: textfield;
+}
+
+.offers-line-items-table [data-slot="table-container"] {
+  overflow-x: hidden;
+}
+
+@media (max-width: 640px) {
+  .offers-line-items-table [data-slot="table-container"] {
+    overflow-x: auto;
+  }
+}
+
 :root {
   --font-size: 14px;
   --background: #f5f6f8;

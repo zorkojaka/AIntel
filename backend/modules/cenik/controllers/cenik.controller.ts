@@ -207,32 +207,134 @@ export async function deleteProduct(req: Request, res: Response) {
 }
 
 export async function searchPriceListItems(req: Request, res: Response) {
-  const q = (req.query?.q ?? '').toString().trim();
-  const limit = Math.min(50, Math.max(1, Number(req.query?.limit) || 5));
-  if (!q) {
+  const q = (req.query?.q ?? '').toString();
+  const normalizedQuery = normalizeSearchValue(q);
+  if (!normalizedQuery) {
     return res.success([] as PriceListSearchItem[]);
   }
 
   try {
-    const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    const products = await ProductModel.find({
-      $or: [{ ime: regex }, { kategorija: regex }],
-    })
-      .sort({ ime: 1 })
-      .limit(limit)
+    const products = await ProductModel.find()
+      .select({
+        ime: 1,
+        kategorija: 1,
+        categorySlug: 1,
+        categorySlugs: 1,
+        categories: 1,
+        prodajnaCena: 1,
+        isService: 1,
+        externalKey: 1,
+        externalId: 1,
+      })
       .lean();
 
-    const mapped: PriceListSearchItem[] = products.map((product) => ({
-      id: product._id.toString(),
-      name: product.ime,
-      code: product.kategorija ?? undefined,
-      unit: product.isService ? 'ura' : 'kos',
-      unitPrice: Number(product.prodajnaCena ?? 0),
-      vatRate: 22,
-    }));
+    const matches = products
+      .map((product) => {
+        const name = castText(product.ime);
+        const code = castText(product.kategorija ?? (product as any).code ?? product.externalId ?? '');
+        const slug = castText((product as any).slug ?? product.categorySlug ?? product.externalKey ?? '');
+        const slugsRaw = [
+          ...((product as any).slugs ?? []),
+          ...(product.categorySlugs ?? []),
+          ...(product.categories ?? []),
+        ].filter((value) => typeof value === 'string' && value.trim() !== '') as string[];
 
-    res.success(mapped);
+        const normalizedName = normalizeSearchValue(name);
+        const normalizedCode = normalizeSearchValue(code);
+        const normalizedSlug = normalizeSearchValue(slug);
+        const normalizedSlugs = slugsRaw.map(normalizeSearchValue).filter(Boolean);
+        const normalizedCategories = [
+          ...(product.categories ?? []),
+          ...(product.categorySlugs ?? []),
+        ]
+          .map(normalizeSearchValue)
+          .filter(Boolean);
+
+        const nameStarts = normalizedName.startsWith(normalizedQuery);
+        const nameIncludes = !nameStarts && normalizedName.includes(normalizedQuery);
+        const slugStarts = [normalizedSlug, ...normalizedSlugs].some((value) =>
+          value.startsWith(normalizedQuery),
+        );
+        const slugIncludes =
+          !slugStarts &&
+          [normalizedSlug, ...normalizedSlugs].some((value) => value.includes(normalizedQuery));
+        const categoryIncludes = normalizedCategories.some((value) =>
+          value.includes(normalizedQuery),
+        );
+        const codeIncludes = normalizedCode.includes(normalizedQuery);
+
+        if (
+          !nameStarts &&
+          !nameIncludes &&
+          !slugStarts &&
+          !slugIncludes &&
+          !categoryIncludes &&
+          !codeIncludes
+        ) {
+          return null;
+        }
+
+        const rank = nameStarts
+          ? 0
+          : nameIncludes
+            ? 1
+            : slugStarts
+              ? 2
+              : slugIncludes
+                ? 3
+                : categoryIncludes
+                  ? 4
+                  : 5;
+
+        const sortName = normalizedName || name.toLowerCase();
+        const sortCodeOrSlug =
+          normalizedCode || normalizedSlug || normalizedSlugs[0] || '';
+
+        const result: PriceListSearchItem & {
+          _rank: number;
+          _sortName: string;
+          _sortCodeOrSlug: string;
+        } = {
+          id: product._id.toString(),
+          name,
+          code: code || undefined,
+          slug: slug || undefined,
+          slugs: normalizedSlugs.length ? slugsRaw : undefined,
+          categorySlugs: product.categorySlugs ?? undefined,
+          categories: product.categories ?? undefined,
+          unit: product.isService ? 'ura' : 'kos',
+          unitPrice: Number(product.prodajnaCena ?? 0),
+          vatRate: 22,
+          _rank: rank,
+          _sortName: sortName,
+          _sortCodeOrSlug: sortCodeOrSlug,
+        };
+
+        return result;
+      })
+      .filter((item): item is PriceListSearchItem & { _rank: number; _sortName: string; _sortCodeOrSlug: string } =>
+        Boolean(item),
+      )
+      .sort((a, b) => {
+        if (a._rank !== b._rank) return a._rank - b._rank;
+        const nameCmp = a._sortName.localeCompare(b._sortName);
+        if (nameCmp !== 0) return nameCmp;
+        return a._sortCodeOrSlug.localeCompare(b._sortCodeOrSlug);
+      })
+      .map(({ _rank, _sortName, _sortCodeOrSlug, ...item }) => item);
+
+    res.success(matches);
   } catch (_error) {
     res.fail('Napaka pri iskanju po ceniku');
   }
+}
+
+function normalizeSearchValue(value: unknown) {
+  if (value === undefined || value === null) return '';
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
 }

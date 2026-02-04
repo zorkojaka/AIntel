@@ -126,6 +126,7 @@ export interface Project {
   offerAmount: number;
   invoiceAmount: number;
   createdAt: string;
+  requirementsText?: string;
   salesUserId?: string | null;
   assignedEmployeeIds?: string[];
   confirmedOfferVersionId?: string | null;
@@ -306,6 +307,7 @@ const ProjectSchema = new Schema<ProjectDocument>(
     assignedEmployeeIds: { type: [Schema.Types.ObjectId], default: [] },
     confirmedOfferVersionId: { type: String, default: null },
     requirementsTemplateVariantSlug: { type: String, required: false },
+    requirementsText: { type: String, default: "" },
     requirements: {
       type: [ProjectRequirementSchema],
       default: [],

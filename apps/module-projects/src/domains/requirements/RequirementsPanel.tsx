@@ -1,21 +1,17 @@
-import type { Dispatch, SetStateAction } from "react";
 import { Card } from "../../components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Button } from "../../components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Textarea } from "../../components/ui/textarea";
 import { Input } from "../../components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
-import { OfferCandidate, ProjectDetails } from "../../types";
+import { ProjectDetails } from "../../types";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
-import { ValidationBanner } from "../core/ValidationBanner";
 import { Loader2 } from "lucide-react";
 
 export type RequirementRow = ProjectRequirement;
 
 interface RequirementsPanelProps {
   project: ProjectDetails;
-  validationIssues: string[];
   showVariantWizard: boolean;
   selectedVariantSlug: string;
   setSelectedVariantSlug: (value: string) => void;
@@ -33,21 +29,10 @@ interface RequirementsPanelProps {
   savingRequirements: boolean;
   proceedingToOffer: boolean;
   handleProceedToOffer: () => Promise<void> | void;
-  isGenerateModalOpen: boolean;
-  setIsGenerateModalOpen: (open: boolean) => void;
-  offerCandidates: OfferCandidate[];
-  candidateSelections: Record<string, { productId?: string; quantity: number; include: boolean }>;
-  candidateProducts: Record<string, ProductLookup[]>;
-  toggleCandidateSelection: (ruleId: string, include: boolean) => void;
-  setCandidateSelections: Dispatch<
-    SetStateAction<Record<string, { productId?: string; quantity: number; include: boolean }>>
-  >;
-  handleConfirmOfferFromRequirements: () => Promise<void>;
 }
 
 export function RequirementsPanel({
   project,
-  validationIssues,
   showVariantWizard,
   selectedVariantSlug,
   setSelectedVariantSlug,
@@ -65,21 +50,11 @@ export function RequirementsPanel({
   savingRequirements,
   proceedingToOffer,
   handleProceedToOffer,
-  isGenerateModalOpen,
-  setIsGenerateModalOpen,
-  offerCandidates,
-  candidateSelections,
-  candidateProducts,
-  toggleCandidateSelection,
-  setCandidateSelections,
-  handleConfirmOfferFromRequirements,
 }: RequirementsPanelProps) {
   const customerName = project.customerDetail?.name || project.customer;
 
   return (
     <>
-      {validationIssues.length > 0 && <ValidationBanner missing={validationIssues} />}
-
       {showVariantWizard && (
         <Card className="p-4 space-y-3">
           <h3 className="text-lg font-semibold">Izberi varianto zahtev</h3>
@@ -225,117 +200,7 @@ export function RequirementsPanel({
         </Button>
       </div>
 
-      <Dialog open={isGenerateModalOpen} onOpenChange={(open) => setIsGenerateModalOpen(open)}>
-        <DialogContent className="sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Predlagane postavke iz zahtev</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            {offerCandidates.length === 0 && (
-              <div className="text-sm text-muted-foreground">Ni kandidatov za dodajanje.</div>
-            )}
-            {offerCandidates.length > 0 && (
-              <div className="space-y-2">
-                {offerCandidates.map((candidate) => {
-                  const selection = candidateSelections[candidate.ruleId] ?? {
-                    productId: candidate.suggestedProductId,
-                    quantity: candidate.quantity ?? 1,
-                    include: true,
-                  };
-                  const productsForCategory = candidateProducts[candidate.productCategorySlug] ?? [];
-                  const product = productsForCategory.find((p) => p.id === selection.productId) ?? productsForCategory[0];
-                  const price = product?.price ?? 0;
-                  const vatRate = typeof product?.vatRate === "number" ? product?.vatRate : 22;
-                  const total = (selection.quantity || 0) * price * (1 + vatRate / 100);
-                  return (
-                    <div
-                      key={candidate.ruleId}
-                      className="flex items-center justify-between rounded border border-border px-3 py-2"
-                    >
-                      <label className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={selection.include}
-                          onChange={(event) => toggleCandidateSelection(candidate.ruleId, event.target.checked)}
-                        />
-                        <div>
-                          <div className="font-medium">{candidate.suggestedName}</div>
-                          <div className="text-xs text-muted-foreground">
-                            Pravilo: {candidate.ruleId} | Kategorija: {candidate.productCategorySlug}
-                          </div>
-                        </div>
-                      </label>
-                      <div className="flex items-center gap-3">
-                        <Select
-                          value={
-                            productsForCategory.length > 0
-                              ? selection.productId ?? productsForCategory[0].id
-                              : "__none__"
-                          }
-                          onValueChange={(value) =>
-                            setCandidateSelections((prev) => ({
-                              ...prev,
-                              [candidate.ruleId]: {
-                                ...(prev[candidate.ruleId] ?? { include: true, quantity: candidate.quantity ?? 1 }),
-                                productId: value === "__none__" ? undefined : value,
-                              },
-                            }))
-                          }
-                          disabled={productsForCategory.length === 0}
-                        >
-                          <SelectTrigger className="w-48">
-                            <SelectValue placeholder="Izberi produkt" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {productsForCategory.length === 0 && (
-                              <SelectItem value="__none__" disabled>
-                                Ni produktov
-                              </SelectItem>
-                            )}
-                            {productsForCategory.map((productOption) => (
-                              <SelectItem key={productOption.id} value={productOption.id}>
-                                {productOption.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          className="w-24"
-                          type="number"
-                          inputMode="decimal"
-                          value={selection.quantity}
-                          onChange={(event) =>
-                            setCandidateSelections((prev) => ({
-                              ...prev,
-                              [candidate.ruleId]: {
-                                ...(prev[candidate.ruleId] ?? { include: true }),
-                                productId: selection.productId,
-                                quantity: Number(event.target.value),
-                              },
-                            }))
-                          }
-                        />
-                        <div className="text-sm font-semibold min-w-[90px] text-right">€ {total.toFixed(2)}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsGenerateModalOpen(false)}>
-                Prekliči
-              </Button>
-              <Button
-                onClick={handleConfirmOfferFromRequirements}
-                disabled={!offerCandidates.some((c) => candidateSelections[c.ruleId]?.include !== false)}
-              >
-                Potrdi in dodaj v ponudbo
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      
     </>
   );
 }

@@ -34,6 +34,7 @@ export function ProjectsPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
+  const [initialWorkspaceTab, setInitialWorkspaceTab] = useState<"items" | "offers" | "logistics" | "execution" | "closing" | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isClientModalOpen, setClientModalOpen] = useState(false);
   const [isNewProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
@@ -143,6 +144,7 @@ export function ProjectsPage() {
   };
 
   const handleSelectProject = (projectId: string) => {
+    setInitialWorkspaceTab(null);
     loadProjectDetails(projectId);
   };
 
@@ -150,6 +152,7 @@ export function ProjectsPage() {
     setCurrentView("list");
     setSelectedProjectId(null);
     setProjectDetails(null);
+    setInitialWorkspaceTab(null);
   };
 
   const fetchCrmClients = useCallback(async () => {
@@ -287,6 +290,7 @@ export function ProjectsPage() {
       setProjectDetails(mapped);
       setTemplates(mapped.templates);
       setSelectedProjectId(mapped.id);
+      setInitialWorkspaceTab("offers");
       setCurrentView("workspace");
       toast.success("Projekt uspešno ustvarjen");
       setNewProjectDialogOpen(false);
@@ -460,9 +464,11 @@ export function ProjectsPage() {
           key={projectDetails.id}
           projectId={projectDetails.id}
           initialProject={projectDetails}
+          initialTab={initialWorkspaceTab ?? undefined}
           templates={templates}
           onBack={handleBackToList}
           onProjectUpdate={handleProjectUpdate}
+          onNewProject={openNewProjectDialog}
           brandColor={globalSettings?.primaryColor}
         />
       )}

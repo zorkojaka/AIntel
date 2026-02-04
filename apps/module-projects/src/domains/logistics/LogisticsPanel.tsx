@@ -690,11 +690,11 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
   const updateDeliveredQty = async (itemId: string, deliveredQty: number, shouldSave: boolean) => {
     const currentMaterial = materialOrderForm ?? selectedMaterialOrder ?? null;
     if (!currentMaterial) return;
-    const nextItems = (currentMaterial.items ?? []).map((item) => {
-      if (item.id !== itemId) return item;
-      const clamped = Math.max(0, Math.min(item.quantity, deliveredQty));
-      return { ...item, deliveredQty: clamped };
-    });
+      const nextItems = (currentMaterial.items ?? []).map((item) => {
+        if (item.id !== itemId) return item;
+        const clamped = Math.max(0, deliveredQty);
+        return { ...item, deliveredQty: clamped };
+      });
     setMaterialOrderForm((prev) => (prev ? { ...prev, items: nextItems } : prev));
     if (shouldSave) {
       await handleSaveWorkOrder({ _id: currentMaterial._id, items: nextItems });

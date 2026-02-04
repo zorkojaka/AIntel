@@ -41,9 +41,12 @@ export async function triggerProjectRefresh(projectId: string) {
 
 export function mapProject(data: any): ProjectDetails {
   const requirementsArray = Array.isArray(data.requirements) ? data.requirements : [];
-  const requirementsText = !Array.isArray(data.requirements) && typeof data.requirements === "string"
-    ? data.requirements
-    : "";
+  const requirementsText =
+    typeof data.requirementsText === "string"
+      ? data.requirementsText
+      : !Array.isArray(data.requirements) && typeof data.requirements === "string"
+        ? data.requirements
+        : "";
   return {
     id: data.id,
     title: data.title,

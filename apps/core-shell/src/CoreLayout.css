@@ -34,6 +34,24 @@
   margin-bottom: var(--space-sm);
 }
 
+.core-shell__user {
+  margin-bottom: var(--space-md);
+  padding: 0 var(--space-md);
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+
+.core-shell__user-name {
+  font-weight: 600;
+}
+
+.core-shell__user-secondary {
+  margin-top: 2px;
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
 .core-shell__sidebar button {
   display: inline-flex;
   align-items: center;

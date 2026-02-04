@@ -1,18 +1,17 @@
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Plus, Save } from "lucide-react";
 import { ProjectDetails, ProjectStatus } from "../../types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 
 export type ProjectHeaderProps = {
   project: ProjectDetails;
   status: ProjectStatus;
-  onStatusChange: (value: string) => void;
   onBack: () => void;
   onRefresh: () => void;
+  onNewProject: () => void;
 };
 
-export function ProjectHeader({ project, status, onStatusChange, onBack, onRefresh }: ProjectHeaderProps) {
+export function ProjectHeader({ project, status, onBack, onRefresh, onNewProject }: ProjectHeaderProps) {
   return (
     <div className="border-b bg-card">
       <div className="max-w-[1280px] mx-auto px-6 py-4">
@@ -57,23 +56,14 @@ export function ProjectHeader({ project, status, onStatusChange, onBack, onRefre
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={onNewProject}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nov projekt
+            </Button>
             <Button variant="outline" onClick={onRefresh}>
               <Save className="w-4 h-4 mr-2" />
               Osveži
             </Button>
-            <Select value={status} onValueChange={onStatusChange}>
-              <SelectTrigger className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="draft">Osnutek</SelectItem>
-                <SelectItem value="offered">Ponujeno</SelectItem>
-                <SelectItem value="ordered">Naročeno</SelectItem>
-                <SelectItem value="in-progress">V teku</SelectItem>
-                <SelectItem value="completed">Zaključeno</SelectItem>
-                <SelectItem value="invoiced">Zaračunano</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </div>
       </div>

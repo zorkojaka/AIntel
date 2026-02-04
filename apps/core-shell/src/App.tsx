@@ -153,6 +153,10 @@ function AppContent() {
   }
 
   const hasModuleAccess = hasAccess(activeModule, roles);
+  const userName = me?.employee?.name?.trim() || me?.user?.email || '';
+  const userSecondary =
+    me?.user?.email && me?.user?.email !== userName ? me.user.email : (me?.employee?.roles?.[0] ?? null);
+  const userInfo = userName ? { name: userName, secondary: userSecondary } : null;
 
   return (
     <CoreLayout
@@ -161,6 +165,7 @@ function AppContent() {
       modules={availableModules}
       logoUrl={logoUrl}
       onLogout={logout}
+      userInfo={userInfo}
     >
       {hasModuleAccess ? moduleComponents[activeModule] : <div>Ni dostopa.</div>}
     </CoreLayout>

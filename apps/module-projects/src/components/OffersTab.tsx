@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "./ui/table";
 import { toast } from "sonner";
 
 import type { OfferLineItem, OfferVersion, OfferVersionSummary } from "@aintel/shared/types/offers";
@@ -12,7 +12,7 @@ import type { ProjectDetails } from "../types";
 import type { User } from "@aintel/shared/types/user";
 import type { Employee } from "@aintel/shared/types/employee";
 
-import { Loader2, Plus, Trash } from "lucide-react";
+import { Loader2, Trash } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
@@ -20,7 +20,6 @@ import { PriceListProductAutocomplete } from "./PriceListProductAutocomplete";
 import { mapProject } from "../domains/core/useProject";
 import { useConfirmOffer } from "../domains/core/useConfirmOffer";
 import { downloadPdf } from "../api";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 
@@ -66,33 +65,22 @@ const clampPositive = (value: unknown, fallback = 0) => {
   return Math.max(0, parsed);
 };
 
+const clampMin = (value: unknown, fallback: number, min: number) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, parsed);
+};
+
 const isItemValid = (item: OfferLineItem | OfferLineItemForm) =>
   item.name.trim() !== "" && item.unitPrice > 0;
 
-type SecondaryDocType = 'PURCHASE_ORDER' | 'DELIVERY_NOTE' | 'WORK_ORDER' | 'WORK_ORDER_CONFIRMATION' | 'CREDIT_NOTE';
-
-const SECONDARY_DOC_OPTIONS: { value: SecondaryDocType; label: string }[] = [
-  { value: 'PURCHASE_ORDER', label: 'Naročilnica' },
-  { value: 'DELIVERY_NOTE', label: 'Dobavnica' },
-  { value: 'WORK_ORDER', label: 'Delovni nalog' },
-  { value: 'WORK_ORDER_CONFIRMATION', label: 'Potrdilo izvedbe' },
-  { value: 'CREDIT_NOTE', label: 'Dobropis' },
-];
-
-const SECONDARY_DOC_PREFIX: Record<SecondaryDocType, string> = {
-  PURCHASE_ORDER: 'Narocilo',
-  DELIVERY_NOTE: 'Dobavnica',
-  WORK_ORDER: 'Delovni nalog',
-  WORK_ORDER_CONFIRMATION: 'Potrdilo',
-  CREDIT_NOTE: 'Dobropis',
-};
+const DEFAULT_PAYMENT_TERMS = "50% - avans, 50% - 10 dni po izvedbi";
 
 export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [items, setItems] = useState<OfferLineItemForm[]>([createEmptyItem()]);
 
   const [title, setTitle] = useState("Ponudba");
   const [paymentTerms, setPaymentTerms] = useState<string>("");
-  const [introText, setIntroText] = useState<string>("");
   const [comment, setComment] = useState<string>("");
 
   const [currentOffer, setCurrentOffer] = useState<OfferVersion | null>(null);
@@ -126,13 +114,13 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [versions, setVersions] = useState<OfferVersionSummary[]>([]);
   const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
   const isDownloading = downloadingMode !== null;
-  const [secondaryDownload, setSecondaryDownload] = useState<SecondaryDocType | null>(null);
+
+  const paymentTermsInitRef = useRef<Record<string, boolean>>({});
 
   const resetToEmptyOffer = useCallback(() => {
     setSelectedOfferId(null);
     setTitle("Ponudba");
     setPaymentTerms("");
-    setIntroText("");
     setComment("");
     setItems(ensureTrailingBlank([]));
     setGlobalDiscountPercent(0);
@@ -178,7 +166,7 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     };
   }, [projectId]);
 
-  const loadOfferById = useCallback(async (offerId: string) => {
+const loadOfferById = useCallback(async (offerId: string) => {
     if (!projectId) return;
 
     try {
@@ -189,8 +177,16 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
       if (!offer) return;
 
       setTitle(offer.baseTitle || "Ponudba");
-      setPaymentTerms(offer.paymentTerms ?? "");
-      setIntroText(offer.introText ?? "");
+      const offerKey = (offer as any)?._id ?? (offer as any)?.id ?? offerId;
+      const normalizedTerms = (offer.paymentTerms ?? "").trim();
+      const shouldUseDefaultTerms = normalizedTerms.length === 0;
+      const alreadyInitialized = paymentTermsInitRef.current[offerKey] === true;
+      if (!alreadyInitialized) {
+        setPaymentTerms(shouldUseDefaultTerms ? DEFAULT_PAYMENT_TERMS : offer.paymentTerms ?? "");
+        paymentTermsInitRef.current[offerKey] = true;
+      } else if (!shouldUseDefaultTerms) {
+        setPaymentTerms(offer.paymentTerms ?? "");
+      }
       setComment(offer.comment ?? "");
 
       setUseGlobalDiscount(offer.useGlobalDiscount ?? false);
@@ -305,12 +301,13 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     setCurrentOffer(null);
     setOverriddenVatIds(new Set());
     setProjectDetails(null);
+    paymentTermsInitRef.current = {};
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
 
   const recalcItem = (item: OfferLineItemForm): OfferLineItemForm => {
-    const quantity = clampPositive(item.quantity, 1);
+    const quantity = clampMin(item.quantity, 1, 1);
     const unitPrice = clampPositive(item.unitPrice, 0);
     const vatRate = clampPositive(item.vatRate, 0);
 
@@ -431,6 +428,8 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })} €`;
+  const totalColumns = usePerItemDiscount ? 8 : 7;
+  const summaryLabelColSpan = totalColumns - 2;
 
   const sanitizeFilenamePart = (value: string) =>
     value
@@ -521,7 +520,6 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       title,
       validUntil: null,
       paymentTerms,
-      introText,
       comment,
       items: cleanItems,
       // kompatibilnost s starimi polji
@@ -560,7 +558,12 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       }
 
       const created: OfferVersion = payload.data;
-      await refreshAfterMutation(() => refreshOffers(created._id ?? selectedOfferId ?? null));
+      await refreshAfterMutation(
+        () => refreshOffers(created._id ?? selectedOfferId ?? null),
+        async () => {
+          await fetchProjectDetails();
+        },
+      );
       toast.success("Ponudba shranjena.");
       return created;
     } catch (error) {
@@ -635,6 +638,10 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     }
   }, [projectId]);
 
+  useEffect(() => {
+    fetchProjectDetails();
+  }, [fetchProjectDetails]);
+
   const ensureProjectDetails = useCallback(async () => {
     if (projectDetails) {
       return projectDetails;
@@ -646,9 +653,10 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     if (!projectId) return;
     setAssignmentsSaving(true);
     try {
+      const headers = { "Content-Type": "application/json", ...buildTenantHeaders() };
       const response = await fetch(`/api/projects/${projectId}/assignments`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           salesUserId: nextSalesUserId,
           assignedEmployeeIds: nextEmployeeIds,
@@ -657,14 +665,20 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       const payload = await response.json();
       if (!payload.success) {
         toast.error(payload.error ?? "Posodobitev dodelitev ni uspela.");
-        return;
+        return false;
       }
       const mapped = mapProject(payload.data);
       setProjectDetails(mapped);
-      await refreshAfterMutation(fetchProjectDetails);
+      setSalesUserId(mapped.salesUserId ?? "");
+      setAssignedEmployeeIds(Array.isArray(mapped.assignedEmployeeIds) ? mapped.assignedEmployeeIds : []);
+      await refreshAfterMutation(async () => {
+        await fetchProjectDetails();
+      });
+      return true;
     } catch (error) {
       console.error(error);
       toast.error("Posodobitev dodelitev ni uspela.");
+      return false;
     } finally {
       setAssignmentsSaving(false);
     }
@@ -672,16 +686,24 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
 
   const handleSalesUserChange = async (value: string) => {
     const normalized = value === 'none' ? '' : value;
+    const previous = salesUserId;
     setSalesUserId(normalized);
-    await saveAssignments(normalized ? normalized : null, assignedEmployeeIds);
+    const ok = await saveAssignments(normalized ? normalized : null, assignedEmployeeIds);
+    if (!ok) {
+      setSalesUserId(previous);
+    }
   };
 
   const toggleAssignedEmployee = async (employeeId: string) => {
     const next = assignedEmployeeIds.includes(employeeId)
       ? assignedEmployeeIds.filter((id) => id !== employeeId)
       : [...assignedEmployeeIds, employeeId];
+    const previous = assignedEmployeeIds;
     setAssignedEmployeeIds(next);
-    await saveAssignments(salesUserId ? salesUserId : null, next);
+    const ok = await saveAssignments(salesUserId ? salesUserId : null, next);
+    if (!ok) {
+      setAssignedEmployeeIds(previous);
+    }
   };
 
   const handleExportPdf = async (mode: "offer" | "project" | "both") => {
@@ -707,23 +729,6 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     }
   };
 
-  const handleExportDocument = async (docType: SecondaryDocType) => {
-    setSecondaryDownload(docType);
-    try {
-      const saved = await ensureSavedOffer();
-      if (!saved?._id) return;
-      const url = `/api/projects/${projectId}/offers/${saved._id}/pdf?docType=${docType}`;
-      const details = await ensureProjectDetails();
-      const filename = buildPdfFilename(details, projectId, SECONDARY_DOC_PREFIX[docType]);
-      await downloadPdf(url, filename);
-      toast.success("PDF prenesen");
-    } catch (error) {
-      console.error(error);
-      toast.error("PDF ni bilo mogoče prenesti.");
-    } finally {
-      setSecondaryDownload(null);
-    }
-  };
 
   const handleSend = async () => {
     setSending(true);
@@ -743,6 +748,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       toast.success(
         payload.data?.message ?? "Pošiljanje bo implementirano kasneje."
       );
+      await refreshOffers(saved._id ?? null, true);
     } catch (error) {
       console.error(error);
       toast.error("Pošiljanje ni uspelo.");
@@ -763,6 +769,12 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
   const canConfirmCurrentOffer =
     !!currentOffer?._id && !isCurrentAccepted && !isCurrentCancelled;
   const isConfirmingCurrentOffer = confirmingId !== null;
+  const sentAtValue = currentOffer?.sentAt ? new Date(currentOffer.sentAt) : null;
+  const sentAtLabel =
+    sentAtValue && !Number.isNaN(sentAtValue.valueOf())
+      ? sentAtValue.toLocaleString("sl-SI")
+      : "";
+  const isSent = Boolean(currentOffer?.sentAt);
 
   return (
     <Card className="p-4 space-y-4">
@@ -937,14 +949,6 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
             placeholder="Npr. 30 dni"
           />
         </div>
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Uvodno besedilo</label>
-        <Input
-          value={introText}
-          onChange={(event) => setIntroText(event.target.value)}
-          placeholder="Kratek opis ali opombe"
-        />
-      </div>
       <div className="md:col-span-3 space-y-2">
         <label className="text-sm font-medium">Komentar (vidno na PDF)</label>
         <Textarea
@@ -960,55 +964,67 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     </div>
 
       {/* TABELA POSTAVK */}
-      <div className="bg-card rounded-[var(--radius-card)] border overflow-hidden">
-        <Table>
+      <div className="bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
+        <Table className="w-full table-fixed">
+          <colgroup>
+            <col style={{ width: "42%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "12%" }} />
+            {usePerItemDiscount && <col style={{ width: "10%" }} />}
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "4%" }} />
+          </colgroup>
           <TableHeader>
-            <TableRow>
-              <TableHead className="w-[42%] text-left pl-4">
+            <TableRow className="h-11">
+              <TableHead className="text-left pl-4 align-middle">
                 Naziv
               </TableHead>
-              <TableHead className="w-[10%] text-right">
+              <TableHead className="text-right align-middle">
                 Količina
               </TableHead>
-              <TableHead className="w-[10%] text-right">
+              <TableHead className="text-right align-middle">
                 Enota
               </TableHead>
-              <TableHead className="w-[12%] text-right">
+              <TableHead className="text-right align-middle">
                 Cena
               </TableHead>
               {usePerItemDiscount && (
-                <TableHead className="w-[10%] text-right">
+                <TableHead className="text-right align-middle">
                   Popust %
                 </TableHead>
               )}
-              <TableHead className="w-[10%] text-right">
+              <TableHead className="text-right align-middle">
                 DDV %
               </TableHead>
-              <TableHead className="w-[12%] text-right pr-4">
+              <TableHead className="text-right align-middle pr-4">
                 Skupaj
               </TableHead>
-              <TableHead className="w-[4%] text-center" />
+              <TableHead className="text-center align-middle" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {items.map((item, index) => (
-              <TableRow key={item.id}>
-                <TableCell className="w-[42%] text-left pl-4 align-top">
-                  <PriceListProductAutocomplete
-                    value={item.name}
-                    placeholder="Naziv ali iskanje v ceniku"
-                    inputClassName="text-left"
-                    onChange={(name) => {
-                      updateItem(item.id, { name, productId: null });
-                    }}
-                    onCustomSelected={() => handleSelectCustomItem(item.id)}
-                    onProductSelected={(product) => handleSelectProduct(item.id, product, index)}
-                  />
+              <TableRow key={item.id} className="h-11">
+                <TableCell className="text-left pl-4 align-middle min-w-0">
+                  <div className="min-w-0">
+                    <PriceListProductAutocomplete
+                      value={item.name}
+                      placeholder="Naziv ali iskanje v ceniku"
+                      inputClassName="text-left h-9 min-w-0 truncate"
+                      onChange={(name) => {
+                        updateItem(item.id, { name, productId: null });
+                      }}
+                      onCustomSelected={() => handleSelectCustomItem(item.id)}
+                      onProductSelected={(product) => handleSelectProduct(item.id, product, index)}
+                    />
+                  </div>
                 </TableCell>
 
-                <TableCell className="w-[10%] text-right align-top">
+                <TableCell className="text-right align-middle">
                   <Input
-                    className="text-right"
+                    className="text-right h-9"
                     type="number"
                     inputMode="decimal"
                     value={item.quantity}
@@ -1020,9 +1036,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                   />
                 </TableCell>
 
-                <TableCell className="w-[10%] text-right align-top">
+                <TableCell className="text-right align-middle">
                   <Input
-                    className="text-right"
+                    className="text-right h-9"
                     value={item.unit}
                     onChange={(event) =>
                       updateItem(item.id, { unit: event.target.value })
@@ -1030,24 +1046,22 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                   />
                 </TableCell>
 
-                <TableCell className="w-[12%] text-right align-top">
-                  <Input
-                    className="text-right"
-                    type="number"
-                    inputMode="decimal"
-                    value={item.unitPrice}
-                    onChange={(event) =>
-                      updateItem(item.id, {
-                        unitPrice: Number(event.target.value),
-                      })
-                    }
-                  />
+                <TableCell className="text-right align-middle">
+                  <div className="flex items-center justify-end gap-2">
+                    <span className="block text-right tabular-nums">
+                      {Number(item.unitPrice || 0).toLocaleString("sl-SI", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                    <span className="shrink-0">€</span>
+                  </div>
                 </TableCell>
 
                 {usePerItemDiscount && (
-                  <TableCell className="w-[10%] text-right align-top">
+                  <TableCell className="text-right align-middle">
                     <Input
-                      className="text-right"
+                      className="text-right h-9"
                       type="number"
                       inputMode="decimal"
                       value={item.discountPercent ?? 0}
@@ -1060,33 +1074,20 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                   </TableCell>
                 )}
 
-                <TableCell className="w-[10%] text-right align-top">
-                  <Input
-                    className="text-right"
-                    type="number"
-                    inputMode="decimal"
-                    value={item.vatRate}
-                    onChange={(event) => {
-                      setOverriddenVatIds((prev) => {
-                        const next = new Set(prev);
-                        next.add(item.id);
-                        return next;
-                      });
-                      updateItem(item.id, {
-                        vatRate: Number(event.target.value),
-                      });
-                    }}
-                  />
+                <TableCell className="text-right align-middle">
+                  <span className="block text-right tabular-nums">
+                    {Number(item.vatRate || 0)}
+                  </span>
                 </TableCell>
 
-                <TableCell className="w-[12%] text-right align-top pr-4">
+                <TableCell className="text-right align-middle pr-4">
                   {(item.totalGross || 0).toLocaleString("sl-SI", {
                     minimumFractionDigits: 2,
                   })}{" "}
                   €
                 </TableCell>
 
-                <TableCell className="w-[4%] text-center align-top">
+                <TableCell className="text-center align-middle">
                   {items.length > 1 && (
                     <Button
                       size="icon"
@@ -1100,123 +1101,126 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
               </TableRow>
             ))}
           </TableBody>
+          <TableFooter>
+            <TableRow className="border-t">
+              <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
+                Osnova brez DDV
+              </TableCell>
+              <TableCell className="text-right tabular-nums pr-4">
+                {formatCurrency(totals.baseWithoutVat ?? 0)}
+              </TableCell>
+              <TableCell />
+            </TableRow>
+
+            {usePerItemDiscount && (totals.perItemDiscountAmount ?? 0) > 0 && (
+              <TableRow>
+                <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
+                  Popust po produktih
+                </TableCell>
+                <TableCell className="text-right tabular-nums pr-4">
+                  -{formatCurrency(totals.perItemDiscountAmount ?? 0)}
+                </TableCell>
+                <TableCell />
+              </TableRow>
+            )}
+
+            {useGlobalDiscount && (totals.globalDiscountAmount ?? 0) > 0 && (
+              <TableRow>
+                <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
+                  Popust na celotno ponudbo ({globalDiscountPercent || 0}%)
+                </TableCell>
+                <TableCell className="text-right tabular-nums pr-4">
+                  -{formatCurrency(totals.globalDiscountAmount ?? 0)}
+                </TableCell>
+                <TableCell />
+              </TableRow>
+            )}
+
+            <TableRow>
+              <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
+                Osnova po popustih
+              </TableCell>
+              <TableCell className="text-right tabular-nums pr-4">
+                {formatCurrency(totals.baseAfterDiscount ?? 0)}
+              </TableCell>
+              <TableCell />
+            </TableRow>
+
+            <TableRow>
+              <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
+                DDV ({vatMode}%)
+              </TableCell>
+              <TableCell className="text-right tabular-nums pr-4">
+                {formatCurrency(vatAmount)}
+              </TableCell>
+              <TableCell />
+            </TableRow>
+
+            <TableRow className="font-semibold">
+              <TableCell colSpan={summaryLabelColSpan} className="text-right pr-4">
+                Skupaj za plačilo (z DDV)
+              </TableCell>
+              <TableCell className="text-right tabular-nums pr-4">
+                {formatCurrency(totalGrossAfterDiscount)}
+              </TableCell>
+              <TableCell />
+            </TableRow>
+          </TableFooter>
         </Table>
       </div>
-
-      {/* POVZETEK / IZRAČUNI */}
-      <div className="mt-6 space-y-1 text-sm">
-        <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">Osnova brez DDV</span>
-          <span>{formatCurrency(totals.baseWithoutVat ?? 0)}</span>
-        </div>
-
-        {usePerItemDiscount && (totals.perItemDiscountAmount ?? 0) > 0 && (
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">
-              Popust po produktih
-            </span>
-            <span>
-              -{formatCurrency(totals.perItemDiscountAmount ?? 0)}
-            </span>
-          </div>
-        )}
-
-        {useGlobalDiscount && (totals.globalDiscountAmount ?? 0) > 0 && (
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">
-              Popust na celotno ponudbo ({globalDiscountPercent || 0}%)
-            </span>
-            <span>
-              -{formatCurrency(totals.globalDiscountAmount ?? 0)}
-            </span>
-          </div>
-        )}
-
-        <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">Osnova po popustih</span>
-          <span>{formatCurrency(totals.baseAfterDiscount ?? 0)}</span>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">DDV ({vatMode}%)</span>
-          <span>{formatCurrency(vatAmount)}</span>
-        </div>
-
-        <div className="flex items-center justify-between font-medium pt-1">
-          <span>Skupaj za plačilo (z DDV)</span>
-          <span>{formatCurrency(totalGrossAfterDiscount)}</span>
-        </div>
-      </div>
-
       {/* GUMBI */}
-      <div className="flex flex-wrap gap-2 justify-end">
-        <Button onClick={handleSave} disabled={saving}>
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Shrani ponudbo
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => handleExportPdf("offer")}
-          disabled={isDownloading}
-        >
-          {downloadingMode === "offer" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Prenesi PDF
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" disabled={isDownloading || secondaryDownload !== null}>
-              {secondaryDownload && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Drugi dokumenti
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {SECONDARY_DOC_OPTIONS.map((option) => (
-              <DropdownMenuItem
-                key={option.value}
-                onClick={() => handleExportDocument(option.value)}
-                disabled={secondaryDownload !== null && secondaryDownload !== option.value}
-              >
-                {secondaryDownload === option.value && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {option.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Button
-          variant="outline"
-          onClick={() => handleExportPdf("project")}
-          disabled={isDownloading}
-        >
-          {downloadingMode === "project" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Izvozi projekt
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => handleExportPdf("both")}
-          disabled={isDownloading}
-        >
-          {downloadingMode === "both" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Izvozi oboje
-        </Button>
-        <Button
-          variant="outline"
-          onClick={handleSend}
-          disabled={sending}
-        >
-          {sending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Pošlji ponudbo stranki
-        </Button>
-        <Button
-          variant="outline"
-          onClick={handleConfirmCurrentOffer}
-          disabled={!canConfirmCurrentOffer || isConfirmingCurrentOffer}
-        >
-          {isConfirmingCurrentOffer && (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+      <div className="flex items-center justify-between gap-3 flex-nowrap">
+        <div className="flex items-center gap-2 flex-nowrap">
+          <Button
+            variant="outline"
+            onClick={() => handleExportPdf("project")}
+            disabled={isDownloading}
+          >
+            {downloadingMode === "project" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Prenesi projekt
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => handleExportPdf("offer")}
+            disabled={isDownloading}
+          >
+            {downloadingMode === "offer" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Prenesi ponudbo
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleSend}
+            disabled={sending}
+          >
+            {sending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isSent ? "Ponovno pošlji" : "Pošlji ponudbo stranki"}
+          </Button>
+          {isSent && (
+            <span className="text-xs text-emerald-600">
+              Poslano{sentAtLabel ? ` ${sentAtLabel}` : ""}
+            </span>
           )}
-          Potrdi ponudbo
-        </Button>
+        </div>
+        <div className="flex items-center gap-2 flex-nowrap">
+          <Button
+            onClick={handleConfirmCurrentOffer}
+            disabled={!canConfirmCurrentOffer || isConfirmingCurrentOffer}
+            className={
+              isCurrentAccepted
+                ? "bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-100"
+                : "bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-100"
+            }
+          >
+            {isConfirmingCurrentOffer && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isCurrentAccepted ? "Ponudba potrjena" : "Potrdi ponudbo"}
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Shrani ponudbo
+          </Button>
+        </div>
       </div>
     </Card>
   );
 }
+

@@ -182,7 +182,6 @@ function buildDemoOffer(): OfferVersion {
     title: 'Ponudba PRJ-000',
     validUntil: now,
     paymentTerms: 'Plačilo v 15 dneh po izstavitvi računa.',
-    introText: null,
     comment: 'Ta komentar je primer prikaza pod izračunom.',
     items: DEMO_ITEMS,
     totalNet,
@@ -211,10 +210,12 @@ function buildDemoOffer(): OfferVersion {
 }
 
 function serializeOffer(offer: any): OfferVersion {
+  const { introText: _introText, ...rest } = offer ?? {};
   return {
-    ...offer,
+    ...rest,
     _id: offer._id?.toString?.() ?? offer._id,
     validUntil: offer.validUntil ? new Date(offer.validUntil).toISOString() : null,
+    sentAt: offer.sentAt ? new Date(offer.sentAt).toISOString() : null,
     createdAt: offer.createdAt ? new Date(offer.createdAt).toISOString() : '',
     updatedAt: offer.updatedAt ? new Date(offer.updatedAt).toISOString() : '',
   } as OfferVersion;

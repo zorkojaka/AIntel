@@ -7,8 +7,8 @@ import type { WorkOrder as LogisticsWorkOrder } from "@aintel/shared/types/logis
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import { renderTemplate, openPreview, downloadHTML } from "../domains/offers/TemplateRenderer";
 import { toast } from "sonner";
-import { ProjectDetails, ProjectOffer, ProjectOfferItem, OfferCandidate, Template } from "../types";
-import { fetchOfferCandidates, fetchProductsByCategories, fetchRequirementVariants, type ProductLookup } from "../api";
+import { ProjectDetails, ProjectOffer, ProjectOfferItem, Template } from "../types";
+import { fetchRequirementVariants } from "../api";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
 import { LogisticsPanel } from "../domains/logistics/LogisticsPanel";
 import { useProject } from "../domains/core/useProject";
@@ -94,22 +94,26 @@ function formatClientAddress(client?: ProjectCrmClient | null) {
 interface ProjectWorkspaceProps {
   projectId: string;
   initialProject?: ProjectDetails | null;
+  initialTab?: WorkspaceTabValue;
   templates: Template[];
   onBack: () => void;
   onProjectUpdate: (path: string, options?: RequestInit) => Promise<ProjectDetails | null>;
+  onNewProject: () => void;
   brandColor?: string | null;
 }
 
 export function ProjectWorkspace({
   projectId,
   initialProject,
+  initialTab,
   templates,
   onBack,
   onProjectUpdate,
+  onNewProject,
   brandColor,
 }: ProjectWorkspaceProps) {
   const { project, loading, error, refresh, setProject } = useProject(projectId, initialProject ?? null);
-  const [activeTab, setActiveTab] = useState<WorkspaceTabValue>("items");
+  const [activeTab, setActiveTab] = useState<WorkspaceTabValue>(initialTab ?? "items");
   const [overrideStep, setOverrideStep] = useState<StepKey | null>(null);
   const [offers, setOffers] = useState<OfferVersion[]>(project?.offers ?? []);
   const [activeOffer, setActiveOffer] = useState<ProjectOffer | null>(null);
@@ -140,11 +144,6 @@ export function ProjectWorkspace({
   const [isOfferLoading, setIsOfferLoading] = useState(false);
   const [offerVatRate, setOfferVatRate] = useState<number>(22);
   const [globalDiscount, setGlobalDiscount] = useState<number>(0);
-  const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
-  const [isGeneratingOffer, setIsGeneratingOffer] = useState(false);
-  const [offerCandidates, setOfferCandidates] = useState<OfferCandidate[]>([]);
-  const [candidateSelections, setCandidateSelections] = useState<Record<string, { productId?: string; quantity: number; include: boolean }>>({});
-  const [candidateProducts, setCandidateProducts] = useState<Record<string, ProductLookup[]>>({});
   const [variantOptions, setVariantOptions] = useState<{ variantSlug: string; label: string }[]>([]);
   const [variantLoading, setVariantLoading] = useState(false);
   const [selectedVariantSlug, setSelectedVariantSlug] = useState<string>(project?.requirementsTemplateVariantSlug ?? "");
@@ -405,12 +404,6 @@ export function ProjectWorkspace({
     await saveRequirementsChanges();
   }, [isRequirementsDirty, isSavingRequirements, saveRequirementsChanges]);
 
-  const validationIssues: string[] = [];
-  if (!project?.customerDetail?.name) validationIssues.push("Manjka podatek o stranki");
-  const projectItems = Array.isArray(project?.items) ? project.items : [];
-  const projectItemsCount = projectItems.length;
-  if (projectItemsCount === 0) validationIssues.push("Dodajte vsaj eno postavko");
-
   const handleDeleteOfferItem = async (id: string) => {
     const next = offerItems.filter((item) => item.id !== id);
     const updated = await persistOfferItems(next);
@@ -585,103 +578,12 @@ export function ProjectWorkspace({
     await refreshAfterMutation();
   };
 
-  const handleGenerateOfferFromRequirements = async () => {
-    const currentProject = project;
-    if (!currentProject) return;
-    setIsGeneratingOffer(true);
-    try {
-      const candidatesResponse = await fetchOfferCandidates(currentProject.id);
-      if (!candidatesResponse.length) {
-        toast.error("Ni predlaganih postavk iz zahtev.");
-        setOfferCandidates([]);
-        return;
-      }
-      const categories = Array.from(
-        new Set(candidatesResponse.map((c) => c.productCategorySlug).filter(Boolean))
-      );
-      const products = await fetchProductsByCategories(categories);
-      const grouped: Record<string, ProductLookup[]> = {};
-      products.forEach((product) => {
-        (product.categorySlugs ?? []).forEach((slug) => {
-          if (!grouped[slug]) grouped[slug] = [];
-          grouped[slug].push(product);
-        });
-      });
-
-      const selections: Record<
-        string,
-        { productId?: string; quantity: number; include: boolean }
-      > = {};
-      candidatesResponse.forEach((c) => {
-        const productsForCategory = grouped[c.productCategorySlug] ?? products;
-        const defaultProductId = c.suggestedProductId ?? productsForCategory[0]?.id;
-        selections[c.ruleId] = {
-          productId: defaultProductId,
-          quantity: c.quantity ?? 1,
-          include: true,
-        };
-      });
-
-      setCandidateProducts(grouped);
-      setOfferCandidates(candidatesResponse);
-      setCandidateSelections(selections);
-      setIsGenerateModalOpen(true);
-    } catch (error) {
-      console.error(error);
-      toast.error("Napaka pri generiranju ponudbe iz zahtev.");
-    } finally {
-      setIsGeneratingOffer(false);
-    }
-  };
-
-  const handleConfirmOfferFromRequirements = async () => {
-    const selectedCandidates = offerCandidates.filter((c) => candidateSelections[c.ruleId]?.include);
-    if (!selectedCandidates.length) {
-      setIsGenerateModalOpen(false);
-      return;
-    }
-    const newItems: ProjectOfferItem[] = [...(offerItems ?? [])];
-    selectedCandidates.forEach((candidate) => {
-      const selection = candidateSelections[candidate.ruleId];
-      if (!selection) return;
-      const productList =
-        candidateProducts[candidate.productCategorySlug] ?? [];
-      const product = productList.find((p) => p.id === selection.productId) ?? productList[0];
-      if (!product) return;
-      const quantityParsed = Number(selection.quantity);
-      const quantity = Number.isFinite(quantityParsed) && quantityParsed > 0 ? quantityParsed : candidate.quantity ?? 1;
-      const price = product.price ?? 0;
-      const vatRate = typeof product.vatRate === "number" ? product.vatRate : 22;
-      newItems.push(
-        buildOfferItem({
-          id: `offer-item-${Date.now()}-${candidate.ruleId}`,
-          name: product.name ?? candidate.suggestedName,
-          sku: product.sku ?? product.id,
-          unit: product.unit ?? "kos",
-          description: "",
-          quantity,
-          price,
-          discount: 0,
-          vatRate,
-          productId: product.id,
-        })
-      );
-    });
-    await persistOfferItems(newItems);
-    setIsGenerateModalOpen(false);
-  };
-
-  const toggleCandidateSelection = (ruleId: string, include: boolean) => {
-    setCandidateSelections((prev) => ({
-      ...prev,
-      [ruleId]: { ...(prev[ruleId] ?? { quantity: 1 }), include },
-    }));
-  };
   useEffect(() => {
-    setActiveTab("items");
-    hasInitializedActiveTabRef.current = false;
+    const nextTab = initialTab ?? "items";
+    setActiveTab(nextTab);
+    hasInitializedActiveTabRef.current = initialTab ? true : false;
     prevActivePhaseStepRef.current = null;
-  }, [project?.id]);
+  }, [project?.id, initialTab]);
   useEffect(() => {
     if (!activePhaseStepKey) {
       prevActivePhaseStepRef.current = null;
@@ -730,8 +632,6 @@ export function ProjectWorkspace({
         await refreshAfterMutation();
       }
       setActiveTab("offers");
-      await handleGenerateOfferFromRequirements();
-      setIsGenerateModalOpen(true);
     } finally {
       setIsProceedingToOffers(false);
     }
@@ -902,16 +802,8 @@ export function ProjectWorkspace({
     if (updated) toast.success(`Podpis shranjen: ${signerName}`);
   };
 
-  const handleStatusChange = async (value: string) => {
-    setStatus(value as any);
-    const updated = await onProjectUpdate(`${basePath}/status`, {
-      method: "POST",
-      body: JSON.stringify({ status: value }),
-    });
-    applyProjectUpdate(updated);
-  };
-
   const renderContent = () => {
+
     if (loading) {
       return (
         <div className="min-h-screen bg-background p-6" style={workspaceCssVars}>
@@ -941,9 +833,9 @@ export function ProjectWorkspace({
         <ProjectHeader
           project={project}
           status={status}
-          onStatusChange={handleStatusChange}
           onBack={onBack}
           onRefresh={refresh}
+          onNewProject={onNewProject}
         />
         <div className="max-w-[1280px] mx-auto px-6 py-6">
           <div className="grid grid-cols-12 gap-6">
@@ -1045,7 +937,6 @@ export function ProjectWorkspace({
                 <TabsContent value="items" className="mt-0 space-y-4">
                   <RequirementsPanel
                     project={project}
-                    validationIssues={validationIssues}
                     showVariantWizard={showVariantWizard}
                     selectedVariantSlug={selectedVariantSlug}
                     setSelectedVariantSlug={setSelectedVariantSlug}
@@ -1063,19 +954,13 @@ export function ProjectWorkspace({
                     savingRequirements={isSavingRequirements}
                     proceedingToOffer={isProceedingToOffers}
                     handleProceedToOffer={handleProceedToOffer}
-                    isGenerateModalOpen={isGenerateModalOpen}
-                    setIsGenerateModalOpen={setIsGenerateModalOpen}
-                    offerCandidates={offerCandidates}
-                    candidateSelections={candidateSelections}
-                    candidateProducts={candidateProducts}
-                    toggleCandidateSelection={toggleCandidateSelection}
-                    setCandidateSelections={setCandidateSelections}
-                    handleConfirmOfferFromRequirements={handleConfirmOfferFromRequirements}
                   />
                 </TabsContent>
 
                 <TabsContent value="offers" className="mt-0 space-y-4">
-                  <OffersPanel project={project} refreshKey={offersRefreshKey} />
+                  {activeTab === "offers" ? (
+                    <OffersPanel project={project} refreshKey={offersRefreshKey} />
+                  ) : null}
                 </TabsContent>
 
                 <TabsContent value="logistics" className="mt-0 space-y-6">

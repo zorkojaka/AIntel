@@ -1,14 +1,16 @@
 import { NextFunction, Request, Response } from 'express';
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import PDFDocument from 'pdfkit';
 import http from 'http';
 import https from 'https';
 import type { OfferLineItem, OfferStatus, OfferVersion } from '../../../../shared/types/offers';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { ProductModel } from '../../cenik/product.model';
+import { ProjectModel } from '../schemas/project';
 import { renderHtmlToPdf } from '../services/html-pdf.service';
 import { generateOfferDocumentPdf } from '../services/offer-pdf-preview.service';
 import { generateOfferDocumentNumber, type DocumentNumberingKind } from '../services/document-numbering.service';
+import { resolveActorId } from '../../../utils/tenant';
 
 function clampNumber(value: unknown, fallback = 0, min = 0) {
   const parsed = Number(value);
@@ -39,6 +41,7 @@ const DOC_TYPE_SLUGS: Partial<Record<DocumentNumberingKind, string>> = {
   WORK_ORDER_CONFIRMATION: 'work-order-confirmation',
   CREDIT_NOTE: 'credit-note',
 };
+const DEFAULT_PAYMENT_TERMS = '50% - avans, 50% - 10 dni po izvedbi';
 
 function parseOfferDocType(value?: string | string[]): DocumentNumberingKind {
   if (Array.isArray(value)) value = value[0];
@@ -52,22 +55,41 @@ function getDocTypeSlug(docType: DocumentNumberingKind) {
   return DOC_TYPE_SLUGS[docType] ?? 'offer';
 }
 
-function sanitizeLineItem(raw: unknown): OfferLineItem | null {
+type LineItemParseResult = { item?: OfferLineItem; error?: string; skipped?: boolean };
+
+function parseQuantity(rawValue: unknown): { value?: number; error?: string } {
+  if (rawValue === undefined || rawValue === null || rawValue === '') {
+    return { value: 1 };
+  }
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return { error: 'quantity' };
+  }
+  return { value: parsed };
+}
+
+function sanitizeLineItem(raw: unknown): LineItemParseResult {
   const item = raw as Record<string, unknown>;
   const name = normalizeText(item?.name);
-  const quantity = clampNumber(item?.quantity, 1, 0);
   const unitPrice = clampNumber(item?.unitPrice, 0, 0);
   const vatRate = clampNumber(item?.vatRate, 22, 0);
   const unit = normalizeText(item?.unit, 'kos') || 'kos';
   const discountPercent = clampNumber(item?.discountPercent, 0, 0);
 
-  if (!name || unitPrice <= 0) return null;
+  if (!name || unitPrice <= 0) return { skipped: true };
+
+  const quantityResult = parseQuantity(item?.quantity);
+  if (quantityResult.error) {
+    return { error: quantityResult.error };
+  }
+  const quantity = quantityResult.value ?? 1;
 
   const totalNet = Number((quantity * unitPrice).toFixed(2));
   const totalVat = Number((totalNet * (vatRate / 100)).toFixed(2));
   const totalGross = Number((totalNet + totalVat).toFixed(2));
 
   return {
+    item: {
     id: item?.id ? String(item.id) : new Types.ObjectId().toString(),
     productId: item?.productId ? String(item.productId) : null,
     name,
@@ -79,6 +101,7 @@ function sanitizeLineItem(raw: unknown): OfferLineItem | null {
     totalNet,
     totalVat,
     totalGross,
+    }
   };
 }
 
@@ -142,15 +165,35 @@ function extractBaseTitle(rawTitle?: string) {
   return (match?.[1] || title).trim() || 'Ponudba';
 }
 
+function getCustomerLastName(name?: string | null) {
+  const trimmed = normalizeText(name);
+  if (!trimmed) return '';
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) {
+    return trimmed;
+  }
+  return parts[parts.length - 1];
+}
+
+function buildDefaultOfferTitle(categoryLabel: string, customerName: string) {
+  const category = normalizeText(categoryLabel, 'Ponudba');
+  const lastName = getCustomerLastName(customerName);
+  if (!category && !lastName) return 'Ponudba';
+  if (category && lastName) return `${category} ${lastName}`.trim();
+  return (category || lastName || 'Ponudba').trim();
+}
+
 async function getNextVersionNumber(projectId: string, baseTitle: string) {
   const last = await OfferVersionModel.findOne({ projectId, baseTitle }).sort({ versionNumber: -1 }).lean();
   return last ? (last.versionNumber || 0) + 1 : 1;
 }
 
 function serializeOffer(offer: OfferVersion) {
+  const { introText: _introText, ...rest } = offer as OfferVersion & { introText?: unknown };
   return {
-    ...offer,
+    ...rest,
     validUntil: offer.validUntil ? new Date(offer.validUntil).toISOString() : null,
+    sentAt: offer.sentAt ? new Date(offer.sentAt).toISOString() : null,
     createdAt: offer.createdAt ? new Date(offer.createdAt).toISOString() : '',
     updatedAt: offer.updatedAt ? new Date(offer.updatedAt).toISOString() : '',
     discountPercent: offer.discountPercent ?? 0,
@@ -174,14 +217,42 @@ function serializeOffer(offer: OfferVersion) {
 export async function saveOfferVersion(req: Request, res: Response, next: NextFunction) {
   try {
     const { projectId } = req.params;
+    const actorId = resolveActorId(req);
     const body = req.body ?? {};
     const rawItems = Array.isArray(body.items) ? body.items : [];
-    const items = rawItems
-      .map((raw: unknown) => sanitizeLineItem(raw))
-      .filter((item: OfferLineItem | null): item is OfferLineItem => !!item);
+    const parsedItems = rawItems.map((raw: unknown) => sanitizeLineItem(raw));
+    if (parsedItems.some((entry) => entry.error)) {
+      return res.fail('Količina postavke mora biti vsaj 1.', 400);
+    }
+    const items = parsedItems
+      .filter((entry) => entry.item)
+      .map((entry) => entry.item as OfferLineItem);
 
     if (!items.length) {
       return res.fail('Ponudba mora vsebovati vsaj eno veljavno postavko.', 400);
+    }
+
+    const needsDefaultTitle = !normalizeText(body?.title) || normalizeText(body?.title).toLowerCase() === 'ponudba';
+    const shouldSetSeller = actorId ? mongoose.isValidObjectId(actorId) : false;
+    const shouldLoadProject = needsDefaultTitle || shouldSetSeller;
+    const project = shouldLoadProject
+      ? await ProjectModel.findOne({ id: projectId }).select('salesUserId customer').lean()
+      : null;
+
+    if (shouldSetSeller && project && !project.salesUserId) {
+      await ProjectModel.updateOne({ id: projectId }, { $set: { salesUserId: actorId } });
+    }
+
+    let resolvedTitle = normalizeText(body?.title);
+    if (needsDefaultTitle) {
+      const firstProductId = items[0]?.productId ? String(items[0].productId) : null;
+      let categoryLabel = '';
+      if (firstProductId) {
+        const product = await ProductModel.findById(firstProductId).select('kategorija').lean();
+        categoryLabel = normalizeText(product?.kategorija, '');
+      }
+      const customerName = normalizeText(project?.customer?.name, '');
+      resolvedTitle = buildDefaultOfferTitle(categoryLabel || 'Ponudba', customerName);
     }
 
     const totals = calculateOfferTotals({
@@ -197,9 +268,12 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
     const validUntil =
       validUntilValue && !Number.isNaN(new Date(validUntilValue).valueOf()) ? new Date(validUntilValue) : null;
 
-    const baseTitle = extractBaseTitle(body?.title);
+    const baseTitle = extractBaseTitle(resolvedTitle || body?.title);
     const versionNumber = await getNextVersionNumber(projectId, baseTitle);
     const title = `${baseTitle}_${versionNumber}`;
+
+    const normalizedPaymentTerms = normalizeText(body?.paymentTerms);
+    const resolvedPaymentTerms = normalizedPaymentTerms || DEFAULT_PAYMENT_TERMS;
 
     const payload: Omit<OfferVersion, '_id'> = {
       projectId,
@@ -207,8 +281,7 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
       versionNumber,
       title,
       validUntil: validUntil ? validUntil.toISOString() : null,
-      paymentTerms: normalizeText(body?.paymentTerms) || null,
-      introText: normalizeText(body?.introText) || null,
+      paymentTerms: resolvedPaymentTerms,
       comment: normalizeText(body?.comment) || null,
       items,
       totalNet: totals.totalNet,
@@ -302,9 +375,13 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
     const { projectId, offerId } = req.params;
     const body = req.body ?? {};
     const rawItems = Array.isArray(body.items) ? body.items : [];
-    const items = rawItems
-      .map((raw: unknown) => sanitizeLineItem(raw))
-      .filter((item: OfferLineItem | null): item is OfferLineItem => !!item);
+    const parsedItems = rawItems.map((raw: unknown) => sanitizeLineItem(raw));
+    if (parsedItems.some((entry) => entry.error)) {
+      return res.fail('Količina postavke mora biti vsaj 1.', 400);
+    }
+    const items = parsedItems
+      .filter((entry) => entry.item)
+      .map((entry) => entry.item as OfferLineItem);
 
     if (!items.length) {
       return res.fail('Ponudba mora vsebovati vsaj eno veljavno postavko.', 400);
@@ -326,7 +403,6 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
     existing.title = body.title ?? existing.title;
     existing.validUntil = body.validUntil ? new Date(body.validUntil).toISOString() : existing.validUntil;
     existing.paymentTerms = body.paymentTerms ?? existing.paymentTerms ?? null;
-    existing.introText = body.introText ?? existing.introText ?? null;
     const normalizedComment = normalizeText(body?.comment, existing.comment ?? '');
     existing.comment = normalizedComment || null;
     existing.items = items;
@@ -387,10 +463,16 @@ export async function exportOfferPdf(req: Request, res: Response) {
   const includeProject = mode === 'project' || mode === 'both';
   const docType = parseOfferDocType(req.query.docType);
 
-  const offer = await OfferVersionModel.findOne({ _id: offerVersionId, projectId }).lean();
+  const offer = await OfferVersionModel.findOne({ _id: offerVersionId, projectId });
   if (!offer) {
     return res.fail('Ponudba ni najdena.', 404);
   }
+
+  const actorId = resolveActorId(req);
+  offer.sentAt = new Date();
+  offer.sentByUserId = actorId ?? offer.sentByUserId ?? null;
+  offer.sentVia = 'email';
+  await offer.save();
 
   if (docType !== 'OFFER' && includeProject) {
     return res.fail('Ta dokument ne podpira kombiniranega izvoza.', 400);
@@ -631,14 +713,23 @@ function ensureSpace(doc: PDFDocumentInstance, requiredHeight: number) {
 
 export async function sendOfferVersionStub(req: Request, res: Response) {
   const { projectId, offerVersionId } = req.params;
-  const offer = await OfferVersionModel.findOne({ _id: offerVersionId, projectId }).lean();
+  const offer = await OfferVersionModel.findOne({ _id: offerVersionId, projectId });
   if (!offer) {
     return res.fail('Ponudba ni najdena.', 404);
   }
 
+  const actorId = resolveActorId(req);
+  offer.sentAt = new Date();
+  offer.sentByUserId = actorId ?? offer.sentByUserId ?? null;
+  offer.sentVia = 'email';
+  await offer.save();
+
   // TODO: implementirati dejansko pošiljanje emaila
   return res.success({
-    sent: false,
+    sent: true,
+    sentAt: offer.sentAt ? offer.sentAt.toISOString() : null,
+    sentByUserId: offer.sentByUserId ?? null,
+    sentVia: offer.sentVia ?? null,
     message: 'Email sending not implemented yet',
   });
 }

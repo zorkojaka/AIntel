@@ -290,6 +290,12 @@ export async function createProject(req: Request, res: Response) {
     ? String(req.body.requirementsTemplateVariantSlug).trim()
     : '';
   let requirements = sanitizeRequirements(req.body?.requirements);
+  const requirementsText =
+    typeof req.body?.requirements === 'string'
+      ? String(req.body.requirements).trim()
+      : typeof req.body?.requirementsText === 'string'
+        ? String(req.body.requirementsText).trim()
+        : '';
   if (requirements.length === 0 && categories.length > 0 && variantSlug) {
     requirements = await generateRequirementsFromTemplates(categories, variantSlug);
   }
@@ -310,6 +316,7 @@ export async function createProject(req: Request, res: Response) {
     invoiceAmount: 0,
     createdAt,
     requirementsTemplateVariantSlug: variantSlug || undefined,
+    requirementsText,
     requirements,
     items: (req.body.items as ProjectItem[])?.map((item) => ({
       ...item,
@@ -353,6 +360,11 @@ export async function updateProject(req: Request, res: Response) {
     : project.requirementsTemplateVariantSlug;
 
   project.title = req.body.title;
+  if (req.body?.requirementsText !== undefined) {
+    project.requirementsText = String(req.body.requirementsText ?? '').trim();
+  } else if (typeof req.body?.requirements === 'string') {
+    project.requirementsText = String(req.body.requirements ?? '').trim();
+  }
   if (req.body?.requirements !== undefined) {
     project.requirements = sanitizeRequirements(req.body.requirements);
   } else if (

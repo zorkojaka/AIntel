@@ -21,6 +21,10 @@ interface CoreLayoutProps {
   onModuleChange: (moduleId: string) => void;
   logoUrl?: string | null;
   onLogout?: () => void;
+  userInfo?: {
+    name: string;
+    secondary?: string | null;
+  } | null;
 }
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -39,21 +43,34 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
   onModuleChange,
   logoUrl,
   onLogout,
+  userInfo,
 }) => (
   <div className="core-shell">
     <aside className="core-shell__sidebar">
       {logoUrl ? <img src={logoUrl} alt="Logo podjetja" className="core-shell__logo" /> : <h2>AIntel</h2>}
       <ul>
-        {modules.map((item) => {
+        {modules.map((item, index) => {
           const navItem = item.navItems[0];
           const icon = navItem?.icon ? iconMap[navItem.icon] : null;
+          const label = navItem?.label ?? item.name;
+          const shouldRenderUserInfo = label === 'STRANKE' && !!userInfo;
           return (
-            <li key={item.id}>
-              <button type="button" data-active={item.id === activeModule} onClick={() => onModuleChange(item.id)}>
-                {icon ? <span className="core-shell__nav-icon">{icon}</span> : null}
-                <span>{navItem?.label ?? item.name}</span>
-              </button>
-            </li>
+            <React.Fragment key={item.id}>
+              {shouldRenderUserInfo ? (
+                <li className="core-shell__user">
+                  <div className="core-shell__user-name">{userInfo?.name}</div>
+                  {userInfo?.secondary ? (
+                    <div className="core-shell__user-secondary">{userInfo.secondary}</div>
+                  ) : null}
+                </li>
+              ) : null}
+              <li>
+                <button type="button" data-active={item.id === activeModule} onClick={() => onModuleChange(item.id)}>
+                  {icon ? <span className="core-shell__nav-icon">{icon}</span> : null}
+                  <span>{label}</span>
+                </button>
+              </li>
+            </React.Fragment>
           );
         })}
       </ul>

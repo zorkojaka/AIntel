@@ -23,7 +23,9 @@ export interface OfferVersion {
   documentNumber?: string | null;
   validUntil: string | null;
   paymentTerms: string | null;
-  introText: string | null;
+  sentAt?: string | null;
+  sentByUserId?: string | null;
+  sentVia?: "email" | null;
   comment?: string | null;
   items: OfferLineItem[];
   totalNet: number;
