@@ -12,6 +12,8 @@ interface MaterialOrderDocument extends Document {
     deliveredQty?: number;
     unit: string;
     note?: string;
+    dobavitelj?: string;
+    naslovDobavitelja?: string;
   }[];
   assignedEmployeeIds?: Array<Types.ObjectId>;
   status: 'draft' | 'ordered' | 'received' | 'cancelled';
@@ -29,6 +31,8 @@ const materialItemSchema = new Schema(
     deliveredQty: { type: Number, default: 0 },
     unit: { type: String, required: true },
     note: { type: String },
+    dobavitelj: { type: String, trim: true, default: '' },
+    naslovDobavitelja: { type: String, trim: true, default: '' },
   },
   { _id: false }
 );

@@ -14,6 +14,7 @@ interface WorkOrderItem {
   isExtra: boolean;
   itemNote?: string | null;
   isCompleted?: boolean;
+  casovnaNorma?: number;
 }
 
 export interface WorkLogEntry {
@@ -58,6 +59,7 @@ const workOrderItemSchema = new Schema<WorkOrderItem>(
     isExtra: { type: Boolean, required: true, default: false },
     itemNote: { type: String, default: null },
     isCompleted: { type: Boolean, default: false },
+    casovnaNorma: { type: Number, default: 0 },
   },
   { _id: false }
 );

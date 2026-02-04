@@ -159,6 +159,41 @@ function calculateOfferTotals(offer: {
   };
 }
 
+function normalizeCasovnaNorma(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function attachCasovnaNorma(items: OfferLineItem[]) {
+  const productIds = Array.from(
+    new Set(
+      items
+        .map((item) => (item.productId ? String(item.productId) : null))
+        .filter((value): value is string => !!value)
+    )
+  );
+  if (productIds.length === 0) {
+    return items.map((item) => ({
+      ...item,
+      casovnaNorma: normalizeCasovnaNorma((item as any).casovnaNorma),
+    }));
+  }
+  const products = await ProductModel.find({ _id: { $in: productIds } }).lean();
+  const productMap = new Map(products.map((product) => [String(product._id), product]));
+  return items.map((item) => {
+    const productId = item.productId ? String(item.productId) : null;
+    const product = productId ? productMap.get(productId) : null;
+    return {
+      ...item,
+      casovnaNorma: product
+        ? normalizeCasovnaNorma((product as any).casovnaNorma)
+        : normalizeCasovnaNorma((item as any).casovnaNorma),
+      dobavitelj: product ? (product as any).dobavitelj : (item as any).dobavitelj,
+      naslovDobavitelja: product ? (product as any).naslovDobavitelja : (item as any).naslovDobavitelja,
+    };
+  });
+}
+
 function extractBaseTitle(rawTitle?: string) {
   const title = (rawTitle || 'Ponudba').trim();
   const match = title.match(/^(.*)_\d+$/);
@@ -192,6 +227,12 @@ function serializeOffer(offer: OfferVersion) {
   const { introText: _introText, ...rest } = offer as OfferVersion & { introText?: unknown };
   return {
     ...rest,
+    items: (offer.items ?? []).map((item) => ({
+      ...item,
+      casovnaNorma: normalizeCasovnaNorma((item as any).casovnaNorma),
+      dobavitelj: (item as any).dobavitelj,
+      naslovDobavitelja: (item as any).naslovDobavitelja,
+    })),
     validUntil: offer.validUntil ? new Date(offer.validUntil).toISOString() : null,
     sentAt: offer.sentAt ? new Date(offer.sentAt).toISOString() : null,
     createdAt: offer.createdAt ? new Date(offer.createdAt).toISOString() : '',
@@ -227,8 +268,9 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
     const items = parsedItems
       .filter((entry) => entry.item)
       .map((entry) => entry.item as OfferLineItem);
+    const itemsWithNorma = await attachCasovnaNorma(items);
 
-    if (!items.length) {
+    if (!itemsWithNorma.length) {
       return res.fail('Ponudba mora vsebovati vsaj eno veljavno postavko.', 400);
     }
 
@@ -256,7 +298,7 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
     }
 
     const totals = calculateOfferTotals({
-      items,
+      items: itemsWithNorma,
       usePerItemDiscount: body?.usePerItemDiscount ?? false,
       useGlobalDiscount: body?.useGlobalDiscount ?? true,
       globalDiscountPercent: body?.globalDiscountPercent ?? body?.discountPercent ?? 0,
@@ -283,7 +325,7 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
       validUntil: validUntil ? validUntil.toISOString() : null,
       paymentTerms: resolvedPaymentTerms,
       comment: normalizeText(body?.comment) || null,
-      items,
+      items: itemsWithNorma,
       totalNet: totals.totalNet,
       totalVat22: totals.totalVat22,
       totalVat95: totals.totalVat95,
@@ -382,13 +424,14 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
     const items = parsedItems
       .filter((entry) => entry.item)
       .map((entry) => entry.item as OfferLineItem);
+    const itemsWithNorma = await attachCasovnaNorma(items);
 
-    if (!items.length) {
+    if (!itemsWithNorma.length) {
       return res.fail('Ponudba mora vsebovati vsaj eno veljavno postavko.', 400);
     }
 
     const totals = calculateOfferTotals({
-      items,
+      items: itemsWithNorma,
       usePerItemDiscount: body?.usePerItemDiscount ?? false,
       useGlobalDiscount: body?.useGlobalDiscount ?? true,
       globalDiscountPercent: body?.globalDiscountPercent ?? body?.discountPercent ?? 0,
@@ -405,7 +448,7 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
     existing.paymentTerms = body.paymentTerms ?? existing.paymentTerms ?? null;
     const normalizedComment = normalizeText(body?.comment, existing.comment ?? '');
     existing.comment = normalizedComment || null;
-    existing.items = items;
+    existing.items = itemsWithNorma;
     existing.totalNet = totals.totalNet;
     existing.totalVat22 = totals.totalVat22;
     existing.totalVat95 = totals.totalVat95;

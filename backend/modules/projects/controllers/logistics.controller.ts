@@ -5,6 +5,7 @@ import { OfferVersionModel } from '../schemas/offer-version';
 import { ProjectModel, addTimeline } from '../schemas/project';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
+import { ProductModel } from '../../cenik/product.model';
 import { resolveActorId, resolveTenantId } from '../../../utils/tenant';
 import { EmployeeModel } from '../../employees/schemas/employee';
 import type { OfferLineItem } from '../../../../shared/types/offers';
@@ -74,6 +75,8 @@ function mapOfferItemsToLogistics(items: OfferLineItem[]) {
       deliveredQty: 0,
       unit: item.unit,
       note,
+      dobavitelj: (item as any).dobavitelj,
+      naslovDobavitelja: (item as any).naslovDobavitelja,
     };
   });
 }
@@ -99,6 +102,9 @@ function mapOfferItemsToWorkOrderItems(items: OfferLineItem[]) {
       isExtra: false,
       itemNote: null,
       isCompleted: false,
+      casovnaNorma: typeof (item as any).casovnaNorma === 'number' && Number.isFinite((item as any).casovnaNorma)
+        ? (item as any).casovnaNorma
+        : 0,
     };
   });
 }
@@ -204,6 +210,8 @@ function serializeMaterialOrder(order: any): MaterialOrder | null {
       deliveredQty: typeof item.deliveredQty === 'number' ? item.deliveredQty : 0,
       unit: item.unit,
       note: item.note,
+      dobavitelj: item.dobavitelj,
+      naslovDobavitelja: item.naslovDobavitelja,
       offerItemId: item.offerItemId ?? null,
       offeredQuantity:
         typeof item.offeredQuantity === 'number' ? item.offeredQuantity : Number(item.quantity) || 0,
@@ -260,6 +268,10 @@ function serializeWorkOrder(order: any): WorkOrder | null {
                 ? null
                 : undefined,
           isCompleted: !!item.isCompleted,
+          casovnaNorma:
+            typeof item.casovnaNorma === 'number' && Number.isFinite(item.casovnaNorma)
+              ? item.casovnaNorma
+              : 0,
         };
       }),
     status: order.status,
@@ -391,7 +403,22 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
     );
 
     const offerItems = offer.items || [];
-    const logisticsItems = mapOfferItemsToLogistics(offerItems);
+    const productIds = offerItems
+      .map((item) => (item.productId ? String(item.productId) : null))
+      .filter((id): id is string => Boolean(id));
+    const serviceProductIds = new Set<string>();
+    if (productIds.length > 0) {
+      const products = await ProductModel.find({ _id: { $in: productIds } }).select('_id isService').lean();
+      products.forEach((product) => {
+        if (product.isService) {
+          serviceProductIds.add(String(product._id));
+        }
+      });
+    }
+    const materialOfferItems = offerItems.filter(
+      (item) => !item.productId || !serviceProductIds.has(String(item.productId))
+    );
+    const logisticsItems = mapOfferItemsToLogistics(materialOfferItems);
     const workOrderItems = mapOfferItemsToWorkOrderItems(offerItems);
     const customerName = project.customer?.name ?? projectClient?.name ?? '';
     const customerEmail = projectClient?.email ?? '';
@@ -637,6 +664,9 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
             if (typeof incoming.isCompleted === 'boolean') {
               target.isCompleted = incoming.isCompleted;
             }
+            if (typeof incoming.casovnaNorma === 'number' && Number.isFinite(incoming.casovnaNorma)) {
+              target.casovnaNorma = incoming.casovnaNorma;
+            }
             if (typeof incoming.offerItemId === 'string' || incoming.offerItemId === null) {
               target.offerItemId = incoming.offerItemId ?? null;
             }
@@ -666,6 +696,10 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           isExtra: incoming.isExtra !== undefined ? !!incoming.isExtra : true,
           itemNote: typeof incoming.itemNote === 'string' ? incoming.itemNote : null,
           isCompleted: typeof incoming.isCompleted === 'boolean' ? incoming.isCompleted : false,
+          casovnaNorma:
+            typeof incoming.casovnaNorma === 'number' && Number.isFinite(incoming.casovnaNorma)
+              ? incoming.casovnaNorma
+              : 0,
         });
       });
 

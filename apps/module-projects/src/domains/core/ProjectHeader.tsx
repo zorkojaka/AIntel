@@ -13,7 +13,7 @@ export type ProjectHeaderProps = {
 
 export function ProjectHeader({ project, status, onBack, onRefresh, onNewProject }: ProjectHeaderProps) {
   return (
-    <div className="border-b bg-card">
+    <div className="sticky top-0 z-20 border-b bg-card">
       <div className="max-w-[1280px] mx-auto px-6 py-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">

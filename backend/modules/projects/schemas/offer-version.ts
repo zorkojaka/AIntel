@@ -18,6 +18,9 @@ const OfferLineItemSchema = new Schema<OfferLineItemDocument>(
     totalVat: { type: Number, required: true, min: 0 },
     totalGross: { type: Number, required: true, min: 0 },
     discountPercent: { type: Number, default: 0 },
+    casovnaNorma: { type: Number, default: 0 },
+    dobavitelj: { type: String, trim: true, default: '' },
+    naslovDobavitelja: { type: String, trim: true, default: '' },
   } as Record<keyof OfferLineItem, any>,
   { _id: false }
 );

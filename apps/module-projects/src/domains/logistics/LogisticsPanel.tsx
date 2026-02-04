@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type {
   MaterialOrder,
@@ -19,7 +19,7 @@ import { MaterialOrderCard } from "./MaterialOrderCard";
 import { useConfirmOffer } from "../core/useConfirmOffer";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { Checkbox } from "../../components/ui/checkbox";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 
@@ -94,6 +94,21 @@ function isBlank(value?: string | null) {
   return !value || value.trim().length === 0;
 }
 
+const pad2Global = (value: number) => value.toString().padStart(2, "0");
+const formatDateGlobal = (date: Date) =>
+  `${date.getFullYear()}-${pad2Global(date.getMonth() + 1)}-${pad2Global(date.getDate())}`;
+const isWeekendDate = (date: Date) => {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+};
+const adjustToWorkday = (date: Date, direction: 1 | -1) => {
+  const next = new Date(date);
+  while (isWeekendDate(next)) {
+    next.setDate(next.getDate() + direction);
+  }
+  return next;
+};
+
 function buildOfferLabel(offer: ProjectLogisticsSnapshot["offerVersions"][number]) {
   const baseLabel = offer.title || `Verzija ${offer.versionNumber}`;
   const totalLabel = typeof offer.totalWithVat === "number" ? ` • ${formatCurrency(offer.totalWithVat)}` : "";
@@ -101,6 +116,7 @@ function buildOfferLabel(offer: ProjectLogisticsSnapshot["offerVersions"][number
 }
 
 export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: LogisticsPanelProps) {
+  const [calendarOffset, setCalendarOffset] = useState(0);
   const [snapshot, setSnapshot] = useState<ProjectLogisticsSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -116,6 +132,10 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
   const [issuingOrder, setIssuingOrder] = useState(false);
   const [materialDownloading, setMaterialDownloading] = useState<"PURCHASE_ORDER" | "DELIVERY_NOTE" | null>(null);
   const [workOrderDownloading, setWorkOrderDownloading] = useState<"WORK_ORDER" | "WORK_ORDER_CONFIRMATION" | null>(null);
+  const timeTouchedRef = useRef(false);
+  const scheduledAtRaw = typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : "";
+  const [workdaysOnly, setWorkdaysOnly] = useState(true);
+  const [isTermConfirmed, setIsTermConfirmed] = useState(false);
 
   const hasConfirmed = useMemo(() => !!snapshot?.confirmedOfferVersionId, [snapshot]);
   const confirmedOffers = useMemo(
@@ -257,6 +277,25 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
   }, [selectedWorkOrder]);
 
   useEffect(() => {
+    if (selectedWorkOrder?.scheduledAt) {
+      timeTouchedRef.current = true;
+    }
+  }, [selectedWorkOrder?.scheduledAt]);
+
+  useEffect(() => {
+    if (!selectedWorkOrder) return;
+    if (scheduledAtRaw) return;
+    const today = new Date();
+    today.setDate(today.getDate() + 14);
+    const todayString = formatDateGlobal(today);
+    setWorkOrderForm((prev) => {
+      const currentValue = typeof prev.scheduledAt === "string" ? prev.scheduledAt : "";
+      if (currentValue) return prev;
+      return { ...prev, scheduledAt: `${todayString}T08:00` };
+    });
+  }, [scheduledAtRaw, selectedWorkOrder]);
+
+  useEffect(() => {
     setMaterialOrderForm(selectedMaterialOrder ?? null);
   }, [selectedMaterialOrder]);
 
@@ -325,6 +364,24 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
     if (field === "customerPhone") setPhoneTouched(true);
     setWorkOrderForm((prev) => ({ ...prev, [field]: value }));
   };
+
+  useEffect(() => {
+    if (!workdaysOnly) return;
+    if (!scheduledAtRaw) return;
+    const [datePart, timePartRaw] = scheduledAtRaw.split("T");
+    if (!datePart) return;
+    const [yearRaw, monthRaw, dayRaw] = datePart.split("-");
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    const day = Number(dayRaw);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return;
+    const currentDate = new Date(year, month - 1, day);
+    if (!isWeekendDate(currentDate)) return;
+    const adjusted = adjustToWorkday(currentDate, 1);
+    const timePart = timePartRaw?.slice(0, 5) || "08:00";
+    const nextDate = formatDateGlobal(adjusted);
+    handleWorkOrderChange("scheduledAt", `${nextDate}T${timePart}`);
+  }, [handleWorkOrderChange, scheduledAtRaw, workdaysOnly]);
 
   const toggleAssignedEmployee = (employeeId: string) => {
     setWorkOrderForm((prev) => {
@@ -428,6 +485,7 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
           location: workOrderForm.location ?? "",
           notes: workOrderForm.notes ?? "",
           status: workOrderOverrides?.status ?? workOrderForm.status ?? undefined,
+          items: Array.isArray(workOrderOverrides?.items) ? workOrderOverrides?.items : undefined,
           materialOrderId: materialOverrides?._id ?? currentMaterial?._id ?? null,
           materialStatus: materialOverrides?.materialStatus ?? currentMaterial?.materialStatus ?? undefined,
           materialAssignedEmployeeIds: Array.isArray(materialOverrides?.assignedEmployeeIds)
@@ -546,6 +604,26 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
     setIssuingOrder(false);
   };
 
+  const updateWorkOrderItemQty = async (itemId: string, deliveredQty: number, shouldSave: boolean) => {
+    const currentItems =
+      Array.isArray(workOrderForm.items) && workOrderForm.items.length > 0
+        ? workOrderForm.items
+        : Array.isArray(selectedWorkOrder?.items)
+          ? selectedWorkOrder?.items ?? []
+          : [];
+    const nextItems = currentItems.map((item) => {
+      if (item.id !== itemId) return item;
+      return {
+        ...item,
+        executedQuantity: Math.max(0, deliveredQty),
+      };
+    });
+    setWorkOrderForm((prev) => ({ ...prev, items: nextItems }));
+    if (shouldSave) {
+      await handleSaveWorkOrder(undefined, { items: nextItems });
+    }
+  };
+
   const renderWorkOrder = (workOrder: LogisticsWorkOrder | null) => {
     if (!workOrder) {
       return <p className="text-sm text-muted-foreground">Delovni nalog bo ustvarjen ob potrditvi ponudbe.</p>;
@@ -556,69 +634,365 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
     const customerEmail = workOrder.customerEmail || client?.email || "";
     const customerPhone = workOrder.customerPhone || client?.phone || "";
     const canDownloadWorkOrderPdf = !!workOrder?._id;
+    const [streetRaw, postalRaw] = customerAddress.split(/,(.+)/);
+    const streetLine = streetRaw?.trim() ?? "";
+    const postalLine = postalRaw?.trim() ?? "";
+    const scheduledAtValue = typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : "";
+    const [datePart, timePartRaw] = scheduledAtValue.split("T");
+    const timePart = timePartRaw?.slice(0, 5) ?? "";
+    const [hoursRaw, minutesRaw] = timePart.split(":");
+    const hoursValue = Number(hoursRaw ?? "0");
+    const minutesValue = Number(minutesRaw ?? "0");
+    const workOrderItems =
+      Array.isArray(workOrderForm.items) && workOrderForm.items.length > 0
+        ? workOrderForm.items
+        : Array.isArray(workOrder.items)
+          ? workOrder.items
+          : [];
+    const totalMinutes = workOrderItems.reduce((sum, item) => {
+      const quantity = typeof item.quantity === "number" ? item.quantity : 0;
+      const casovnaNorma = typeof item.casovnaNorma === "number" ? item.casovnaNorma : 0;
+      return sum + quantity * casovnaNorma;
+    }, 0);
+    const formatDuration = (value: number) => {
+      if (value <= 0) return "0 min";
+      if (value < 60) return `${value} min`;
+      const hours = Math.floor(value / 60);
+      const minutes = value % 60;
+      return minutes > 0 ? `${hours} h ${minutes} min` : `${hours} h`;
+    };
+    const durationLabel = formatDuration(totalMinutes);
+    const todayPlus21 = new Date();
+    todayPlus21.setDate(todayPlus21.getDate() + 21);
+    const calendarAnchor = datePart ? new Date(`${datePart}T00:00:00`) : todayPlus21;
+    const anchorYear = calendarAnchor.getFullYear();
+    const anchorMonth = calendarAnchor.getMonth();
+    const pad2 = (value: number) => value.toString().padStart(2, "0");
+    const formatDate = (date: Date) =>
+      `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+    const anchorDateString = formatDate(calendarAnchor);
+    const monthNames = [
+      "Januar",
+      "Februar",
+      "Marec",
+      "April",
+      "Maj",
+      "Junij",
+      "Julij",
+      "Avgust",
+      "September",
+      "Oktober",
+      "November",
+      "December",
+    ];
+    const firstMonth = new Date(anchorYear, anchorMonth + calendarOffset, 1);
+    const secondMonth = new Date(anchorYear, anchorMonth + calendarOffset + 1, 1);
+    const firstMonthStart = new Date(firstMonth.getFullYear(), firstMonth.getMonth(), 1);
+    const secondMonthStart = new Date(secondMonth.getFullYear(), secondMonth.getMonth(), 1);
+    const firstDaysInMonth = new Date(firstMonth.getFullYear(), firstMonth.getMonth() + 1, 0).getDate();
+    const secondDaysInMonth = new Date(secondMonth.getFullYear(), secondMonth.getMonth() + 1, 0).getDate();
+    const firstStartOffset = (firstMonthStart.getDay() + 6) % 7;
+    const secondStartOffset = (secondMonthStart.getDay() + 6) % 7;
+    const calendarMonths = [
+      { month: firstMonth, days: firstDaysInMonth, offset: firstStartOffset },
+      { month: secondMonth, days: secondDaysInMonth, offset: secondStartOffset },
+    ];
+    const todayDateString = formatDate(new Date());
+    const baseDateString = datePart || anchorDateString;
+    const [baseYearRaw, baseMonthRaw, baseDayRaw] = baseDateString.split("-");
+    const baseYear = Number(baseYearRaw ?? anchorYear);
+    const baseMonth = Number(baseMonthRaw ?? anchorMonth + 1);
+    const baseDay = Number(baseDayRaw ?? 1);
+    const dowLabels = ["NEDELJA", "PONEDELJEK", "TOREK", "SREDA", "\u010cETRTEK", "PETEK", "SOBOTA"];
+    const baseDateForDow = new Date(baseYear, baseMonth - 1, baseDay);
+    const dowLabel = Number.isNaN(baseDateForDow.getTime()) ? "?" : dowLabels[baseDateForDow.getDay()];
+    const setDateParts = (year: number, month: number, day: number, direction: 1 | -1 | 0 = 0) => {
+      const safeYear = Number.isFinite(year) ? year : anchorYear;
+      const safeMonth = Math.min(12, Math.max(1, Number.isFinite(month) ? month : anchorMonth + 1));
+      const daysInTarget = new Date(safeYear, safeMonth, 0).getDate();
+      const safeDay = Math.min(daysInTarget, Math.max(1, Number.isFinite(day) ? day : 1));
+      const tentativeDate = new Date(safeYear, safeMonth - 1, safeDay);
+      if (workdaysOnly && direction === 0 && isWeekendDate(tentativeDate)) {
+        return;
+      }
+      const targetDate = workdaysOnly && direction !== 0 ? adjustToWorkday(tentativeDate, direction) : tentativeDate;
+      const nextDate = formatDate(targetDate);
+      const shouldDefaultTime = !timeTouchedRef.current && !timePartRaw;
+      const nextHours = shouldDefaultTime ? 8 : hoursValue;
+      const nextMinutes = shouldDefaultTime ? 0 : minutesValue;
+      setIsTermConfirmed(false);
+      handleWorkOrderChange("scheduledAt", `${nextDate}T${pad2(nextHours)}:${pad2(nextMinutes)}`);
+    };
+    const updateTimeValue = (nextHours: number, nextMinutes: number) => {
+      timeTouchedRef.current = true;
+      const hours = Math.min(23, Math.max(0, nextHours));
+      const minutes = Math.min(55, Math.max(0, Math.round(nextMinutes / 5) * 5));
+      const nextDate = baseDateString;
+      setIsTermConfirmed(false);
+      handleWorkOrderChange("scheduledAt", `${nextDate}T${pad2(hours)}:${pad2(minutes)}`);
+    };
     return (
       <div className="space-y-5">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Stranka</label>
-              <p className="rounded-md border border-input bg-muted/50 px-3 py-2 text-sm">{customerName || "-"}</p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Naslov</label>
-              <p className="rounded-md border border-input bg-muted/50 px-3 py-2 text-sm">{customerAddress || "-"}</p>
-            </div>
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Email</label>
-              <Input
-                value={workOrderForm.customerEmail ?? ""}
-                onChange={(e) => handleWorkOrderChange("customerEmail", e.target.value)}
-                placeholder={customerEmail || "Email stranke"}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Telefon</label>
-              <Input
-                value={workOrderForm.customerPhone ?? ""}
-                onChange={(e) => handleWorkOrderChange("customerPhone", e.target.value)}
-                placeholder={customerPhone || "Telefon stranke"}
-              />
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Termin izvedbe</label>
-              <Input
-                type="datetime-local"
-                value={(workOrderForm.scheduledAt as string) ?? ""}
-                onChange={(e) => handleWorkOrderChange("scheduledAt", e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Tehniki (ekipa)</label>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {employees.filter((employee) => employee.active).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Ni zaposlenih.</p>
-                ) : (
-                  employees
-                    .filter((employee) => employee.active)
-                    .map((employee) => (
-                    <label key={employee.id} className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Checkbox
-                        checked={(workOrderForm.assignedEmployeeIds ?? []).includes(employee.id)}
-                        onChange={() => toggleAssignedEmployee(employee.id)}
-                      />
-                      {employee.name}
-                    </label>
-                  ))
-                )}
+              <p className="text-sm font-medium">Podatki stranke</p>
+              <div className="space-y-1 text-sm">
+                {customerName && <p>{customerName}</p>}
+                {customerEmail && <p>{customerEmail}</p>}
+                {customerPhone && <p>{customerPhone}</p>}
               </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Status materiala</label>
-              <p className="rounded-md border border-input bg-muted/50 px-3 py-2 text-sm">
-                {effectiveMaterialStatus ?? "-"}
-              </p>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-start justify-between gap-4">
+                <span className="text-muted-foreground">Naslov:</span>
+                <div className="text-right">
+                  {streetLine && <div>{streetLine}</div>}
+                  {postalLine && <div>{postalLine}</div>}
+                </div>
+              </div>
+            </div>
+          </div>
+          <hr className="border-border/60" />
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Termin izvedbe</label>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Checkbox
+                  checked={workdaysOnly}
+                  onChange={(event) => setWorkdaysOnly(event.target.checked)}
+                />
+                <span>Samo delovni dnevi</span>
+              </label>
+              <div className="grid gap-3">
+                <div className="rounded-md border border-input bg-background p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2 text-sm font-medium">
+                    <button
+                      type="button"
+                      className="rounded-md border border-input px-2 py-1 text-xs hover:bg-muted"
+                      onClick={() => setCalendarOffset((prev) => prev - 1)}
+                      aria-label={"Prejšnji mesec"}
+                    >
+                      {"‹"}
+                    </button>
+                    <div className="flex flex-1 justify-between gap-4 text-center">
+                      <span className="pointer-events-none cursor-default">
+                        {monthNames[firstMonth.getMonth()]} {firstMonth.getFullYear()}
+                      </span>
+                      <span className="pointer-events-none cursor-default">
+                        {monthNames[secondMonth.getMonth()]} {secondMonth.getFullYear()}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-md border border-input px-2 py-1 text-xs hover:bg-muted"
+                      onClick={() => setCalendarOffset((prev) => prev + 1)}
+                      aria-label={"Naslednji mesec"}
+                    >
+                      {"›"}
+                    </button>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {calendarMonths.map((entry) => {
+                      const monthYear = entry.month.getFullYear();
+                      const monthIndex = entry.month.getMonth();
+                      return (
+                        <div
+                          key={`${monthYear}-${monthIndex}`}
+                          className="grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground"
+                        >
+                          {["Po", "To", "Sr", "Če", "Pe", "So", "Ne"].map((label) => (
+                            <span key={`${monthYear}-${monthIndex}-${label}`} className="py-1">
+                              {label}
+                            </span>
+                          ))}
+                          {Array.from({ length: entry.offset }).map((_, index) => (
+                            <span key={`${monthYear}-${monthIndex}-empty-${index}`} className="py-1" />
+                          ))}
+                          {Array.from({ length: entry.days }).map((_, index) => {
+                            const day = index + 1;
+                            const dayDate = `${monthYear}-${pad2(monthIndex + 1)}-${pad2(day)}`;
+                            const isSelected = datePart === dayDate;
+                            const isToday = dayDate === todayDateString;
+                            const isWeekend = isWeekendDate(new Date(monthYear, monthIndex, day));
+                            const isDisabled = workdaysOnly && isWeekend;
+                            return (
+                              <button
+                                key={dayDate}
+                                type="button"
+                                className={`rounded-md py-1 text-sm transition ${
+                                  isSelected
+                                    ? "bg-primary text-primary-foreground"
+                                    : isDisabled
+                                      ? "cursor-not-allowed text-muted-foreground/40"
+                                      : "hover:bg-muted"
+                                } ${isToday ? "rounded-full ring-2 ring-red-500 ring-offset-0" : ""}`}
+                                disabled={isDisabled}
+                                onClick={() => {
+                                  if (isDisabled) return;
+                                  setDateParts(monthYear, monthIndex + 1, day);
+                                }}
+                              >
+                                {day}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="rounded-md border border-input bg-background px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-center gap-2 text-sm">
+                      <span className="text-base font-semibold tabular-nums">{dowLabel}</span>
+                      <span className="text-base font-semibold">-</span>
+                      <div className="flex items-center gap-1">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <button
+                            type="button"
+                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
+                            onClick={() => setDateParts(baseYear, baseMonth, baseDay + 1, 1)}
+                            aria-label={"Povečaj dan"}
+                          >
+                            +
+                          </button>
+                          <div className="text-base font-semibold tabular-nums">{baseDay}</div>
+                          <button
+                            type="button"
+                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
+                            onClick={() => setDateParts(baseYear, baseMonth, baseDay - 1, -1)}
+                            aria-label={"Zmanjšaj dan"}
+                          >
+                            -
+                          </button>
+                        </div>
+                        <span className="text-base font-semibold">.</span>
+                        <div className="flex flex-col items-center gap-0.5">
+                          <button
+                            type="button"
+                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
+                            onClick={() => setDateParts(baseYear, baseMonth + 1, baseDay, 1)}
+                            aria-label={"Povečaj mesec"}
+                          >
+                            +
+                          </button>
+                          <div className="text-base font-semibold tabular-nums">{baseMonth}</div>
+                          <button
+                            type="button"
+                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
+                            onClick={() => setDateParts(baseYear, baseMonth - 1, baseDay, -1)}
+                            aria-label={"Zmanjšaj mesec"}
+                          >
+                            -
+                          </button>
+                        </div>
+                        <span className="text-base font-semibold">.</span>
+                        <div className="flex flex-col items-center gap-0.5">
+                          <button
+                            type="button"
+                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
+                            onClick={() => setDateParts(baseYear + 1, baseMonth, baseDay, 1)}
+                            aria-label={"Povečaj leto"}
+                          >
+                            +
+                          </button>
+                          <div className="text-base font-semibold tabular-nums">{baseYear}</div>
+                          <button
+                            type="button"
+                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
+                            onClick={() => setDateParts(baseYear - 1, baseMonth, baseDay, -1)}
+                            aria-label={"Zmanjšaj leto"}
+                          >
+                            -
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <button
+                            type="button"
+                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
+                            onClick={() => updateTimeValue(hoursValue + 1, minutesValue)}
+                            aria-label={"Povečaj ure"}
+                          >
+                            +
+                          </button>
+                          <div className="text-base font-semibold tabular-nums">{Number.isFinite(hoursValue) ? hoursValue : 0}</div>
+                          <button
+                            type="button"
+                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
+                            onClick={() => updateTimeValue(hoursValue - 1, minutesValue)}
+                            aria-label={"Zmanjšaj ure"}
+                          >
+                            -
+                          </button>
+                        </div>
+                        <span className="text-base font-semibold">:</span>
+                        <div className="flex flex-col items-center gap-0.5">
+                          <button
+                            type="button"
+                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
+                            onClick={() => updateTimeValue(hoursValue, minutesValue + 5)}
+                            aria-label={"Povečaj minute"}
+                          >
+                            +
+                          </button>
+                          <div className="text-base font-semibold tabular-nums">{pad2(Number.isFinite(minutesValue) ? minutesValue : 0)}</div>
+                          <button
+                            type="button"
+                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
+                            onClick={() => updateTimeValue(hoursValue, minutesValue - 5)}
+                            aria-label={"Zmanjšaj minute"}
+                          >
+                            -
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isTermConfirmed ? (
+                        <Badge variant="secondary">Termin potrjen</Badge>
+                      ) : (
+                        <Button type="button" size="sm" variant="outline" onClick={() => setIsTermConfirmed(true)}>
+                          Potrdi termin
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Ocena trajanja izvedbe: <span className="font-medium text-foreground">{durationLabel}</span>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Tehniki (ekipa)</label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {employees.filter((employee) => employee.active).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Ni zaposlenih.</p>
+                  ) : (
+                    employees
+                      .filter((employee) => employee.active)
+                      .map((employee) => (
+                      <label key={employee.id} className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Checkbox
+                          checked={(workOrderForm.assignedEmployeeIds ?? []).includes(employee.id)}
+                          onChange={() => toggleAssignedEmployee(employee.id)}
+                        />
+                        {employee.name}
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Status materiala</label>
+                <p className="rounded-md border border-input bg-muted/50 px-3 py-2 text-sm">
+                  {effectiveMaterialStatus ?? "-"}
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -636,18 +1010,108 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
             <TableHeader>
               <TableRow>
                 <TableHead>Artikel</TableHead>
-                <TableHead className="text-right">Količina</TableHead>
-                <TableHead>Enota</TableHead>
+                <TableHead className="text-center tabular-nums w-[90px]">{"Količina"}</TableHead>
+                <TableHead className="text-center tabular-nums w-[90px]">Razlika</TableHead>
+                <TableHead className="text-right w-[56px]">Imamo</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(workOrder.items ?? []).map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell className="font-medium">{item.name}</TableCell>
-                  <TableCell className="text-right">{item.quantity}</TableCell>
-                  <TableCell>{item.unit}</TableCell>
-                </TableRow>
-              ))}
+              {(workOrder.items ?? []).map((item) => {
+                const requiredQty = typeof item.quantity === "number" ? item.quantity : 0;
+                const executedQty = typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
+                const diff = executedQty - requiredQty;
+                const status = diff === 0 ? "ok" : diff < 0 ? "missing" : "extra";
+                const isEnough = diff >= 0;
+                const borderClass =
+                  status === "ok" ? "border-green-600" : status === "missing" ? "border-red-600" : "border-orange-500";
+                const fillClass =
+                  status === "ok" ? "bg-green-600" : status === "missing" ? "bg-transparent" : "bg-orange-500";
+                const displayDelta = diff > 0 ? `+${diff}` : `${diff}`;
+                return (
+                  <TableRow key={item.id}>
+                    <TableCell className="font-medium">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>{item.name}</span>
+                        {diff < 0 && (
+                          <Badge
+                            variant="destructive"
+                            className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-700"
+                          >
+                            <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                            Manjka {Math.abs(diff)}
+                          </Badge>
+                        )}
+                        {diff > 0 && (
+                          <Badge className="inline-flex items-center gap-1 rounded-md border border-orange-500/30 bg-orange-500/15 px-2 py-0.5 text-xs font-medium text-orange-700">
+                            Dodatno {diff}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center tabular-nums w-[90px]">{item.quantity}</TableCell>
+                    <TableCell className="text-center tabular-nums w-[90px]">
+                      <div className="flex items-center justify-center gap-1">
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="outline"
+                          className="h-7 w-7"
+                          onClick={() => {
+                            const nextExecuted = Math.max(0, executedQty - 1);
+                            void updateWorkOrderItemQty(item.id, nextExecuted, true);
+                          }}
+                          aria-label={"Zmanjšaj razliko"}
+                        >
+                          -
+                        </Button>
+                        <span className="min-w-[28px] text-center tabular-nums">{displayDelta}</span>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="outline"
+                          className="h-7 w-7"
+                          onClick={() => {
+                            const nextExecuted = executedQty + 1;
+                            void updateWorkOrderItemQty(item.id, nextExecuted, true);
+                          }}
+                          aria-label={"Povečaj razliko"}
+                        >
+                          +
+                        </Button>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right w-[56px] align-top">
+                      <label className="relative inline-flex items-center justify-center cursor-pointer p-1">
+                        <input
+                          type="checkbox"
+                          className="peer sr-only"
+                          aria-label="Imamo material"
+                          checked={isEnough}
+                          onChange={() => {
+                            void updateWorkOrderItemQty(item.id, requiredQty, true);
+                          }}
+                        />
+                        <span
+                          className={`inline-flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors ${
+                            isEnough ? fillClass : "bg-transparent"
+                          } ${borderClass} peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40`}
+                        >
+                          {isEnough && (
+                            <svg
+                              viewBox="0 0 20 20"
+                              aria-hidden="true"
+                              className="h-4 w-4 text-white"
+                              fill="currentColor"
+                            >
+                              <path d="M7.667 13.4 4.6 10.333l-1.2 1.2 4.267 4.267 8-8-1.2-1.2-6 6z" />
+                            </svg>
+                          )}
+                        </span>
+                      </label>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
@@ -909,24 +1373,9 @@ export function LogisticsPanel({ projectId, client, onWorkOrderUpdated }: Logist
             )}
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              {filteredWorkOrders.length > 0 ? (
-                <Select value={selectedWorkOrder?._id ?? ""} onValueChange={(id) => setSelectedWorkOrderId(id)}>
-                  <SelectTrigger className="w-[260px]">
-                    <SelectValue placeholder="Izberi delovni nalog" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {filteredWorkOrders.map((wo, index) => (
-                      <SelectItem key={wo._id} value={wo._id}>
-                        {wo.title || `Delovni nalog #${wo.sequence ?? index + 1}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <span className="text-sm text-muted-foreground">Delovni nalog še ni ustvarjen.</span>
-              )}
-            </div>
+            {filteredWorkOrders.length === 0 ? (
+              <span className="text-sm text-muted-foreground">Delovni nalog še ni ustvarjen.</span>
+            ) : null}
             {renderWorkOrder(selectedWorkOrder)}
           </CardContent>
         </Card>

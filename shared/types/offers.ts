@@ -12,6 +12,9 @@ export interface OfferLineItem {
   totalVat: number;
   totalGross: number;
   discountPercent?: number;
+  casovnaNorma?: number;
+  dobavitelj?: string;
+  naslovDobavitelja?: string;
 }
 
 export interface OfferVersion {

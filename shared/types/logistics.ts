@@ -8,6 +8,8 @@ export interface LogisticsMaterialItem {
   deliveredQty?: number;
   unit: string;
   note?: string;
+  dobavitelj?: string;
+  naslovDobavitelja?: string;
 }
 
 export type MaterialStatus =
@@ -42,6 +44,7 @@ export interface WorkOrderItem extends LogisticsMaterialItem {
   isExtra: boolean;
   itemNote?: string | null;
   isCompleted?: boolean;
+  casovnaNorma?: number;
 }
 
 export interface WorkLogEntry {
