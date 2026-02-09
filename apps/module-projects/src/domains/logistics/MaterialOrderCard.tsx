@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { PhaseRibbon, type PhaseRibbonStatus } from "../../components/PhaseRibbon";
 
 type MaterialLine = MaterialOrder["items"][number];
 type SupplierGroup = {
@@ -130,8 +131,10 @@ export function MaterialOrderCard({
     : `Material: Delno (${preparedCount}/${totalCount} pripravljeno)`;
   const stepIndexes = allItems.map((item) => MATERIAL_STEPS.indexOf(resolveStep(item.materialStep)));
   const minStepIndex = stepIndexes.length > 0 ? Math.min(...stepIndexes) : 0;
-  const currentStep = MATERIAL_STEPS[minStepIndex] ?? "Naročeno";
-  const nextStep = MATERIAL_STEPS[minStepIndex + 1] ?? null;
+  const maxStepIndex = MATERIAL_STEPS.length - 1;
+  const currentIndex = isFullyPrepared ? -1 : Math.min(Math.max(minStepIndex, 0), maxStepIndex);
+  const currentStep = currentIndex >= 0 ? MATERIAL_STEPS[currentIndex] : null;
+  const nextStep = currentIndex >= 0 ? MATERIAL_STEPS[currentIndex + 1] ?? null : null;
   const eligibleCount =
     nextStep === null
       ? 0
@@ -173,26 +176,21 @@ export function MaterialOrderCard({
           <span className="text-muted-foreground">Manjkajoče postavke: {missingItemsCount}</span>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        {MATERIAL_STEPS.map((step, index) => {
-          const reachedCount = stepIndexes.filter((value) => value >= index).length;
-          const isCompleted = totalCount > 0 && reachedCount === totalCount;
-          const isCurrent = !isCompleted && index === minStepIndex + 1;
-          const isPartial = !isCompleted && reachedCount > 0 && index <= minStepIndex + 1;
-          const className = isCompleted
-            ? "bg-green-600 text-white"
-            : isCurrent
-              ? "bg-primary text-primary-foreground"
-              : isPartial
-                ? "border border-orange-500 text-orange-700"
-                : "border border-muted-foreground/30 text-muted-foreground";
-          return (
-            <span key={step} className={`inline-flex items-center rounded-full px-2 py-1 ${className}`}>
-              {step}
-            </span>
-          );
+      <PhaseRibbon
+        steps={MATERIAL_STEPS.map((step, index) => {
+          const status: PhaseRibbonStatus =
+            currentIndex === -1
+              ? "done"
+              : index < currentIndex
+                ? "done"
+                : index === currentIndex
+                  ? "active"
+                  : "future";
+          return { key: step, label: step, status };
         })}
-      </div>
+        activeKey={currentStep ?? undefined}
+        variant="static"
+      />
       {groupedByDobavitelj.map((group) => (
         <div key={group.dobaviteljKey} className="space-y-2">
           <div className="space-y-1 text-sm">
