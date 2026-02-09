@@ -13,6 +13,13 @@ import { NewProjectDialog } from "./components/NewProjectDialog";
 import { mapProject } from "./domains/core/useProject";
 
 const API_PREFIX = "/api/projects";
+const VALID_TABS = ["items", "offers", "logistics", "execution", "closing"] as const;
+type WorkspaceTab = (typeof VALID_TABS)[number];
+
+function parseWorkspaceTab(value: string | null): WorkspaceTab | null {
+  if (!value) return null;
+  return (VALID_TABS as readonly string[]).includes(value) ? (value as WorkspaceTab) : null;
+}
 
 function toSummary(project: ProjectDetails): ProjectSummary {
   return {
@@ -143,6 +150,17 @@ export function ProjectsPage() {
     setCurrentView("workspace");
   };
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const projectId = params.get("projectId");
+    if (!projectId) return;
+    const tab = parseWorkspaceTab(params.get("tab"));
+    if (tab) {
+      setInitialWorkspaceTab(tab);
+    }
+    loadProjectDetails(projectId);
+  }, []);
+
   const handleSelectProject = (projectId: string) => {
     setInitialWorkspaceTab(null);
     loadProjectDetails(projectId);
@@ -153,6 +171,9 @@ export function ProjectsPage() {
     setSelectedProjectId(null);
     setProjectDetails(null);
     setInitialWorkspaceTab(null);
+    if (window.location.search) {
+      window.history.replaceState({ moduleId: "projects" }, "", "/projects");
+    }
   };
 
   const fetchCrmClients = useCallback(async () => {

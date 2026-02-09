@@ -1,5 +1,5 @@
 import React from 'react';
-import { FolderKanban, List, Settings, User, Users, Wallet } from 'lucide-react';
+import { FolderKanban, LayoutGrid, List, Settings, User, Users, Wallet } from 'lucide-react';
 import './CoreLayout.css';
 
 type ModuleNavItem = {
@@ -31,6 +31,7 @@ const iconMap: Record<string, React.ReactNode> = {
   users: <Users size={16} />,
   user: <User size={16} />,
   'folder-kanban': <FolderKanban size={16} />,
+  'layout-grid': <LayoutGrid size={16} />,
   list: <List size={16} />,
   wallet: <Wallet size={16} />,
   settings: <Settings size={16} />,

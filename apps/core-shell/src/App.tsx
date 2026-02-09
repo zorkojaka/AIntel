@@ -6,18 +6,21 @@ import { CenikPage } from '@aintel/module-cenik';
 import { SettingsPage, fetchSettings } from '@aintel/module-settings';
 import { FinancePage } from '@aintel/module-finance';
 import { EmployeesPage } from '@aintel/module-employees';
+import { DashboardPage } from '@aintel/module-dashboard';
 import { manifest as crmManifest } from '@aintel/module-crm';
 import { manifest as projectsManifest } from '@aintel/module-projects';
 import { manifest as cenikManifest } from '@aintel/module-cenik';
 import { manifest as financeManifest } from '@aintel/module-finance';
 import { manifest as settingsManifest } from '@aintel/module-settings';
 import { manifest as employeesManifest } from '@aintel/module-employees';
+import { manifest as dashboardManifest } from '@aintel/module-dashboard';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { LoginPage } from './auth/LoginPage';
 import { ResetRequestPage } from './auth/ResetRequestPage';
 import { ResetPasswordPage } from './auth/ResetPasswordPage';
 
 const modules = [
+  dashboardManifest,
   crmManifest,
   projectsManifest,
   cenikManifest,
@@ -34,6 +37,7 @@ function getModuleIdFromPath(pathname: string): ModuleId {
 }
 
 const moduleComponents: Record<ModuleId, React.ReactNode> = {
+  dashboard: <DashboardPage />,
   settings: <SettingsPage />,
   crm: <CRMPage />,
   projects: <ProjectsPage />,

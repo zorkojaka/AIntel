@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@aintel/module-crm": "*",
+    "@aintel/module-dashboard": "*",
     "@aintel/module-projects": "*",
     "@aintel/module-cenik": "*",
     "@aintel/module-settings": "*",
