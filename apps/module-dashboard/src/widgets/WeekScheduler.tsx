@@ -1,7 +1,7 @@
 ﻿import { useMemo, useState } from 'react';
 import { Button } from '@aintel/ui';
 import type { WorkOrderSummary } from '../types';
-import { navigateToProject } from './utils';
+import { navigateToProject, normalizeMaterialStatusLabel } from './utils';
 
 const START_HOUR = 6;
 const END_HOUR = 18;
@@ -264,7 +264,7 @@ export function WeekScheduler({ workOrders }: WeekSchedulerProps) {
                     const customerName = displayValue(item.customerName);
                     const projectLine = formatProjectLine(item.projectTitle, item.projectAddress);
                     const customerAddress = displayValue(item.customerAddress);
-                    const materialStatus = item.materialStatus ? item.materialStatus.trim() : '';
+                    const materialStatus = normalizeMaterialStatusLabel(item.materialStatus) ?? '';
                     const headerLabel = `${item.projectCode} – ${customerName}`;
                     const statusLabel = mapStatusLabel(item.status);
                     const statusTone = mapStatusTone(item.status);

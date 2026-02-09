@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import type { MaterialOrder, MaterialStatus } from "@aintel/shared/types/logistics";
+import type { MaterialOrder, MaterialStep } from "@aintel/shared/types/logistics";
 import type { Employee } from "@aintel/shared/types/employee";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "../../components/ui/button";
@@ -65,8 +65,7 @@ function groupMaterialLinesByDobavitelj(lines: MaterialLine[]): SupplierGroup[] 
 
 interface MaterialOrderCardProps {
   materialOrder: MaterialOrder | null;
-  nextStatus: MaterialStatus | null;
-  onAdvanceStatus: (status: MaterialStatus) => void;
+  onAdvanceStep?: (step: MaterialStep) => void;
   savingWorkOrder: boolean;
   employees: Employee[];
   assignedEmployeeIds: string[];
@@ -79,10 +78,30 @@ interface MaterialOrderCardProps {
   downloadingPdf: "PURCHASE_ORDER" | "DELIVERY_NOTE" | null;
 }
 
+const MATERIAL_STEPS: MaterialStep[] = ["Naročeno", "Za prevzem", "Prevzeto", "Pripravljeno"];
+
+function resolveStep(value?: string | null): MaterialStep {
+  if (value === "Za naročiti") {
+    return "Naročeno";
+  }
+  return MATERIAL_STEPS.includes(value as MaterialStep) ? (value as MaterialStep) : "Naročeno";
+}
+
+function isStepEligible(item: MaterialLine, targetStep: MaterialStep) {
+  if (targetStep === "Naročeno") return true;
+  if (targetStep === "Za prevzem") return true;
+  if (targetStep === "Prevzeto") {
+    const requiredQty = typeof item.quantity === "number" ? item.quantity : 0;
+    const deliveredQty = typeof item.deliveredQty === "number" ? item.deliveredQty : 0;
+    return deliveredQty >= requiredQty;
+  }
+  if (targetStep === "Pripravljeno") return true;
+  return false;
+}
+
 export function MaterialOrderCard({
   materialOrder,
-  nextStatus,
-  onAdvanceStatus,
+  onAdvanceStep,
   savingWorkOrder,
   employees,
   assignedEmployeeIds,
@@ -101,6 +120,25 @@ export function MaterialOrderCard({
   }
 
   const groupedByDobavitelj = groupMaterialLinesByDobavitelj(materialOrder.items ?? []);
+
+  const allItems = materialOrder.items ?? [];
+  const totalCount = allItems.length;
+  const preparedCount = allItems.filter((item) => resolveStep(item.materialStep) === "Pripravljeno").length;
+  const isFullyPrepared = totalCount > 0 && preparedCount === totalCount;
+  const summaryLabel = isFullyPrepared
+    ? "Material: Pripravljeno"
+    : `Material: Delno (${preparedCount}/${totalCount} pripravljeno)`;
+  const stepIndexes = allItems.map((item) => MATERIAL_STEPS.indexOf(resolveStep(item.materialStep)));
+  const minStepIndex = stepIndexes.length > 0 ? Math.min(...stepIndexes) : 0;
+  const currentStep = MATERIAL_STEPS[minStepIndex] ?? "Naročeno";
+  const nextStep = MATERIAL_STEPS[minStepIndex + 1] ?? null;
+  const eligibleCount =
+    nextStep === null
+      ? 0
+      : allItems.filter((item) => resolveStep(item.materialStep) === currentStep && isStepEligible(item, nextStep))
+          .length;
+  const nextDisabledReason =
+    nextStep === null ? "Material je že pripravljen." : eligibleCount === 0 ? "Ni postavk za napredovanje." : "";
 
   const missingItemsCount = (materialOrder.items ?? []).filter((item) => {
     const deliveredQty = typeof item.deliveredQty === "number" ? item.deliveredQty : 0;
@@ -129,21 +167,43 @@ export function MaterialOrderCard({
           )}
         </div>
       </div>
-      {missingItemsCount > 0 && (
-        <div className="text-sm text-muted-foreground">Manjkajoce postavke: {missingItemsCount}</div>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <span className="font-medium">{summaryLabel}</span>
+        {missingItemsCount > 0 && (
+          <span className="text-muted-foreground">Manjkajoče postavke: {missingItemsCount}</span>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        {MATERIAL_STEPS.map((step, index) => {
+          const reachedCount = stepIndexes.filter((value) => value >= index).length;
+          const isCompleted = totalCount > 0 && reachedCount === totalCount;
+          const isCurrent = !isCompleted && index === minStepIndex + 1;
+          const isPartial = !isCompleted && reachedCount > 0 && index <= minStepIndex + 1;
+          const className = isCompleted
+            ? "bg-green-600 text-white"
+            : isCurrent
+              ? "bg-primary text-primary-foreground"
+              : isPartial
+                ? "border border-orange-500 text-orange-700"
+                : "border border-muted-foreground/30 text-muted-foreground";
+          return (
+            <span key={step} className={`inline-flex items-center rounded-full px-2 py-1 ${className}`}>
+              {step}
+            </span>
+          );
+        })}
+      </div>
       {groupedByDobavitelj.map((group) => (
         <div key={group.dobaviteljKey} className="space-y-2">
           <div className="space-y-1 text-sm">
             <div className="font-medium">
               <span className="text-muted-foreground">Dobavitelj</span>: {group.dobaviteljLabel}
             </div>
-            <div className="text-muted-foreground">
-              Naslov dobavitelja:{" "}
-              {group.dobaviteljLabel === "MANJKA DOBAVITELJ"
-                ? "—"
-                : group.naslovDobavitelja || "—"}
-            </div>
+            {group.dobaviteljLabel !== "MANJKA DOBAVITELJ" &&
+            typeof group.naslovDobavitelja === "string" &&
+            group.naslovDobavitelja.trim().length > 0 ? (
+              <div className="text-muted-foreground">Naslov dobavitelja: {group.naslovDobavitelja}</div>
+            ) : null}
           </div>
           <div className="border rounded-[var(--radius-card)] bg-card overflow-hidden">
             <Table className="table-fixed w-full">
@@ -152,6 +212,7 @@ export function MaterialOrderCard({
                 <col style={{ width: "90px" }} />
                 <col style={{ width: "90px" }} />
                 <col style={{ width: "56px" }} />
+                <col style={{ width: "130px" }} />
               </colgroup>
               <TableHeader>
                 <TableRow>
@@ -159,6 +220,7 @@ export function MaterialOrderCard({
                   <TableHead className="text-center tabular-nums w-[90px]">{"Koli\u010dina"}</TableHead>
                   <TableHead className="text-center tabular-nums w-[90px]">Razlika</TableHead>
                   <TableHead className="text-right w-[56px]">Imamo</TableHead>
+                  <TableHead className="text-center w-[130px]">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -270,6 +332,11 @@ export function MaterialOrderCard({
                           </span>
                         </label>
                       </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="text-[11px]">
+                          {resolveStep(item.materialStep)}
+                        </Badge>
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -299,19 +366,19 @@ export function MaterialOrderCard({
             Prenesi dobavnico
           </Button>
         </div>
-        {nextStatus && (
+        {nextStep && onAdvanceStep && (
           <Button
-            onClick={() => onAdvanceStatus(nextStatus)}
-            disabled={savingWorkOrder}
-            title="Naprej"
-            aria-label="Naprej"
+            onClick={() => onAdvanceStep(nextStep)}
+            disabled={savingWorkOrder || eligibleCount === 0}
+            title={nextDisabledReason || "Naslednji korak"}
+            aria-label="Naslednji korak"
             className="px-5"
             style={{
               clipPath: "polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%)",
               paddingRight: "20px",
             }}
           >
-            {nextStatus}
+            Naslednji korak
           </Button>
         )}
       </div>
