@@ -6,6 +6,7 @@ import { applySettingsTheme, fetchSettings } from '@aintel/module-settings';
 import '@aintel/module-projects/src/globals.css';
 import '@aintel/module-crm/src/styles.css';
 import '@aintel/module-cenik/src/globals.css';
+import '@aintel/module-dashboard/src/styles.css';
 import '@aintel/module-employees/src/index.css';
 import './index.css';
 

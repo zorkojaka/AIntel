@@ -23,7 +23,7 @@ for (const file of walk(path.join(__dirname, '..', 'src'))) {
   const lines = content.split(/\r?\n/);
   lines.forEach((line, index) => {
     if (line.includes('\uFFFD')) {
-      issues.push({ file, line: index + 1, reason: 'replacement character (�) detected', snippet: line.trim() });
+      issues.push({ file, line: index + 1, reason: 'replacement character (U+FFFD) detected', snippet: line.trim() });
     }
     if (/[\u0096\u0097]/.test(line)) {
       issues.push({ file, line: index + 1, reason: 'control dash character (\\u0096/\\u0097) detected', snippet: line.trim() });
