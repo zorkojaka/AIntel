@@ -1,53 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Button, Card } from '@aintel/ui';
-import type { DashboardWidgetId, InstallerDashboardResponse } from './types';
 import { useDashboardLayout } from './hooks/useDashboardLayout';
 import { useInstallerDashboardData } from './hooks/useInstallerDashboardData';
+import { ALL_WIDGETS, getWidgetById } from './widgets/registry';
 
 const DEFAULT_AUTH = {
   userId: null as string | null,
   employeeId: null as string | null,
 };
 
-const widgetLabels: Record<DashboardWidgetId, string> = {
-  'upcoming-projects': 'Prihajajoči projekti (potrjena ponudba)',
-  'material-orders': 'Moja naročila za material',
-  'work-orders': 'Moji delovni nalogi',
-};
-
-function formatDate(value?: string | null) {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return value;
-  return date.toLocaleDateString('sl-SI');
-}
-
-function navigateToProject(projectId: string, tab?: string) {
-  const params = new URLSearchParams();
-  params.set('projectId', projectId);
-  if (tab) {
-    params.set('tab', tab);
-  }
-  window.location.assign(`/projects?${params.toString()}`);
-}
-
-function showMetaParts(parts: Array<string | null | undefined>) {
-  return parts.filter(Boolean).join(' • ');
-}
-
-function renderEmptyState(message: string) {
-  return <p className="dashboard-widget__empty">{message}</p>;
-}
-
-function renderError(message: string) {
-  return <p className="dashboard-widget__error">{message}</p>;
-}
-
 export function DashboardPage() {
   const [auth, setAuth] = useState(DEFAULT_AUTH);
   const [isEditing, setIsEditing] = useState(false);
   const { data, isLoading, error } = useInstallerDashboardData();
-  const { visibleWidgets, toggleWidget } = useDashboardLayout(auth.userId);
+  const { visibleWidgets, toggleWidget, reorderWidget } = useDashboardLayout(auth.userId, 'installer');
+  const [draggingWidgetId, setDraggingWidgetId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -81,125 +48,31 @@ export function DashboardPage() {
     };
   }, []);
 
-  const widgetList = useMemo(
-    () =>
-      (Object.keys(widgetLabels) as DashboardWidgetId[]).map((id) => ({
-        id,
-        label: widgetLabels[id],
-      })),
+  const availableWidgets = useMemo(
+    () => ALL_WIDGETS.filter((widget) => !widget.roles || widget.roles.includes('installer')),
     [],
   );
 
-  const renderUpcomingProjects = (payload: InstallerDashboardResponse) => {
-    if (isLoading) {
-      return renderEmptyState('Nalagam projekte...');
+  const handleDragStart = (widgetId: string, isSelected: boolean) => {
+    if (!isSelected) {
+      return;
     }
-    if (error) {
-      return renderError(error);
-    }
-    if (!payload.upcomingConfirmedProjects.length) {
-      return renderEmptyState('Ni potrjenih projektov.');
-    }
-
-    return (
-      <ul className="dashboard-widget__list">
-        {payload.upcomingConfirmedProjects.slice(0, 10).map((project) => (
-          <li key={project.id} className="dashboard-widget__item">
-            <div>
-              <div className="dashboard-widget__title">{project.code ?? project.id}</div>
-              <div className="dashboard-widget__meta">
-                {showMetaParts([project.customerName, project.customerAddress ?? undefined])}
-              </div>
-              <div className="dashboard-widget__meta">
-                {showMetaParts([
-                  project.confirmedOfferVersionLabel
-                    ? `Ponudba: ${project.confirmedOfferVersionLabel}`
-                    : project.confirmedOfferVersionId
-                      ? `Ponudba: ${project.confirmedOfferVersionId}`
-                      : 'Ponudba ni označena',
-                ])}
-              </div>
-              <div className="dashboard-widget__meta">
-                {showMetaParts([
-                  `Ustvarjeno: ${formatDate(project.createdAt)}`,
-                  `Posodobljeno: ${formatDate(project.updatedAt)}`,
-                ])}
-              </div>
-            </div>
-            <Button variant="ghost" onClick={() => navigateToProject(project.id)}>
-              Odpri projekt
-            </Button>
-          </li>
-        ))}
-      </ul>
-    );
+    setDraggingWidgetId(widgetId);
   };
 
-  const renderMaterialOrders = (payload: InstallerDashboardResponse) => {
-    if (isLoading) {
-      return renderEmptyState('Nalagam naročila...');
+  const handleDragOver = (event: React.DragEvent<HTMLLabelElement>, widgetId: string, isSelected: boolean) => {
+    if (!isSelected || draggingWidgetId === widgetId) {
+      return;
     }
-    if (error) {
-      return renderError(error);
-    }
-    if (!payload.myMaterialOrders.length) {
-      return renderEmptyState('Ni materialnih naročil.');
-    }
-
-    return (
-      <ul className="dashboard-widget__list">
-        {payload.myMaterialOrders.slice(0, 10).map((order) => (
-          <li key={order.id} className="dashboard-widget__item">
-            <div>
-              <div className="dashboard-widget__title">{order.projectCode}</div>
-              <div className="dashboard-widget__meta">
-                {showMetaParts([`Status: ${order.materialStatus}`, `Postavke: ${order.itemCount}`])}
-              </div>
-              <div className="dashboard-widget__meta">{`Ustvarjeno: ${formatDate(order.createdAt)}`}</div>
-            </div>
-            <Button variant="ghost" onClick={() => navigateToProject(order.projectId, 'logistics')}>
-              Odpri logistiko
-            </Button>
-          </li>
-        ))}
-      </ul>
-    );
+    event.preventDefault();
   };
 
-  const renderWorkOrders = (payload: InstallerDashboardResponse) => {
-    if (isLoading) {
-      return renderEmptyState('Nalagam delovne naloge...');
+  const handleDrop = (widgetId: string, isSelected: boolean) => {
+    if (!isSelected || !draggingWidgetId || draggingWidgetId === widgetId) {
+      return;
     }
-    if (error) {
-      return renderError(error);
-    }
-    if (!payload.myWorkOrders.length) {
-      return renderEmptyState('Ni delovnih nalogov.');
-    }
-
-    return (
-      <ul className="dashboard-widget__list">
-        {payload.myWorkOrders.slice(0, 10).map((order) => (
-          <li key={order.id} className="dashboard-widget__item">
-            <div>
-              <div className="dashboard-widget__title">{order.projectCode}</div>
-              <div className="dashboard-widget__meta">
-                {showMetaParts([
-                  order.scheduledAt ? `Termin: ${formatDate(order.scheduledAt)}` : 'Termin ni določen',
-                  `Status: ${order.status}`,
-                ])}
-              </div>
-              <div className="dashboard-widget__meta">
-                {showMetaParts([`Postavke: ${order.itemCount}`, `Ustvarjeno: ${formatDate(order.createdAt)}`])}
-              </div>
-            </div>
-            <Button variant="ghost" onClick={() => navigateToProject(order.projectId, 'execution')}>
-              Odpri delovni nalog
-            </Button>
-          </li>
-        ))}
-      </ul>
-    );
+    reorderWidget(draggingWidgetId, widgetId);
+    setDraggingWidgetId(null);
   };
 
   return (
@@ -210,7 +83,7 @@ export function DashboardPage() {
           <p>Dobrodošli na domači strani monterja.</p>
         </div>
         <Button variant="ghost" onClick={() => setIsEditing((prev) => !prev)}>
-          {isEditing ? 'Zapri' : 'Uredi'}
+          {isEditing ? 'Zapri' : 'Dodaj widget'}
         </Button>
       </div>
 
@@ -218,51 +91,46 @@ export function DashboardPage() {
         <div className="dashboard-editor">
           <p>Izberi pripomočke za prikaz:</p>
           <div className="dashboard-editor__list">
-            {widgetList.map((widget) => (
-              <label key={widget.id} className="dashboard-editor__item">
-                <input
-                  type="checkbox"
-                  checked={visibleWidgets.includes(widget.id)}
-                  onChange={() => toggleWidget(widget.id)}
-                />
-                <span>{widget.label}</span>
-              </label>
-            ))}
+            {availableWidgets.map((widget) => {
+              const isSelected = visibleWidgets.includes(widget.id);
+              return (
+                <label
+                  key={widget.id}
+                  className="dashboard-editor__item"
+                  draggable={isSelected}
+                  onDragStart={() => handleDragStart(widget.id, isSelected)}
+                  onDragOver={(event) => handleDragOver(event, widget.id, isSelected)}
+                  onDrop={() => handleDrop(widget.id, isSelected)}
+                  onDragEnd={() => setDraggingWidgetId(null)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleWidget(widget.id)}
+                  />
+                  <span>{widget.title}</span>
+                </label>
+              );
+            })}
           </div>
         </div>
       ) : null}
 
       <div className="dashboard-grid">
-        {visibleWidgets.includes('upcoming-projects') ? (
-          <Card title={widgetLabels['upcoming-projects']}>
-            {renderUpcomingProjects(data)}
-            <div className="dashboard-widget__footer">
-              <Button variant="ghost" onClick={() => window.location.assign('/projects')}>
-                Pokaži vse
-              </Button>
+        {visibleWidgets.map((widgetId) => {
+          const widget = getWidgetById(widgetId);
+          if (!widget) {
+            return null;
+          }
+          const sizeClass = widget.size ? `dashboard-grid__item--${widget.size}` : '';
+          return (
+            <div key={widget.id} className={['dashboard-grid__item', sizeClass].filter(Boolean).join(' ')}>
+              <Card title={widget.title}>
+                {widget.render({ data, isLoading, error, employeeId: auth.employeeId, userId: auth.userId })}
+              </Card>
             </div>
-          </Card>
-        ) : null}
-        {visibleWidgets.includes('material-orders') ? (
-          <Card title={widgetLabels['material-orders']}>
-            {renderMaterialOrders(data)}
-            <div className="dashboard-widget__footer">
-              <Button variant="ghost" onClick={() => window.location.assign('/projects')}>
-                Pokaži vse
-              </Button>
-            </div>
-          </Card>
-        ) : null}
-        {visibleWidgets.includes('work-orders') ? (
-          <Card title={widgetLabels['work-orders']}>
-            {renderWorkOrders(data)}
-            <div className="dashboard-widget__footer">
-              <Button variant="ghost" onClick={() => window.location.assign('/projects')}>
-                Pokaži vse
-              </Button>
-            </div>
-          </Card>
-        ) : null}
+          );
+        })}
       </div>
 
       {!auth.employeeId ? (

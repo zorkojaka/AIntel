@@ -1,4 +1,26 @@
-export type DashboardWidgetId = 'upcoming-projects' | 'material-orders' | 'work-orders';
+import type { ReactNode } from 'react';
+
+export type DashboardWidgetId =
+  | 'agenda'
+  | 'project-summary'
+  | 'upcoming-projects'
+  | 'material-orders'
+  | 'work-orders';
+export type DashboardWidgetSize = 'sm' | 'md' | 'lg';
+
+export interface DashboardWidgetDefinition {
+  id: DashboardWidgetId;
+  title: string;
+  description?: string;
+  roles?: string[];
+  defaultEnabledForRoles?: string[];
+  size?: DashboardWidgetSize;
+  render: (props: InstallerDashboardWidgetProps) => ReactNode;
+}
+
+export interface DashboardLayout {
+  widgetIds: DashboardWidgetId[];
+}
 
 export interface UpcomingProjectSummary {
   id: string;
@@ -25,6 +47,13 @@ export interface WorkOrderSummary {
   projectId: string;
   projectCode: string;
   scheduledAt: string | null;
+  title?: string | null;
+  projectTitle?: string | null;
+  projectAddress?: string | null;
+  customerName?: string | null;
+  customerAddress?: string | null;
+  materialStatus?: string | null;
+  casovnaNorma: number;
   status: string;
   itemCount: number;
   createdAt: string;
@@ -34,4 +63,12 @@ export interface InstallerDashboardResponse {
   upcomingConfirmedProjects: UpcomingProjectSummary[];
   myMaterialOrders: MaterialOrderSummary[];
   myWorkOrders: WorkOrderSummary[];
+}
+
+export interface InstallerDashboardWidgetProps {
+  data: InstallerDashboardResponse;
+  isLoading: boolean;
+  error: string | null;
+  employeeId: string | null;
+  userId: string | null;
 }

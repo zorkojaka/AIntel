@@ -30,6 +30,13 @@ type WorkOrderSummary = {
   projectId: string;
   projectCode: string;
   scheduledAt: string | null;
+  title?: string | null;
+  projectTitle?: string | null;
+  projectAddress?: string | null;
+  customerName?: string | null;
+  customerAddress?: string | null;
+  materialStatus?: string | null;
+  casovnaNorma: number;
   status: string;
   itemCount: number;
   createdAt: string;
@@ -119,9 +126,36 @@ export async function getInstallerDashboard(req: Request, res: Response) {
   );
 
   const projects = projectIds.length
-    ? await ProjectModel.find({ id: { $in: projectIds } }).select({ id: 1, code: 1 }).lean()
+    ? await ProjectModel.find({ id: { $in: projectIds } })
+        .select({ id: 1, code: 1, title: 1, customer: 1 })
+        .lean()
     : [];
   const projectLookup = buildProjectLookup(projects.map((project) => ({ id: project.id, code: project.code })));
+  const projectDetailsLookup = new Map<
+    string,
+    { title: string | null; customerName: string | null; customerAddress: string | null }
+  >(
+    projects.map((project) => [
+      project.id,
+      {
+        title: (project as any).title ?? null,
+        customerName: (project as any).customer?.name ?? null,
+        customerAddress: (project as any).customer?.address ?? null,
+      },
+    ])
+  );
+
+  const materialStatusByProject = new Map<string, { status: string; createdAt: number }>();
+  materialOrders.forEach((order) => {
+    const createdAt = (order as any).createdAt ? new Date((order as any).createdAt).valueOf() : 0;
+    const existing = materialStatusByProject.get(order.projectId);
+    if (!existing || createdAt >= existing.createdAt) {
+      materialStatusByProject.set(order.projectId, {
+        status: order.materialStatus,
+        createdAt,
+      });
+    }
+  });
 
   const myMaterialOrders: MaterialOrderSummary[] = materialOrders.map((order) => ({
     id: String(order._id),
@@ -137,6 +171,18 @@ export async function getInstallerDashboard(req: Request, res: Response) {
     projectId: order.projectId,
     projectCode: projectLookup.get(order.projectId)?.code ?? order.projectId,
     scheduledAt: order.scheduledAt ?? null,
+    title: order.title ?? null,
+    projectTitle: projectDetailsLookup.get(order.projectId)?.title ?? null,
+    projectAddress: projectDetailsLookup.get(order.projectId)?.customerAddress ?? null,
+    customerName: projectDetailsLookup.get(order.projectId)?.customerName ?? null,
+    customerAddress: projectDetailsLookup.get(order.projectId)?.customerAddress ?? null,
+    materialStatus: materialStatusByProject.get(order.projectId)?.status ?? null,
+    casovnaNorma: Array.isArray(order.items)
+      ? order.items.reduce((sum, item) => {
+          const value = (item as any).casovnaNorma;
+          return typeof value === 'number' && Number.isFinite(value) ? sum + value : sum;
+        }, 0)
+      : 0,
     status: order.status,
     itemCount: order.items?.length ?? 0,
     createdAt: formatDate((order as any).createdAt),

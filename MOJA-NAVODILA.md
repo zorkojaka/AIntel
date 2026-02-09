@@ -61,11 +61,12 @@ pnpm install
 pnpm --filter aintel-backend build
 pnpm --filter @aintel/core-shell build
 pnpm --filter @aintel/module-crm build
-pnppnpm --filter @aintel/core-shell devm --filter @aintel/module-projects build
+pnpm --filter @aintel/module-projects build
 pnpm --filter @aintel/module-cenik build
 pnpm --filter @aintel/module-settings build
 pnpm --filter @aintel/module-employees build
-
+pnpm --filter @aintel/module-dashboard build
+pnpm --filter @aintel/core-shell dev
 
 
 ### run in terminal /BACKEND da se naložijo iz gita aa_api_produktion.json 
