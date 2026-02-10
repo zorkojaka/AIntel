@@ -500,6 +500,7 @@ export async function deleteOfferVersion(req: Request, res: Response, next: Next
 export async function exportOfferPdf(req: Request, res: Response) {
   const { projectId, offerVersionId } = req.params;
   const modeParam = typeof req.query.mode === 'string' ? req.query.mode.toLowerCase() : 'offer';
+  const variantParam = typeof req.query.variant === 'string' ? req.query.variant.toLowerCase() : '';
   const mode: 'offer' | 'project' | 'both' =
     modeParam === 'project' || modeParam === 'both' ? (modeParam as 'project' | 'both') : 'offer';
   const includeOffer = mode === 'offer' || mode === 'both';
@@ -516,6 +517,16 @@ export async function exportOfferPdf(req: Request, res: Response) {
   offer.sentByUserId = actorId ?? offer.sentByUserId ?? null;
   offer.sentVia = 'email';
   await offer.save();
+
+  if (variantParam === 'descriptions') {
+    try {
+      await renderOfferDescriptionsPdf(res, offer);
+    } catch (error) {
+      console.error('Descriptions PDF failed', error);
+      res.fail('Izvoz dokumenta ni uspel. Poskusite znova.', 500);
+    }
+    return;
+  }
 
   if (docType !== 'OFFER' && includeProject) {
     return res.fail('Ta dokument ne podpira kombiniranega izvoza.', 400);
@@ -639,6 +650,13 @@ interface ProjectEntry {
   imageBuffer?: Buffer | null;
 }
 
+interface DescriptionEntry {
+  title: string;
+  description?: string;
+  imageUrl?: string;
+  imageBuffer?: Buffer | null;
+}
+
 async function buildProjectEntries(offer: OfferVersion): Promise<ProjectEntry[]> {
   const items = Array.isArray(offer.items) ? offer.items : [];
   const uniqueIds = Array.from(
@@ -681,6 +699,45 @@ async function buildProjectEntries(offer: OfferVersion): Promise<ProjectEntry[]>
   return entries;
 }
 
+async function buildDescriptionEntries(offer: OfferVersion): Promise<DescriptionEntry[]> {
+  const items = Array.isArray(offer.items) ? offer.items : [];
+  const uniqueIds = Array.from(
+    new Set(
+      items
+        .map((item) => (item.productId ? String(item.productId) : null))
+        .filter((value): value is string => !!value)
+    )
+  );
+
+  let productMap = new Map<string, any>();
+  if (uniqueIds.length > 0) {
+    const products = await ProductModel.find({ _id: { $in: uniqueIds } }).lean();
+    productMap = new Map(products.map((product) => [product._id.toString(), product]));
+  }
+
+  const entries: DescriptionEntry[] = [];
+
+  for (const item of items) {
+    const productId = item.productId ? String(item.productId) : null;
+    const product = productId ? productMap.get(productId) : null;
+    const title = product?.ime || item.name;
+    const description = sanitizeDescription(product?.dolgOpis || '');
+    const imageUrl = typeof product?.povezavaDoSlike === 'string' ? product.povezavaDoSlike.trim() : '';
+    const hasImage = !!imageUrl;
+    const hasDesc = !!description;
+    if (!hasImage && !hasDesc) {
+      continue;
+    }
+    entries.push({
+      title,
+      description: hasDesc ? description : undefined,
+      imageUrl: hasImage ? imageUrl : undefined,
+    });
+  }
+
+  return entries;
+}
+
 async function appendProjectSection(doc: PDFDocumentInstance, entries: ProjectEntry[]) {
   const processed = await Promise.all(
     entries.map(async (entry) => {
@@ -716,6 +773,71 @@ async function appendProjectSection(doc: PDFDocumentInstance, entries: ProjectEn
     if (index < processed.length - 1) {
       doc.moveDown(0.5);
     }
+  });
+}
+
+async function renderOfferDescriptionsPdf(res: Response, offer: OfferVersion) {
+  const doc = new PDFDocument({ size: 'A4', margin: 50 });
+  const chunks: Buffer[] = [];
+  doc.on('data', (chunk: unknown) => chunks.push(chunk as Buffer));
+  doc.on('end', () => {
+    const pdf = Buffer.concat(chunks);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="product-descriptions-${offer._id}.pdf"`);
+    res.send(pdf);
+  });
+
+  (async () => {
+    const entries = await buildDescriptionEntries(offer);
+    const processed = await Promise.all(
+      entries.map(async (entry) => {
+        if (entry.imageUrl) {
+          entry.imageBuffer = await downloadImageBuffer(entry.imageUrl);
+        }
+        return entry;
+      })
+    );
+
+    doc.fontSize(18).text('Produktni opisi', { align: 'left' });
+    doc.moveDown();
+
+    const usableWidth =
+      doc.page.width - (doc.page.margins?.left ?? 72) - (doc.page.margins?.right ?? 72);
+
+    let rendered = 0;
+
+    processed.forEach((entry) => {
+      const hasImage = !!entry.imageBuffer;
+      const hasDesc = !!entry.description;
+      if (!hasImage && !hasDesc) {
+        return;
+      }
+      ensureSpace(doc, 200);
+      doc.fontSize(14).text(entry.title, { align: 'left' });
+      doc.moveDown(0.3);
+      if (entry.imageBuffer) {
+        doc.image(entry.imageBuffer, {
+          fit: [Math.min(usableWidth, 320), 220],
+        });
+        doc.moveDown(0.3);
+      }
+      if (entry.description) {
+        doc.fontSize(11).text(entry.description, { align: 'left' });
+        doc.moveDown(0.5);
+      } else {
+        doc.moveDown(0.5);
+      }
+      rendered += 1;
+    });
+
+    if (rendered === 0) {
+      doc.fontSize(12).text('Ni produktnih opisov za izbrane postavke.', { align: 'left' });
+    }
+
+    doc.end();
+  })().catch((error) => {
+    console.error('Offer descriptions PDF failed', error);
+    doc.end();
   });
 }
 
