@@ -65,6 +65,10 @@ const baseStyles = `
   .page { width: 794px; min-height: 1122px; margin: 0 auto; background: #fff; padding: 48px; display:flex; flex-direction:column; }
   h1, h2, h3, h4 { margin: 0; }
   .muted { color: #6b7280; }
+  .product { page-break-inside: avoid; break-inside: avoid; margin: 0 0 18px 0; }
+  .product h2 { margin: 0 0 6px 0; font-size: 16px; }
+  .desc { white-space: pre-wrap; line-height: 1.35; font-size: 11px; margin-top: 6px; }
+  .img { max-height: 160px; max-width: 220px; object-fit: contain; display: block; margin-top: 6px; }
   table { width: 100%; border-collapse: collapse; page-break-inside:auto; }
   thead { display: table-header-group; }
   tfoot { display: table-footer-group; }
@@ -649,4 +653,41 @@ const DOC_RENDERERS: Record<DocumentNumberingKind, (context: DocumentPreviewCont
 export function renderDocumentHtml(context: DocumentPreviewContext) {
   const renderer = DOC_RENDERERS[context.docType] ?? renderOfferPdf;
   return renderer(context);
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export type ProductDescriptionEntry = {
+  title: string;
+  description?: string;
+  imageUrl?: string;
+};
+
+export function renderProductDescriptionsHtml(entries: ProductDescriptionEntry[]) {
+  const content = entries.length
+    ? entries
+        .map((entry) => {
+          const title = escapeHtml(entry.title);
+          const description = entry.description ? escapeHtml(entry.description) : '';
+          const image = entry.imageUrl ? `<img class="img" src="${entry.imageUrl}" alt="" />` : '';
+          const descBlock = description ? `<div class="desc">${description}</div>` : '';
+          return `<section class="product">
+              <h2>${title}</h2>
+              ${image}
+              ${descBlock}
+            </section>`;
+        })
+        .join('')
+    : `<section class="product">
+        <h2>Ni produktnih opisov za izbrane postavke.</h2>
+      </section>`;
+
+  return wrapDocument('Produktni opisi', `<div>${content}</div>`);
 }

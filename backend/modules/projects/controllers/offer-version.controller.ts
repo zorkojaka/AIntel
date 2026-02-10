@@ -8,6 +8,7 @@ import { OfferVersionModel } from '../schemas/offer-version';
 import { ProductModel } from '../../cenik/product.model';
 import { ProjectModel } from '../schemas/project';
 import { renderHtmlToPdf } from '../services/html-pdf.service';
+import { renderProductDescriptionsHtml, type ProductDescriptionEntry } from '../services/document-renderers';
 import { generateOfferDocumentPdf } from '../services/offer-pdf-preview.service';
 import { generateOfferDocumentNumber, type DocumentNumberingKind } from '../services/document-numbering.service';
 import { resolveActorId } from '../../../utils/tenant';
@@ -650,13 +651,6 @@ interface ProjectEntry {
   imageBuffer?: Buffer | null;
 }
 
-interface DescriptionEntry {
-  title: string;
-  description?: string;
-  imageUrl?: string;
-  imageBuffer?: Buffer | null;
-}
-
 async function buildProjectEntries(offer: OfferVersion): Promise<ProjectEntry[]> {
   const items = Array.isArray(offer.items) ? offer.items : [];
   const uniqueIds = Array.from(
@@ -699,7 +693,23 @@ async function buildProjectEntries(offer: OfferVersion): Promise<ProjectEntry[]>
   return entries;
 }
 
-async function buildDescriptionEntries(offer: OfferVersion): Promise<DescriptionEntry[]> {
+function sanitizeDescriptionForHtml(value: string) {
+  const withoutControls = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+  const withoutTags = withoutControls.replace(/<[^>]+>/g, '');
+  const normalized = withoutTags.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter((line) => line.length > 0);
+  let result = lines.join('\n').trim();
+  const limit = 1800;
+  if (result.length > limit) {
+    result = `${result.slice(0, limit).trim()}…`;
+  }
+  return result;
+}
+
+async function buildDescriptionEntries(offer: OfferVersion): Promise<ProductDescriptionEntry[]> {
   const items = Array.isArray(offer.items) ? offer.items : [];
   const uniqueIds = Array.from(
     new Set(
@@ -715,23 +725,32 @@ async function buildDescriptionEntries(offer: OfferVersion): Promise<Description
     productMap = new Map(products.map((product) => [product._id.toString(), product]));
   }
 
-  const entries: DescriptionEntry[] = [];
+  const entries: ProductDescriptionEntry[] = [];
 
   for (const item of items) {
     const productId = item.productId ? String(item.productId) : null;
     const product = productId ? productMap.get(productId) : null;
     const title = product?.ime || item.name;
-    const description = sanitizeDescription(product?.dolgOpis || '');
+    const description = sanitizeDescriptionForHtml(String(product?.dolgOpis ?? ''));
     const imageUrl = typeof product?.povezavaDoSlike === 'string' ? product.povezavaDoSlike.trim() : '';
     const hasImage = !!imageUrl;
     const hasDesc = !!description;
     if (!hasImage && !hasDesc) {
       continue;
     }
+    let imageDataUrl: string | undefined;
+    if (hasImage) {
+      imageDataUrl = await fetchImageDataUrl(imageUrl);
+    }
+    const resolvedHasImage = !!imageDataUrl;
+    const resolvedHasDesc = !!description;
+    if (!resolvedHasImage && !resolvedHasDesc) {
+      continue;
+    }
     entries.push({
       title,
-      description: hasDesc ? description : undefined,
-      imageUrl: hasImage ? imageUrl : undefined,
+      description: resolvedHasDesc ? description : undefined,
+      imageUrl: resolvedHasImage ? imageDataUrl : undefined,
     });
   }
 
@@ -777,73 +796,44 @@ async function appendProjectSection(doc: PDFDocumentInstance, entries: ProjectEn
 }
 
 async function renderOfferDescriptionsPdf(res: Response, offer: OfferVersion) {
-  const doc = new PDFDocument({ size: 'A4', margin: 50 });
-  const chunks: Buffer[] = [];
-  doc.on('data', (chunk: unknown) => chunks.push(chunk as Buffer));
-  doc.on('end', () => {
-    const pdf = Buffer.concat(chunks);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="product-descriptions-${offer._id}.pdf"`);
-    res.send(pdf);
-  });
-
-  (async () => {
-    const entries = await buildDescriptionEntries(offer);
-    const processed = await Promise.all(
-      entries.map(async (entry) => {
-        if (entry.imageUrl) {
-          entry.imageBuffer = await downloadImageBuffer(entry.imageUrl);
-        }
-        return entry;
-      })
-    );
-
-    doc.fontSize(18).text('Produktni opisi', { align: 'left' });
-    doc.moveDown();
-
-    const usableWidth =
-      doc.page.width - (doc.page.margins?.left ?? 72) - (doc.page.margins?.right ?? 72);
-
-    let rendered = 0;
-
-    processed.forEach((entry) => {
-      const hasImage = !!entry.imageBuffer;
-      const hasDesc = !!entry.description;
-      if (!hasImage && !hasDesc) {
-        return;
-      }
-      ensureSpace(doc, 200);
-      doc.fontSize(14).text(entry.title, { align: 'left' });
-      doc.moveDown(0.3);
-      if (entry.imageBuffer) {
-        doc.image(entry.imageBuffer, {
-          fit: [Math.min(usableWidth, 320), 220],
-        });
-        doc.moveDown(0.3);
-      }
-      if (entry.description) {
-        doc.fontSize(11).text(entry.description, { align: 'left' });
-        doc.moveDown(0.5);
-      } else {
-        doc.moveDown(0.5);
-      }
-      rendered += 1;
-    });
-
-    if (rendered === 0) {
-      doc.fontSize(12).text('Ni produktnih opisov za izbrane postavke.', { align: 'left' });
-    }
-
-    doc.end();
-  })().catch((error) => {
-    console.error('Offer descriptions PDF failed', error);
-    doc.end();
-  });
+  const entries = await buildDescriptionEntries(offer);
+  const html = renderProductDescriptionsHtml(entries);
+  const buffer = await renderHtmlToPdf(html);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="product-descriptions-${offer._id}.pdf"`);
+  res.end(buffer);
 }
 
 function sanitizeDescription(value: string) {
   if (!value) return '';
   return value.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+async function fetchImageDataUrl(url: string): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    try {
+      const client = url.startsWith('https') ? https : http;
+      client
+        .get(url, (response) => {
+          if (!response.statusCode || response.statusCode >= 400) {
+            response.resume();
+            resolve(undefined);
+            return;
+          }
+          const data: Buffer[] = [];
+          response.on('data', (chunk) => data.push(chunk as Buffer));
+          response.on('end', () => {
+            const buffer = Buffer.concat(data);
+            const contentType = response.headers['content-type'] ?? 'image/jpeg';
+            const base64 = buffer.toString('base64');
+            resolve(`data:${contentType};base64,${base64}`);
+          });
+        })
+        .on('error', () => resolve(undefined));
+    } catch {
+      resolve(undefined);
+    }
+  });
 }
 
 async function downloadImageBuffer(url: string): Promise<Buffer | null> {
