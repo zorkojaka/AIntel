@@ -65,10 +65,6 @@ const baseStyles = `
   .page { width: 794px; min-height: 1122px; margin: 0 auto; background: #fff; padding: 48px; display:flex; flex-direction:column; }
   h1, h2, h3, h4 { margin: 0; }
   .muted { color: #6b7280; }
-  .product { page-break-inside: avoid; break-inside: avoid; margin: 0 0 18px 0; }
-  .product h2 { margin: 0 0 6px 0; font-size: 16px; }
-  .desc { white-space: pre-wrap; line-height: 1.35; font-size: 11px; margin-top: 6px; }
-  .img { max-height: 160px; max-width: 220px; object-fit: contain; display: block; margin-top: 6px; }
   table { width: 100%; border-collapse: collapse; page-break-inside:auto; }
   thead { display: table-header-group; }
   tfoot { display: table-footer-group; }
@@ -119,12 +115,12 @@ function formatCurrency(value?: number) {
   return currencyFormatter.format(Number(value ?? 0));
 }
 
-function wrapDocument(title: string, body: string) {
+function wrapDocument(title: string, body: string, extraStyles = '') {
   return `<!doctype html>
   <html lang="sl">
     <head>
       <meta charset="UTF-8" />
-      <style>${baseStyles}</style>
+      <style>${baseStyles}${extraStyles}</style>
       <title>${title}</title>
     </head>
     <body>
@@ -671,23 +667,52 @@ export type ProductDescriptionEntry = {
 };
 
 export function renderProductDescriptionsHtml(entries: ProductDescriptionEntry[]) {
+  const extraStyles = `
+    @page { size: A4; margin: 22mm 18mm; }
+    body { font-family: Arial, sans-serif; color: #111; }
+    .product { margin: 0 0 18px 0; break-inside: avoid; page-break-inside: avoid; }
+    .title { margin: 0 0 10px 0; font-size: 18px; font-weight: 700; }
+    .row { display: flex; gap: 14px; align-items: flex-start; }
+    .col.image { flex: 0 0 38%; }
+    .col.desc { flex: 1 1 62%; }
+    .col.image img { width: 100%; max-height: 210px; object-fit: contain; display: block; }
+    .col.desc { white-space: pre-wrap; line-height: 1.35; font-size: 11px; }
+    .product.noImage .row { display: block; }
+    .product.noImage .col.desc { font-size: 11px; }
+    .product.noDesc .row { display: block; }
+    .product.noDesc .col.image { width: 45%; }
+  `;
+
   const content = entries.length
     ? entries
         .map((entry) => {
           const title = escapeHtml(entry.title);
           const description = entry.description ? escapeHtml(entry.description) : '';
-          const image = entry.imageUrl ? `<img class="img" src="${entry.imageUrl}" alt="" />` : '';
-          const descBlock = description ? `<div class="desc">${description}</div>` : '';
-          return `<section class="product">
-              <h2>${title}</h2>
-              ${image}
-              ${descBlock}
+          const hasImage = !!entry.imageUrl;
+          const hasDesc = !!description;
+          const classes = [
+            'product',
+            hasImage ? 'hasImage' : 'noImage',
+            hasDesc ? 'hasDesc' : 'noDesc',
+          ].join(' ');
+          const imageBlock = hasImage
+            ? `<div class="col image"><img src="${entry.imageUrl}" alt="" /></div>`
+            : '';
+          const descBlock = hasDesc
+            ? `<div class="col desc">${description}</div>`
+            : '';
+          return `<section class="${classes}">
+              <h2 class="title">${title}</h2>
+              <div class="row">
+                ${imageBlock}
+                ${descBlock}
+              </div>
             </section>`;
         })
         .join('')
     : `<section class="product">
-        <h2>Ni produktnih opisov za izbrane postavke.</h2>
+        <h2 class="title">Ni produktnih opisov za izbrane postavke.</h2>
       </section>`;
 
-  return wrapDocument('Produktni opisi', `<div>${content}</div>`);
+  return wrapDocument('Produktni opisi', `<div>${content}</div>`, extraStyles);
 }
