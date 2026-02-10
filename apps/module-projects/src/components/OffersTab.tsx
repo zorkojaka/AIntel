@@ -101,7 +101,7 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [vatAmount, setVatAmount] = useState<number>(0);
 
   const [saving, setSaving] = useState(false);
-  const [downloadingMode, setDownloadingMode] = useState<"offer" | "project" | "both" | "descriptions" | null>(null);
+  const [downloadingMode, setDownloadingMode] = useState<"offer" | "both" | "descriptions" | null>(null);
   const [sending, setSending] = useState(false);
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -742,7 +742,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     }
   };
 
-  const handleExportPdf = async (mode: "offer" | "project" | "both") => {
+  const handleExportPdf = async (mode: "offer" | "both") => {
     setDownloadingMode(mode);
     try {
       const saved = await ensureSavedOffer();
@@ -751,7 +751,6 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       const details = await ensureProjectDetails();
       const labelMap = {
         offer: "Ponudba",
-        project: "Projekt",
         both: "Ponudba+Projekt",
       } as const;
       const filename = buildPdfFilename(details, projectId, labelMap[mode]);
@@ -1233,19 +1232,11 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         <div className="flex items-center gap-2 flex-nowrap">
           <Button
             variant="outline"
-            onClick={() => handleExportPdf("project")}
-            disabled={isDownloading}
-          >
-            {downloadingMode === "project" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Prenesi projekt
-          </Button>
-          <Button
-            variant="outline"
             onClick={handleExportDescriptionsPdf}
             disabled={isDownloading}
           >
             {downloadingMode === "descriptions" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Produktni opisi (PDF)
+            Prenesi opise
           </Button>
           <Button
             variant="outline"
