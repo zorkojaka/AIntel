@@ -31,6 +31,30 @@ type ApiEnvelope<T> = {
   error: string | null;
 };
 
+type ImportSource = 'aa_api' | 'services_sheet';
+
+type ImportReport = {
+  source: string;
+  total: number;
+  created: number;
+  updated: number;
+  reactivated: number;
+  wouldDeactivate: number;
+  deactivated: number;
+};
+
+type ImportError = {
+  index: number;
+  rowId: string;
+  field: string;
+  reason: string;
+};
+
+type ImportResult = {
+  report: ImportReport | null;
+  errors: ImportError[];
+};
+
 type Category = {
   _id: string;
   name: string;
@@ -114,6 +138,11 @@ export const CenikPage: React.FC = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusBanner | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [importSource, setImportSource] = useState<ImportSource>('aa_api');
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -266,8 +295,48 @@ export const CenikPage: React.FC = () => {
     setEditingProduct(null);
   };
 
+  const openImportModal = () => {
+    setImportSource('aa_api');
+    setImportResult(null);
+    setImportError(null);
+    setIsImportOpen(true);
+  };
+
+  const closeImportModal = () => {
+    if (importLoading) return;
+    setIsImportOpen(false);
+  };
+
+  const runImport = async () => {
+    setImportLoading(true);
+    setImportResult(null);
+    setImportError(null);
+    try {
+      const response = await fetch('/api/admin/import/products/from-git', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: importSource, confirm: false })
+      });
+      const payload: ApiEnvelope<ImportResult> = await response.json();
+      if (!payload.success) {
+        setImportResult(payload.data ?? { report: null, errors: [] });
+        setImportError(payload.error ?? 'Uvoz ni uspel.');
+        return;
+      }
+      setImportResult(payload.data);
+      await loadProducts();
+    } catch (error) {
+      setImportError('Uvoz ni uspel. Poskusi znova.');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   return (
     <section className="max-w-6xl mx-auto p-6 space-y-6">
+      <div className="sticky top-0 z-30 -mx-6 border-b border-border/40 bg-background/80 px-6 py-3 backdrop-blur">
+        <Button onClick={openImportModal}>Uvoz produktov</Button>
+      </div>
       <header className="space-y-2">
         <h1 className="text-3xl font-semibold text-foreground">Cenik</h1>
       </header>
@@ -478,6 +547,87 @@ export const CenikPage: React.FC = () => {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {isImportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
+          <div className="w-full max-w-xl rounded-xl bg-card p-6 shadow-2xl shadow-black/40">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-xl font-semibold text-foreground">Uvoz produktov</h2>
+              <button
+                type="button"
+                aria-label="Zapri"
+                onClick={closeImportModal}
+                className="inline-flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-card text-foreground transition hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <p className="text-sm text-muted-foreground">Izberi vir in sproži uvoz.</p>
+              <div className="grid gap-3">
+                <button
+                  type="button"
+                  onClick={() => setImportSource('aa_api')}
+                  className={`rounded-lg border px-4 py-3 text-left transition ${
+                    importSource === 'aa_api'
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border/70 text-foreground hover:border-primary'
+                  }`}
+                >
+                  <div className="text-sm font-semibold">AA API (material)</div>
+                  <div className="text-xs text-muted-foreground">Uvoz materiala iz Alarm Automatika</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportSource('services_sheet')}
+                  className={`rounded-lg border px-4 py-3 text-left transition ${
+                    importSource === 'services_sheet'
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border/70 text-foreground hover:border-primary'
+                  }`}
+                >
+                  <div className="text-sm font-semibold">Storitve</div>
+                  <div className="text-xs text-muted-foreground">Uvoz storitev iz cenika</div>
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Button variant="ghost" type="button" onClick={closeImportModal} disabled={importLoading}>
+                Preklici
+              </Button>
+              <Button type="button" onClick={runImport} disabled={importLoading}>
+                {importLoading ? 'Uvozim ...' : 'Posodobi'}
+              </Button>
+            </div>
+
+            {(importError || importResult) && (
+              <div className="mt-5 rounded-lg border border-border/60 bg-muted/30 p-4 text-sm">
+                {importError && <p className="text-destructive">{importError}</p>}
+                {importResult?.report && (
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-foreground">
+                    <span>Ustvarjeni: {importResult.report.created}</span>
+                    <span>Posodobljeni: {importResult.report.updated}</span>
+                    <span>Reaktivirani: {importResult.report.reactivated}</span>
+                    <span>Deaktivirani: {importResult.report.deactivated}</span>
+                  </div>
+                )}
+                {importResult?.errors?.length > 0 && (
+                  <div className="mt-3 space-y-1 text-xs text-destructive">
+                    {importResult.errors.slice(0, 8).map((error) => (
+                      <div key={`${error.index}-${error.field}`}>
+                        [{error.index}] {error.rowId} {error.field}: {error.reason}
+                      </div>
+                    ))}
+                    {importResult.errors.length > 8 && <div>...in se {importResult.errors.length - 8} napak</div>}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
