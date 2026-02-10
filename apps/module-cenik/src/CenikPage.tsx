@@ -55,6 +55,33 @@ type ImportResult = {
   errors: ImportError[];
 };
 
+type AuditReport = {
+  totals: { products: number };
+  countsBySource: Array<{ source: string; count: number }>;
+  duplicates: {
+    externalKey: { groupCount: number };
+    externalSourceExternalId: { groupCount: number };
+    nameManufacturerSupplier: { groupCount: number };
+  };
+  missingFields: Record<string, { count: number }>;
+  priceAnomalies: Record<string, { count: number }>;
+};
+
+function sumCounts(record: Record<string, { count: number }>) {
+  return Object.values(record).reduce((total, entry) => total + (entry?.count ?? 0), 0);
+}
+
+function isAuditOk(report: AuditReport | null) {
+  if (!report) return false;
+  const duplicatesOk =
+    report.duplicates.externalKey.groupCount === 0 &&
+    report.duplicates.externalSourceExternalId.groupCount === 0 &&
+    report.duplicates.nameManufacturerSupplier.groupCount === 0;
+  const missingOk = sumCounts(report.missingFields) === 0;
+  const anomaliesOk = sumCounts(report.priceAnomalies) === 0;
+  return duplicatesOk && missingOk && anomaliesOk;
+}
+
 type Category = {
   _id: string;
   name: string;
@@ -143,6 +170,9 @@ export const CenikPage: React.FC = () => {
   const [importLoading, setImportLoading] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditResult, setAuditResult] = useState<AuditReport | null>(null);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -299,11 +329,13 @@ export const CenikPage: React.FC = () => {
     setImportSource('aa_api');
     setImportResult(null);
     setImportError(null);
+    setAuditResult(null);
+    setAuditError(null);
     setIsImportOpen(true);
   };
 
   const closeImportModal = () => {
-    if (importLoading) return;
+    if (importLoading || auditLoading) return;
     setIsImportOpen(false);
   };
 
@@ -329,6 +361,25 @@ export const CenikPage: React.FC = () => {
       setImportError('Uvoz ni uspel. Poskusi znova.');
     } finally {
       setImportLoading(false);
+    }
+  };
+
+  const runAudit = async () => {
+    setAuditLoading(true);
+    setAuditResult(null);
+    setAuditError(null);
+    try {
+      const response = await fetch('/api/admin/cenik/audit');
+      const payload: ApiEnvelope<AuditReport> = await response.json();
+      if (!payload.success) {
+        setAuditError(payload.error ?? 'Audit ni uspel.');
+        return;
+      }
+      setAuditResult(payload.data);
+    } catch (error) {
+      setAuditError('Audit ni uspel. Poskusi znova.');
+    } finally {
+      setAuditLoading(false);
     }
   };
 
@@ -600,10 +651,62 @@ export const CenikPage: React.FC = () => {
               <Button variant="ghost" type="button" onClick={closeImportModal} disabled={importLoading}>
                 Preklici
               </Button>
+              <Button variant="outline" type="button" onClick={runAudit} disabled={auditLoading}>
+                {auditLoading ? 'Preverjam ...' : 'Preveri cenik (Audit)'}
+              </Button>
               <Button type="button" onClick={runImport} disabled={importLoading}>
                 {importLoading ? 'Uvozim ...' : 'Posodobi'}
               </Button>
             </div>
+
+            {(auditError || auditResult) && (
+              <div className="mt-5 rounded-lg border border-border/60 bg-muted/30 p-4 text-sm">
+                {auditError && <p className="text-destructive">{auditError}</p>}
+                {auditResult && (
+                  <div className="space-y-3">
+                    <div
+                      className={`text-sm font-semibold ${
+                        isAuditOk(auditResult) ? 'text-emerald-600' : 'text-destructive'
+                      }`}
+                    >
+                      {isAuditOk(auditResult) ? 'Vse OK' : 'Napake'}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-foreground">
+                      <span>Skupaj produktov: {auditResult.totals.products}</span>
+                      <span>Viri: {auditResult.countsBySource.length}</span>
+                      {auditResult.countsBySource.map((entry) => (
+                        <span key={entry.source || 'unknown'}>
+                          {entry.source || 'unknown'}: {entry.count}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-foreground">
+                      <span>Duplikati (externalKey): {auditResult.duplicates.externalKey.groupCount}</span>
+                      <span>
+                        Duplikati (source+id): {auditResult.duplicates.externalSourceExternalId.groupCount}
+                      </span>
+                      <span>
+                        Duplikati (ime/proizv./dobav.): {auditResult.duplicates.nameManufacturerSupplier.groupCount}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-foreground">
+                      {Object.entries(auditResult.missingFields).map(([key, value]) => (
+                        <span key={`missing-${key}`}>
+                          Manjka {key}: {value?.count ?? 0}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-foreground">
+                      {Object.entries(auditResult.priceAnomalies).map(([key, value]) => (
+                        <span key={`price-${key}`}>
+                          {key}: {value?.count ?? 0}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {(importError || importResult) && (
               <div className="mt-5 rounded-lg border border-border/60 bg-muted/30 p-4 text-sm">
