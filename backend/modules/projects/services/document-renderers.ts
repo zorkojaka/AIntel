@@ -672,7 +672,7 @@ export function renderProductDescriptionsHtml(entries: ProductDescriptionEntry[]
     body { font-family: Arial, sans-serif; color: #111; }
     .product { margin: 0 0 18px 0; break-inside: avoid; page-break-inside: avoid; }
     .title { margin: 0 0 10px 0; font-size: 18px; font-weight: 700; }
-    .row { display: flex; gap: 14px; align-items: flex-start; }
+    .row { display: flex; gap: 14px; align-items: flex-start; flex-direction: row-reverse; }
     .col.image { flex: 0 0 38%; }
     .col.desc { flex: 1 1 62%; }
     .col.image img { width: 100%; max-height: 210px; object-fit: contain; display: block; }
