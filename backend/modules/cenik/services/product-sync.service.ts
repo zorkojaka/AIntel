@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
 import { ProductModel } from '../product.model';
+import { IMPORT_DEFAULTS } from '../sync/importDefaults';
 
 type NormalizedProduct = {
   externalSource: string;
@@ -58,6 +59,11 @@ export class ProductSyncValidationError extends Error {
 
 const LOCK_TTL_MINUTES = 30;
 
+type ImportDefaults = {
+  dobavitelj: string;
+  naslovDobavitelja: string;
+};
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -107,11 +113,25 @@ function removeUndefined<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(entries) as T;
 }
 
+function getImportDefaults(source: string): ImportDefaults {
+  const defaults = IMPORT_DEFAULTS[source as keyof typeof IMPORT_DEFAULTS];
+  if (!defaults) {
+    throw new Error(`Missing IMPORT_DEFAULTS for source="${source}".`);
+  }
+  const dobavitelj = normalizeText(defaults.dobavitelj);
+  const naslovDobavitelja = normalizeText(defaults.naslovDobavitelja);
+  if (!dobavitelj || !naslovDobavitelja) {
+    throw new Error(`Missing IMPORT_DEFAULTS values for source="${source}".`);
+  }
+  return { dobavitelj, naslovDobavitelja };
+}
+
 function validateAndNormalize(
   product: unknown,
   index: number,
   source: string,
   seenKeys: Map<string, number>,
+  defaults: ImportDefaults,
   errors: ValidationError[]
 ): NormalizedProduct | null {
   const errorStart = errors.length;
@@ -170,9 +190,14 @@ function validateAndNormalize(
     errors.push({ index, rowId, field: 'nabavnaCena', reason: 'must be a number >= 0' });
   }
 
-  const dobavitelj = normalizeText(product.dobavitelj);
+  const dobavitelj = normalizeText(product.dobavitelj) || defaults.dobavitelj;
   if (!dobavitelj) {
     errors.push({ index, rowId, field: 'dobavitelj', reason: 'must be a non-empty string' });
+  }
+
+  const naslovDobavitelja = normalizeText(product.naslovDobavitelja) || defaults.naslovDobavitelja;
+  if (!naslovDobavitelja) {
+    errors.push({ index, rowId, field: 'naslovDobavitelja', reason: 'must be a non-empty string' });
   }
 
   if (!assertBoolean(product.isService)) {
@@ -206,7 +231,7 @@ function validateAndNormalize(
     povezavaDoProdukta: normalizeUrl(product.povezavaDoProdukta) || undefined,
     proizvajalec: normalizeText(product.proizvajalec) || undefined,
     dobavitelj,
-    naslovDobavitelja: normalizeText(product.naslovDobavitelja) || undefined,
+    naslovDobavitelja,
     casovnaNorma: normalizeText(product.casovnaNorma) || undefined,
     isService: product.isService as boolean
   };
@@ -244,9 +269,10 @@ export async function syncProductsFromItems({ source, items, confirm }: SyncProd
   const errors: ValidationError[] = [];
   const products: NormalizedProduct[] = [];
   const seenKeys = new Map<string, number>();
+  const defaults = getImportDefaults(source);
 
   items.forEach((product, index) => {
-    const normalized = validateAndNormalize(product, index, source, seenKeys, errors);
+    const normalized = validateAndNormalize(product, index, source, seenKeys, defaults, errors);
     if (normalized) {
       products.push(normalized);
     }
