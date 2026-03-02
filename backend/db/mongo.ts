@@ -8,8 +8,7 @@ export async function connectToMongo() {
   const dbName = process.env.MONGO_DB ?? 'inteligent';
 
   console.log('[connectToMongo] NODE_ENV =', process.env.NODE_ENV ?? 'undefined');
-  console.log('[connectToMongo] MONGO_URI =', process.env.MONGO_URI ?? 'undefined');
-  console.log('[connectToMongo] using URI =', uri);
+  console.log('[connectToMongo] MONGO_URI configured =', Boolean(envUri));
 
   if (mongoose.connection.readyState === 1) {
     return mongoose.connection;
