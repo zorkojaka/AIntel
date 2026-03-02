@@ -178,6 +178,44 @@ export function LogisticsPanel({
         : filteredMaterialOrders[0] ?? null,
     [filteredMaterialOrders, selectedWorkOrder],
   );
+  const materialOrdersForSelectedWorkOrder = useMemo(() => {
+    if (!selectedWorkOrder) return [];
+    const base = filteredMaterialOrders.filter((materialOrder) => materialOrder.workOrderId === selectedWorkOrder._id);
+    if (materialOrderForm?._id) {
+      const merged = base.map((order) => (order._id === materialOrderForm._id ? materialOrderForm : order));
+      if (merged.length > 0) return merged;
+    }
+    if (base.length > 0) return base;
+    return materialOrderForm ? [materialOrderForm] : [];
+  }, [filteredMaterialOrders, materialOrderForm, selectedWorkOrder]);
+
+  const aggregateMaterialItems = useCallback((orders: MaterialOrder[]) => {
+    const byId = new Map<string, MaterialOrder["items"][number]>();
+    orders.forEach((order) => {
+      (order.items ?? []).forEach((item) => {
+        const key = item.id;
+        if (!key) return;
+        const itemQty = typeof item.quantity === "number" ? item.quantity : 0;
+        const itemDelivered = typeof item.deliveredQty === "number" ? item.deliveredQty : 0;
+        const existing = byId.get(key);
+        if (!existing) {
+          byId.set(key, { ...item, quantity: itemQty, deliveredQty: itemDelivered });
+          return;
+        }
+        const merged = { ...existing };
+        merged.quantity = (typeof merged.quantity === "number" ? merged.quantity : 0) + itemQty;
+        merged.deliveredQty = (typeof merged.deliveredQty === "number" ? merged.deliveredQty : 0) + itemDelivered;
+        if (!merged.name && item.name) merged.name = item.name;
+        if (!merged.unit && item.unit) merged.unit = item.unit;
+        if (!merged.note && item.note) merged.note = item.note;
+        if (!merged.productId && item.productId) merged.productId = item.productId;
+        if (!merged.dobavitelj && item.dobavitelj) merged.dobavitelj = item.dobavitelj;
+        if (!merged.naslovDobavitelja && item.naslovDobavitelja) merged.naslovDobavitelja = item.naslovDobavitelja;
+        byId.set(key, merged);
+      });
+    });
+    return Array.from(byId.values());
+  }, []);
   const resolveMaterialOrderById = useCallback(
     (materialOrderId: string) => {
       if (materialOrderForm?._id === materialOrderId) return materialOrderForm;
@@ -504,18 +542,22 @@ export function LogisticsPanel({
     const currentMaterial = materialOrderForm ?? selectedMaterialOrder ?? null;
     setSavingWorkOrder(true);
     try {
+      const hasOverrideConfirmedAt =
+        workOrderOverrides && Object.prototype.hasOwnProperty.call(workOrderOverrides, "scheduledConfirmedAt");
+      const resolvedScheduledConfirmedAt = hasOverrideConfirmedAt
+        ? workOrderOverrides?.scheduledConfirmedAt
+        : typeof workOrderForm.scheduledConfirmedAt === "string"
+          ? workOrderForm.scheduledConfirmedAt
+          : workOrderForm.scheduledConfirmedAt === null
+            ? null
+            : undefined;
       const response = await fetch(`/api/projects/${projectId}/work-orders/${selectedWorkOrder._id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           workOrderId: selectedWorkOrder._id,
           scheduledAt: typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : null,
-          scheduledConfirmedAt:
-            typeof workOrderForm.scheduledConfirmedAt === "string"
-              ? workOrderForm.scheduledConfirmedAt
-              : workOrderForm.scheduledConfirmedAt === null
-                ? null
-                : workOrderOverrides?.scheduledConfirmedAt ?? undefined,
+          scheduledConfirmedAt: resolvedScheduledConfirmedAt,
           assignedEmployeeIds: Array.isArray(workOrderForm.assignedEmployeeIds) ? workOrderForm.assignedEmployeeIds : [],
           location: workOrderForm.location ?? "",
           notes: workOrderForm.notes ?? "",
@@ -708,11 +750,14 @@ export function LogisticsPanel({
         : Array.isArray(workOrder.items)
           ? workOrder.items
           : [];
-    const materialItems = Array.isArray(materialOrderForm?.items)
-      ? materialOrderForm?.items ?? []
-      : Array.isArray(selectedMaterialOrder?.items)
-        ? selectedMaterialOrder?.items ?? []
-        : [];
+    const materialItems =
+      materialOrdersForSelectedWorkOrder.length > 0
+        ? aggregateMaterialItems(materialOrdersForSelectedWorkOrder)
+        : Array.isArray(materialOrderForm?.items)
+          ? materialOrderForm?.items ?? []
+          : Array.isArray(selectedMaterialOrder?.items)
+            ? selectedMaterialOrder?.items ?? []
+            : [];
     const materialItemsById = new Map(materialItems.map((item) => [item.id, item]));
     const totalMinutes = workOrderItems.reduce((sum, item) => {
       const quantity = typeof item.quantity === "number" ? item.quantity : 0;
@@ -768,7 +813,7 @@ export function LogisticsPanel({
     const baseYear = Number(baseYearRaw ?? anchorYear);
     const baseMonth = Number(baseMonthRaw ?? anchorMonth + 1);
     const baseDay = Number(baseDayRaw ?? 1);
-    const dowLabels = ["NEDELJA", "PONEDELJEK", "TOREK", "SREDA", "\u010cETRTEK", "PETEK", "SOBOTA"];
+    const dowLabels = ["NED", "PON", "TOR", "SRE", "\u010cET", "PET", "SOB"];
     const baseDateForDow = new Date(baseYear, baseMonth - 1, baseDay);
     const dowLabel = Number.isNaN(baseDateForDow.getTime()) ? "?" : dowLabels[baseDateForDow.getDay()];
     const setDateParts = (year: number, month: number, day: number, direction: 1 | -1 | 0 = 0) => {
@@ -1051,23 +1096,40 @@ export function LogisticsPanel({
             <div className="space-y-3">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Tehniki (ekipa)</label>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="flex flex-wrap gap-2">
                   {employees.filter((employee) => employee.active).length === 0 ? (
                     <p className="text-sm text-muted-foreground">Ni zaposlenih.</p>
                   ) : (
                     employees
                       .filter((employee) => employee.active)
-                      .map((employee) => (
-                      <label key={employee.id} className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Checkbox
-                          checked={(workOrderForm.assignedEmployeeIds ?? []).includes(employee.id)}
-                          onChange={() => toggleAssignedEmployee(employee.id)}
-                        />
-                        {employee.name}
-                      </label>
-                    ))
+                      .map((employee) => {
+                        const isSelected = (workOrderForm.assignedEmployeeIds ?? []).includes(employee.id);
+                        return (
+                          <button
+                            key={employee.id}
+                            type="button"
+                            onClick={() => toggleAssignedEmployee(employee.id)}
+                            className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                              isSelected
+                                ? "border-primary bg-primary/10 !text-primary"
+                                : "border-border bg-card !text-muted-foreground hover:border-primary"
+                            }`}
+                          >
+                            {employee.name}
+                          </button>
+                        );
+                      })
                   )}
                 </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Opombe</label>
+                <Textarea
+                  value={workOrderForm.notes ?? ""}
+                  onChange={(e) => handleWorkOrderChange("notes", e.target.value)}
+                  placeholder="Navodila za tehnika"
+                  rows={3}
+                />
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">Status materiala</label>
@@ -1077,15 +1139,6 @@ export function LogisticsPanel({
               </div>
             </div>
           </div>
-        </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Opombe</label>
-          <Textarea
-            value={workOrderForm.notes ?? ""}
-            onChange={(e) => handleWorkOrderChange("notes", e.target.value)}
-            placeholder="Navodila za tehnika"
-            rows={3}
-          />
         </div>
         <div className="border rounded-[var(--radius-card)] bg-card overflow-hidden">
           <Table>

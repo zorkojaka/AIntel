@@ -10,12 +10,20 @@ export interface LogisticsMaterialItem {
   note?: string;
   dobavitelj?: string;
   naslovDobavitelja?: string;
+  materialStep?: MaterialStep;
 }
 
 export type MaterialStatus =
   | "Preklicano"
   | "Za naročit"
   | "Naročeno"
+  | "Prevzeto"
+  | "Pripravljeno";
+
+export type MaterialStep =
+  | "Za naročiti"
+  | "Naročeno"
+  | "Za prevzem"
   | "Prevzeto"
   | "Pripravljeno";
 
@@ -62,6 +70,7 @@ export interface WorkOrder {
   items: WorkOrderItem[];
   status: WorkOrderStatus;
   scheduledAt: string | null;
+  scheduledConfirmedAt?: string | null;
   assignedEmployeeIds?: string[];
   location?: string;
   notes?: string;

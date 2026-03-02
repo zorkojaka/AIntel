@@ -180,7 +180,7 @@
 }
 
 .dashboard-week-scheduler__time-slot {
-  height: 60px;
+  height: 30px;
   font-size: 0.75rem;
   color: var(--color-muted, #667085);
   display: flex;
@@ -529,4 +529,95 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dashboard-project-widget__phase-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.dashboard-project-widget__phase-label {
+  font-size: 0.75rem;
+  color: var(--color-muted, #667085);
+  margin-right: 0.35rem;
+}
+
+.dashboard-project-widget__phase-value {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.dashboard-project-widget__phase-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.2);
+  color: #047857;
+}
+
+.dashboard-project-widget__next-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+}
+
+.dashboard-project-widget__next-step-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.dashboard-project-widget__link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--color-primary);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.dashboard-project-widget__next-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.dashboard-project-widget__next-step-text {
+  font-size: 0.78rem;
+  color: var(--color-muted, #667085);
+  margin: 0;
+}
+
+.dashboard-project-widget__primary {
+  align-self: flex-start;
+  background: var(--color-primary, #2563eb);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dashboard-project-widget__primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dashboard-project-widget__readonly {
+  font-size: 0.8rem;
+  color: var(--color-muted, #667085);
 }

@@ -5,7 +5,7 @@ import { navigateToProject, normalizeMaterialStatusLabel } from './utils';
 
 const START_HOUR = 6;
 const END_HOUR = 18;
-const PX_PER_MIN = 1;
+const PX_PER_MIN = 0.5;
 const MIN_BLOCK_MINUTES = 30;
 const WINDOW_DAYS = 14;
 const STEP_DAYS = 7;

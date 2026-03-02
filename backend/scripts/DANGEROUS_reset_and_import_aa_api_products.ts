@@ -16,6 +16,7 @@ type ProductRecord = Record<string, unknown>;
 
 const INPUT_PATH = path.resolve(__dirname, '..', 'data', 'cenik', 'aa_api_produkti.json');
 const REQUIRED_SLUGS = ['ajax', 'kamera', 'internet'] as const;
+const DANGEROUS_FLAG = '--i-know-what-im-doing';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -184,6 +185,10 @@ async function inspectBeforeDelete() {
 }
 
 async function main() {
+  if (!process.argv.includes(DANGEROUS_FLAG)) {
+    throw new Error(`Missing required flag ${DANGEROUS_FLAG}. Aborting.`);
+  }
+
   loadEnvironment();
   await connectToMongo();
 
@@ -208,11 +213,6 @@ async function main() {
   for (const slug of REQUIRED_SLUGS) {
     const count = countBySlug(products, slug);
     console.log(`INPUT slug ${slug}: ${count}`);
-  }
-
-  if (process.env.CONFIRM_RESET !== 'YES') {
-    console.log('CONFIRM_RESET is not set to YES. Stopping before delete.');
-    return;
   }
 
   const deleted = await ProductModel.deleteMany({});

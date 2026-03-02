@@ -4,9 +4,14 @@ import { connectToMongo } from '../db/mongo';
 import { loadEnvironment } from '../loadEnv';
 import { ProductModel } from '../modules/cenik/product.model';
 
+const DANGEROUS_FLAG = '--i-know-what-im-doing';
 const SUPPLIER = 'Alarm automatika d.o.o.';
 
 async function main() {
+  if (!process.argv.includes(DANGEROUS_FLAG)) {
+    throw new Error(`Missing required flag ${DANGEROUS_FLAG}. Aborting.`);
+  }
+
   loadEnvironment();
   await connectToMongo();
 

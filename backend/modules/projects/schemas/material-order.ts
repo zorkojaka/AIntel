@@ -14,6 +14,7 @@ interface MaterialOrderDocument extends Document {
     note?: string;
     dobavitelj?: string;
     naslovDobavitelja?: string;
+    materialStep?: 'Za naročiti' | 'Naročeno' | 'Za prevzem' | 'Prevzeto' | 'Pripravljeno';
   }[];
   assignedEmployeeIds?: Array<Types.ObjectId>;
   status: 'draft' | 'ordered' | 'received' | 'cancelled';
@@ -33,6 +34,11 @@ const materialItemSchema = new Schema(
     note: { type: String },
     dobavitelj: { type: String, trim: true, default: '' },
     naslovDobavitelja: { type: String, trim: true, default: '' },
+    materialStep: {
+      type: String,
+      enum: ['Za naročiti', 'Naročeno', 'Za prevzem', 'Prevzeto', 'Pripravljeno'],
+      default: 'Za naročiti',
+    },
   },
   { _id: false }
 );

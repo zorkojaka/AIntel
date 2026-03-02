@@ -79,12 +79,21 @@ interface MaterialOrderCardProps {
   downloadingPdf: "PURCHASE_ORDER" | "DELIVERY_NOTE" | null;
 }
 
+const RAW_MATERIAL_STEPS: MaterialStep[] = [
+  "Za naročiti",
+  "Naročeno",
+  "Za prevzem",
+  "Prevzeto",
+  "Pripravljeno",
+];
 const MATERIAL_STEPS: MaterialStep[] = ["Naročeno", "Za prevzem", "Prevzeto", "Pripravljeno"];
 
-function resolveStep(value?: string | null): MaterialStep {
-  if (value === "Za naročiti") {
-    return "Naročeno";
-  }
+function resolveRawStep(value?: string | null): MaterialStep {
+  return RAW_MATERIAL_STEPS.includes(value as MaterialStep) ? (value as MaterialStep) : "Za naročiti";
+}
+
+function resolveDisplayStep(value?: string | null): MaterialStep {
+  if (value === "Za naročiti") return "Naročeno";
   return MATERIAL_STEPS.includes(value as MaterialStep) ? (value as MaterialStep) : "Naročeno";
 }
 
@@ -124,22 +133,22 @@ export function MaterialOrderCard({
 
   const allItems = materialOrder.items ?? [];
   const totalCount = allItems.length;
-  const preparedCount = allItems.filter((item) => resolveStep(item.materialStep) === "Pripravljeno").length;
+  const preparedCount = allItems.filter((item) => resolveRawStep(item.materialStep) === "Pripravljeno").length;
   const isFullyPrepared = totalCount > 0 && preparedCount === totalCount;
   const summaryLabel = isFullyPrepared
     ? "Material: Pripravljeno"
     : `Material: Delno (${preparedCount}/${totalCount} pripravljeno)`;
-  const stepIndexes = allItems.map((item) => MATERIAL_STEPS.indexOf(resolveStep(item.materialStep)));
-  const minStepIndex = stepIndexes.length > 0 ? Math.min(...stepIndexes) : 0;
-  const maxStepIndex = MATERIAL_STEPS.length - 1;
-  const currentIndex = isFullyPrepared ? -1 : Math.min(Math.max(minStepIndex, 0), maxStepIndex);
+  const rawIndexes = allItems.map((item) => RAW_MATERIAL_STEPS.indexOf(resolveRawStep(item.materialStep)));
+  const minRawIndex = rawIndexes.length > 0 ? Math.min(...rawIndexes) : 0;
+  const currentIndex = isFullyPrepared ? -1 : Math.min(Math.max(minRawIndex - 1, 0), MATERIAL_STEPS.length - 1);
   const currentStep = currentIndex >= 0 ? MATERIAL_STEPS[currentIndex] : null;
-  const nextStep = currentIndex >= 0 ? MATERIAL_STEPS[currentIndex + 1] ?? null : null;
+  const nextStep = isFullyPrepared ? null : RAW_MATERIAL_STEPS[minRawIndex + 1] ?? null;
   const eligibleCount =
     nextStep === null
       ? 0
-      : allItems.filter((item) => resolveStep(item.materialStep) === currentStep && isStepEligible(item, nextStep))
-          .length;
+      : allItems.filter(
+          (item) => resolveRawStep(item.materialStep) === RAW_MATERIAL_STEPS[minRawIndex] && isStepEligible(item, nextStep),
+        ).length;
   const nextDisabledReason =
     nextStep === null ? "Material je že pripravljen." : eligibleCount === 0 ? "Ni postavk za napredovanje." : "";
 
@@ -179,13 +188,7 @@ export function MaterialOrderCard({
       <PhaseRibbon
         steps={MATERIAL_STEPS.map((step, index) => {
           const status: PhaseRibbonStatus =
-            currentIndex === -1
-              ? "done"
-              : index < currentIndex
-                ? "done"
-                : index === currentIndex
-                  ? "active"
-                  : "future";
+            currentIndex === -1 ? "done" : index < currentIndex ? "done" : index === currentIndex ? "active" : "future";
           return { key: step, label: step, status };
         })}
         activeKey={currentStep ?? undefined}
@@ -332,7 +335,7 @@ export function MaterialOrderCard({
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant="outline" className="text-[11px]">
-                          {resolveStep(item.materialStep)}
+                          {resolveDisplayStep(item.materialStep)}
                         </Badge>
                       </TableCell>
                     </TableRow>

@@ -158,11 +158,6 @@ export function PriceListProductAutocomplete({
     }, 100);
   };
 
-  const handleCustomSelect = () => {
-    onCustomSelected?.();
-    setIsOpen(false);
-  };
-
   const handleProductPick = (product: PriceListSearchItem) => {
     onProductSelected(product);
     setInputValue(product.name);
@@ -207,15 +202,7 @@ export function PriceListProductAutocomplete({
               }}
             >
               <div className="flex max-h-64 flex-col overflow-y-auto">
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-muted-foreground hover:bg-muted/50"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={handleCustomSelect}
-                >
-                  Po meri
-                </button>
-                <div className="border-t">
+                <div>
                   {loading && (
                     <div className="flex items-center gap-2 px-3 py-2 text-muted-foreground">
                       <span className="text-xs">Iskanje...</span>

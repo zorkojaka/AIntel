@@ -130,7 +130,7 @@ export function ProjectList({
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  € {project.offerAmount.toLocaleString("sl-SI", { minimumFractionDigits: 2 })}
+                  € {(Number.isFinite(project.quotedTotalWithVat) ? project.quotedTotalWithVat : 0).toLocaleString("sl-SI", { minimumFractionDigits: 2 })}
                 </TableCell>
                 <TableCell className="text-right">
                   € {project.invoiceAmount.toLocaleString("sl-SI", { minimumFractionDigits: 2 })}
