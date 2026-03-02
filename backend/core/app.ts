@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import express from 'express';
@@ -8,6 +10,19 @@ import { responseHelpers } from './response';
 import { normalizePayload } from './middleware/normalizePayload';
 import { errorHandler } from './errorHandler';
 import { isMongoConnected } from '../db/mongo';
+
+function resolveWebDistDir() {
+  const explicit = process.env.AINTEL_WEB_DIST?.trim();
+  const candidates = [
+    explicit,
+    path.resolve(__dirname, '../../apps/core-shell/dist'),
+    path.resolve(__dirname, '../../../apps/core-shell/dist'),
+    path.resolve(process.cwd(), '../apps/core-shell/dist'),
+    path.resolve(process.cwd(), 'apps/core-shell/dist'),
+  ].filter((value): value is string => !!value);
+
+  return candidates.find((candidate) => fs.existsSync(path.join(candidate, 'index.html'))) ?? null;
+}
 
 export function createApp() {
   const app = express();
@@ -28,6 +43,20 @@ export function createApp() {
 
   app.use('/api/auth', authRoutes);
   app.use('/api', requireAuth, routes);
+
+  if (process.env.NODE_ENV === 'production') {
+    const webDistDir = resolveWebDistDir();
+    if (webDistDir) {
+      app.use(express.static(webDistDir));
+      app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api')) {
+          return next();
+        }
+        return res.sendFile(path.join(webDistDir, 'index.html'));
+      });
+    }
+  }
+
   app.use(errorHandler);
 
   return app;

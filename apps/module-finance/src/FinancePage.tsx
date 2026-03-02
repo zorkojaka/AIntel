@@ -150,7 +150,7 @@ function useFinanceEntries() {
     let isMounted = true;
     async function fetchEntries() {
       try {
-        const response = await fetch('http://localhost:3000/finance');
+        const response = await fetch('/api/finance');
         if (!response.ok) {
           throw new Error(`Napaka API: ${response.status}`);
         }
