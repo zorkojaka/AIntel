@@ -22,6 +22,7 @@ import { useConfirmOffer } from "../domains/core/useConfirmOffer";
 import { downloadPdf } from "../api";
 import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
+import { useSettingsData } from "@aintel/module-settings";
 
 type OffersTabProps = {
   projectId: string;
@@ -74,8 +75,6 @@ const clampMin = (value: unknown, fallback: number, min: number) => {
 const isItemValid = (item: OfferLineItem | OfferLineItemForm) =>
   item.name.trim() !== "" && item.unitPrice > 0;
 
-const DEFAULT_PAYMENT_TERMS = "50% - avans, 50% - 10 dni po izvedbi";
-
 export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [items, setItems] = useState<OfferLineItemForm[]>([createEmptyItem()]);
 
@@ -102,7 +101,7 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [vatAmount, setVatAmount] = useState<number>(0);
 
   const [saving, setSaving] = useState(false);
-  const [downloadingMode, setDownloadingMode] = useState<"offer" | "project" | "both" | null>(null);
+  const [downloadingMode, setDownloadingMode] = useState<"offer" | "both" | "descriptions" | null>(null);
   const [sending, setSending] = useState(false);
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -116,6 +115,43 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const isDownloading = downloadingMode !== null;
 
   const paymentTermsInitRef = useRef<Record<string, boolean>>({});
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(title);
+
+  useEffect(() => {
+    if (!isEditingTitle) {
+      setTitleDraft(title);
+    }
+  }, [title, isEditingTitle]);
+
+  const { settings } = useSettingsData();
+  const paymentTermsOptions = useMemo(() => {
+    const notes = Array.isArray(settings?.notes) ? settings.notes : [];
+    const paymentNotes = notes
+      .filter((note) => note.category === "payment")
+      .slice()
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      .map((note) => ({ label: note.title, value: note.text }));
+    const defaultTerms = settings?.defaultPaymentTerms?.trim() ?? "";
+    if (defaultTerms && !paymentNotes.some((entry) => entry.value === defaultTerms)) {
+      paymentNotes.unshift({ label: "Privzeto", value: defaultTerms });
+    }
+    return paymentNotes;
+  }, [settings]);
+  const defaultPaymentTerms = paymentTermsOptions[0]?.value ?? settings?.defaultPaymentTerms ?? "";
+
+  useEffect(() => {
+    if (paymentTermsOptions.length === 0) {
+      return;
+    }
+    const exists = paymentTermsOptions.some((option) => option.value === paymentTerms);
+    if (!exists) {
+      const next = defaultPaymentTerms || paymentTermsOptions[0].value;
+      if (next && next !== paymentTerms) {
+        setPaymentTerms(next);
+      }
+    }
+  }, [paymentTermsOptions, defaultPaymentTerms, paymentTerms]);
 
   const resetToEmptyOffer = useCallback(() => {
     setSelectedOfferId(null);
@@ -182,7 +218,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
       const shouldUseDefaultTerms = normalizedTerms.length === 0;
       const alreadyInitialized = paymentTermsInitRef.current[offerKey] === true;
       if (!alreadyInitialized) {
-        setPaymentTerms(shouldUseDefaultTerms ? DEFAULT_PAYMENT_TERMS : offer.paymentTerms ?? "");
+        setPaymentTerms(shouldUseDefaultTerms ? defaultPaymentTerms : offer.paymentTerms ?? "");
         paymentTermsInitRef.current[offerKey] = true;
       } else if (!shouldUseDefaultTerms) {
         setPaymentTerms(offer.paymentTerms ?? "");
@@ -706,7 +742,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     }
   };
 
-  const handleExportPdf = async (mode: "offer" | "project" | "both") => {
+  const handleExportPdf = async (mode: "offer" | "both") => {
     setDownloadingMode(mode);
     try {
       const saved = await ensureSavedOffer();
@@ -715,10 +751,27 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       const details = await ensureProjectDetails();
       const labelMap = {
         offer: "Ponudba",
-        project: "Projekt",
         both: "Ponudba+Projekt",
       } as const;
       const filename = buildPdfFilename(details, projectId, labelMap[mode]);
+      await downloadPdf(url, filename);
+      toast.success("PDF prenesen");
+    } catch (error) {
+      console.error(error);
+      toast.error("PDF ni bilo mogoce prenesti.");
+    } finally {
+      setDownloadingMode(null);
+    }
+  };
+
+  const handleExportDescriptionsPdf = async () => {
+    setDownloadingMode("descriptions");
+    try {
+      const saved = await ensureSavedOffer();
+      if (!saved?._id) return;
+      const url = `/api/projects/${projectId}/offers/${saved._id}/pdf?variant=descriptions`;
+      const details = await ensureProjectDetails();
+      const filename = buildPdfFilename(details, projectId, "Produktni opisi");
       await downloadPdf(url, filename);
       toast.success("PDF prenesen");
     } catch (error) {
@@ -893,75 +946,81 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       </div>
 
       {/* HEADER POLJA */}
-      <div className="grid gap-3 md:grid-cols-3">
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Prodajnik</label>
-          <Select value={salesUserId || 'none'} onValueChange={handleSalesUserChange}>
-            <SelectTrigger>
-              <SelectValue placeholder="Izberi prodajnika" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Brez</SelectItem>
-              {users.map((user) => (
-                <SelectItem key={user.id} value={user.id}>
-                  {user.name} {user.email ? `(${user.email})` : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {assignmentsSaving ? (
-            <p className="text-xs text-muted-foreground">Shranjujem dodelitve...</p>
-          ) : null}
-        </div>
-        <div className="space-y-2 md:col-span-2">
-          <label className="text-sm font-medium">Ekipa</label>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {employees.filter((employee) => employee.active).length === 0 ? (
-              <p className="text-sm text-muted-foreground">Ni zaposlenih.</p>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            {isEditingTitle ? (
+              <Input
+                value={titleDraft}
+                onChange={(event) => setTitleDraft(event.target.value)}
+                onBlur={() => {
+                  const next = titleDraft.trim() || "Ponudba";
+                  setTitle(next);
+                  setIsEditingTitle(false);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    const next = titleDraft.trim() || "Ponudba";
+                    setTitle(next);
+                    setIsEditingTitle(false);
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setTitleDraft(title);
+                    setIsEditingTitle(false);
+                  }
+                }}
+                className="text-xl font-semibold"
+                autoFocus
+              />
             ) : (
-              employees
-                .filter((employee) => employee.active)
-                .map((employee) => (
-                <label key={employee.id} className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Checkbox
-                    checked={assignedEmployeeIds.includes(employee.id)}
-                    onChange={() => toggleAssignedEmployee(employee.id)}
-                  />
-                  {employee.name}
-                </label>
-              ))
+              <button
+                type="button"
+                className="text-xl font-semibold text-left"
+                onClick={() => setIsEditingTitle(true)}
+              >
+                {title || "Ponudba"}
+              </button>
             )}
           </div>
+          <div className="text-xs text-muted-foreground">
+            Prodajnik:{" "}
+            {users.find((user) => user.id === salesUserId)?.name ?? "—"}
+          </div>
         </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Naziv ponudbe</label>
-          <Input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="Ponudba"
-          />
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Plačilni pogoji</label>
+            <Select
+              value={paymentTerms || ""}
+              onValueChange={(value) => setPaymentTerms(value)}
+              disabled={paymentTermsOptions.length === 0}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Izberi plačilne pogoje" />
+              </SelectTrigger>
+              <SelectContent>
+                {paymentTermsOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <label className="text-sm font-medium">Komentar (vidno na PDF)</label>
+            <Textarea
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              placeholder="Dodatne informacije za prikaz v PDF-ju"
+              rows={3}
+            />
+          </div>
         </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Plačilni pogoji</label>
-          <Input
-            value={paymentTerms}
-            onChange={(event) => setPaymentTerms(event.target.value)}
-            placeholder="Npr. 30 dni"
-          />
-        </div>
-      <div className="md:col-span-3 space-y-2">
-        <label className="text-sm font-medium">Komentar (vidno na PDF)</label>
-        <Textarea
-          value={comment}
-          onChange={(event) => setComment(event.target.value)}
-          placeholder="Dodatne informacije za prikaz v PDF-ju"
-          rows={3}
-        />
-        <p className="text-xs text-muted-foreground">
-          Komentar se prikaže v PDF-ju pod izračunom in nad podpisom.
-        </p>
       </div>
-    </div>
 
       {/* TABELA POSTAVK */}
       <div className="bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
@@ -1173,11 +1232,11 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         <div className="flex items-center gap-2 flex-nowrap">
           <Button
             variant="outline"
-            onClick={() => handleExportPdf("project")}
+            onClick={handleExportDescriptionsPdf}
             disabled={isDownloading}
           >
-            {downloadingMode === "project" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Prenesi projekt
+            {downloadingMode === "descriptions" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Prenesi opise
           </Button>
           <Button
             variant="outline"

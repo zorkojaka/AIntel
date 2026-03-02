@@ -1,21 +1,12 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import type { DashboardWidgetDefinition, InstallerDashboardWidgetProps } from '../types';
-import { renderEmptyState } from './utils';
+import { navigateToProject, renderEmptyState } from './utils';
 import { useProject } from '../../../module-projects/src/domains/core/useProject';
 import { useProjectTimeline, type TimelineStep } from '../../../module-projects/src/domains/core/useProjectTimeline';
-import type { MaterialOrder, WorkOrder } from '@aintel/shared/types/logistics';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+ 
+import { LogisticsPanel } from '../../../module-projects/src/domains/logistics/LogisticsPanel';
 
 const STORAGE_PREFIX = 'dashboard:projectWidget:selectedProject:';
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: 'V pripravi',
-  issued: 'Izdano',
-  'in-progress': 'V teku',
-  confirmed: 'Potrjeno',
-  completed: 'Zaključeno',
-  cancelled: 'Preklicano',
-};
 
 type ProjectOption = {
   id: string;
@@ -94,9 +85,17 @@ function getMaterialStatusLabel(steps: TimelineStep[]) {
   return logistics?.logisticsSummary?.material?.label ?? '—';
 }
 
-function getWorkOrderStatusLabel(status?: string | null) {
-  if (!status) return 'V pripravi';
-  return STATUS_LABELS[status] ?? status;
+function getCurrentPhase(steps: TimelineStep[]) {
+  const allDone = steps.length > 0 && steps.every((step) => step.status === 'done');
+  if (allDone) {
+    return { key: 'completed' as const, label: 'Zaključeno' };
+  }
+  const active = steps.find((step) => step.status === 'inProgress');
+  if (active) {
+    return { key: active.key, label: active.label };
+  }
+  const pending = steps.find((step) => step.status === 'pending');
+  return { key: pending?.key ?? 'requirements', label: pending?.label ?? 'Zahteve' };
 }
 
 function getNextScheduledForProject(props: InstallerDashboardWidgetProps, projectId: string) {
@@ -110,8 +109,6 @@ function ProjectSummaryWidget(props: InstallerDashboardWidgetProps) {
   const options = useMemo(() => collectProjectOptions(props), [props]);
   const storageKey = useMemo(() => getStorageKey(props.userId), [props.userId]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [showWorkOrders, setShowWorkOrders] = useState(false);
-  const [showMaterials, setShowMaterials] = useState(false);
 
   useEffect(() => {
     if (!options.length) {
@@ -146,10 +143,6 @@ function ProjectSummaryWidget(props: InstallerDashboardWidgetProps) {
       storageKey={storageKey}
       selectedProjectId={selectedProjectId}
       onSelectProject={setSelectedProjectId}
-      showWorkOrders={showWorkOrders}
-      showMaterials={showMaterials}
-      onToggleWorkOrders={() => setShowWorkOrders((prev) => !prev)}
-      onToggleMaterials={() => setShowMaterials((prev) => !prev)}
     />
   );
 }
@@ -159,10 +152,6 @@ type ProjectSummaryBodyProps = InstallerDashboardWidgetProps & {
   storageKey: string | null;
   selectedProjectId: string | null;
   onSelectProject: (value: string) => void;
-  showWorkOrders: boolean;
-  showMaterials: boolean;
-  onToggleWorkOrders: () => void;
-  onToggleMaterials: () => void;
 };
 
 function ProjectSummaryBody({
@@ -170,15 +159,12 @@ function ProjectSummaryBody({
   storageKey,
   selectedProjectId,
   onSelectProject,
-  showWorkOrders,
-  showMaterials,
-  onToggleWorkOrders,
-  onToggleMaterials,
   ...props
 }: ProjectSummaryBodyProps) {
   const effectiveProjectId = selectedProjectId ?? options[0].id;
-  const { project, loading, refresh } = useProject(effectiveProjectId, null);
+  const { project, loading } = useProject(effectiveProjectId, null);
   const timelineSteps = useProjectTimeline(project);
+  const currentPhase = useMemo(() => getCurrentPhase(timelineSteps), [timelineSteps]);
 
   useEffect(() => {
     if (!storageKey || !selectedProjectId || typeof window === 'undefined') {
@@ -196,72 +182,29 @@ function ProjectSummaryBody({
   const customerAddress = project?.customerDetail?.address ?? optionMeta?.customerAddress ?? '—';
   const projectCode = project?.id ?? optionMeta?.code ?? effectiveProjectId;
   const materialStatus = project ? getMaterialStatusLabel(timelineSteps) : '—';
-  const hasMaterialStatus = materialStatus !== '—';
   const nextSchedule = getNextScheduledForProject(props, effectiveProjectId);
-  const logistics = project?.logistics ?? null;
-  const workOrders: WorkOrder[] = logistics
-    ? [...(logistics.workOrders ?? []), ...(logistics.workOrder ? [logistics.workOrder] : [])]
-    : [];
-  const materialOrders: MaterialOrder[] = logistics
-    ? [...(logistics.materialOrders ?? []), ...(logistics.materialOrder ? [logistics.materialOrder] : [])]
-    : [];
+  const isCompleted = currentPhase.key === 'completed';
+  const nextStepHelp =
+    currentPhase.key === 'logistics'
+      ? 'Nadaljuj pripravo materiala.'
+      : currentPhase.key === 'execution'
+        ? 'Nadaljuj izvedbo delovnega naloga.'
+        : 'Račun se izda v Projects modulu.';
 
-  const handleSaveWorkOrder = async (
-    workOrder: WorkOrder,
-    workOrderItems: WorkOrder['items'],
-    materialOrder?: MaterialOrder | null,
-    materialItems?: MaterialOrder['items'],
-  ) => {
-    if (!workOrder || !(workOrder as any)._id) {
+  const handleNextStepFocus = () => {
+    const targetId =
+      currentPhase.key === 'logistics'
+        ? 'dashboard-logistics-material'
+        : currentPhase.key === 'execution'
+          ? 'dashboard-logistics-workorder'
+          : null;
+    if (!targetId || typeof document === 'undefined') {
       return;
     }
-    const workOrderId = (workOrder as any)._id as string;
-    const material = materialOrder ?? null;
-    await fetch(`/api/projects/${effectiveProjectId}/work-orders/${workOrderId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        workOrderId,
-        scheduledAt: (workOrder as any).scheduledAt ?? null,
-        assignedEmployeeIds: Array.isArray((workOrder as any).assignedEmployeeIds)
-          ? (workOrder as any).assignedEmployeeIds
-          : [],
-        location: (workOrder as any).location ?? '',
-        notes: (workOrder as any).notes ?? '',
-        status: (workOrder as any).status ?? undefined,
-        items: Array.isArray(workOrderItems) ? workOrderItems : undefined,
-        materialOrderId: material?._id ?? null,
-        materialStatus: material?.materialStatus ?? undefined,
-        materialAssignedEmployeeIds: Array.isArray(material?.assignedEmployeeIds)
-          ? material?.assignedEmployeeIds
-          : undefined,
-        materialItems: Array.isArray(materialItems ?? material?.items) ? materialItems ?? material?.items : undefined,
-      }),
-    });
-    await refresh();
-  };
-
-  const updateWorkOrderItem = async (workOrder: WorkOrder, itemId: string, nextExecuted: number) => {
-    const nextItems = Array.isArray(workOrder.items)
-      ? workOrder.items.map((item) =>
-          item.id === itemId ? { ...item, executedQuantity: nextExecuted } : item,
-        )
-      : [];
-    const materialOrder =
-      materialOrders.find((order) => order.workOrderId === (workOrder as any)._id) ?? null;
-    await handleSaveWorkOrder(workOrder, nextItems, materialOrder ?? undefined);
-  };
-
-  const updateMaterialItem = async (materialOrder: MaterialOrder, itemId: string, nextDelivered: number) => {
-    const nextItems = Array.isArray(materialOrder.items)
-      ? materialOrder.items.map((item) =>
-          item.id === itemId ? { ...item, deliveredQty: nextDelivered } : item,
-        )
-      : [];
-    const workOrder =
-      workOrders.find((order) => (order as any)._id === materialOrder.workOrderId) ?? workOrders[0];
-    if (!workOrder) return;
-    await handleSaveWorkOrder(workOrder, workOrder.items ?? [], materialOrder, nextItems);
+    const target = document.getElementById(targetId);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   };
 
   return (
@@ -285,12 +228,45 @@ function ProjectSummaryBody({
         <p className="dashboard-widget__empty">Nalagam projekt...</p>
       ) : (
         <div className="dashboard-project-widget__content">
+          <div className="dashboard-project-widget__phase-banner">
+            <div>
+              <span className="dashboard-project-widget__phase-label">Trenutna faza:</span>
+              <span className="dashboard-project-widget__phase-value">{currentPhase.label}</span>
+            </div>
+            {isCompleted ? <span className="dashboard-project-widget__phase-badge">Zaključeno</span> : null}
+          </div>
           <div className="dashboard-project-widget__header">
             <div className="dashboard-project-widget__title">[{projectCode}] – {customerName}</div>
             <div className="dashboard-project-widget__subtitle">{customerAddress}</div>
             <div className="dashboard-project-widget__meta">
               <span>Status materiala: {materialStatus}</span>
               <span>Termin: {formatDateTime(nextSchedule)}</span>
+            </div>
+          </div>
+          <div className="dashboard-project-widget__next-step">
+            <div className="dashboard-project-widget__next-step-header">
+              <span>Naslednji korak</span>
+              <button
+                type="button"
+                className="dashboard-project-widget__link"
+                onClick={() => navigateToProject(effectiveProjectId, 'logistics')}
+              >
+                Odpri podrobnosti
+              </button>
+            </div>
+            <div className="dashboard-project-widget__next-step-body">
+              <p className="dashboard-project-widget__next-step-text">{nextStepHelp}</p>
+              {currentPhase.key === 'logistics' || currentPhase.key === 'execution' ? (
+                <button
+                  type="button"
+                  className="dashboard-project-widget__primary"
+                  onClick={handleNextStepFocus}
+                >
+                  Pokaži korak
+                </button>
+              ) : (
+                <span className="dashboard-project-widget__readonly">Čaka na račun</span>
+              )}
             </div>
           </div>
           <div className="dashboard-project-widget__timeline">
@@ -303,105 +279,18 @@ function ProjectSummaryBody({
               );
             })}
           </div>
-          <div className="dashboard-project-widget__accordion">
-            <button
-              type="button"
-              className="dashboard-project-widget__accordion-header"
-              onClick={onToggleWorkOrders}
-            >
-              <span>Delovni nalog</span>
-              {showWorkOrders ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-            </button>
-            {showWorkOrders ? (
-              <div className="dashboard-project-widget__accordion-body">
-                {workOrders.length ? (
-                  workOrders.map((workOrder) => (
-                    <div key={(workOrder as any)._id ?? workOrder.id} className="dashboard-project-widget__list">
-                      <div className="dashboard-project-widget__order-title">
-                        {workOrder.title ?? 'Delovni nalog'}
-                        <span className="dashboard-project-widget__badge dashboard-project-widget__badge--status">
-                          {getWorkOrderStatusLabel(workOrder.status)}
-                        </span>
-                      </div>
-                      {(workOrder.items ?? []).map((item) => {
-                        const requiredQty = typeof item.quantity === 'number' ? item.quantity : 0;
-                        const executedQty = typeof item.executedQuantity === 'number' ? item.executedQuantity : 0;
-                        const diff = executedQty - requiredQty;
-                        const isEnough = diff >= 0;
-                        return (
-                          <label key={item.id} className="dashboard-project-widget__checkbox-row">
-                            <input
-                              type="checkbox"
-                              checked={isEnough}
-                              onChange={() => {
-                                void updateWorkOrderItem(workOrder, item.id, requiredQty);
-                              }}
-                            />
-                            <span className="dashboard-project-widget__checkbox-label">
-                              {item.name}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  ))
-                ) : (
-                  <p className="dashboard-widget__empty">Ni delovnih nalogov.</p>
-                )}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="dashboard-project-widget__accordion">
-            <button
-              type="button"
-              className="dashboard-project-widget__accordion-header"
-              onClick={onToggleMaterials}
-            >
-              <span>Naročilo materiala</span>
-              {showMaterials ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-            </button>
-            {showMaterials ? (
-              <div className="dashboard-project-widget__accordion-body">
-                {materialOrders.length ? (
-                  materialOrders.map((materialOrder) => (
-                    <div key={materialOrder._id ?? materialOrder.id} className="dashboard-project-widget__list">
-                      <div className="dashboard-project-widget__order-title">
-                        <span>Material</span>
-                        {hasMaterialStatus ? (
-                          <span className="dashboard-project-widget__badge dashboard-project-widget__badge--material">
-                            {`Material: ${materialStatus}`}
-                          </span>
-                        ) : null}
-                      </div>
-                      {(materialOrder.items ?? []).map((item) => {
-                        const requiredQty = typeof item.quantity === 'number' ? item.quantity : 0;
-                        const deliveredQty = typeof item.deliveredQty === 'number' ? item.deliveredQty : 0;
-                        const diff = deliveredQty - requiredQty;
-                        const isEnough = diff >= 0;
-                        return (
-                          <label key={item.id} className="dashboard-project-widget__checkbox-row">
-                            <input
-                              type="checkbox"
-                              checked={isEnough}
-                              onChange={() => {
-                                void updateMaterialItem(materialOrder, item.id, requiredQty);
-                              }}
-                            />
-                            <span className="dashboard-project-widget__checkbox-label">
-                              {item.name}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  ))
-                ) : (
-                  <p className="dashboard-widget__empty">Ni materialnih naročil.</p>
-                )}
-              </div>
-            ) : null}
-          </div>
+          {currentPhase.key === 'logistics' ? (
+            <LogisticsPanel projectId={effectiveProjectId} client={project?.customerDetail ?? null} mode="embedded" section="material" />
+          ) : null}
+          {currentPhase.key === 'execution' ? (
+            <LogisticsPanel
+              projectId={effectiveProjectId}
+              client={project?.customerDetail ?? null}
+              mode="embedded"
+              section="workorder"
+              workOrderMode="execute"
+            />
+          ) : null}
         </div>
       )}
     </div>

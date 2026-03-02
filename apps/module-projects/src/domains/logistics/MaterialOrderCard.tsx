@@ -1,11 +1,12 @@
 import { useRef } from "react";
-import type { MaterialOrder, MaterialStatus } from "@aintel/shared/types/logistics";
+import type { MaterialOrder, MaterialStep } from "@aintel/shared/types/logistics";
 import type { Employee } from "@aintel/shared/types/employee";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { PhaseRibbon, type PhaseRibbonStatus } from "../../components/PhaseRibbon";
 
 type MaterialLine = MaterialOrder["items"][number];
 type SupplierGroup = {
@@ -65,8 +66,7 @@ function groupMaterialLinesByDobavitelj(lines: MaterialLine[]): SupplierGroup[] 
 
 interface MaterialOrderCardProps {
   materialOrder: MaterialOrder | null;
-  nextStatus: MaterialStatus | null;
-  onAdvanceStatus: (status: MaterialStatus) => void;
+  onAdvanceStep?: (step: MaterialStep) => void;
   savingWorkOrder: boolean;
   employees: Employee[];
   assignedEmployeeIds: string[];
@@ -79,10 +79,39 @@ interface MaterialOrderCardProps {
   downloadingPdf: "PURCHASE_ORDER" | "DELIVERY_NOTE" | null;
 }
 
+const RAW_MATERIAL_STEPS: MaterialStep[] = [
+  "Za naročiti",
+  "Naročeno",
+  "Za prevzem",
+  "Prevzeto",
+  "Pripravljeno",
+];
+const MATERIAL_STEPS: MaterialStep[] = ["Naročeno", "Za prevzem", "Prevzeto", "Pripravljeno"];
+
+function resolveRawStep(value?: string | null): MaterialStep {
+  return RAW_MATERIAL_STEPS.includes(value as MaterialStep) ? (value as MaterialStep) : "Za naročiti";
+}
+
+function resolveDisplayStep(value?: string | null): MaterialStep {
+  if (value === "Za naročiti") return "Naročeno";
+  return MATERIAL_STEPS.includes(value as MaterialStep) ? (value as MaterialStep) : "Naročeno";
+}
+
+function isStepEligible(item: MaterialLine, targetStep: MaterialStep) {
+  if (targetStep === "Naročeno") return true;
+  if (targetStep === "Za prevzem") return true;
+  if (targetStep === "Prevzeto") {
+    const requiredQty = typeof item.quantity === "number" ? item.quantity : 0;
+    const deliveredQty = typeof item.deliveredQty === "number" ? item.deliveredQty : 0;
+    return deliveredQty >= requiredQty;
+  }
+  if (targetStep === "Pripravljeno") return true;
+  return false;
+}
+
 export function MaterialOrderCard({
   materialOrder,
-  nextStatus,
-  onAdvanceStatus,
+  onAdvanceStep,
   savingWorkOrder,
   employees,
   assignedEmployeeIds,
@@ -101,6 +130,27 @@ export function MaterialOrderCard({
   }
 
   const groupedByDobavitelj = groupMaterialLinesByDobavitelj(materialOrder.items ?? []);
+
+  const allItems = materialOrder.items ?? [];
+  const totalCount = allItems.length;
+  const preparedCount = allItems.filter((item) => resolveRawStep(item.materialStep) === "Pripravljeno").length;
+  const isFullyPrepared = totalCount > 0 && preparedCount === totalCount;
+  const summaryLabel = isFullyPrepared
+    ? "Material: Pripravljeno"
+    : `Material: Delno (${preparedCount}/${totalCount} pripravljeno)`;
+  const rawIndexes = allItems.map((item) => RAW_MATERIAL_STEPS.indexOf(resolveRawStep(item.materialStep)));
+  const minRawIndex = rawIndexes.length > 0 ? Math.min(...rawIndexes) : 0;
+  const currentIndex = isFullyPrepared ? -1 : Math.min(Math.max(minRawIndex - 1, 0), MATERIAL_STEPS.length - 1);
+  const currentStep = currentIndex >= 0 ? MATERIAL_STEPS[currentIndex] : null;
+  const nextStep = isFullyPrepared ? null : RAW_MATERIAL_STEPS[minRawIndex + 1] ?? null;
+  const eligibleCount =
+    nextStep === null
+      ? 0
+      : allItems.filter(
+          (item) => resolveRawStep(item.materialStep) === RAW_MATERIAL_STEPS[minRawIndex] && isStepEligible(item, nextStep),
+        ).length;
+  const nextDisabledReason =
+    nextStep === null ? "Material je že pripravljen." : eligibleCount === 0 ? "Ni postavk za napredovanje." : "";
 
   const missingItemsCount = (materialOrder.items ?? []).filter((item) => {
     const deliveredQty = typeof item.deliveredQty === "number" ? item.deliveredQty : 0;
@@ -129,21 +179,32 @@ export function MaterialOrderCard({
           )}
         </div>
       </div>
-      {missingItemsCount > 0 && (
-        <div className="text-sm text-muted-foreground">Manjkajoce postavke: {missingItemsCount}</div>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <span className="font-medium">{summaryLabel}</span>
+        {missingItemsCount > 0 && (
+          <span className="text-muted-foreground">Manjkajoče postavke: {missingItemsCount}</span>
+        )}
+      </div>
+      <PhaseRibbon
+        steps={MATERIAL_STEPS.map((step, index) => {
+          const status: PhaseRibbonStatus =
+            currentIndex === -1 ? "done" : index < currentIndex ? "done" : index === currentIndex ? "active" : "future";
+          return { key: step, label: step, status };
+        })}
+        activeKey={currentStep ?? undefined}
+        variant="static"
+      />
       {groupedByDobavitelj.map((group) => (
         <div key={group.dobaviteljKey} className="space-y-2">
           <div className="space-y-1 text-sm">
             <div className="font-medium">
               <span className="text-muted-foreground">Dobavitelj</span>: {group.dobaviteljLabel}
             </div>
-            <div className="text-muted-foreground">
-              Naslov dobavitelja:{" "}
-              {group.dobaviteljLabel === "MANJKA DOBAVITELJ"
-                ? "—"
-                : group.naslovDobavitelja || "—"}
-            </div>
+            {group.dobaviteljLabel !== "MANJKA DOBAVITELJ" &&
+            typeof group.naslovDobavitelja === "string" &&
+            group.naslovDobavitelja.trim().length > 0 ? (
+              <div className="text-muted-foreground">Naslov dobavitelja: {group.naslovDobavitelja}</div>
+            ) : null}
           </div>
           <div className="border rounded-[var(--radius-card)] bg-card overflow-hidden">
             <Table className="table-fixed w-full">
@@ -152,6 +213,7 @@ export function MaterialOrderCard({
                 <col style={{ width: "90px" }} />
                 <col style={{ width: "90px" }} />
                 <col style={{ width: "56px" }} />
+                <col style={{ width: "130px" }} />
               </colgroup>
               <TableHeader>
                 <TableRow>
@@ -159,6 +221,7 @@ export function MaterialOrderCard({
                   <TableHead className="text-center tabular-nums w-[90px]">{"Koli\u010dina"}</TableHead>
                   <TableHead className="text-center tabular-nums w-[90px]">Razlika</TableHead>
                   <TableHead className="text-right w-[56px]">Imamo</TableHead>
+                  <TableHead className="text-center w-[130px]">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -270,6 +333,11 @@ export function MaterialOrderCard({
                           </span>
                         </label>
                       </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="text-[11px]">
+                          {resolveDisplayStep(item.materialStep)}
+                        </Badge>
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -299,19 +367,19 @@ export function MaterialOrderCard({
             Prenesi dobavnico
           </Button>
         </div>
-        {nextStatus && (
+        {nextStep && onAdvanceStep && (
           <Button
-            onClick={() => onAdvanceStatus(nextStatus)}
-            disabled={savingWorkOrder}
-            title="Naprej"
-            aria-label="Naprej"
+            onClick={() => onAdvanceStep(nextStep)}
+            disabled={savingWorkOrder || eligibleCount === 0}
+            title={nextDisabledReason || "Naslednji korak"}
+            aria-label="Naslednji korak"
             className="px-5"
             style={{
               clipPath: "polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%)",
               paddingRight: "20px",
             }}
           >
-            {nextStatus}
+            Naslednji korak
           </Button>
         )}
       </div>

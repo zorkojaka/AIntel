@@ -8,6 +8,7 @@ import { OfferVersionModel } from '../schemas/offer-version';
 import { ProductModel } from '../../cenik/product.model';
 import { ProjectModel } from '../schemas/project';
 import { renderHtmlToPdf } from '../services/html-pdf.service';
+import { renderProductDescriptionsHtml, type ProductDescriptionEntry } from '../services/document-renderers';
 import { generateOfferDocumentPdf } from '../services/offer-pdf-preview.service';
 import { generateOfferDocumentNumber, type DocumentNumberingKind } from '../services/document-numbering.service';
 import { resolveActorId } from '../../../utils/tenant';
@@ -500,6 +501,7 @@ export async function deleteOfferVersion(req: Request, res: Response, next: Next
 export async function exportOfferPdf(req: Request, res: Response) {
   const { projectId, offerVersionId } = req.params;
   const modeParam = typeof req.query.mode === 'string' ? req.query.mode.toLowerCase() : 'offer';
+  const variantParam = typeof req.query.variant === 'string' ? req.query.variant.toLowerCase() : '';
   const mode: 'offer' | 'project' | 'both' =
     modeParam === 'project' || modeParam === 'both' ? (modeParam as 'project' | 'both') : 'offer';
   const includeOffer = mode === 'offer' || mode === 'both';
@@ -516,6 +518,16 @@ export async function exportOfferPdf(req: Request, res: Response) {
   offer.sentByUserId = actorId ?? offer.sentByUserId ?? null;
   offer.sentVia = 'email';
   await offer.save();
+
+  if (variantParam === 'descriptions') {
+    try {
+      await renderOfferDescriptionsPdf(res, offer);
+    } catch (error) {
+      console.error('Descriptions PDF failed', error);
+      res.fail('Izvoz dokumenta ni uspel. Poskusite znova.', 500);
+    }
+    return;
+  }
 
   if (docType !== 'OFFER' && includeProject) {
     return res.fail('Ta dokument ne podpira kombiniranega izvoza.', 400);
@@ -681,6 +693,70 @@ async function buildProjectEntries(offer: OfferVersion): Promise<ProjectEntry[]>
   return entries;
 }
 
+function sanitizeDescriptionForHtml(value: string) {
+  const withoutControls = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+  const withoutTags = withoutControls.replace(/<[^>]+>/g, '');
+  const normalized = withoutTags.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter((line) => line.length > 0);
+  let result = lines.join('\n').trim();
+  const limit = 1800;
+  if (result.length > limit) {
+    result = `${result.slice(0, limit).trim()}…`;
+  }
+  return result;
+}
+
+async function buildDescriptionEntries(offer: OfferVersion): Promise<ProductDescriptionEntry[]> {
+  const items = Array.isArray(offer.items) ? offer.items : [];
+  const uniqueIds = Array.from(
+    new Set(
+      items
+        .map((item) => (item.productId ? String(item.productId) : null))
+        .filter((value): value is string => !!value)
+    )
+  );
+
+  let productMap = new Map<string, any>();
+  if (uniqueIds.length > 0) {
+    const products = await ProductModel.find({ _id: { $in: uniqueIds } }).lean();
+    productMap = new Map(products.map((product) => [product._id.toString(), product]));
+  }
+
+  const entries: ProductDescriptionEntry[] = [];
+
+  for (const item of items) {
+    const productId = item.productId ? String(item.productId) : null;
+    const product = productId ? productMap.get(productId) : null;
+    const title = product?.ime || item.name;
+    const description = sanitizeDescriptionForHtml(String(product?.dolgOpis ?? ''));
+    const imageUrl = typeof product?.povezavaDoSlike === 'string' ? product.povezavaDoSlike.trim() : '';
+    const hasImage = !!imageUrl;
+    const hasDesc = !!description;
+    if (!hasImage && !hasDesc) {
+      continue;
+    }
+    let imageDataUrl: string | undefined;
+    if (hasImage) {
+      imageDataUrl = await fetchImageDataUrl(imageUrl);
+    }
+    const resolvedHasImage = !!imageDataUrl;
+    const resolvedHasDesc = !!description;
+    if (!resolvedHasImage && !resolvedHasDesc) {
+      continue;
+    }
+    entries.push({
+      title,
+      description: resolvedHasDesc ? description : undefined,
+      imageUrl: resolvedHasImage ? imageDataUrl : undefined,
+    });
+  }
+
+  return entries;
+}
+
 async function appendProjectSection(doc: PDFDocumentInstance, entries: ProjectEntry[]) {
   const processed = await Promise.all(
     entries.map(async (entry) => {
@@ -719,9 +795,45 @@ async function appendProjectSection(doc: PDFDocumentInstance, entries: ProjectEn
   });
 }
 
+async function renderOfferDescriptionsPdf(res: Response, offer: OfferVersion) {
+  const entries = await buildDescriptionEntries(offer);
+  const html = renderProductDescriptionsHtml(entries);
+  const buffer = await renderHtmlToPdf(html);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="product-descriptions-${offer._id}.pdf"`);
+  res.end(buffer);
+}
+
 function sanitizeDescription(value: string) {
   if (!value) return '';
   return value.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+async function fetchImageDataUrl(url: string): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    try {
+      const client = url.startsWith('https') ? https : http;
+      client
+        .get(url, (response) => {
+          if (!response.statusCode || response.statusCode >= 400) {
+            response.resume();
+            resolve(undefined);
+            return;
+          }
+          const data: Buffer[] = [];
+          response.on('data', (chunk) => data.push(chunk as Buffer));
+          response.on('end', () => {
+            const buffer = Buffer.concat(data);
+            const contentType = response.headers['content-type'] ?? 'image/jpeg';
+            const base64 = buffer.toString('base64');
+            resolve(`data:${contentType};base64,${base64}`);
+          });
+        })
+        .on('error', () => resolve(undefined));
+    } catch {
+      resolve(undefined);
+    }
+  });
 }
 
 async function downloadImageBuffer(url: string): Promise<Buffer | null> {

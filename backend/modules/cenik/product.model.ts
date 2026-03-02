@@ -55,7 +55,7 @@ const ProductSchema = new Schema<ProductDocument>(
   }
 );
 
-ProductSchema.index({ externalKey: 1 }, { unique: true, sparse: true });
+ProductSchema.index({ externalKey: 1 }, { unique: true });
 ProductSchema.index(
   { externalSource: 1, externalId: 1 },
   {

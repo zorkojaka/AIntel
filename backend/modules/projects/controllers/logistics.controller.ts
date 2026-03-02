@@ -63,6 +63,46 @@ function calculateOfferTotalsFromSnapshot(offer: {
 }
 
 const MATERIAL_STATUS_VALUES = ['Za naročit', 'Naročeno', 'Prevzeto', 'Pripravljeno', 'Dostavljeno', 'Zmontirano'];
+const MATERIAL_STEP_SEQUENCE = ['Za naročiti', 'Naročeno', 'Za prevzem', 'Prevzeto', 'Pripravljeno'] as const;
+type MaterialStep = (typeof MATERIAL_STEP_SEQUENCE)[number];
+const MATERIAL_STATUS_BY_STEP: Record<MaterialStep, string> = {
+  'Za naročiti': 'Za naročit',
+  'Naročeno': 'Naročeno',
+  'Za prevzem': 'Naročeno',
+  'Prevzeto': 'Prevzeto',
+  'Pripravljeno': 'Pripravljeno',
+};
+
+function resolveMaterialStep(value: unknown): MaterialStep {
+  return MATERIAL_STEP_SEQUENCE.includes(value as MaterialStep) ? (value as MaterialStep) : 'Za naročiti';
+}
+
+function getNextStep(step: MaterialStep | null): MaterialStep | null {
+  if (!step) return MATERIAL_STEP_SEQUENCE[0];
+  const index = MATERIAL_STEP_SEQUENCE.indexOf(step);
+  if (index < 0 || index >= MATERIAL_STEP_SEQUENCE.length - 1) return null;
+  return MATERIAL_STEP_SEQUENCE[index + 1];
+}
+
+function isStepEligible(item: any, targetStep: MaterialStep) {
+  if (targetStep === 'Naročeno') return true;
+  if (targetStep === 'Za prevzem') return true;
+  if (targetStep === 'Prevzeto') {
+    const requiredQty = typeof item.quantity === 'number' ? item.quantity : 0;
+    const deliveredQty = typeof item.deliveredQty === 'number' ? item.deliveredQty : 0;
+    return deliveredQty >= requiredQty;
+  }
+  if (targetStep === 'Pripravljeno') return true;
+  return false;
+}
+
+function resolveSupplierKey(item: any) {
+  const supplier = typeof item.dobavitelj === 'string' ? item.dobavitelj.trim().toLowerCase() : '';
+  const address =
+    typeof item.naslovDobavitelja === 'string' ? item.naslovDobavitelja.trim().toLowerCase() : '';
+  const key = `${supplier}||${address}`.trim();
+  return key.length > 2 ? key : 'brez-dobavitelja';
+}
 
 function mapOfferItemsToLogistics(items: OfferLineItem[]) {
   return items.map((item) => {
@@ -77,6 +117,7 @@ function mapOfferItemsToLogistics(items: OfferLineItem[]) {
       note,
       dobavitelj: (item as any).dobavitelj,
       naslovDobavitelja: (item as any).naslovDobavitelja,
+      materialStep: 'Za naročiti',
     };
   });
 }
@@ -169,12 +210,17 @@ async function ensureMaterialOrderForOffer(params: {
     if (materialOrder.status === 'cancelled') {
       materialOrder.status = 'draft';
     }
-    const existingDelivered = new Map(
-      (materialOrder.items ?? []).map((item: any) => [String(item.id), item.deliveredQty])
+    const existingItems = new Map<string, any>(
+      (materialOrder.items ?? []).map((item: any) => [String(item.id), item])
     );
     materialOrder.items = items.map((item) => ({
       ...item,
-      deliveredQty: typeof existingDelivered.get(item.id) === 'number' ? existingDelivered.get(item.id) : 0,
+      deliveredQty:
+        typeof existingItems.get(item.id)?.deliveredQty === 'number' ? existingItems.get(item.id).deliveredQty : 0,
+      materialStep:
+        typeof existingItems.get(item.id)?.materialStep === 'string'
+          ? existingItems.get(item.id).materialStep
+          : item.materialStep ?? 'Za naročiti',
     }));
     materialOrder.workOrderId = workOrderId;
     materialOrder.materialStatus = materialOrder.materialStatus ?? 'Za naročit';
@@ -212,6 +258,7 @@ function serializeMaterialOrder(order: any): MaterialOrder | null {
       note: item.note,
       dobavitelj: item.dobavitelj,
       naslovDobavitelja: item.naslovDobavitelja,
+      materialStep: typeof item.materialStep === 'string' ? item.materialStep : 'Za naročiti',
       offerItemId: item.offerItemId ?? null,
       offeredQuantity:
         typeof item.offeredQuantity === 'number' ? item.offeredQuantity : Number(item.quantity) || 0,
@@ -276,6 +323,11 @@ function serializeWorkOrder(order: any): WorkOrder | null {
       }),
     status: order.status,
     scheduledAt: order.scheduledAt ?? null,
+    scheduledConfirmedAt: order.scheduledConfirmedAt
+      ? new Date(order.scheduledConfirmedAt).toISOString()
+      : order.scheduleConfirmedAt
+        ? new Date(order.scheduleConfirmedAt).toISOString()
+        : null,
     assignedEmployeeIds: Array.isArray(order.assignedEmployeeIds)
       ? order.assignedEmployeeIds.map((id: any) => String(id))
       : [],
@@ -389,8 +441,13 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
     offer.status = 'accepted';
     await offer.save();
 
+    const offerTotals = calculateOfferTotalsFromSnapshot(offer as any);
     const updatePayload: Record<string, unknown> = {
       confirmedOfferVersionId: offerId,
+      quotedTotal: offerTotals.baseWithoutVat,
+      quotedVat: offerTotals.vatAmount,
+      quotedTotalWithVat: offerTotals.totalWithVat,
+      offerAmount: offerTotals.totalWithVat,
     };
     if (project.status !== 'completed') {
       updatePayload.status = 'ordered';
@@ -609,6 +666,15 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     if ('scheduledAt' in payload) {
       updates.scheduledAt = typeof payload.scheduledAt === 'string' ? payload.scheduledAt : null;
     }
+    const scheduledConfirmedValue =
+      'scheduledConfirmedAt' in payload ? payload.scheduledConfirmedAt : payload.scheduleConfirmedAt;
+    if (scheduledConfirmedValue !== undefined) {
+      if (scheduledConfirmedValue === null) {
+        updates.scheduledConfirmedAt = null;
+      } else if (typeof scheduledConfirmedValue === 'string' && scheduledConfirmedValue.trim().length > 0) {
+        updates.scheduledConfirmedAt = new Date(scheduledConfirmedValue);
+      }
+    }
     if ('technicianName' in payload || 'technicianId' in payload) {
       console.warn('Ignoring legacy technician fields on work order update.');
     }
@@ -722,7 +788,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       payload.status === 'completed'
     ) {
       updates.status = payload.status;
-    }
+  }
 
   const updated = await WorkOrderModel.findOneAndUpdate({ _id: workOrderId, projectId }, { $set: updates }, { new: true });
 
@@ -830,6 +896,189 @@ function parseWorkDocType(value?: string | string[] | null): 'WORK_ORDER' | 'WOR
     return 'WORK_ORDER_CONFIRMATION';
   }
   return 'WORK_ORDER';
+}
+
+export async function advanceMaterialOrderStep(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { projectId, materialOrderId } = req.params;
+    const materialOrder = await MaterialOrderModel.findOne({
+      _id: materialOrderId,
+      projectId,
+      status: { $ne: 'cancelled' },
+    });
+    if (!materialOrder) {
+      return res.fail('Naročilo materiala ni najdeno.', 404);
+    }
+
+    const items = (materialOrder.items ?? []).map((item: any) => ({
+      ...(item.toObject ? item.toObject() : item),
+      materialStep: resolveMaterialStep(item.materialStep),
+    }));
+
+    if (items.length === 0) {
+      return res.success({ materialOrders: [serializeMaterialOrder(materialOrder)].filter(Boolean) });
+    }
+
+    const targetStepInput =
+      typeof req.body?.targetStep === 'string' ? (req.body.targetStep as string).trim() : null;
+
+    const minStepIndex = items.reduce((min, item) => {
+      const index = MATERIAL_STEP_SEQUENCE.indexOf(resolveMaterialStep(item.materialStep));
+      return Math.min(min, index >= 0 ? index : 0);
+    }, MATERIAL_STEP_SEQUENCE.length - 1);
+    const currentStep = MATERIAL_STEP_SEQUENCE[minStepIndex] ?? MATERIAL_STEP_SEQUENCE[0];
+    const expectedNext = getNextStep(currentStep);
+    if (!expectedNext) {
+      return res.success({ materialOrders: [serializeMaterialOrder(materialOrder)].filter(Boolean) });
+    }
+    if (targetStepInput && targetStepInput !== expectedNext) {
+      return res.fail('Neveljaven korak napredovanja.', 400);
+    }
+
+    const targetStep = expectedNext;
+    const targetIndex = MATERIAL_STEP_SEQUENCE.indexOf(targetStep);
+
+    const advancedItems = items.map((item) => {
+      const current = resolveMaterialStep(item.materialStep);
+      if (current === currentStep && isStepEligible(item, targetStep)) {
+        return { ...item, materialStep: targetStep };
+      }
+      return item;
+    });
+
+    const groups = new Map<string, any[]>();
+    advancedItems.forEach((item) => {
+      const key = resolveSupplierKey(item);
+      const existing = groups.get(key);
+      if (existing) {
+        existing.push(item);
+      } else {
+        groups.set(key, [item]);
+      }
+    });
+
+    const groupEntries = Array.from(groups.entries());
+    const primaryKey = groupEntries[0]?.[0] ?? 'brez-dobavitelja';
+
+    const createOrderFromItems = async (itemsForOrder: any[]) => {
+      const stepIndex = itemsForOrder.reduce((min, item) => {
+        const index = MATERIAL_STEP_SEQUENCE.indexOf(resolveMaterialStep(item.materialStep));
+        return Math.min(min, index >= 0 ? index : 0);
+      }, MATERIAL_STEP_SEQUENCE.length - 1);
+      const step = MATERIAL_STEP_SEQUENCE[stepIndex] ?? MATERIAL_STEP_SEQUENCE[0];
+      const materialStatus = MATERIAL_STATUS_BY_STEP[step];
+      return MaterialOrderModel.create({
+        projectId,
+        offerVersionId: materialOrder.offerVersionId,
+        workOrderId: materialOrder.workOrderId,
+        items: itemsForOrder,
+        status: materialOrder.status ?? 'draft',
+        materialStatus,
+        assignedEmployeeIds: materialOrder.assignedEmployeeIds ?? [],
+        reopened: false,
+      });
+    };
+
+    const createdOrders: any[] = [];
+
+    for (const [supplierKey, groupItems] of groupEntries) {
+      const mainItems = groupItems.filter(
+        (item) => MATERIAL_STEP_SEQUENCE.indexOf(resolveMaterialStep(item.materialStep)) >= targetIndex
+      );
+      const laggingItems = groupItems.filter(
+        (item) => MATERIAL_STEP_SEQUENCE.indexOf(resolveMaterialStep(item.materialStep)) < targetIndex
+      );
+
+      const shouldSplit = mainItems.length > 0 && laggingItems.length > 0;
+      const primaryItems = mainItems.length > 0 ? mainItems : groupItems;
+
+      if (supplierKey === primaryKey) {
+        materialOrder.items = primaryItems;
+        const stepIndex = primaryItems.reduce((min, item) => {
+          const index = MATERIAL_STEP_SEQUENCE.indexOf(resolveMaterialStep(item.materialStep));
+          return Math.min(min, index >= 0 ? index : 0);
+        }, MATERIAL_STEP_SEQUENCE.length - 1);
+        const step = MATERIAL_STEP_SEQUENCE[stepIndex] ?? MATERIAL_STEP_SEQUENCE[0];
+        materialOrder.materialStatus = MATERIAL_STATUS_BY_STEP[step];
+        await materialOrder.save();
+      } else {
+        const created = await createOrderFromItems(primaryItems);
+        createdOrders.push(created);
+      }
+
+      if (shouldSplit) {
+        const laggingOrder = await createOrderFromItems(laggingItems);
+        createdOrders.push(laggingOrder);
+      }
+    }
+
+    const materialOrderDocs = await MaterialOrderModel.find({
+      projectId,
+      status: { $ne: 'cancelled' },
+      cancelledAt: null,
+    }).sort({ createdAt: 1 });
+
+    // Merge lagging orders back once all items for the same supplier align on the same step.
+    const mergeGroups = new Map<string, typeof materialOrderDocs>();
+    for (const order of materialOrderDocs) {
+      const items = (order.items ?? []).map((item: any) => ({
+        ...(item.toObject ? item.toObject() : item),
+      }));
+      if (items.length === 0) continue;
+      const supplierKey = resolveSupplierKey(items[0]);
+      const hasMixedSuppliers = items.some((item) => resolveSupplierKey(item) !== supplierKey);
+      if (hasMixedSuppliers) continue;
+      const workOrderId = order.workOrderId ? String(order.workOrderId) : '';
+      const groupKey = `${order.offerVersionId}::${supplierKey}::${workOrderId}`;
+      const existing = mergeGroups.get(groupKey);
+      if (existing) {
+        existing.push(order);
+      } else {
+        mergeGroups.set(groupKey, [order]);
+      }
+    }
+
+    for (const orders of mergeGroups.values()) {
+      if (orders.length <= 1) continue;
+      const stepIndexes = orders.flatMap((order) =>
+        (order.items ?? []).map((item: any) => MATERIAL_STEP_SEQUENCE.indexOf(resolveMaterialStep(item.materialStep)))
+      );
+      if (stepIndexes.length === 0) continue;
+      const minIndex = Math.min(...stepIndexes);
+      const maxIndex = Math.max(...stepIndexes);
+      if (minIndex !== maxIndex) continue;
+
+      const primary = orders[0];
+      const mergedItems = orders.flatMap((order) =>
+        (order.items ?? []).map((item: any) => (item.toObject ? item.toObject() : item))
+      );
+      const step = MATERIAL_STEP_SEQUENCE[minIndex] ?? MATERIAL_STEP_SEQUENCE[0];
+      primary.items = mergedItems;
+      primary.materialStatus = MATERIAL_STATUS_BY_STEP[step];
+      await primary.save();
+
+      const toRemove = orders.slice(1).map((order) => order._id);
+      if (toRemove.length > 0) {
+        await MaterialOrderModel.deleteMany({ _id: { $in: toRemove } });
+      }
+    }
+
+    const refreshedMaterialOrders = await MaterialOrderModel.find({
+      projectId,
+      status: { $ne: 'cancelled' },
+      cancelledAt: null,
+    })
+      .sort({ createdAt: 1 })
+      .lean();
+
+    const serializedMaterialOrders = refreshedMaterialOrders
+      .map(serializeMaterialOrder)
+      .filter((order): order is MaterialOrder => order !== null);
+
+    return res.success({ materialOrders: serializedMaterialOrders });
+  } catch (err) {
+    next(err);
+  }
 }
 
 export async function exportMaterialOrderPdf(req: Request, res: Response, next: NextFunction) {

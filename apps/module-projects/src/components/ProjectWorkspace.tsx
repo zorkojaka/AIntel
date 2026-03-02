@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Button } from "./ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { Tabs, TabsContent } from "./ui/tabs";
 import { Card } from "./ui/card";
 import { OfferVersion } from "../domains/offers/OfferVersionCard";
 import type { WorkOrder as LogisticsWorkOrder } from "@aintel/shared/types/logistics";
@@ -16,29 +16,8 @@ import { ProjectHeader } from "../domains/core/ProjectHeader";
 import { ProjectQuickNav } from "../domains/core/ProjectQuickNav";
 import { useProjectTimeline, type StepKey, type StepStatus, type TimelineStep } from "../domains/core/useProjectTimeline";
 import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
+import { PhaseRibbon, type PhaseRibbonStatus } from "./PhaseRibbon";
 
-const TAB_PHASE_STYLES: Record<"done" | "active" | "future", { container: string; label: string; iconColor: string }> = {
-  done: {
-    container: "bg-emerald-500 text-white hover:bg-emerald-500 data-[state=active]:bg-emerald-500",
-    label: "text-white",
-    iconColor: "text-white/80",
-  },
-  active: {
-    container:
-      "bg-amber-500 text-white shadow-sm data-[state=active]:bg-amber-500 hover:bg-amber-500 focus-visible:ring-2 focus-visible:ring-amber-400",
-    label: "text-white",
-    iconColor: "text-white/80",
-  },
-  future: {
-    container:
-      "bg-background text-muted-foreground border border-muted/60 hover:bg-muted/40 data-[state=active]:bg-muted/40",
-    label: "text-muted-foreground",
-    iconColor: "text-muted-foreground",
-  },
-};
-const ARROW_CUT_PX = 12;
-const ARROW_OVERLAP_PX = 12;
-const ARROW_RIGHT_PADDING_PX = 16;
 type WorkspaceTabValue = "items" | "offers" | "logistics" | "execution" | "closing";
 type WorkspaceCSSVars = CSSProperties & { "--brand-color"?: string };
 const STEP_ORDER: StepKey[] = ["requirements", "offers", "logistics", "execution", "invoice"];
@@ -57,10 +36,6 @@ const TAB_BY_STEP: Record<StepKey, WorkspaceTabValue> = {
   invoice: "closing",
 };
 
-const buildArrowClipPath = (isLast: boolean) =>
-  isLast
-    ? "polygon(0 0, 100% 0, 100% 100%, 0 100%)"
-    : `polygon(0 0, calc(100% - ${ARROW_CUT_PX}px) 0, 100% 50%, calc(100% - ${ARROW_CUT_PX}px) 100%, 0 100%)`;
 import { RequirementsPanel, RequirementRow } from "../domains/requirements/RequirementsPanel";
 import { OffersPanel } from "../domains/offers/OffersPanel";
 import { ExecutionPanel } from "../domains/execution/ExecutionPanel";
@@ -170,6 +145,20 @@ export function ProjectWorkspace({
     const activeStep = timelineSteps.find((step) => step.status === "inProgress");
     return activeStep?.key ?? null;
   }, [timelineSteps]);
+  const phaseRibbonSteps = useMemo(() => {
+    return tabsConfig.map((tab) => {
+      const stepKey = STEP_BY_TAB[tab.value];
+      const stepStatus: StepStatus = stepKey ? timelineStepByKey[stepKey]?.status ?? "pending" : "pending";
+      const status: PhaseRibbonStatus =
+        stepStatus === "done" ? "done" : stepStatus === "inProgress" ? "active" : "future";
+      return {
+        key: tab.value,
+        value: tab.value,
+        label: tab.label,
+        status,
+      };
+    });
+  }, [tabsConfig, timelineStepByKey]);
   const hasInitializedActiveTabRef = useRef(false);
   const prevActivePhaseStepRef = useRef<StepKey | null>(null);
 
@@ -892,47 +881,7 @@ export function ProjectWorkspace({
                 onValueChange={(value) => setActiveTab((value as WorkspaceTabValue) ?? "items")}
                 className="space-y-6"
               >
-                <TabsList className="flex w-full overflow-hidden bg-muted/10 p-0">
-                  {tabsConfig.map((tab, index, tabsArr) => {
-                    const stepKey = STEP_BY_TAB[tab.value];
-                    const stepStatus: StepStatus = stepKey ? timelineStepByKey[stepKey]?.status ?? "pending" : "pending";
-                    const phase = stepStatus === "done" ? "done" : stepStatus === "inProgress" ? "active" : "future";
-                    const styles = TAB_PHASE_STYLES[phase];
-                    const icon = phase === "done" ? "✓" : phase === "active" ? "•" : "";
-                    const isLast = index === tabsArr.length - 1;
-                    const clipPath = buildArrowClipPath(isLast);
-                    const roundedClass =
-                      index === 0 ? "rounded-l-md" : isLast ? "rounded-r-md" : "";
-                    const isActiveTab = activeTab === tab.value;
-                    return (
-                      <TabsTrigger
-                        key={tab.value}
-                        value={tab.value}
-                        style={{
-                          clipPath,
-                          marginInlineStart: index === 0 ? 0 : -ARROW_OVERLAP_PX,
-                          zIndex: tabsArr.length - index,
-                          paddingRight: `${ARROW_RIGHT_PADDING_PX}px`,
-                          boxShadow: isActiveTab
-                            ? "inset 0 4px 0 0 var(--brand-color), inset 0 -2px 0 0 var(--brand-color)"
-                            : undefined,
-                          borderWidth: isActiveTab ? 0 : undefined,
-                          borderStyle: isActiveTab ? "none" : undefined,
-                        }}
-                        className={`relative flex flex-1 items-center gap-2 pl-5 py-3 text-sm font-semibold uppercase tracking-wide transition overflow-hidden ${roundedClass} ${styles.container}`}
-                      >
-                        <span className={`inline-flex items-center gap-1 ${styles.label} relative z-10`}>
-                          {tab.label}
-                          {icon && (
-                            <span className={`text-xs opacity-70 ${styles.iconColor}`} aria-hidden>
-                              {icon}
-                            </span>
-                          )}
-                        </span>
-                      </TabsTrigger>
-                    );
-                  })}
-                </TabsList>
+                <PhaseRibbon steps={phaseRibbonSteps} activeKey={activeTab} variant="tabs" />
 
                 <TabsContent value="items" className="mt-0 space-y-4">
                   <RequirementsPanel

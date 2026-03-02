@@ -46,7 +46,7 @@ const MATERIAL_STATUS_PRIORITY: MaterialTimelineStatus[] = [
 ];
 
 const MATERIAL_STATUS_LABELS: Record<MaterialTimelineStatus, string> = {
-  TO_ORDER: "Za naročit",
+  TO_ORDER: "Naročeno",
   ORDERED: "Naročeno",
   PREPARED: "Pripravljeno",
   PICKED_UP: "Prevzeto",

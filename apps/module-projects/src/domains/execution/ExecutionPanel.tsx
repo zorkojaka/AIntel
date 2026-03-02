@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import type { MaterialOrder, WorkOrder, WorkOrderItem, WorkOrderStatus } from "@aintel/shared/types/logistics";
+import { normalizeMaterialStatusLabel } from "../logistics/materialStatus";
 import { SignaturePad } from "./SignaturePad";
 import { PriceListProductAutocomplete } from "../../components/PriceListProductAutocomplete";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
@@ -451,7 +452,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                         <div className="space-y-1">
                           <p className="text-xs text-muted-foreground uppercase">Status materiala</p>
                           <Badge variant="secondary">
-                            {materialOrder?.materialStatus ?? "Ni podatka"}
+                            {normalizeMaterialStatusLabel(materialOrder?.materialStatus) ?? "Ni podatka"}
                           </Badge>
                         </div>
                         <div className="space-y-2">

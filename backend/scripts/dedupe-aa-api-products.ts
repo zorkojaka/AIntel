@@ -8,6 +8,8 @@ import { WorkOrderModel } from '../modules/projects/schemas/work-order';
 import { MaterialOrderModel } from '../modules/projects/schemas/material-order';
 import { ProjectModel } from '../modules/projects/schemas/project';
 
+const DANGEROUS_FLAG = '--i-know-what-im-doing';
+
 type ProductDoc = {
   _id: string;
   externalSource?: string;
@@ -107,6 +109,10 @@ async function replaceReferences(oldId: string, newId: string) {
 }
 
 async function main() {
+  if (!process.argv.includes(DANGEROUS_FLAG)) {
+    throw new Error(`Missing required flag ${DANGEROUS_FLAG}. Aborting.`);
+  }
+
   loadEnvironment();
   await connectToMongo();
 

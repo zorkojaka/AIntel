@@ -313,6 +313,9 @@ export async function createProject(req: Request, res: Response) {
     },
     status: 'draft',
     offerAmount: 0,
+    quotedTotal: 0,
+    quotedVat: 0,
+    quotedTotalWithVat: 0,
     invoiceAmount: 0,
     createdAt,
     requirementsTemplateVariantSlug: variantSlug || undefined,
@@ -682,6 +685,9 @@ export async function confirmOffer(req: Request, res: Response) {
   }));
   project.workOrders = [...project.workOrders, workOrder];
   project.status = 'ordered';
+  project.quotedTotal = offer.amount;
+  project.quotedVat = 0;
+  project.quotedTotalWithVat = offer.amount;
 
   addTimeline(project, {
     type: 'offer',

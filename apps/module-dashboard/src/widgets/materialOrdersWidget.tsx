@@ -1,6 +1,6 @@
 import { Button } from '@aintel/ui';
 import type { DashboardWidgetDefinition, InstallerDashboardWidgetProps } from '../types';
-import { formatDate, navigateToProject, renderEmptyState, renderError, showMetaParts } from './utils';
+import { formatDate, navigateToProject, normalizeMaterialStatusLabel, renderEmptyState, renderError, showMetaParts } from './utils';
 
 export const materialOrdersWidget: DashboardWidgetDefinition = {
   id: 'material-orders',
@@ -28,7 +28,10 @@ export const materialOrdersWidget: DashboardWidgetDefinition = {
               <div>
                 <div className="dashboard-widget__title">{order.projectCode}</div>
                 <div className="dashboard-widget__meta">
-                  {showMetaParts([`Status: ${order.materialStatus}`, `Postavke: ${order.itemCount}`])}
+                  {showMetaParts([
+                    `Status: ${normalizeMaterialStatusLabel(order.materialStatus) ?? '—'}`,
+                    `Postavke: ${order.itemCount}`,
+                  ])}
                 </div>
                 <div className="dashboard-widget__meta">{`Ustvarjeno: ${formatDate(order.createdAt)}`}</div>
               </div>

@@ -115,12 +115,12 @@ function formatCurrency(value?: number) {
   return currencyFormatter.format(Number(value ?? 0));
 }
 
-function wrapDocument(title: string, body: string) {
+function wrapDocument(title: string, body: string, extraStyles = '') {
   return `<!doctype html>
   <html lang="sl">
     <head>
       <meta charset="UTF-8" />
-      <style>${baseStyles}</style>
+      <style>${baseStyles}${extraStyles}</style>
       <title>${title}</title>
     </head>
     <body>
@@ -649,4 +649,70 @@ const DOC_RENDERERS: Record<DocumentNumberingKind, (context: DocumentPreviewCont
 export function renderDocumentHtml(context: DocumentPreviewContext) {
   const renderer = DOC_RENDERERS[context.docType] ?? renderOfferPdf;
   return renderer(context);
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export type ProductDescriptionEntry = {
+  title: string;
+  description?: string;
+  imageUrl?: string;
+};
+
+export function renderProductDescriptionsHtml(entries: ProductDescriptionEntry[]) {
+  const extraStyles = `
+    @page { size: A4; margin: 22mm 18mm; }
+    body { font-family: Arial, sans-serif; color: #111; }
+    .product { margin: 0 0 18px 0; break-inside: avoid; page-break-inside: avoid; }
+    .title { margin: 0 0 10px 0; font-size: 18px; font-weight: 700; }
+    .row { display: flex; gap: 14px; align-items: flex-start; flex-direction: row-reverse; }
+    .col.image { flex: 0 0 38%; }
+    .col.desc { flex: 1 1 62%; }
+    .col.image img { width: 100%; max-height: 210px; object-fit: contain; display: block; }
+    .col.desc { white-space: pre-wrap; line-height: 1.35; font-size: 11px; }
+    .product.noImage .row { display: block; }
+    .product.noImage .col.desc { font-size: 11px; }
+    .product.noDesc .row { display: block; }
+    .product.noDesc .col.image { width: 45%; }
+  `;
+
+  const content = entries.length
+    ? entries
+        .map((entry) => {
+          const title = escapeHtml(entry.title);
+          const description = entry.description ? escapeHtml(entry.description) : '';
+          const hasImage = !!entry.imageUrl;
+          const hasDesc = !!description;
+          const classes = [
+            'product',
+            hasImage ? 'hasImage' : 'noImage',
+            hasDesc ? 'hasDesc' : 'noDesc',
+          ].join(' ');
+          const imageBlock = hasImage
+            ? `<div class="col image"><img src="${entry.imageUrl}" alt="" /></div>`
+            : '';
+          const descBlock = hasDesc
+            ? `<div class="col desc">${description}</div>`
+            : '';
+          return `<section class="${classes}">
+              <h2 class="title">${title}</h2>
+              <div class="row">
+                ${imageBlock}
+                ${descBlock}
+              </div>
+            </section>`;
+        })
+        .join('')
+    : `<section class="product">
+        <h2 class="title">Ni produktnih opisov za izbrane postavke.</h2>
+      </section>`;
+
+  return wrapDocument('Produktni opisi', `<div>${content}</div>`, extraStyles);
 }

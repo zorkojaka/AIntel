@@ -7,6 +7,7 @@ import { OfferVersionModel } from '../modules/projects/schemas/offer-version';
 import { WorkOrderModel } from '../modules/projects/schemas/work-order';
 import { MaterialOrderModel } from '../modules/projects/schemas/material-order';
 
+const DANGEROUS_FLAG = '--i-know-what-im-doing';
 const SUPPLIER = 'Alarm automatika d.o.o.';
 
 type ProductDoc = {
@@ -90,6 +91,10 @@ async function countReferences(productIds: string[]) {
 }
 
 async function main() {
+  if (!process.argv.includes(DANGEROUS_FLAG)) {
+    throw new Error(`Missing required flag ${DANGEROUS_FLAG}. Aborting.`);
+  }
+
   loadEnvironment();
   await connectToMongo();
 

@@ -124,6 +124,9 @@ export interface Project {
   customer: ProjectCustomer;
   status: ProjectStatus;
   offerAmount: number;
+  quotedTotal: number;
+  quotedVat: number;
+  quotedTotalWithVat: number;
   invoiceAmount: number;
   createdAt: string;
   requirementsText?: string;
@@ -301,6 +304,9 @@ const ProjectSchema = new Schema<ProjectDocument>(
     },
     status: { type: String, required: true },
     offerAmount: { type: Number, required: true, default: 0 },
+    quotedTotal: { type: Number, required: true, default: 0 },
+    quotedVat: { type: Number, required: true, default: 0 },
+    quotedTotalWithVat: { type: Number, required: true, default: 0 },
     invoiceAmount: { type: Number, required: true, default: 0 },
     createdAt: { type: String, required: true },
     salesUserId: { type: Schema.Types.ObjectId, default: null },
@@ -353,6 +359,9 @@ export function summarizeProject(project: Project | ProjectDocument) {
     customer: project.customer.name,
     status: project.status,
     offerAmount: project.offerAmount,
+    quotedTotal: project.quotedTotal ?? 0,
+    quotedVat: project.quotedVat ?? 0,
+    quotedTotalWithVat: project.quotedTotalWithVat ?? 0,
     invoiceAmount: project.invoiceAmount,
     createdAt: project.createdAt,
     categories: project.categories ?? [],

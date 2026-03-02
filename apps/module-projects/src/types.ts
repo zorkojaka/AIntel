@@ -50,6 +50,9 @@ export interface ProjectSummary {
   customer: string;
   status: ProjectStatus;
   offerAmount: number;
+  quotedTotal: number;
+  quotedVat: number;
+  quotedTotalWithVat: number;
   invoiceAmount: number;
   createdAt: string;
   categories: string[];
