@@ -1,0 +1,245 @@
+.finance-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 32px 40px;
+  background: linear-gradient(180deg, #f5f7fb 0%, #ffffff 100%);
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.finance-page__header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.finance-page__title {
+  font-size: 28px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.finance-page__subtitle {
+  font-size: 15px;
+  color: #475467;
+  margin: 0;
+}
+
+.finance-page__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.finance-page__input,
+.finance-page__select {
+  padding: 8px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  font-size: 14px;
+  background-color: #ffffff;
+  color: inherit;
+}
+
+.finance-page__grid {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 960px) {
+  .finance-page__grid {
+    grid-template-columns: 2fr 1fr;
+  }
+}
+
+.finance-page__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.finance-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.finance-card__label {
+  font-size: 13px;
+  color: #667085;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.finance-card__value {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.finance-card__delta {
+  font-size: 12px;
+  color: #12b76a;
+}
+
+.finance-table {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  overflow: auto;
+}
+
+.finance-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.finance-table th,
+.finance-table td {
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f2f4f7;
+  font-size: 14px;
+}
+
+.finance-table th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #475467;
+}
+
+.finance-table tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-pill[data-status='plačano'] {
+  background: rgba(18, 183, 106, 0.12);
+  color: #027a48;
+}
+
+.status-pill[data-status='čaka na plačilo'] {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b54708;
+}
+
+.status-pill[data-status='preklicano'] {
+  background: rgba(240, 68, 56, 0.12);
+  color: #b42318;
+}
+
+.chart-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.chart-card__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.chart-card__bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chart-bar {
+  display: grid;
+  grid-template-columns: 100px 1fr 60px;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.chart-bar__track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: #f2f4f7;
+  overflow: hidden;
+}
+
+.chart-bar__fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #6366f1 0%, #22d3ee 100%);
+}
+
+.chart-bar__fill[data-variant='cost'] {
+  background: linear-gradient(90deg, #f97316 0%, #facc15 100%);
+}
+
+.chart-bar__fill[data-variant='profit'] {
+  background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%);
+}
+
+.chart-card__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: #475467;
+}
+
+.chart-card__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chart-card__legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.legend-income {
+  background: linear-gradient(90deg, #6366f1 0%, #22d3ee 100%);
+}
+
+.legend-cost {
+  background: linear-gradient(90deg, #f97316 0%, #facc15 100%);
+}
+
+.legend-profit {
+  background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%);
+}
+
+.finance-table__empty {
+  padding: 32px;
+  text-align: center;
+  color: #475467;
+  font-size: 14px;
+}
+
+.finance-page__error {
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgba(240, 68, 56, 0.12);
+  color: #b42318;
+  font-size: 13px;
+}

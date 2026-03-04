@@ -1,0 +1,32 @@
+.aintel-color-picker {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: var(--font-size, 1rem);
+}
+
+.aintel-color-picker input[type='color'] {
+  appearance: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-soft, 8px);
+  width: 60px;
+  height: 36px;
+  padding: 0;
+  background: var(--color-surface, #ffffff);
+  cursor: pointer;
+}
+
+.aintel-color-picker input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+  border-radius: var(--radius-soft, 8px);
+}
+
+.aintel-color-picker input[type='color']::-webkit-color-swatch {
+  border-radius: var(--radius-soft, 8px);
+  border: none;
+}
+
+.aintel-color-picker input[type='color']::-moz-color-swatch {
+  border: none;
+  border-radius: var(--radius-soft, 8px);
+}

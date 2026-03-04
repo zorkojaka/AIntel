@@ -1,0 +1,24 @@
+.aintel-button {
+  border: none;
+  padding: var(--space-sm) var(--space-lg);
+  font-size: var(--font-size, 1rem);
+  border-radius: var(--radius-soft);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.aintel-button--primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.aintel-button--ghost {
+  background: transparent;
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+
+.aintel-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

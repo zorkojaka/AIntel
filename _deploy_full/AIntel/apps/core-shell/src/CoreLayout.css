@@ -1,0 +1,109 @@
+.core-shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  height: 100vh;
+  min-height: 100vh;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.core-shell__sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  align-self: start;
+  border-right: 1px solid var(--color-border);
+  padding: var(--space-lg);
+  background: var(--color-surface);
+}
+
+.core-shell__logo {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  max-height: 48px;
+  object-fit: contain;
+}
+
+.core-shell__content {
+  overflow-y: auto;
+}
+
+.core-shell__sidebar ul {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-md) 0 0 0;
+}
+
+.core-shell__sidebar li {
+  margin-bottom: var(--space-sm);
+}
+
+.core-shell__user {
+  margin-bottom: var(--space-md);
+  padding: 0 var(--space-md);
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+
+.core-shell__user-name {
+  font-weight: 600;
+}
+
+.core-shell__user-secondary {
+  margin-top: 2px;
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.core-shell__sidebar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-soft);
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.core-shell__sidebar button:hover {
+  background: rgba(15, 99, 247, 0.08);
+}
+
+.core-shell__sidebar button[data-active="true"] {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.core-shell__nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.core-shell__logout {
+  margin-top: var(--space-lg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-soft);
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.core-shell__logout:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 6px 12px rgba(15, 99, 247, 0.12);
+}

@@ -1,0 +1,16 @@
+.aintel-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size, 1rem);
+}
+
+.aintel-data-table th,
+.aintel-data-table td {
+  border: 1px solid var(--color-border);
+  padding: var(--space-sm);
+  text-align: left;
+}
+
+.aintel-data-table tbody tr:nth-child(even) {
+  background: rgba(15, 23, 42, 0.03);
+}

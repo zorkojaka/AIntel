@@ -1,0 +1,47 @@
+{
+  "name": "aintel-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Modular backend for the AIntel CORE phase",
+  "main": "server.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only server.ts",
+    "build": "tsc",
+    "start:prod": "node dist/server.js",
+    "seed:cenik": "ts-node scripts/seed-cenik.ts",
+    "seed:settings": "ts-node scripts/seed-settings.ts",
+    "migrate:employee-roles": "ts-node scripts/migrate-employee-roles.ts",
+    "dev:create-admin": "ts-node --transpile-only scripts/devCreateAdmin.ts",
+    "pdf:smoke": "ts-node --transpile-only scripts/pdf-smoke.ts",
+    "db:reset-aa": "echo \"Dangerous: run ts-node scripts/DANGEROUS_reset_and_import_aa_api_products.ts --i-know-what-im-doing\"",
+    "db:fix-legacy-products": "ts-node scripts/fix-legacy-products.ts",
+    "db:audit-products": "ts-node scripts/audit-products.ts",
+    "db:sync-aa": "ts-node scripts/sync-products.ts --source aa_api --input data/cenik/aa_api_produkti.json",
+    "db:sync-services": "ts-node scripts/sync-products.ts --source services_sheet --input data/cenik/custom_storitve.json",
+    "db:sync-all": "ts-node scripts/sync-products.ts --source aa_api --input data/cenik/aa_api_produkti.json && ts-node scripts/sync-products.ts --source services_sheet --input data/cenik/custom_storitve.json"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^7.5.0",
+    "pdfkit": "^0.15.0",
+    "playwright": "^1.57.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "^1.4.7",
+    "@types/cors": "^2.8.18",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/mongoose": "^5.11.97",
+    "@types/node": "^20.15.0",
+    "ts-node": "^10.0.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.3.0"
+  }
+}

@@ -1,0 +1,16 @@
+.aintel-textarea {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: var(--font-size, 1rem);
+}
+
+.aintel-textarea textarea {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-soft, 8px);
+  padding: var(--space-sm, 0.5rem);
+  min-height: 120px;
+  resize: vertical;
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text, inherit);
+}
