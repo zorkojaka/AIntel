@@ -227,7 +227,20 @@ type OfferImportMatch = {
   dobavitelj?: string;
 };
 
-type OfferImportRowStatus = 'matched' | 'needs_review' | 'not_found';
+type OfferImportTopCandidate = OfferImportMatch & {
+  score: number;
+};
+
+type OfferImportRowStatus = 'matched' | 'needs_review' | 'not_found' | 'invalid';
+type OfferImportReviewLevel = 'ok' | 'low' | 'needs_review' | 'invalid';
+type OfferImportChosenReason =
+  | 'exact'
+  | 'color_default_wh'
+  | 'explicit_color'
+  | 'base_exact'
+  | 'token_best'
+  | 'token_needs_review'
+  | 'invalid_row';
 
 type OfferImportRow = {
   rowIndex: number;
@@ -237,7 +250,10 @@ type OfferImportRow = {
   status: OfferImportRowStatus;
   matches: OfferImportMatch[];
   chosenProductId?: string;
-  chosenReason?: string;
+  chosenReason: OfferImportChosenReason;
+  matchScore: number;
+  topCandidates: OfferImportTopCandidate[];
+  reviewLevel: OfferImportReviewLevel;
 };
 
 type OfferImportColor = 'wh' | 'bl';
@@ -249,6 +265,13 @@ type OfferImportBaseBucket = {
     other: OfferImportMatch[];
   };
   all: OfferImportMatch[];
+};
+
+type OfferImportProduct = OfferImportMatch & {
+  normFull: string;
+  baseName: string;
+  color: OfferImportColor | null;
+  tokens: string[];
 };
 
 function normalizeImportProductName(value: unknown) {
@@ -286,6 +309,100 @@ function sortImportMatches(matches: OfferImportMatch[]) {
     if (nameCmp !== 0) return nameCmp;
     return a.productId.localeCompare(b.productId);
   });
+}
+
+function scoreToFixed(score: number) {
+  if (!Number.isFinite(score)) return 0;
+  return Math.max(0, Math.min(1, Number(score.toFixed(4))));
+}
+
+const IMPORT_TOKEN_STOPWORDS = new Set([
+  'in',
+  'ter',
+  'za',
+  'na',
+  'od',
+  'do',
+  'v',
+  's',
+  'z',
+  'pri',
+  'po',
+  'km',
+  'kos',
+  'ura',
+  'h',
+]);
+
+function tokenizeForImportSimilarity(normName: string) {
+  if (!normName) return [] as string[];
+  return normName
+    .replace(/[^\p{L}\p{N}+*]+/gu, ' ')
+    .replace(/[+*]/g, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2)
+    .filter((token) => !IMPORT_TOKEN_STOPWORDS.has(token));
+}
+
+function computeTokenSimilarity(inputTokens: string[], productTokens: string[]) {
+  if (inputTokens.length === 0 || productTokens.length === 0) {
+    return 0;
+  }
+  const inputSet = new Set(inputTokens);
+  const productSet = new Set(productTokens);
+  let intersection = 0;
+  for (const token of inputSet) {
+    if (productSet.has(token)) {
+      intersection += 1;
+    }
+  }
+  const baseScore = (2 * intersection) / (inputSet.size + productSet.size);
+  const inputNumericTokens = Array.from(inputSet).filter((token) => /\d/.test(token));
+  const hasAllNumericTokens =
+    inputNumericTokens.length > 0 && inputNumericTokens.every((token) => productSet.has(token));
+  const bonus = hasAllNumericTokens ? 0.05 : 0;
+  return scoreToFixed(baseScore + bonus);
+}
+
+function pickBestByColor(
+  candidates: OfferImportMatch[],
+  requestedColor: OfferImportColor | null,
+) {
+  if (candidates.length === 0) return null;
+  const sorted = sortImportMatches(candidates);
+  if (requestedColor) {
+    for (const candidate of sorted) {
+      const color = parseColorTokenFromName(normalizeImportProductName(candidate.ime));
+      if (color === requestedColor) {
+        return candidate;
+      }
+    }
+  }
+  const whCandidate = sorted.find(
+    (candidate) => parseColorTokenFromName(normalizeImportProductName(candidate.ime)) === 'wh',
+  );
+  return whCandidate ?? sorted[0];
+}
+
+function buildTopCandidates(
+  candidates: Array<{ product: OfferImportMatch; score: number }>,
+  limit = 5,
+): OfferImportTopCandidate[] {
+  const sorted = candidates
+    .slice()
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const nameCmp = a.product.ime.localeCompare(b.product.ime, 'sl-SI');
+      if (nameCmp !== 0) return nameCmp;
+      return a.product.productId.localeCompare(b.product.productId);
+    })
+    .slice(0, limit)
+    .map(({ product, score }) => ({
+      ...product,
+      score: scoreToFixed(score),
+    }));
+  return sorted;
 }
 
 function parseLocalizedNumber(value: string): number | null {
@@ -372,7 +489,7 @@ function extractQuantityFromCells(cells: string[], nameIndex: number) {
       return parsed;
     }
   }
-  return 1;
+  return null;
 }
 
 function buildOfferImportRows(rawText: string): Array<{ rowIndex: number; cells: string[] }> {
@@ -399,25 +516,32 @@ export async function parseOfferImport(req: Request, res: Response, next: NextFu
       .select({ ime: 1, prodajnaCena: 1, isService: 1, dobavitelj: 1 })
       .lean();
 
-    const exactMap = new Map<string, OfferImportMatch[]>();
+    const exactMap = new Map<string, OfferImportProduct[]>();
     const baseMap = new Map<string, OfferImportBaseBucket>();
+    const allProducts: OfferImportProduct[] = [];
     for (const product of products) {
       const normFullName = normalizeImportProductName(product.ime);
       if (!normFullName) continue;
-      const mapped: OfferImportMatch = {
+      const baseName = stripTrailingColorToken(normFullName);
+      const color = parseColorTokenFromName(normFullName);
+      const tokens = tokenizeForImportSimilarity(normFullName);
+      const mapped: OfferImportProduct = {
         productId: String(product._id),
         ime: normalizeText(product.ime, ''),
         prodajnaCena: Number(product.prodajnaCena ?? 0),
         isService: Boolean(product.isService),
         dobavitelj: normalizeText((product as any).dobavitelj, '') || undefined,
+        normFull: normFullName,
+        baseName,
+        color,
+        tokens,
       };
+      allProducts.push(mapped);
 
       const exactExisting = exactMap.get(normFullName) ?? [];
       exactExisting.push(mapped);
       exactMap.set(normFullName, exactExisting);
 
-      const baseName = stripTrailingColorToken(normFullName);
-      const color = parseColorTokenFromName(normFullName);
       const bucket = baseMap.get(baseName) ?? {
         variants: { wh: [], bl: [], other: [] },
         all: [],
@@ -434,7 +558,10 @@ export async function parseOfferImport(req: Request, res: Response, next: NextFu
     }
 
     for (const [key, matches] of exactMap.entries()) {
-      exactMap.set(key, sortImportMatches(matches));
+      exactMap.set(
+        key,
+        sortImportMatches(matches).map((match) => match as OfferImportProduct),
+      );
     }
     for (const [key, bucket] of baseMap.entries()) {
       baseMap.set(key, {
@@ -454,6 +581,45 @@ export async function parseOfferImport(req: Request, res: Response, next: NextFu
       const inputColor = parseColorTokenFromName(normName);
       const inputBase = stripTrailingColorToken(normName);
       const qty = extractQuantityFromCells(cells, firstTextIndex);
+      const inputTokens = tokenizeForImportSimilarity(normName);
+      const toPublicMatch = (product: OfferImportMatch): OfferImportMatch => ({
+        productId: product.productId,
+        ime: product.ime,
+        prodajnaCena: product.prodajnaCena,
+        isService: product.isService,
+        dobavitelj: product.dobavitelj,
+      });
+
+      if (!rawName || !normName || qty === null || qty <= 0) {
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          qty: qty ?? 0,
+          status: 'invalid',
+          matches: [],
+          chosenReason: 'invalid_row',
+          matchScore: 0,
+          topCandidates: [],
+          reviewLevel: 'invalid',
+        };
+      }
+
+      if (allProducts.length === 0) {
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          qty,
+          status: 'not_found',
+          matches: [],
+          chosenReason: 'invalid_row',
+          matchScore: 0,
+          topCandidates: [],
+          reviewLevel: 'invalid',
+        };
+      }
+
       const exactMatches = normName ? exactMap.get(normName) ?? [] : [];
 
       if (exactMatches.length === 1) {
@@ -464,24 +630,32 @@ export async function parseOfferImport(req: Request, res: Response, next: NextFu
           normName,
           qty,
           status: 'matched',
-          matches: exactMatches,
+          matches: exactMatches.map((entry) => toPublicMatch(entry)),
           chosenProductId: chosen.productId,
-          chosenReason: inputColor ? 'explicit_color' : 'exact',
+          chosenReason: 'exact',
+          matchScore: 1,
+          topCandidates: buildTopCandidates([{ product: toPublicMatch(chosen), score: 1 }]),
+          reviewLevel: 'ok',
         };
       }
 
       if (exactMatches.length > 1) {
-        if (inputColor) {
-          const chosen = exactMatches[0];
+        const chosen = pickBestByColor(exactMatches, inputColor);
+        if (chosen) {
           return {
             rowIndex,
             rawName,
             normName,
             qty,
-            status: 'matched',
-            matches: exactMatches,
+            status: inputColor ? 'matched' : 'needs_review',
+            matches: exactMatches.map((entry) => toPublicMatch(entry)),
             chosenProductId: chosen.productId,
-            chosenReason: 'explicit_color',
+            chosenReason: inputColor ? 'explicit_color' : 'exact',
+            matchScore: 1,
+            topCandidates: buildTopCandidates(
+              exactMatches.map((entry) => ({ product: toPublicMatch(entry), score: 1 })),
+            ),
+            reviewLevel: inputColor ? 'ok' : 'needs_review',
           };
         }
         return {
@@ -490,83 +664,119 @@ export async function parseOfferImport(req: Request, res: Response, next: NextFu
           normName,
           qty,
           status: 'needs_review',
-          matches: exactMatches,
+          matches: exactMatches.map((entry) => toPublicMatch(entry)),
+          chosenReason: 'token_needs_review',
+          matchScore: 1,
+          topCandidates: buildTopCandidates(
+            exactMatches.map((entry) => ({ product: toPublicMatch(entry), score: 1 })),
+          ),
+          reviewLevel: 'needs_review',
         };
       }
 
       const baseBucket = inputBase ? baseMap.get(inputBase) : undefined;
       const baseMatches = baseBucket?.all ?? [];
-      if (baseMatches.length === 0) {
-        return {
-          rowIndex,
-          rawName,
-          normName,
-          qty,
-          status: 'not_found',
-          matches: [],
-        };
-      }
+      if (baseMatches.length > 0) {
+        if (inputColor) {
+          const colorMatches = inputColor === 'wh' ? baseBucket?.variants.wh ?? [] : baseBucket?.variants.bl ?? [];
+          if (colorMatches.length > 0) {
+            const chosen = pickBestByColor(colorMatches, inputColor);
+            if (chosen) {
+              return {
+                rowIndex,
+                rawName,
+                normName,
+                qty,
+                status: colorMatches.length === 1 ? 'matched' : 'needs_review',
+                matches: baseMatches.map((entry) => toPublicMatch(entry)),
+                chosenProductId: chosen.productId,
+                chosenReason: 'explicit_color',
+                matchScore: 0.98,
+                topCandidates: buildTopCandidates(
+                  baseMatches.map((entry) => ({ product: toPublicMatch(entry), score: 0.98 })),
+                ),
+                reviewLevel: colorMatches.length === 1 ? 'ok' : 'needs_review',
+              };
+            }
+          }
+        }
 
-      if (inputColor) {
-        const colorMatches = inputColor === 'wh' ? baseBucket?.variants.wh ?? [] : baseBucket?.variants.bl ?? [];
-        if (colorMatches.length === 1) {
+        const whMatches = baseBucket?.variants.wh ?? [];
+        const hasColorVariants = whMatches.length > 0 || (baseBucket?.variants.bl?.length ?? 0) > 0;
+        if (hasColorVariants && whMatches.length > 0) {
+          const chosen = pickBestByColor(whMatches, 'wh');
+          if (chosen) {
+            return {
+              rowIndex,
+              rawName,
+              normName,
+              qty,
+              status: whMatches.length === 1 ? 'matched' : 'needs_review',
+              matches: baseMatches.map((entry) => toPublicMatch(entry)),
+              chosenProductId: chosen.productId,
+              chosenReason: 'color_default_wh',
+              matchScore: 0.96,
+              topCandidates: buildTopCandidates(
+                baseMatches.map((entry) => ({ product: toPublicMatch(entry), score: 0.96 })),
+              ),
+              reviewLevel: whMatches.length === 1 ? 'ok' : 'needs_review',
+            };
+          }
+        }
+
+        const chosen = pickBestByColor(baseMatches, inputColor);
+        if (chosen) {
           return {
             rowIndex,
             rawName,
             normName,
             qty,
-            status: 'matched',
-            matches: baseMatches,
-            chosenProductId: colorMatches[0].productId,
-            chosenReason: 'explicit_color',
-          };
-        }
-        if (colorMatches.length > 1) {
-          return {
-            rowIndex,
-            rawName,
-            normName,
-            qty,
-            status: 'needs_review',
-            matches: baseMatches,
+            status: baseMatches.length === 1 ? 'matched' : 'needs_review',
+            matches: baseMatches.map((entry) => toPublicMatch(entry)),
+            chosenProductId: chosen.productId,
+            chosenReason: 'base_exact',
+            matchScore: baseMatches.length === 1 ? 0.95 : 0.9,
+            topCandidates: buildTopCandidates(
+              baseMatches.map((entry) => ({ product: toPublicMatch(entry), score: 0.9 })),
+            ),
+            reviewLevel: baseMatches.length === 1 ? 'ok' : 'needs_review',
           };
         }
       }
 
-      const whMatches = baseBucket?.variants.wh ?? [];
-      if (whMatches.length === 1) {
+      const tokenCandidatesRaw = allProducts.map((product) => ({
+        product,
+        score: computeTokenSimilarity(inputTokens, product.tokens),
+      }));
+      const topCandidates = buildTopCandidates(
+        tokenCandidatesRaw.map((entry) => ({ product: toPublicMatch(entry.product), score: entry.score })),
+      );
+      const best = topCandidates[0];
+      const secondBest = topCandidates[1];
+      const bestScore = best?.score ?? 0;
+      const secondBestScore = secondBest?.score ?? 0;
+      const delta = bestScore - secondBestScore;
+      const isBestReliable = bestScore >= 0.55 && delta >= 0.08;
+
+      if (best && isBestReliable) {
         return {
           rowIndex,
           rawName,
           normName,
           qty,
           status: 'matched',
-          matches: baseMatches,
-          chosenProductId: whMatches[0].productId,
-          chosenReason: 'color_default_wh',
-        };
-      }
-      if (whMatches.length > 1) {
-        return {
-          rowIndex,
-          rawName,
-          normName,
-          qty,
-          status: 'needs_review',
-          matches: baseMatches,
-        };
-      }
-
-      if (baseMatches.length === 1) {
-        return {
-          rowIndex,
-          rawName,
-          normName,
-          qty,
-          status: 'matched',
-          matches: baseMatches,
-          chosenProductId: baseMatches[0].productId,
-          chosenReason: 'base_match_single',
+          matches: topCandidates.map((entry) => ({
+            productId: entry.productId,
+            ime: entry.ime,
+            prodajnaCena: entry.prodajnaCena,
+            isService: entry.isService,
+            dobavitelj: entry.dobavitelj,
+          })),
+          chosenProductId: best.productId,
+          chosenReason: 'token_best',
+          matchScore: bestScore,
+          topCandidates,
+          reviewLevel: bestScore < 0.7 ? 'low' : 'ok',
         };
       }
 
@@ -575,10 +785,19 @@ export async function parseOfferImport(req: Request, res: Response, next: NextFu
         rawName,
         normName,
         qty,
-        status: 'matched',
-        matches: baseMatches,
-        chosenProductId: baseMatches[0].productId,
-        chosenReason: 'base_match_multi_no_wh',
+        status: 'needs_review',
+        matches: topCandidates.map((entry) => ({
+          productId: entry.productId,
+          ime: entry.ime,
+          prodajnaCena: entry.prodajnaCena,
+          isService: entry.isService,
+          dobavitelj: entry.dobavitelj,
+        })),
+        chosenProductId: best?.productId,
+        chosenReason: 'token_needs_review',
+        matchScore: bestScore,
+        topCandidates,
+        reviewLevel: 'needs_review',
       };
     });
 

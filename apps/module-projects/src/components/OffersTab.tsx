@@ -58,9 +58,20 @@ type OfferImportRow = {
   rawName: string;
   normName: string;
   qty: number;
-  status: "matched" | "needs_review" | "not_found";
+  status: "matched" | "needs_review" | "not_found" | "invalid";
   matches: OfferImportMatch[];
   chosenProductId?: string;
+  chosenReason?:
+    | "exact"
+    | "color_default_wh"
+    | "explicit_color"
+    | "base_exact"
+    | "token_best"
+    | "token_needs_review"
+    | "invalid_row";
+  matchScore?: number;
+  reviewLevel?: "ok" | "low" | "needs_review" | "invalid";
+  topCandidates?: Array<{ productId: string; ime: string; prodajnaCena: number; score: number }>;
   skipped?: boolean;
   manualMatch?: OfferImportMatch;
 };
@@ -965,7 +976,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
   const isSent = Boolean(currentOffer?.sentAt);
   const importMatchedCount = importRows.filter((row) => row.status === "matched").length;
   const importNeedsReviewCount = importRows.filter((row) => row.status === "needs_review").length;
-  const importNotFoundCount = importRows.filter((row) => row.status === "not_found").length;
+  const importInvalidCount = importRows.filter((row) => row.status === "invalid").length;
 
   return (
     <Card className="p-4 space-y-4">
@@ -1407,7 +1418,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
               <div className="flex flex-wrap items-center gap-2">
                 <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">Matched: {importMatchedCount}</Badge>
                 <Badge className="bg-amber-500 text-white hover:bg-amber-500">Needs review: {importNeedsReviewCount}</Badge>
-                <Badge className="bg-red-600 text-white hover:bg-red-600">Not found: {importNotFoundCount}</Badge>
+                <Badge className="bg-slate-600 text-white hover:bg-slate-600">Invalid: {importInvalidCount}</Badge>
               </div>
 
               <div className="rounded-md border overflow-hidden">
@@ -1441,9 +1452,13 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                             {row.status === "needs_review" && (
                               <Badge className="bg-amber-500 text-white hover:bg-amber-500">Needs review</Badge>
                             )}
-                            {row.status === "not_found" && (
-                              <Badge className="bg-red-600 text-white hover:bg-red-600">Not found</Badge>
+                            {(row.status === "not_found" || row.status === "invalid") && (
+                              <Badge className="bg-slate-600 text-white hover:bg-slate-600">Invalid</Badge>
                             )}
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {row.chosenReason ?? "n/a"}{" "}
+                              {typeof row.matchScore === "number" ? row.matchScore.toFixed(2) : "0.00"}
+                            </div>
                           </TableCell>
                           <TableCell className="space-y-2">
                             {row.matches.length > 0 ? (

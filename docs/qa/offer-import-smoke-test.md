@@ -24,9 +24,9 @@ Potni stroski [km]*	9.5%	195
 2. Click `Uvozi ponudbo`.
 3. Paste the sample table into `Prilepi tabelo`.
 4. Click `Analiziraj tabelo`.
-5. Verify preview rows appear with status chips (`Matched`, `Needs review`, `Not found`).
+5. Verify preview rows appear with status chips (`Matched`, `Needs review`, `Invalid`).
 6. For `Needs review`, choose a product in dropdown.
-7. For `Not found`, pick a product using manual autocomplete or click `Odstrani`.
+7. For `Invalid`, fix source line or click `Odstrani`.
 8. Click `Uvozi v ponudbo`.
 9. Verify modal closes and view scrolls to line items table.
 10. Verify imported line items:
@@ -52,8 +52,28 @@ Expected:
 - In `POST /api/offers/import/parse` response row, verify:
 - `chosenProductId` points to WH item.
 - `chosenReason` is `color_default_wh`.
+- `matchScore` is high (typically >= `0.90`).
+
+## Multi-line Service Similarity Test
+Precondition in cenik:
+- `Montaža in konfiguracija alarmne naprave v sodelovanju z AlarmAutomatika`
+
+Paste this line:
+
+```tsv
+"Montaža in konfiguracija alarmne naprave
+V sodelovanju z AlarmAutomatika"	9.5%	1
+```
+
+Expected:
+- Row should not be `not_found`.
+- Row is either:
+- `Matched` with `chosenReason = token_best` and visible score, or
+- `Needs review` with `chosenReason = token_needs_review` and preselected `chosenProductId`.
+- Response includes `topCandidates` (up to 5) sorted by score.
 
 ## Expected Result
 - Import populates offer line items from paste.
-- Unresolved rows can be manually resolved or removed before apply.
+- `not_found` should be rare; unresolved rows are mostly `needs_review` with a preselected candidate.
+- Rows show reason + score so operator can validate quick picks.
 - Existing offer editor behavior remains functional after import.
