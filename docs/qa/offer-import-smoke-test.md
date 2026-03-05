@@ -36,6 +36,23 @@ Potni stroski [km]*	9.5%	195
 - service items use unit `ura`, products use `kos`.
 11. Edit any imported row and save offer to confirm normal flow still works.
 
+## Color Variant Rule Test (WH/BL)
+Precondition in cenik:
+- `Ajax DoorProtect Plus WH`
+- `Ajax DoorProtect Plus BL`
+
+Paste this additional line:
+
+```tsv
+Ajax DoorProtect Plus\t9.5%\t14
+```
+
+Expected:
+- Import auto-selects `Ajax DoorProtect Plus WH`.
+- In `POST /api/offers/import/parse` response row, verify:
+- `chosenProductId` points to WH item.
+- `chosenReason` is `color_default_wh`.
+
 ## Expected Result
 - Import populates offer line items from paste.
 - Unresolved rows can be manually resolved or removed before apply.

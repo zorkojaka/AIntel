@@ -237,6 +237,18 @@ type OfferImportRow = {
   status: OfferImportRowStatus;
   matches: OfferImportMatch[];
   chosenProductId?: string;
+  chosenReason?: string;
+};
+
+type OfferImportColor = 'wh' | 'bl';
+
+type OfferImportBaseBucket = {
+  variants: {
+    wh: OfferImportMatch[];
+    bl: OfferImportMatch[];
+    other: OfferImportMatch[];
+  };
+  all: OfferImportMatch[];
 };
 
 function normalizeImportProductName(value: unknown) {
@@ -255,6 +267,25 @@ function cleanImportedName(value: unknown) {
   const withoutOuterQuotes =
     text.length >= 2 && text.startsWith('"') && text.endsWith('"') ? text.slice(1, -1) : text;
   return withoutOuterQuotes.replace(/\s+/g, ' ').trim();
+}
+
+function parseColorTokenFromName(normName: string): OfferImportColor | null {
+  const match = normName.match(/(?:\s+|[-_]\s*)(wh|bl)$/i);
+  if (!match) return null;
+  const token = (match[1] ?? '').toLowerCase();
+  return token === 'wh' || token === 'bl' ? token : null;
+}
+
+function stripTrailingColorToken(normName: string): string {
+  return normName.replace(/(?:\s+|[-_]\s*)(wh|bl)$/i, '').replace(/\s+/g, ' ').trim();
+}
+
+function sortImportMatches(matches: OfferImportMatch[]) {
+  return matches.slice().sort((a, b) => {
+    const nameCmp = a.ime.localeCompare(b.ime, 'sl-SI');
+    if (nameCmp !== 0) return nameCmp;
+    return a.productId.localeCompare(b.productId);
+  });
 }
 
 function parseLocalizedNumber(value: string): number | null {
@@ -368,10 +399,11 @@ export async function parseOfferImport(req: Request, res: Response, next: NextFu
       .select({ ime: 1, prodajnaCena: 1, isService: 1, dobavitelj: 1 })
       .lean();
 
-    const byNormalizedName = new Map<string, OfferImportMatch[]>();
+    const exactMap = new Map<string, OfferImportMatch[]>();
+    const baseMap = new Map<string, OfferImportBaseBucket>();
     for (const product of products) {
-      const normalizedName = normalizeImportProductName(product.ime);
-      if (!normalizedName) continue;
+      const normFullName = normalizeImportProductName(product.ime);
+      if (!normFullName) continue;
       const mapped: OfferImportMatch = {
         productId: String(product._id),
         ime: normalizeText(product.ime, ''),
@@ -379,38 +411,162 @@ export async function parseOfferImport(req: Request, res: Response, next: NextFu
         isService: Boolean(product.isService),
         dobavitelj: normalizeText((product as any).dobavitelj, '') || undefined,
       };
-      const existing = byNormalizedName.get(normalizedName) ?? [];
-      existing.push(mapped);
-      byNormalizedName.set(normalizedName, existing);
+
+      const exactExisting = exactMap.get(normFullName) ?? [];
+      exactExisting.push(mapped);
+      exactMap.set(normFullName, exactExisting);
+
+      const baseName = stripTrailingColorToken(normFullName);
+      const color = parseColorTokenFromName(normFullName);
+      const bucket = baseMap.get(baseName) ?? {
+        variants: { wh: [], bl: [], other: [] },
+        all: [],
+      };
+      bucket.all.push(mapped);
+      if (color === 'wh') {
+        bucket.variants.wh.push(mapped);
+      } else if (color === 'bl') {
+        bucket.variants.bl.push(mapped);
+      } else {
+        bucket.variants.other.push(mapped);
+      }
+      baseMap.set(baseName, bucket);
+    }
+
+    for (const [key, matches] of exactMap.entries()) {
+      exactMap.set(key, sortImportMatches(matches));
+    }
+    for (const [key, bucket] of baseMap.entries()) {
+      baseMap.set(key, {
+        variants: {
+          wh: sortImportMatches(bucket.variants.wh),
+          bl: sortImportMatches(bucket.variants.bl),
+          other: sortImportMatches(bucket.variants.other),
+        },
+        all: sortImportMatches(bucket.all),
+      });
     }
 
     const rows: OfferImportRow[] = rowsForParsing.map(({ rowIndex, cells }) => {
       const firstTextIndex = cells.findIndex((cell) => cleanImportedName(cell).length > 0);
       const rawName = firstTextIndex >= 0 ? cleanImportedName(cells[firstTextIndex]) : '';
       const normName = normalizeImportProductName(rawName);
+      const inputColor = parseColorTokenFromName(normName);
+      const inputBase = stripTrailingColorToken(normName);
       const qty = extractQuantityFromCells(cells, firstTextIndex);
-      const matches = normName ? byNormalizedName.get(normName) ?? [] : [];
+      const exactMatches = normName ? exactMap.get(normName) ?? [] : [];
 
-      if (matches.length === 1) {
+      if (exactMatches.length === 1) {
+        const chosen = exactMatches[0];
         return {
           rowIndex,
           rawName,
           normName,
           qty,
           status: 'matched',
-          matches,
-          chosenProductId: matches[0].productId,
+          matches: exactMatches,
+          chosenProductId: chosen.productId,
+          chosenReason: inputColor ? 'explicit_color' : 'exact',
         };
       }
 
-      if (matches.length > 1) {
+      if (exactMatches.length > 1) {
+        if (inputColor) {
+          const chosen = exactMatches[0];
+          return {
+            rowIndex,
+            rawName,
+            normName,
+            qty,
+            status: 'matched',
+            matches: exactMatches,
+            chosenProductId: chosen.productId,
+            chosenReason: 'explicit_color',
+          };
+        }
         return {
           rowIndex,
           rawName,
           normName,
           qty,
           status: 'needs_review',
-          matches,
+          matches: exactMatches,
+        };
+      }
+
+      const baseBucket = inputBase ? baseMap.get(inputBase) : undefined;
+      const baseMatches = baseBucket?.all ?? [];
+      if (baseMatches.length === 0) {
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          qty,
+          status: 'not_found',
+          matches: [],
+        };
+      }
+
+      if (inputColor) {
+        const colorMatches = inputColor === 'wh' ? baseBucket?.variants.wh ?? [] : baseBucket?.variants.bl ?? [];
+        if (colorMatches.length === 1) {
+          return {
+            rowIndex,
+            rawName,
+            normName,
+            qty,
+            status: 'matched',
+            matches: baseMatches,
+            chosenProductId: colorMatches[0].productId,
+            chosenReason: 'explicit_color',
+          };
+        }
+        if (colorMatches.length > 1) {
+          return {
+            rowIndex,
+            rawName,
+            normName,
+            qty,
+            status: 'needs_review',
+            matches: baseMatches,
+          };
+        }
+      }
+
+      const whMatches = baseBucket?.variants.wh ?? [];
+      if (whMatches.length === 1) {
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          qty,
+          status: 'matched',
+          matches: baseMatches,
+          chosenProductId: whMatches[0].productId,
+          chosenReason: 'color_default_wh',
+        };
+      }
+      if (whMatches.length > 1) {
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          qty,
+          status: 'needs_review',
+          matches: baseMatches,
+        };
+      }
+
+      if (baseMatches.length === 1) {
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          qty,
+          status: 'matched',
+          matches: baseMatches,
+          chosenProductId: baseMatches[0].productId,
+          chosenReason: 'base_match_single',
         };
       }
 
@@ -419,8 +575,10 @@ export async function parseOfferImport(req: Request, res: Response, next: NextFu
         rawName,
         normName,
         qty,
-        status: 'not_found',
-        matches: [],
+        status: 'matched',
+        matches: baseMatches,
+        chosenProductId: baseMatches[0].productId,
+        chosenReason: 'base_match_multi_no_wh',
       };
     });
 
