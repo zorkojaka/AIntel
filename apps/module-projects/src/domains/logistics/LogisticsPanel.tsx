@@ -126,6 +126,7 @@ export function LogisticsPanel({
   const [advancingMaterialOrderId, setAdvancingMaterialOrderId] = useState<string | null>(null);
   const [materialDownloading, setMaterialDownloading] = useState<"PURCHASE_ORDER" | "DELIVERY_NOTE" | null>(null);
   const [workOrderDownloading, setWorkOrderDownloading] = useState<"WORK_ORDER" | "WORK_ORDER_CONFIRMATION" | null>(null);
+  const [pendingMaterialOrderIds, setPendingMaterialOrderIds] = useState<Record<string, boolean>>({});
   const timeTouchedRef = useRef(false);
   const scheduledAtRaw = typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : "";
   const [workdaysOnly, setWorkdaysOnly] = useState(true);
@@ -1161,10 +1162,9 @@ export function LogisticsPanel({
               {(workOrder.items ?? []).map((item) => {
                 const requiredQty = typeof item.quantity === "number" ? item.quantity : 0;
                 if (workOrderMode !== "execute") {
-                  const unitValue = typeof item.unit === "string" ? item.unit.toLowerCase() : "";
-                  const isService = unitValue === "ura";
                   const materialKey = item.offerItemId ?? item.id;
                   const materialItem = materialItemsById.get(materialKey);
+                  const isService = Boolean(item.isService) || (Boolean(item.productId) && !materialItem);
                   const materialRequired =
                     typeof materialItem?.quantity === "number" ? materialItem.quantity : requiredQty;
                   const deliveredQty = typeof materialItem?.deliveredQty === "number" ? materialItem.deliveredQty : 0;
@@ -1339,8 +1339,34 @@ export function LogisticsPanel({
       setMaterialOrderForm((prev) => (prev ? { ...prev, items: nextItems } : prev));
     }
     if (shouldSave) {
-      await handleSaveWorkOrder({ _id: materialOrderId, items: nextItems });
+      const saved = await handleSaveWorkOrder({ _id: materialOrderId, items: nextItems });
+      if (saved) {
+        setPendingMaterialOrderIds((prev) => ({ ...prev, [materialOrderId]: false }));
+      }
+      return;
     }
+    setPendingMaterialOrderIds((prev) => ({ ...prev, [materialOrderId]: true }));
+  };
+
+  const saveMaterialOrderChanges = async (materialOrderId: string): Promise<boolean> => {
+    const currentMaterial = resolveMaterialOrderById(materialOrderId);
+    if (!currentMaterial) return false;
+    const saved = await handleSaveWorkOrder({
+      _id: materialOrderId,
+      items: Array.isArray(currentMaterial.items) ? currentMaterial.items : [],
+    });
+    if (saved) {
+      setPendingMaterialOrderIds((prev) => ({ ...prev, [materialOrderId]: false }));
+    }
+    return saved;
+  };
+
+  const handleAdvanceMaterialStepWithSave = async (materialOrderId: string, targetStep: MaterialStep) => {
+    if (pendingMaterialOrderIds[materialOrderId]) {
+      const saved = await saveMaterialOrderChanges(materialOrderId);
+      if (!saved) return;
+    }
+    await handleAdvanceMaterialStep(materialOrderId, targetStep);
   };
 
   const shouldShowOfferSelector = confirmedOffers.length > 0;
@@ -1378,7 +1404,9 @@ export function LogisticsPanel({
                   <MaterialOrderCard
                     key={order._id}
                     materialOrder={order}
-                    onAdvanceStep={(step) => handleAdvanceMaterialStep(order._id, step)}
+                    onAdvanceStep={(step) => {
+                      void handleAdvanceMaterialStepWithSave(order._id, step);
+                    }}
                     savingWorkOrder={savingWorkOrder || advancingMaterialOrderId === order._id}
                     employees={employees}
                     assignedEmployeeIds={Array.isArray(order.assignedEmployeeIds) ? order.assignedEmployeeIds : []}
@@ -1393,6 +1421,10 @@ export function LogisticsPanel({
                     onDeliveredQtyCommit={(itemId, deliveredQty) => {
                       void updateDeliveredQty(order._id, itemId, deliveredQty, true);
                     }}
+                    onSaveMaterialChanges={() => {
+                      void saveMaterialOrderChanges(order._id);
+                    }}
+                    hasPendingMaterialChanges={Boolean(pendingMaterialOrderIds[order._id])}
                     canDownloadPdf={Boolean(order._id)}
                     downloadingPdf={materialDownloading}
                   />
@@ -1576,7 +1608,9 @@ export function LogisticsPanel({
                   <MaterialOrderCard
                     key={order._id}
                     materialOrder={order}
-                    onAdvanceStep={(step) => handleAdvanceMaterialStep(order._id, step)}
+                    onAdvanceStep={(step) => {
+                      void handleAdvanceMaterialStepWithSave(order._id, step);
+                    }}
                     savingWorkOrder={savingWorkOrder || advancingMaterialOrderId === order._id}
                     employees={employees}
                     assignedEmployeeIds={Array.isArray(order.assignedEmployeeIds) ? order.assignedEmployeeIds : []}
@@ -1591,6 +1625,10 @@ export function LogisticsPanel({
                     onDeliveredQtyCommit={(itemId, deliveredQty) => {
                       void updateDeliveredQty(order._id, itemId, deliveredQty, true);
                     }}
+                    onSaveMaterialChanges={() => {
+                      void saveMaterialOrderChanges(order._id);
+                    }}
+                    hasPendingMaterialChanges={Boolean(pendingMaterialOrderIds[order._id])}
                     canDownloadPdf={Boolean(order._id)}
                     downloadingPdf={materialDownloading}
                   />

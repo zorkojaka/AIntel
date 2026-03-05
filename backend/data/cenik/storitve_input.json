@@ -115,7 +115,7 @@
     "slugs": "Storitve"
   },
   {
-    "ime": "Monta?a in konfiguracija kamere\nV sodelovanju z AlarmAutomatika",
+    "ime": "Montaža in konfiguracija kamere\nV sodelovanju z AlarmAutomatika",
     "cena": "55,00?",
     "slugs": "Videonadzor, dvc"
   },
@@ -125,7 +125,7 @@
     "slugs": "Videonadzor, dvc"
   },
   {
-    "ime": "Monta?a naprave - Izvedba\nV sodelovanju z AlarmAutomatika",
+    "ime": "Montaža naprave - Izvedba\nV sodelovanju z AlarmAutomatika",
     "cena": "35,00?",
     "slugs": "Videonadzor, dvc"
   },
@@ -150,92 +150,92 @@
     "slugs": "Videonadzor, dvc"
   },
   {
-    "ime": "Remonta?a kamere",
+    "ime": "Remontaža kamere",
     "cena": "35,00?",
     "slugs": "Videonadzor, dvc"
   },
   {
-    "ime": "Demonta?a kamere",
+    "ime": "Demontaža kamere",
     "cena": "20,00?",
     "slugs": "Videonadzor, dvc"
   },
   {
-    "ime": "Monta?a in konfiguracija Ajax domofona",
+    "ime": "Montaža in konfiguracija Ajax domofona",
     "cena": "95,00?",
     "slugs": "Ajax, alarm"
   },
   {
-    "ime": "Monta?a in konfiguracija ?i?ne alarmne naprave\nV sodelovanju z AlarmAutomatika",
+    "ime": "Montaža in konfiguracija žične alarmne naprave\nV sodelovanju z AlarmAutomatika",
     "cena": "45,00?",
     "slugs": "Ajax, alarm"
   },
   {
-    "ime": "Monta?a in konfiguracija alarmne naprave\nV sodelovanju z AlarmAutomatika",
+    "ime": "Montaža in konfiguracija alarmne naprave\nV sodelovanju z AlarmAutomatika",
     "cena": "39,00?",
     "slugs": "Ajax, alarm"
   },
   {
-    "ime": "Monta?a in konfiguracija samostojne kamere\nV sodelovanju z AlarmAutomatika",
+    "ime": "Montaža in konfiguracija samostojne kamere\nV sodelovanju z AlarmAutomatika",
     "cena": "72,00?",
     "slugs": "Reolink"
   },
   {
-    "ime": "Monta?a in konfiguracija REO domofona",
+    "ime": "Montaža in konfiguracija REO domofona",
     "cena": "75,00?",
     "slugs": "Reolink, domofon"
   },
   {
-    "ime": "Monta?a in konfiguracija domofonske enote",
+    "ime": "Montaža in konfiguracija domofonske enote",
     "cena": "85,00?",
     "slugs": "Domofon"
   },
   {
-    "ime": "Monta?a in vezava tipkovnice/?italca",
+    "ime": "Montaža in vezava tipkovnice/čitalca",
     "cena": "55,00?",
     "slugs": "Domofon"
   },
   {
-    "ime": "Monta?a in vezava elektri?ne klju?avnice",
+    "ime": "Montaža in vezava električne ključavnice",
     "cena": "65,00?",
     "slugs": "Domofon"
   },
   {
-    "ime": "Remonta?a Blebox modula",
+    "ime": "Remontaža Blebox modula",
     "cena": "30,00?",
     "slugs": "Blebox, Smarthome"
   },
   {
-    "ime": "Monta?a in konfiguracija pametnega modula",
+    "ime": "Montaža in konfiguracija pametnega modula",
     "cena": "45,00?",
     "slugs": "Blebox, Smarthome"
   },
   {
-    "ime": "Monta?a in konfiguracija SaunaBox/GateBoxPro",
+    "ime": "Montaža in konfiguracija SaunaBox/GateBoxPro",
     "cena": "75,00?",
     "slugs": "Blebox, Smarthome"
   },
   {
-    "ime": "Monta?a pametnega modula",
+    "ime": "Montaža pametnega modula",
     "cena": "35,00?",
     "slugs": "Blebox, Smarthome"
   },
   {
-    "ime": "Monta?a lu?i",
+    "ime": "Montaža luči",
     "cena": "24,00?",
     "slugs": "Elektro"
   },
   {
-    "ime": "Monta?a vti?nice",
+    "ime": "Montaža vtičnice",
     "cena": "13,00?",
     "slugs": "Elektro"
   },
   {
-    "ime": "Monta?a stikala",
+    "ime": "Montaža stikala",
     "cena": "13,00?",
     "slugs": "Elektro"
   },
   {
-    "ime": "Demonta?a elektri?ne naprave",
+    "ime": "Demontaža električne naprave",
     "cena": "20,00?",
     "slugs": "Elektro"
   }

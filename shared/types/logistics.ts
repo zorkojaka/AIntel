@@ -46,6 +46,7 @@ export type WorkOrderStatus = "draft" | "issued" | "in-progress" | "confirmed" |
 
 export interface WorkOrderItem extends LogisticsMaterialItem {
   offerItemId?: string | null;
+  isService?: boolean;
   offeredQuantity: number;
   plannedQuantity: number;
   executedQuantity: number;

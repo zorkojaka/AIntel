@@ -6,6 +6,7 @@ interface WorkOrderItem {
   name: string;
   quantity: number;
   unit: string;
+  isService?: boolean;
   note?: string;
   offerItemId?: string | null;
   offeredQuantity: number;
@@ -52,6 +53,7 @@ const workOrderItemSchema = new Schema<WorkOrderItem>(
     name: { type: String, required: true },
     quantity: { type: Number, required: true },
     unit: { type: String, required: true },
+    isService: { type: Boolean, default: false },
     note: { type: String },
     offerItemId: { type: String, default: null },
     offeredQuantity: { type: Number, required: true, default: 0 },
