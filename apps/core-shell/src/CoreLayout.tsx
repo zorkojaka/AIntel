@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { FolderKanban, LayoutGrid, List, Settings, User, Users, Wallet } from 'lucide-react';
 import './CoreLayout.css';
 
@@ -45,9 +45,28 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
   logoUrl,
   onLogout,
   userInfo,
-}) => (
-  <div className="core-shell">
-    <aside className="core-shell__sidebar">
+}) => {
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    setIsMobileSidebarOpen(false);
+  }, [activeModule]);
+
+  return (
+    <div className="core-shell">
+      <header className="core-shell__topbar">
+        <button
+          type="button"
+          className="core-shell__menu-toggle"
+          aria-expanded={isMobileSidebarOpen}
+          aria-controls="core-shell-sidebar"
+          onClick={() => setIsMobileSidebarOpen((prev) => !prev)}
+        >
+          ☰
+        </button>
+        <span className="core-shell__topbar-title">{modules.find((item) => item.id === activeModule)?.name ?? 'AIntel'}</span>
+      </header>
+      <aside id="core-shell-sidebar" className="core-shell__sidebar" data-open={isMobileSidebarOpen}>
       {logoUrl ? <img src={logoUrl} alt="Logo podjetja" className="core-shell__logo" /> : <h2>AIntel</h2>}
       <ul>
         {modules.map((item, index) => {
@@ -66,7 +85,11 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
                 </li>
               ) : null}
               <li>
-                <button type="button" data-active={item.id === activeModule} onClick={() => onModuleChange(item.id)}>
+                <button
+                  type="button"
+                  data-active={item.id === activeModule}
+                  onClick={() => onModuleChange(item.id)}
+                >
                   {icon ? <span className="core-shell__nav-icon">{icon}</span> : null}
                   <span>{label}</span>
                 </button>
@@ -80,9 +103,11 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
           Odjava
         </button>
       ) : null}
-    </aside>
-    <main className="core-shell__content">{children}</main>
-  </div>
-);
+      </aside>
+      {isMobileSidebarOpen ? <button className="core-shell__backdrop" type="button" onClick={() => setIsMobileSidebarOpen(false)} /> : null}
+      <main className="core-shell__content">{children}</main>
+    </div>
+  );
+};
 
 export default CoreLayout;
