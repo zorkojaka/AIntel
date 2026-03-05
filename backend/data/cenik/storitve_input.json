@@ -21,7 +21,7 @@
   },
   {
     "ime": "Zagon in konfiguracija REO snemalnika\nV sodelovanju z AlarmAutomatika",
-    "cena": "75,00€",
+    "cena": "75,00?",
     "slugs": "Reolink"
   },
   {
@@ -31,7 +31,7 @@
   },
   {
     "ime": "Konfiguracija REOLINK kamere\nV sodelovanju z AlarmAutomatika",
-    "cena": "42,00€",
+    "cena": "42,00?",
     "slugs": "Reolink"
   },
   {
@@ -46,7 +46,7 @@
   },
   {
     "ime": "Izrez odprtine za vgradni domofon",
-    "cena": "45,00€",
+    "cena": "45,00?",
     "slugs": "Domofon"
   },
   {
@@ -81,13 +81,13 @@
   },
   {
     "ime": "Konfiguracija pametnega modula",
-    "cena": "25,00€",
-    "slugs": "Blebox,Smarthome"
+    "cena": "25,00?",
+    "slugs": "Blebox, Smarthome"
   },
   {
     "ime": "Namestitev aplikacije in prikaz uporabe",
-    "cena": "25,00€",
-    "slugs": "Blebox,Smarthome"
+    "cena": "25,00?",
+    "slugs": "Blebox, Smarthome"
   },
   {
     "ime": "Montaža luči",
@@ -107,6 +107,136 @@
   {
     "ime": "Demontaža električne naprave",
     "cena": "20,00€",
+    "slugs": "Elektro"
+  },
+  {
+    "ime": "Potni stroški [km]*",
+    "cena": "0,43?",
+    "slugs": "Storitve"
+  },
+  {
+    "ime": "Monta?a in konfiguracija kamere\nV sodelovanju z AlarmAutomatika",
+    "cena": "55,00?",
+    "slugs": "Videonadzor, dvc"
+  },
+  {
+    "ime": "Konfiguracija kamere\nV sodelovanju z AlarmAutomatika",
+    "cena": "25,00?",
+    "slugs": "Videonadzor, dvc"
+  },
+  {
+    "ime": "Monta?a naprave - Izvedba\nV sodelovanju z AlarmAutomatika",
+    "cena": "35,00?",
+    "slugs": "Videonadzor, dvc"
+  },
+  {
+    "ime": "LPR konfiguracija branja registerskih tablic",
+    "cena": "245,00?",
+    "slugs": "Videonadzor, dvc"
+  },
+  {
+    "ime": "Delovna ura napeljave vodnika*",
+    "cena": "30,00?",
+    "slugs": "Videonadzor, dvc"
+  },
+  {
+    "ime": "Polaganje vodnika [m]",
+    "cena": "2,75?",
+    "slugs": "Videonadzor, dvc"
+  },
+  {
+    "ime": "Rekonfiguracija kamere",
+    "cena": "25,00?",
+    "slugs": "Videonadzor, dvc"
+  },
+  {
+    "ime": "Remonta?a kamere",
+    "cena": "35,00?",
+    "slugs": "Videonadzor, dvc"
+  },
+  {
+    "ime": "Demonta?a kamere",
+    "cena": "20,00?",
+    "slugs": "Videonadzor, dvc"
+  },
+  {
+    "ime": "Monta?a in konfiguracija Ajax domofona",
+    "cena": "95,00?",
+    "slugs": "Ajax, alarm"
+  },
+  {
+    "ime": "Monta?a in konfiguracija ?i?ne alarmne naprave\nV sodelovanju z AlarmAutomatika",
+    "cena": "45,00?",
+    "slugs": "Ajax, alarm"
+  },
+  {
+    "ime": "Monta?a in konfiguracija alarmne naprave\nV sodelovanju z AlarmAutomatika",
+    "cena": "39,00?",
+    "slugs": "Ajax, alarm"
+  },
+  {
+    "ime": "Monta?a in konfiguracija samostojne kamere\nV sodelovanju z AlarmAutomatika",
+    "cena": "72,00?",
+    "slugs": "Reolink"
+  },
+  {
+    "ime": "Monta?a in konfiguracija REO domofona",
+    "cena": "75,00?",
+    "slugs": "Reolink, domofon"
+  },
+  {
+    "ime": "Monta?a in konfiguracija domofonske enote",
+    "cena": "85,00?",
+    "slugs": "Domofon"
+  },
+  {
+    "ime": "Monta?a in vezava tipkovnice/?italca",
+    "cena": "55,00?",
+    "slugs": "Domofon"
+  },
+  {
+    "ime": "Monta?a in vezava elektri?ne klju?avnice",
+    "cena": "65,00?",
+    "slugs": "Domofon"
+  },
+  {
+    "ime": "Remonta?a Blebox modula",
+    "cena": "30,00?",
+    "slugs": "Blebox, Smarthome"
+  },
+  {
+    "ime": "Monta?a in konfiguracija pametnega modula",
+    "cena": "45,00?",
+    "slugs": "Blebox, Smarthome"
+  },
+  {
+    "ime": "Monta?a in konfiguracija SaunaBox/GateBoxPro",
+    "cena": "75,00?",
+    "slugs": "Blebox, Smarthome"
+  },
+  {
+    "ime": "Monta?a pametnega modula",
+    "cena": "35,00?",
+    "slugs": "Blebox, Smarthome"
+  },
+  {
+    "ime": "Monta?a lu?i",
+    "cena": "24,00?",
+    "slugs": "Elektro"
+  },
+  {
+    "ime": "Monta?a vti?nice",
+    "cena": "13,00?",
+    "slugs": "Elektro"
+  },
+  {
+    "ime": "Monta?a stikala",
+    "cena": "13,00?",
+    "slugs": "Elektro"
+  },
+  {
+    "ime": "Demonta?a elektri?ne naprave",
+    "cena": "20,00?",
     "slugs": "Elektro"
   }
 ]

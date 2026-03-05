@@ -116,6 +116,15 @@ const clampMin = (value: unknown, fallback: number, min: number) => {
 const isItemValid = (item: OfferLineItem | OfferLineItemForm) =>
   item.name.trim() !== "" && item.unitPrice > 0;
 
+const resolveUnitFromName = (name: string) => {
+  const match = name.trim().match(/\[([^\]]+)\]\s*$/);
+  const parsed = match?.[1]?.trim();
+  if (parsed) {
+    return parsed;
+  }
+  return "kos";
+};
+
 export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [items, setItems] = useState<OfferLineItemForm[]>([createEmptyItem()]);
 
@@ -652,7 +661,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         const product = resolveImportRowProduct(row);
         if (!product) return null;
         const rowName = product.ime || row.rawName;
-        const rowUnit = product.isService ? "ura" : "kos";
+        const rowUnit = resolveUnitFromName(rowName);
         const baseItem: OfferLineItemForm = {
           id: crypto.randomUUID(),
           productId: product.productId,
