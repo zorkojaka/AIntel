@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import type { MaterialOrder, MaterialStep } from "@aintel/shared/types/logistics";
 import type { Employee } from "@aintel/shared/types/employee";
 import { AlertTriangle, Loader2 } from "lucide-react";
@@ -75,6 +74,8 @@ interface MaterialOrderCardProps {
   onDownloadDeliveryNote: () => void;
   onDeliveredQtyChange: (itemId: string, deliveredQty: number) => void;
   onDeliveredQtyCommit: (itemId: string, deliveredQty: number) => void;
+  onSaveMaterialChanges: () => void;
+  hasPendingMaterialChanges: boolean;
   canDownloadPdf: boolean;
   downloadingPdf: "PURCHASE_ORDER" | "DELIVERY_NOTE" | null;
 }
@@ -120,11 +121,11 @@ export function MaterialOrderCard({
   onDownloadDeliveryNote,
   onDeliveredQtyChange,
   onDeliveredQtyCommit,
+  onSaveMaterialChanges,
+  hasPendingMaterialChanges,
   canDownloadPdf,
   downloadingPdf,
 }: MaterialOrderCardProps) {
-  const toggleRef = useRef<Record<string, boolean>>({});
-
   if (!materialOrder) {
     return <p className="text-sm text-muted-foreground">Naročilo za material bo ustvarjeno ob potrditvi ponudbe.</p>;
   }
@@ -238,7 +239,6 @@ export function MaterialOrderCard({
                     status === "ok" ? "border-green-600" : status === "missing" ? "border-red-600" : "border-orange-500";
                   const fillClass =
                     status === "ok" ? "bg-green-600" : status === "missing" ? "bg-transparent" : "bg-orange-500";
-                  const isOn = Boolean(toggleRef.current[item.id]);
                   const displayDelta = diff > 0 ? `+${diff}` : `${diff}`;
                   return (
                     <TableRow key={item.id}>
@@ -275,7 +275,6 @@ export function MaterialOrderCard({
                             variant="outline"
                             className="h-7 w-7"
                             onClick={() => {
-                              toggleRef.current[item.id] = false;
                               const nextDelivered = Math.max(0, deliveredQty - 1);
                               onDeliveredQtyChange(item.id, nextDelivered);
                               onDeliveredQtyCommit(item.id, nextDelivered);
@@ -291,7 +290,6 @@ export function MaterialOrderCard({
                             variant="outline"
                             className="h-7 w-7"
                             onClick={() => {
-                              toggleRef.current[item.id] = false;
                               const nextDelivered = deliveredQty + 1;
                               onDeliveredQtyChange(item.id, nextDelivered);
                               onDeliveredQtyCommit(item.id, nextDelivered);
@@ -308,11 +306,10 @@ export function MaterialOrderCard({
                             type="checkbox"
                             className="peer sr-only"
                             aria-label="Imamo material"
-                            checked={isOn}
+                            checked={isEnough}
                             onChange={() => {
-                              toggleRef.current[item.id] = !isOn;
-                              onDeliveredQtyChange(item.id, requiredQty);
-                              onDeliveredQtyCommit(item.id, requiredQty);
+                              const nextDelivered = isEnough ? 0 : requiredQty;
+                              onDeliveredQtyChange(item.id, nextDelivered);
                             }}
                           />
                           <span
@@ -348,6 +345,14 @@ export function MaterialOrderCard({
       ))}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={onSaveMaterialChanges}
+            disabled={!hasPendingMaterialChanges || savingWorkOrder}
+          >
+            Shrani
+          </Button>
           <Button
             variant="outline"
             size="sm"

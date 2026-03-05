@@ -33,7 +33,12 @@ export const materialOrdersWidget: DashboardWidgetDefinition = {
                     `Postavke: ${order.itemCount}`,
                   ])}
                 </div>
-                <div className="dashboard-widget__meta">{`Ustvarjeno: ${formatDate(order.createdAt)}`}</div>
+                <details className="dashboard-widget__details">
+                  <summary>Podrobnosti</summary>
+                  <div className="dashboard-widget__details-content">
+                    <div className="dashboard-widget__meta">{`Ustvarjeno: ${formatDate(order.createdAt)}`}</div>
+                  </div>
+                </details>
               </div>
               <Button variant="ghost" onClick={() => navigateToProject(order.projectId, 'logistics')}>
                 Odpri logistiko

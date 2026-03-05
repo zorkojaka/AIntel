@@ -59,6 +59,19 @@ export class ProductSyncValidationError extends Error {
 
 const LOCK_TTL_MINUTES = 30;
 
+type ImportLockDocument = {
+  _id: string;
+  source: string;
+  createdAt: Date;
+  expiresAt: Date;
+};
+
+type ImportLockCollection = {
+  findOne: (filter: { _id: string }) => Promise<ImportLockDocument | null>;
+  deleteOne: (filter: { _id: string }) => Promise<unknown>;
+  insertOne: (doc: ImportLockDocument) => Promise<unknown>;
+};
+
 type ImportDefaults = {
   dobavitelj: string;
   naslovDobavitelja: string;
@@ -240,7 +253,7 @@ function validateAndNormalize(
 }
 
 async function acquireLock(source: string) {
-  const collection = mongoose.connection.collection('import_locks');
+  const collection = mongoose.connection.collection('import_locks') as unknown as ImportLockCollection;
   const lockId = `product-import:${source}`;
   const now = new Date();
   const expiresAt = new Date(now.getTime() + LOCK_TTL_MINUTES * 60 * 1000);
@@ -260,7 +273,7 @@ async function acquireLock(source: string) {
 }
 
 async function releaseLock(source: string) {
-  const collection = mongoose.connection.collection('import_locks');
+  const collection = mongoose.connection.collection('import_locks') as unknown as ImportLockCollection;
   const lockId = `product-import:${source}`;
   await collection.deleteOne({ _id: lockId });
 }

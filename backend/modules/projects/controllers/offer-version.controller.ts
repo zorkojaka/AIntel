@@ -219,6 +219,839 @@ function buildDefaultOfferTitle(categoryLabel: string, customerName: string) {
   return (category || lastName || 'Ponudba').trim();
 }
 
+type OfferImportMatch = {
+  productId: string;
+  ime: string;
+  displayName?: string;
+  prodajnaCena: number;
+  isService: boolean;
+  dobavitelj?: string;
+  score?: number;
+  reasonFlags?: {
+    prefixStrong?: boolean;
+    whPreferred?: boolean;
+  };
+};
+
+type OfferImportTopCandidate = OfferImportMatch & {
+  score: number;
+};
+
+type OfferImportRowStatus = 'matched' | 'needs_review' | 'not_found' | 'invalid';
+type OfferImportReviewLevel = 'ok' | 'low' | 'needs_review' | 'invalid';
+type OfferImportChosenReason =
+  | 'exact'
+  | 'color_default_wh'
+  | 'explicit_color'
+  | 'base_exact'
+  | 'token_best'
+  | 'token_needs_review'
+  | 'invalid_row';
+
+type OfferImportRow = {
+  rowIndex: number;
+  rawName: string;
+  normName: string;
+  normCore?: string;
+  qty: number;
+  status: OfferImportRowStatus;
+  matches: OfferImportMatch[];
+  matchCandidates?: OfferImportTopCandidate[];
+  chosenProductId?: string;
+  chosenReason: OfferImportChosenReason;
+  matchScore: number;
+  topCandidates: OfferImportTopCandidate[];
+  reviewLevel: OfferImportReviewLevel;
+};
+
+type OfferImportColor = 'wh' | 'bl';
+
+type OfferImportBaseBucket = {
+  variants: {
+    wh: OfferImportMatch[];
+    bl: OfferImportMatch[];
+    other: OfferImportMatch[];
+  };
+  all: OfferImportMatch[];
+};
+
+type OfferImportProduct = OfferImportMatch & {
+  normFull: string;
+  normCore: string;
+  fullTokens: string[];
+  coreTokens: string[];
+  firstToken: string;
+  color: OfferImportColor | null;
+  trailingColor: OfferImportColor | null;
+  trailingColorWord: 'black' | 'white' | null;
+  tokens: string[];
+};
+
+function normalizeImportProductName(value: unknown) {
+  if (value === undefined || value === null) return '';
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function cleanImportedName(value: unknown) {
+  const text = normalizeText(value, '');
+  if (!text) return '';
+  const withoutOuterQuotes =
+    text.length >= 2 && text.startsWith('"') && text.endsWith('"') ? text.slice(1, -1) : text;
+  return withoutOuterQuotes.replace(/\s+/g, ' ').trim();
+}
+
+function parseColorTokenFromName(normName: string): OfferImportColor | null {
+  const match = normName.match(/(?:\s+|[-_]\s*)(wh|bl|white|black)$/i);
+  if (!match) return null;
+  const token = (match[1] ?? '').toLowerCase();
+  if (token === 'white') return 'wh';
+  if (token === 'black') return 'bl';
+  return token === 'wh' || token === 'bl' ? token : null;
+}
+
+function parseTrailingColorWord(normName: string): 'black' | 'white' | null {
+  const match = normName.match(/(?:\s+|[-_]\s*)(white|black)$/i);
+  if (!match) return null;
+  const token = (match[1] ?? '').toLowerCase();
+  return token === 'white' || token === 'black' ? token : null;
+}
+
+function stripTrailingBracketSuffix(normName: string): string {
+  let current = normName;
+  while (/\s*\([^)]*\)\s*$/.test(current)) {
+    current = current.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  }
+  return current;
+}
+
+function stripTrailingVariantCore(normName: string): string {
+  let current = stripTrailingBracketSuffix(normName);
+  current = current.replace(/(?:\s+|[-_]\s*)(wh|bl|white|black)$/i, '').trim();
+  return current.replace(/\s+/g, ' ').trim();
+}
+
+function stripTrailingColorToken(normName: string): string {
+  return stripTrailingVariantCore(normName);
+}
+
+function tokenizeBySpace(normName: string) {
+  if (!normName) return [] as string[];
+  return normName.split(/\s+/).map((token) => token.trim()).filter(Boolean);
+}
+
+function commonPrefixLength(a: string, b: string) {
+  const limit = Math.min(a.length, b.length);
+  let idx = 0;
+  while (idx < limit && a[idx] === b[idx]) {
+    idx += 1;
+  }
+  return idx;
+}
+
+function commonPrefixTokenCount(tokensA: string[], tokensB: string[]) {
+  const limit = Math.min(tokensA.length, tokensB.length);
+  let idx = 0;
+  while (idx < limit && tokensA[idx] === tokensB[idx]) {
+    idx += 1;
+  }
+  return idx;
+}
+
+function levenshteinDistance(a: string, b: string) {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  const previous = new Array<number>(b.length + 1);
+  const current = new Array<number>(b.length + 1);
+  for (let j = 0; j <= b.length; j += 1) {
+    previous[j] = j;
+  }
+
+  for (let i = 1; i <= a.length; i += 1) {
+    current[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      current[j] = Math.min(
+        current[j - 1] + 1,
+        previous[j] + 1,
+        previous[j - 1] + cost,
+      );
+    }
+    for (let j = 0; j <= b.length; j += 1) {
+      previous[j] = current[j];
+    }
+  }
+
+  return previous[b.length];
+}
+
+function sortImportMatches(matches: OfferImportMatch[]) {
+  return matches.slice().sort((a, b) => {
+    const nameCmp = a.ime.localeCompare(b.ime, 'sl-SI');
+    if (nameCmp !== 0) return nameCmp;
+    return a.productId.localeCompare(b.productId);
+  });
+}
+
+function scoreToFixed(score: number) {
+  if (!Number.isFinite(score)) return 0;
+  return Math.max(0, Math.min(1, Number(score.toFixed(4))));
+}
+
+const IMPORT_TOKEN_STOPWORDS = new Set([
+  'in',
+  'ter',
+  'za',
+  'na',
+  'od',
+  'do',
+  'v',
+  's',
+  'z',
+  'pri',
+  'po',
+  'km',
+  'kos',
+  'ura',
+  'h',
+]);
+
+function tokenizeForImportSimilarity(normName: string) {
+  if (!normName) return [] as string[];
+  return normName
+    .replace(/[^\p{L}\p{N}+*]+/gu, ' ')
+    .replace(/[+*]/g, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2)
+    .filter((token) => !IMPORT_TOKEN_STOPWORDS.has(token));
+}
+
+function computeTokenSimilarity(inputTokens: string[], productTokens: string[]) {
+  if (inputTokens.length === 0 || productTokens.length === 0) {
+    return 0;
+  }
+  const inputSet = new Set(inputTokens);
+  const productSet = new Set(productTokens);
+  let intersection = 0;
+  for (const token of inputSet) {
+    if (productSet.has(token)) {
+      intersection += 1;
+    }
+  }
+  const baseScore = (2 * intersection) / (inputSet.size + productSet.size);
+  const inputNumericTokens = Array.from(inputSet).filter((token) => /\d/.test(token));
+  const hasAllNumericTokens =
+    inputNumericTokens.length > 0 && inputNumericTokens.every((token) => productSet.has(token));
+  const bonus = hasAllNumericTokens ? 0.05 : 0;
+  return scoreToFixed(baseScore + bonus);
+}
+
+function pickBestByColor(
+  candidates: OfferImportMatch[],
+  requestedColor: OfferImportColor | null,
+) {
+  if (candidates.length === 0) return null;
+  const sorted = sortImportMatches(candidates);
+  if (requestedColor) {
+    for (const candidate of sorted) {
+      const color = parseColorTokenFromName(normalizeImportProductName(candidate.ime));
+      if (color === requestedColor) {
+        return candidate;
+      }
+    }
+  }
+  const whCandidate = sorted.find(
+    (candidate) => parseColorTokenFromName(normalizeImportProductName(candidate.ime)) === 'wh',
+  );
+  return whCandidate ?? sorted[0];
+}
+
+function buildTopCandidates(
+  candidates: Array<{ product: OfferImportMatch; score: number; reasonFlags?: OfferImportMatch['reasonFlags'] }>,
+  limit = 5,
+): OfferImportTopCandidate[] {
+  const sorted = candidates
+    .slice()
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const nameCmp = a.product.ime.localeCompare(b.product.ime, 'sl-SI');
+      if (nameCmp !== 0) return nameCmp;
+      return a.product.productId.localeCompare(b.product.productId);
+    })
+    .slice(0, limit)
+    .map(({ product, score, reasonFlags }) => ({
+      ...product,
+      displayName: product.ime,
+      score: scoreToFixed(score),
+      reasonFlags,
+    }));
+  return sorted;
+}
+
+function shouldPreferWhVariant(topCandidates: OfferImportTopCandidate[]) {
+  if (topCandidates.length < 2) return false;
+  const top = topCandidates[0];
+  const near = topCandidates.filter(
+    (candidate) => Math.abs((candidate.score ?? 0) - (top.score ?? 0)) <= 0.02,
+  );
+  const wh = near.find((candidate) => parseColorTokenFromName(normalizeImportProductName(candidate.ime)) === 'wh');
+  const bl = near.find((candidate) => parseColorTokenFromName(normalizeImportProductName(candidate.ime)) === 'bl');
+  return Boolean(wh && bl && wh.productId !== top.productId);
+}
+
+function chooseCandidateWithWhPreference(topCandidates: OfferImportTopCandidate[]) {
+  if (topCandidates.length === 0) return { chosen: undefined, whPreferred: false };
+  if (!shouldPreferWhVariant(topCandidates)) {
+    return { chosen: topCandidates[0], whPreferred: false };
+  }
+  const top = topCandidates[0];
+  const wh = topCandidates.find(
+    (candidate) =>
+      parseColorTokenFromName(normalizeImportProductName(candidate.ime)) === 'wh' &&
+      Math.abs((candidate.score ?? 0) - (top.score ?? 0)) <= 0.02,
+  );
+  return { chosen: wh ?? top, whPreferred: Boolean(wh) };
+}
+
+function computePrefixFirstScore(inputCore: string, productCore: string) {
+  const tokensA = tokenizeBySpace(inputCore);
+  const tokensB = tokenizeBySpace(productCore);
+  const minLen = Math.min(inputCore.length, productCore.length);
+  const minTokenLen = Math.min(tokensA.length, tokensB.length);
+
+  const prefixChars = commonPrefixLength(inputCore, productCore);
+  const prefixCharScore = minLen > 0 ? prefixChars / minLen : 0;
+
+  const prefixTokens = commonPrefixTokenCount(tokensA, tokensB);
+  const prefixTokenScore = minTokenLen > 0 ? prefixTokens / minTokenLen : 0;
+
+  const containsScore = inputCore.startsWith(productCore) || productCore.startsWith(inputCore) ? 1 : 0;
+  const distance = levenshteinDistance(inputCore, productCore);
+  const denom = Math.max(inputCore.length, productCore.length, 1);
+  const editDistanceScore = 1 - distance / denom;
+
+  const score =
+    0.45 * prefixTokenScore +
+    0.35 * prefixCharScore +
+    0.15 * containsScore +
+    0.05 * editDistanceScore;
+
+  const prefixStrong = prefixTokenScore >= 0.6 && prefixCharScore >= 0.6;
+  return {
+    score: scoreToFixed(score),
+    prefixStrong,
+    prefixTokenScore: scoreToFixed(prefixTokenScore),
+    prefixCharScore: scoreToFixed(prefixCharScore),
+    containsScore: scoreToFixed(containsScore),
+    editDistanceScore: scoreToFixed(editDistanceScore),
+  };
+}
+
+function parseLocalizedNumber(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const noSpaces = trimmed.replace(/\s+/g, '');
+  const hasComma = noSpaces.includes(',');
+  const hasDot = noSpaces.includes('.');
+  let normalized = noSpaces;
+
+  if (hasComma && hasDot) {
+    normalized = noSpaces.replace(/\./g, '').replace(',', '.');
+  } else if (hasComma) {
+    normalized = noSpaces.replace(',', '.');
+  }
+
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
+function parseQuotedDelimitedText(rawText: string, delimiter: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < rawText.length; index += 1) {
+    const char = rawText[index];
+    const nextChar = rawText[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentField += '"';
+        index += 1;
+        continue;
+      }
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (!inQuotes && char === delimiter) {
+      currentRow.push(currentField);
+      currentField = '';
+      continue;
+    }
+
+    if (!inQuotes && (char === '\n' || char === '\r')) {
+      currentRow.push(currentField);
+      currentField = '';
+      if (char === '\r' && nextChar === '\n') {
+        index += 1;
+      }
+      rows.push(currentRow);
+      currentRow = [];
+      continue;
+    }
+
+    currentField += char;
+  }
+
+  if (currentField.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentField);
+    rows.push(currentRow);
+  }
+
+  return rows;
+}
+
+function detectDelimiter(rawText: string): string {
+  if (rawText.includes('\t')) return '\t';
+  const semicolonCount = (rawText.match(/;/g) ?? []).length;
+  const commaCount = (rawText.match(/,/g) ?? []).length;
+  return semicolonCount > commaCount ? ';' : ',';
+}
+
+function extractQuantityFromCells(cells: string[], nameIndex: number) {
+  for (let index = cells.length - 1; index >= 0; index -= 1) {
+    if (index === nameIndex) continue;
+    const cell = normalizeText(cells[index], '');
+    if (!cell || cell.includes('%')) continue;
+    const parsed = parseLocalizedNumber(cell);
+    if (parsed !== null && parsed > 0) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function buildOfferImportRows(rawText: string): Array<{ rowIndex: number; cells: string[] }> {
+  const delimiter = detectDelimiter(rawText);
+  const parsedRows = parseQuotedDelimitedText(rawText, delimiter);
+  return parsedRows
+    .map((cells, index) => ({ rowIndex: index + 1, cells }))
+    .filter(({ cells }) => cells.some((cell) => normalizeText(cell, '').length > 0));
+}
+
+export async function parseOfferImport(req: Request, res: Response, next: NextFunction) {
+  try {
+    const rawText = typeof req.body?.rawText === 'string' ? req.body.rawText : '';
+    if (!rawText.trim()) {
+      return res.fail('Prilepi tabelo za uvoz.', 400);
+    }
+
+    const rowsForParsing = buildOfferImportRows(rawText);
+    if (rowsForParsing.length === 0) {
+      return res.success({ rows: [] as OfferImportRow[] });
+    }
+
+    const products = await ProductModel.find()
+      .select({ ime: 1, prodajnaCena: 1, isService: 1, dobavitelj: 1 })
+      .lean();
+
+    const exactMap = new Map<string, OfferImportProduct[]>();
+    const coreMap = new Map<string, OfferImportProduct[]>();
+    const allProducts: OfferImportProduct[] = [];
+    for (const product of products) {
+      const normFullName = normalizeImportProductName(product.ime);
+      if (!normFullName) continue;
+      const normCore = stripTrailingVariantCore(normFullName) || normFullName;
+      const color = parseColorTokenFromName(normFullName);
+      const trailingColorWord = parseTrailingColorWord(normFullName);
+      const fullTokens = tokenizeBySpace(normFullName);
+      const coreTokens = tokenizeBySpace(normCore);
+      const firstToken = coreTokens[0] ?? fullTokens[0] ?? '';
+      const tokens = tokenizeForImportSimilarity(normCore);
+      const mapped: OfferImportProduct = {
+        productId: String(product._id),
+        ime: normalizeText(product.ime, ''),
+        prodajnaCena: Number(product.prodajnaCena ?? 0),
+        isService: Boolean(product.isService),
+        dobavitelj: normalizeText((product as any).dobavitelj, '') || undefined,
+        normFull: normFullName,
+        normCore,
+        fullTokens,
+        coreTokens,
+        firstToken,
+        color,
+        trailingColor: color,
+        trailingColorWord,
+        tokens,
+      };
+      allProducts.push(mapped);
+
+      const exactExisting = exactMap.get(normFullName) ?? [];
+      exactExisting.push(mapped);
+      exactMap.set(normFullName, exactExisting);
+
+      const coreExisting = coreMap.get(normCore) ?? [];
+      coreExisting.push(mapped);
+      coreMap.set(normCore, coreExisting);
+    }
+
+    for (const [key, matches] of exactMap.entries()) {
+      exactMap.set(
+        key,
+        sortImportMatches(matches).map((match) => match as OfferImportProduct),
+      );
+    }
+    for (const [key, matches] of coreMap.entries()) {
+      coreMap.set(
+        key,
+        sortImportMatches(matches).map((match) => match as OfferImportProduct),
+      );
+    }
+
+    const rows: OfferImportRow[] = rowsForParsing.map(({ rowIndex, cells }) => {
+      const firstTextIndex = cells.findIndex((cell) => cleanImportedName(cell).length > 0);
+      const rawName = firstTextIndex >= 0 ? cleanImportedName(cells[firstTextIndex]) : '';
+      const normName = normalizeImportProductName(rawName);
+      const normCore = stripTrailingVariantCore(normName) || normName;
+      const inputColor = parseColorTokenFromName(normName);
+      const qty = extractQuantityFromCells(cells, firstTextIndex);
+      const toPublicMatch = (product: OfferImportMatch): OfferImportMatch => ({
+        productId: product.productId,
+        ime: product.ime,
+        displayName: product.ime,
+        prodajnaCena: product.prodajnaCena,
+        isService: product.isService,
+        dobavitelj: product.dobavitelj,
+        score: product.score,
+        reasonFlags: product.reasonFlags,
+      });
+
+      if (!rawName || !normName || qty === null || qty <= 0) {
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          normCore,
+          qty: qty ?? 0,
+          status: 'invalid',
+          matches: [],
+          matchCandidates: [],
+          chosenReason: 'invalid_row',
+          matchScore: 0,
+          topCandidates: [],
+          reviewLevel: 'invalid',
+        };
+      }
+
+      if (allProducts.length === 0) {
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          normCore,
+          qty,
+          status: 'not_found',
+          matches: [],
+          matchCandidates: [],
+          chosenReason: 'invalid_row',
+          matchScore: 0,
+          topCandidates: [],
+          reviewLevel: 'invalid',
+        };
+      }
+
+      const exactMatches = normName ? exactMap.get(normName) ?? [] : [];
+
+      if (exactMatches.length === 1) {
+        const chosen = exactMatches[0];
+        const topCandidates = buildTopCandidates([{ product: toPublicMatch(chosen), score: 1 }]);
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          normCore,
+          qty,
+          status: 'matched',
+          matches: exactMatches.map((entry) => toPublicMatch(entry)),
+          matchCandidates: topCandidates,
+          chosenProductId: chosen.productId,
+          chosenReason: 'exact',
+          matchScore: 1,
+          topCandidates,
+          reviewLevel: 'ok',
+        };
+      }
+
+      if (exactMatches.length > 1) {
+        const chosen = pickBestByColor(exactMatches, inputColor);
+        if (chosen) {
+          const topCandidates = buildTopCandidates(
+            exactMatches.map((entry) => ({ product: toPublicMatch(entry), score: 1 })),
+          );
+          return {
+            rowIndex,
+            rawName,
+            normName,
+            normCore,
+            qty,
+            status: inputColor ? 'matched' : 'needs_review',
+            matches: exactMatches.map((entry) => toPublicMatch(entry)),
+            matchCandidates: topCandidates,
+            chosenProductId: chosen.productId,
+            chosenReason: inputColor ? 'explicit_color' : 'exact',
+            matchScore: 1,
+            topCandidates,
+            reviewLevel: inputColor ? 'ok' : 'needs_review',
+          };
+        }
+        const topCandidates = buildTopCandidates(
+          exactMatches.map((entry) => ({ product: toPublicMatch(entry), score: 1 })),
+        );
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          normCore,
+          qty,
+          status: 'needs_review',
+          matches: exactMatches.map((entry) => toPublicMatch(entry)),
+          matchCandidates: topCandidates,
+          chosenReason: 'token_needs_review',
+          matchScore: 1,
+          topCandidates,
+          reviewLevel: 'needs_review',
+        };
+      }
+
+      const coreMatches = normCore ? coreMap.get(normCore) ?? [] : [];
+      if (coreMatches.length > 0) {
+        const explicitColorMatches =
+          inputColor !== null
+            ? coreMatches.filter((entry) => parseColorTokenFromName(entry.normFull) === inputColor)
+            : [];
+        const whMatches = coreMatches.filter((entry) => parseColorTokenFromName(entry.normFull) === 'wh');
+
+        let chosen: OfferImportProduct | null = null;
+        let chosenReason: OfferImportChosenReason = 'base_exact';
+        if (explicitColorMatches.length > 0) {
+          chosen = pickBestByColor(explicitColorMatches, inputColor) as OfferImportProduct | null;
+          chosenReason = 'explicit_color';
+        } else if (whMatches.length > 0 && coreMatches.length > 1) {
+          chosen = pickBestByColor(whMatches, 'wh') as OfferImportProduct | null;
+          chosenReason = 'color_default_wh';
+        } else {
+          chosen = pickBestByColor(coreMatches, inputColor) as OfferImportProduct | null;
+          chosenReason = 'base_exact';
+        }
+
+        if (chosen) {
+          const scoredCoreCandidates = coreMatches.map((entry) => {
+            const scoreBreakdown = computePrefixFirstScore(normCore, entry.normCore);
+            return {
+              product: toPublicMatch({
+                ...entry,
+                score: scoreBreakdown.score,
+                reasonFlags: { prefixStrong: scoreBreakdown.prefixStrong },
+              }),
+              score: scoreBreakdown.score,
+              reasonFlags: { prefixStrong: scoreBreakdown.prefixStrong },
+            };
+          });
+          const topCandidates = buildTopCandidates(scoredCoreCandidates);
+          return {
+            rowIndex,
+            rawName,
+            normName,
+            normCore,
+            qty,
+            status: coreMatches.length > 1 ? 'needs_review' : 'matched',
+            matches: coreMatches.map((entry) => toPublicMatch(entry)),
+            matchCandidates: topCandidates,
+            chosenProductId: chosen.productId,
+            chosenReason,
+            matchScore: topCandidates.find((entry) => entry.productId === chosen?.productId)?.score ?? 0.9,
+            topCandidates,
+            reviewLevel: coreMatches.length > 1 ? 'needs_review' : 'ok',
+          };
+        }
+      }
+
+      const coreTokens = tokenizeBySpace(normCore);
+      const firstToken = coreTokens[0] ?? '';
+      const firstPrefix = normCore.slice(0, Math.min(normCore.length, 10));
+      const loosePrefix = firstPrefix.slice(0, Math.min(firstPrefix.length, 6));
+
+      let candidatePool = allProducts.filter((product) => {
+        if (firstToken && product.firstToken === firstToken) return true;
+        if (firstPrefix && product.normCore.startsWith(firstPrefix)) return true;
+        if (loosePrefix && product.normCore.includes(loosePrefix)) return true;
+        return false;
+      });
+      if (candidatePool.length < 30) {
+        candidatePool = allProducts;
+      }
+
+      const tokenCandidatesRaw = candidatePool.map((product) => {
+        const scoreBreakdown = computePrefixFirstScore(normCore, product.normCore);
+        return {
+          product,
+          score: scoreBreakdown.score,
+          reasonFlags: {
+            prefixStrong: scoreBreakdown.prefixStrong,
+          },
+        };
+      });
+      const topCandidates = buildTopCandidates(
+        tokenCandidatesRaw.map((entry) => ({
+          product: toPublicMatch({
+            ...entry.product,
+            score: entry.score,
+            reasonFlags: entry.reasonFlags,
+          }),
+          score: entry.score,
+          reasonFlags: entry.reasonFlags,
+        })),
+      );
+
+      const { chosen, whPreferred } = chooseCandidateWithWhPreference(topCandidates);
+      const bestScore = chosen?.score ?? 0;
+
+      if (chosen && chosen.reasonFlags?.prefixStrong) {
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          normCore,
+          qty,
+          status: 'matched',
+          matches: topCandidates.map((entry) => ({
+            productId: entry.productId,
+            ime: entry.ime,
+            displayName: entry.displayName ?? entry.ime,
+            prodajnaCena: entry.prodajnaCena,
+            isService: entry.isService,
+            dobavitelj: entry.dobavitelj,
+            score: entry.score,
+            reasonFlags: entry.reasonFlags,
+          })),
+          matchCandidates: topCandidates,
+          chosenProductId: chosen.productId,
+          chosenReason: 'token_best',
+          matchScore: bestScore,
+          topCandidates,
+          reviewLevel: 'ok',
+        };
+      }
+
+      if (chosen && bestScore >= 0.6) {
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          normCore,
+          qty,
+          status: 'matched',
+          matches: topCandidates.map((entry) => ({
+            productId: entry.productId,
+            ime: entry.ime,
+            displayName: entry.displayName ?? entry.ime,
+            prodajnaCena: entry.prodajnaCena,
+            isService: entry.isService,
+            dobavitelj: entry.dobavitelj,
+            score: entry.score,
+            reasonFlags: entry.reasonFlags,
+          })),
+          matchCandidates: topCandidates.map((entry) =>
+            entry.productId === chosen.productId && whPreferred
+              ? { ...entry, reasonFlags: { ...(entry.reasonFlags ?? {}), whPreferred: true } }
+              : entry,
+          ),
+          chosenProductId: chosen.productId,
+          chosenReason: whPreferred ? 'color_default_wh' : 'token_best',
+          matchScore: bestScore,
+          topCandidates: topCandidates.map((entry) =>
+            entry.productId === chosen.productId && whPreferred
+              ? { ...entry, reasonFlags: { ...(entry.reasonFlags ?? {}), whPreferred: true } }
+              : entry,
+          ),
+          reviewLevel: bestScore < 0.7 ? 'low' : 'ok',
+        };
+      }
+
+      if (chosen && bestScore >= 0.45) {
+        const candidatesWithFlags = topCandidates.map((entry) =>
+          entry.productId === chosen.productId && whPreferred
+            ? { ...entry, reasonFlags: { ...(entry.reasonFlags ?? {}), whPreferred: true } }
+            : entry,
+        );
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          normCore,
+          qty,
+          status: 'needs_review',
+          matches: candidatesWithFlags.map((entry) => ({
+            productId: entry.productId,
+            ime: entry.ime,
+            displayName: entry.displayName ?? entry.ime,
+            prodajnaCena: entry.prodajnaCena,
+            isService: entry.isService,
+            dobavitelj: entry.dobavitelj,
+            score: entry.score,
+            reasonFlags: entry.reasonFlags,
+          })),
+          matchCandidates: candidatesWithFlags,
+          chosenProductId: chosen.productId,
+          chosenReason: 'token_needs_review',
+          matchScore: bestScore,
+          topCandidates: candidatesWithFlags,
+          reviewLevel: 'needs_review',
+        };
+      }
+
+      return {
+        rowIndex,
+        rawName,
+        normName,
+        normCore,
+        qty,
+        status: 'not_found',
+        matches: topCandidates.map((entry) => ({
+          productId: entry.productId,
+          ime: entry.ime,
+          displayName: entry.displayName ?? entry.ime,
+          prodajnaCena: entry.prodajnaCena,
+          isService: entry.isService,
+          dobavitelj: entry.dobavitelj,
+          score: entry.score,
+          reasonFlags: entry.reasonFlags,
+        })),
+        matchCandidates: topCandidates,
+        chosenProductId: chosen?.productId,
+        chosenReason: 'token_needs_review',
+        matchScore: bestScore,
+        topCandidates,
+        reviewLevel: 'needs_review',
+      };
+    });
+
+    return res.success({ rows });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function getNextVersionNumber(projectId: string, baseTitle: string) {
   const last = await OfferVersionModel.findOne({ projectId, baseTitle }).sort({ versionNumber: -1 }).lean();
   return last ? (last.versionNumber || 0) + 1 : 1;

@@ -124,17 +124,24 @@ function mapOfferItemsToLogistics(items: OfferLineItem[]) {
 
 type LogisticsItems = ReturnType<typeof mapOfferItemsToLogistics>;
 
-function mapOfferItemsToWorkOrderItems(items: OfferLineItem[]) {
+function mapOfferItemsToWorkOrderItems(items: OfferLineItem[], serviceProductIds: Set<string>) {
   return items.map((item) => {
     const quantity = typeof item.quantity === 'number' ? item.quantity : 0;
     const generatedId = item.id ?? new Types.ObjectId().toString();
     const note = (item as any).note ?? undefined;
+    const unitValue = typeof item.unit === 'string' ? item.unit.trim().toLowerCase() : '';
+    const isService =
+      Boolean((item as any).isService) ||
+      (item.productId ? serviceProductIds.has(String(item.productId)) : false) ||
+      unitValue === 'ura' ||
+      unitValue === 'h';
     return {
       id: generatedId,
       productId: item.productId ?? null,
       name: item.name,
       quantity,
       unit: item.unit,
+      isService,
       note,
       offerItemId: item.id ?? null,
       offeredQuantity: quantity,
@@ -476,7 +483,7 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       (item) => !item.productId || !serviceProductIds.has(String(item.productId))
     );
     const logisticsItems = mapOfferItemsToLogistics(materialOfferItems);
-    const workOrderItems = mapOfferItemsToWorkOrderItems(offerItems);
+    const workOrderItems = mapOfferItemsToWorkOrderItems(offerItems, serviceProductIds);
     const customerName = project.customer?.name ?? projectClient?.name ?? '';
     const customerEmail = projectClient?.email ?? '';
     const customerPhone = projectClient?.phone ?? '';
@@ -713,6 +720,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           if (target) {
             if (typeof incoming.name === 'string') target.name = incoming.name;
             if (typeof incoming.unit === 'string') target.unit = incoming.unit;
+            if (typeof incoming.isService === 'boolean') target.isService = incoming.isService;
             if (typeof incoming.note === 'string' || incoming.note === null) target.note = incoming.note ?? '';
             if (typeof incoming.itemNote === 'string' || incoming.itemNote === null) {
               target.itemNote = incoming.itemNote ?? null;
@@ -754,6 +762,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           name: incoming.name ?? 'Dodatna postavka',
           quantity: planned,
           unit: incoming.unit ?? '',
+          isService: typeof incoming.isService === 'boolean' ? incoming.isService : false,
           note: incoming.note ?? '',
           offerItemId: incoming.offerItemId ?? null,
           offeredQuantity: offered,

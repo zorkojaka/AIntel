@@ -30,21 +30,26 @@ export const upcomingProjectsWidget: DashboardWidgetDefinition = {
                 <div className="dashboard-widget__meta">
                   {showMetaParts([project.customerName, project.customerAddress ?? undefined])}
                 </div>
-                <div className="dashboard-widget__meta">
-                  {showMetaParts([
-                    project.confirmedOfferVersionLabel
-                      ? `Ponudba: ${project.confirmedOfferVersionLabel}`
-                      : project.confirmedOfferVersionId
-                        ? `Ponudba: ${project.confirmedOfferVersionId}`
-                        : 'Ponudba ni oznacena',
-                  ])}
-                </div>
-                <div className="dashboard-widget__meta">
-                  {showMetaParts([
-                    `Ustvarjeno: ${formatDate(project.createdAt)}`,
-                    `Posodobljeno: ${formatDate(project.updatedAt)}`,
-                  ])}
-                </div>
+                <details className="dashboard-widget__details">
+                  <summary>Podrobnosti</summary>
+                  <div className="dashboard-widget__details-content">
+                    <div className="dashboard-widget__meta">
+                      {showMetaParts([
+                        project.confirmedOfferVersionLabel
+                          ? `Ponudba: ${project.confirmedOfferVersionLabel}`
+                          : project.confirmedOfferVersionId
+                            ? `Ponudba: ${project.confirmedOfferVersionId}`
+                            : 'Ponudba ni oznacena',
+                      ])}
+                    </div>
+                    <div className="dashboard-widget__meta">
+                      {showMetaParts([
+                        `Ustvarjeno: ${formatDate(project.createdAt)}`,
+                        `Posodobljeno: ${formatDate(project.updatedAt)}`,
+                      ])}
+                    </div>
+                  </div>
+                </details>
               </div>
               <Button variant="ghost" onClick={() => navigateToProject(project.id)}>
                 Odpri projekt

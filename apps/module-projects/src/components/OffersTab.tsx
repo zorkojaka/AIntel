@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
 import { Card } from "./ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "./ui/table";
 import { toast } from "sonner";
 
@@ -43,6 +45,45 @@ type OfferLineItemForm = {
   discountPercent: number;
 };
 
+type OfferImportMatch = {
+  productId: string;
+  ime: string;
+  displayName?: string;
+  prodajnaCena: number;
+  isService: boolean;
+  dobavitelj?: string;
+  score?: number;
+  reasonFlags?: {
+    prefixStrong?: boolean;
+    whPreferred?: boolean;
+  };
+};
+
+type OfferImportRow = {
+  rowIndex: number;
+  rawName: string;
+  normName: string;
+  normCore?: string;
+  qty: number;
+  status: "matched" | "needs_review" | "not_found" | "invalid";
+  matches: OfferImportMatch[];
+  matchCandidates?: Array<OfferImportMatch & { score: number }>;
+  chosenProductId?: string;
+  chosenReason?:
+    | "exact"
+    | "color_default_wh"
+    | "explicit_color"
+    | "base_exact"
+    | "token_best"
+    | "token_needs_review"
+    | "invalid_row";
+  matchScore?: number;
+  reviewLevel?: "ok" | "low" | "needs_review" | "invalid";
+  topCandidates?: Array<{ productId: string; ime: string; prodajnaCena: number; score: number }>;
+  skipped?: boolean;
+  manualMatch?: OfferImportMatch;
+};
+
 const createEmptyItem = (): OfferLineItemForm => ({
   id: crypto.randomUUID(),
   productId: null,
@@ -74,6 +115,15 @@ const clampMin = (value: unknown, fallback: number, min: number) => {
 
 const isItemValid = (item: OfferLineItem | OfferLineItemForm) =>
   item.name.trim() !== "" && item.unitPrice > 0;
+
+const resolveUnitFromName = (name: string) => {
+  const match = name.trim().match(/\[([^\]]+)\]\s*$/);
+  const parsed = match?.[1]?.trim();
+  if (parsed) {
+    return parsed;
+  }
+  return "kos";
+};
 
 export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [items, setItems] = useState<OfferLineItemForm[]>([createEmptyItem()]);
@@ -113,6 +163,14 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
   const [versions, setVersions] = useState<OfferVersionSummary[]>([]);
   const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
   const isDownloading = downloadingMode !== null;
+  const lineItemsRef = useRef<HTMLDivElement | null>(null);
+
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [importRawText, setImportRawText] = useState("");
+  const [importRows, setImportRows] = useState<OfferImportRow[]>([]);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [showImportMappingHint, setShowImportMappingHint] = useState(false);
 
   const paymentTermsInitRef = useRef<Record<string, boolean>>({});
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -532,6 +590,111 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     updateItem(rowId, { productId: null });
   };
 
+  const openImportModal = () => {
+    setImportError("");
+    setShowImportMappingHint(false);
+    setImportRows([]);
+    setImportRawText("");
+    setIsImportOpen(true);
+  };
+
+  const parseOfferImport = async () => {
+    const raw = importRawText.trim();
+    if (!raw) {
+      setImportError("Prilepi tabelo za uvoz.");
+      setImportRows([]);
+      return;
+    }
+
+    setImportLoading(true);
+    setImportError("");
+    setShowImportMappingHint(false);
+    try {
+      const response = await fetch("/api/offers/import/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawText: raw, projectId }),
+      });
+      const payload = await response.json();
+      if (!payload?.success || !Array.isArray(payload?.data?.rows)) {
+        setImportRows([]);
+        setImportError(payload?.error ?? "Razčlenjevanje tabele ni uspelo.");
+        setShowImportMappingHint(true);
+        return;
+      }
+      setImportRows(payload.data.rows as OfferImportRow[]);
+    } catch (error) {
+      console.error(error);
+      setImportRows([]);
+      setImportError("Razčlenjevanje tabele ni uspelo.");
+      setShowImportMappingHint(true);
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const updateImportRow = (rowIndex: number, changes: Partial<OfferImportRow>) => {
+    setImportRows((prev) =>
+      prev.map((row) => (row.rowIndex === rowIndex ? { ...row, ...changes } : row)),
+    );
+  };
+
+  const resolveImportRowProduct = (row: OfferImportRow): OfferImportMatch | null => {
+    const chosenProductId = row.chosenProductId;
+    if (!chosenProductId) {
+      return row.manualMatch ?? null;
+    }
+    const fromMatches = row.matches.find((match) => match.productId === chosenProductId);
+    return fromMatches ?? row.manualMatch ?? null;
+  };
+
+  const handleImportApply = () => {
+    const importedRows = importRows.filter((row) => !row.skipped);
+    const unresolvedRows = importedRows.filter((row) => !resolveImportRowProduct(row));
+    if (unresolvedRows.length > 0) {
+      toast.error("Nekatere vrstice nimajo izbranega produkta/storitve.");
+      return;
+    }
+
+    const nextItems = importedRows
+      .map((row) => {
+        const product = resolveImportRowProduct(row);
+        if (!product) return null;
+        const rowName = product.ime || row.rawName;
+        const rowUnit = resolveUnitFromName(rowName);
+        const baseItem: OfferLineItemForm = {
+          id: crypto.randomUUID(),
+          productId: product.productId,
+          name: rowName,
+          quantity: row.qty > 0 ? row.qty : 1,
+          unit: rowUnit,
+          unitPrice: Number(product.prodajnaCena ?? 0),
+          vatRate: vatMode,
+          discountPercent: 0,
+          totalNet: 0,
+          totalVat: 0,
+          totalGross: 0,
+        };
+        return recalcItem(baseItem);
+      })
+      .filter((item): item is OfferLineItemForm => Boolean(item));
+
+    if (nextItems.length === 0) {
+      toast.error("Ni postavk za uvoz.");
+      return;
+    }
+
+    setItems(ensureTrailingBlank(nextItems));
+    setIsImportOpen(false);
+    toast.success(`Uvoženih postavk: ${nextItems.length}`);
+
+    window.setTimeout(() => {
+      lineItemsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const input = lineItemsRef.current?.querySelector("input");
+      input?.focus();
+    }, 120);
+  };
+
   const buildPayloadFromCurrentState = () => {
     const cleanItems = items
       .filter((i) => !isEmptyOfferItem(i))
@@ -828,6 +991,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       ? sentAtValue.toLocaleString("sl-SI")
       : "";
   const isSent = Boolean(currentOffer?.sentAt);
+  const importMatchedCount = importRows.filter((row) => row.status === "matched").length;
+  const importNeedsReviewCount = importRows.filter((row) => row.status === "needs_review").length;
+  const importInvalidCount = importRows.filter((row) => row.status === "invalid").length;
 
   return (
     <Card className="p-4 space-y-4">
@@ -1023,7 +1189,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       </div>
 
       {/* TABELA POSTAVK */}
-      <div className="bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
+      <div ref={lineItemsRef} className="bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
         <Table className="w-full table-fixed">
           <colgroup>
             <col style={{ width: "42%" }} />
@@ -1227,9 +1393,184 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           </TableFooter>
         </Table>
       </div>
+
+      <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+        <DialogContent className="sm:max-w-5xl max-h-[88vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Uvozi ponudbo</DialogTitle>
+            <DialogDescription>Prilepi tabelo iz Google Sheets (TSV/CSV) in preveri ujemanja s cenikom.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Prilepi tabelo</label>
+            <Textarea
+              value={importRawText}
+              onChange={(event) => setImportRawText(event.target.value)}
+              rows={8}
+              placeholder={"Naziv\t9.5%\t1"}
+            />
+            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <span>Delimiter: samodejno zaznano (prednost ima tabulator).</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={parseOfferImport}
+                disabled={importLoading}
+              >
+                {importLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Analiziraj tabelo
+              </Button>
+            </div>
+            {importError && <p className="text-sm text-red-600">{importError}</p>}
+            {showImportMappingHint && (
+              <div className="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
+                Namig mapiranja: naziv = prvi besedilni stolpec, DDV (%) se ignorira, kolicina = zadnji numericni stolpec.
+              </div>
+            )}
+          </div>
+
+          {importRows.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">Matched: {importMatchedCount}</Badge>
+                <Badge className="bg-amber-500 text-white hover:bg-amber-500">Needs review: {importNeedsReviewCount}</Badge>
+                <Badge className="bg-slate-600 text-white hover:bg-slate-600">Invalid: {importInvalidCount}</Badge>
+              </div>
+
+              <div className="rounded-md border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[70px]">Vrstica</TableHead>
+                      <TableHead>Naziv iz paste</TableHead>
+                      <TableHead className="w-[120px] text-right">Kolicina</TableHead>
+                      <TableHead className="w-[180px]">Status</TableHead>
+                      <TableHead>Izbira produkta</TableHead>
+                      <TableHead className="w-[120px] text-right">Cena</TableHead>
+                      <TableHead className="w-[120px] text-right">Akcija</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {importRows.map((row) => {
+                      const resolvedProduct = resolveImportRowProduct(row);
+                      const candidateOptions = (row.matchCandidates?.length ? row.matchCandidates : row.matches) ?? [];
+                      const isSkipped = Boolean(row.skipped);
+                      return (
+                        <TableRow key={row.rowIndex} className={isSkipped ? "opacity-60" : ""}>
+                          <TableCell>{row.rowIndex}</TableCell>
+                          <TableCell className="align-top">
+                            <div className="break-words">{row.rawName || "-"}</div>
+                          </TableCell>
+                          <TableCell className="text-right">{row.qty}</TableCell>
+                          <TableCell>
+                            {row.status === "matched" && (
+                              <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">Matched</Badge>
+                            )}
+                            {row.status === "needs_review" && (
+                              <Badge className="bg-amber-500 text-white hover:bg-amber-500">Needs review</Badge>
+                            )}
+                            {(row.status === "not_found" || row.status === "invalid") && (
+                              <Badge className="bg-slate-600 text-white hover:bg-slate-600">Invalid</Badge>
+                            )}
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {row.chosenReason ?? "n/a"}{" "}
+                              {typeof row.matchScore === "number" ? row.matchScore.toFixed(2) : "0.00"}
+                            </div>
+                          </TableCell>
+                          <TableCell className="space-y-2">
+                            {candidateOptions.length > 0 ? (
+                              <Select
+                                value={row.chosenProductId ?? "__none"}
+                                onValueChange={(value) => {
+                                  updateImportRow(row.rowIndex, {
+                                    chosenProductId: value === "__none" ? undefined : value,
+                                  });
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Izberi produkt" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none">Brez izbire</SelectItem>
+                                  {candidateOptions.map((match) => (
+                                    <SelectItem key={match.productId} value={match.productId}>
+                                      {match.displayName ?? match.ime}
+                                      {typeof match.score === "number" ? ` (${match.score.toFixed(3)})` : ""}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : null}
+                            {(row.status === "not_found" || row.status === "needs_review") && (
+                              <PriceListProductAutocomplete
+                                value={row.manualMatch?.ime ?? row.rawName}
+                                placeholder="Rocno poisci v ceniku"
+                                onChange={(name) => {
+                                  updateImportRow(row.rowIndex, { rawName: name });
+                                }}
+                                onCustomSelected={() => undefined}
+                                onProductSelected={(product) => {
+                                  updateImportRow(row.rowIndex, {
+                                    chosenProductId: product.id,
+                                    manualMatch: {
+                                      productId: product.id,
+                                      ime: product.name,
+                                      prodajnaCena: product.unitPrice,
+                                      isService: product.unit === "ura",
+                                    },
+                                  });
+                                }}
+                              />
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {resolvedProduct
+                              ? `${Number(resolvedProduct.prodajnaCena).toLocaleString("sl-SI", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })} €`
+                              : "-"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={isSkipped ? "secondary" : "outline"}
+                              onClick={() => updateImportRow(row.rowIndex, { skipped: !isSkipped })}
+                            >
+                              {isSkipped ? "Vrni" : "Odstrani"}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsImportOpen(false)}>
+              Zapri
+            </Button>
+            <Button
+              onClick={handleImportApply}
+              disabled={importRows.length === 0 || importLoading}
+            >
+              Uvozi v ponudbo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* GUMBI */}
       <div className="flex items-center justify-between gap-3 flex-nowrap">
         <div className="flex items-center gap-2 flex-nowrap">
+          <Button variant="outline" onClick={openImportModal}>
+            Uvozi ponudbo
+          </Button>
           <Button
             variant="outline"
             onClick={handleExportDescriptionsPdf}

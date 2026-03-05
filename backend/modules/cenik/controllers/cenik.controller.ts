@@ -302,7 +302,7 @@ export async function searchPriceListItems(req: Request, res: Response) {
           slugs: normalizedSlugs.length ? slugsRaw : undefined,
           categorySlugs: product.categorySlugs ?? undefined,
           categories: product.categories ?? undefined,
-          unit: product.isService ? 'ura' : 'kos',
+          unit: resolveUnitFromName(name),
           unitPrice: Number(product.prodajnaCena ?? 0),
           vatRate: 22,
           _rank: rank,
@@ -337,4 +337,13 @@ function normalizeSearchValue(value: unknown) {
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function resolveUnitFromName(name: string) {
+  const match = name.trim().match(/\[([^\]]+)\]\s*$/);
+  const parsed = match?.[1]?.trim();
+  if (parsed) {
+    return parsed;
+  }
+  return 'kos';
 }
