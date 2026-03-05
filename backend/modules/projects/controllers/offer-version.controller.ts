@@ -219,6 +219,217 @@ function buildDefaultOfferTitle(categoryLabel: string, customerName: string) {
   return (category || lastName || 'Ponudba').trim();
 }
 
+type OfferImportMatch = {
+  productId: string;
+  ime: string;
+  prodajnaCena: number;
+  isService: boolean;
+  dobavitelj?: string;
+};
+
+type OfferImportRowStatus = 'matched' | 'needs_review' | 'not_found';
+
+type OfferImportRow = {
+  rowIndex: number;
+  rawName: string;
+  normName: string;
+  qty: number;
+  status: OfferImportRowStatus;
+  matches: OfferImportMatch[];
+  chosenProductId?: string;
+};
+
+function normalizeImportProductName(value: unknown) {
+  if (value === undefined || value === null) return '';
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function cleanImportedName(value: unknown) {
+  const text = normalizeText(value, '');
+  if (!text) return '';
+  const withoutOuterQuotes =
+    text.length >= 2 && text.startsWith('"') && text.endsWith('"') ? text.slice(1, -1) : text;
+  return withoutOuterQuotes.replace(/\s+/g, ' ').trim();
+}
+
+function parseLocalizedNumber(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const noSpaces = trimmed.replace(/\s+/g, '');
+  const hasComma = noSpaces.includes(',');
+  const hasDot = noSpaces.includes('.');
+  let normalized = noSpaces;
+
+  if (hasComma && hasDot) {
+    normalized = noSpaces.replace(/\./g, '').replace(',', '.');
+  } else if (hasComma) {
+    normalized = noSpaces.replace(',', '.');
+  }
+
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
+function parseQuotedDelimitedText(rawText: string, delimiter: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < rawText.length; index += 1) {
+    const char = rawText[index];
+    const nextChar = rawText[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentField += '"';
+        index += 1;
+        continue;
+      }
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (!inQuotes && char === delimiter) {
+      currentRow.push(currentField);
+      currentField = '';
+      continue;
+    }
+
+    if (!inQuotes && (char === '\n' || char === '\r')) {
+      currentRow.push(currentField);
+      currentField = '';
+      if (char === '\r' && nextChar === '\n') {
+        index += 1;
+      }
+      rows.push(currentRow);
+      currentRow = [];
+      continue;
+    }
+
+    currentField += char;
+  }
+
+  if (currentField.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentField);
+    rows.push(currentRow);
+  }
+
+  return rows;
+}
+
+function detectDelimiter(rawText: string): string {
+  if (rawText.includes('\t')) return '\t';
+  const semicolonCount = (rawText.match(/;/g) ?? []).length;
+  const commaCount = (rawText.match(/,/g) ?? []).length;
+  return semicolonCount > commaCount ? ';' : ',';
+}
+
+function extractQuantityFromCells(cells: string[], nameIndex: number) {
+  for (let index = cells.length - 1; index >= 0; index -= 1) {
+    if (index === nameIndex) continue;
+    const cell = normalizeText(cells[index], '');
+    if (!cell || cell.includes('%')) continue;
+    const parsed = parseLocalizedNumber(cell);
+    if (parsed !== null && parsed > 0) {
+      return parsed;
+    }
+  }
+  return 1;
+}
+
+function buildOfferImportRows(rawText: string): Array<{ rowIndex: number; cells: string[] }> {
+  const delimiter = detectDelimiter(rawText);
+  const parsedRows = parseQuotedDelimitedText(rawText, delimiter);
+  return parsedRows
+    .map((cells, index) => ({ rowIndex: index + 1, cells }))
+    .filter(({ cells }) => cells.some((cell) => normalizeText(cell, '').length > 0));
+}
+
+export async function parseOfferImport(req: Request, res: Response, next: NextFunction) {
+  try {
+    const rawText = typeof req.body?.rawText === 'string' ? req.body.rawText : '';
+    if (!rawText.trim()) {
+      return res.fail('Prilepi tabelo za uvoz.', 400);
+    }
+
+    const rowsForParsing = buildOfferImportRows(rawText);
+    if (rowsForParsing.length === 0) {
+      return res.success({ rows: [] as OfferImportRow[] });
+    }
+
+    const products = await ProductModel.find()
+      .select({ ime: 1, prodajnaCena: 1, isService: 1, dobavitelj: 1 })
+      .lean();
+
+    const byNormalizedName = new Map<string, OfferImportMatch[]>();
+    for (const product of products) {
+      const normalizedName = normalizeImportProductName(product.ime);
+      if (!normalizedName) continue;
+      const mapped: OfferImportMatch = {
+        productId: String(product._id),
+        ime: normalizeText(product.ime, ''),
+        prodajnaCena: Number(product.prodajnaCena ?? 0),
+        isService: Boolean(product.isService),
+        dobavitelj: normalizeText((product as any).dobavitelj, '') || undefined,
+      };
+      const existing = byNormalizedName.get(normalizedName) ?? [];
+      existing.push(mapped);
+      byNormalizedName.set(normalizedName, existing);
+    }
+
+    const rows: OfferImportRow[] = rowsForParsing.map(({ rowIndex, cells }) => {
+      const firstTextIndex = cells.findIndex((cell) => cleanImportedName(cell).length > 0);
+      const rawName = firstTextIndex >= 0 ? cleanImportedName(cells[firstTextIndex]) : '';
+      const normName = normalizeImportProductName(rawName);
+      const qty = extractQuantityFromCells(cells, firstTextIndex);
+      const matches = normName ? byNormalizedName.get(normName) ?? [] : [];
+
+      if (matches.length === 1) {
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          qty,
+          status: 'matched',
+          matches,
+          chosenProductId: matches[0].productId,
+        };
+      }
+
+      if (matches.length > 1) {
+        return {
+          rowIndex,
+          rawName,
+          normName,
+          qty,
+          status: 'needs_review',
+          matches,
+        };
+      }
+
+      return {
+        rowIndex,
+        rawName,
+        normName,
+        qty,
+        status: 'not_found',
+        matches: [],
+      };
+    });
+
+    return res.success({ rows });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function getNextVersionNumber(projectId: string, baseTitle: string) {
   const last = await OfferVersionModel.findOne({ projectId, baseTitle }).sort({ versionNumber: -1 }).lean();
   return last ? (last.versionNumber || 0) + 1 : 1;
