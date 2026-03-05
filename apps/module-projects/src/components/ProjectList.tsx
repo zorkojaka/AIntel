@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { Input } from "./ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
@@ -13,6 +13,7 @@ interface ProjectListProps {
   categories: Category[];
   onEditProject: (project: ProjectSummary) => void;
   onDeleteProject: (project: ProjectSummary) => void;
+  readOnly?: boolean;
 }
 
 const statusColors: Record<ProjectStatus, string> = {
@@ -38,7 +39,8 @@ export function ProjectList({
   onSelectProject,
   categories,
   onEditProject,
-  onDeleteProject
+  onDeleteProject,
+  readOnly = false,
 }: ProjectListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -95,7 +97,7 @@ export function ProjectList({
               <TableHead className="text-right">Ponudba (€)</TableHead>
               <TableHead className="text-right">Računi (€)</TableHead>
               <TableHead>Datum</TableHead>
-              <TableHead className="text-right">Akcije</TableHead>
+              {!readOnly ? <TableHead className="text-right">Akcije</TableHead> : null}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -105,7 +107,7 @@ export function ProjectList({
                 className="cursor-pointer"
                 onClick={() => onSelectProject(project.id)}
               >
-                  <TableCell className="font-medium">
+                <TableCell className="font-medium">
                   <div className="flex flex-col gap-1">
                     <span>{project.title}</span>
                     {project.categories && project.categories.length > 0 && (
@@ -125,9 +127,7 @@ export function ProjectList({
                 </TableCell>
                 <TableCell>{project.customer}</TableCell>
                 <TableCell>
-                  <Badge className={statusColors[project.status]}>
-                    {statusLabels[project.status]}
-                  </Badge>
+                  <Badge className={statusColors[project.status]}>{statusLabels[project.status]}</Badge>
                 </TableCell>
                 <TableCell className="text-right">
                   € {(Number.isFinite(project.quotedTotalWithVat) ? project.quotedTotalWithVat : 0).toLocaleString("sl-SI", { minimumFractionDigits: 2 })}
@@ -136,17 +136,16 @@ export function ProjectList({
                   € {project.invoiceAmount.toLocaleString("sl-SI", { minimumFractionDigits: 2 })}
                 </TableCell>
                 <TableCell>{project.createdAt}</TableCell>
-                <TableCell
-                  className="text-right"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <TableRowActions
-                    onEdit={() => onEditProject(project)}
-                    onDelete={() => onDeleteProject(project)}
-                    deleteConfirmTitle="Izbriši projekt"
-                    deleteConfirmMessage="Si prepričan, da želiš izbrisati ta projekt? Tega dejanja ni mogoče razveljaviti."
-                  />
-                </TableCell>
+                {!readOnly ? (
+                  <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
+                    <TableRowActions
+                      onEdit={() => onEditProject(project)}
+                      onDelete={() => onDeleteProject(project)}
+                      deleteConfirmTitle="Izbriši projekt"
+                      deleteConfirmMessage="Si prepričan, da želiš izbrisati ta projekt? Tega dejanja ni mogoče razveljaviti."
+                    />
+                  </TableCell>
+                ) : null}
               </TableRow>
             ))}
           </TableBody>

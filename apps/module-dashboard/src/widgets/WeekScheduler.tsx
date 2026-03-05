@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@aintel/ui';
 import type { WorkOrderSummary } from '../types';
 import { navigateToProject, normalizeMaterialStatusLabel } from './utils';
@@ -9,6 +9,7 @@ const PX_PER_MIN = 0.5;
 const MIN_BLOCK_MINUTES = 30;
 const WINDOW_DAYS = 14;
 const STEP_DAYS = 7;
+const MOBILE_MEDIA_QUERY = '(max-width: 767px)';
 
 const WEEKDAYS = ['Pon', 'Tor', 'Sre', 'Čet', 'Pet', 'Sob', 'Ned'];
 
@@ -50,8 +51,8 @@ function formatDayHeader(date: Date, index: number) {
   return `${dayLabel} ${day}.${month}.`;
 }
 
-function formatWeekRange(start: Date) {
-  const end = addDays(start, 6);
+function formatWeekRange(start: Date, dayCount: number) {
+  const end = addDays(start, Math.max(0, dayCount - 1));
   const startLabel = `${String(start.getDate()).padStart(2, '0')}.${String(start.getMonth() + 1).padStart(2, '0')}.`;
   const endLabel = `${String(end.getDate()).padStart(2, '0')}.${String(end.getMonth() + 1).padStart(2, '0')}.`;
   return `${startLabel} – ${endLabel}`;
@@ -159,6 +160,18 @@ function mapStatusTone(status?: string | null) {
   }
 }
 
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return value;
+  return date.toLocaleString('sl-SI', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 type WeekSchedulerProps = {
   workOrders: WorkOrderSummary[];
 };
@@ -166,13 +179,27 @@ type WeekSchedulerProps = {
 export function WeekScheduler({ workOrders }: WeekSchedulerProps) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [hideNonWorkingDays, setHideNonWorkingDays] = useState(true);
+  const [isMobileView, setIsMobileView] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia(MOBILE_MEDIA_QUERY).matches;
+  });
+  const windowDays = isMobileView ? 7 : WINDOW_DAYS;
   const totalMinutes = (END_HOUR - START_HOUR) * 60;
   const weekStart = useMemo(() => addDays(getWeekStart(new Date()), weekOffset * STEP_DAYS), [weekOffset]);
-  const weekEnd = useMemo(() => addDays(weekStart, WINDOW_DAYS), [weekStart]);
+  const weekEnd = useMemo(() => addDays(weekStart, windowDays), [weekStart, windowDays]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const media = window.matchMedia(MOBILE_MEDIA_QUERY);
+    const onChange = () => setIsMobileView(media.matches);
+    onChange();
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
 
   const days = useMemo(
-    () => Array.from({ length: WINDOW_DAYS }, (_, index) => addDays(weekStart, index)),
-    [weekStart],
+    () => Array.from({ length: windowDays }, (_, index) => addDays(weekStart, index)),
+    [weekStart, windowDays],
   );
   const visibleDays = useMemo(() => {
     const indexed = days.map((day, offset) => ({ day, offset }));
@@ -198,6 +225,15 @@ export function WeekScheduler({ workOrders }: WeekSchedulerProps) {
     return map;
   }, [items]);
 
+  const mobileAgendaItems = useMemo(
+    () =>
+      items.map((item) => ({
+        ...item,
+        scheduledTimeLabel: formatDateTime(item.scheduledAt),
+      })),
+    [items],
+  );
+
   return (
     <div className="dashboard-week-scheduler">
       <div className="dashboard-week-scheduler__header">
@@ -206,7 +242,7 @@ export function WeekScheduler({ workOrders }: WeekSchedulerProps) {
             Prejšnji teden
           </Button>
         </div>
-        <div className="dashboard-week-scheduler__range">{formatWeekRange(weekStart)}</div>
+        <div className="dashboard-week-scheduler__range">{formatWeekRange(weekStart, windowDays)}</div>
         <div className="dashboard-week-scheduler__header-right">
           <label className="dashboard-week-scheduler__toggle">
             <input
@@ -306,6 +342,30 @@ export function WeekScheduler({ workOrders }: WeekSchedulerProps) {
           })}
         </div>
       </div>
+
+      {isMobileView ? (
+        <div className="dashboard-week-scheduler__mobile-list">
+          <h4>Pregled terminov</h4>
+          {mobileAgendaItems.length === 0 ? (
+            <p className="dashboard-widget__empty">Za izbrani teden ni terminov.</p>
+          ) : (
+            <ul>
+              {mobileAgendaItems.map((item) => (
+                <li key={`mobile-${item.id}`}>
+                  <button type="button" onClick={() => navigateToProject(item.projectId, 'execution')}>
+                    <span className="dashboard-week-scheduler__mobile-title">
+                      {item.projectCode} – {displayValue(item.customerName)}
+                    </span>
+                    <span className="dashboard-week-scheduler__mobile-meta">
+                      {item.scheduledTimeLabel} · {mapStatusLabel(item.status)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

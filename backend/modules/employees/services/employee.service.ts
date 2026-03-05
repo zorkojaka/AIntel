@@ -1,5 +1,72 @@
 import { FilterQuery } from 'mongoose';
 import { EmployeeModel, type EmployeeDocument } from '../schemas/employee';
+import { UserModel } from '../../users/schemas/user';
+
+function normalizeEmail(value?: string | null) {
+  if (typeof value !== 'string') return '';
+  return value.trim().toLowerCase();
+}
+
+function hasEmployeeAppAccess(employee: Partial<EmployeeDocument>) {
+  const email = normalizeEmail(employee.email);
+  return Boolean(employee.appAccess) && Boolean(employee.active) && !employee.deletedAt && email.length > 0;
+}
+
+async function syncEmployeeUser(employee: Partial<EmployeeDocument> & { _id: any; tenantId: string }) {
+  const employeeId = String(employee._id);
+  const tenantId = employee.tenantId;
+  const email = normalizeEmail(employee.email);
+  const shouldEnable = hasEmployeeAppAccess(employee);
+  const name = (employee.name ?? '').trim();
+  const roles = Array.isArray(employee.roles) ? employee.roles : [];
+
+  const linkedUser = await UserModel.findOne({ tenantId, employeeId, deletedAt: null });
+  if (!shouldEnable) {
+    if (linkedUser) {
+      linkedUser.active = false;
+      linkedUser.status = 'DISABLED';
+      linkedUser.employeeId = employee._id as any;
+      await linkedUser.save();
+    }
+    return;
+  }
+
+  const sameEmailUser = await UserModel.findOne({ tenantId, email, deletedAt: null });
+  if (sameEmailUser && String(sameEmailUser.employeeId ?? '') !== employeeId) {
+    throw new Error('EMAIL_IN_USE_BY_OTHER_USER');
+  }
+
+  const user = linkedUser ?? sameEmailUser;
+  if (!user) {
+    await UserModel.create({
+      tenantId,
+      email,
+      name: name || email,
+      roles,
+      status: 'ACTIVE',
+      active: true,
+      employeeId: employee._id,
+      passwordHash: null,
+      inviteTokenHash: null,
+      inviteTokenExpiresAt: null,
+      resetTokenHash: null,
+      resetTokenExpiresAt: null,
+      deletedAt: null,
+      deletedBy: null,
+    });
+    return;
+  }
+
+  user.email = email;
+  user.name = name || email;
+  user.roles = roles;
+  user.employeeId = employee._id as any;
+  user.active = true;
+  user.status = 'ACTIVE';
+  user.deletedAt = null;
+  user.deletedBy = null;
+  await user.save();
+}
 
 export function sanitizeEmployee(doc: EmployeeDocument) {
   const plain = (doc as any)?.toObject ? (doc as any).toObject() : (doc as any as EmployeeDocument);
@@ -19,6 +86,7 @@ export function sanitizeEmployee(doc: EmployeeDocument) {
     notes: plain.notes ?? '',
     hourRateWithoutVat: plain.hourRateWithoutVat ?? 0,
     active: !!plain.active,
+    appAccess: plain.appAccess !== false,
     deletedAt: plain.deletedAt ? new Date(plain.deletedAt).toISOString() : null,
     deletedBy: plain.deletedBy ?? null,
     createdAt: plain.createdAt?.toISOString?.() ?? new Date(plain.createdAt).toISOString(),
@@ -47,6 +115,7 @@ function toEmployeeUpdate(payload: Partial<EmployeeDocument>) {
     update.hourRateWithoutVat = parsedRate;
   }
   if (payload.active !== undefined) update.active = payload.active;
+  if (payload.appAccess !== undefined) update.appAccess = payload.appAccess;
 
   return update;
 }
@@ -80,7 +149,9 @@ export async function createEmployee(tenantId: string, payload: Partial<Employee
     notes: payload.notes ?? '',
     hourRateWithoutVat: safeRate,
     active: payload.active !== undefined ? !!payload.active : true,
+    appAccess: payload.appAccess !== undefined ? !!payload.appAccess : true,
   });
+  await syncEmployeeUser(employee);
   return sanitizeEmployee(employee as any);
 }
 
@@ -99,6 +170,9 @@ export async function updateEmployee(id: string, tenantId: string, payload: Part
     update,
     { new: true }
   );
+  if (updated) {
+    await syncEmployeeUser(updated as any);
+  }
   return updated ? sanitizeEmployee(updated as any) : null;
 }
 
@@ -108,10 +182,16 @@ export async function softDeleteEmployee(id: string, tenantId: string, deletedBy
     { deletedAt: new Date(), deletedBy: deletedBy ?? null, active: false },
     { new: true }
   );
+  if (deleted) {
+    await syncEmployeeUser(deleted as any);
+  }
   return !!deleted;
 }
 
 export async function hardDeleteEmployee(id: string, tenantId: string) {
   const deleted = await EmployeeModel.findOneAndDelete({ _id: id, tenantId });
+  if (deleted) {
+    await UserModel.findOneAndDelete({ tenantId, employeeId: deleted._id });
+  }
   return !!deleted;
 }

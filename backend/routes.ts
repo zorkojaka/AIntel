@@ -15,14 +15,14 @@ import offerPreviewRoutes from './modules/projects/routes/offer-preview.routes';
 import employeeProfilesRoutes from './modules/employee-profiles/routes/employee-profiles.routes';
 import adminRoutes from './modules/admin/routes/admin.routes';
 import { requireRoles } from './middlewares/auth';
-import { ROLE_ADMIN } from './utils/roles';
+import { ROLE_ADMIN, ROLE_FINANCE, ROLE_SALES } from './utils/roles';
 
 const router = Router();
 
 router.use('/dashboard', dashboardRoutes);
 router.use('/crm', crmRoutes);
-router.use('/cenik', cenikRoutes);
-router.use('/price-list', priceListRoutes);
+router.use('/cenik', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), cenikRoutes);
+router.use('/price-list', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), priceListRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/settings', pdfSettingsRoutes);
 router.use('/finance', financeRoutes);

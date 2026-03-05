@@ -117,12 +117,15 @@ const isItemValid = (item: OfferLineItem | OfferLineItemForm) =>
   item.name.trim() !== "" && item.unitPrice > 0;
 
 const resolveUnitFromName = (name: string) => {
-  const match = name.trim().match(/\[([^\]]+)\]\s*$/);
-  const parsed = match?.[1]?.trim();
-  if (parsed) {
-    return parsed;
-  }
-  return "kos";
+  const normalized = name.trim();
+  const match = normalized.match(/\[([^\]]+)\]\s*\*?\s*$/);
+  const raw = match?.[1]?.trim();
+  if (!raw) return "kos";
+
+  const withoutCurrency = raw.replace(/[€$£]/g, "").trim();
+  const slashParts = withoutCurrency.split("/").map((part) => part.trim()).filter(Boolean);
+  const candidate = (slashParts[slashParts.length - 1] ?? withoutCurrency).toLowerCase();
+  return candidate || "kos";
 };
 
 export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
@@ -1566,8 +1569,8 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       </Dialog>
 
       {/* GUMBI */}
-      <div className="flex items-center justify-between gap-3 flex-nowrap">
-        <div className="flex items-center gap-2 flex-nowrap">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" onClick={openImportModal}>
             Uvozi ponudbo
           </Button>
@@ -1601,7 +1604,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2 flex-nowrap">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             onClick={handleConfirmCurrentOffer}
             disabled={!canConfirmCurrentOffer || isConfirmingCurrentOffer}

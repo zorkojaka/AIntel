@@ -23,6 +23,7 @@ import { OfferVersionModel } from '../schemas/offer-version';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
 import { resolveTenantId } from '../../../utils/tenant';
+import { ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_SALES } from '../../../utils/roles';
 import { UserModel } from '../../users/schemas/user';
 import { EmployeeModel } from '../../employees/schemas/employee';
 
@@ -180,6 +181,37 @@ async function findProjectById(id: string) {
   return project ?? null;
 }
 
+function getContextRoles(req: Request): string[] {
+  const roles = (req as any)?.context?.roles;
+  return Array.isArray(roles) ? roles : [];
+}
+
+function getActorEmployeeId(req: Request): string | null {
+  const actorEmployeeId = (req as any)?.context?.actorEmployeeId;
+  return typeof actorEmployeeId === 'string' && actorEmployeeId.trim().length > 0 ? actorEmployeeId : null;
+}
+
+function isExecutionOnlyViewer(req: Request) {
+  const roles = getContextRoles(req);
+  const hasExecution = roles.includes(ROLE_EXECUTION);
+  const hasPrivileged = roles.includes(ROLE_ADMIN) || roles.includes(ROLE_SALES) || roles.includes(ROLE_FINANCE);
+  return hasExecution && !hasPrivileged;
+}
+
+async function getExecutionAssignedProjectIds(actorEmployeeId: string) {
+  const [workOrderProjectIds, materialOrderProjectIds] = await Promise.all([
+    WorkOrderModel.distinct('projectId', { assignedEmployeeIds: actorEmployeeId }),
+    MaterialOrderModel.distinct('projectId', { assignedEmployeeIds: actorEmployeeId }),
+  ]);
+  return Array.from(
+    new Set(
+      [...workOrderProjectIds, ...materialOrderProjectIds]
+        .map((value) => (value == null ? '' : String(value)))
+        .filter((value) => value.length > 0),
+    ),
+  );
+}
+
 function calculateOfferItemsTotal(items: ProjectOfferItem[]) {
   return items.reduce(
     (acc, item) => acc + item.quantity * item.price * (1 - item.discount / 100) * (1 + item.vatRate / 100),
@@ -228,7 +260,22 @@ async function validateUsersAndEmployees(tenantId: string, salesUserId?: string 
 }
 
 export async function listProjects(_req: Request, res: Response) {
-  const all = await ProjectModel.find().lean();
+  const req = _req as Request;
+  let query: any = {};
+  if (isExecutionOnlyViewer(req)) {
+    const actorEmployeeId = getActorEmployeeId(req);
+    if (!actorEmployeeId) {
+      return res.success([]);
+    }
+    const orderProjectIds = await getExecutionAssignedProjectIds(actorEmployeeId);
+    query = {
+      $or: [
+        { assignedEmployeeIds: actorEmployeeId },
+        ...(orderProjectIds.length > 0 ? [{ id: { $in: orderProjectIds } }] : []),
+      ],
+    };
+  }
+  const all = await ProjectModel.find(query).lean();
   return res.success(all.map(summarizeProject));
 }
 
@@ -265,6 +312,23 @@ export async function getProject(req: Request, res: Response) {
   const project = await findProjectById(req.params.id);
   if (!project) {
     return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+  }
+  if (isExecutionOnlyViewer(req)) {
+    const actorEmployeeId = getActorEmployeeId(req);
+    const assignedEmployeeIds = Array.isArray((project as any)?.assignedEmployeeIds)
+      ? (project as any).assignedEmployeeIds.map((id: any) => String(id))
+      : [];
+    const isDirectlyAssigned = Boolean(actorEmployeeId) && assignedEmployeeIds.includes(actorEmployeeId as string);
+    const hasWorkOrderAssignment =
+      Boolean(actorEmployeeId) &&
+      (await WorkOrderModel.exists({ projectId: (project as any).id, assignedEmployeeIds: actorEmployeeId })) != null;
+    const hasMaterialAssignment =
+      Boolean(actorEmployeeId) &&
+      (await MaterialOrderModel.exists({ projectId: (project as any).id, assignedEmployeeIds: actorEmployeeId })) !=
+        null;
+    if (!isDirectlyAssigned && !hasWorkOrderAssignment && !hasMaterialAssignment) {
+      return res.fail('Ni dostopa do projekta.', 403);
+    }
   }
 
   return res.success(await responseProject(project));

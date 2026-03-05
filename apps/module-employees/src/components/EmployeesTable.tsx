@@ -28,6 +28,7 @@ export function EmployeesTable({ employees, onEdit, onDelete }: EmployeesTablePr
             <th>Urna postavka (brez DDV)</th>
             <th>Vloge</th>
             <th>Aktiven</th>
+            <th>Dostop</th>
             <th className="text-right">Akcije</th>
           </tr>
         </thead>
@@ -50,6 +51,20 @@ export function EmployeesTable({ employees, onEdit, onDelete }: EmployeesTablePr
                     className={`h-2.5 w-2.5 rounded-full ${employee.active ? 'bg-green-500' : 'bg-orange-500'}`}
                   />
                   {employee.active ? 'Aktiven' : 'Neaktiven'}
+                </span>
+              </td>
+              <td>
+                <span
+                  className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+                    employee.appAccess !== false ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${
+                      employee.appAccess !== false ? 'bg-blue-500' : 'bg-slate-400'
+                    }`}
+                  />
+                  {employee.appAccess !== false ? 'Omogočen' : 'Onemogočen'}
                 </span>
               </td>
               <td className="text-right">

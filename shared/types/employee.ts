@@ -14,6 +14,7 @@ export interface Employee {
   notes?: string;
   hourRateWithoutVat: number;
   active: boolean;
+  appAccess?: boolean;
   deletedAt?: string | null;
   deletedBy?: string | null;
   createdAt: string;
