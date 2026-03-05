@@ -48,18 +48,26 @@ type OfferLineItemForm = {
 type OfferImportMatch = {
   productId: string;
   ime: string;
+  displayName?: string;
   prodajnaCena: number;
   isService: boolean;
   dobavitelj?: string;
+  score?: number;
+  reasonFlags?: {
+    prefixStrong?: boolean;
+    whPreferred?: boolean;
+  };
 };
 
 type OfferImportRow = {
   rowIndex: number;
   rawName: string;
   normName: string;
+  normCore?: string;
   qty: number;
   status: "matched" | "needs_review" | "not_found" | "invalid";
   matches: OfferImportMatch[];
+  matchCandidates?: Array<OfferImportMatch & { score: number }>;
   chosenProductId?: string;
   chosenReason?:
     | "exact"
@@ -1437,6 +1445,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                   <TableBody>
                     {importRows.map((row) => {
                       const resolvedProduct = resolveImportRowProduct(row);
+                      const candidateOptions = (row.matchCandidates?.length ? row.matchCandidates : row.matches) ?? [];
                       const isSkipped = Boolean(row.skipped);
                       return (
                         <TableRow key={row.rowIndex} className={isSkipped ? "opacity-60" : ""}>
@@ -1461,7 +1470,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                             </div>
                           </TableCell>
                           <TableCell className="space-y-2">
-                            {row.matches.length > 0 ? (
+                            {candidateOptions.length > 0 ? (
                               <Select
                                 value={row.chosenProductId ?? "__none"}
                                 onValueChange={(value) => {
@@ -1475,9 +1484,10 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="__none">Brez izbire</SelectItem>
-                                  {row.matches.map((match) => (
+                                  {candidateOptions.map((match) => (
                                     <SelectItem key={match.productId} value={match.productId}>
-                                      {match.ime}
+                                      {match.displayName ?? match.ime}
+                                      {typeof match.score === "number" ? ` (${match.score.toFixed(3)})` : ""}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>

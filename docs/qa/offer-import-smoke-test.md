@@ -72,6 +72,21 @@ Expected:
 - `Needs review` with `chosenReason = token_needs_review` and preselected `chosenProductId`.
 - Response includes `topCandidates` (up to 5) sorted by score.
 
+## Prefix-First Matching Regression Cases
+Add test lines that differ near the end of the name:
+
+```tsv
+Ajax DoorProtect Plus   WH	9.5%	2
+Ajax DoorProtect Plus W	9.5%	2
+Ajax DoorProtect Plus BL	9.5%	2
+```
+
+Expected:
+- Extra spaces should still produce top candidate with high score (typically >= `0.60`).
+- Missing last character near suffix should still suggest the same product at top (usually `Matched` or `Needs review` with preselected top).
+- WH/BL variants should prefer WH when scores are nearly equal and input is ambiguous.
+- Preview should show `reason + score` for each parsed row, and dropdown options should include candidate score.
+
 ## Expected Result
 - Import populates offer line items from paste.
 - `not_found` should be rare; unresolved rows are mostly `needs_review` with a preselected candidate.
