@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="sl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Settings Concept 3 - Field First</title>
+    <style>
+      :root {
+        --bg: #f3f6fb;
+        --card: #ffffff;
+        --line: #d7e1ef;
+        --text: #1d2734;
+        --muted: #607086;
+        --brand: #0f4c5c;
+        --ok: #1f9d6a;
+        --warn: #f0a500;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Inter", sans-serif;
+        background:
+          radial-gradient(900px 380px at 85% -10%, #d8ecff 0%, transparent 60%),
+          radial-gradient(900px 400px at 10% -10%, #ffe7c7 0%, transparent 60%),
+          var(--bg);
+        color: var(--text);
+      }
+      .wrap { max-width: 1280px; margin: 0 auto; padding: 24px; }
+      .title { margin: 0 0 6px 0; font-size: 30px; }
+      .sub { margin: 0 0 18px 0; color: var(--muted); }
+      .layout { display: grid; grid-template-columns: 360px 1fr; gap: 18px; }
+      .phone, .desktop {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: var(--card);
+        box-shadow: 0 10px 30px rgba(13, 32, 67, 0.08);
+      }
+      .phone { padding: 12px; }
+      .mobile-shell {
+        border: 1px solid var(--line);
+        border-radius: 26px;
+        padding: 10px;
+        background: #fff;
+      }
+      .m-top {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 10px;
+        background: #f8fbff;
+        font-weight: 700;
+      }
+      .chiprow { display: flex; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
+      .chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 6px 9px;
+        font-size: 12px;
+        background: #fff;
+      }
+      .chip.active { background: #e9f5ff; border-color: #b7d6f5; }
+      .acc { display: grid; gap: 8px; }
+      .acc .item {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px;
+        background: #fff;
+      }
+      .item h4 { margin: 0 0 6px 0; font-size: 14px; }
+      .line { height: 8px; background: #eff3f8; border-radius: 6px; margin: 6px 0; }
+      .line.s { width: 68%; }
+      .line.m { width: 84%; }
+      .line.l { width: 96%; }
+      .m-bottom {
+        margin-top: 10px;
+        border: 1px solid #bfcedf;
+        border-radius: 12px;
+        padding: 10px;
+        background: #f8fbff;
+        display: flex;
+        gap: 8px;
+      }
+      .btn {
+        flex: 1;
+        text-align: center;
+        border-radius: 8px;
+        padding: 8px 0;
+        font-weight: 700;
+        font-size: 13px;
+      }
+      .btn.primary { background: var(--brand); color: #fff; }
+      .btn.ghost { border: 1px solid var(--line); color: var(--text); background: #fff; }
+
+      .desktop { padding: 14px; }
+      .d-top {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: linear-gradient(90deg, #f8fbff, #ffffff);
+      }
+      .status { font-size: 12px; font-weight: 700; color: #fff; background: var(--ok); border-radius: 999px; padding: 6px 10px; }
+      .d-grid { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+        background: #fff;
+      }
+      .card h3 { margin: 0 0 8px 0; font-size: 15px; }
+      .row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; font-size: 13px; color: var(--muted); }
+      .toggle {
+        width: 36px; height: 20px; border-radius: 999px; background: #dde6f2; position: relative;
+      }
+      .toggle::after {
+        content: "";
+        width: 14px; height: 14px; border-radius: 999px; background: #fff;
+        position: absolute; top: 3px; left: 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      }
+      .toggle.on { background: #9fd4bd; }
+      .toggle.on::after { left: 19px; }
+      .warn { font-size: 12px; color: #8d5e00; background: #fff5dd; border: 1px solid #f0d79a; border-radius: 8px; padding: 7px 8px; }
+      .legend { margin-top: 14px; color: var(--muted); font-size: 14px; }
+      @media (max-width: 1020px) { .layout { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1 class="title">Koncept 3: Field First Settings</h1>
+      <p class="sub">Nastavitve optimizirane za monterja na terenu: hitri dostopi, manj korakov, visoka preglednost.</p>
+
+      <div class="layout">
+        <section class="phone">
+          <div class="mobile-shell">
+            <div class="m-top">Nastavitve monterja</div>
+            <div class="chiprow">
+              <div class="chip active">Profil</div>
+              <div class="chip">Terensko delo</div>
+              <div class="chip">Obvestila</div>
+              <div class="chip">Varnost</div>
+            </div>
+            <div class="acc">
+              <div class="item">
+                <h4>Privzeti dashboard</h4>
+                <div class="line l"></div>
+                <div class="line s"></div>
+              </div>
+              <div class="item">
+                <h4>Offline Sync</h4>
+                <div class="line m"></div>
+                <div class="line s"></div>
+              </div>
+              <div class="item">
+                <h4>Check-in / Check-out</h4>
+                <div class="line l"></div>
+                <div class="line m"></div>
+              </div>
+              <div class="item">
+                <h4>Opozorila materiala</h4>
+                <div class="line m"></div>
+                <div class="line s"></div>
+              </div>
+            </div>
+            <div class="m-bottom">
+              <div class="btn ghost">Prekliči</div>
+              <div class="btn primary">Shrani</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="desktop">
+          <div class="d-top">
+            <strong>Field Profile Settings</strong>
+            <div class="status">Pripravljeno za teren</div>
+          </div>
+          <div class="d-grid">
+            <article class="card">
+              <h3>Monter profil</h3>
+              <div class="row"><span>Privzeti način dashboarda</span><strong>Delovni</strong></div>
+              <div class="row"><span>Prioriteta kartic</span><strong>Nalogi first</strong></div>
+              <div class="row"><span>Prikaz ur</span><strong>24h</strong></div>
+            </article>
+            <article class="card">
+              <h3>Terensko delo</h3>
+              <div class="row"><span>Offline način</span><div class="toggle on"></div></div>
+              <div class="row"><span>Avto-sync ob signalu</span><div class="toggle on"></div></div>
+              <div class="row"><span>Lokacija ob check-in</span><div class="toggle"></div></div>
+            </article>
+            <article class="card">
+              <h3>Obvestila</h3>
+              <div class="row"><span>Zamuda termina</span><div class="toggle on"></div></div>
+              <div class="row"><span>Material blokada</span><div class="toggle on"></div></div>
+              <div class="row"><span>Nova dodelitev naloga</span><div class="toggle on"></div></div>
+            </article>
+            <article class="card">
+              <h3>Varnost in dostop</h3>
+              <div class="row"><span>2FA</span><strong>SMS</strong></div>
+              <div class="row"><span>Aktivne seje</span><strong>2 napravi</strong></div>
+              <div class="warn">Opozorilo: prijava iz nove lokacije danes ob 07:42.</div>
+            </article>
+          </div>
+        </section>
+      </div>
+      <p class="legend">Če ta smer ustreza, naslednji korak je polni “production-ready” screen set (desktop + mobile states).</p>
+    </div>
+    <script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+  </body>
+</html>

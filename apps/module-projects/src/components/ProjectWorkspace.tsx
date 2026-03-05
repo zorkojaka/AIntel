@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Button } from "./ui/button";
 import { Tabs, TabsContent } from "./ui/tabs";
 import { Card } from "./ui/card";
@@ -70,6 +70,7 @@ interface ProjectWorkspaceProps {
   projectId: string;
   initialProject?: ProjectDetails | null;
   initialTab?: WorkspaceTabValue;
+  allowedTabs?: WorkspaceTabValue[];
   templates: Template[];
   onBack: () => void;
   onProjectUpdate: (path: string, options?: RequestInit) => Promise<ProjectDetails | null>;
@@ -81,14 +82,25 @@ export function ProjectWorkspace({
   projectId,
   initialProject,
   initialTab,
+  allowedTabs,
   templates,
   onBack,
   onProjectUpdate,
   onNewProject,
   brandColor,
 }: ProjectWorkspaceProps) {
+  const allowedTabValues = useMemo<WorkspaceTabValue[]>(
+    () => (allowedTabs && allowedTabs.length > 0 ? allowedTabs : ["items", "offers", "logistics", "execution", "closing"]),
+    [allowedTabs],
+  );
+  const initialResolvedTab = useMemo<WorkspaceTabValue>(() => {
+    if (initialTab && allowedTabValues.includes(initialTab)) {
+      return initialTab;
+    }
+    return allowedTabValues[0] ?? "items";
+  }, [initialTab, allowedTabValues]);
   const { project, loading, error, refresh, setProject } = useProject(projectId, initialProject ?? null);
-  const [activeTab, setActiveTab] = useState<WorkspaceTabValue>(initialTab ?? "items");
+  const [activeTab, setActiveTab] = useState<WorkspaceTabValue>(initialResolvedTab);
   const [overrideStep, setOverrideStep] = useState<StepKey | null>(null);
   const [offers, setOffers] = useState<OfferVersion[]>(project?.offers ?? []);
   const [activeOffer, setActiveOffer] = useState<ProjectOffer | null>(null);
@@ -126,13 +138,17 @@ export function ProjectWorkspace({
   const [offersRefreshKey, setOffersRefreshKey] = useState(0);
   const invoiceSectionRef = useRef<HTMLDivElement | null>(null);
   const timelineSteps = useProjectTimeline(project);
-  const tabsConfig: { value: WorkspaceTabValue; label: string }[] = [
+  const allTabsConfig: { value: WorkspaceTabValue; label: string }[] = [
     { value: "items", label: "Zahteve" },
     { value: "offers", label: "Ponudbe" },
     { value: "logistics", label: "Priprava" },
     { value: "execution", label: "Izvedba" },
     { value: "closing", label: "Račun" },
   ];
+  const tabsConfig = useMemo(
+    () => allTabsConfig.filter((tab) => allowedTabValues.includes(tab.value)),
+    [allTabsConfig, allowedTabValues],
+  );
   const timelineStepByKey = useMemo(() => {
     const map = {} as Partial<Record<StepKey, TimelineStep>>;
     timelineSteps.forEach((step) => {
@@ -141,6 +157,14 @@ export function ProjectWorkspace({
     return map;
   }, [timelineSteps]);
   const activeQuickStep: StepKey = overrideStep ?? STEP_BY_TAB[activeTab] ?? "requirements";
+  const allowedStepKeys = useMemo(
+    () => new Set(allowedTabValues.map((tab) => STEP_BY_TAB[tab])),
+    [allowedTabValues],
+  );
+  const visibleTimelineSteps = useMemo(
+    () => timelineSteps.filter((step) => allowedStepKeys.has(step.key)),
+    [timelineSteps, allowedStepKeys],
+  );
   const activePhaseStepKey = useMemo<StepKey | null>(() => {
     const activeStep = timelineSteps.find((step) => step.status === "inProgress");
     return activeStep?.key ?? null;
@@ -162,16 +186,21 @@ export function ProjectWorkspace({
   const hasInitializedActiveTabRef = useRef(false);
   const prevActivePhaseStepRef = useRef<StepKey | null>(null);
 
+  useEffect(() => {
+    if (!allowedTabValues.includes(activeTab)) {
+      setActiveTab(allowedTabValues[0] ?? "items");
+    }
+  }, [activeTab, allowedTabValues]);
+
   const basePath = project ? `/api/projects/${project.id}` : "";
   const isExecutionPhase = status === "ordered" || status === "in-progress" || status === "completed";
   const inlineClient = project ? ((project as ProjectDetails & { client?: ProjectCrmClient }).client ?? null) : null;
   const [remoteClient, setRemoteClient] = useState<ProjectCrmClient | null>(null);
   const crmClient = inlineClient ?? remoteClient;
   const displayedClient: ProjectCrmClient = crmClient ?? project?.customerDetail ?? {};
-  const infoCardAddress =
-    formatClientAddress(displayedClient) || project?.customerDetail.address || "-";
-  const infoCardEmail = crmClient?.email ?? project?.customerDetail.email ?? "-";
-  const infoCardPhone = crmClient?.phone ?? project?.customerDetail.phone ?? "-";
+  const infoCardAddress = formatClientAddress(displayedClient) || project?.customerDetail.address || "";
+  const infoCardEmail = crmClient?.email ?? project?.customerDetail.email ?? "";
+  const infoCardPhone = crmClient?.phone ?? project?.customerDetail.phone ?? "";
   const refreshAfterMutation = useProjectMutationRefresh(project?.id ?? projectId);
   const brandAccentColor = useMemo(() => {
     const trimmed = brandColor?.trim();
@@ -663,6 +692,9 @@ export function ProjectWorkspace({
   };
 
   const handleNavigateStep = (step: StepKey) => {
+    if (!allowedStepKeys.has(step)) {
+      return;
+    }
     if (step === "invoice") {
       setOverrideStep("invoice");
     } else {
@@ -826,36 +858,18 @@ export function ProjectWorkspace({
           onRefresh={refresh}
           onNewProject={onNewProject}
         />
-        <div className="max-w-[1280px] mx-auto px-6 py-6">
-          <div className="grid grid-cols-12 gap-6">
-            <div className="col-span-3 space-y-4">
+        <div className="max-w-[1280px] mx-auto px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
+            <div className="space-y-4 lg:col-span-3">
               <Card className="p-4">
                 <h3 className="mb-3">Stranka</h3>
                 <div className="space-y-2 text-sm">
-                  <div>
-                    <div className="text-muted-foreground">Naziv</div>
-                    <div>{project.customerDetail.name}</div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">ID za DDV</div>
-                    <div>{project.customerDetail.taxId}</div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">Naslov</div>
-                    <div>{infoCardAddress}</div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">Plačilni pogoji</div>
-                    <div>{project.customerDetail.paymentTerms}</div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">Email</div>
-                    <div>{infoCardEmail}</div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">Telefon</div>
-                    <div>{infoCardPhone}</div>
-                  </div>
+                  {project.customerDetail.taxId?.trim() ? <div>{project.customerDetail.taxId.trim()}</div> : null}
+                  {project.customerDetail.name?.trim() ? <div>{project.customerDetail.name.trim()}</div> : null}
+                  {infoCardAddress?.trim() ? <div>{infoCardAddress.trim()}</div> : null}
+                  {infoCardEmail?.trim() ? <div>{infoCardEmail.trim()}</div> : null}
+                  {infoCardPhone?.trim() ? <div>{infoCardPhone.trim()}</div> : null}
+                  {project.customerDetail.paymentTerms?.trim() ? <div>{project.customerDetail.paymentTerms.trim()}</div> : null}
                 </div>
               </Card>
 
@@ -864,25 +878,31 @@ export function ProjectWorkspace({
                 <p className="text-sm text-muted-foreground">{requirementsText}</p>
               </Card>
 
-                            <Card className="p-4">
+              <Card className="hidden p-4 lg:block">
                 <h4 className="mb-3 text-sm">Hitra navigacija</h4>
                 <ProjectQuickNav
                   project={project}
-                  steps={timelineSteps}
+                  steps={visibleTimelineSteps}
                   activeStep={activeQuickStep}
                   onSelectStep={handleNavigateStep}
                 />
               </Card>
             </div>
 
-            <div className="col-span-9">
+            <div className="min-w-0 lg:col-span-9">
               <Tabs
                 value={activeTab}
-                onValueChange={(value) => setActiveTab((value as WorkspaceTabValue) ?? "items")}
+                onValueChange={(value) => {
+                  const next = (value as WorkspaceTabValue) ?? (allowedTabValues[0] ?? "items");
+                  if (allowedTabValues.includes(next)) {
+                    setActiveTab(next);
+                  }
+                }}
                 className="space-y-6"
               >
                 <PhaseRibbon steps={phaseRibbonSteps} activeKey={activeTab} variant="tabs" />
 
+                {allowedTabValues.includes("items") ? (
                 <TabsContent value="items" className="mt-0 space-y-4">
                   <RequirementsPanel
                     project={project}
@@ -905,17 +925,23 @@ export function ProjectWorkspace({
                     handleProceedToOffer={handleProceedToOffer}
                   />
                 </TabsContent>
+                ) : null}
 
+                {allowedTabValues.includes("offers") ? (
                 <TabsContent value="offers" className="mt-0 space-y-4">
                   {activeTab === "offers" ? (
                     <OffersPanel project={project} refreshKey={offersRefreshKey} />
                   ) : null}
                 </TabsContent>
+                ) : null}
 
+                {allowedTabValues.includes("logistics") ? (
                 <TabsContent value="logistics" className="mt-0 space-y-6">
                   <LogisticsPanel projectId={project.id} client={displayedClient} />
                 </TabsContent>
+                ) : null}
 
+                {allowedTabValues.includes("execution") ? (
                 <TabsContent value="execution" className="mt-0 space-y-6">
                   <ExecutionPanel
                     projectId={project.id}
@@ -924,12 +950,15 @@ export function ProjectWorkspace({
                     onWorkOrderUpdated={handleWorkOrderUpdated}
                   />
                 </TabsContent>
+                ) : null}
 
+                {allowedTabValues.includes("closing") ? (
                 <TabsContent value="closing" className="mt-0 space-y-4">
                   <div ref={invoiceSectionRef}>
                     <ClosingPanel logistics={project?.logistics} />
                   </div>
                 </TabsContent>
+                ) : null}
               </Tabs>
             </div>
           </div>
@@ -940,3 +969,4 @@ export function ProjectWorkspace({
 
   return renderContent();
 }
+

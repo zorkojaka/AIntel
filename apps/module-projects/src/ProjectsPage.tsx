@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ClientForm, ClientFormPayload, Client } from "@aintel/module-crm";
 import { useSettingsData } from "@aintel/module-settings";
@@ -15,6 +15,7 @@ import { mapProject } from "./domains/core/useProject";
 const API_PREFIX = "/api/projects";
 const VALID_TABS = ["items", "offers", "logistics", "execution", "closing"] as const;
 type WorkspaceTab = (typeof VALID_TABS)[number];
+const shownForbiddenProjectToasts = new Set<string>();
 
 function parseWorkspaceTab(value: string | null): WorkspaceTab | null {
   if (!value) return null;
@@ -40,9 +41,11 @@ function toSummary(project: ProjectDetails): ProjectSummary {
 
 export function ProjectsPage() {
   const { settings: globalSettings } = useSettingsData({ applyTheme: false });
+  const [viewerRoles, setViewerRoles] = useState<string[]>([]);
   const [currentView, setCurrentView] = useState<"list" | "workspace">("list");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
   const [initialWorkspaceTab, setInitialWorkspaceTab] = useState<"items" | "offers" | "logistics" | "execution" | "closing" | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -61,11 +64,39 @@ export function ProjectsPage() {
     requirements: "Dodajte opis projekta",
   });
   const [clientPortalContainer, setClientPortalContainer] = useState<HTMLElement | null>(null);
+  const initialProjectFromUrlHandledRef = useRef(false);
+  const isExecutionOnlyViewer = useMemo(() => {
+    const roleSet = new Set(viewerRoles);
+    const isExecution = roleSet.has("EXECUTION");
+    const hasPrivileged = roleSet.has("ADMIN") || roleSet.has("SALES") || roleSet.has("FINANCE");
+    return isExecution && !hasPrivileged;
+  }, [viewerRoles]);
 
   useEffect(() => {
     if (typeof document !== "undefined") {
       setClientPortalContainer(document.body);
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchMe = async () => {
+      try {
+        const response = await fetch("/api/auth/me");
+        const result = await response.json();
+        if (cancelled || !result?.success) return;
+        const roles = Array.isArray(result?.data?.employee?.roles) ? result.data.employee.roles : [];
+        setViewerRoles(roles);
+      } catch {
+        if (!cancelled) {
+          setViewerRoles([]);
+        }
+      }
+    };
+    fetchMe();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -94,13 +125,19 @@ export function ProjectsPage() {
   }, [projectFormInitial, crmClients]);
 
   const fetchProjectList = async () => {
-    const response = await fetch(API_PREFIX);
-    const result = await response.json();
-    if (!result.success) {
-      toast.error(result.error ?? "Napaka pri nalaganju projektov.");
-      return;
+    try {
+      const response = await fetch(API_PREFIX);
+      const result = await response.json();
+      if (!result.success) {
+        toast.error(result.error ?? "Napaka pri nalaganju projektov.");
+        return;
+      }
+      setProjects(result.data as ProjectSummary[]);
+    } catch {
+      toast.error("Napaka pri nalaganju projektov.");
+    } finally {
+      setProjectsLoaded(true);
     }
-    setProjects(result.data as ProjectSummary[]);
   };
 
   const sortCategories = useCallback(
@@ -143,9 +180,18 @@ export function ProjectsPage() {
     const response = await fetch(`${API_PREFIX}/${projectId}`);
     const result = await response.json();
     if (!result.success) {
-      toast.error(result.error ?? "Projekt ni bil najden.");
+      if (response.status === 403) {
+        if (!shownForbiddenProjectToasts.has(projectId)) {
+          shownForbiddenProjectToasts.add(projectId);
+          toast.error("Nimaš dostopa do izbranega projekta.");
+        }
+        handleBackToList();
+      } else {
+        toast.error(result.error ?? "Projekt ni bil najden.");
+      }
       return;
     }
+    shownForbiddenProjectToasts.delete(projectId);
     const mapped = mapProject(result.data);
     setProjectDetails(mapped);
     setSelectedProjectId(mapped.id);
@@ -154,18 +200,39 @@ export function ProjectsPage() {
   };
 
   useEffect(() => {
+    if (initialProjectFromUrlHandledRef.current) return;
+    if (!projectsLoaded) return;
+
     const params = new URLSearchParams(window.location.search);
     const projectId = params.get("projectId");
-    if (!projectId) return;
+    if (!projectId) {
+      initialProjectFromUrlHandledRef.current = true;
+      return;
+    }
     const tab = parseWorkspaceTab(params.get("tab"));
     if (tab) {
       setInitialWorkspaceTab(tab);
     }
-    loadProjectDetails(projectId);
-  }, []);
+
+    if (isExecutionOnlyViewer) {
+      const isAssignedProject = projects.some((project) => project.id === projectId);
+      if (!isAssignedProject) {
+        initialProjectFromUrlHandledRef.current = true;
+        if (!shownForbiddenProjectToasts.has(projectId)) {
+          shownForbiddenProjectToasts.add(projectId);
+          toast.error("Nimaš dostopa do izbranega projekta.");
+        }
+        handleBackToList();
+        return;
+      }
+    }
+
+    initialProjectFromUrlHandledRef.current = true;
+    void loadProjectDetails(projectId);
+  }, [projectsLoaded, projects, isExecutionOnlyViewer]);
 
   const handleSelectProject = (projectId: string) => {
-    setInitialWorkspaceTab(null);
+    setInitialWorkspaceTab(isExecutionOnlyViewer ? "logistics" : null);
     loadProjectDetails(projectId);
   };
 
@@ -316,13 +383,13 @@ export function ProjectsPage() {
       setSelectedProjectId(mapped.id);
       setInitialWorkspaceTab("offers");
       setCurrentView("workspace");
-      toast.success("Projekt uspešno ustvarjen");
+      toast.success("Projekt uspeÅ¡no ustvarjen");
       setNewProjectDialogOpen(false);
       setSelectedClientId(null);
       setProjectFormInitial(null);
       setNewProjectCategorySlugs([]);
     } catch (error) {
-      toast.error("Prišlo je do napake pri ustvarjanju projekta.");
+      toast.error("PriÅ¡lo je do napake pri ustvarjanju projekta.");
     } finally {
       setIsCreatingProject(false);
     }
@@ -415,7 +482,7 @@ export function ProjectsPage() {
     });
     const result = await response.json();
     if (!result.success) {
-      throw new Error(result.error ?? "Prišlo je do napake pri shranjevanju stranke.");
+      throw new Error(result.error ?? "PriÅ¡lo je do napake pri shranjevanju stranke.");
     }
 
     const createdClient = result.data as Client;
@@ -461,16 +528,18 @@ export function ProjectsPage() {
           <div className="mx-auto max-w-[1280px]">
             <div className="mb-6 flex items-center justify-between">
               <h1 className="m-0">Projekti</h1>
-              <div className="flex items-center gap-2">
-                <Button onClick={openNewProjectDialog}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Nov projekt
-                </Button>
-                <Button variant="ghost" onClick={handleAddClient}>
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Dodaj stranko
-                </Button>
-              </div>
+              {!isExecutionOnlyViewer ? (
+                <div className="flex items-center gap-2">
+                  <Button onClick={openNewProjectDialog}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Nov projekt
+                  </Button>
+                  <Button variant="ghost" onClick={handleAddClient}>
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Dodaj stranko
+                  </Button>
+                </div>
+              ) : null}
             </div>
             <ProjectList
               projects={projects}
@@ -478,6 +547,7 @@ export function ProjectsPage() {
               categories={categories}
               onEditProject={handleEditProject}
               onDeleteProject={handleDeleteProject}
+              readOnly={isExecutionOnlyViewer}
             />
           </div>
         </div>
@@ -494,6 +564,7 @@ export function ProjectsPage() {
           onProjectUpdate={handleProjectUpdate}
           onNewProject={openNewProjectDialog}
           brandColor={globalSettings?.primaryColor}
+          allowedTabs={isExecutionOnlyViewer ? ["items", "logistics", "execution"] : undefined}
         />
       )}
 
@@ -539,3 +610,6 @@ export function ProjectsPage() {
     </>
   );
 }
+
+
+

@@ -7,6 +7,7 @@ type ProjectQuickNavProps = {
   activeStep: StepKey;
   onSelectStep: (key: StepKey) => void;
   steps?: TimelineStep[];
+  layout?: "vertical" | "horizontal";
 };
 
 const statusStyles: Record<StepStatus, string> = {
@@ -25,12 +26,19 @@ function StatusIcon({ status }: { status: StepStatus }) {
   return <Circle className="h-3.5 w-3.5" />;
 }
 
-export function ProjectQuickNav({ project, activeStep, onSelectStep, steps: stepsOverride }: ProjectQuickNavProps) {
+export function ProjectQuickNav({
+  project,
+  activeStep,
+  onSelectStep,
+  steps: stepsOverride,
+  layout = "vertical",
+}: ProjectQuickNavProps) {
   const localSteps = useProjectTimeline(project);
   const steps = stepsOverride ?? localSteps;
+  const isHorizontal = layout === "horizontal";
 
   return (
-    <nav className="space-y-1">
+    <nav className={isHorizontal ? "flex gap-2 overflow-x-auto pb-1" : "space-y-1"}>
       {steps.map((step) => {
         const isActive = step.key === activeStep;
         const metaText = typeof step.meta === "string" ? step.meta.trim() : "";
@@ -49,7 +57,7 @@ export function ProjectQuickNav({ project, activeStep, onSelectStep, steps: step
             key={step.key}
             type="button"
             onClick={() => onSelectStep(step.key)}
-            className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between gap-3 transition-colors ${
+            className={`${isHorizontal ? "min-w-[180px] shrink-0" : "w-full"} text-left px-3 py-2 rounded text-sm flex items-center justify-between gap-3 transition-colors ${
               isActive ? "bg-primary text-primary-foreground" : "hover:bg-muted"
             }`}
           >

@@ -86,10 +86,20 @@ export async function postEmployee(req: Request, res: Response) {
     }
     req.body.roles = roles;
   }
+  if (req.body.appAccess !== undefined && typeof req.body.appAccess !== 'boolean') {
+    return res.fail('Dostop do aplikacije mora biti bool.', 400);
+  }
 
   await assertCan('create', (req as any).user, { tenantId });
-  const employee = await createEmployee(tenantId, req.body);
-  return res.success(employee, 201);
+  try {
+    const employee = await createEmployee(tenantId, req.body);
+    return res.success(employee, 201);
+  } catch (error: any) {
+    if (error?.message === 'EMAIL_IN_USE_BY_OTHER_USER') {
+      return res.fail('Email je vezan na drugega uporabnika.', 409);
+    }
+    throw error;
+  }
 }
 
 export async function patchEmployee(req: Request, res: Response) {
@@ -123,6 +133,9 @@ export async function patchEmployee(req: Request, res: Response) {
     }
     req.body.roles = roles;
   }
+  if (req.body.appAccess !== undefined && typeof req.body.appAccess !== 'boolean') {
+    return res.fail('Dostop do aplikacije mora biti bool.', 400);
+  }
 
   await assertCan('update', (req as any).user, { tenantId, employeeId: req.params.id });
 
@@ -135,6 +148,9 @@ export async function patchEmployee(req: Request, res: Response) {
   } catch (error: any) {
     if (error?.message === 'NEGATIVE_RATE') {
       return res.fail('Urna postavka mora biti nenegativna.', 400);
+    }
+    if (error?.message === 'EMAIL_IN_USE_BY_OTHER_USER') {
+      return res.fail('Email je vezan na drugega uporabnika.', 409);
     }
     throw error;
   }

@@ -36,8 +36,8 @@
 }
 
 .dashboard-editor__list {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: var(--space-md);
 }
 
@@ -57,7 +57,7 @@
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--space-lg);
 }
 
@@ -68,6 +68,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
+  max-height: min(56vh, 560px);
+  overflow: auto;
+  padding-right: 0.25rem;
 }
 
 .dashboard-widget__item {
@@ -77,6 +80,12 @@
   gap: var(--space-md);
   padding-bottom: var(--space-sm);
   border-bottom: 1px solid var(--color-border);
+  min-width: 0;
+}
+
+.dashboard-widget__item > div {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .dashboard-widget__item:last-child {
@@ -87,11 +96,15 @@
 .dashboard-widget__title {
   font-weight: 600;
   margin-bottom: 0.2rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dashboard-widget__meta {
   font-size: 0.85rem;
   color: var(--color-muted, #667085);
+  overflow-wrap: anywhere;
 }
 
 .dashboard-widget__details {
@@ -131,6 +144,8 @@
   margin-top: var(--space-md);
   display: flex;
   justify-content: flex-end;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
 }
 
 .dashboard-hint {
@@ -172,6 +187,8 @@
   align-items: center;
   gap: var(--space-sm);
   margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .dashboard-week-scheduler__range {
@@ -218,7 +235,7 @@
 
 .dashboard-week-scheduler__days {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: var(--space-sm);
 }
 
@@ -238,6 +255,11 @@
   font-size: 0.8rem;
   font-weight: 600;
   text-align: center;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-surface, #fff);
+  border-radius: 6px;
 }
 
 .dashboard-week-scheduler__day-body {
@@ -261,7 +283,7 @@
   border-radius: 8px;
   background: var(--color-primary, #1d4ed8);
   color: #ffffff;
-  padding: 6px 8px;
+  padding: 6px 7px;
   text-align: left;
   font-size: 0.75rem;
   line-height: 1.2;
@@ -359,6 +381,49 @@
   margin-right: 0.25rem;
 }
 
+.dashboard-week-scheduler__mobile-list {
+  display: none;
+}
+
+.dashboard-week-scheduler__mobile-list h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.9rem;
+}
+
+.dashboard-week-scheduler__mobile-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.dashboard-week-scheduler__mobile-list li button {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.55rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.dashboard-week-scheduler__mobile-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-week-scheduler__mobile-meta {
+  font-size: 0.74rem;
+  color: var(--color-muted, #667085);
+}
+
 .dashboard-project-widget {
   display: flex;
   flex-direction: column;
@@ -385,6 +450,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
+  min-width: 0;
 }
 
 .dashboard-project-widget__header {
@@ -415,11 +481,12 @@
   gap: 0.5rem 1rem;
   font-size: 0.78rem;
   color: var(--color-muted, #667085);
+  overflow-wrap: anywhere;
 }
 
 .dashboard-project-widget__timeline {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 0.35rem;
 }
 
@@ -517,6 +584,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .dashboard-project-widget__list {
@@ -555,6 +623,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dashboard-project-widget .overflow-hidden {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.dashboard-project-widget table {
+  min-width: 640px;
 }
 
 .dashboard-project-widget__phase-banner {
@@ -673,10 +750,21 @@
     gap: var(--space-md);
   }
 
+  .dashboard-editor__list {
+    grid-template-columns: 1fr;
+    gap: var(--space-sm);
+  }
+
   .dashboard-widget__item {
     flex-direction: column;
     align-items: stretch;
     gap: 0.5rem;
+  }
+
+  .dashboard-widget__list {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .dashboard-widget__item button {
@@ -702,7 +790,76 @@
   }
 
   .dashboard-week-scheduler__days {
-    grid-template-columns: 1fr;
+    display: flex;
+    overflow-x: auto;
+    gap: var(--space-sm);
+    scroll-snap-type: x mandatory;
+    padding-bottom: 0.25rem;
+  }
+
+  .dashboard-week-scheduler__day {
+    min-width: min(86vw, 360px);
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+  }
+
+  .dashboard-week-scheduler__day-body {
+    height: 360px !important;
+  }
+
+  .dashboard-week-scheduler__event {
+    left: 5px;
+    right: 5px;
+  }
+
+  .dashboard-week-scheduler__mobile-list {
+    display: block;
+  }
+
+  .dashboard-week-scheduler__header {
+    gap: 0.5rem;
+  }
+
+  .dashboard-week-scheduler__header-left,
+  .dashboard-week-scheduler__header-right {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+  }
+
+  .dashboard-week-scheduler__header-left > button,
+  .dashboard-week-scheduler__header-right > button {
+    min-height: 40px;
+  }
+
+  .dashboard-week-scheduler__range {
+    width: 100%;
+    text-align: center;
+    order: -1;
+  }
+
+  .dashboard-project-widget__phase-banner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dashboard-project-widget__next-step-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+
+  .dashboard-project-widget__timeline {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .dashboard-project-widget__primary {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .dashboard-project-widget table {
+    min-width: 720px;
   }
 
   .dashboard-week-scheduler__event-title,

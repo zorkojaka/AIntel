@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type {
   MaterialOrder,
@@ -96,9 +96,7 @@ const adjustToWorkday = (date: Date, direction: 1 | -1) => {
 };
 
 function buildOfferLabel(offer: ProjectLogisticsSnapshot["offerVersions"][number]) {
-  const baseLabel = offer.title || `Verzija ${offer.versionNumber}`;
-  const totalLabel = typeof offer.totalWithVat === "number" ? ` • ${formatCurrency(offer.totalWithVat)}` : "";
-  return `${baseLabel}${totalLabel}`;
+  return offer.title || `Verzija ${offer.versionNumber}`;
 }
 
 export function LogisticsPanel({
@@ -706,6 +704,15 @@ export function LogisticsPanel({
     }
   };
 
+  const handleUnconfirmSchedule = async () => {
+    if (!selectedWorkOrder) return;
+    setWorkOrderForm((prev) => ({ ...prev, scheduledConfirmedAt: null }));
+    const saved = await handleSaveWorkOrder(undefined, { scheduledConfirmedAt: null });
+    if (saved) {
+      toast.success("Potrditev termina odstranjena.");
+    }
+  };
+
   const updateWorkOrderItemQty = async (itemId: string, deliveredQty: number, shouldSave: boolean) => {
     const currentItems =
       Array.isArray(workOrderForm.items) && workOrderForm.items.length > 0
@@ -1074,7 +1081,15 @@ export function LogisticsPanel({
                     </div>
                     <div className="flex items-center gap-2">
                       {isTermConfirmed ? (
-                        <Badge variant="secondary">Termin potrjen</Badge>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={handleUnconfirmSchedule}
+                          disabled={savingWorkOrder}
+                        >
+                          Prekliči termin
+                        </Button>
                       ) : resolvedSchedule ? (
                         <Button
                           type="button"
@@ -1145,13 +1160,15 @@ export function LogisticsPanel({
           <Table>
             <TableHeader>
               <TableRow>
+                {workOrderMode === "execute" ? (
+                  <TableHead className="text-right w-[56px]">Imamo</TableHead>
+                ) : null}
                 <TableHead>Artikel</TableHead>
                 <TableHead className="text-center tabular-nums w-[90px]">{"Količina"}</TableHead>
                 <TableHead className="text-center tabular-nums w-[90px]">Enota</TableHead>
                 {workOrderMode === "execute" ? (
                   <>
                     <TableHead className="text-center tabular-nums w-[90px]">Razlika</TableHead>
-                    <TableHead className="text-right w-[56px]">Imamo</TableHead>
                   </>
                 ) : (
                   <TableHead className="text-center w-[96px]">Pripravljeno</TableHead>
@@ -1199,6 +1216,35 @@ export function LogisticsPanel({
                 const displayDelta = diff > 0 ? `+${diff}` : `${diff}`;
                 return (
                   <TableRow key={item.id}>
+                    <TableCell className="text-right w-[56px] align-top">
+                      <label className="relative inline-flex items-center justify-center cursor-pointer p-1">
+                        <input
+                          type="checkbox"
+                          className="peer sr-only"
+                          aria-label="Imamo material"
+                          checked={isEnough}
+                          onChange={() => {
+                            void updateWorkOrderItemQty(item.id, requiredQty, true);
+                          }}
+                        />
+                        <span
+                          className={`inline-flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors ${
+                            isEnough ? fillClass : "bg-transparent"
+                          } ${borderClass} peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40`}
+                        >
+                          {isEnough && (
+                            <svg
+                              viewBox="0 0 20 20"
+                              aria-hidden="true"
+                              className="h-4 w-4 text-white"
+                              fill="currentColor"
+                            >
+                              <path d="M7.667 13.4 4.6 10.333l-1.2 1.2 4.267 4.267 8-8-1.2-1.2-6 6z" />
+                            </svg>
+                          )}
+                        </span>
+                      </label>
+                    </TableCell>
                     <TableCell className="font-medium">
                       <div className="flex flex-wrap items-center gap-2">
                         <span>{item.name}</span>
@@ -1250,35 +1296,6 @@ export function LogisticsPanel({
                           +
                         </Button>
                       </div>
-                    </TableCell>
-                    <TableCell className="text-right w-[56px] align-top">
-                      <label className="relative inline-flex items-center justify-center cursor-pointer p-1">
-                        <input
-                          type="checkbox"
-                          className="peer sr-only"
-                          aria-label="Imamo material"
-                          checked={isEnough}
-                          onChange={() => {
-                            void updateWorkOrderItemQty(item.id, requiredQty, true);
-                          }}
-                        />
-                        <span
-                          className={`inline-flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors ${
-                            isEnough ? fillClass : "bg-transparent"
-                          } ${borderClass} peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40`}
-                        >
-                          {isEnough && (
-                            <svg
-                              viewBox="0 0 20 20"
-                              aria-hidden="true"
-                              className="h-4 w-4 text-white"
-                              fill="currentColor"
-                            >
-                              <path d="M7.667 13.4 4.6 10.333l-1.2 1.2 4.267 4.267 8-8-1.2-1.2-6 6z" />
-                            </svg>
-                          )}
-                        </span>
-                      </label>
                     </TableCell>
                   </TableRow>
                 );
@@ -1475,92 +1492,6 @@ export function LogisticsPanel({
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader className="flex items-center justify-between">
-          <CardTitle>Verzije ponudb</CardTitle>
-          {hasConfirmed && snapshot?.confirmedOfferVersionId && (
-            <Badge variant="secondary">Potrjeno: {snapshot.confirmedOfferVersionId}</Badge>
-          )}
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Nalaganje...</p>
-          ) : snapshot ? (
-            <div className="border rounded-[var(--radius-card)] bg-card overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Verzija</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Skupaj z DDV</TableHead>
-                    <TableHead>Akcije</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(snapshot.offerVersions ?? []).map((offer) => {
-                    const statusKey = (offer.status ?? "").toUpperCase();
-                    const statusLabel = STATUS_LABELS[statusKey] ?? offer.status ?? "";
-                    const isConfirmed = snapshot.confirmedOfferVersionId === offer._id;
-                    const isAccepted = statusKey === "ACCEPTED";
-                    const isCancelled = statusKey === "CANCELLED";
-                    return (
-                      <TableRow key={offer._id}>
-                        <TableCell className="font-medium flex items-center gap-2">
-                          {offer.title}
-                          {isConfirmed && <Badge variant="secondary">Potrjeno</Badge>}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="uppercase text-xs tracking-wide">
-                            {statusLabel}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">{formatCurrency(offer.totalWithVat ?? 0)}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            {!isAccepted && !isCancelled && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={confirmingId === offer._id}
-                                onClick={() => confirmOffer(offer._id)}
-                              >
-                                {confirmingId === offer._id ? "Potrjujem..." : "Potrdi to verzijo"}
-                              </Button>
-                            )}
-                            {isAccepted && (
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => handleCancelConfirmation(offer._id)}
-                                disabled={cancelling}
-                              >
-                                {cancelling ? "Preklicujem..." : "Prekliči potrditev"}
-                              </Button>
-                            )}
-                            {isCancelled && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => confirmOffer(offer._id)}
-                                disabled={confirmingId === offer._id}
-                              >
-                                {confirmingId === offer._id ? "Potrjujem..." : "Ponovno potrdi verzijo"}
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Ni podatkov.</p>
-          )}
-        </CardContent>
-      </Card>
-
       <div className="space-y-6 rounded-[var(--radius-card)] border border-border/60 bg-card/30 p-4">
         {shouldShowOfferSelector && (
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1674,4 +1605,5 @@ export function LogisticsPanel({
     </div>
   );
 }
+
 

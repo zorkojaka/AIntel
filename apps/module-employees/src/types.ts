@@ -16,4 +16,5 @@ export interface EmployeePayload {
   notes?: string;
   hourRateWithoutVat: number;
   active: boolean;
+  appAccess?: boolean;
 }

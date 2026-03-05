@@ -1,4 +1,4 @@
-import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+﻿import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
@@ -497,21 +497,18 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                           </Button>
                         </div>
                         <div className="overflow-x-auto rounded-md border">
-                          <table className="w-full min-w-[720px] text-sm">
+                          <table className="w-full min-w-[640px] text-sm">
                             <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                               <tr>
-                                <th className="p-2 text-left font-semibold">Naziv</th>
-                                <th className="p-2 text-right font-semibold">Ponujeno</th>
-                                <th className="p-2 text-right font-semibold">Izvedeno</th>
-                                <th className="p-2 text-left font-semibold">Opomba</th>
-                                <th className="p-2 text-center font-semibold">Status</th>
                                 <th className="p-2 text-center font-semibold">Dokončano</th>
+                                <th className="p-2 text-center font-semibold">X/Y</th>
+                                <th className="p-2 text-left font-semibold">Naziv</th>
                               </tr>
                             </thead>
                             <tbody>
                               {items.length === 0 && (
                                 <tr>
-                                  <td colSpan={6} className="p-3 text-center text-muted-foreground">
+                                  <td colSpan={3} className="p-3 text-center text-muted-foreground">
                                     Ni postavk za prikaz.
                                   </td>
                                 </tr>
@@ -537,6 +534,33 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                 };
                                 return (
                                   <tr key={item.id} className="border-t">
+                                    <td className="p-2 text-center align-middle">
+                                      <Checkbox
+                                        className="h-5 w-5"
+                                        checked={isCompleted}
+                                        onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                                          handleCompletionChange(event.target.checked)
+                                        }
+                                      />
+                                    </td>
+                                    <td className="p-2 align-middle">
+                                      <div className="flex items-center justify-center gap-0">
+                                        <Input
+                                          type="number"
+                                          value={item.executedQuantity ?? ""}
+                                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                                            applyItemChange(order, item.id, {
+                                              executedQuantity: Number(event.target.value),
+                                            })
+                                          }
+                                          className="w-16 text-right"
+                                        />
+                                        <span className="px-0.5 text-muted-foreground">/</span>
+                                        <span className="text-right tabular-nums">
+                                          {offeredValue.toLocaleString("sl-SI")}
+                                        </span>
+                                      </div>
+                                    </td>
                                     <td className="p-2 align-top">
                                       {isExtraEditable ? (
                                         <div>
@@ -575,41 +599,6 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                           <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
                                         </div>
                                       )}
-                                    </td>
-                                    <td className="p-2 text-right align-top">
-                                      {offeredValue.toLocaleString("sl-SI")}
-                                    </td>
-                                    <td className="p-2 align-top">
-                                      <Input
-                                        type="number"
-                                        value={item.executedQuantity ?? ""}
-                                        onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                                          applyItemChange(order, item.id, {
-                                            executedQuantity: Number(event.target.value),
-                                          })
-                                        }
-                                        className="w-24 text-right"
-                                      />
-                                    </td>
-                                    <td className="p-2 align-top">
-                                      <Textarea
-                                        value={item.itemNote ?? ""}
-                                        onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-                                          applyItemChange(order, item.id, { itemNote: event.target.value })
-                                        }
-                                        rows={2}
-                                        className="min-h-[56px]"
-                                      />
-                                    </td>
-                                    <td className="p-2 text-center align-top">{renderItemStatusBadge(item)}</td>
-                                    <td className="p-2 text-center align-middle">
-                                      <Checkbox
-                                        className="h-5 w-5"
-                                        checked={isCompleted}
-                                        onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                                          handleCompletionChange(event.target.checked)
-                                        }
-                                      />
                                     </td>
                                   </tr>
                                 );
@@ -705,3 +694,4 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
     </div>
   );
 }
+

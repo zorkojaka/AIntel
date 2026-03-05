@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="sl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AIntel Settings Concepts</title>
+    <style>
+      :root {
+        --bg: #f4f6fb;
+        --card: #ffffff;
+        --line: #d9e0ec;
+        --text: #182230;
+        --muted: #5c6677;
+        --brand: #0f4c5c;
+        --accent: #ffb703;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Inter", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(1200px 500px at 20% -10%, #dbe7ff 0%, transparent 60%),
+          radial-gradient(900px 400px at 100% 0%, #ffe8c7 0%, transparent 55%),
+          var(--bg);
+      }
+      .wrap { max-width: 1480px; margin: 0 auto; padding: 28px; }
+      h1 { margin: 0 0 8px 0; font-size: 30px; }
+      .lead { margin: 0 0 22px 0; color: var(--muted); }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+      .concept {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        overflow: hidden;
+        box-shadow: 0 8px 28px rgba(13, 33, 72, 0.08);
+      }
+      .head {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(90deg, #f8fbff, #ffffff);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .tag {
+        font-size: 12px;
+        font-weight: 700;
+        padding: 6px 10px;
+        border-radius: 999px;
+        color: #fff;
+        background: var(--brand);
+      }
+      .title { margin: 0; font-size: 17px; }
+      .ui {
+        height: 360px;
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+      }
+      .box {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+      }
+      .muted { background: #f7f9fd; }
+      .strong { background: #eef4ff; border-color: #c9dafc; }
+      .accent { background: #fff6e6; border-color: #f7cf85; }
+      .c1 { grid-template-columns: 190px 1fr 220px; grid-template-rows: 52px 1fr 92px; }
+      .c1 .a { grid-column: 1 / 4; }
+      .c1 .b { grid-column: 1 / 2; grid-row: 2; }
+      .c1 .c { grid-column: 2 / 3; grid-row: 2; }
+      .c1 .d { grid-column: 3 / 4; grid-row: 2; }
+      .c1 .e { grid-column: 2 / 4; grid-row: 3; }
+      .c2 { grid-template-columns: 1fr; grid-template-rows: 50px 46px 1fr 56px; }
+      .c2 .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 10px; }
+      .c3 { grid-template-columns: 1fr; grid-template-rows: 48px 1fr 56px; }
+      .c3 .acc { display: grid; grid-template-rows: repeat(4, 1fr); gap: 10px; padding: 10px; }
+      .c4 { grid-template-columns: 220px 1fr 280px; grid-template-rows: 1fr; }
+      .c5 { grid-template-columns: 1fr; grid-template-rows: 68px 1fr; }
+      .c5 .cards { display: grid; grid-template-columns: repeat(2, 1fr); grid-auto-rows: 120px; gap: 10px; padding: 10px; }
+      .bar {
+        border: 1px dashed #b7c3d8;
+        border-radius: 10px;
+        margin: 10px;
+        height: 28px;
+        background: #fff;
+      }
+      .note {
+        margin-top: 18px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 12px 14px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      @media (max-width: 1100px) {
+        .grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Nastavitve: 5 Končnih Vizualnih Predlogov</h1>
+      <p class="lead">Primerjaj layout, hierarhijo, gostoto in akcijski model. Vsak koncept je pripravljen kot realen UI mock.</p>
+
+      <div class="grid">
+        <section class="concept">
+          <div class="head">
+            <h2 class="title">1) Enterprise Clean</h2>
+            <span class="tag">Stabilno + pregledno</span>
+          </div>
+          <div class="ui c1">
+            <div class="box strong a"></div>
+            <div class="box muted b"></div>
+            <div class="box c"></div>
+            <div class="box accent d"></div>
+            <div class="box muted e"></div>
+          </div>
+        </section>
+
+        <section class="concept">
+          <div class="head">
+            <h2 class="title">2) Compact Operator</h2>
+            <span class="tag">Hitro delo</span>
+          </div>
+          <div class="ui c2">
+            <div class="box strong"></div>
+            <div class="box muted"></div>
+            <div class="box cards">
+              <div class="box muted"></div>
+              <div class="box"></div>
+              <div class="box accent"></div>
+              <div class="box"></div>
+              <div class="box muted"></div>
+              <div class="box"></div>
+            </div>
+            <div class="box accent"></div>
+          </div>
+        </section>
+
+        <section class="concept">
+          <div class="head">
+            <h2 class="title">3) Field First (Mobile Priority)</h2>
+            <span class="tag">Monter teren</span>
+          </div>
+          <div class="ui c3">
+            <div class="box strong"></div>
+            <div class="box acc">
+              <div class="box"></div>
+              <div class="box muted"></div>
+              <div class="box"></div>
+              <div class="box accent"></div>
+            </div>
+            <div class="box accent"></div>
+          </div>
+        </section>
+
+        <section class="concept">
+          <div class="head">
+            <h2 class="title">4) Split Workspace + Live Preview</h2>
+            <span class="tag">Napreden workflow</span>
+          </div>
+          <div class="ui c4">
+            <div class="box muted"></div>
+            <div class="box">
+              <div class="bar"></div>
+              <div class="bar"></div>
+              <div class="bar"></div>
+              <div class="bar"></div>
+            </div>
+            <div class="box strong"></div>
+          </div>
+        </section>
+
+        <section class="concept" style="grid-column: 1 / -1;">
+          <div class="head">
+            <h2 class="title">5) Visual Cards</h2>
+            <span class="tag">Produktni občutek</span>
+          </div>
+          <div class="ui c5">
+            <div class="box strong"></div>
+            <div class="box cards">
+              <div class="box accent"></div>
+              <div class="box"></div>
+              <div class="box muted"></div>
+              <div class="box"></div>
+              <div class="box"></div>
+              <div class="box muted"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="note">
+        Naslednji korak: izberi koncept (1-5), potem pripravim finalno verzijo tega koncepta z realnimi polji, tipkami in komponentami za implementacijo.
+      </div>
+    </div>
+    <script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+  </body>
+</html>

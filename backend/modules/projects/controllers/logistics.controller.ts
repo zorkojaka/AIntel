@@ -129,12 +129,9 @@ function mapOfferItemsToWorkOrderItems(items: OfferLineItem[], serviceProductIds
     const quantity = typeof item.quantity === 'number' ? item.quantity : 0;
     const generatedId = item.id ?? new Types.ObjectId().toString();
     const note = (item as any).note ?? undefined;
-    const unitValue = typeof item.unit === 'string' ? item.unit.trim().toLowerCase() : '';
     const isService =
       Boolean((item as any).isService) ||
-      (item.productId ? serviceProductIds.has(String(item.productId)) : false) ||
-      unitValue === 'ura' ||
-      unitValue === 'h';
+      (item.productId ? serviceProductIds.has(String(item.productId)) : false);
     return {
       id: generatedId,
       productId: item.productId ?? null,

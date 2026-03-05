@@ -47,6 +47,9 @@ const moduleComponents: Record<ModuleId, React.ReactNode> = {
 };
 
 const moduleRoleMap: Partial<Record<ModuleId, string[]>> = {
+  crm: ['SALES', 'FINANCE'],
+  projects: ['SALES', 'FINANCE', 'EXECUTION'],
+  cenik: ['SALES', 'FINANCE'],
   finance: ['FINANCE'],
   employees: ['ADMIN'],
   settings: ['ADMIN'],

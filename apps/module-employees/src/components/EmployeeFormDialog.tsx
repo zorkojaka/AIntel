@@ -33,6 +33,7 @@ export function EmployeeFormDialog({
   const [notes, setNotes] = useState('');
   const [hourRateWithoutVat, setHourRateWithoutVat] = useState('0');
   const [active, setActive] = useState(true);
+  const [appAccess, setAppAccess] = useState(true);
   const [roles, setRoles] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,6 +51,7 @@ export function EmployeeFormDialog({
       setNotes(initialData.notes ?? '');
       setHourRateWithoutVat(String(initialData.hourRateWithoutVat ?? 0));
       setActive(initialData.active ?? true);
+      setAppAccess(initialData.appAccess !== false);
       setRoles(initialData.roles ?? []);
       setError(null);
     } else {
@@ -65,6 +67,7 @@ export function EmployeeFormDialog({
       setNotes('');
       setHourRateWithoutVat('0');
       setActive(true);
+      setAppAccess(true);
       setRoles([]);
       setError(null);
     }
@@ -116,6 +119,7 @@ export function EmployeeFormDialog({
       notes: trimmedNotes || undefined,
       hourRateWithoutVat: parsedRate,
       active,
+      appAccess,
     });
   };
 
@@ -320,6 +324,16 @@ export function EmployeeFormDialog({
                 className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
               />
               Aktiven
+            </label>
+
+            <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={appAccess}
+                onChange={(event) => setAppAccess(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+              />
+              Dostop do aplikacije
             </label>
 
             {error ? (

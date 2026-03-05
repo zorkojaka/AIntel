@@ -234,7 +234,9 @@ export function ClientForm({ open, client, mode = "create", onClose, onSubmit, o
         <DialogPrimitive.Overlay className="client-modal__overlay" />
         <DialogPrimitive.Content className="client-modal__dialog" onOpenAutoFocus={(event) => event.preventDefault()}>
           <header className="client-modal__header">
-            <h2>{title}</h2>
+            <DialogPrimitive.Title asChild>
+              <h2>{title}</h2>
+            </DialogPrimitive.Title>
             <DialogPrimitive.Close asChild>
               <button type="button" className="client-modal__close" aria-label="Zapri">
                 <X className="h-4 w-4" />

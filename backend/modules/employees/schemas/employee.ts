@@ -15,6 +15,7 @@ export interface EmployeeDocument extends Document {
   notes?: string;
   hourRateWithoutVat: number;
   active: boolean;
+  appAccess: boolean;
   deletedAt?: Date | null;
   deletedBy?: string | null;
   createdAt: Date;
@@ -41,6 +42,7 @@ const EmployeeSchema = new Schema<EmployeeDocument>(
     notes: { type: String, trim: true, default: '' },
     hourRateWithoutVat: { type: Number, required: true, default: 0, min: 0 },
     active: { type: Boolean, required: true, default: true },
+    appAccess: { type: Boolean, required: true, default: true },
     deletedAt: { type: Date, default: null },
     deletedBy: { type: String, default: null },
   },
