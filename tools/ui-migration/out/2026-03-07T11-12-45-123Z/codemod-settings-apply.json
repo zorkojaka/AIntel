@@ -1,0 +1,22 @@
+{
+  "module": "settings",
+  "mode": "apply",
+  "generatedAt": "2026-03-07T11:12:45.128Z",
+  "changes": [
+    {
+      "file": "apps/module-settings/src/theme.tokens.css",
+      "reason": "Create module settings tokens based on target spec",
+      "mode": "apply"
+    },
+    {
+      "file": "apps/module-settings/src/index.css",
+      "reason": "Import generated theme tokens",
+      "mode": "apply"
+    },
+    {
+      "file": "apps/module-settings/src/globals.css",
+      "reason": "Bridge legacy CSS vars to target tokens",
+      "mode": "apply"
+    }
+  ]
+}

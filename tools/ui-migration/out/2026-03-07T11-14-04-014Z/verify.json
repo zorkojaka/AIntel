@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-03-07T11:14:07.106Z",
+  "passed": false,
+  "results": [
+    {
+      "name": "settings-build",
+      "cmd": "pnpm",
+      "args": [
+        "--filter",
+        "@aintel/module-settings",
+        "build"
+      ],
+      "status": "failed",
+      "error": "Command failed: powershell.exe -NoProfile -Command pnpm --filter @aintel/module-settings build\n'vite' is not recognized as an internal or external command,\r\noperable program or batch file.\r\n"
+    },
+    {
+      "name": "core-shell-build",
+      "cmd": "pnpm",
+      "args": [
+        "--filter",
+        "@aintel/core-shell",
+        "build"
+      ],
+      "status": "failed",
+      "error": "Command failed: powershell.exe -NoProfile -Command pnpm --filter @aintel/core-shell build\n'vite' is not recognized as an internal or external command,\r\noperable program or batch file.\r\n"
+    }
+  ]
+}

@@ -81,17 +81,3 @@
     border-color: var(--destructive);
   }
 }
-
-/* ui-migration: bridge old vars to new tokens */
-:root {
-  --background: var(--app-bg);
-  --foreground: var(--app-text);
-  --card: var(--app-surface);
-  --card-foreground: var(--app-text);
-  --border: var(--app-border);
-  --muted-foreground: var(--app-muted-text);
-  --primary: var(--app-brand);
-  --primary-foreground: var(--app-brand-contrast);
-  --success: var(--app-success);
-  --destructive: var(--app-danger);
-}
