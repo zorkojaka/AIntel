@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 
 export type DashboardWidgetId =
   | 'agenda'
+  | 'agenda-week'
+  | 'agenda-adaptive'
   | 'project-summary'
   | 'upcoming-projects'
   | 'material-orders'

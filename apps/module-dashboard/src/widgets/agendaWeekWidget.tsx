@@ -1,13 +1,12 @@
-﻿import type { DashboardWidgetDefinition, InstallerDashboardWidgetProps } from '../types';
+import type { DashboardWidgetDefinition, InstallerDashboardWidgetProps } from '../types';
 import { renderEmptyState } from './utils';
 import { WeekScheduler } from './WeekScheduler';
 
-export const agendaWidget: DashboardWidgetDefinition = {
-  id: 'agenda',
-  title: 'Urnik (standard)',
-  description: 'Standardni prikaz urnika delovnih nalogov.',
+export const agendaWeekWidget: DashboardWidgetDefinition = {
+  id: 'agenda-week',
+  title: 'Urnik (1 teden)',
+  description: 'Fiksni tedenski pregled delovnih nalogov.',
   roles: ['installer'],
-  defaultEnabledForRoles: ['installer'],
   size: 'lg',
   render: ({ data, isLoading, error }: InstallerDashboardWidgetProps) => {
     if (isLoading) {
@@ -16,11 +15,9 @@ export const agendaWidget: DashboardWidgetDefinition = {
     if (error) {
       return renderEmptyState('Napaka pri nalaganju urnika.');
     }
-
     if (!data.myWorkOrders.length) {
       return renderEmptyState('Ni dogodkov.');
     }
-
-    return <WeekScheduler workOrders={data.myWorkOrders} variant="standard" />;
+    return <WeekScheduler workOrders={data.myWorkOrders} variant="week" />;
   },
 };
