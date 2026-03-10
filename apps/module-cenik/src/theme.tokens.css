@@ -1,0 +1,14 @@
+:root {
+  --app-bg: #eef3fb;
+  --app-surface: #ffffff;
+  --app-surface-soft: #f8fbff;
+  --app-border: #d6e0ef;
+  --app-text: #1c2635;
+  --app-muted: #5f7088;
+  --app-brand: #0f4c5c;
+  --app-brand-contrast: #ffffff;
+  --app-success: #1f9d6a;
+  --app-danger: #cf3d35;
+  --app-radius-card: 14px;
+  --app-shadow-card: 0 10px 30px rgba(13, 32, 67, 0.08);
+}

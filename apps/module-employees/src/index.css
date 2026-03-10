@@ -1,23 +1,27 @@
+@import url('./theme.tokens.css');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #0f172a;
-  background-color: #f8fafc;
+  color: var(--employees-text);
+  background-color: var(--employees-bg);
 }
 
 body {
   margin: 0;
-  background: #f8fafc;
+  background:
+    radial-gradient(900px 320px at 0% -10%, rgba(177, 213, 255, 0.35) 0%, transparent 60%),
+    radial-gradient(900px 340px at 100% -18%, rgba(255, 222, 177, 0.28) 0%, transparent 62%),
+    var(--employees-bg);
 }
 
 .employees-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  background: var(--employees-surface);
+  border: 1px solid var(--employees-border);
+  border-radius: var(--employees-radius);
+  box-shadow: var(--employees-shadow);
 }
 
 .table th,
@@ -28,14 +32,14 @@ body {
 .table th {
   text-align: left;
   font-size: 13px;
-  color: #475569;
+  color: var(--employees-muted);
   font-weight: 600;
   border-bottom: 1px solid #e2e8f0;
 }
 
 .table td {
   font-size: 14px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--employees-border);
 }
 
 .dialog-overlay {
@@ -54,4 +58,8 @@ body {
   border-radius: 16px;
   padding: 24px;
   box-shadow: 0 25px 60px rgba(0, 0, 0, 0.12);
+}
+
+.employees-page-shell {
+  background: transparent;
 }

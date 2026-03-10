@@ -384,8 +384,8 @@ export const CenikPage: React.FC = () => {
   };
 
   return (
-    <section className="max-w-6xl mx-auto p-6 space-y-6">
-      <div className="sticky top-0 z-30 -mx-6 border-b border-border/40 bg-background/80 px-6 py-3 backdrop-blur">
+    <section className="cenik-page-shell max-w-6xl mx-auto p-6 space-y-6">
+      <div className="sticky top-0 z-30 -mx-6 border-b border-border/40 bg-background/80 px-6 py-3 backdrop-blur cenik-sticky-bar">
         <Button onClick={openImportModal}>Uvoz produktov</Button>
       </div>
       <header className="space-y-2">
@@ -403,7 +403,7 @@ export const CenikPage: React.FC = () => {
       )}
 
 
-      <Card title="Iskanje in filtriranje">
+      <Card title="Iskanje in filtriranje" className="cenik-card">
         <FilterBar
           categories={categories}
           value={{ q: filters.q, category: filters.category }}
@@ -411,7 +411,7 @@ export const CenikPage: React.FC = () => {
           onAddProduct={() => startEdit()}
         />
       </Card>
-      <Card title="Seznam produktov">
+      <Card title="Seznam produktov" className="cenik-card">
         {loading ? (
           <p className="text-sm text-muted-foreground">Nalaganje cenika …</p>
         ) : (

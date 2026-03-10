@@ -257,7 +257,9 @@ function ChartBar({ label, value, max, variant }: ChartRow & { max: number }) {
 }
 
 function StatusPill({ status }: { status: InvoiceStatus }) {
-  return <span className="status-pill" data-status={status}>{status}</span>;
+  const normalized =
+    status === 'plaÄano' ? 'placano' : status === 'Äaka na plaÄilo' ? 'caka na placilo' : 'preklicano';
+  return <span className="status-pill" data-status={normalized}>{status}</span>;
 }
 
 export const FinancePage: React.FC = () => {

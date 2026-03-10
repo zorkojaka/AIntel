@@ -1,0 +1,10 @@
+:root {
+  --employees-bg: #eef3fb;
+  --employees-surface: #ffffff;
+  --employees-border: #d6e0ef;
+  --employees-text: #1c2635;
+  --employees-muted: #5f7088;
+  --employees-brand: #0f4c5c;
+  --employees-radius: 16px;
+  --employees-shadow: 0 10px 30px rgba(13, 32, 67, 0.08);
+}

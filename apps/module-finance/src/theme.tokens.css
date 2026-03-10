@@ -1,0 +1,13 @@
+:root {
+  --finance-bg: #eef3fb;
+  --finance-surface: #ffffff;
+  --finance-border: #d6e0ef;
+  --finance-text: #1c2635;
+  --finance-muted: #5f7088;
+  --finance-brand: #0f4c5c;
+  --finance-success: #1f9d6a;
+  --finance-warning: #d98a00;
+  --finance-danger: #cf3d35;
+  --finance-radius: 16px;
+  --finance-shadow: 0 10px 30px rgba(13, 32, 67, 0.08);
+}

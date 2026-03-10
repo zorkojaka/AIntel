@@ -4,40 +4,40 @@
 
 :root {
   --font-size: 14px;
-  --background: #f9fafb;
-  --foreground: #111827;
-  --card: #ffffff;
-  --card-foreground: #111827;
-  --popover: #ffffff;
-  --popover-foreground: #111827;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --secondary: #f3f4f6;
-  --secondary-foreground: #111827;
-  --muted: #f9fafb;
-  --muted-foreground: #6b7280;
-  --accent: #f3f4f6;
-  --accent-foreground: #111827;
-  --destructive: #ef4444;
+  --background: var(--app-bg);
+  --foreground: var(--app-text);
+  --card: var(--app-surface);
+  --card-foreground: var(--app-text);
+  --popover: var(--app-surface);
+  --popover-foreground: var(--app-text);
+  --primary: var(--app-brand);
+  --primary-foreground: var(--app-brand-contrast);
+  --secondary: var(--app-surface-soft);
+  --secondary-foreground: var(--app-text);
+  --muted: var(--app-surface-soft);
+  --muted-foreground: var(--app-muted);
+  --accent: #e8f1ff;
+  --accent-foreground: var(--app-text);
+  --destructive: var(--app-danger);
   --destructive-foreground: #ffffff;
-  --border: #e5e7eb;
+  --border: var(--app-border);
   --input: transparent;
   --input-background: #ffffff;
   --switch-background: #e5e7eb;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-normal: 400;
-  --ring: #2563eb;
-  --radius-card: 0.75rem;
-  --success: #16a34a;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #111827;
-  --sidebar-primary: #2563eb;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f9fafb;
-  --sidebar-accent-foreground: #111827;
-  --sidebar-border: #e5e7eb;
-  --sidebar-ring: #2563eb;
+  --ring: var(--app-brand);
+  --radius-card: var(--app-radius-card);
+  --success: var(--app-success);
+  --sidebar: var(--app-surface);
+  --sidebar-foreground: var(--app-text);
+  --sidebar-primary: var(--app-brand);
+  --sidebar-primary-foreground: var(--app-brand-contrast);
+  --sidebar-accent: var(--app-surface-soft);
+  --sidebar-accent-foreground: var(--app-text);
+  --sidebar-border: var(--app-border);
+  --sidebar-ring: var(--app-brand);
 }
 
 .dark {
