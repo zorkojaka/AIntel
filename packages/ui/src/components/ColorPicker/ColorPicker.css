@@ -1,19 +1,20 @@
 .aintel-color-picker {
   display: inline-flex;
   flex-direction: column;
-  gap: 0.25rem;
-  font-size: var(--font-size, 1rem);
+  gap: 0.35rem;
+  font-size: var(--font-size, 0.95rem);
 }
 
 .aintel-color-picker input[type='color'] {
   appearance: none;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border, #d6e0ef);
   border-radius: var(--radius-soft, 8px);
-  width: 60px;
-  height: 36px;
+  width: 68px;
+  height: 38px;
   padding: 0;
-  background: var(--color-surface, #ffffff);
+  background: color-mix(in srgb, var(--color-surface, #fff) 88%, #edf4ff 12%);
   cursor: pointer;
+  box-shadow: 0 2px 6px rgba(13, 32, 67, 0.08);
 }
 
 .aintel-color-picker input[type='color']::-webkit-color-swatch-wrapper {
@@ -29,4 +30,9 @@
 .aintel-color-picker input[type='color']::-moz-color-swatch {
   border: none;
   border-radius: var(--radius-soft, 8px);
+}
+
+.aintel-color-picker input[type='color']:focus {
+  outline: 2px solid var(--color-primary, #0f4c5c);
+  outline-offset: 2px;
 }

@@ -1,12 +1,17 @@
 .aintel-card {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-rounded);
-  padding: var(--space-md);
-  background: var(--color-surface);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--color-border, #d6e0ef);
+  border-radius: var(--radius-rounded, 14px);
+  padding: var(--space-md, 0.75rem);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--color-surface, #fff) 98%, #f2f7ff 2%), var(--color-surface, #fff));
+  box-shadow: 0 10px 30px rgba(13, 32, 67, 0.08);
+  backdrop-filter: blur(4px);
 }
 
 .aintel-card__header {
   font-weight: 600;
-  margin-bottom: var(--space-sm);
+  margin: calc(var(--space-xs, 0.25rem) * -1) calc(var(--space-xs, 0.25rem) * -1) var(--space-sm, 0.5rem);
+  padding: var(--space-sm, 0.5rem) var(--space-sm, 0.5rem);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-surface, #fff) 86%, #edf4ff 14%);
+  border: 1px solid color-mix(in srgb, var(--color-border, #d6e0ef) 75%, #ffffff 25%);
 }
