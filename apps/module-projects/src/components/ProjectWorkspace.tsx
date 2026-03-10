@@ -850,7 +850,7 @@ export function ProjectWorkspace({
     }
 
     return (
-      <div className="min-h-screen bg-background" style={workspaceCssVars}>
+      <div className="projects-workspace-shell min-h-screen bg-background" style={workspaceCssVars}>
         <ProjectHeader
           project={project}
           status={status}

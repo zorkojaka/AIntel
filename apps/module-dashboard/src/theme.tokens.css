@@ -1,0 +1,14 @@
+:root {
+  --dashboard-bg: #eef3fb;
+  --dashboard-surface: #ffffff;
+  --dashboard-border: #d6e0ef;
+  --dashboard-text: #1c2635;
+  --dashboard-muted: #5f7088;
+  --dashboard-brand: #0f4c5c;
+  --dashboard-brand-contrast: #ffffff;
+  --dashboard-success: #1f9d6a;
+  --dashboard-warning: #d98a00;
+  --dashboard-danger: #cf3d35;
+  --dashboard-radius: 16px;
+  --dashboard-shadow: 0 10px 30px rgba(13, 32, 67, 0.08);
+}

@@ -1,0 +1,22 @@
+:root {
+  --app-bg: #eef3fb;
+  --app-surface: #ffffff;
+  --app-surface-soft: #f8fbff;
+  --app-border: #d6e0ef;
+  --app-border-strong: #bfd0e7;
+  --app-text: #1c2635;
+  --app-muted: #5f7088;
+  --app-brand: #0f4c5c;
+  --app-brand-contrast: #ffffff;
+  --app-success: #1f9d6a;
+  --app-warning: #d98a00;
+  --app-danger: #cf3d35;
+
+  --app-radius-sm: 10px;
+  --app-radius-md: 14px;
+  --app-radius-lg: 18px;
+  --app-radius-xl: 24px;
+
+  --app-shadow-card: 0 10px 30px rgba(13, 32, 67, 0.08);
+  --app-shadow-soft: 0 4px 12px rgba(13, 32, 67, 0.06);
+}
