@@ -1,0 +1,81 @@
+{
+  "generatedAt": "2026-03-07T11:14:03.275Z",
+  "appRoot": "apps",
+  "fileCount": 150,
+  "moduleCount": 8,
+  "selectedConcept": "3-field-first",
+  "modules": [
+    {
+      "module": "core-shell",
+      "files": 14,
+      "lines": 1560,
+      "imports": 37,
+      "cssVars": 56,
+      "hardcodedHex": 72,
+      "tailwindClassAttrs": 38
+    },
+    {
+      "module": "module-cenik",
+      "files": 11,
+      "lines": 1116,
+      "imports": 14,
+      "cssVars": 24,
+      "hardcodedHex": 57,
+      "tailwindClassAttrs": 66
+    },
+    {
+      "module": "module-crm",
+      "files": 9,
+      "lines": 828,
+      "imports": 21,
+      "cssVars": 28,
+      "hardcodedHex": 3,
+      "tailwindClassAttrs": 22
+    },
+    {
+      "module": "module-dashboard",
+      "files": 18,
+      "lines": 2261,
+      "imports": 48,
+      "cssVars": 58,
+      "hardcodedHex": 33,
+      "tailwindClassAttrs": 83
+    },
+    {
+      "module": "module-employees",
+      "files": 14,
+      "lines": 889,
+      "imports": 27,
+      "cssVars": 0,
+      "hardcodedHex": 11,
+      "tailwindClassAttrs": 91
+    },
+    {
+      "module": "module-finance",
+      "files": 8,
+      "lines": 750,
+      "imports": 9,
+      "cssVars": 0,
+      "hardcodedHex": 35,
+      "tailwindClassAttrs": 44
+    },
+    {
+      "module": "module-projects",
+      "files": 58,
+      "lines": 11545,
+      "imports": 280,
+      "cssVars": 79,
+      "hardcodedHex": 65,
+      "tailwindClassAttrs": 660
+    },
+    {
+      "module": "module-settings",
+      "files": 18,
+      "lines": 2419,
+      "imports": 38,
+      "cssVars": 22,
+      "hardcodedHex": 41,
+      "tailwindClassAttrs": 132
+    }
+  ]
+}

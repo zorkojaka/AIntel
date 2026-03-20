@@ -8,4 +8,22 @@ body {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background-color: var(--background);
   color: var(--foreground);
+  overflow-x: hidden;
+}
+
+@media (max-width: 767px) {
+  .document-preview {
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+
+  .document-preview table {
+    width: 100%;
+    table-layout: fixed;
+  }
+
+  .document-preview td,
+  .document-preview th {
+    overflow-wrap: anywhere;
+  }
 }

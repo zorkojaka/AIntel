@@ -257,7 +257,9 @@ function ChartBar({ label, value, max, variant }: ChartRow & { max: number }) {
 }
 
 function StatusPill({ status }: { status: InvoiceStatus }) {
-  return <span className="status-pill" data-status={status}>{status}</span>;
+  const normalized =
+    status === 'plaÄano' ? 'placano' : status === 'Äaka na plaÄilo' ? 'caka na placilo' : 'preklicano';
+  return <span className="status-pill" data-status={normalized}>{status}</span>;
 }
 
 export const FinancePage: React.FC = () => {
@@ -359,9 +361,9 @@ export const FinancePage: React.FC = () => {
               <thead>
                 <tr>
                   <th>Račun</th>
-                  <th>Projekt</th>
+                  <th className="finance-col--desktop">Projekt</th>
                   <th>Stranka</th>
-                  <th>Datum</th>
+                  <th className="finance-col--desktop">Datum</th>
                   <th>Znesek</th>
                   <th>Dobiček</th>
                   <th>Status</th>
@@ -371,9 +373,9 @@ export const FinancePage: React.FC = () => {
                 {filteredInvoices.map((entry) => (
                   <tr key={entry.id}>
                     <td>{entry.id_racuna}</td>
-                    <td>{entry.id_projekta}</td>
+                    <td className="finance-col--desktop">{entry.id_projekta}</td>
                     <td>{entry.stranka}</td>
-                    <td>{new Date(entry.datum_izdaje).toLocaleDateString('sl-SI')}</td>
+                    <td className="finance-col--desktop">{new Date(entry.datum_izdaje).toLocaleDateString('sl-SI')}</td>
                     <td>{currencyFormatter.format(entry.znesek_skupaj)}</td>
                     <td>{currencyFormatter.format(entry.dobicek)}</td>
                     <td>

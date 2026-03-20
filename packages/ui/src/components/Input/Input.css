@@ -1,14 +1,34 @@
 .aintel-input {
   display: flex;
   flex-direction: column;
-  font-size: var(--font-size, 1rem);
-  gap: 0.25rem;
+  font-size: var(--font-size, 0.95rem);
+  gap: 0.35rem;
+}
+
+.aintel-input__label {
+  color: var(--color-text, #1c2635);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .aintel-input input {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-soft);
-  padding: var(--space-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
+  border: 1px solid var(--color-border, #d6e0ef);
+  border-radius: var(--radius-soft, 10px);
+  padding: var(--space-sm, 0.5rem) calc(var(--space-sm, 0.5rem) + 2px);
+  min-height: 38px;
+  background: color-mix(in srgb, var(--color-surface, #fff) 92%, #edf4ff 8%);
+  color: var(--color-text, #1c2635);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.aintel-input input::placeholder {
+  color: color-mix(in srgb, var(--color-text, #1c2635) 45%, #ffffff 55%);
+}
+
+.aintel-input input:focus {
+  outline: none;
+  border-color: var(--color-primary, #0f4c5c);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary, #0f4c5c) 18%, transparent 82%);
+  background: var(--color-surface, #fff);
 }
