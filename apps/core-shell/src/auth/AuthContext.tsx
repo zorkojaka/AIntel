@@ -41,9 +41,20 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 async function parseResponse<T>(response: Response): Promise<T> {
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  const isJson = contentType.includes('application/json');
+
+  if (!isJson) {
+    const body = await response.text();
+    if (body.trim().startsWith('<')) {
+      throw new Error('Auth API ni dosegljiv ali /api ni pravilno preusmerjen na backend.');
+    }
+    throw new Error('Neveljaven odgovor streznika.');
+  }
+
   const payload = await response.json();
   if (!response.ok || payload?.success === false) {
-    const error = payload?.error ?? 'Prišlo je do napake';
+    const error = payload?.error ?? 'Prislo je do napake';
     throw new Error(error);
   }
   return payload?.data as T;
@@ -120,3 +131,4 @@ export function useAuth() {
   }
   return context;
 }
+

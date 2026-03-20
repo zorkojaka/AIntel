@@ -33,6 +33,7 @@ export const workOrdersWidget: DashboardWidgetDefinition = {
                     `Status: ${order.status}`,
                   ])}
                 </div>
+                <div className="dashboard-widget__status">{order.status}</div>
                 <details className="dashboard-widget__details">
                   <summary>Podrobnosti</summary>
                   <div className="dashboard-widget__details-content">
@@ -42,8 +43,8 @@ export const workOrdersWidget: DashboardWidgetDefinition = {
                   </div>
                 </details>
               </div>
-              <Button variant="ghost" onClick={() => navigateToProject(order.projectId, 'execution')}>
-                Odpri delovni nalog
+              <Button className="dashboard-widget__cta" variant="ghost" onClick={() => navigateToProject(order.projectId, 'execution')}>
+                Odpri / nadaljuj
               </Button>
             </li>
           ))}

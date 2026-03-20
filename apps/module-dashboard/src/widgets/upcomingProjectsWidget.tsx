@@ -51,8 +51,8 @@ export const upcomingProjectsWidget: DashboardWidgetDefinition = {
                   </div>
                 </details>
               </div>
-              <Button variant="ghost" onClick={() => navigateToProject(project.id)}>
-                Odpri projekt
+              <Button className="dashboard-widget__cta" variant="ghost" onClick={() => navigateToProject(project.id)}>
+                Odpri / nadaljuj
               </Button>
             </li>
           ))}

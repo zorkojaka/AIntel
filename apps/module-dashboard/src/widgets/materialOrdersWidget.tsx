@@ -1,6 +1,6 @@
 import { Button } from '@aintel/ui';
 import type { DashboardWidgetDefinition, InstallerDashboardWidgetProps } from '../types';
-import { formatDate, navigateToProject, normalizeMaterialStatusLabel, renderEmptyState, renderError, showMetaParts } from './utils';
+import { formatDate, navigateToProject, normalizeMaterialStatusLabel, renderEmptyState, renderError } from './utils';
 
 export const materialOrdersWidget: DashboardWidgetDefinition = {
   id: 'material-orders',
@@ -27,11 +27,9 @@ export const materialOrdersWidget: DashboardWidgetDefinition = {
             <li key={order.id} className="dashboard-widget__item">
               <div>
                 <div className="dashboard-widget__title">{order.projectCode}</div>
-                <div className="dashboard-widget__meta">
-                  {showMetaParts([
-                    `Status: ${normalizeMaterialStatusLabel(order.materialStatus) ?? '—'}`,
-                    `Postavke: ${order.itemCount}`,
-                  ])}
+                <div className="dashboard-widget__meta">{`Postavke: ${order.itemCount}`}</div>
+                <div className="dashboard-widget__status">
+                  {normalizeMaterialStatusLabel(order.materialStatus) ?? '—'}
                 </div>
                 <details className="dashboard-widget__details">
                   <summary>Podrobnosti</summary>
@@ -40,7 +38,7 @@ export const materialOrdersWidget: DashboardWidgetDefinition = {
                   </div>
                 </details>
               </div>
-              <Button variant="ghost" onClick={() => navigateToProject(order.projectId, 'logistics')}>
+              <Button className="dashboard-widget__cta" variant="ghost" onClick={() => navigateToProject(order.projectId, 'logistics')}>
                 Odpri logistiko
               </Button>
             </li>
