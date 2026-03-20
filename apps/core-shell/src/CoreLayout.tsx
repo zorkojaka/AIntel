@@ -69,7 +69,7 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
       <aside id="core-shell-sidebar" className="core-shell__sidebar" data-open={isMobileSidebarOpen}>
       {logoUrl ? <img src={logoUrl} alt="Logo podjetja" className="core-shell__logo" /> : <h2>AIntel</h2>}
       <ul>
-        {modules.map((item, index) => {
+        {modules.map((item) => {
           const navItem = item.navItems[0];
           const icon = navItem?.icon ? iconMap[navItem.icon] : null;
           const label = navItem?.label ?? item.name;

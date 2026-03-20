@@ -403,10 +403,20 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
     return <Badge className="bg-amber-100 text-amber-900">Več</Badge>;
   };
 
+  const getWorkOrderStatusLabel = (status: WorkOrderStatus) =>
+    STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status;
+
+  const getWorkOrderStatusBadgeClass = (status: WorkOrderStatus) => {
+    if (status === "completed") return "bg-emerald-100 text-emerald-900";
+    if (status === "in-progress") return "bg-amber-100 text-amber-900";
+    if (status === "issued") return "bg-blue-100 text-blue-900";
+    return "bg-muted text-muted-foreground";
+  };
+
   const hasWorkOrders = workOrders.length > 0;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 overflow-x-hidden pb-24 md:pb-0">
       <div className="space-y-6">
         {STATUS_OPTIONS.map((statusOption) => {
           const entries = workOrdersByStatus[statusOption.value] ?? [];
@@ -436,14 +446,14 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                       .filter((name): name is string => !!name) ?? [];
                   return (
                     <div key={order._id} className="rounded-lg border p-4 space-y-4">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="flex flex-col items-start justify-between gap-3 md:flex-row md:items-start">
                         <div>
                           <p className="text-sm font-medium">{order.customerName || "Neznana stranka"}</p>
                           <p className="text-sm text-muted-foreground">
                             {order.customerAddress || "Naslov ni zapisan"}
                           </p>
                         </div>
-                        <div className="text-sm text-muted-foreground text-right space-y-1">
+                        <div className="w-full space-y-1 text-sm text-muted-foreground md:w-auto md:text-right">
                           <div>{formatDateTime(order.scheduledAt)}</div>
                           <div>{assignedTeam.length > 0 ? assignedTeam.join(", ") : "Ni dodeljene ekipe"}</div>
                         </div>
@@ -457,6 +467,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                         </div>
                         <div className="space-y-2">
                           <label className="text-xs text-muted-foreground uppercase">Status delovnega naloga</label>
+                          <Badge className={getWorkOrderStatusBadgeClass(draft.status)}>{getWorkOrderStatusLabel(draft.status)}</Badge>
                           <Select
                             value={draft.status}
                             onValueChange={(value: string) =>
@@ -496,8 +507,8 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                             + Dodaj dodatno postavko
                           </Button>
                         </div>
-                        <div className="overflow-x-auto rounded-md border">
-                          <table className="w-full min-w-[640px] text-sm">
+                        <div className="hidden overflow-x-auto rounded-md border md:block">
+                          <table className="w-full min-w-[720px] text-sm">
                             <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                               <tr>
                                 <th className="p-2 text-center font-semibold">Dokončano</th>
@@ -606,66 +617,160 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                             </tbody>
                           </table>
                         </div>
-                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                          <div className="text-xs text-muted-foreground">
-                            {savingState === "saving" && "Shranjujem spremembe..."}
-                            {savingState === "saved" && (
-                              <span className="text-emerald-600">Spremembe shranjene.</span>
-                            )}
-                            {savingState === "error" && (
-                              <span className="text-destructive">Shranjevanje ni uspelo.</span>
-                            )}
-                          </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            variant="outline"
-                            onClick={() => handleDownloadWorkOrder(order)}
-                            disabled={!order._id || downloadingWorkOrderId === order._id}
-                          >
-                            {downloadingWorkOrderId === order._id ? (
-                              <span className="flex items-center gap-2">
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                                Prenos...
-                              </span>
-                            ) : (
-                              "Prenesi delovni nalog"
-                            )}
-                          </Button>
-                          <Button
-                            onClick={() => saveWorkOrder(order._id)}
-                            disabled={!orderHasUnsavedChanges || isSavingOrder || isCompletingOrder}
-                          >
-                              {isSavingOrder ? (
-                                <>
-                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                  Shranjujem...
-                                </>
-                              ) : (
-                                "Shrani delovni nalog"
-                              )}
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              onClick={() => handleCompleteWorkOrder(order)}
-                              disabled={
-                                items.length === 0 ||
-                                !allItemsCompleted ||
-                                isOrderCompleted ||
-                                isCompletingOrder ||
-                                isSavingOrder
+
+                        <div className="space-y-3 md:hidden">
+                          {items.length === 0 ? (
+                            <div className="rounded-md border p-3 text-sm text-muted-foreground">Ni postavk za prikaz.</div>
+                          ) : null}
+                          {items.map((item: WorkOrderItemDraft) => {
+                            const offeredValue = typeof item.offeredQuantity === "number" ? item.offeredQuantity : 0;
+                            const isExtraEditable = item.isExtra && offeredValue === 0;
+                            const hasCenikProduct = typeof item.productId === "string" && item.productId.length > 0;
+                            const isCompleted = !!item.isCompleted;
+                            const handleCompletionChange = (checked: boolean) => {
+                              const updates: Partial<WorkOrder["items"][number]> = { isCompleted: checked };
+                              if (
+                                checked &&
+                                offeredValue > 0 &&
+                                (typeof item.executedQuantity !== "number" || item.executedQuantity === 0)
+                              ) {
+                                updates.executedQuantity = offeredValue;
                               }
-                            >
-                              {isOrderCompleted ? (
-                                "Delovni nalog je zaključen"
-                              ) : isCompletingOrder ? (
-                                <>
-                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                  Zaključujem...
-                                </>
-                              ) : (
-                                "Zaključi delovni nalog"
+                              applyItemChange(order, item.id, updates);
+                            };
+
+                            return (
+                              <div key={item.id} className="space-y-3 rounded-md border p-3">
+                                <div className="space-y-1">
+                                  {isExtraEditable ? (
+                                    <PriceListProductAutocomplete
+                                      value={item.name ?? ""}
+                                      onChange={(value) => applyItemChange(order, item.id, { name: value })}
+                                      onSelect={(product) =>
+                                        applyItemChange(order, item.id, {
+                                          productId: product.id,
+                                          name: product.name,
+                                          unit: product.unit,
+                                          offerItemId: item.offerItemId ?? null,
+                                        })
+                                      }
+                                      placeholder="Poišči iz cenika"
+                                    />
+                                  ) : (
+                                    <p className="text-sm font-medium">{item.name}</p>
+                                  )}
+                                  <div>{renderItemStatusBadge(item)}</div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">Ponujeno</p>
+                                    <p>{offeredValue.toLocaleString("sl-SI")}</p>
+                                  </div>
+                                  <label className="space-y-1">
+                                    <span className="text-xs text-muted-foreground">Izvedeno</span>
+                                    <Input
+                                      type="number"
+                                      value={item.executedQuantity ?? ""}
+                                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                                        applyItemChange(order, item.id, {
+                                          executedQuantity: Number(event.target.value),
+                                        })
+                                      }
+                                      className="h-11"
+                                    />
+                                  </label>
+                                </div>
+                                <label className="space-y-1">
+                                  <span className="text-xs text-muted-foreground">Opomba</span>
+                                  <Textarea
+                                    value={item.itemNote ?? ""}
+                                    onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+                                      applyItemChange(order, item.id, { itemNote: event.target.value })
+                                    }
+                                    rows={2}
+                                    className="min-h-[56px]"
+                                  />
+                                </label>
+                                <label className="flex min-h-[44px] items-center justify-between rounded-md bg-muted/40 px-3 text-sm">
+                                  <span>{isCompleted ? "Dokončano" : "Označi kot dokončano"}</span>
+                                  <Checkbox
+                                    className="h-5 w-5"
+                                    checked={isCompleted}
+                                    onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                                      handleCompletionChange(event.target.checked)
+                                    }
+                                  />
+                                </label>
+                                {item.isExtra && !hasCenikProduct ? (
+                                  <p className="text-xs text-muted-foreground">Dodajte izdelek iz cenika za pravilno poročanje.</p>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="sticky bottom-2 z-10 -mx-2 rounded-lg border bg-background/95 p-2 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80 md:static md:mx-0 md:border-0 md:bg-transparent md:p-0 md:shadow-none">
+                          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                            <div className="text-xs text-muted-foreground">
+                              {savingState === "saving" && "Shranjujem spremembe..."}
+                              {savingState === "saved" && (
+                                <span className="text-emerald-600">Spremembe shranjene.</span>
                               )}
-                            </Button>
+                              {savingState === "error" && (
+                                <span className="text-destructive">Shranjevanje ni uspelo.</span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                variant="outline"
+                                onClick={() => handleDownloadWorkOrder(order)}
+                                disabled={!order._id || downloadingWorkOrderId === order._id}
+                              >
+                                {downloadingWorkOrderId === order._id ? (
+                                  <span className="flex items-center gap-2">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Prenos...
+                                  </span>
+                                ) : (
+                                  "Prenesi delovni nalog"
+                                )}
+                              </Button>
+                              <Button
+                                onClick={() => saveWorkOrder(order._id)}
+                                disabled={!orderHasUnsavedChanges || isSavingOrder || isCompletingOrder}
+                              >
+                                {isSavingOrder ? (
+                                  <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Shranjujem...
+                                  </>
+                                ) : (
+                                  "Shrani delovni nalog"
+                                )}
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                onClick={() => handleCompleteWorkOrder(order)}
+                                disabled={
+                                  items.length === 0 ||
+                                  !allItemsCompleted ||
+                                  isOrderCompleted ||
+                                  isCompletingOrder ||
+                                  isSavingOrder
+                                }
+                              >
+                                {isOrderCompleted ? (
+                                  "Delovni nalog je zaključen"
+                                ) : isCompletingOrder ? (
+                                  <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Zaključujem...
+                                  </>
+                                ) : (
+                                  "Zaključi delovni nalog"
+                                )}
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       </div>
