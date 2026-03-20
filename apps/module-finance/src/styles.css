@@ -1,7 +1,9 @@
+@import url('./theme.tokens.css');
+
 :root {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #101828;
-  background-color: #f5f5f7;
+  color: var(--finance-text);
+  background-color: var(--finance-bg);
 }
 
 body,
@@ -9,7 +11,12 @@ html {
   margin: 0;
   padding: 0;
   min-height: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
   background-color: inherit;
+  background-image:
+    radial-gradient(900px 320px at 0% -10%, rgba(177, 213, 255, 0.35) 0%, transparent 60%),
+    radial-gradient(900px 340px at 100% -18%, rgba(255, 222, 177, 0.28) 0%, transparent 62%);
 }
 
 a {

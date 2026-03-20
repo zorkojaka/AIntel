@@ -1,0 +1,12 @@
+:root {
+  --crm-bg: #eef3fb;
+  --crm-surface: #ffffff;
+  --crm-border: #d6e0ef;
+  --crm-text: #1c2635;
+  --crm-muted: #5f7088;
+  --crm-brand: #0f4c5c;
+  --crm-brand-soft: rgba(15, 76, 92, 0.1);
+  --crm-danger: #cf3d35;
+  --crm-radius: 16px;
+  --crm-shadow: 0 10px 30px rgba(13, 32, 67, 0.08);
+}

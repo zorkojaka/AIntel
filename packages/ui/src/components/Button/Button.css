@@ -1,24 +1,43 @@
 .aintel-button {
-  border: none;
-  padding: var(--space-sm) var(--space-lg);
-  font-size: var(--font-size, 1rem);
-  border-radius: var(--radius-soft);
+  border: 1px solid transparent;
+  padding: var(--space-sm, 0.5rem) var(--space-lg, 1rem);
+  font-size: var(--font-size, 0.95rem);
+  font-weight: 600;
+  border-radius: var(--radius-soft, 10px);
+  min-height: 38px;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease, border-color 0.15s ease;
+  box-shadow: 0 2px 8px rgba(13, 32, 67, 0.08);
 }
 
 .aintel-button--primary {
-  background: var(--color-primary);
-  color: #fff;
+  background: linear-gradient(135deg, var(--color-primary, #0f4c5c), color-mix(in srgb, var(--color-primary, #0f4c5c) 78%, #ffffff 22%));
+  color: var(--color-primary-foreground, #fff);
+  border-color: color-mix(in srgb, var(--color-primary, #0f4c5c) 72%, #000000 28%);
 }
 
 .aintel-button--ghost {
-  background: transparent;
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface, #fff) 92%, #eef3fb 8%);
+  color: var(--color-text, #1c2635);
+  border: 1px solid var(--color-border, #d6e0ef);
 }
 
 .aintel-button:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-primary, #0f4c5c);
   outline-offset: 2px;
+}
+
+.aintel-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(0.98);
+}
+
+.aintel-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.aintel-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
 }

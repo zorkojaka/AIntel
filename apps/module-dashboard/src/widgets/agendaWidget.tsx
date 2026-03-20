@@ -4,8 +4,8 @@ import { WeekScheduler } from './WeekScheduler';
 
 export const agendaWidget: DashboardWidgetDefinition = {
   id: 'agenda',
-  title: 'Urnik (7 dni)',
-  description: 'Tedenski urnik delovnih nalogov.',
+  title: 'Urnik (standard)',
+  description: 'Standardni prikaz urnika delovnih nalogov.',
   roles: ['installer'],
   defaultEnabledForRoles: ['installer'],
   size: 'lg',
@@ -21,6 +21,6 @@ export const agendaWidget: DashboardWidgetDefinition = {
       return renderEmptyState('Ni dogodkov.');
     }
 
-    return <WeekScheduler workOrders={data.myWorkOrders} />;
+    return <WeekScheduler workOrders={data.myWorkOrders} variant="standard" />;
   },
 };

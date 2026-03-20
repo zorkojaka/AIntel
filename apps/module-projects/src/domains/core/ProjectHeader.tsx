@@ -12,6 +12,19 @@ export type ProjectHeaderProps = {
 };
 
 export function ProjectHeader({ project, status, onBack, onRefresh, onNewProject }: ProjectHeaderProps) {
+  const statusClass =
+    status === "draft"
+      ? "project-status-chip project-status-chip--draft"
+      : status === "offered"
+        ? "project-status-chip project-status-chip--offered"
+        : status === "ordered"
+          ? "project-status-chip project-status-chip--ordered"
+          : status === "in-progress"
+            ? "project-status-chip project-status-chip--in-progress"
+            : status === "completed"
+              ? "project-status-chip project-status-chip--completed"
+              : "project-status-chip project-status-chip--invoiced";
+
   return (
     <div className="sticky top-0 z-20 border-b bg-card">
       <div className="max-w-[1280px] mx-auto px-6 py-4">
@@ -23,21 +36,7 @@ export function ProjectHeader({ project, status, onBack, onRefresh, onNewProject
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="m-0">{project.title}</h1>
-                <Badge
-                  className={
-                    status === "draft"
-                      ? "bg-gray-100 text-gray-700"
-                      : status === "offered"
-                        ? "bg-blue-100 text-blue-700"
-                        : status === "ordered"
-                          ? "bg-purple-100 text-purple-700"
-                          : status === "in-progress"
-                            ? "bg-yellow-100 text-yellow-700"
-                            : status === "completed"
-                              ? "bg-green-100 text-green-700"
-                              : "bg-gray-100 text-gray-700"
-                  }
-                >
+                <Badge className={statusClass}>
                   {status === "draft"
                     ? "Osnutek"
                     : status === "offered"

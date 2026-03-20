@@ -17,12 +17,12 @@ interface ProjectListProps {
 }
 
 const statusColors: Record<ProjectStatus, string> = {
-  draft: "bg-gray-100 text-gray-700",
-  offered: "bg-blue-100 text-blue-700",
-  ordered: "bg-purple-100 text-purple-700",
-  "in-progress": "bg-yellow-100 text-yellow-700",
-  completed: "bg-green-100 text-green-700",
-  invoiced: "bg-indigo-100 text-indigo-700",
+  draft: "project-status-chip project-status-chip--draft",
+  offered: "project-status-chip project-status-chip--offered",
+  ordered: "project-status-chip project-status-chip--ordered",
+  "in-progress": "project-status-chip project-status-chip--in-progress",
+  completed: "project-status-chip project-status-chip--completed",
+  invoiced: "project-status-chip project-status-chip--invoiced",
 };
 
 const statusLabels: Record<ProjectStatus, string> = {
@@ -87,7 +87,7 @@ export function ProjectList({
         </Select>
       </div>
 
-      <div className="bg-card rounded-[var(--radius-card)] border overflow-hidden">
+      <div className="projects-table-shell bg-card rounded-[var(--radius-card)] border overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>

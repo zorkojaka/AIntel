@@ -1,17 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@aintel/ui';
 import type { WorkOrderSummary } from '../types';
 import { navigateToProject, normalizeMaterialStatusLabel } from './utils';
 
-const START_HOUR = 6;
-const END_HOUR = 18;
+const DEFAULT_START_HOUR = 6;
+const DEFAULT_END_HOUR = 18;
 const PX_PER_MIN = 0.5;
 const MIN_BLOCK_MINUTES = 30;
-const WINDOW_DAYS = 14;
+const STANDARD_DESKTOP_WINDOW_DAYS = 14;
 const STEP_DAYS = 7;
 const MOBILE_MEDIA_QUERY = '(max-width: 767px)';
 
-const WEEKDAYS = ['Pon', 'Tor', 'Sre', 'Čet', 'Pet', 'Sob', 'Ned'];
+const WEEKDAYS = ['Pon', 'Tor', 'Sre', 'Cet', 'Pet', 'Sob', 'Ned'];
+
+type SchedulerVariant = 'standard' | 'week' | 'adaptive';
 
 type SchedulerItem = {
   id: string;
@@ -55,23 +57,17 @@ function formatWeekRange(start: Date, dayCount: number) {
   const end = addDays(start, Math.max(0, dayCount - 1));
   const startLabel = `${String(start.getDate()).padStart(2, '0')}.${String(start.getMonth() + 1).padStart(2, '0')}.`;
   const endLabel = `${String(end.getDate()).padStart(2, '0')}.${String(end.getMonth() + 1).padStart(2, '0')}.`;
-  return `${startLabel} – ${endLabel}`;
+  return `${startLabel} - ${endLabel}`;
 }
 
 function buildItems(workOrders: WorkOrderSummary[], weekStart: Date, weekEnd: Date) {
   const items: SchedulerItem[] = [];
 
   workOrders.forEach((order) => {
-    if (!order.scheduledAt) {
-      return;
-    }
+    if (!order.scheduledAt) return;
     const date = new Date(order.scheduledAt);
-    if (Number.isNaN(date.valueOf())) {
-      return;
-    }
-    if (date < weekStart || date >= weekEnd) {
-      return;
-    }
+    if (Number.isNaN(date.valueOf())) return;
+    if (date < weekStart || date >= weekEnd) return;
 
     const durationMin = Number.isFinite(order.casovnaNorma) && order.casovnaNorma > 0 ? order.casovnaNorma : MIN_BLOCK_MINUTES;
     const approx = !(Number.isFinite(order.casovnaNorma) && order.casovnaNorma > 0);
@@ -105,8 +101,8 @@ function localDayKey(date: Date) {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
-function getMinutesFromStart(date: Date) {
-  return date.getHours() * 60 + date.getMinutes() - START_HOUR * 60;
+function getMinutesFromStart(date: Date, startHour: number) {
+  return date.getHours() * 60 + date.getMinutes() - startHour * 60;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -114,19 +110,15 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function displayValue(value?: string | null) {
-  if (!value) {
-    return '—';
-  }
+  if (!value) return '-';
   const trimmed = value.trim();
-  return trimmed.length ? trimmed : '—';
+  return trimmed.length ? trimmed : '-';
 }
 
 function formatProjectLine(title?: string | null, address?: string | null) {
   const safeTitle = title ? title.trim() : '';
   const safeAddress = address ? address.trim() : '';
-  if (safeTitle && safeAddress) {
-    return `${safeTitle} – ${safeAddress}`;
-  }
+  if (safeTitle && safeAddress) return `${safeTitle} - ${safeAddress}`;
   return displayValue(safeTitle || safeAddress);
 }
 
@@ -137,7 +129,7 @@ function mapStatusLabel(status?: string | null) {
     case 'issued':
       return 'Izdano';
     case 'completed':
-      return 'Zaključeno';
+      return 'Zakljuceno';
     case 'cancelled':
       return 'Preklicano';
     default:
@@ -174,19 +166,18 @@ function formatDateTime(value: string) {
 
 type WeekSchedulerProps = {
   workOrders: WorkOrderSummary[];
+  variant?: SchedulerVariant;
 };
 
-export function WeekScheduler({ workOrders }: WeekSchedulerProps) {
+export function WeekScheduler({ workOrders, variant = 'standard' }: WeekSchedulerProps) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [hideNonWorkingDays, setHideNonWorkingDays] = useState(true);
   const [isMobileView, setIsMobileView] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.matchMedia(MOBILE_MEDIA_QUERY).matches;
   });
-  const windowDays = isMobileView ? 7 : WINDOW_DAYS;
-  const totalMinutes = (END_HOUR - START_HOUR) * 60;
-  const weekStart = useMemo(() => addDays(getWeekStart(new Date()), weekOffset * STEP_DAYS), [weekOffset]);
-  const weekEnd = useMemo(() => addDays(weekStart, windowDays), [weekStart, windowDays]);
+
+  const baseWeekStart = useMemo(() => addDays(getWeekStart(new Date()), weekOffset * STEP_DAYS), [weekOffset]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -197,21 +188,42 @@ export function WeekScheduler({ workOrders }: WeekSchedulerProps) {
     return () => media.removeEventListener('change', onChange);
   }, []);
 
+  const windowDays =
+    variant === 'week'
+      ? 7
+      : variant === 'adaptive'
+        ? 7
+        : (isMobileView ? 7 : STANDARD_DESKTOP_WINDOW_DAYS);
+
+  const weekStart = baseWeekStart;
+  const weekEnd = useMemo(() => addDays(weekStart, windowDays), [weekStart, windowDays]);
+
   const days = useMemo(
     () => Array.from({ length: windowDays }, (_, index) => addDays(weekStart, index)),
     [weekStart, windowDays],
   );
-  const visibleDays = useMemo(() => {
-    const indexed = days.map((day, offset) => ({ day, offset }));
-    const filtered = hideNonWorkingDays
-      ? indexed.filter(({ day }) => {
-          const dayOfWeek = day.getDay();
-          return dayOfWeek !== 0 && dayOfWeek !== 6;
-        })
-      : indexed;
-    return filtered;
-  }, [days, hideNonWorkingDays]);
+
   const items = useMemo(() => buildItems(workOrders, weekStart, weekEnd), [workOrders, weekStart, weekEnd]);
+
+  const schedulerBounds = useMemo(() => {
+    if (variant !== 'adaptive' || items.length === 0) {
+      return { startHour: DEFAULT_START_HOUR, endHour: DEFAULT_END_HOUR };
+    }
+    const minMinute = Math.min(...items.map((item) => {
+      const date = new Date(item.scheduledAt);
+      return date.getHours() * 60 + date.getMinutes();
+    }));
+    const maxMinute = Math.max(...items.map((item) => {
+      const date = new Date(item.scheduledAt);
+      return date.getHours() * 60 + date.getMinutes() + item.durationMin;
+    }));
+
+    const dynamicStart = clamp(Math.floor(minMinute / 60) - 1, 0, 20);
+    const dynamicEnd = clamp(Math.ceil(maxMinute / 60) + 1, dynamicStart + 6, 24);
+    return { startHour: dynamicStart, endHour: dynamicEnd };
+  }, [variant, items]);
+
+  const totalMinutes = (schedulerBounds.endHour - schedulerBounds.startHour) * 60;
 
   const itemsByDay = useMemo(() => {
     const map = new Map<string, SchedulerItem[]>();
@@ -226,124 +238,154 @@ export function WeekScheduler({ workOrders }: WeekSchedulerProps) {
   }, [items]);
 
   const mobileAgendaItems = useMemo(
-    () =>
-      items.map((item) => ({
-        ...item,
-        scheduledTimeLabel: formatDateTime(item.scheduledAt),
-      })),
+    () => items.map((item) => ({ ...item, scheduledTimeLabel: formatDateTime(item.scheduledAt) })),
     [items],
   );
+
+  const useAdaptiveCompact = variant === 'adaptive' && isMobileView;
+  const shouldHideNonWorkingDays = useAdaptiveCompact ? false : hideNonWorkingDays;
+
+  const visibleDays = useMemo(() => {
+    const indexed = days.map((day, offset) => ({ day, offset }));
+    const filtered = shouldHideNonWorkingDays
+      ? indexed.filter(({ day }) => {
+          const dayOfWeek = day.getDay();
+          return dayOfWeek !== 0 && dayOfWeek !== 6;
+        })
+      : indexed;
+    return filtered;
+  }, [days, shouldHideNonWorkingDays]);
 
   return (
     <div className="dashboard-week-scheduler">
       <div className="dashboard-week-scheduler__header">
         <div className="dashboard-week-scheduler__header-left">
           <Button variant="ghost" onClick={() => setWeekOffset((prev) => prev - 1)}>
-            Prejšnji teden
+            Prejsnji teden
           </Button>
         </div>
         <div className="dashboard-week-scheduler__range">{formatWeekRange(weekStart, windowDays)}</div>
         <div className="dashboard-week-scheduler__header-right">
-          <label className="dashboard-week-scheduler__toggle">
-            <input
-              type="checkbox"
-              checked={hideNonWorkingDays}
-              onChange={(event) => setHideNonWorkingDays(event.target.checked)}
-            />
-            <span>Skrij nedelovne dni</span>
-          </label>
+          {!useAdaptiveCompact ? (
+            <label className="dashboard-week-scheduler__toggle">
+              <input type="checkbox" checked={hideNonWorkingDays} onChange={(event) => setHideNonWorkingDays(event.target.checked)} />
+              <span>Skrij nedelovne dni</span>
+            </label>
+          ) : null}
           <Button variant="ghost" onClick={() => setWeekOffset((prev) => prev + 1)}>
             Naslednji teden
           </Button>
         </div>
       </div>
 
-      <div className="dashboard-week-scheduler__grid">
-        <div className="dashboard-week-scheduler__time">
-          {Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, index) => {
-            const hour = START_HOUR + index;
+      {useAdaptiveCompact ? (
+        <div className="dashboard-week-scheduler__adaptive-week">
+          {visibleDays.map(({ day }) => {
+            const dayKey = localDayKey(day);
+            const dayItems = itemsByDay.get(dayKey) ?? [];
+            const dayIndex = getDayIndex(day);
             return (
-              <div key={hour} className="dashboard-week-scheduler__time-slot">
-                {`${String(hour).padStart(2, '0')}:00`}
+              <div key={`adaptive-${dayKey}`} className="dashboard-week-scheduler__adaptive-day">
+                <h4>{formatDayHeader(day, dayIndex)}</h4>
+                {dayItems.length === 0 ? (
+                  <p className="dashboard-widget__empty">Brez termina</p>
+                ) : (
+                  <ul>
+                    {dayItems.map((item) => {
+                      const timeLabel = new Date(item.scheduledAt).toLocaleTimeString('sl-SI', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      });
+                      return (
+                        <li key={`adaptive-item-${item.id}`}>
+                          <button type="button" onClick={() => navigateToProject(item.projectId, 'execution')}>
+                            <span className="dashboard-week-scheduler__adaptive-time">{timeLabel}</span>
+                            <span className="dashboard-week-scheduler__adaptive-title">{item.projectCode}</span>
+                            <span className="dashboard-week-scheduler__adaptive-status">{mapStatusLabel(item.status)}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </div>
             );
           })}
         </div>
-
-        <div className="dashboard-week-scheduler__days">
-          {visibleDays.map(({ day, offset }) => {
-            const index = getDayIndex(day);
-            const dayItems = itemsByDay.get(localDayKey(day)) ?? [];
-            const isWeekDivider = offset === 7;
-            return (
-              <div
-                key={localDayKey(day)}
-                className={[
-                  'dashboard-week-scheduler__day',
-                  isWeekDivider ? 'dashboard-week-scheduler__day--week-divider' : '',
-                ].filter(Boolean).join(' ')}
-              >
-                <div className="dashboard-week-scheduler__day-header">{formatDayHeader(day, index)}</div>
-                <div className="dashboard-week-scheduler__day-body" style={{ height: totalMinutes * PX_PER_MIN }}>
-                  {dayItems.map((item) => {
-                    const scheduledDate = new Date(item.scheduledAt);
-                    const startMinutes = getMinutesFromStart(scheduledDate);
-                    const endMinutes = startMinutes + item.durationMin;
-                    if (endMinutes <= 0 || startMinutes >= totalMinutes) {
-                      return null;
-                    }
-
-                    const clampedStart = clamp(startMinutes, 0, totalMinutes);
-                    const clampedEnd = clamp(endMinutes, 0, totalMinutes);
-                    const height = Math.max(item.approx ? MIN_BLOCK_MINUTES : 1, clampedEnd - clampedStart) * PX_PER_MIN;
-                    const top = clampedStart * PX_PER_MIN;
-                    const customerName = displayValue(item.customerName);
-                    const projectLine = formatProjectLine(item.projectTitle, item.projectAddress);
-                    const customerAddress = displayValue(item.customerAddress);
-                    const materialStatus = normalizeMaterialStatusLabel(item.materialStatus) ?? '';
-                    const headerLabel = `${item.projectCode} – ${customerName}`;
-                    const statusLabel = mapStatusLabel(item.status);
-                    const statusTone = mapStatusTone(item.status);
-
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className="dashboard-week-scheduler__event"
-                        style={{ top, height }}
-                        onClick={() => navigateToProject(item.projectId, 'execution')}
-                      >
-                        {item.approx ? <span className="dashboard-week-scheduler__approx">≈</span> : null}
-                        <div className="dashboard-week-scheduler__event-header">
-                          <span className="dashboard-week-scheduler__event-title">{headerLabel}</span>
-                          <span className="dashboard-week-scheduler__event-subtitle">{projectLine}</span>
-                          <span className="dashboard-week-scheduler__event-subtitle">{customerAddress}</span>
-                        </div>
-                        <div className="dashboard-week-scheduler__event-divider" />
-                        <div className="dashboard-week-scheduler__event-body">
-                          <span className="dashboard-week-scheduler__event-label">Delovni nalog</span>
-                          <div className="dashboard-week-scheduler__event-badges">
-                            <span className={`dashboard-week-scheduler__badge dashboard-week-scheduler__badge--${statusTone}`}>
-                              {statusLabel}
-                            </span>
-                            {materialStatus ? (
-                              <span className="dashboard-week-scheduler__badge dashboard-week-scheduler__badge--material">
-                                {`Material: ${materialStatus}`}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
+      ) : (
+        <div className="dashboard-week-scheduler__grid">
+          <div className="dashboard-week-scheduler__time">
+            {Array.from({ length: schedulerBounds.endHour - schedulerBounds.startHour + 1 }, (_, index) => {
+              const hour = schedulerBounds.startHour + index;
+              return (
+                <div key={hour} className="dashboard-week-scheduler__time-slot">
+                  {`${String(hour).padStart(2, '0')}:00`}
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+              );
+            })}
+          </div>
 
-      {isMobileView ? (
+          <div className="dashboard-week-scheduler__days">
+            {visibleDays.map(({ day, offset }) => {
+              const index = getDayIndex(day);
+              const dayItems = itemsByDay.get(localDayKey(day)) ?? [];
+              const isWeekDivider = variant === 'standard' && offset === 7;
+              return (
+                <div
+                  key={localDayKey(day)}
+                  className={[
+                    'dashboard-week-scheduler__day',
+                    isWeekDivider ? 'dashboard-week-scheduler__day--week-divider' : '',
+                  ].filter(Boolean).join(' ')}
+                >
+                  <div className="dashboard-week-scheduler__day-header">{formatDayHeader(day, index)}</div>
+                  <div className="dashboard-week-scheduler__day-body" style={{ height: totalMinutes * PX_PER_MIN }}>
+                    {dayItems.map((item) => {
+                      const scheduledDate = new Date(item.scheduledAt);
+                      const startMinutes = getMinutesFromStart(scheduledDate, schedulerBounds.startHour);
+                      const endMinutes = startMinutes + item.durationMin;
+                      if (endMinutes <= 0 || startMinutes >= totalMinutes) return null;
+
+                      const clampedStart = clamp(startMinutes, 0, totalMinutes);
+                      const clampedEnd = clamp(endMinutes, 0, totalMinutes);
+                      const height = Math.max(item.approx ? MIN_BLOCK_MINUTES : 1, clampedEnd - clampedStart) * PX_PER_MIN;
+                      const top = clampedStart * PX_PER_MIN;
+                      const customerName = displayValue(item.customerName);
+                      const projectLine = formatProjectLine(item.projectTitle, item.projectAddress);
+                      const customerAddress = displayValue(item.customerAddress);
+                      const materialStatus = normalizeMaterialStatusLabel(item.materialStatus) ?? '';
+                      const headerLabel = `${item.projectCode} - ${customerName}`;
+                      const statusLabel = mapStatusLabel(item.status);
+                      const statusTone = mapStatusTone(item.status);
+
+                      return (
+                        <button key={item.id} type="button" className="dashboard-week-scheduler__event" style={{ top, height }} onClick={() => navigateToProject(item.projectId, 'execution')}>
+                          {item.approx ? <span className="dashboard-week-scheduler__approx">~</span> : null}
+                          <div className="dashboard-week-scheduler__event-header">
+                            <span className="dashboard-week-scheduler__event-title">{headerLabel}</span>
+                            <span className="dashboard-week-scheduler__event-subtitle">{projectLine}</span>
+                            <span className="dashboard-week-scheduler__event-subtitle">{customerAddress}</span>
+                          </div>
+                          <div className="dashboard-week-scheduler__event-divider" />
+                          <div className="dashboard-week-scheduler__event-body">
+                            <span className="dashboard-week-scheduler__event-label">Delovni nalog</span>
+                            <div className="dashboard-week-scheduler__event-badges">
+                              <span className={`dashboard-week-scheduler__badge dashboard-week-scheduler__badge--${statusTone}`}>{statusLabel}</span>
+                              {materialStatus ? <span className="dashboard-week-scheduler__badge dashboard-week-scheduler__badge--material">{`Material: ${materialStatus}`}</span> : null}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {!useAdaptiveCompact && isMobileView ? (
         <div className="dashboard-week-scheduler__mobile-list">
           <h4>Pregled terminov</h4>
           {mobileAgendaItems.length === 0 ? (
@@ -354,7 +396,7 @@ export function WeekScheduler({ workOrders }: WeekSchedulerProps) {
                 <li key={`mobile-${item.id}`}>
                   <button type="button" onClick={() => navigateToProject(item.projectId, 'execution')}>
                     <span className="dashboard-week-scheduler__mobile-title">
-                      {item.projectCode} – {displayValue(item.customerName)}
+                      {item.projectCode} - {displayValue(item.customerName)}
                     </span>
                     <span className="dashboard-week-scheduler__mobile-meta">
                       {item.scheduledTimeLabel} · {mapStatusLabel(item.status)}

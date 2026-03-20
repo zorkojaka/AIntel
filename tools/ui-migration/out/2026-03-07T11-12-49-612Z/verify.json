@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-03-07T11:12:49.614Z",
+  "passed": false,
+  "results": [
+    {
+      "name": "settings-build",
+      "cmd": "pnpm",
+      "args": [
+        "--filter",
+        "@aintel/module-settings",
+        "build"
+      ],
+      "status": "failed",
+      "error": "spawnSync pnpm.cmd EINVAL"
+    },
+    {
+      "name": "core-shell-build",
+      "cmd": "pnpm",
+      "args": [
+        "--filter",
+        "@aintel/core-shell",
+        "build"
+      ],
+      "status": "failed",
+      "error": "spawnSync pnpm.cmd EINVAL"
+    }
+  ]
+}

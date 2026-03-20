@@ -1,0 +1,69 @@
+{
+  "version": "1.0.0",
+  "name": "AIntel Unified UI Plan",
+  "selectedConcept": "3-field-first",
+  "principles": [
+    "Keep backend contracts unchanged",
+    "Migrate UI in small reversible steps",
+    "Prefer design tokens over hardcoded values",
+    "Standardize layout and interaction patterns across modules"
+  ],
+  "tokens": {
+    "color": {
+      "bg": "#f3f6fb",
+      "surface": "#ffffff",
+      "border": "#d7e1ef",
+      "text": "#1d2734",
+      "mutedText": "#607086",
+      "brand": "#0f4c5c",
+      "brandContrast": "#ffffff",
+      "success": "#1f9d6a",
+      "warning": "#f0a500",
+      "danger": "#dc2626"
+    },
+    "radius": {
+      "sm": "8px",
+      "md": "12px",
+      "lg": "16px",
+      "xl": "20px"
+    },
+    "spacing": {
+      "xs": "4px",
+      "sm": "8px",
+      "md": "12px",
+      "lg": "16px",
+      "xl": "24px"
+    },
+    "shadow": {
+      "card": "0 10px 30px rgba(13, 32, 67, 0.08)"
+    }
+  },
+  "layoutRules": {
+    "desktopMaxWidth": "1280px",
+    "pagePadding": "24px",
+    "cardGap": "16px",
+    "headerPattern": "title + helper text + actions",
+    "mobileActionPattern": "sticky save/cancel action bar"
+  },
+  "moduleSequence": [
+    "settings",
+    "dashboard",
+    "projects",
+    "crm",
+    "finance",
+    "employees",
+    "cenik"
+  ],
+  "safetyGuards": {
+    "neverTouch": [
+      "backend/**",
+      "apps/**/src/**/api.ts",
+      "apps/**/src/**/hooks/use*Data.ts"
+    ],
+    "validateAfterEachStep": [
+      "typecheck",
+      "build",
+      "smoke"
+    ]
+  }
+}

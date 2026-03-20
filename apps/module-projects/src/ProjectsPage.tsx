@@ -525,8 +525,8 @@ export function ProjectsPage() {
     <>
       {currentView === "list" && (
         <div className="min-h-screen bg-background p-6">
-          <div className="mx-auto max-w-[1280px]">
-            <div className="mb-6 flex items-center justify-between">
+          <div className="projects-page-shell">
+            <div className="projects-page-topbar mb-6 flex items-center justify-between">
               <h1 className="m-0">Projekti</h1>
               {!isExecutionOnlyViewer ? (
                 <div className="flex items-center gap-2">

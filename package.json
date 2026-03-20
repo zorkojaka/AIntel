@@ -10,7 +10,14 @@
     "lint": "echo \"No lint configured yet\"",
     "dev:projekti": "pnpm --filter @aintel/module-projects dev",
     "migrate:product-categories": "cross-env dotenv_config_path=backend/.env ts-node -r dotenv/config backend/scripts/migrate-product-categories.ts",
-    "migrate:cleanup-product-categories": "cross-env dotenv_config_path=backend/.env ts-node -r dotenv/config backend/scripts/cleanup-product-category-fields.ts"
+    "migrate:cleanup-product-categories": "cross-env dotenv_config_path=backend/.env ts-node -r dotenv/config backend/scripts/cleanup-product-category-fields.ts",
+    "ui:migrate:inventory": "node tools/ui-migration/inventory.mjs",
+    "ui:migrate:spec": "node tools/ui-migration/print-spec.mjs",
+    "ui:migrate:settings:dry": "node tools/ui-migration/codemod-settings.mjs --dry-run",
+    "ui:migrate:settings:apply": "node tools/ui-migration/codemod-settings.mjs --apply",
+    "ui:migrate:verify": "node tools/ui-migration/verify.mjs",
+    "ui:migrate:report": "node tools/ui-migration/report.mjs",
+    "ui:migrate:settings": "node tools/ui-migration/run.mjs --module settings --apply"
   },
   "devDependencies": {
     "@types/pdfkit": "^0.17.4",

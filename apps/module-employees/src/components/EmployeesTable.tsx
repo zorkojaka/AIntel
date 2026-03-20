@@ -17,16 +17,16 @@ export function EmployeesTable({ employees, onEdit, onDelete }: EmployeesTablePr
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
       <table className="table w-full border-collapse">
         <thead className="bg-slate-50">
           <tr>
             <th>Ime</th>
-            <th>Podjetje</th>
-            <th>Email</th>
-            <th>Telefon</th>
+            <th className="hidden md:table-cell">Podjetje</th>
+            <th className="hidden lg:table-cell">Email</th>
+            <th className="hidden lg:table-cell">Telefon</th>
             <th>Urna postavka (brez DDV)</th>
-            <th>Vloge</th>
+            <th className="hidden md:table-cell">Vloge</th>
             <th>Aktiven</th>
             <th>Dostop</th>
             <th className="text-right">Akcije</th>
@@ -36,11 +36,11 @@ export function EmployeesTable({ employees, onEdit, onDelete }: EmployeesTablePr
           {employees.map((employee) => (
             <tr key={employee.id}>
               <td className="font-medium text-slate-900">{employee.name}</td>
-              <td className="text-slate-600">{employee.company || '-'}</td>
-              <td className="text-slate-600">{employee.email || '-'}</td>
-              <td className="text-slate-600">{employee.phone || '-'}</td>
+              <td className="hidden md:table-cell text-slate-600">{employee.company || '-'}</td>
+              <td className="hidden lg:table-cell text-slate-600">{employee.email || '-'}</td>
+              <td className="hidden lg:table-cell text-slate-600">{employee.phone || '-'}</td>
               <td className="text-slate-900">{employee.hourRateWithoutVat.toFixed(2)}</td>
-              <td className="text-slate-600">{employee.roles?.length ? employee.roles.join(', ') : '-'}</td>
+              <td className="hidden md:table-cell text-slate-600">{employee.roles?.length ? employee.roles.join(', ') : '-'}</td>
               <td>
                 <span
                   className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
@@ -72,18 +72,18 @@ export function EmployeesTable({ employees, onEdit, onDelete }: EmployeesTablePr
                   <button
                     type="button"
                     onClick={() => onEdit(employee)}
-                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-slate-700 shadow-sm transition hover:-translate-y-[1px] hover:border-slate-300 hover:shadow"
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-slate-700 shadow-sm transition hover:-translate-y-[1px] hover:border-slate-300 hover:shadow sm:gap-2 sm:px-3"
                   >
                     <Pencil size={16} />
-                    Uredi
+                    <span className="hidden sm:inline">Uredi</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => onDelete(employee)}
-                    className="inline-flex items-center gap-2 rounded-lg border border-rose-100 bg-rose-50 px-3 py-1.5 text-rose-700 shadow-sm transition hover:-translate-y-[1px] hover:border-rose-200 hover:bg-rose-100 hover:shadow"
+                    className="inline-flex items-center gap-1 rounded-lg border border-rose-100 bg-rose-50 px-2 py-1.5 text-rose-700 shadow-sm transition hover:-translate-y-[1px] hover:border-rose-200 hover:bg-rose-100 hover:shadow sm:gap-2 sm:px-3"
                   >
                     <Trash2 size={16} />
-                    Izbrisi
+                    <span className="hidden sm:inline">Izbrisi</span>
                   </button>
                 </div>
               </td>
