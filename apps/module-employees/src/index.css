@@ -11,6 +11,7 @@
 
 body {
   margin: 0;
+  overflow-x: hidden;
   background:
     radial-gradient(900px 320px at 0% -10%, rgba(177, 213, 255, 0.35) 0%, transparent 60%),
     radial-gradient(900px 340px at 100% -18%, rgba(255, 222, 177, 0.28) 0%, transparent 62%),
@@ -62,4 +63,22 @@ body {
 
 .employees-page-shell {
   background: transparent;
+}
+
+@media (max-width: 767px) {
+  .employees-card {
+    border-radius: 12px;
+  }
+
+  .table th,
+  .table td {
+    padding: 8px 6px;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  .dialog-content {
+    width: min(480px, 96vw);
+    padding: 16px;
+  }
 }

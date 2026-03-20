@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+ï»¿import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@aintel/ui';
 import type { WorkOrderSummary } from '../types';
 import { navigateToProject, normalizeMaterialStatusLabel } from './utils';
@@ -64,16 +64,10 @@ function buildItems(workOrders: WorkOrderSummary[], weekStart: Date, weekEnd: Da
   const items: SchedulerItem[] = [];
 
   workOrders.forEach((order) => {
-    if (!order.scheduledAt) {
-      return;
-    }
+    if (!order.scheduledAt) return;
     const date = new Date(order.scheduledAt);
-    if (Number.isNaN(date.valueOf())) {
-      return;
-    }
-    if (date < weekStart || date >= weekEnd) {
-      return;
-    }
+    if (Number.isNaN(date.valueOf())) return;
+    if (date < weekStart || date >= weekEnd) return;
 
     const durationMin = Number.isFinite(order.casovnaNorma) && order.casovnaNorma > 0 ? order.casovnaNorma : MIN_BLOCK_MINUTES;
     const approx = !(Number.isFinite(order.casovnaNorma) && order.casovnaNorma > 0);
@@ -116,9 +110,7 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function displayValue(value?: string | null) {
-  if (!value) {
-    return '-';
-  }
+  if (!value) return '-';
   const trimmed = value.trim();
   return trimmed.length ? trimmed : '-';
 }
@@ -126,9 +118,7 @@ function displayValue(value?: string | null) {
 function formatProjectLine(title?: string | null, address?: string | null) {
   const safeTitle = title ? title.trim() : '';
   const safeAddress = address ? address.trim() : '';
-  if (safeTitle && safeAddress) {
-    return `${safeTitle} - ${safeAddress}`;
-  }
+  if (safeTitle && safeAddress) return `${safeTitle} - ${safeAddress}`;
   return displayValue(safeTitle || safeAddress);
 }
 
@@ -198,23 +188,11 @@ export function WeekScheduler({ workOrders, variant = 'standard' }: WeekSchedule
     return () => media.removeEventListener('change', onChange);
   }, []);
 
-  const adaptiveWindowDays = useMemo(() => {
-    if (variant !== 'adaptive') {
-      return 7;
-    }
-    const horizonEnd = addDays(baseWeekStart, 14);
-    const horizonItems = buildItems(workOrders, baseWeekStart, horizonEnd);
-    const activeDayCount = new Set(horizonItems.map((item) => localDayKey(new Date(item.scheduledAt)))).size;
-    if (activeDayCount <= 2) return 3;
-    if (activeDayCount <= 4) return 5;
-    return 7;
-  }, [variant, workOrders, baseWeekStart]);
-
   const windowDays =
     variant === 'week'
       ? 7
       : variant === 'adaptive'
-        ? (isMobileView ? Math.min(adaptiveWindowDays, 5) : adaptiveWindowDays)
+        ? 7
         : (isMobileView ? 7 : STANDARD_DESKTOP_WINDOW_DAYS);
 
   const weekStart = baseWeekStart;
@@ -224,17 +202,6 @@ export function WeekScheduler({ workOrders, variant = 'standard' }: WeekSchedule
     () => Array.from({ length: windowDays }, (_, index) => addDays(weekStart, index)),
     [weekStart, windowDays],
   );
-
-  const visibleDays = useMemo(() => {
-    const indexed = days.map((day, offset) => ({ day, offset }));
-    const filtered = hideNonWorkingDays
-      ? indexed.filter(({ day }) => {
-          const dayOfWeek = day.getDay();
-          return dayOfWeek !== 0 && dayOfWeek !== 6;
-        })
-      : indexed;
-    return filtered;
-  }, [days, hideNonWorkingDays]);
 
   const items = useMemo(() => buildItems(workOrders, weekStart, weekEnd), [workOrders, weekStart, weekEnd]);
 
@@ -253,10 +220,7 @@ export function WeekScheduler({ workOrders, variant = 'standard' }: WeekSchedule
 
     const dynamicStart = clamp(Math.floor(minMinute / 60) - 1, 0, 20);
     const dynamicEnd = clamp(Math.ceil(maxMinute / 60) + 1, dynamicStart + 6, 24);
-    return {
-      startHour: dynamicStart,
-      endHour: dynamicEnd,
-    };
+    return { startHour: dynamicStart, endHour: dynamicEnd };
   }, [variant, items]);
 
   const totalMinutes = (schedulerBounds.endHour - schedulerBounds.startHour) * 60;
@@ -274,15 +238,23 @@ export function WeekScheduler({ workOrders, variant = 'standard' }: WeekSchedule
   }, [items]);
 
   const mobileAgendaItems = useMemo(
-    () =>
-      items.map((item) => ({
-        ...item,
-        scheduledTimeLabel: formatDateTime(item.scheduledAt),
-      })),
+    () => items.map((item) => ({ ...item, scheduledTimeLabel: formatDateTime(item.scheduledAt) })),
     [items],
   );
 
   const useAdaptiveCompact = variant === 'adaptive' && isMobileView;
+  const shouldHideNonWorkingDays = useAdaptiveCompact ? false : hideNonWorkingDays;
+
+  const visibleDays = useMemo(() => {
+    const indexed = days.map((day, offset) => ({ day, offset }));
+    const filtered = shouldHideNonWorkingDays
+      ? indexed.filter(({ day }) => {
+          const dayOfWeek = day.getDay();
+          return dayOfWeek !== 0 && dayOfWeek !== 6;
+        })
+      : indexed;
+    return filtered;
+  }, [days, shouldHideNonWorkingDays]);
 
   return (
     <div className="dashboard-week-scheduler">
@@ -294,14 +266,12 @@ export function WeekScheduler({ workOrders, variant = 'standard' }: WeekSchedule
         </div>
         <div className="dashboard-week-scheduler__range">{formatWeekRange(weekStart, windowDays)}</div>
         <div className="dashboard-week-scheduler__header-right">
-          <label className="dashboard-week-scheduler__toggle">
-            <input
-              type="checkbox"
-              checked={hideNonWorkingDays}
-              onChange={(event) => setHideNonWorkingDays(event.target.checked)}
-            />
-            <span>Skrij nedelovne dni</span>
-          </label>
+          {!useAdaptiveCompact ? (
+            <label className="dashboard-week-scheduler__toggle">
+              <input type="checkbox" checked={hideNonWorkingDays} onChange={(event) => setHideNonWorkingDays(event.target.checked)} />
+              <span>Skrij nedelovne dni</span>
+            </label>
+          ) : null}
           <Button variant="ghost" onClick={() => setWeekOffset((prev) => prev + 1)}>
             Naslednji teden
           </Button>
@@ -309,7 +279,7 @@ export function WeekScheduler({ workOrders, variant = 'standard' }: WeekSchedule
       </div>
 
       {useAdaptiveCompact ? (
-        <div className="dashboard-week-scheduler__adaptive-list">
+        <div className="dashboard-week-scheduler__adaptive-week">
           {visibleDays.map(({ day }) => {
             const dayKey = localDayKey(day);
             const dayItems = itemsByDay.get(dayKey) ?? [];
@@ -318,21 +288,24 @@ export function WeekScheduler({ workOrders, variant = 'standard' }: WeekSchedule
               <div key={`adaptive-${dayKey}`} className="dashboard-week-scheduler__adaptive-day">
                 <h4>{formatDayHeader(day, dayIndex)}</h4>
                 {dayItems.length === 0 ? (
-                  <p className="dashboard-widget__empty">Brez terminov.</p>
+                  <p className="dashboard-widget__empty">Brez termina</p>
                 ) : (
                   <ul>
-                    {dayItems.map((item) => (
-                      <li key={`adaptive-item-${item.id}`}>
-                        <button type="button" onClick={() => navigateToProject(item.projectId, 'execution')}>
-                          <span className="dashboard-week-scheduler__mobile-title">
-                            {item.projectCode} - {displayValue(item.customerName)}
-                          </span>
-                          <span className="dashboard-week-scheduler__mobile-meta">
-                            {formatDateTime(item.scheduledAt)} · {mapStatusLabel(item.status)}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
+                    {dayItems.map((item) => {
+                      const timeLabel = new Date(item.scheduledAt).toLocaleTimeString('sl-SI', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      });
+                      return (
+                        <li key={`adaptive-item-${item.id}`}>
+                          <button type="button" onClick={() => navigateToProject(item.projectId, 'execution')}>
+                            <span className="dashboard-week-scheduler__adaptive-time">{timeLabel}</span>
+                            <span className="dashboard-week-scheduler__adaptive-title">{item.projectCode}</span>
+                            <span className="dashboard-week-scheduler__adaptive-status">{mapStatusLabel(item.status)}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
@@ -371,9 +344,7 @@ export function WeekScheduler({ workOrders, variant = 'standard' }: WeekSchedule
                       const scheduledDate = new Date(item.scheduledAt);
                       const startMinutes = getMinutesFromStart(scheduledDate, schedulerBounds.startHour);
                       const endMinutes = startMinutes + item.durationMin;
-                      if (endMinutes <= 0 || startMinutes >= totalMinutes) {
-                        return null;
-                      }
+                      if (endMinutes <= 0 || startMinutes >= totalMinutes) return null;
 
                       const clampedStart = clamp(startMinutes, 0, totalMinutes);
                       const clampedEnd = clamp(endMinutes, 0, totalMinutes);
@@ -388,13 +359,7 @@ export function WeekScheduler({ workOrders, variant = 'standard' }: WeekSchedule
                       const statusTone = mapStatusTone(item.status);
 
                       return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          className="dashboard-week-scheduler__event"
-                          style={{ top, height }}
-                          onClick={() => navigateToProject(item.projectId, 'execution')}
-                        >
+                        <button key={item.id} type="button" className="dashboard-week-scheduler__event" style={{ top, height }} onClick={() => navigateToProject(item.projectId, 'execution')}>
                           {item.approx ? <span className="dashboard-week-scheduler__approx">~</span> : null}
                           <div className="dashboard-week-scheduler__event-header">
                             <span className="dashboard-week-scheduler__event-title">{headerLabel}</span>
@@ -405,14 +370,8 @@ export function WeekScheduler({ workOrders, variant = 'standard' }: WeekSchedule
                           <div className="dashboard-week-scheduler__event-body">
                             <span className="dashboard-week-scheduler__event-label">Delovni nalog</span>
                             <div className="dashboard-week-scheduler__event-badges">
-                              <span className={`dashboard-week-scheduler__badge dashboard-week-scheduler__badge--${statusTone}`}>
-                                {statusLabel}
-                              </span>
-                              {materialStatus ? (
-                                <span className="dashboard-week-scheduler__badge dashboard-week-scheduler__badge--material">
-                                  {`Material: ${materialStatus}`}
-                                </span>
-                              ) : null}
+                              <span className={`dashboard-week-scheduler__badge dashboard-week-scheduler__badge--${statusTone}`}>{statusLabel}</span>
+                              {materialStatus ? <span className="dashboard-week-scheduler__badge dashboard-week-scheduler__badge--material">{`Material: ${materialStatus}`}</span> : null}
                             </div>
                           </div>
                         </button>
@@ -440,7 +399,7 @@ export function WeekScheduler({ workOrders, variant = 'standard' }: WeekSchedule
                       {item.projectCode} - {displayValue(item.customerName)}
                     </span>
                     <span className="dashboard-week-scheduler__mobile-meta">
-                      {item.scheduledTimeLabel} · {mapStatusLabel(item.status)}
+                      {item.scheduledTimeLabel} Â· {mapStatusLabel(item.status)}
                     </span>
                   </button>
                 </li>

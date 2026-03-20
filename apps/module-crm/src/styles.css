@@ -193,3 +193,39 @@
   color: var(--crm-danger);
   font-size: 0.9rem;
 }
+
+@media (max-width: 767px) {
+  .crm-page {
+    padding: var(--space-md);
+  }
+
+  .crm-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-sm);
+  }
+
+  .crm-header__button {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .crm-clients__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .crm-search {
+    max-width: none;
+  }
+
+  .crm-clients .aintel-data-table-wrap {
+    overflow-x: auto;
+  }
+
+  .crm-clients .aintel-data-table th,
+  .crm-clients .aintel-data-table td {
+    font-size: 0.74rem;
+    padding: 0.5rem 0.4rem;
+  }
+}

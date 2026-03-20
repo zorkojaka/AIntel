@@ -9,6 +9,7 @@ body {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background-color: var(--background);
   color: var(--foreground);
+  overflow-x: hidden;
   background-image:
     radial-gradient(900px 320px at 0% -10%, rgba(177, 213, 255, 0.35) 0%, transparent 60%),
     radial-gradient(900px 340px at 100% -18%, rgba(255, 222, 177, 0.28) 0%, transparent 62%);
@@ -40,4 +41,29 @@ body {
   border-color: var(--app-border);
   border-radius: var(--app-radius-card);
   box-shadow: var(--app-shadow-card);
+}
+
+@media (max-width: 767px) {
+  .cenik-page-shell {
+    padding: 0.85rem;
+  }
+
+  .cenik-page-shell .cenik-sticky-bar {
+    margin-left: -0.85rem;
+    margin-right: -0.85rem;
+    padding-left: 0.85rem;
+    padding-right: 0.85rem;
+  }
+
+  .cenik-card [class*='overflow-x-auto'] {
+    overflow-x: auto;
+  }
+
+  .cenik-card table th,
+  .cenik-card table td {
+    font-size: 0.76rem;
+    padding: 0.45rem 0.4rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }

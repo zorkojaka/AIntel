@@ -40,3 +40,25 @@
 .aintel-data-table tbody tr:last-child td {
   border-bottom: none;
 }
+
+@media (max-width: 767px) {
+  .aintel-data-table-wrap {
+    overflow-x: auto;
+  }
+
+  .aintel-data-table th,
+  .aintel-data-table td {
+    padding: 0.5rem 0.42rem;
+    font-size: 0.76rem;
+    vertical-align: top;
+  }
+
+  .aintel-data-table th {
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  .aintel-data-table td {
+    overflow-wrap: anywhere;
+  }
+}

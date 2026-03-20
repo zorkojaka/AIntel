@@ -384,7 +384,7 @@ export const CenikPage: React.FC = () => {
   };
 
   return (
-    <section className="cenik-page-shell max-w-6xl mx-auto p-6 space-y-6">
+    <section className="cenik-page-shell max-w-6xl mx-auto px-3 py-4 md:p-6 space-y-6">
       <div className="sticky top-0 z-30 -mx-6 border-b border-border/40 bg-background/80 px-6 py-3 backdrop-blur cenik-sticky-bar">
         <Button onClick={openImportModal}>Uvoz produktov</Button>
       </div>

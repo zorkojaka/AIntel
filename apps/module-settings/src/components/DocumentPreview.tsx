@@ -73,7 +73,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({ docType, visib
   return (
     <Card title="PDF predogled">
       <div className="overflow-auto rounded-md border border-border bg-slate-50 p-4">
-        <div className="mx-auto min-h-[400px] w-[794px] bg-white p-6 shadow-sm">
+        <div className="mx-auto min-h-[400px] w-full max-w-[794px] bg-white p-6 shadow-sm">
           {loading && <p className="text-sm text-muted-foreground">Nalaganje predogleda ...</p>}
           {error && <p className="text-sm text-destructive">{error}</p>}
           {!loading && !error && html && (
