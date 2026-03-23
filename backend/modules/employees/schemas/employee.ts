@@ -31,7 +31,7 @@ const EmployeeSchema = new Schema<EmployeeDocument>(
     email: { type: String, trim: true, lowercase: true, default: '' },
     roles: {
       type: [String],
-      enum: ['ADMIN', 'SALES', 'EXECUTION', 'FINANCE'],
+      enum: ['ADMIN', 'SALES', 'EXECUTION', 'FINANCE', 'ORGANIZER'],
       default: [],
     },
     address: { type: String, trim: true, default: '' },

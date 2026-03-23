@@ -19,6 +19,7 @@ import {
   generateMaterialOrderDocumentPdf,
   generateWorkOrderDocumentPdf,
 } from '../services/project-document-pdf.service';
+import { canEditPreparation } from '../../../../shared/utils/preparationAccess';
 
 function calculateOfferTotalsFromSnapshot(offer: {
   items: OfferLineItem[];
@@ -84,6 +85,34 @@ const MATERIAL_PICKUP_METHOD_VALUES: MaterialPickupMethod[] = [
   'DIRECT_TO_INSTALLER',
   'DIRECT_TO_SITE',
 ];
+
+function getContextRoles(req: Request): string[] {
+  const roles = (req as any)?.context?.roles;
+  return Array.isArray(roles) ? roles.filter((role): role is string => typeof role === 'string') : [];
+}
+
+function hasPreparationPayload(payload: Record<string, unknown>) {
+  return (
+    'scheduledAt' in payload ||
+    'scheduledConfirmedAt' in payload ||
+    'scheduleConfirmedAt' in payload ||
+    'assignedEmployeeIds' in payload ||
+    'mainInstallerId' in payload ||
+    'location' in payload ||
+    'notes' in payload ||
+    'materialOrderId' in payload ||
+    'materialStatus' in payload ||
+    'materialAssignedEmployeeIds' in payload ||
+    'pickupMethod' in payload ||
+    'pickupLocation' in payload ||
+    'logisticsOwnerId' in payload ||
+    'pickupNote' in payload ||
+    'deliveryNotePhotos' in payload ||
+    'pickupConfirmedAt' in payload ||
+    'materialItems' in payload ||
+    payload.status === 'issued'
+  );
+}
 
 function resolveMaterialStep(value: unknown): MaterialStep {
   return MATERIAL_STEP_SEQUENCE.includes(value as MaterialStep) ? (value as MaterialStep) : 'Za naročiti';
@@ -264,6 +293,7 @@ async function ensureMaterialOrderForOffer(params: {
     offerVersionId: offerId,
     workOrderId,
     items,
+    pickupMethod: 'SUPPLIER_PICKUP',
     status: 'draft',
     materialStatus: 'Za naročit',
     reopened: false,
@@ -772,6 +802,9 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     }
 
     const payload = req.body ?? {};
+    if (hasPreparationPayload(payload) && !canEditPreparation(getContextRoles(req))) {
+      return res.fail('Ni dostopa do faze Priprava.', 403);
+    }
     const resolveAssignedEmployeeIds = async (value: unknown) => {
       if (!Array.isArray(value)) {
         return { error: 'Neveljaven seznam zaposlenih.' };
@@ -1262,7 +1295,7 @@ export async function advanceMaterialOrderStep(req: Request, res: Response, next
         status: materialOrder.status ?? 'draft',
         materialStatus,
         assignedEmployeeIds: materialOrder.assignedEmployeeIds ?? [],
-        pickupMethod: materialOrder.pickupMethod ?? null,
+        pickupMethod: materialOrder.pickupMethod ?? 'SUPPLIER_PICKUP',
         pickupLocation: materialOrder.pickupLocation ?? null,
         logisticsOwnerId: materialOrder.logisticsOwnerId ?? null,
         pickupNote: materialOrder.pickupNote ?? null,

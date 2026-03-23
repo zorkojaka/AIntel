@@ -55,6 +55,9 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
   width: min(480px, 92vw);
+  max-height: min(90vh, calc(100dvh - 24px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: #fff;
   border-radius: 16px;
   padding: 24px;
@@ -79,6 +82,7 @@ body {
 
   .dialog-content {
     width: min(480px, 96vw);
+    max-height: calc(100dvh - 16px);
     padding: 16px;
   }
 }

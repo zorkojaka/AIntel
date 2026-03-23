@@ -2,8 +2,9 @@ export const ROLE_ADMIN = 'ADMIN';
 export const ROLE_SALES = 'SALES';
 export const ROLE_EXECUTION = 'EXECUTION';
 export const ROLE_FINANCE = 'FINANCE';
+export const ROLE_ORGANIZER = 'ORGANIZER';
 
-export const ROLE_VALUES = [ROLE_ADMIN, ROLE_SALES, ROLE_EXECUTION, ROLE_FINANCE] as const;
+export const ROLE_VALUES = [ROLE_ADMIN, ROLE_SALES, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER] as const;
 
 const ROLE_ALIAS_MAP: Record<string, string> = {
   admin: ROLE_ADMIN,
@@ -13,6 +14,8 @@ const ROLE_ALIAS_MAP: Record<string, string> = {
   technician: ROLE_EXECUTION,
   ops: ROLE_EXECUTION,
   manager: ROLE_EXECUTION,
+  organizer: ROLE_ORGANIZER,
+  organizator: ROLE_ORGANIZER,
 };
 
 export function toCanonicalRole(role: string): string | null {
