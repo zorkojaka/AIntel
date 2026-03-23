@@ -124,6 +124,8 @@ function mapOfferItemsToLogistics(items: OfferLineItem[]) {
       productId: item.productId ?? null,
       name: item.name,
       quantity: item.quantity,
+      isOrdered: false,
+      orderedQty: 0,
       deliveredQty: 0,
       unit: item.unit,
       note,
@@ -235,6 +237,10 @@ async function ensureMaterialOrderForOffer(params: {
     materialOrder.items = [
       ...items.map((item) => ({
         ...item,
+        isOrdered:
+          typeof existingItems.get(item.id)?.isOrdered === 'boolean' ? existingItems.get(item.id).isOrdered : false,
+        orderedQty:
+          typeof existingItems.get(item.id)?.orderedQty === 'number' ? existingItems.get(item.id).orderedQty : 0,
         deliveredQty:
           typeof existingItems.get(item.id)?.deliveredQty === 'number' ? existingItems.get(item.id).deliveredQty : 0,
         materialStep:
@@ -276,6 +282,8 @@ function serializeMaterialOrder(order: any): MaterialOrder | null {
       productId: item.productId ?? null,
       name: item.name,
       quantity: item.quantity,
+      isOrdered: typeof item.isOrdered === 'boolean' ? item.isOrdered : false,
+      orderedQty: typeof item.orderedQty === 'number' ? item.orderedQty : 0,
       deliveredQty: typeof item.deliveredQty === 'number' ? item.deliveredQty : 0,
       unit: item.unit,
       note: item.note,
@@ -360,6 +368,8 @@ function serializeWorkOrder(order: any): WorkOrder | null {
       : order.scheduleConfirmedAt
         ? new Date(order.scheduleConfirmedAt).toISOString()
         : null,
+    scheduledConfirmedBy: typeof order.scheduledConfirmedBy === 'string' ? order.scheduledConfirmedBy : null,
+    mainInstallerId: order.mainInstallerId ? String(order.mainInstallerId) : null,
     assignedEmployeeIds: Array.isArray(order.assignedEmployeeIds)
       ? order.assignedEmployeeIds.map((id: any) => String(id))
       : [],
@@ -384,6 +394,35 @@ function serializeWorkOrder(order: any): WorkOrder | null {
     createdAt: order.createdAt ? new Date(order.createdAt).toISOString() : '',
     updatedAt: order.updatedAt ? new Date(order.updatedAt).toISOString() : '',
   };
+}
+
+function resolveScheduleConfirmerLabel(req: Request) {
+  const authEmployeeName =
+    typeof (req as any).authEmployee?.name === 'string' ? (req as any).authEmployee.name.trim() : '';
+  if (authEmployeeName) return authEmployeeName;
+
+  const userName = typeof (req as any).user?.name === 'string' ? (req as any).user.name.trim() : '';
+  if (userName) return userName;
+
+  const userEmail = typeof (req as any).user?.email === 'string' ? (req as any).user.email.trim() : '';
+  if (userEmail) return userEmail;
+
+  return resolveActorId(req);
+}
+
+async function resolveEmployeeIdForTenant(tenantId: string, value: unknown) {
+  const nextId = typeof value === 'string' ? value.trim() : '';
+  if (!nextId) {
+    return { id: null as string | null };
+  }
+  if (!mongoose.isValidObjectId(nextId)) {
+    return { error: 'Neveljaven zaposleni.' };
+  }
+  const match = await EmployeeModel.findOne({ _id: nextId, tenantId }).select('_id').lean();
+  if (!match) {
+    return { error: 'Zaposleni ne pripada tenantu.' };
+  }
+  return { id: nextId };
 }
 
 async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisticsSnapshot | null> {
@@ -662,6 +701,63 @@ export async function getProjectLogistics(req: Request, res: Response, next: Nex
   }
 }
 
+export async function getInstallerAvailability(req: Request, res: Response, next: NextFunction) {
+  try {
+    const tenantId = resolveTenantId(req);
+    if (!tenantId) {
+      return res.fail('TenantId ni podan.', 400);
+    }
+
+    const { employeeId } = req.params;
+    const excludeWorkOrderId = typeof req.query.excludeWorkOrderId === 'string' ? req.query.excludeWorkOrderId : '';
+    const resolvedEmployee = await resolveEmployeeIdForTenant(tenantId, employeeId);
+    if ('error' in resolvedEmployee) {
+      return res.fail(resolvedEmployee.error, 400);
+    }
+    if (!resolvedEmployee.id) {
+      return res.success([]);
+    }
+
+    const nowIso = new Date().toISOString();
+    const query: Record<string, unknown> = {
+      assignedEmployeeIds: new Types.ObjectId(resolvedEmployee.id),
+      status: { $ne: 'cancelled' },
+      cancelledAt: null,
+      scheduledAt: { $ne: null, $gte: nowIso },
+    };
+    if (excludeWorkOrderId && mongoose.isValidObjectId(excludeWorkOrderId)) {
+      query._id = { $ne: new Types.ObjectId(excludeWorkOrderId) };
+    }
+
+    const workOrders = await WorkOrderModel.find(query)
+      .sort({ scheduledAt: 1, createdAt: 1 })
+      .limit(12)
+      .lean();
+
+    const projectIds = Array.from(new Set(workOrders.map((order) => order.projectId).filter(Boolean)));
+    const projects = projectIds.length
+      ? await ProjectModel.find({ id: { $in: projectIds } }).select({ id: 1, code: 1, title: 1 }).lean()
+      : [];
+    const projectLookup = new Map<string, any>(projects.map((project: any) => [project.id, project]));
+
+    const availability = workOrders.map((order: any) => {
+      const project = projectLookup.get(order.projectId);
+      return {
+        workOrderId: String(order._id),
+        projectId: order.projectId,
+        projectCode: project?.code ?? order.projectId,
+        projectTitle: typeof project?.title === 'string' ? project.title : null,
+        title: typeof order.title === 'string' ? order.title : null,
+        scheduledAt: typeof order.scheduledAt === 'string' ? order.scheduledAt : null,
+      };
+    });
+
+    return res.success(availability);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function updateWorkOrder(req: Request, res: Response, next: NextFunction) {
   try {
     const { projectId, workOrderId } = req.params;
@@ -703,8 +799,10 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     if (scheduledConfirmedValue !== undefined) {
       if (scheduledConfirmedValue === null) {
         updates.scheduledConfirmedAt = null;
+        updates.scheduledConfirmedBy = null;
       } else if (typeof scheduledConfirmedValue === 'string' && scheduledConfirmedValue.trim().length > 0) {
         updates.scheduledConfirmedAt = new Date(scheduledConfirmedValue);
+        updates.scheduledConfirmedBy = resolveScheduleConfirmerLabel(req);
       }
     }
     if ('technicianName' in payload || 'technicianId' in payload) {
@@ -716,6 +814,13 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         return res.fail(resolved.error, 400);
       }
       updates.assignedEmployeeIds = resolved.ids;
+    }
+    if ('mainInstallerId' in payload) {
+      const resolved = await resolveEmployeeIdForTenant(tenantId, payload.mainInstallerId);
+      if ('error' in resolved) {
+        return res.fail(resolved.error, 400);
+      }
+      updates.mainInstallerId = resolved.id;
     }
     if ('location' in payload) updates.location = payload.location;
     if ('notes' in payload) updates.notes = payload.notes;
@@ -902,6 +1007,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         : [];
       const nextItems = [...currentItems];
       const changes: Array<{ itemId: string; before: number; after: number }> = [];
+      let hasItemMutations = false;
       const resolveItemId = (incoming: any) =>
         typeof incoming.id === 'string'
           ? incoming.id
@@ -914,11 +1020,43 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         if (targetId) {
           const target = nextItems.find((item) => String(item.id) === targetId);
           if (target) {
-            if (typeof incoming.name === 'string') target.name = incoming.name;
-            if (typeof incoming.unit === 'string') target.unit = incoming.unit;
-            if (typeof incoming.note === 'string' || incoming.note === null) target.note = incoming.note ?? '';
-            if (typeof incoming.productId === 'string' || incoming.productId === null) target.productId = incoming.productId ?? null;
-            if (typeof incoming.quantity === 'number' && Number.isFinite(incoming.quantity)) target.quantity = incoming.quantity;
+            if (typeof incoming.name === 'string' && target.name !== incoming.name) {
+              target.name = incoming.name;
+              hasItemMutations = true;
+            }
+            if (typeof incoming.unit === 'string' && target.unit !== incoming.unit) {
+              target.unit = incoming.unit;
+              hasItemMutations = true;
+            }
+            if (typeof incoming.note === 'string' || incoming.note === null) {
+              const nextNote = incoming.note ?? '';
+              if (target.note !== nextNote) {
+                target.note = nextNote;
+                hasItemMutations = true;
+              }
+            }
+            if (typeof incoming.productId === 'string' || incoming.productId === null) {
+              const nextProductId = incoming.productId ?? null;
+              if (target.productId !== nextProductId) {
+                target.productId = nextProductId;
+                hasItemMutations = true;
+              }
+            }
+            if (typeof incoming.quantity === 'number' && Number.isFinite(incoming.quantity) && target.quantity !== incoming.quantity) {
+              target.quantity = incoming.quantity;
+              hasItemMutations = true;
+            }
+            if (typeof incoming.isOrdered === 'boolean' && target.isOrdered !== incoming.isOrdered) {
+              target.isOrdered = incoming.isOrdered;
+              hasItemMutations = true;
+            }
+            if (typeof incoming.orderedQty === 'number' && Number.isFinite(incoming.orderedQty)) {
+              const nextOrderedQty = Math.max(0, incoming.orderedQty);
+              if (target.orderedQty !== nextOrderedQty) {
+                target.orderedQty = nextOrderedQty;
+                hasItemMutations = true;
+              }
+            }
             if (typeof incoming.deliveredQty === 'number' && Number.isFinite(incoming.deliveredQty)) {
               const before = typeof target.deliveredQty === 'number' ? target.deliveredQty : 0;
               const after = Math.max(0, incoming.deliveredQty);
@@ -927,10 +1065,22 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
                 changes.push({ itemId: String(targetId), before, after });
               }
             }
-            if (typeof incoming.materialStep === 'string') target.materialStep = incoming.materialStep;
-            if (typeof incoming.dobavitelj === 'string') target.dobavitelj = incoming.dobavitelj;
-            if (typeof incoming.naslovDobavitelja === 'string') target.naslovDobavitelja = incoming.naslovDobavitelja;
-            if (typeof incoming.isExtra === 'boolean') target.isExtra = incoming.isExtra;
+            if (typeof incoming.materialStep === 'string' && target.materialStep !== incoming.materialStep) {
+              target.materialStep = incoming.materialStep;
+              hasItemMutations = true;
+            }
+            if (typeof incoming.dobavitelj === 'string' && target.dobavitelj !== incoming.dobavitelj) {
+              target.dobavitelj = incoming.dobavitelj;
+              hasItemMutations = true;
+            }
+            if (typeof incoming.naslovDobavitelja === 'string' && target.naslovDobavitelja !== incoming.naslovDobavitelja) {
+              target.naslovDobavitelja = incoming.naslovDobavitelja;
+              hasItemMutations = true;
+            }
+            if (typeof incoming.isExtra === 'boolean' && target.isExtra !== incoming.isExtra) {
+              target.isExtra = incoming.isExtra;
+              hasItemMutations = true;
+            }
             return;
           }
         }
@@ -940,6 +1090,9 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           : typeof incoming.quantity === 'number' && Number.isFinite(incoming.quantity)
             ? Math.max(0, incoming.quantity)
             : 0;
+        const orderedQty = typeof incoming.orderedQty === 'number' && Number.isFinite(incoming.orderedQty)
+          ? Math.max(0, incoming.orderedQty)
+          : 0;
         const quantity = typeof incoming.quantity === 'number' && Number.isFinite(incoming.quantity)
           ? incoming.quantity
           : 0;
@@ -954,6 +1107,8 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           productId: typeof incoming.productId === 'string' ? incoming.productId : null,
           name: typeof incoming.name === 'string' && incoming.name.trim().length > 0 ? incoming.name : 'Dodatni material',
           quantity,
+          isOrdered: typeof incoming.isOrdered === 'boolean' ? incoming.isOrdered : false,
+          orderedQty,
           deliveredQty,
           unit: typeof incoming.unit === 'string' ? incoming.unit : '',
           note: typeof incoming.note === 'string' ? incoming.note : '',
@@ -962,12 +1117,13 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           materialStep: typeof incoming.materialStep === 'string' ? incoming.materialStep : 'Prevzeto',
           isExtra: incoming.isExtra !== undefined ? Boolean(incoming.isExtra) : true,
         });
+        hasItemMutations = true;
         if (deliveredQty > 0) {
           changes.push({ itemId: newItemId, before: 0, after: deliveredQty });
         }
       });
 
-      if (changes.length > 0 || nextItems.length !== currentItems.length) {
+      if (hasItemMutations || changes.length > 0 || nextItems.length !== currentItems.length) {
         materialOrder.items = nextItems;
         await materialOrder.save();
 
@@ -1019,6 +1175,14 @@ function parseWorkDocType(value?: string | string[] | null): 'WORK_ORDER' | 'WOR
     return 'WORK_ORDER_CONFIRMATION';
   }
   return 'WORK_ORDER';
+}
+
+function parsePdfResponseMode(value?: string | string[] | null): 'inline' | 'download' {
+  const normalized = Array.isArray(value) ? value[0] : value;
+  if (typeof normalized === 'string' && normalized.toLowerCase() === 'inline') {
+    return 'inline';
+  }
+  return 'download';
 }
 
 export async function advanceMaterialOrderStep(req: Request, res: Response, next: NextFunction) {
@@ -1214,10 +1378,11 @@ export async function advanceMaterialOrderStep(req: Request, res: Response, next
 export async function exportMaterialOrderPdf(req: Request, res: Response, next: NextFunction) {
   try {
     const docType = parseMaterialDocType(req.query.docType);
+    const mode = parsePdfResponseMode(req.query.mode);
     const buffer = await generateMaterialOrderDocumentPdf(req.params.projectId, req.params.materialOrderId, docType);
     res.setHeader('Content-Type', 'application/pdf');
     const slug = docType === 'DELIVERY_NOTE' ? 'delivery-note' : 'purchase-order';
-    res.setHeader('Content-Disposition', `attachment; filename="${slug}-${req.params.materialOrderId}.pdf"`);
+    res.setHeader('Content-Disposition', `${mode}; filename="${slug}-${req.params.materialOrderId}.pdf"`);
     res.end(buffer);
   } catch (error) {
     next(error);
@@ -1227,10 +1392,11 @@ export async function exportMaterialOrderPdf(req: Request, res: Response, next: 
 export async function exportWorkOrderPdf(req: Request, res: Response, next: NextFunction) {
   try {
     const docType = parseWorkDocType(req.query.docType);
+    const mode = parsePdfResponseMode(req.query.mode);
     const buffer = await generateWorkOrderDocumentPdf(req.params.projectId, req.params.workOrderId, docType);
     res.setHeader('Content-Type', 'application/pdf');
     const slug = docType === 'WORK_ORDER_CONFIRMATION' ? 'work-order-confirmation' : 'work-order';
-    res.setHeader('Content-Disposition', `attachment; filename="${slug}-${req.params.workOrderId}.pdf"`);
+    res.setHeader('Content-Disposition', `${mode}; filename="${slug}-${req.params.workOrderId}.pdf"`);
     res.end(buffer);
   } catch (error) {
     next(error);

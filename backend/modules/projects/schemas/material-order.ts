@@ -9,6 +9,8 @@ interface MaterialOrderDocument extends Document {
     productId: string | null;
     name: string;
     quantity: number;
+    isOrdered?: boolean;
+    orderedQty?: number;
     deliveredQty?: number;
     unit: string;
     note?: string;
@@ -37,6 +39,8 @@ const materialItemSchema = new Schema(
     productId: { type: String, default: null },
     name: { type: String, required: true },
     quantity: { type: Number, required: true },
+    isOrdered: { type: Boolean, default: false },
+    orderedQty: { type: Number, default: 0 },
     deliveredQty: { type: Number, default: 0 },
     unit: { type: String, required: true },
     note: { type: String },

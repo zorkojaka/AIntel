@@ -5,6 +5,8 @@ export interface LogisticsMaterialItem {
   productId: string | null;
   name: string;
   quantity: number;
+  isOrdered?: boolean;
+  orderedQty?: number;
   deliveredQty?: number;
   unit: string;
   note?: string;
@@ -86,6 +88,8 @@ export interface WorkOrder {
   status: WorkOrderStatus;
   scheduledAt: string | null;
   scheduledConfirmedAt?: string | null;
+  scheduledConfirmedBy?: string | null;
+  mainInstallerId?: string | null;
   assignedEmployeeIds?: string[];
   location?: string;
   notes?: string;
