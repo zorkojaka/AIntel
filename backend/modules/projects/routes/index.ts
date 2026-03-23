@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireRoles } from '../../../middlewares/auth';
-import { ROLE_ADMIN, ROLE_FINANCE, ROLE_SALES } from '../../../utils/roles';
+import { ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from '../../../utils/roles';
 import {
   addItem,
   addItemFromCenik,
@@ -38,6 +38,8 @@ import * as invoiceController from '../controllers/invoice.controller';
 
 const router = Router();
 const requireProjectWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]);
+const requirePreparationAccess = requireRoles([ROLE_ORGANIZER]);
+const requireWorkOrderWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_EXECUTION, ROLE_ORGANIZER]);
 
 router.get('/', listProjects);
 router.get('/offer-templates', listOfferTemplates);
@@ -65,11 +67,11 @@ router.get('/:projectId/offers/:offerVersionId/pdf', exportOfferPdf);
 router.post('/:projectId/offers/:offerVersionId/send', requireProjectWrite, sendOfferVersionStub);
 router.get('/:projectId/offer', getActiveOffer);
 router.post('/:projectId/offers/:offerId/confirm', requireProjectWrite, logisticsController.confirmOffer);
-router.post('/:projectId/logistics/cancel-confirmation', requireProjectWrite, cancelOfferConfirmation);
+router.post('/:projectId/logistics/cancel-confirmation', requirePreparationAccess, cancelOfferConfirmation);
 router.get('/:projectId/logistics', logisticsController.getProjectLogistics);
-router.get('/:projectId/logistics/installer-availability/:employeeId', logisticsController.getInstallerAvailability);
-router.put('/:projectId/work-orders/:workOrderId', requireProjectWrite, logisticsController.updateWorkOrder);
-router.post('/:projectId/material-orders/:materialOrderId/advance', requireProjectWrite, logisticsController.advanceMaterialOrderStep);
+router.get('/:projectId/logistics/installer-availability/:employeeId', requirePreparationAccess, logisticsController.getInstallerAvailability);
+router.put('/:projectId/work-orders/:workOrderId', requireWorkOrderWrite, logisticsController.updateWorkOrder);
+router.post('/:projectId/material-orders/:materialOrderId/advance', requirePreparationAccess, logisticsController.advanceMaterialOrderStep);
 router.get('/:projectId/work-orders/:workOrderId/pdf', logisticsController.exportWorkOrderPdf);
 router.get('/:projectId/material-orders/:materialOrderId/pdf', logisticsController.exportMaterialOrderPdf);
 router.get('/:projectId/invoices', invoiceController.listInvoices);

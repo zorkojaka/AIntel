@@ -80,7 +80,6 @@ export function DashboardPage() {
       <div className="dashboard-header">
         <div>
           <h1>Nadzorna plošča</h1>
-          <p>Dobrodošli na domači strani monterja.</p>
         </div>
         <Button variant="ghost" onClick={() => setIsEditing((prev) => !prev)}>
           {isEditing ? 'Zapri' : 'Dodaj widget'}

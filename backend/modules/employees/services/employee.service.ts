@@ -32,7 +32,18 @@ async function syncEmployeeUser(employee: Partial<EmployeeDocument> & { _id: any
   }
 
   const sameEmailUser = await UserModel.findOne({ tenantId, email, deletedAt: null });
-  if (sameEmailUser && String(sameEmailUser.employeeId ?? '') !== employeeId) {
+  const linkedUserId = linkedUser ? String(linkedUser._id) : '';
+  const sameEmailUserId = sameEmailUser ? String(sameEmailUser._id) : '';
+  const sameEmailEmployeeId = sameEmailUser ? String(sameEmailUser.employeeId ?? '') : '';
+  const isSameLinkedUser = Boolean(linkedUserId) && linkedUserId === sameEmailUserId;
+  const canAdoptSameEmailUser = !linkedUser && sameEmailUser && sameEmailEmployeeId.length === 0;
+
+  if (
+    sameEmailUser &&
+    !isSameLinkedUser &&
+    !canAdoptSameEmailUser &&
+    sameEmailEmployeeId !== employeeId
+  ) {
     throw new Error('EMAIL_IN_USE_BY_OTHER_USER');
   }
 
@@ -156,6 +167,10 @@ export async function createEmployee(tenantId: string, payload: Partial<Employee
 }
 
 export async function updateEmployee(id: string, tenantId: string, payload: Partial<EmployeeDocument>) {
+  const existing = await EmployeeModel.findOne({ _id: id, tenantId, deletedAt: null });
+  if (!existing) {
+    return null;
+  }
   const update = toEmployeeUpdate(payload);
   if (update.hourRateWithoutVat !== undefined) {
     const rate = Number(update.hourRateWithoutVat);
@@ -165,13 +180,40 @@ export async function updateEmployee(id: string, tenantId: string, payload: Part
     update.hourRateWithoutVat = rate;
   }
 
+  const existingEmail = normalizeEmail(existing.email);
+  const requestedEmail =
+    payload.email !== undefined ? normalizeEmail(payload.email as any) : existingEmail;
+  const emailChanged = requestedEmail !== existingEmail;
+
   const updated = await EmployeeModel.findOneAndUpdate(
     { _id: id, tenantId, deletedAt: null },
     update,
     { new: true }
   );
   if (updated) {
-    await syncEmployeeUser(updated as any);
+    try {
+      await syncEmployeeUser(updated as any);
+    } catch (error: any) {
+      // Role/name changes should not be blocked by a legacy email conflict if the email itself
+      // was not edited in this request. Preserve the employee update and keep any linked user
+      // in sync as much as possible.
+      if (error?.message === 'EMAIL_IN_USE_BY_OTHER_USER' && !emailChanged) {
+        const linkedUser = await UserModel.findOne({ tenantId, employeeId: updated._id, deletedAt: null });
+        if (linkedUser) {
+          const email = normalizeEmail(linkedUser.email);
+          linkedUser.name = (updated.name ?? '').trim() || email;
+          linkedUser.roles = Array.isArray(updated.roles) ? updated.roles : [];
+          linkedUser.active = hasEmployeeAppAccess({
+            ...updated.toObject(),
+            email: linkedUser.email,
+          } as any);
+          linkedUser.status = linkedUser.active ? 'ACTIVE' : 'DISABLED';
+          await linkedUser.save();
+        }
+      } else {
+        throw error;
+      }
+    }
   }
   return updated ? sanitizeEmployee(updated as any) : null;
 }

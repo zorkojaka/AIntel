@@ -21,11 +21,12 @@ import type { ProjectDetails } from "../types";
 import type { User } from "@aintel/shared/types/user";
 import type { Employee } from "@aintel/shared/types/employee";
 
-import { Check, ChevronsUpDown, Loader2, Pencil, Trash, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, Check, ChevronsUpDown, Loader2, Pencil, Trash, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
 import { PriceListProductAutocomplete } from "./PriceListProductAutocomplete";
+import { OfferItemsMobile } from "./OfferItemsMobile";
 import { mapProject } from "../domains/core/useProject";
 import { useConfirmOffer } from "../domains/core/useConfirmOffer";
 import { downloadPdf } from "../api";
@@ -246,6 +247,8 @@ export function OffersTab({ projectId, refreshKey = 0, onDirtyChange, onRegister
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState(EMPTY_OFFER_SNAPSHOT);
   const isDownloading = downloadingMode !== null;
   const lineItemsRef = useRef<HTMLDivElement | null>(null);
+  const commentTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [visibleMobileBlankItemId, setVisibleMobileBlankItemId] = useState<string | null>(null);
 
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [importRawText, setImportRawText] = useState("");
@@ -263,6 +266,13 @@ export function OffersTab({ projectId, refreshKey = 0, onDirtyChange, onRegister
       setTitleDraft(title);
     }
   }, [title, isEditingTitle]);
+
+  useEffect(() => {
+    const textarea = commentTextareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "0px";
+    textarea.style.height = `${Math.max(textarea.scrollHeight, 36)}px`;
+  }, [comment]);
 
   const { settings } = useSettingsData();
   const paymentTermsOptions = useMemo(() => {
@@ -584,12 +594,32 @@ const loadOfferById = useCallback(async (offerId: string) => {
     });
   };
 
+  const revealMobileBlankItem = useCallback(() => {
+    const trailingBlank =
+      [...items].reverse().find((item) => isEmptyOfferItem(item)) ?? createEmptyItem();
+
+    if (!items.some((item) => item.id === trailingBlank.id)) {
+      setItems((prev) => ensureTrailingBlank([...prev, trailingBlank]));
+    }
+    setVisibleMobileBlankItemId(trailingBlank.id);
+  }, [items]);
+
 
 
   const validItems = useMemo(
     () => items.filter((item) => !isEmptyOfferItem(item)).filter(isItemValid),
     [items]
   );
+
+  useEffect(() => {
+    if (!visibleMobileBlankItemId) return;
+    const visibleBlankStillExists = items.some(
+      (item) => item.id === visibleMobileBlankItemId && isEmptyOfferItem(item),
+    );
+    if (!visibleBlankStillExists) {
+      setVisibleMobileBlankItemId(null);
+    }
+  }, [items, visibleMobileBlankItemId]);
 
   const totals = useMemo(() => {
     const baseWithout = validItems.reduce(
@@ -1546,7 +1576,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
-              variant="secondary"
+              variant="outline"
               onClick={handleCreateNewVersion}
             >
               Nova verzija
@@ -1711,22 +1741,26 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
-              variant="outline"
-              className="border-sky-300 text-sky-700 hover:bg-sky-50"
+              variant="secondary"
               onClick={openCreateTemplateDialog}
               disabled={templateSaving}
             >
-              {templateSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {templateSaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowLeft className="mr-2 h-4 w-4" />
+              )}
               Shrani template
             </Button>
             <Button
               size="sm"
-              className="bg-teal-600 text-white hover:bg-teal-700"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={handleApplyTemplate}
               disabled={!selectedTemplateId || templateCreating}
             >
               {templateCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Vnos podatkov
+              {!templateCreating && <ArrowDown className="ml-2 h-4 w-4" />}
             </Button>
           </div>
         </div>
@@ -1792,7 +1826,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       </div>
 
       {/* HEADER POLJA */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             {isEditingTitle ? (
@@ -1859,10 +1893,12 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           <div className="space-y-2 md:col-span-2">
             <label className="text-sm font-medium">Komentar (vidno na PDF)</label>
             <Textarea
+              ref={commentTextareaRef}
               value={comment}
               onChange={(event) => setComment(event.target.value)}
               placeholder="Dodatne informacije za prikaz v PDF-ju"
-              rows={3}
+              rows={1}
+              className="min-h-9 resize-none overflow-hidden"
             />
           </div>
         </div>
@@ -1929,8 +1965,24 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           </div>
         </div>
       {/* TABELA POSTAVK */}
-      <div ref={lineItemsRef} className="bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
-        <Table className="w-full table-fixed">
+      <div ref={lineItemsRef}>
+        <OfferItemsMobile
+          items={items}
+          visibleBlankItemId={visibleMobileBlankItemId}
+          usePerItemDiscount={usePerItemDiscount}
+          useGlobalDiscount={useGlobalDiscount}
+          globalDiscountPercent={globalDiscountPercent}
+          totals={totals}
+          formatCurrency={formatCurrency}
+          onRevealBlankItem={revealMobileBlankItem}
+          onUpdateItem={updateItem}
+          onDeleteItem={deleteRow}
+          onSelectProduct={handleSelectProduct}
+          onSelectCustomItem={handleSelectCustomItem}
+        />
+
+        <div className="hidden md:block bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
+          <Table className="w-full table-fixed">
           <colgroup>
             <col style={{ width: "42%" }} />
             <col style={{ width: "10%" }} />
@@ -2131,7 +2183,8 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
               <TableCell />
             </TableRow>
           </TableFooter>
-        </Table>
+          </Table>
+        </div>
       </div>
 
       <Dialog open={isTemplateNameDialogOpen} onOpenChange={setIsTemplateNameDialogOpen}>

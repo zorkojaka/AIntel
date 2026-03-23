@@ -11,6 +11,7 @@ import { Button } from "./components/ui/button";
 import { Category, ProjectDetails, ProjectSummary, Template, ProjectStatus } from "./types";
 import { NewProjectDialog } from "./components/NewProjectDialog";
 import { mapProject } from "./domains/core/useProject";
+import { canAccessPreparation } from "@aintel/shared/utils/preparationAccess";
 
 const API_PREFIX = "/api/projects";
 const VALID_TABS = ["items", "offers", "logistics", "execution", "closing"] as const;
@@ -42,6 +43,7 @@ function toSummary(project: ProjectDetails): ProjectSummary {
 export function ProjectsPage() {
   const { settings: globalSettings } = useSettingsData({ applyTheme: false });
   const [viewerRoles, setViewerRoles] = useState<string[]>([]);
+  const [viewerRolesLoaded, setViewerRolesLoaded] = useState(false);
   const [currentView, setCurrentView] = useState<"list" | "workspace">("list");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -68,9 +70,20 @@ export function ProjectsPage() {
   const isExecutionOnlyViewer = useMemo(() => {
     const roleSet = new Set(viewerRoles);
     const isExecution = roleSet.has("EXECUTION");
-    const hasPrivileged = roleSet.has("ADMIN") || roleSet.has("SALES") || roleSet.has("FINANCE");
+    const hasPrivileged =
+      roleSet.has("ADMIN") || roleSet.has("SALES") || roleSet.has("FINANCE") || canAccessPreparation(viewerRoles);
     return isExecution && !hasPrivileged;
   }, [viewerRoles]);
+  const canAccessPreparationPhase = useMemo(() => canAccessPreparation(viewerRoles), [viewerRoles]);
+  const allowedWorkspaceTabs = useMemo<WorkspaceTabValue[] | undefined>(() => {
+    if (isExecutionOnlyViewer) {
+      return ["items", "execution"];
+    }
+    if (!canAccessPreparationPhase) {
+      return ["items", "offers", "execution", "closing"];
+    }
+    return undefined;
+  }, [canAccessPreparationPhase, isExecutionOnlyViewer]);
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -84,12 +97,19 @@ export function ProjectsPage() {
       try {
         const response = await fetch("/api/auth/me");
         const result = await response.json();
-        if (cancelled || !result?.success) return;
+        if (cancelled || !result?.success) {
+          if (!cancelled) {
+            setViewerRolesLoaded(true);
+          }
+          return;
+        }
         const roles = Array.isArray(result?.data?.employee?.roles) ? result.data.employee.roles : [];
         setViewerRoles(roles);
+        setViewerRolesLoaded(true);
       } catch {
         if (!cancelled) {
           setViewerRoles([]);
+          setViewerRolesLoaded(true);
         }
       }
     };
@@ -202,6 +222,7 @@ export function ProjectsPage() {
   useEffect(() => {
     if (initialProjectFromUrlHandledRef.current) return;
     if (!projectsLoaded) return;
+    if (!viewerRolesLoaded) return;
 
     const params = new URLSearchParams(window.location.search);
     const projectId = params.get("projectId");
@@ -211,7 +232,11 @@ export function ProjectsPage() {
     }
     const tab = parseWorkspaceTab(params.get("tab"));
     if (tab) {
-      setInitialWorkspaceTab(tab);
+      if (tab === "logistics" && !canAccessPreparationPhase) {
+        toast.error("Nimaš dostopa do faze Priprava.");
+      } else {
+        setInitialWorkspaceTab(tab);
+      }
     }
 
     if (isExecutionOnlyViewer) {
@@ -229,10 +254,10 @@ export function ProjectsPage() {
 
     initialProjectFromUrlHandledRef.current = true;
     void loadProjectDetails(projectId);
-  }, [projectsLoaded, projects, isExecutionOnlyViewer]);
+  }, [projectsLoaded, projects, isExecutionOnlyViewer, viewerRolesLoaded, canAccessPreparationPhase]);
 
   const handleSelectProject = (projectId: string) => {
-    setInitialWorkspaceTab(isExecutionOnlyViewer ? "logistics" : null);
+    setInitialWorkspaceTab(isExecutionOnlyViewer ? "execution" : null);
     loadProjectDetails(projectId);
   };
 
@@ -564,7 +589,7 @@ export function ProjectsPage() {
           onProjectUpdate={handleProjectUpdate}
           onNewProject={openNewProjectDialog}
           brandColor={globalSettings?.primaryColor}
-          allowedTabs={isExecutionOnlyViewer ? ["items", "logistics", "execution"] : undefined}
+          allowedTabs={allowedWorkspaceTabs}
         />
       )}
 

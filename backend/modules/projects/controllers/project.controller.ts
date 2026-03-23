@@ -276,7 +276,46 @@ export async function listProjects(_req: Request, res: Response) {
     };
   }
   const all = await ProjectModel.find(query).lean();
-  return res.success(all.map(summarizeProject));
+  const confirmedOfferIds = Array.from(
+    new Set(
+      all
+        .map((project: any) => (project?.confirmedOfferVersionId ? String(project.confirmedOfferVersionId) : ''))
+        .filter((value: string) => value.length > 0),
+    ),
+  );
+
+  const confirmedOffers =
+    confirmedOfferIds.length > 0
+      ? await OfferVersionModel.find({ _id: { $in: confirmedOfferIds } })
+          .select('_id totalWithVat totalGrossAfterDiscount totalGross')
+          .lean()
+      : [];
+
+  const confirmedOfferTotals = new Map<string, number>(
+    confirmedOffers.map((offer: any) => [
+      String(offer._id),
+      Number(offer.totalWithVat ?? offer.totalGrossAfterDiscount ?? offer.totalGross ?? 0),
+    ]),
+  );
+
+  const summaries = all.map((project: any) => {
+    const summary = summarizeProject(project);
+    const projectQuoted = Number(project?.quotedTotalWithVat ?? 0);
+    const projectOfferAmount = Number(project?.offerAmount ?? 0);
+    const confirmedOfferId = project?.confirmedOfferVersionId ? String(project.confirmedOfferVersionId) : '';
+    const confirmedOfferAmount = confirmedOfferId ? confirmedOfferTotals.get(confirmedOfferId) ?? 0 : 0;
+
+    const resolvedQuotedTotalWithVat =
+      projectQuoted > 0 ? projectQuoted : confirmedOfferAmount > 0 ? confirmedOfferAmount : projectOfferAmount;
+
+    return {
+      ...summary,
+      offerAmount: resolvedQuotedTotalWithVat,
+      quotedTotalWithVat: resolvedQuotedTotalWithVat,
+    };
+  });
+
+  return res.success(summaries);
 }
 
 export async function updateProjectAssignments(req: Request, res: Response) {
