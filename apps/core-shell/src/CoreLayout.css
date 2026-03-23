@@ -26,7 +26,61 @@
 .core-shell__topbar-title {
   font-size: 1rem;
   font-weight: 700;
-  margin-left: var(--space-sm);
+  min-width: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.core-shell__topbar-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.core-shell__topbar-action {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
+.core-shell__topbar-action--ghost {
+  background: transparent;
+  color: var(--color-text);
+}
+
+.core-shell__topbar-action--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.core-shell__topbar-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.core-shell__topbar-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 80%, transparent 20%);
+  color: var(--color-text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .core-shell__sidebar {
@@ -149,13 +203,19 @@
     position: sticky;
     top: 0;
     z-index: 45;
-    display: flex;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-sm);
     min-height: 56px;
     padding: var(--space-sm) var(--space-md);
     border-bottom: 1px solid var(--color-border);
     background: var(--color-surface);
+  }
+
+  .core-shell__topbar-title {
+    justify-self: center;
+    max-width: 100%;
   }
 
   .core-shell__sidebar {

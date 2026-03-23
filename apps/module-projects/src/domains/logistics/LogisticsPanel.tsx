@@ -1156,7 +1156,7 @@ export function LogisticsPanel({
             </div>
           </div>
         </div>
-        <div className="border rounded-[var(--radius-card)] bg-card overflow-hidden">
+        <div className="hidden overflow-hidden rounded-[var(--radius-card)] border bg-card md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -1302,6 +1302,161 @@ export function LogisticsPanel({
               })}
             </TableBody>
           </Table>
+        </div>
+        <div className="space-y-3 md:hidden">
+          {(workOrder.items ?? []).map((item) => {
+            const requiredQty = typeof item.quantity === "number" ? item.quantity : 0;
+            if (workOrderMode !== "execute") {
+              const materialKey = item.offerItemId ?? item.id;
+              const materialItem = materialItemsById.get(materialKey);
+              const isService = Boolean(item.isService) || (Boolean(item.productId) && !materialItem);
+              const materialRequired =
+                typeof materialItem?.quantity === "number" ? materialItem.quantity : requiredQty;
+              const deliveredQty = typeof materialItem?.deliveredQty === "number" ? materialItem.deliveredQty : 0;
+              const isReady = isService ? hasAssignedTeam : deliveredQty - materialRequired >= 0;
+              return (
+                <div key={item.id} className="space-y-3 rounded-[var(--radius-card)] border border-border/70 bg-card p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold leading-5">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
+                    </div>
+                    <span
+                      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 ${
+                        isReady
+                          ? "border-green-600 bg-green-600 text-white"
+                          : "border-red-600 text-red-600"
+                      }`}
+                      aria-label={isReady ? "Pripravljeno" : "Ni pripravljeno"}
+                    >
+                      {isReady ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Količina</p>
+                      <p className="font-medium tabular-nums">{requiredQty}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Pripravljeno</p>
+                      <p className="font-medium">{isReady ? "Da" : "Ne"}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            const executedQty = typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
+            const diff = executedQty - requiredQty;
+            const status = diff === 0 ? "ok" : diff < 0 ? "missing" : "extra";
+            const isEnough = diff >= 0;
+            const borderClass =
+              status === "ok" ? "border-green-600" : status === "missing" ? "border-red-600" : "border-orange-500";
+            const fillClass =
+              status === "ok" ? "bg-green-600" : status === "missing" ? "bg-transparent" : "bg-orange-500";
+            const displayDelta = diff > 0 ? `+${diff}` : `${diff}`;
+            return (
+              <div key={item.id} className="space-y-3 rounded-[var(--radius-card)] border border-border/70 bg-card p-3">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-start gap-2">
+                    <p className="min-w-0 flex-1 text-sm font-semibold leading-5">{item.name}</p>
+                    {diff < 0 && (
+                      <Badge
+                        variant="destructive"
+                        className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-700"
+                      >
+                        <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                        Manjka {Math.abs(diff)}
+                      </Badge>
+                    )}
+                    {diff > 0 && (
+                      <Badge className="inline-flex items-center gap-1 rounded-md border border-orange-500/30 bg-orange-500/15 px-2 py-0.5 text-xs font-medium text-orange-700">
+                        Dodatno {diff}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="space-y-1">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Količina</p>
+                    <p className="font-medium tabular-nums">{requiredQty}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Razlika</p>
+                    <p className="font-medium tabular-nums">{displayDelta}</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-md bg-muted/35 px-3 py-2">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Imamo</p>
+                    <p className="text-sm font-medium">{isEnough ? "Da" : "Ne"}</p>
+                  </div>
+                  <label className="relative inline-flex items-center justify-center cursor-pointer p-1">
+                    <input
+                      type="checkbox"
+                      className="peer sr-only"
+                      aria-label="Imamo material"
+                      checked={isEnough}
+                      onChange={() => {
+                        void updateWorkOrderItemQty(item.id, requiredQty, true);
+                      }}
+                    />
+                    <span
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-full border-2 transition-colors ${
+                        isEnough ? fillClass : "bg-transparent"
+                      } ${borderClass} peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40`}
+                    >
+                      {isEnough && (
+                        <svg
+                          viewBox="0 0 20 20"
+                          aria-hidden="true"
+                          className="h-4 w-4 text-white"
+                          fill="currentColor"
+                        >
+                          <path d="M7.667 13.4 4.6 10.333l-1.2 1.2 4.267 4.267 8-8-1.2-1.2-6 6z" />
+                        </svg>
+                      )}
+                    </span>
+                  </label>
+                </div>
+                <div className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Glavna akcija</p>
+                    <p className="text-sm text-muted-foreground">Posodobi izvedeno količino</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      className="h-9 w-9"
+                      onClick={() => {
+                        const nextExecuted = Math.max(0, executedQty - 1);
+                        void updateWorkOrderItemQty(item.id, nextExecuted, true);
+                      }}
+                      aria-label={"Zmanjšaj razliko"}
+                    >
+                      -
+                    </Button>
+                    <span className="min-w-[34px] text-center text-sm font-medium tabular-nums">{displayDelta}</span>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      className="h-9 w-9"
+                      onClick={() => {
+                        const nextExecuted = executedQty + 1;
+                        void updateWorkOrderItemQty(item.id, nextExecuted, true);
+                      }}
+                      aria-label={"Povečaj razliko"}
+                    >
+                      +
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap gap-2">

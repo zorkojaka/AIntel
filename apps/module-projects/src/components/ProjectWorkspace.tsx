@@ -2,6 +2,8 @@
 import { Button } from "./ui/button";
 import { Tabs, TabsContent } from "./ui/tabs";
 import { Card } from "./ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
+import { clearMobileTopbar, setMobileTopbar } from "@aintel/shared/utils/mobileTopbar";
 import { OfferVersion } from "../domains/offers/OfferVersionCard";
 import type { WorkOrder as LogisticsWorkOrder } from "@aintel/shared/types/logistics";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
@@ -64,6 +66,23 @@ function formatClientAddress(client?: ProjectCrmClient | null) {
   if (street) return street;
   if (postal) return postal;
   return client.address?.trim() ?? "";
+}
+
+function formatProjectDisplayId(project?: Pick<ProjectDetails, "projectNumber" | "code" | "id"> | null) {
+  if (!project) return "";
+  if (project.projectNumber != null && Number.isFinite(project.projectNumber)) {
+    return `PRJ-${String(project.projectNumber).padStart(3, "0")}`;
+  }
+  return project.code?.trim() || project.id || "";
+}
+
+function getProjectStatusLabel(status: ProjectStatus) {
+  if (status === "draft") return "Osnutek";
+  if (status === "offered") return "Ponujeno";
+  if (status === "ordered") return "Naročeno";
+  if (status === "in-progress") return "V teku";
+  if (status === "completed") return "Zaključeno";
+  return "Zaračunano";
 }
 
 interface ProjectWorkspaceProps {
@@ -136,6 +155,10 @@ export function ProjectWorkspace({
   const [selectedVariantSlug, setSelectedVariantSlug] = useState<string>(project?.requirementsTemplateVariantSlug ?? "");
   const showVariantWizard = variantOptions.length > 0 && !project?.requirementsTemplateVariantSlug;
   const [offersRefreshKey, setOffersRefreshKey] = useState(0);
+  const [isOfferEditorDirty, setIsOfferEditorDirty] = useState(false);
+  const [isUnsavedOfferDialogOpen, setIsUnsavedOfferDialogOpen] = useState(false);
+  const pendingOfferNavigationRef = useRef<(() => void | Promise<void>) | null>(null);
+  const offerSaveHandlerRef = useRef<(() => Promise<boolean>) | null>(null);
   const invoiceSectionRef = useRef<HTMLDivElement | null>(null);
   const timelineSteps = useProjectTimeline(project);
   const allTabsConfig: { value: WorkspaceTabValue; label: string }[] = [
@@ -192,6 +215,59 @@ export function ProjectWorkspace({
     }
   }, [activeTab, allowedTabValues]);
 
+  const registerOfferSaveHandler = useCallback((handler: (() => Promise<boolean>) | null) => {
+    offerSaveHandlerRef.current = handler;
+  }, []);
+
+  const closeUnsavedOfferDialog = useCallback(() => {
+    setIsUnsavedOfferDialogOpen(false);
+    pendingOfferNavigationRef.current = null;
+  }, []);
+
+  const runPendingOfferNavigation = useCallback(async () => {
+    const action = pendingOfferNavigationRef.current;
+    pendingOfferNavigationRef.current = null;
+    setIsUnsavedOfferDialogOpen(false);
+    if (action) {
+      await action();
+    }
+  }, []);
+
+  const requestOfferNavigation = useCallback(
+    (action: () => void | Promise<void>) => {
+      if (activeTab === "offers" && isOfferEditorDirty) {
+        pendingOfferNavigationRef.current = action;
+        setIsUnsavedOfferDialogOpen(true);
+        return;
+      }
+      void action();
+    },
+    [activeTab, isOfferEditorDirty],
+  );
+
+  const handleSaveDirtyOfferAndContinue = useCallback(async () => {
+    const saveHandler = offerSaveHandlerRef.current;
+    if (!saveHandler) {
+      await runPendingOfferNavigation();
+      return;
+    }
+    const saved = await saveHandler();
+    if (!saved) {
+      return;
+    }
+    setIsOfferEditorDirty(false);
+    await runPendingOfferNavigation();
+  }, [runPendingOfferNavigation]);
+
+  const handleDiscardDirtyOfferAndContinue = useCallback(async () => {
+    setIsOfferEditorDirty(false);
+    await runPendingOfferNavigation();
+  }, [runPendingOfferNavigation]);
+
+  const handleBackWithGuard = useCallback(() => {
+    requestOfferNavigation(onBack);
+  }, [onBack, requestOfferNavigation]);
+
   const basePath = project ? `/api/projects/${project.id}` : "";
   const isExecutionPhase = status === "ordered" || status === "in-progress" || status === "completed";
   const inlineClient = project ? ((project as ProjectDetails & { client?: ProjectCrmClient }).client ?? null) : null;
@@ -207,6 +283,7 @@ export function ProjectWorkspace({
     return trimmed && trimmed.length > 0 ? trimmed : "#22c55e";
   }, [brandColor]);
   const workspaceCssVars = useMemo<WorkspaceCSSVars>(() => ({ "--brand-color": brandAccentColor }), [brandAccentColor]);
+  const projectDisplayId = useMemo(() => formatProjectDisplayId(project), [project]);
   const isRequirementsDirty = useMemo(
     () =>
       !areRequirementListsEqual(requirements, savedRequirements) || requirementsText !== savedRequirementsText,
@@ -241,6 +318,34 @@ export function ProjectWorkspace({
       cancelled = true;
     };
   }, [project, inlineClient]);
+
+  useEffect(() => {
+    if (!project) {
+      clearMobileTopbar();
+      return;
+    }
+
+    const statusLabel = getProjectStatusLabel(status as ProjectStatus);
+    setMobileTopbar({
+      title: project.title,
+      leadingAction: {
+        kind: "back",
+        onClick: handleBackWithGuard,
+        ariaLabel: "Nazaj na projekte",
+      },
+      actions: [
+        {
+          id: "project-status",
+          label: statusLabel,
+          onClick: () => {},
+          variant: "badge",
+          ariaLabel: `Status projekta: ${statusLabel}`,
+        },
+      ],
+    });
+
+    return () => clearMobileTopbar();
+  }, [handleBackWithGuard, project, status]);
 
   const fetchActiveOffer = useCallback(async () => {
     setIsOfferLoading(true);
@@ -695,18 +800,20 @@ export function ProjectWorkspace({
     if (!allowedStepKeys.has(step)) {
       return;
     }
-    if (step === "invoice") {
-      setOverrideStep("invoice");
-    } else {
-      setOverrideStep(null);
-    }
-    const targetTab = TAB_BY_STEP[step] ?? "items";
-    setActiveTab(targetTab);
-    if (step === "invoice") {
-      requestAnimationFrame(() => {
-        invoiceSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-    }
+    requestOfferNavigation(() => {
+      if (step === "invoice") {
+        setOverrideStep("invoice");
+      } else {
+        setOverrideStep(null);
+      }
+      const targetTab = TAB_BY_STEP[step] ?? "items";
+      setActiveTab(targetTab);
+      if (step === "invoice") {
+        requestAnimationFrame(() => {
+          invoiceSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      }
+    });
   };
 
   const handleWorkOrderUpdated = useCallback(
@@ -824,6 +931,23 @@ export function ProjectWorkspace({
   };
 
   const renderContent = () => {
+    const handleHeaderPrimaryAction = () => {
+      if (activeTab === "offers" && offerSaveHandlerRef.current) {
+        void offerSaveHandlerRef.current();
+        return;
+      }
+      void refresh();
+    };
+
+    const handleNewProjectWithGuard = () => requestOfferNavigation(onNewProject);
+    const handleTabChangeWithGuard = (next: WorkspaceTabValue) => {
+      if (!allowedTabValues.includes(next)) {
+        return;
+      }
+      requestOfferNavigation(() => {
+        setActiveTab(next);
+      });
+    };
 
     if (loading) {
       return (
@@ -850,15 +974,20 @@ export function ProjectWorkspace({
     }
 
     return (
+      <>
       <div className="projects-workspace-shell min-h-screen bg-background" style={workspaceCssVars}>
         <ProjectHeader
           project={project}
           status={status}
-          onBack={onBack}
-          onRefresh={refresh}
-          onNewProject={onNewProject}
+          onBack={handleBackWithGuard}
+          onPrimaryAction={handleHeaderPrimaryAction}
+          onNewProject={handleNewProjectWithGuard}
+          primaryActionLabel={activeTab === "offers" ? "Shrani" : "Osveži"}
         />
         <div className="max-w-[1280px] mx-auto px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6">
+          <div className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground md:hidden">
+            ID: {projectDisplayId || project.id}
+          </div>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
             <div className="space-y-4 lg:col-span-3">
               <Card className="p-4">
@@ -894,9 +1023,7 @@ export function ProjectWorkspace({
                 value={activeTab}
                 onValueChange={(value) => {
                   const next = (value as WorkspaceTabValue) ?? (allowedTabValues[0] ?? "items");
-                  if (allowedTabValues.includes(next)) {
-                    setActiveTab(next);
-                  }
+                  handleTabChangeWithGuard(next);
                 }}
                 className="space-y-6"
               >
@@ -930,7 +1057,12 @@ export function ProjectWorkspace({
                 {allowedTabValues.includes("offers") ? (
                 <TabsContent value="offers" className="mt-0 space-y-4">
                   {activeTab === "offers" ? (
-                    <OffersPanel project={project} refreshKey={offersRefreshKey} />
+                    <OffersPanel
+                      project={project}
+                      refreshKey={offersRefreshKey}
+                      onDirtyChange={setIsOfferEditorDirty}
+                      onRegisterSaveHandler={registerOfferSaveHandler}
+                    />
                   ) : null}
                 </TabsContent>
                 ) : null}
@@ -964,6 +1096,32 @@ export function ProjectWorkspace({
           </div>
         </div>
       </div>
+      <Dialog open={isUnsavedOfferDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          closeUnsavedOfferDialog();
+        }
+      }}>
+        <DialogContent className="sm:max-w-md" hideCloseButton>
+          <DialogHeader>
+            <DialogTitle>Imaš neshranjene spremembe</DialogTitle>
+            <DialogDescription>
+              Kaj želiš narediti s trenutnimi spremembami ponudbe?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeUnsavedOfferDialog}>
+              Prekliči
+            </Button>
+            <Button variant="secondary" onClick={() => void handleDiscardDirtyOfferAndContinue()}>
+              Zavrzi
+            </Button>
+            <Button onClick={() => void handleSaveDirtyOfferAndContinue()}>
+              Shrani spremembe
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      </>
     );
   };
 

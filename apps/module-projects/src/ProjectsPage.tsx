@@ -158,7 +158,7 @@ export function ProjectsPage() {
       }));
       setCategories(sortCategories(normalized));
     } catch (error) {
-      toast.error("Kategorij ni mogo??e pridobiti.");
+      toast.error("Kategorij ni mogoče pridobiti.");
     } finally {
       setCategoriesLoading(false);
     }
@@ -383,13 +383,13 @@ export function ProjectsPage() {
       setSelectedProjectId(mapped.id);
       setInitialWorkspaceTab("offers");
       setCurrentView("workspace");
-      toast.success("Projekt uspeÅ¡no ustvarjen");
+      toast.success("Projekt uspešno ustvarjen");
       setNewProjectDialogOpen(false);
       setSelectedClientId(null);
       setProjectFormInitial(null);
       setNewProjectCategorySlugs([]);
     } catch (error) {
-      toast.error("PriÅ¡lo je do napake pri ustvarjanju projekta.");
+      toast.error("Prišlo je do napake pri ustvarjanju projekta.");
     } finally {
       setIsCreatingProject(false);
     }
@@ -482,7 +482,7 @@ export function ProjectsPage() {
     });
     const result = await response.json();
     if (!result.success) {
-      throw new Error(result.error ?? "PriÅ¡lo je do napake pri shranjevanju stranke.");
+      throw new Error(result.error ?? "Prišlo je do napake pri shranjevanju stranke.");
     }
 
     const createdClient = result.data as Client;
@@ -524,12 +524,12 @@ export function ProjectsPage() {
   return (
     <>
       {currentView === "list" && (
-        <div className="min-h-screen bg-background p-6">
+        <div className="min-h-screen bg-background px-3 py-4 md:p-6">
           <div className="projects-page-shell">
-            <div className="projects-page-topbar mb-6 flex items-center justify-between">
+            <div className="projects-page-topbar mb-4 flex flex-col gap-3 md:mb-6 md:flex-row md:items-center md:justify-between">
               <h1 className="m-0">Projekti</h1>
               {!isExecutionOnlyViewer ? (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button onClick={openNewProjectDialog}>
                     <Plus className="mr-2 h-4 w-4" />
                     Nov projekt

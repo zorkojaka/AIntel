@@ -196,6 +196,13 @@
   overflow: hidden;
 }
 
+.projects-mobile-card-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .projects-table-shell thead tr {
   background: #f6faff;
 }
@@ -261,17 +268,11 @@
   }
 
   .projects-table-shell {
-    overflow-x: auto;
+    overflow-x: visible;
   }
 
   .projects-table-shell [data-slot="table-container"] {
-    overflow-x: auto;
-  }
-
-  .projects-table-shell [data-slot="table-head"],
-  .projects-table-shell [data-slot="table-cell"] {
-    white-space: normal;
-    overflow-wrap: anywhere;
+    overflow-x: visible;
   }
 
   .projects-workspace-shell [data-slot="card"] {

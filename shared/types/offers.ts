@@ -67,3 +67,45 @@ export interface OfferVersionSummary {
   totalGrossAfterDiscount?: number;
   totalWithVat?: number;
 }
+
+export interface OfferTemplate {
+  _id: string;
+  title: string;
+  sourceProjectId?: string | null;
+  sourceOfferId?: string | null;
+  paymentTerms: string | null;
+  comment?: string | null;
+  items: OfferLineItem[];
+  totalNet: number;
+  totalVat22: number;
+  totalVat95: number;
+  totalVat: number;
+  totalGross: number;
+  discountPercent: number;
+  globalDiscountPercent?: number;
+  discountAmount: number;
+  totalNetAfterDiscount: number;
+  totalGrossAfterDiscount: number;
+  applyGlobalDiscount: boolean;
+  applyPerItemDiscount: boolean;
+  useGlobalDiscount: boolean;
+  usePerItemDiscount: boolean;
+  vatMode: 0 | 9.5 | 22;
+  baseWithoutVat?: number;
+  perItemDiscountAmount?: number;
+  globalDiscountAmount?: number;
+  baseAfterDiscount?: number;
+  vatAmount?: number;
+  totalWithVat?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OfferTemplateSummary {
+  _id: string;
+  title: string;
+  sourceOfferId?: string | null;
+  updatedAt: string;
+  totalGrossAfterDiscount?: number;
+  totalWithVat?: number;
+}

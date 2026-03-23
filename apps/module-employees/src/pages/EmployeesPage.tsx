@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Eye, EyeOff, Plus, RefreshCw, Search, Users } from 'lucide-react';
+import { Eye, EyeOff, Plus, RefreshCw, Search } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 import { EmployeesTable } from '../components/EmployeesTable';
 import { EmployeeFormDialog } from '../components/EmployeeFormDialog';
@@ -94,28 +94,21 @@ export function EmployeesPage() {
 
   return (
     <div className="employees-page-shell space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-3 text-slate-800">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-              <Users size={20} />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">Zaposleni</h1>
-              <p className="text-sm text-slate-500">Upravljanje ekip in urnih postavk.</p>
-            </div>
-          </div>
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-xl font-bold text-slate-900">Zaposleni</h1>
+          <p className="text-sm text-slate-500">Pregled ekip in urnih postavk.</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => loadEmployees(showDeleted)}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:-translate-y-[1px] hover:border-slate-300 hover:shadow"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
             disabled={loading}
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            Osvezi
+            Osveži
           </button>
           {capabilities.canCreate ? (
             <button
@@ -130,10 +123,9 @@ export function EmployeesPage() {
         </div>
       </div>
 
-      <div className="employees-card space-y-4 p-5">
+      <div className="employees-card space-y-4 p-4 md:p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="inline-flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            <Users size={16} />
             <span>{filteredEmployees.length} rezultatov</span>
           </div>
 
@@ -147,14 +139,14 @@ export function EmployeesPage() {
               />
               <span className="inline-flex items-center gap-1">
                 {showDeleted ? <Eye size={14} /> : <EyeOff size={14} />}
-                Vkljuci izbrisane
+                Vključi izbrisane
               </span>
             </label>
-            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm">
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm sm:min-w-[18rem]">
               <Search size={16} className="text-slate-400" />
               <input
                 type="search"
-                placeholder="Isci po imenu, podjetju ali emailu"
+                placeholder="Išči po imenu, podjetju ali emailu"
                 className="w-full border-none bg-transparent text-sm outline-none"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}

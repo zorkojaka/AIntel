@@ -3,8 +3,9 @@ import mongoose, { Types } from 'mongoose';
 import PDFDocument from 'pdfkit';
 import http from 'http';
 import https from 'https';
-import type { OfferLineItem, OfferStatus, OfferVersion } from '../../../../shared/types/offers';
+import type { OfferLineItem, OfferStatus, OfferTemplate, OfferVersion } from '../../../../shared/types/offers';
 import { OfferVersionModel } from '../schemas/offer-version';
+import { OfferTemplateModel } from '../schemas/offer-template';
 import { ProductModel } from '../../cenik/product.model';
 import { ProjectModel } from '../schemas/project';
 import { renderHtmlToPdf } from '../services/html-pdf.service';
@@ -1089,6 +1090,107 @@ function serializeOffer(offer: OfferVersion) {
   } as OfferVersion;
 }
 
+function serializeTemplate(template: OfferTemplate) {
+  return {
+    ...template,
+    createdAt: template.createdAt ? new Date(template.createdAt).toISOString() : '',
+    updatedAt: template.updatedAt ? new Date(template.updatedAt).toISOString() : '',
+    items: (template.items ?? []).map((item) => ({
+      ...item,
+      casovnaNorma: normalizeCasovnaNorma((item as any).casovnaNorma),
+      dobavitelj: (item as any).dobavitelj,
+      naslovDobavitelja: (item as any).naslovDobavitelja,
+    })),
+    paymentTerms: template.paymentTerms ?? null,
+    comment: template.comment ?? null,
+    discountPercent: template.discountPercent ?? 0,
+    globalDiscountPercent: template.globalDiscountPercent ?? template.discountPercent ?? 0,
+    discountAmount: template.discountAmount ?? 0,
+    totalNetAfterDiscount: template.totalNetAfterDiscount ?? template.totalNet ?? 0,
+    totalGrossAfterDiscount: template.totalGrossAfterDiscount ?? template.totalGross ?? 0,
+    applyGlobalDiscount: template.applyGlobalDiscount ?? true,
+    applyPerItemDiscount: template.applyPerItemDiscount ?? true,
+    useGlobalDiscount: template.useGlobalDiscount ?? true,
+    usePerItemDiscount: template.usePerItemDiscount ?? false,
+    vatMode: (template.vatMode as number) ?? 22,
+    baseWithoutVat: template.baseWithoutVat ?? 0,
+    perItemDiscountAmount: template.perItemDiscountAmount ?? 0,
+    globalDiscountAmount: template.globalDiscountAmount ?? template.discountAmount ?? 0,
+    baseAfterDiscount: template.baseAfterDiscount ?? template.totalNetAfterDiscount ?? 0,
+    vatAmount: template.vatAmount ?? template.totalVat ?? 0,
+    totalWithVat: template.totalWithVat ?? template.totalGrossAfterDiscount ?? template.totalGross ?? 0,
+  } as OfferTemplate;
+}
+
+function buildOfferSnapshotPayload(input: {
+  title: string;
+  sourceProjectId?: string | null;
+  paymentTerms: string | null;
+  comment: string | null;
+  items: OfferLineItem[];
+  applyGlobalDiscount: boolean;
+  applyPerItemDiscount: boolean;
+  useGlobalDiscount: boolean;
+  usePerItemDiscount: boolean;
+  vatMode: number;
+  totals: ReturnType<typeof calculateOfferTotals>;
+  sourceOfferId?: string | null;
+}) {
+  return {
+    title: input.title,
+    sourceProjectId: input.sourceProjectId ?? null,
+    sourceOfferId: input.sourceOfferId ?? null,
+    paymentTerms: input.paymentTerms,
+    comment: input.comment,
+    items: input.items,
+    totalNet: input.totals.totalNet,
+    totalVat22: input.totals.totalVat22,
+    totalVat95: input.totals.totalVat95,
+    totalVat: input.totals.totalVat,
+    totalGross: input.totals.totalGross,
+    discountPercent: input.totals.discountPercent,
+    globalDiscountPercent: input.totals.discountPercent,
+    discountAmount: input.totals.discountAmount,
+    totalNetAfterDiscount: input.totals.totalNetAfterDiscount,
+    totalGrossAfterDiscount: input.totals.totalGrossAfterDiscount,
+    applyGlobalDiscount: input.applyGlobalDiscount,
+    applyPerItemDiscount: input.applyPerItemDiscount,
+    useGlobalDiscount: input.useGlobalDiscount,
+    usePerItemDiscount: input.usePerItemDiscount,
+    vatMode: input.vatMode as 0 | 9.5 | 22,
+    baseWithoutVat: input.totals.baseWithoutVat ?? input.totals.totalNet ?? 0,
+    perItemDiscountAmount: input.totals.perItemDiscountAmount ?? 0,
+    globalDiscountAmount: input.totals.globalDiscountAmount ?? 0,
+    baseAfterDiscount: input.totals.baseAfterDiscount ?? input.totals.totalNetAfterDiscount ?? 0,
+    vatAmount: input.totals.vatAmount ?? input.totals.totalVat ?? 0,
+    totalWithVat: input.totals.totalWithVat ?? input.totals.totalGrossAfterDiscount ?? input.totals.totalGross ?? 0,
+  };
+}
+
+async function parseOfferItemsFromBody(body: Record<string, unknown>) {
+  const rawItems = Array.isArray(body.items) ? body.items : [];
+  const parsedItems = rawItems.map((raw: unknown) => sanitizeLineItem(raw));
+  if (parsedItems.some((entry) => entry.error)) {
+    return { error: 'Količina postavke mora biti vsaj 1.' };
+  }
+
+  const items = parsedItems
+    .filter((entry) => entry.item)
+    .map((entry) => entry.item as OfferLineItem);
+  const itemsWithNorma = await attachCasovnaNorma(items);
+
+  if (!itemsWithNorma.length) {
+    return { error: 'Ponudba mora vsebovati vsaj eno veljavno postavko.' };
+  }
+
+  return { items: itemsWithNorma };
+}
+
+function buildOfferTitleFromTemplate(templateTitle: string) {
+  const normalized = normalizeText(templateTitle, 'Template');
+  return normalized.toLowerCase().endsWith(' template') ? normalized.slice(0, -9).trim() || 'Ponudba' : normalized;
+}
+
 export async function saveOfferVersion(req: Request, res: Response, next: NextFunction) {
   try {
     const { projectId } = req.params;
@@ -1230,6 +1332,162 @@ export async function listOffersForProject(req: Request, res: Response, next: Ne
       totalWithVat: o.totalWithVat ?? o.totalGrossAfterDiscount ?? o.totalGross ?? 0,
     }));
     return res.success(data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function listOfferTemplates(req: Request, res: Response, next: NextFunction) {
+  try {
+    const templates = await OfferTemplateModel.find({}).sort({ updatedAt: -1, title: 1 }).lean();
+    return res.success(
+      templates.map((template) => ({
+        _id: String(template._id),
+        title: template.title,
+        sourceProjectId: (template as any).sourceProjectId ?? (template as any).projectId ?? null,
+        sourceOfferId: template.sourceOfferId ?? null,
+        updatedAt: template.updatedAt ? new Date(template.updatedAt).toISOString() : '',
+        totalGrossAfterDiscount:
+          template.totalGrossAfterDiscount ?? template.totalWithVat ?? template.totalGross ?? 0,
+        totalWithVat: template.totalWithVat ?? template.totalGrossAfterDiscount ?? template.totalGross ?? 0,
+      }))
+    );
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function saveOfferTemplate(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { projectId } = req.params;
+    const body = req.body ?? {};
+    const parsed = await parseOfferItemsFromBody(body);
+    if (parsed.error || !parsed.items) {
+      return res.fail(parsed.error ?? 'Ponudba mora vsebovati vsaj eno veljavno postavko.', 400);
+    }
+
+    const itemsWithNorma = parsed.items;
+    const totals = calculateOfferTotals({
+      items: itemsWithNorma,
+      usePerItemDiscount: body?.usePerItemDiscount ?? false,
+      useGlobalDiscount: body?.useGlobalDiscount ?? true,
+      globalDiscountPercent: body?.globalDiscountPercent ?? body?.discountPercent ?? 0,
+      vatMode: body?.vatMode ?? 22,
+    });
+    const normalizedTitle = normalizeText(body?.title);
+    const templateTitle = normalizedTitle || `${extractBaseTitle(normalizeText(body?.sourceTitle, 'Ponudba'))} template`;
+    const normalizedPaymentTerms = normalizeText(body?.paymentTerms);
+
+    const created = await OfferTemplateModel.create(
+      buildOfferSnapshotPayload({
+        title: templateTitle,
+        sourceProjectId: projectId,
+        paymentTerms: normalizedPaymentTerms || DEFAULT_PAYMENT_TERMS,
+        comment: normalizeText(body?.comment) || null,
+        items: itemsWithNorma,
+        applyGlobalDiscount: body?.applyGlobalDiscount ?? true,
+        applyPerItemDiscount: body?.applyPerItemDiscount ?? true,
+        useGlobalDiscount: body?.useGlobalDiscount ?? true,
+        usePerItemDiscount: body?.usePerItemDiscount ?? false,
+        vatMode: body?.vatMode ?? 22,
+        totals,
+        sourceOfferId: normalizeText(body?.sourceOfferId) || null,
+      })
+    );
+
+    return res.success(serializeTemplate(created.toObject() as OfferTemplate));
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function applyOfferTemplate(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { templateId } = req.params;
+    const template = await OfferTemplateModel.findById(templateId).lean();
+    if (!template) {
+      return res.fail('Template ne obstaja.', 404);
+    }
+    return res.success(serializeTemplate(template as OfferTemplate));
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function renameOfferTemplate(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { templateId } = req.params;
+    const nextTitle = normalizeText(req.body?.title);
+    if (!nextTitle) {
+      return res.fail('Ime template-a je obvezno.', 400);
+    }
+
+    const template = await OfferTemplateModel.findById(templateId);
+    if (!template) {
+      return res.fail('Template ne obstaja.', 404);
+    }
+
+    template.title = nextTitle;
+    const nextApplyGlobalDiscount =
+      req.body && Object.prototype.hasOwnProperty.call(req.body, 'applyGlobalDiscount')
+        ? Boolean(req.body.applyGlobalDiscount)
+        : template.applyGlobalDiscount ?? true;
+    const nextApplyPerItemDiscount =
+      req.body && Object.prototype.hasOwnProperty.call(req.body, 'applyPerItemDiscount')
+        ? Boolean(req.body.applyPerItemDiscount)
+        : template.applyPerItemDiscount ?? true;
+    const nextGlobalDiscountPercent = Math.min(
+      100,
+      Math.max(0, Number(req.body?.globalDiscountPercent ?? req.body?.discountPercent ?? template.globalDiscountPercent ?? template.discountPercent ?? 0) || 0)
+    );
+    const nextUseGlobalDiscount =
+      req.body && Object.prototype.hasOwnProperty.call(req.body, 'useGlobalDiscount')
+        ? Boolean(req.body.useGlobalDiscount)
+        : template.useGlobalDiscount ?? true;
+    const nextUsePerItemDiscount =
+      req.body && Object.prototype.hasOwnProperty.call(req.body, 'usePerItemDiscount')
+        ? Boolean(req.body.usePerItemDiscount)
+        : template.usePerItemDiscount ?? false;
+    const nextVatMode =
+      req.body && Object.prototype.hasOwnProperty.call(req.body, 'vatMode')
+        ? ((Number(req.body.vatMode) as 0 | 9.5 | 22) || 22)
+        : ((template.vatMode as 0 | 9.5 | 22) ?? 22);
+    const totals = calculateOfferTotals({
+      items: (template.items ?? []) as OfferLineItem[],
+      usePerItemDiscount: nextUsePerItemDiscount,
+      useGlobalDiscount: nextUseGlobalDiscount,
+      globalDiscountPercent: nextGlobalDiscountPercent,
+      vatMode: nextVatMode,
+    });
+
+    template.applyGlobalDiscount = nextApplyGlobalDiscount;
+    template.applyPerItemDiscount = nextApplyPerItemDiscount;
+    template.useGlobalDiscount = nextUseGlobalDiscount;
+    template.usePerItemDiscount = nextUsePerItemDiscount;
+    template.vatMode = nextVatMode;
+    template.discountPercent = totals.discountPercent;
+    template.globalDiscountPercent = totals.discountPercent;
+    template.discountAmount = totals.discountAmount;
+    template.totalNetAfterDiscount = totals.totalNetAfterDiscount;
+    template.totalGrossAfterDiscount = totals.totalGrossAfterDiscount;
+    template.baseWithoutVat = totals.baseWithoutVat ?? totals.totalNet ?? 0;
+    template.perItemDiscountAmount = totals.perItemDiscountAmount ?? 0;
+    template.globalDiscountAmount = totals.globalDiscountAmount ?? 0;
+    template.baseAfterDiscount = totals.baseAfterDiscount ?? totals.totalNetAfterDiscount ?? 0;
+    template.vatAmount = totals.vatAmount ?? totals.totalVat ?? 0;
+    template.totalWithVat = totals.totalWithVat ?? totals.totalGrossAfterDiscount ?? totals.totalGross ?? 0;
+    await template.save();
+    return res.success(serializeTemplate(template.toObject() as OfferTemplate));
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteOfferTemplate(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { templateId } = req.params;
+    const deleted = await OfferTemplateModel.findByIdAndDelete(templateId);
+    return res.success(Boolean(deleted));
   } catch (err) {
     next(err);
   }
