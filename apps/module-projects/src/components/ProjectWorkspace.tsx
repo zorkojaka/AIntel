@@ -159,6 +159,7 @@ export function ProjectWorkspace({
   const [isUnsavedOfferDialogOpen, setIsUnsavedOfferDialogOpen] = useState(false);
   const pendingOfferNavigationRef = useRef<(() => void | Promise<void>) | null>(null);
   const offerSaveHandlerRef = useRef<(() => Promise<boolean>) | null>(null);
+  const logisticsSaveHandlerRef = useRef<(() => Promise<boolean>) | null>(null);
   const invoiceSectionRef = useRef<HTMLDivElement | null>(null);
   const timelineSteps = useProjectTimeline(project);
   const allTabsConfig: { value: WorkspaceTabValue; label: string }[] = [
@@ -217,6 +218,9 @@ export function ProjectWorkspace({
 
   const registerOfferSaveHandler = useCallback((handler: (() => Promise<boolean>) | null) => {
     offerSaveHandlerRef.current = handler;
+  }, []);
+  const registerLogisticsSaveHandler = useCallback((handler: (() => Promise<boolean>) | null) => {
+    logisticsSaveHandlerRef.current = handler;
   }, []);
 
   const closeUnsavedOfferDialog = useCallback(() => {
@@ -936,6 +940,10 @@ export function ProjectWorkspace({
         void offerSaveHandlerRef.current();
         return;
       }
+      if (activeTab === "logistics" && logisticsSaveHandlerRef.current) {
+        void logisticsSaveHandlerRef.current();
+        return;
+      }
       void refresh();
     };
 
@@ -982,7 +990,7 @@ export function ProjectWorkspace({
           onBack={handleBackWithGuard}
           onPrimaryAction={handleHeaderPrimaryAction}
           onNewProject={handleNewProjectWithGuard}
-          primaryActionLabel={activeTab === "offers" ? "Shrani" : "Osveži"}
+          primaryActionLabel={activeTab === "offers" || activeTab === "logistics" ? "Shrani" : "Osveži"}
         />
         <div className="max-w-[1280px] mx-auto px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6">
           <div className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground md:hidden">
@@ -1069,7 +1077,11 @@ export function ProjectWorkspace({
 
                 {allowedTabValues.includes("logistics") ? (
                 <TabsContent value="logistics" className="mt-0 space-y-6">
-                  <LogisticsPanel projectId={project.id} client={displayedClient} />
+                  <LogisticsPanel
+                    projectId={project.id}
+                    client={displayedClient}
+                    onRegisterSaveHandler={registerLogisticsSaveHandler}
+                  />
                 </TabsContent>
                 ) : null}
 

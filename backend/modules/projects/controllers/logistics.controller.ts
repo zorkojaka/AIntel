@@ -1,6 +1,11 @@
 import { NextFunction, Request, Response } from 'express';
 import mongoose, { Types } from 'mongoose';
-import type { MaterialOrder, ProjectLogisticsSnapshot, WorkOrder } from '../../../../shared/types/logistics';
+import type {
+  MaterialOrder,
+  MaterialPickupMethod,
+  ProjectLogisticsSnapshot,
+  WorkOrder,
+} from '../../../../shared/types/logistics';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { ProjectModel, addTimeline } from '../schemas/project';
 import { MaterialOrderModel } from '../schemas/material-order';
@@ -73,6 +78,13 @@ const MATERIAL_STATUS_BY_STEP: Record<MaterialStep, string> = {
   'Pripravljeno': 'Pripravljeno',
 };
 
+const MATERIAL_PICKUP_METHOD_VALUES: MaterialPickupMethod[] = [
+  'COMPANY_PICKUP',
+  'SUPPLIER_PICKUP',
+  'DIRECT_TO_INSTALLER',
+  'DIRECT_TO_SITE',
+];
+
 function resolveMaterialStep(value: unknown): MaterialStep {
   return MATERIAL_STEP_SEQUENCE.includes(value as MaterialStep) ? (value as MaterialStep) : 'Za naročiti';
 }
@@ -112,6 +124,8 @@ function mapOfferItemsToLogistics(items: OfferLineItem[]) {
       productId: item.productId ?? null,
       name: item.name,
       quantity: item.quantity,
+      isOrdered: false,
+      orderedQty: 0,
       deliveredQty: 0,
       unit: item.unit,
       note,
@@ -217,15 +231,26 @@ async function ensureMaterialOrderForOffer(params: {
     const existingItems = new Map<string, any>(
       (materialOrder.items ?? []).map((item: any) => [String(item.id), item])
     );
-    materialOrder.items = items.map((item) => ({
-      ...item,
-      deliveredQty:
-        typeof existingItems.get(item.id)?.deliveredQty === 'number' ? existingItems.get(item.id).deliveredQty : 0,
-      materialStep:
-        typeof existingItems.get(item.id)?.materialStep === 'string'
-          ? existingItems.get(item.id).materialStep
-          : item.materialStep ?? 'Za naročiti',
-    }));
+    const extraItems = (materialOrder.items ?? [])
+      .map((item: any) => (item.toObject ? item.toObject() : item))
+      .filter((item: any) => item?.isExtra);
+    materialOrder.items = [
+      ...items.map((item) => ({
+        ...item,
+        isOrdered:
+          typeof existingItems.get(item.id)?.isOrdered === 'boolean' ? existingItems.get(item.id).isOrdered : false,
+        orderedQty:
+          typeof existingItems.get(item.id)?.orderedQty === 'number' ? existingItems.get(item.id).orderedQty : 0,
+        deliveredQty:
+          typeof existingItems.get(item.id)?.deliveredQty === 'number' ? existingItems.get(item.id).deliveredQty : 0,
+        materialStep:
+          typeof existingItems.get(item.id)?.materialStep === 'string'
+            ? existingItems.get(item.id).materialStep
+            : item.materialStep ?? 'Za naro?iti',
+        isExtra: false,
+      })),
+      ...extraItems,
+    ];
     materialOrder.workOrderId = workOrderId;
     materialOrder.materialStatus = materialOrder.materialStatus ?? 'Za naročit';
     materialOrder.cancelledAt = null;
@@ -257,6 +282,8 @@ function serializeMaterialOrder(order: any): MaterialOrder | null {
       productId: item.productId ?? null,
       name: item.name,
       quantity: item.quantity,
+      isOrdered: typeof item.isOrdered === 'boolean' ? item.isOrdered : false,
+      orderedQty: typeof item.orderedQty === 'number' ? item.orderedQty : 0,
       deliveredQty: typeof item.deliveredQty === 'number' ? item.deliveredQty : 0,
       unit: item.unit,
       note: item.note,
@@ -279,6 +306,15 @@ function serializeMaterialOrder(order: any): MaterialOrder | null {
     assignedEmployeeIds: Array.isArray(order.assignedEmployeeIds)
       ? order.assignedEmployeeIds.map((id: any) => String(id))
       : [],
+    pickupMethod: typeof order.pickupMethod === 'string' ? order.pickupMethod : null,
+    pickupLocation: typeof order.pickupLocation === 'string' ? order.pickupLocation : null,
+    logisticsOwnerId: order.logisticsOwnerId ? String(order.logisticsOwnerId) : null,
+    pickupNote: typeof order.pickupNote === 'string' ? order.pickupNote : null,
+    deliveryNotePhotos: Array.isArray(order.deliveryNotePhotos)
+      ? order.deliveryNotePhotos.filter((entry: unknown) => typeof entry === 'string')
+      : [],
+    pickupConfirmedAt: order.pickupConfirmedAt ? new Date(order.pickupConfirmedAt).toISOString() : null,
+    pickupConfirmedBy: typeof order.pickupConfirmedBy === 'string' ? order.pickupConfirmedBy : null,
     cancelledAt: order.cancelledAt ? new Date(order.cancelledAt).toISOString() : null,
     reopened: !!order.reopened,
     createdAt: order.createdAt ? new Date(order.createdAt).toISOString() : '',
@@ -332,6 +368,8 @@ function serializeWorkOrder(order: any): WorkOrder | null {
       : order.scheduleConfirmedAt
         ? new Date(order.scheduleConfirmedAt).toISOString()
         : null,
+    scheduledConfirmedBy: typeof order.scheduledConfirmedBy === 'string' ? order.scheduledConfirmedBy : null,
+    mainInstallerId: order.mainInstallerId ? String(order.mainInstallerId) : null,
     assignedEmployeeIds: Array.isArray(order.assignedEmployeeIds)
       ? order.assignedEmployeeIds.map((id: any) => String(id))
       : [],
@@ -356,6 +394,35 @@ function serializeWorkOrder(order: any): WorkOrder | null {
     createdAt: order.createdAt ? new Date(order.createdAt).toISOString() : '',
     updatedAt: order.updatedAt ? new Date(order.updatedAt).toISOString() : '',
   };
+}
+
+function resolveScheduleConfirmerLabel(req: Request) {
+  const authEmployeeName =
+    typeof (req as any).authEmployee?.name === 'string' ? (req as any).authEmployee.name.trim() : '';
+  if (authEmployeeName) return authEmployeeName;
+
+  const userName = typeof (req as any).user?.name === 'string' ? (req as any).user.name.trim() : '';
+  if (userName) return userName;
+
+  const userEmail = typeof (req as any).user?.email === 'string' ? (req as any).user.email.trim() : '';
+  if (userEmail) return userEmail;
+
+  return resolveActorId(req);
+}
+
+async function resolveEmployeeIdForTenant(tenantId: string, value: unknown) {
+  const nextId = typeof value === 'string' ? value.trim() : '';
+  if (!nextId) {
+    return { id: null as string | null };
+  }
+  if (!mongoose.isValidObjectId(nextId)) {
+    return { error: 'Neveljaven zaposleni.' };
+  }
+  const match = await EmployeeModel.findOne({ _id: nextId, tenantId }).select('_id').lean();
+  if (!match) {
+    return { error: 'Zaposleni ne pripada tenantu.' };
+  }
+  return { id: nextId };
 }
 
 async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisticsSnapshot | null> {
@@ -634,6 +701,63 @@ export async function getProjectLogistics(req: Request, res: Response, next: Nex
   }
 }
 
+export async function getInstallerAvailability(req: Request, res: Response, next: NextFunction) {
+  try {
+    const tenantId = resolveTenantId(req);
+    if (!tenantId) {
+      return res.fail('TenantId ni podan.', 400);
+    }
+
+    const { employeeId } = req.params;
+    const excludeWorkOrderId = typeof req.query.excludeWorkOrderId === 'string' ? req.query.excludeWorkOrderId : '';
+    const resolvedEmployee = await resolveEmployeeIdForTenant(tenantId, employeeId);
+    if ('error' in resolvedEmployee) {
+      return res.fail(resolvedEmployee.error, 400);
+    }
+    if (!resolvedEmployee.id) {
+      return res.success([]);
+    }
+
+    const nowIso = new Date().toISOString();
+    const query: Record<string, unknown> = {
+      assignedEmployeeIds: new Types.ObjectId(resolvedEmployee.id),
+      status: { $ne: 'cancelled' },
+      cancelledAt: null,
+      scheduledAt: { $ne: null, $gte: nowIso },
+    };
+    if (excludeWorkOrderId && mongoose.isValidObjectId(excludeWorkOrderId)) {
+      query._id = { $ne: new Types.ObjectId(excludeWorkOrderId) };
+    }
+
+    const workOrders = await WorkOrderModel.find(query)
+      .sort({ scheduledAt: 1, createdAt: 1 })
+      .limit(12)
+      .lean();
+
+    const projectIds = Array.from(new Set(workOrders.map((order) => order.projectId).filter(Boolean)));
+    const projects = projectIds.length
+      ? await ProjectModel.find({ id: { $in: projectIds } }).select({ id: 1, code: 1, title: 1 }).lean()
+      : [];
+    const projectLookup = new Map<string, any>(projects.map((project: any) => [project.id, project]));
+
+    const availability = workOrders.map((order: any) => {
+      const project = projectLookup.get(order.projectId);
+      return {
+        workOrderId: String(order._id),
+        projectId: order.projectId,
+        projectCode: project?.code ?? order.projectId,
+        projectTitle: typeof project?.title === 'string' ? project.title : null,
+        title: typeof order.title === 'string' ? order.title : null,
+        scheduledAt: typeof order.scheduledAt === 'string' ? order.scheduledAt : null,
+      };
+    });
+
+    return res.success(availability);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function updateWorkOrder(req: Request, res: Response, next: NextFunction) {
   try {
     const { projectId, workOrderId } = req.params;
@@ -675,8 +799,10 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     if (scheduledConfirmedValue !== undefined) {
       if (scheduledConfirmedValue === null) {
         updates.scheduledConfirmedAt = null;
+        updates.scheduledConfirmedBy = null;
       } else if (typeof scheduledConfirmedValue === 'string' && scheduledConfirmedValue.trim().length > 0) {
         updates.scheduledConfirmedAt = new Date(scheduledConfirmedValue);
+        updates.scheduledConfirmedBy = resolveScheduleConfirmerLabel(req);
       }
     }
     if ('technicianName' in payload || 'technicianId' in payload) {
@@ -688,6 +814,13 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         return res.fail(resolved.error, 400);
       }
       updates.assignedEmployeeIds = resolved.ids;
+    }
+    if ('mainInstallerId' in payload) {
+      const resolved = await resolveEmployeeIdForTenant(tenantId, payload.mainInstallerId);
+      if ('error' in resolved) {
+        return res.fail(resolved.error, 400);
+      }
+      updates.mainInstallerId = resolved.id;
     }
     if ('location' in payload) updates.location = payload.location;
     if ('notes' in payload) updates.notes = payload.notes;
@@ -801,61 +934,200 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
   const materialOrderId = typeof payload.materialOrderId === 'string' ? payload.materialOrderId : null;
   if (materialOrderId) {
     const materialUpdates: Record<string, unknown> = {};
-      if (typeof payload.materialStatus === 'string' && MATERIAL_STATUS_VALUES.includes(payload.materialStatus)) {
-        materialUpdates.materialStatus = payload.materialStatus;
+    if (typeof payload.materialStatus === 'string' && MATERIAL_STATUS_VALUES.includes(payload.materialStatus)) {
+      materialUpdates.materialStatus = payload.materialStatus;
+    }
+    if ('materialAssignedEmployeeIds' in payload) {
+      const resolved = await resolveAssignedEmployeeIds(payload.materialAssignedEmployeeIds);
+      if ('error' in resolved) {
+        return res.fail(resolved.error, 400);
       }
-      if ('materialAssignedEmployeeIds' in payload) {
-        const resolved = await resolveAssignedEmployeeIds(payload.materialAssignedEmployeeIds);
+      materialUpdates.assignedEmployeeIds = resolved.ids;
+    }
+    if ('pickupMethod' in payload) {
+      materialUpdates.pickupMethod =
+        typeof payload.pickupMethod === 'string' && MATERIAL_PICKUP_METHOD_VALUES.includes(payload.pickupMethod as MaterialPickupMethod)
+          ? payload.pickupMethod
+          : null;
+    }
+    if ('pickupLocation' in payload) {
+      materialUpdates.pickupLocation = typeof payload.pickupLocation === 'string' ? payload.pickupLocation : null;
+    }
+    if ('pickupNote' in payload) {
+      materialUpdates.pickupNote = typeof payload.pickupNote === 'string' ? payload.pickupNote : null;
+    }
+    if ('deliveryNotePhotos' in payload) {
+      materialUpdates.deliveryNotePhotos = Array.isArray(payload.deliveryNotePhotos)
+        ? payload.deliveryNotePhotos.filter((entry: unknown) => typeof entry === 'string')
+        : [];
+    }
+    if ('logisticsOwnerId' in payload) {
+      const nextOwner = typeof payload.logisticsOwnerId === 'string' ? payload.logisticsOwnerId.trim() : '';
+      if (!nextOwner) {
+        materialUpdates.logisticsOwnerId = null;
+      } else {
+        const resolved = await resolveAssignedEmployeeIds([nextOwner]);
         if ('error' in resolved) {
           return res.fail(resolved.error, 400);
         }
-        materialUpdates.assignedEmployeeIds = resolved.ids;
-      }
-      if ('materialTechnicianId' in payload || 'materialTechnicianName' in payload) {
-        console.warn('Ignoring legacy material technician fields on work order update.');
-      }
-
-      if (Object.keys(materialUpdates).length > 0) {
-        materialUpdates.workOrderId = workOrderId;
-        await MaterialOrderModel.findOneAndUpdate(
-          { _id: materialOrderId, projectId },
-          { $set: materialUpdates },
-          { new: false }
-        );
+        materialUpdates.logisticsOwnerId = resolved.ids[0] ?? null;
       }
     }
+    if ('pickupConfirmedAt' in payload) {
+      if (payload.pickupConfirmedAt === null) {
+        materialUpdates.pickupConfirmedAt = null;
+        materialUpdates.pickupConfirmedBy = null;
+      } else if (typeof payload.pickupConfirmedAt === 'string' && payload.pickupConfirmedAt.trim().length > 0) {
+        materialUpdates.pickupConfirmedAt = new Date(payload.pickupConfirmedAt);
+        materialUpdates.pickupConfirmedBy = resolveActorId(req);
+        if (!('materialStatus' in materialUpdates)) {
+          materialUpdates.materialStatus = 'Prevzeto';
+        }
+      }
+    }
+    if ('materialTechnicianId' in payload || 'materialTechnicianName' in payload) {
+      console.warn('Ignoring legacy material technician fields on work order update.');
+    }
 
-    if (Array.isArray(payload.materialItems)) {
-      const materialOrder = await MaterialOrderModel.findOne({ _id: materialOrderId, projectId });
-      if (materialOrder) {
-        const incomingItems = payload.materialItems as Array<{ id?: string; deliveredQty?: number }>;
-        const deliveredById = new Map(
-          incomingItems
-            .map((item) => ({
-              id: typeof item.id === 'string' ? item.id : null,
-              deliveredQty: typeof item.deliveredQty === 'number' ? item.deliveredQty : null,
-            }))
-            .filter((item) => item.id && item.deliveredQty !== null)
-            .map((item) => [item.id as string, item.deliveredQty as number])
-        );
+    if (Object.keys(materialUpdates).length > 0) {
+      materialUpdates.workOrderId = workOrderId;
+      await MaterialOrderModel.findOneAndUpdate(
+        { _id: materialOrderId, projectId },
+        { $set: materialUpdates },
+        { new: false }
+      );
+    }
+  }
 
-        const changes: Array<{ itemId: string; before: number; after: number }> = [];
-        const nextItems = (materialOrder.items ?? []).map((item: any) => {
-          const id = String(item.id);
-          if (!deliveredById.has(id)) return item;
-          const rawDelivered = deliveredById.get(id) ?? 0;
-          const clamped = Math.max(0, rawDelivered);
-          const before = typeof item.deliveredQty === 'number' ? item.deliveredQty : 0;
-          if (before !== clamped) {
-            changes.push({ itemId: id, before, after: clamped });
+  if (Array.isArray(payload.materialItems)) {
+    const materialOrder = await MaterialOrderModel.findOne({ _id: materialOrderId, projectId });
+    if (materialOrder) {
+      const currentItems = Array.isArray(materialOrder.items)
+        ? materialOrder.items.map((item: any) => ({ ...(item.toObject ? item.toObject() : item) }))
+        : [];
+      const nextItems = [...currentItems];
+      const changes: Array<{ itemId: string; before: number; after: number }> = [];
+      let hasItemMutations = false;
+      const resolveItemId = (incoming: any) =>
+        typeof incoming.id === 'string'
+          ? incoming.id
+          : typeof incoming._id === 'string'
+            ? incoming._id
+            : null;
+
+      (payload.materialItems as Array<any>).forEach((incoming: any) => {
+        const targetId = resolveItemId(incoming);
+        if (targetId) {
+          const target = nextItems.find((item) => String(item.id) === targetId);
+          if (target) {
+            if (typeof incoming.name === 'string' && target.name !== incoming.name) {
+              target.name = incoming.name;
+              hasItemMutations = true;
+            }
+            if (typeof incoming.unit === 'string' && target.unit !== incoming.unit) {
+              target.unit = incoming.unit;
+              hasItemMutations = true;
+            }
+            if (typeof incoming.note === 'string' || incoming.note === null) {
+              const nextNote = incoming.note ?? '';
+              if (target.note !== nextNote) {
+                target.note = nextNote;
+                hasItemMutations = true;
+              }
+            }
+            if (typeof incoming.productId === 'string' || incoming.productId === null) {
+              const nextProductId = incoming.productId ?? null;
+              if (target.productId !== nextProductId) {
+                target.productId = nextProductId;
+                hasItemMutations = true;
+              }
+            }
+            if (typeof incoming.quantity === 'number' && Number.isFinite(incoming.quantity) && target.quantity !== incoming.quantity) {
+              target.quantity = incoming.quantity;
+              hasItemMutations = true;
+            }
+            if (typeof incoming.isOrdered === 'boolean' && target.isOrdered !== incoming.isOrdered) {
+              target.isOrdered = incoming.isOrdered;
+              hasItemMutations = true;
+            }
+            if (typeof incoming.orderedQty === 'number' && Number.isFinite(incoming.orderedQty)) {
+              const nextOrderedQty = Math.max(0, incoming.orderedQty);
+              if (target.orderedQty !== nextOrderedQty) {
+                target.orderedQty = nextOrderedQty;
+                hasItemMutations = true;
+              }
+            }
+            if (typeof incoming.deliveredQty === 'number' && Number.isFinite(incoming.deliveredQty)) {
+              const before = typeof target.deliveredQty === 'number' ? target.deliveredQty : 0;
+              const after = Math.max(0, incoming.deliveredQty);
+              target.deliveredQty = after;
+              if (before !== after) {
+                changes.push({ itemId: String(targetId), before, after });
+              }
+            }
+            if (typeof incoming.materialStep === 'string' && target.materialStep !== incoming.materialStep) {
+              target.materialStep = incoming.materialStep;
+              hasItemMutations = true;
+            }
+            if (typeof incoming.dobavitelj === 'string' && target.dobavitelj !== incoming.dobavitelj) {
+              target.dobavitelj = incoming.dobavitelj;
+              hasItemMutations = true;
+            }
+            if (typeof incoming.naslovDobavitelja === 'string' && target.naslovDobavitelja !== incoming.naslovDobavitelja) {
+              target.naslovDobavitelja = incoming.naslovDobavitelja;
+              hasItemMutations = true;
+            }
+            if (typeof incoming.isExtra === 'boolean' && target.isExtra !== incoming.isExtra) {
+              target.isExtra = incoming.isExtra;
+              hasItemMutations = true;
+            }
+            return;
           }
-          return { ...item, deliveredQty: clamped };
+        }
+
+        const deliveredQty = typeof incoming.deliveredQty === 'number' && Number.isFinite(incoming.deliveredQty)
+          ? Math.max(0, incoming.deliveredQty)
+          : typeof incoming.quantity === 'number' && Number.isFinite(incoming.quantity)
+            ? Math.max(0, incoming.quantity)
+            : 0;
+        const orderedQty = typeof incoming.orderedQty === 'number' && Number.isFinite(incoming.orderedQty)
+          ? Math.max(0, incoming.orderedQty)
+          : 0;
+        const quantity = typeof incoming.quantity === 'number' && Number.isFinite(incoming.quantity)
+          ? incoming.quantity
+          : 0;
+        const newItemId =
+          typeof incoming.id === 'string'
+            ? incoming.id
+            : typeof incoming._id === 'string'
+              ? incoming._id
+              : `extra-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        nextItems.push({
+          id: newItemId,
+          productId: typeof incoming.productId === 'string' ? incoming.productId : null,
+          name: typeof incoming.name === 'string' && incoming.name.trim().length > 0 ? incoming.name : 'Dodatni material',
+          quantity,
+          isOrdered: typeof incoming.isOrdered === 'boolean' ? incoming.isOrdered : false,
+          orderedQty,
+          deliveredQty,
+          unit: typeof incoming.unit === 'string' ? incoming.unit : '',
+          note: typeof incoming.note === 'string' ? incoming.note : '',
+          dobavitelj: typeof incoming.dobavitelj === 'string' ? incoming.dobavitelj : '',
+          naslovDobavitelja: typeof incoming.naslovDobavitelja === 'string' ? incoming.naslovDobavitelja : '',
+          materialStep: typeof incoming.materialStep === 'string' ? incoming.materialStep : 'Prevzeto',
+          isExtra: incoming.isExtra !== undefined ? Boolean(incoming.isExtra) : true,
         });
+        hasItemMutations = true;
+        if (deliveredQty > 0) {
+          changes.push({ itemId: newItemId, before: 0, after: deliveredQty });
+        }
+      });
+
+      if (hasItemMutations || changes.length > 0 || nextItems.length !== currentItems.length) {
+        materialOrder.items = nextItems;
+        await materialOrder.save();
 
         if (changes.length > 0) {
-          materialOrder.items = nextItems;
-          await materialOrder.save();
-
           const project = await ProjectModel.findOne({ id: projectId });
           if (project) {
             const actorEmployeeId = resolveActorId(req);
@@ -881,6 +1153,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         }
       }
     }
+  }
 
     return res.success(serializeWorkOrder(updated));
   } catch (err) {
@@ -902,6 +1175,14 @@ function parseWorkDocType(value?: string | string[] | null): 'WORK_ORDER' | 'WOR
     return 'WORK_ORDER_CONFIRMATION';
   }
   return 'WORK_ORDER';
+}
+
+function parsePdfResponseMode(value?: string | string[] | null): 'inline' | 'download' {
+  const normalized = Array.isArray(value) ? value[0] : value;
+  if (typeof normalized === 'string' && normalized.toLowerCase() === 'inline') {
+    return 'inline';
+  }
+  return 'download';
 }
 
 export async function advanceMaterialOrderStep(req: Request, res: Response, next: NextFunction) {
@@ -981,6 +1262,13 @@ export async function advanceMaterialOrderStep(req: Request, res: Response, next
         status: materialOrder.status ?? 'draft',
         materialStatus,
         assignedEmployeeIds: materialOrder.assignedEmployeeIds ?? [],
+        pickupMethod: materialOrder.pickupMethod ?? null,
+        pickupLocation: materialOrder.pickupLocation ?? null,
+        logisticsOwnerId: materialOrder.logisticsOwnerId ?? null,
+        pickupNote: materialOrder.pickupNote ?? null,
+        deliveryNotePhotos: materialOrder.deliveryNotePhotos ?? [],
+        pickupConfirmedAt: materialOrder.pickupConfirmedAt ?? null,
+        pickupConfirmedBy: materialOrder.pickupConfirmedBy ?? null,
         reopened: false,
       });
     };
@@ -1090,10 +1378,11 @@ export async function advanceMaterialOrderStep(req: Request, res: Response, next
 export async function exportMaterialOrderPdf(req: Request, res: Response, next: NextFunction) {
   try {
     const docType = parseMaterialDocType(req.query.docType);
+    const mode = parsePdfResponseMode(req.query.mode);
     const buffer = await generateMaterialOrderDocumentPdf(req.params.projectId, req.params.materialOrderId, docType);
     res.setHeader('Content-Type', 'application/pdf');
     const slug = docType === 'DELIVERY_NOTE' ? 'delivery-note' : 'purchase-order';
-    res.setHeader('Content-Disposition', `attachment; filename="${slug}-${req.params.materialOrderId}.pdf"`);
+    res.setHeader('Content-Disposition', `${mode}; filename="${slug}-${req.params.materialOrderId}.pdf"`);
     res.end(buffer);
   } catch (error) {
     next(error);
@@ -1103,10 +1392,11 @@ export async function exportMaterialOrderPdf(req: Request, res: Response, next: 
 export async function exportWorkOrderPdf(req: Request, res: Response, next: NextFunction) {
   try {
     const docType = parseWorkDocType(req.query.docType);
+    const mode = parsePdfResponseMode(req.query.mode);
     const buffer = await generateWorkOrderDocumentPdf(req.params.projectId, req.params.workOrderId, docType);
     res.setHeader('Content-Type', 'application/pdf');
     const slug = docType === 'WORK_ORDER_CONFIRMATION' ? 'work-order-confirmation' : 'work-order';
-    res.setHeader('Content-Disposition', `attachment; filename="${slug}-${req.params.workOrderId}.pdf"`);
+    res.setHeader('Content-Disposition', `${mode}; filename="${slug}-${req.params.workOrderId}.pdf"`);
     res.end(buffer);
   } catch (error) {
     next(error);

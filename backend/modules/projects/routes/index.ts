@@ -67,6 +67,7 @@ router.get('/:projectId/offer', getActiveOffer);
 router.post('/:projectId/offers/:offerId/confirm', requireProjectWrite, logisticsController.confirmOffer);
 router.post('/:projectId/logistics/cancel-confirmation', requireProjectWrite, cancelOfferConfirmation);
 router.get('/:projectId/logistics', logisticsController.getProjectLogistics);
+router.get('/:projectId/logistics/installer-availability/:employeeId', logisticsController.getInstallerAvailability);
 router.put('/:projectId/work-orders/:workOrderId', requireProjectWrite, logisticsController.updateWorkOrder);
 router.post('/:projectId/material-orders/:materialOrderId/advance', requireProjectWrite, logisticsController.advanceMaterialOrderStep);
 router.get('/:projectId/work-orders/:workOrderId/pdf', logisticsController.exportWorkOrderPdf);

@@ -2,6 +2,7 @@
 import { toast } from "sonner";
 import type {
   MaterialOrder,
+  MaterialPickupMethod,
   MaterialStatus,
   MaterialStep,
   ProjectLogisticsSnapshot,
@@ -9,21 +10,20 @@ import type {
   WorkOrderStatus,
 } from "@aintel/shared/types/logistics";
 import type { Employee } from "@aintel/shared/types/employee";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Card, CardContent, CardHeader } from "../../components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
-import { Textarea } from "../../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { MaterialOrderCard } from "./MaterialOrderCard";
 import { normalizeMaterialStatusLabel } from "./materialStatus";
 import { useConfirmOffer } from "../core/useConfirmOffer";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
-import { AlertTriangle, Check, Loader2, X } from "lucide-react";
-import { Checkbox } from "../../components/ui/checkbox";
+import { AlertTriangle, Check, Download, Loader2, X } from "lucide-react";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
+import { useSettingsData } from "@aintel/module-settings";
 
 interface LogisticsPanelProps {
   projectId: string;
@@ -37,10 +37,20 @@ interface LogisticsPanelProps {
     postalCity?: string | null;
   } | null;
   onWorkOrderUpdated?: (workOrder: LogisticsWorkOrder) => void;
+  onRegisterSaveHandler?: (handler: (() => Promise<boolean>) | null) => void;
   mode?: "full" | "embedded";
   section?: "material" | "workorder" | "both";
   workOrderMode?: "preview" | "execute";
 }
+
+type InstallerAvailabilityEntry = {
+  workOrderId: string;
+  projectId: string;
+  projectCode: string;
+  projectTitle?: string | null;
+  title?: string | null;
+  scheduledAt: string | null;
+};
 
 const workOrderStatusOptions: WorkOrderStatus[] = ["draft", "issued", "in-progress", "confirmed", "completed"];
 const workOrderStatusLabels: Record<WorkOrderStatus, string> = {
@@ -80,34 +90,123 @@ function isBlank(value?: string | null) {
   return !value || value.trim().length === 0;
 }
 
-const pad2Global = (value: number) => value.toString().padStart(2, "0");
-const formatDateGlobal = (date: Date) =>
-  `${date.getFullYear()}-${pad2Global(date.getMonth() + 1)}-${pad2Global(date.getDate())}`;
-const isWeekendDate = (date: Date) => {
-  const day = date.getDay();
-  return day === 0 || day === 6;
-};
-const adjustToWorkday = (date: Date, direction: 1 | -1) => {
-  const next = new Date(date);
-  while (isWeekendDate(next)) {
-    next.setDate(next.getDate() + direction);
+function formatCompanyAddress(settings: {
+  address?: string | null;
+  postalCode?: string | null;
+  city?: string | null;
+  country?: string | null;
+}) {
+  const parts = [
+    settings.address?.trim(),
+    [settings.postalCode?.trim(), settings.city?.trim()].filter(Boolean).join(" ").trim(),
+    settings.country?.trim(),
+  ].filter(Boolean);
+  return parts.join(", ");
+}
+
+function resolveDefaultSupplierAddress(materialOrder?: MaterialOrder | null) {
+  if (!materialOrder) return "";
+  for (const item of materialOrder.items ?? []) {
+    const address = typeof item.naslovDobavitelja === "string" ? item.naslovDobavitelja.trim() : "";
+    if (address) return address;
   }
-  return next;
-};
+  return "";
+}
+
+function resolvePickupLocationForMethod(
+  method: MaterialPickupMethod,
+  supplierAddress: string,
+  companyAddress: string,
+  installerAddress: string,
+  siteAddress: string,
+) {
+  if (method === "SUPPLIER_PICKUP") return supplierAddress;
+  if (method === "COMPANY_PICKUP") return companyAddress;
+  if (method === "DIRECT_TO_INSTALLER") return installerAddress;
+  if (method === "DIRECT_TO_SITE") return siteAddress;
+  return "";
+}
+
+function formatPickupMethodLabel(method?: MaterialPickupMethod | null) {
+  if (method === "COMPANY_PICKUP") return "Prevzem v firmi";
+  if (method === "SUPPLIER_PICKUP") return "Prevzem pri dobavitelju";
+  if (method === "DIRECT_TO_INSTALLER") return "Direktna dostava monterju";
+  if (method === "DIRECT_TO_SITE") return "Direktna dostava na objekt";
+  return "Ni določen";
+}
 
 function buildOfferLabel(offer: ProjectLogisticsSnapshot["offerVersions"][number]) {
   return offer.title || `Verzija ${offer.versionNumber}`;
+}
+
+function resolveMaterialPreviewStep(value?: string | null) {
+  if (value === "Za naročiti" || value === "Naročeno" || value === "Za prevzem" || value === "Prevzeto" || value === "Pripravljeno") {
+    return value;
+  }
+  return "Za naročiti";
+}
+
+function groupMaterialPreviewBySupplier(items: MaterialOrder["items"]) {
+  const groups = new Map<
+    string,
+    {
+      supplierLabel: string;
+      itemCount: number;
+      orderedCount: number;
+      readyCount: number;
+    }
+  >();
+
+  (items ?? []).forEach((item) => {
+    if (item.isExtra) return;
+    const supplierLabel =
+      typeof item.dobavitelj === "string" && item.dobavitelj.trim().length > 0 ? item.dobavitelj.trim() : "Manjka dobavitelj";
+    const existing = groups.get(supplierLabel) ?? {
+      supplierLabel,
+      itemCount: 0,
+      orderedCount: 0,
+      readyCount: 0,
+    };
+    existing.itemCount += 1;
+    const plannedQty = typeof item.quantity === "number" && Number.isFinite(item.quantity) ? Math.max(0, item.quantity) : 0;
+    const orderedQty = typeof item.orderedQty === "number" && Number.isFinite(item.orderedQty) ? Math.max(0, item.orderedQty) : 0;
+    const orderedStatus = orderedQty <= 0 ? "NE" : orderedQty < plannedQty ? "DELNO" : "DA";
+    const isFullyOrdered = orderedStatus === "DA";
+    if (isFullyOrdered) existing.orderedCount += 1;
+    const step = resolveMaterialPreviewStep(item.materialStep);
+    if (isFullyOrdered && (step === "Za prevzem" || step === "Prevzeto" || step === "Pripravljeno")) {
+      existing.readyCount += 1;
+    }
+    groups.set(supplierLabel, existing);
+  });
+
+  return Array.from(groups.values()).sort((a, b) => a.supplierLabel.localeCompare(b.supplierLabel));
+}
+
+function formatExecutionDuration(items: LogisticsWorkOrder["items"] | undefined) {
+  const totalMinutes = (items ?? []).reduce((sum, item) => {
+    const quantity = typeof item.quantity === "number" ? item.quantity : 0;
+    const casovnaNorma = typeof item.casovnaNorma === "number" ? item.casovnaNorma : 0;
+    return sum + quantity * casovnaNorma;
+  }, 0);
+
+  if (totalMinutes <= 0) return "0 min";
+  if (totalMinutes < 60) return `${totalMinutes} min`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes > 0 ? `${hours} h ${minutes} min` : `${hours} h`;
 }
 
 export function LogisticsPanel({
   projectId,
   client,
   onWorkOrderUpdated,
+  onRegisterSaveHandler,
   mode = "full",
   section = "both",
   workOrderMode = "preview",
 }: LogisticsPanelProps) {
-  const [calendarOffset, setCalendarOffset] = useState(0);
+  const { settings } = useSettingsData({ applyTheme: false });
   const [snapshot, setSnapshot] = useState<ProjectLogisticsSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -116,6 +215,7 @@ export function LogisticsPanel({
   const [workOrderForm, setWorkOrderForm] = useState<Partial<LogisticsWorkOrder>>({});
   const [materialOrderForm, setMaterialOrderForm] = useState<MaterialOrder | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [installerAvailability, setInstallerAvailability] = useState<InstallerAvailabilityEntry[]>([]);
   const [emailTouched, setEmailTouched] = useState(false);
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [locationTouched, setLocationTouched] = useState(false);
@@ -125,9 +225,6 @@ export function LogisticsPanel({
   const [materialDownloading, setMaterialDownloading] = useState<"PURCHASE_ORDER" | "DELIVERY_NOTE" | null>(null);
   const [workOrderDownloading, setWorkOrderDownloading] = useState<"WORK_ORDER" | "WORK_ORDER_CONFIRMATION" | null>(null);
   const [pendingMaterialOrderIds, setPendingMaterialOrderIds] = useState<Record<string, boolean>>({});
-  const timeTouchedRef = useRef(false);
-  const scheduledAtRaw = typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : "";
-  const [workdaysOnly, setWorkdaysOnly] = useState(true);
 
   const hasConfirmed = useMemo(() => !!snapshot?.confirmedOfferVersionId, [snapshot]);
   const confirmedOffers = useMemo(
@@ -177,6 +274,8 @@ export function LogisticsPanel({
         : filteredMaterialOrders[0] ?? null,
     [filteredMaterialOrders, selectedWorkOrder],
   );
+  const companyPickupAddress = useMemo(() => formatCompanyAddress(settings), [settings]);
+  const sitePickupAddress = useMemo(() => formatClientAddress(client ?? null), [client]);
   const materialOrdersForSelectedWorkOrder = useMemo(() => {
     if (!selectedWorkOrder) return [];
     const base = filteredMaterialOrders.filter((materialOrder) => materialOrder.workOrderId === selectedWorkOrder._id);
@@ -230,6 +329,15 @@ export function LogisticsPanel({
     [confirmedOffers, selectedOfferVersionId],
   );
   const selectedOfferLabel = selectedOffer ? buildOfferLabel(selectedOffer) : null;
+  const selectedExecutionDurationLabel = useMemo(() => {
+    const items =
+      Array.isArray(workOrderForm.items) && workOrderForm.items.length > 0
+        ? workOrderForm.items
+        : Array.isArray(selectedWorkOrder?.items)
+          ? selectedWorkOrder.items
+          : [];
+    return formatExecutionDuration(items);
+  }, [selectedWorkOrder?.items, workOrderForm.items]);
 
   const fetchSnapshot = useCallback(async () => {
     setLoading(true);
@@ -305,6 +413,8 @@ export function LogisticsPanel({
         ...selectedWorkOrder,
         scheduledAt: selectedWorkOrder.scheduledAt ?? "",
         scheduledConfirmedAt: selectedWorkOrder.scheduledConfirmedAt ?? null,
+        scheduledConfirmedBy: selectedWorkOrder.scheduledConfirmedBy ?? null,
+        mainInstallerId: selectedWorkOrder.mainInstallerId ?? null,
         assignedEmployeeIds: Array.isArray(selectedWorkOrder.assignedEmployeeIds)
           ? selectedWorkOrder.assignedEmployeeIds
           : [],
@@ -315,23 +425,47 @@ export function LogisticsPanel({
   }, [selectedWorkOrder]);
 
   useEffect(() => {
-    if (selectedWorkOrder?.scheduledAt) {
-      timeTouchedRef.current = true;
+    const mainInstallerId =
+      typeof workOrderForm.mainInstallerId === "string" && workOrderForm.mainInstallerId.trim().length > 0
+        ? workOrderForm.mainInstallerId
+        : typeof selectedWorkOrder?.mainInstallerId === "string" && selectedWorkOrder.mainInstallerId.trim().length > 0
+          ? selectedWorkOrder.mainInstallerId
+          : "";
+    if (!mainInstallerId) {
+      setInstallerAvailability([]);
+      return;
     }
-  }, [selectedWorkOrder?.scheduledAt]);
 
-  useEffect(() => {
-    if (!selectedWorkOrder) return;
-    if (scheduledAtRaw) return;
-    const today = new Date();
-    today.setDate(today.getDate() + 14);
-    const todayString = formatDateGlobal(today);
-    setWorkOrderForm((prev) => {
-      const currentValue = typeof prev.scheduledAt === "string" ? prev.scheduledAt : "";
-      if (currentValue) return prev;
-      return { ...prev, scheduledAt: `${todayString}T08:00` };
-    });
-  }, [scheduledAtRaw, selectedWorkOrder]);
+    let alive = true;
+    const controller = new AbortController();
+    const excludeWorkOrderId = selectedWorkOrder?._id ?? "";
+
+    const fetchInstallerAvailability = async () => {
+      try {
+        const query = excludeWorkOrderId ? `?excludeWorkOrderId=${encodeURIComponent(excludeWorkOrderId)}` : "";
+        const response = await fetch(
+          `/api/projects/${projectId}/logistics/installer-availability/${mainInstallerId}${query}`,
+          { signal: controller.signal },
+        );
+        const payload = await response.json();
+        if (!alive) return;
+        if (!payload?.success) {
+          setInstallerAvailability([]);
+          return;
+        }
+        setInstallerAvailability(Array.isArray(payload.data) ? payload.data : []);
+      } catch (error) {
+        if (!alive || (error instanceof DOMException && error.name === "AbortError")) return;
+        setInstallerAvailability([]);
+      }
+    };
+
+    void fetchInstallerAvailability();
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [projectId, selectedWorkOrder?._id, selectedWorkOrder?.mainInstallerId, workOrderForm.mainInstallerId]);
 
   useEffect(() => {
     setMaterialOrderForm(selectedMaterialOrder ?? null);
@@ -402,29 +536,11 @@ export function LogisticsPanel({
     if (field === "customerPhone") setPhoneTouched(true);
     setWorkOrderForm((prev) => {
       if (field === "scheduledAt") {
-        return { ...prev, [field]: value, scheduledConfirmedAt: null };
+        return { ...prev, [field]: value, scheduledConfirmedAt: null, scheduledConfirmedBy: null };
       }
       return { ...prev, [field]: value };
     });
   };
-
-  useEffect(() => {
-    if (!workdaysOnly) return;
-    if (!scheduledAtRaw) return;
-    const [datePart, timePartRaw] = scheduledAtRaw.split("T");
-    if (!datePart) return;
-    const [yearRaw, monthRaw, dayRaw] = datePart.split("-");
-    const year = Number(yearRaw);
-    const month = Number(monthRaw);
-    const day = Number(dayRaw);
-    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return;
-    const currentDate = new Date(year, month - 1, day);
-    if (!isWeekendDate(currentDate)) return;
-    const adjusted = adjustToWorkday(currentDate, 1);
-    const timePart = timePartRaw?.slice(0, 5) || "08:00";
-    const nextDate = formatDateGlobal(adjusted);
-    handleWorkOrderChange("scheduledAt", `${nextDate}T${timePart}`);
-  }, [handleWorkOrderChange, scheduledAtRaw, workdaysOnly]);
 
   const toggleAssignedEmployee = (employeeId: string) => {
     setWorkOrderForm((prev) => {
@@ -432,28 +548,169 @@ export function LogisticsPanel({
       const next = current.includes(employeeId)
         ? current.filter((id) => id !== employeeId)
         : [...current, employeeId];
-      return { ...prev, assignedEmployeeIds: next };
+      const currentMainInstallerId =
+        typeof prev.mainInstallerId === "string" && prev.mainInstallerId.trim().length > 0 ? prev.mainInstallerId : null;
+      const nextMainInstallerId =
+        currentMainInstallerId && next.includes(currentMainInstallerId)
+          ? currentMainInstallerId
+          : next[0] ?? null;
+      return {
+        ...prev,
+        assignedEmployeeIds: next,
+        mainInstallerId: nextMainInstallerId,
+      };
     });
   };
 
-  const toggleMaterialAssignedEmployee = async (materialOrderId: string, employeeId: string) => {
-    const currentMaterial = resolveMaterialOrderById(materialOrderId);
-    if (!currentMaterial) return;
-    const current = Array.isArray(currentMaterial.assignedEmployeeIds) ? currentMaterial.assignedEmployeeIds : [];
-    const next = current.includes(employeeId)
-      ? current.filter((id) => id !== employeeId)
-      : [...current, employeeId];
-    if (materialOrderForm?._id === materialOrderId) {
-      setMaterialOrderForm((prev) =>
-        prev ? { ...prev, assignedEmployeeIds: next } : { ...currentMaterial, assignedEmployeeIds: next },
-      );
-    }
-    await handleSaveWorkOrder({
-      _id: materialOrderId,
-      assignedEmployeeIds: next,
-      items: Array.isArray(currentMaterial.items) ? currentMaterial.items : [],
+  const handleMainInstallerChange = (employeeId: string | null) => {
+    setWorkOrderForm((prev) => {
+      const current = Array.isArray(prev.assignedEmployeeIds) ? prev.assignedEmployeeIds : [];
+      const normalizedId = employeeId && employeeId.trim().length > 0 ? employeeId : null;
+      const nextAssignedIds =
+        normalizedId && !current.includes(normalizedId) ? [normalizedId, ...current] : current;
+      return {
+        ...prev,
+        mainInstallerId: normalizedId,
+        assignedEmployeeIds: nextAssignedIds,
+      };
     });
   };
+
+  const updateMaterialOrderForm = useCallback(
+    (materialOrderId: string, updates: Partial<MaterialOrder>) => {
+      const currentMaterial = resolveMaterialOrderById(materialOrderId);
+      if (!currentMaterial) return;
+      setMaterialOrderForm((prev) => {
+        const base = prev && prev._id === materialOrderId ? prev : currentMaterial;
+        return { ...base, ...updates };
+      });
+      setPendingMaterialOrderIds((prev) => ({ ...prev, [materialOrderId]: true }));
+    },
+    [resolveMaterialOrderById],
+  );
+
+  const handlePickupMethodChange = useCallback(
+    (materialOrderId: string, value: MaterialPickupMethod) => {
+      const currentMaterial = resolveMaterialOrderById(materialOrderId);
+      if (!currentMaterial) return;
+      const resolvedMainInstallerId =
+        typeof workOrderForm.mainInstallerId === "string" && workOrderForm.mainInstallerId.trim().length > 0
+          ? workOrderForm.mainInstallerId.trim()
+          : typeof selectedWorkOrder?.mainInstallerId === "string" && selectedWorkOrder.mainInstallerId.trim().length > 0
+            ? selectedWorkOrder.mainInstallerId.trim()
+            : "";
+      const supplierAddress = resolveDefaultSupplierAddress(
+        materialOrderForm?._id === materialOrderId ? materialOrderForm : currentMaterial,
+      );
+      const installerAddress = resolvedMainInstallerId
+        ? employees.find((employee) => employee.id === resolvedMainInstallerId)?.address?.trim() ?? ""
+        : "";
+      const autoPickupLocation = resolvePickupLocationForMethod(
+        value,
+        supplierAddress,
+        companyPickupAddress,
+        installerAddress,
+        sitePickupAddress,
+      );
+      updateMaterialOrderForm(materialOrderId, {
+        pickupMethod: value,
+        pickupLocation: autoPickupLocation || currentMaterial.pickupLocation || "",
+      });
+    },
+    [
+      companyPickupAddress,
+      employees,
+      materialOrderForm,
+      resolveMaterialOrderById,
+      selectedWorkOrder?.mainInstallerId,
+      sitePickupAddress,
+      updateMaterialOrderForm,
+      workOrderForm.mainInstallerId,
+    ],
+  );
+
+  useEffect(() => {
+    if (!selectedMaterialOrder?._id) return;
+
+    const resolvedMainInstallerId =
+      typeof workOrderForm.mainInstallerId === "string" && workOrderForm.mainInstallerId.trim().length > 0
+        ? workOrderForm.mainInstallerId.trim()
+        : typeof selectedWorkOrder?.mainInstallerId === "string" && selectedWorkOrder.mainInstallerId.trim().length > 0
+          ? selectedWorkOrder.mainInstallerId.trim()
+          : "";
+    const defaultSupplierAddress = resolveDefaultSupplierAddress(materialOrderForm ?? selectedMaterialOrder);
+    const installerAddress = resolvedMainInstallerId
+      ? employees.find((employee) => employee.id === resolvedMainInstallerId)?.address?.trim() ?? ""
+      : "";
+    const currentPickupMethod = materialOrderForm?.pickupMethod ?? selectedMaterialOrder.pickupMethod ?? null;
+    const nextPickupMethod: MaterialPickupMethod = currentPickupMethod ?? "SUPPLIER_PICKUP";
+    const currentPickupLocation =
+      typeof (materialOrderForm?.pickupLocation ?? selectedMaterialOrder.pickupLocation) === "string"
+        ? (materialOrderForm?.pickupLocation ?? selectedMaterialOrder.pickupLocation ?? "").trim()
+        : "";
+    const autoPickupLocation = resolvePickupLocationForMethod(
+      nextPickupMethod,
+      defaultSupplierAddress,
+      companyPickupAddress,
+      installerAddress,
+      sitePickupAddress,
+    );
+
+    const updates: Partial<MaterialOrder> = {};
+
+    if (!currentPickupMethod) {
+      updates.pickupMethod = nextPickupMethod;
+    }
+    if (resolvedMainInstallerId && materialOrderForm?.logisticsOwnerId !== resolvedMainInstallerId) {
+      updates.logisticsOwnerId = resolvedMainInstallerId;
+    }
+    if (!resolvedMainInstallerId && materialOrderForm?.logisticsOwnerId) {
+      updates.logisticsOwnerId = null;
+    }
+    if (!currentPickupLocation && autoPickupLocation) {
+      updates.pickupLocation = autoPickupLocation;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      updateMaterialOrderForm(selectedMaterialOrder._id, updates);
+    }
+  }, [
+    companyPickupAddress,
+    employees,
+    materialOrderForm,
+    selectedMaterialOrder,
+    selectedWorkOrder?.mainInstallerId,
+    sitePickupAddress,
+    updateMaterialOrderForm,
+    workOrderForm.mainInstallerId,
+  ]);
+
+  const addExtraMaterialItem = useCallback(
+    (
+      materialOrderId: string,
+      draft: { productId: string | null; name: string; unit: string; quantity: number; note: string },
+    ) => {
+      const currentMaterial = resolveMaterialOrderById(materialOrderId);
+      if (!currentMaterial) return;
+      const extraItem = {
+        id: `extra-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        productId: draft.productId,
+        name: draft.name.trim(),
+        quantity: 0,
+        isOrdered: false,
+        deliveredQty: Math.max(0, Number(draft.quantity) || 0),
+        unit: draft.unit.trim(),
+        note: draft.note.trim(),
+        dobavitelj: "",
+        naslovDobavitelja: "",
+        materialStep: "Prevzeto" as MaterialStep,
+        isExtra: true,
+      };
+      const nextItems = [...(Array.isArray(currentMaterial.items) ? currentMaterial.items : []), extraItem];
+      updateMaterialOrderForm(materialOrderId, { items: nextItems });
+    },
+    [resolveMaterialOrderById, updateMaterialOrderForm],
+  );
 
   const handleDownloadMaterialPdf = async (
     materialOrderId: string,
@@ -466,7 +723,7 @@ export function LogisticsPanel({
     }
     setMaterialDownloading(docType);
     try {
-      const url = `/api/projects/${projectId}/material-orders/${target._id}/pdf?docType=${docType}`;
+      const url = `/api/projects/${projectId}/material-orders/${target._id}/pdf?docType=${docType}&mode=download`;
       const prefix = docType === "DELIVERY_NOTE" ? "dobavnica" : "narocilo";
       const filename = `${prefix}-${projectId}-${target._id}.pdf`;
       await downloadPdf(url, filename);
@@ -477,6 +734,16 @@ export function LogisticsPanel({
     } finally {
       setMaterialDownloading(null);
     }
+  };
+
+  const openMaterialPdfPreview = (materialOrderId: string, docType: "PURCHASE_ORDER" | "DELIVERY_NOTE") => {
+    const target = resolveMaterialOrderById(materialOrderId) ?? materialOrderForm ?? selectedMaterialOrder ?? null;
+    if (!target?._id) {
+      toast.error("Naročilo še ni pripravljeno za predogled.");
+      return;
+    }
+    const url = `/api/projects/${projectId}/material-orders/${target._id}/pdf?docType=${docType}&mode=inline`;
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const handleAdvanceMaterialStep = async (materialOrderId: string, targetStep: MaterialStep) => {
@@ -520,7 +787,7 @@ export function LogisticsPanel({
     }
     setWorkOrderDownloading(docType);
     try {
-      const url = `/api/projects/${projectId}/work-orders/${target._id}/pdf?docType=${docType}`;
+      const url = `/api/projects/${projectId}/work-orders/${target._id}/pdf?docType=${docType}&mode=download`;
       const prefix = docType === "WORK_ORDER_CONFIRMATION" ? "potrdilo" : "delovni-nalog";
       const filename = `${prefix}-${projectId}-${target._id}.pdf`;
       await downloadPdf(url, filename);
@@ -531,6 +798,16 @@ export function LogisticsPanel({
     } finally {
       setWorkOrderDownloading(null);
     }
+  };
+
+  const openWorkOrderPdfPreview = (docType: "WORK_ORDER" | "WORK_ORDER_CONFIRMATION") => {
+    const target = selectedWorkOrder ?? null;
+    if (!target?._id) {
+      toast.error("Delovni nalog ni pripravljen za predogled.");
+      return;
+    }
+    const url = `/api/projects/${projectId}/work-orders/${target._id}/pdf?docType=${docType}&mode=inline`;
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const handleSaveWorkOrder = async (
@@ -557,6 +834,10 @@ export function LogisticsPanel({
           workOrderId: selectedWorkOrder._id,
           scheduledAt: typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : null,
           scheduledConfirmedAt: resolvedScheduledConfirmedAt,
+          mainInstallerId:
+            typeof workOrderForm.mainInstallerId === "string" && workOrderForm.mainInstallerId.trim().length > 0
+              ? workOrderForm.mainInstallerId
+              : null,
           assignedEmployeeIds: Array.isArray(workOrderForm.assignedEmployeeIds) ? workOrderForm.assignedEmployeeIds : [],
           location: workOrderForm.location ?? "",
           notes: workOrderForm.notes ?? "",
@@ -564,11 +845,22 @@ export function LogisticsPanel({
           items: Array.isArray(workOrderOverrides?.items) ? workOrderOverrides?.items : undefined,
           materialOrderId: materialOverrides?._id ?? currentMaterial?._id ?? null,
           materialStatus: materialOverrides?.materialStatus ?? currentMaterial?.materialStatus ?? undefined,
-          materialAssignedEmployeeIds: Array.isArray(materialOverrides?.assignedEmployeeIds)
-            ? materialOverrides?.assignedEmployeeIds
-            : Array.isArray(currentMaterial?.assignedEmployeeIds)
-              ? currentMaterial?.assignedEmployeeIds
+          materialAssignedEmployeeIds: Array.isArray(workOrderForm.assignedEmployeeIds)
+            ? workOrderForm.assignedEmployeeIds
+            : undefined,
+          pickupMethod: materialOverrides?.pickupMethod ?? currentMaterial?.pickupMethod ?? undefined,
+          pickupLocation: materialOverrides?.pickupLocation ?? currentMaterial?.pickupLocation ?? undefined,
+          logisticsOwnerId: materialOverrides?.logisticsOwnerId ?? currentMaterial?.logisticsOwnerId ?? undefined,
+          pickupNote: materialOverrides?.pickupNote ?? currentMaterial?.pickupNote ?? undefined,
+          deliveryNotePhotos: Array.isArray(materialOverrides?.deliveryNotePhotos)
+            ? materialOverrides?.deliveryNotePhotos
+            : Array.isArray(currentMaterial?.deliveryNotePhotos)
+              ? currentMaterial?.deliveryNotePhotos
               : undefined,
+          pickupConfirmedAt:
+            materialOverrides && Object.prototype.hasOwnProperty.call(materialOverrides, "pickupConfirmedAt")
+              ? materialOverrides.pickupConfirmedAt
+              : currentMaterial?.pickupConfirmedAt ?? undefined,
           materialItems: Array.isArray(materialOverrides?.items)
             ? materialOverrides?.items
             : Array.isArray(currentMaterial?.items)
@@ -644,6 +936,8 @@ export function LogisticsPanel({
         ...mergedWorkOrder,
         scheduledAt: mergedWorkOrder.scheduledAt ?? "",
         scheduledConfirmedAt: mergedWorkOrder.scheduledConfirmedAt ?? null,
+        scheduledConfirmedBy: mergedWorkOrder.scheduledConfirmedBy ?? null,
+        mainInstallerId: mergedWorkOrder.mainInstallerId ?? null,
       });
       if (onWorkOrderUpdated) {
         onWorkOrderUpdated(mergedWorkOrder);
@@ -680,11 +974,44 @@ export function LogisticsPanel({
   const isTermConfirmed = Boolean(resolvedScheduleConfirmedAt);
   const canConfirmSchedule = Boolean(resolvedSchedule && !isTermConfirmed);
   const hasAssignedTeam = (workOrderForm.assignedEmployeeIds ?? selectedWorkOrder?.assignedEmployeeIds ?? []).length > 0;
+  const currentIssueMaterialOrder = materialOrderForm ?? selectedMaterialOrder ?? null;
+  const currentIssueMaterialItems = (currentIssueMaterialOrder?.items ?? []).filter((item) => !item.isExtra);
+  const isMaterialReadyForIssue =
+    currentIssueMaterialItems.length > 0 &&
+    currentIssueMaterialItems.every((item) => {
+      const plannedQty = typeof item.quantity === "number" && Number.isFinite(item.quantity) ? Math.max(0, item.quantity) : 0;
+      const orderedQty = typeof item.orderedQty === "number" && Number.isFinite(item.orderedQty) ? Math.max(0, item.orderedQty) : 0;
+      const step = resolveMaterialPreviewStep(item.materialStep);
+      return orderedQty > 0 && orderedQty >= plannedQty && (step === "Za prevzem" || step === "Prevzeto" || step === "Pripravljeno");
+    });
 
   const canIssueOrder = Boolean(resolvedSchedule && hasAssignedTeam && isTermConfirmed);
+  const canIssueWorkOrder = canIssueOrder && isMaterialReadyForIssue;
+  const issueRequirements = [
+    {
+      label: "Izvedbena ekipa",
+      met: hasAssignedTeam,
+      missingText: "Manjka izvedbena ekipa",
+    },
+    {
+      label: "Termin izvedbe",
+      met: Boolean(resolvedSchedule),
+      missingText: "Manjka termin izvedbe",
+    },
+    {
+      label: "Potrditev termina",
+      met: isTermConfirmed,
+      missingText: "Termin še ni potrjen",
+    },
+    {
+      label: "Material",
+      met: isMaterialReadyForIssue,
+      missingText: "Material še ni pripravljen za prevzem",
+    },
+  ];
 
   const handleIssueWorkOrder = async () => {
-    if (!canIssueOrder || issuingOrder || !selectedWorkOrder) return;
+    if (!canIssueWorkOrder || issuingOrder || !selectedWorkOrder) return;
     setIssuingOrder(true);
     setWorkOrderForm((prev) => ({ ...prev, status: "issued" }));
     const saved = await handleSaveWorkOrder(undefined, { status: "issued" });
@@ -706,12 +1033,18 @@ export function LogisticsPanel({
 
   const handleUnconfirmSchedule = async () => {
     if (!selectedWorkOrder) return;
-    setWorkOrderForm((prev) => ({ ...prev, scheduledConfirmedAt: null }));
+    setWorkOrderForm((prev) => ({ ...prev, scheduledConfirmedAt: null, scheduledConfirmedBy: null }));
     const saved = await handleSaveWorkOrder(undefined, { scheduledConfirmedAt: null });
     if (saved) {
       toast.success("Potrditev termina odstranjena.");
     }
   };
+
+  useEffect(() => {
+    if (!onRegisterSaveHandler) return;
+    onRegisterSaveHandler(async () => Boolean(await handleSaveWorkOrder()));
+    return () => onRegisterSaveHandler(null);
+  }, [onRegisterSaveHandler, handleSaveWorkOrder]);
 
   const updateWorkOrderItemQty = async (itemId: string, deliveredQty: number, shouldSave: boolean) => {
     const currentItems =
@@ -746,12 +1079,6 @@ export function LogisticsPanel({
     const [streetRaw, postalRaw] = customerAddress.split(/,(.+)/);
     const streetLine = streetRaw?.trim() ?? "";
     const postalLine = postalRaw?.trim() ?? "";
-    const scheduledAtValue = typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : "";
-    const [datePart, timePartRaw] = scheduledAtValue.split("T");
-    const timePart = timePartRaw?.slice(0, 5) ?? "";
-    const [hoursRaw, minutesRaw] = timePart.split(":");
-    const hoursValue = Number(hoursRaw ?? "0");
-    const minutesValue = Number(minutesRaw ?? "0");
     const workOrderItems =
       Array.isArray(workOrderForm.items) && workOrderForm.items.length > 0
         ? workOrderForm.items
@@ -763,90 +1090,10 @@ export function LogisticsPanel({
         ? aggregateMaterialItems(materialOrdersForSelectedWorkOrder)
         : Array.isArray(materialOrderForm?.items)
           ? materialOrderForm?.items ?? []
-          : Array.isArray(selectedMaterialOrder?.items)
-            ? selectedMaterialOrder?.items ?? []
-            : [];
+        : Array.isArray(selectedMaterialOrder?.items)
+          ? selectedMaterialOrder?.items ?? []
+          : [];
     const materialItemsById = new Map(materialItems.map((item) => [item.id, item]));
-    const totalMinutes = workOrderItems.reduce((sum, item) => {
-      const quantity = typeof item.quantity === "number" ? item.quantity : 0;
-      const casovnaNorma = typeof item.casovnaNorma === "number" ? item.casovnaNorma : 0;
-      return sum + quantity * casovnaNorma;
-    }, 0);
-    const formatDuration = (value: number) => {
-      if (value <= 0) return "0 min";
-      if (value < 60) return `${value} min`;
-      const hours = Math.floor(value / 60);
-      const minutes = value % 60;
-      return minutes > 0 ? `${hours} h ${minutes} min` : `${hours} h`;
-    };
-    const durationLabel = formatDuration(totalMinutes);
-    const todayPlus21 = new Date();
-    todayPlus21.setDate(todayPlus21.getDate() + 21);
-    const calendarAnchor = datePart ? new Date(`${datePart}T00:00:00`) : todayPlus21;
-    const anchorYear = calendarAnchor.getFullYear();
-    const anchorMonth = calendarAnchor.getMonth();
-    const pad2 = (value: number) => value.toString().padStart(2, "0");
-    const formatDate = (date: Date) =>
-      `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-    const anchorDateString = formatDate(calendarAnchor);
-    const monthNames = [
-      "Januar",
-      "Februar",
-      "Marec",
-      "April",
-      "Maj",
-      "Junij",
-      "Julij",
-      "Avgust",
-      "September",
-      "Oktober",
-      "November",
-      "December",
-    ];
-    const firstMonth = new Date(anchorYear, anchorMonth + calendarOffset, 1);
-    const secondMonth = new Date(anchorYear, anchorMonth + calendarOffset + 1, 1);
-    const firstMonthStart = new Date(firstMonth.getFullYear(), firstMonth.getMonth(), 1);
-    const secondMonthStart = new Date(secondMonth.getFullYear(), secondMonth.getMonth(), 1);
-    const firstDaysInMonth = new Date(firstMonth.getFullYear(), firstMonth.getMonth() + 1, 0).getDate();
-    const secondDaysInMonth = new Date(secondMonth.getFullYear(), secondMonth.getMonth() + 1, 0).getDate();
-    const firstStartOffset = (firstMonthStart.getDay() + 6) % 7;
-    const secondStartOffset = (secondMonthStart.getDay() + 6) % 7;
-    const calendarMonths = [
-      { month: firstMonth, days: firstDaysInMonth, offset: firstStartOffset },
-      { month: secondMonth, days: secondDaysInMonth, offset: secondStartOffset },
-    ];
-    const todayDateString = formatDate(new Date());
-    const baseDateString = datePart || anchorDateString;
-    const [baseYearRaw, baseMonthRaw, baseDayRaw] = baseDateString.split("-");
-    const baseYear = Number(baseYearRaw ?? anchorYear);
-    const baseMonth = Number(baseMonthRaw ?? anchorMonth + 1);
-    const baseDay = Number(baseDayRaw ?? 1);
-    const dowLabels = ["NED", "PON", "TOR", "SRE", "\u010cET", "PET", "SOB"];
-    const baseDateForDow = new Date(baseYear, baseMonth - 1, baseDay);
-    const dowLabel = Number.isNaN(baseDateForDow.getTime()) ? "?" : dowLabels[baseDateForDow.getDay()];
-    const setDateParts = (year: number, month: number, day: number, direction: 1 | -1 | 0 = 0) => {
-      const safeYear = Number.isFinite(year) ? year : anchorYear;
-      const safeMonth = Math.min(12, Math.max(1, Number.isFinite(month) ? month : anchorMonth + 1));
-      const daysInTarget = new Date(safeYear, safeMonth, 0).getDate();
-      const safeDay = Math.min(daysInTarget, Math.max(1, Number.isFinite(day) ? day : 1));
-      const tentativeDate = new Date(safeYear, safeMonth - 1, safeDay);
-      if (workdaysOnly && direction === 0 && isWeekendDate(tentativeDate)) {
-        return;
-      }
-      const targetDate = workdaysOnly && direction !== 0 ? adjustToWorkday(tentativeDate, direction) : tentativeDate;
-      const nextDate = formatDate(targetDate);
-      const shouldDefaultTime = !timeTouchedRef.current && !timePartRaw;
-      const nextHours = shouldDefaultTime ? 8 : hoursValue;
-      const nextMinutes = shouldDefaultTime ? 0 : minutesValue;
-      handleWorkOrderChange("scheduledAt", `${nextDate}T${pad2(nextHours)}:${pad2(nextMinutes)}`);
-    };
-    const updateTimeValue = (nextHours: number, nextMinutes: number) => {
-      timeTouchedRef.current = true;
-      const hours = Math.min(23, Math.max(0, nextHours));
-      const minutes = Math.min(55, Math.max(0, Math.round(nextMinutes / 5) * 5));
-      const nextDate = baseDateString;
-      handleWorkOrderChange("scheduledAt", `${nextDate}T${pad2(hours)}:${pad2(minutes)}`);
-    };
     return (
       <div className="space-y-5">
         <div className="space-y-4">
@@ -860,301 +1107,14 @@ export function LogisticsPanel({
               </div>
             </div>
             <div className="space-y-2 text-sm">
-              <div className="flex items-start justify-between gap-4">
-                <span className="text-muted-foreground">Naslov:</span>
-                <div className="text-right">
-                  {streetLine && <div>{streetLine}</div>}
-                  {postalLine && <div>{postalLine}</div>}
-                </div>
+              <p className="text-sm font-medium text-muted-foreground">Naslov</p>
+              <div className="space-y-1 text-sm text-left">
+                {streetLine && <div>{streetLine}</div>}
+                {postalLine && <div>{postalLine}</div>}
               </div>
             </div>
           </div>
           <hr className="border-border/60" />
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Termin izvedbe</label>
-              <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Checkbox
-                  checked={workdaysOnly}
-                  onChange={(event) => setWorkdaysOnly(event.target.checked)}
-                  disabled={isTermConfirmed}
-                />
-                <span>Samo delovni dnevi</span>
-              </label>
-              <div className="grid gap-3">
-                <div className="rounded-md border border-input bg-background p-3">
-                  <div className="mb-2 flex items-center justify-between gap-2 text-sm font-medium">
-                    <button
-                      type="button"
-                      className="rounded-md border border-input px-2 py-1 text-xs hover:bg-muted"
-                      onClick={() => setCalendarOffset((prev) => prev - 1)}
-                      aria-label={"Prejšnji mesec"}
-                      disabled={isTermConfirmed}
-                    >
-                      {"‹"}
-                    </button>
-                    <div className="flex flex-1 justify-between gap-4 text-center">
-                      <span className="pointer-events-none cursor-default">
-                        {monthNames[firstMonth.getMonth()]} {firstMonth.getFullYear()}
-                      </span>
-                      <span className="pointer-events-none cursor-default">
-                        {monthNames[secondMonth.getMonth()]} {secondMonth.getFullYear()}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      className="rounded-md border border-input px-2 py-1 text-xs hover:bg-muted"
-                      onClick={() => setCalendarOffset((prev) => prev + 1)}
-                      aria-label={"Naslednji mesec"}
-                      disabled={isTermConfirmed}
-                    >
-                      {"›"}
-                    </button>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {calendarMonths.map((entry) => {
-                      const monthYear = entry.month.getFullYear();
-                      const monthIndex = entry.month.getMonth();
-                      return (
-                        <div
-                          key={`${monthYear}-${monthIndex}`}
-                          className="grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground"
-                        >
-                          {["Po", "To", "Sr", "Če", "Pe", "So", "Ne"].map((label) => (
-                            <span key={`${monthYear}-${monthIndex}-${label}`} className="py-1">
-                              {label}
-                            </span>
-                          ))}
-                          {Array.from({ length: entry.offset }).map((_, index) => (
-                            <span key={`${monthYear}-${monthIndex}-empty-${index}`} className="py-1" />
-                          ))}
-                          {Array.from({ length: entry.days }).map((_, index) => {
-                            const day = index + 1;
-                            const dayDate = `${monthYear}-${pad2(monthIndex + 1)}-${pad2(day)}`;
-                            const isSelected = datePart === dayDate;
-                            const isToday = dayDate === todayDateString;
-                            const isWeekend = isWeekendDate(new Date(monthYear, monthIndex, day));
-                            const isDisabled = (workdaysOnly && isWeekend) || isTermConfirmed;
-                            return (
-                              <button
-                                key={dayDate}
-                                type="button"
-                                className={`rounded-md py-1 text-sm transition ${
-                                  isSelected
-                                    ? "bg-primary text-primary-foreground"
-                                    : isDisabled
-                                      ? "cursor-not-allowed text-muted-foreground/40"
-                                      : "hover:bg-muted"
-                                } ${isToday ? "rounded-full ring-2 ring-red-500 ring-offset-0" : ""}`}
-                                disabled={isDisabled}
-                                onClick={() => {
-                                  if (isDisabled) return;
-                                  setDateParts(monthYear, monthIndex + 1, day);
-                                }}
-                              >
-                                {day}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="rounded-md border border-input bg-background px-3 py-2">
-                  <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-                    <div className="flex flex-wrap items-center justify-center gap-2 text-sm">
-                      <span className="text-base font-semibold tabular-nums">{dowLabel}</span>
-                      <span className="text-base font-semibold">-</span>
-                      <div className="flex items-center gap-1">
-                        <div className="flex flex-col items-center gap-0.5">
-                          <button
-                            type="button"
-                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
-                            onClick={() => setDateParts(baseYear, baseMonth, baseDay + 1, 1)}
-                            aria-label={"Povečaj dan"}
-                            disabled={isTermConfirmed}
-                          >
-                            +
-                          </button>
-                          <div className="text-base font-semibold tabular-nums">{baseDay}</div>
-                          <button
-                            type="button"
-                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
-                            onClick={() => setDateParts(baseYear, baseMonth, baseDay - 1, -1)}
-                            aria-label={"Zmanjšaj dan"}
-                            disabled={isTermConfirmed}
-                          >
-                            -
-                          </button>
-                        </div>
-                        <span className="text-base font-semibold">.</span>
-                        <div className="flex flex-col items-center gap-0.5">
-                          <button
-                            type="button"
-                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
-                            onClick={() => setDateParts(baseYear, baseMonth + 1, baseDay, 1)}
-                            aria-label={"Povečaj mesec"}
-                            disabled={isTermConfirmed}
-                          >
-                            +
-                          </button>
-                          <div className="text-base font-semibold tabular-nums">{baseMonth}</div>
-                          <button
-                            type="button"
-                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
-                            onClick={() => setDateParts(baseYear, baseMonth - 1, baseDay, -1)}
-                            aria-label={"Zmanjšaj mesec"}
-                            disabled={isTermConfirmed}
-                          >
-                            -
-                          </button>
-                        </div>
-                        <span className="text-base font-semibold">.</span>
-                        <div className="flex flex-col items-center gap-0.5">
-                          <button
-                            type="button"
-                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
-                            onClick={() => setDateParts(baseYear + 1, baseMonth, baseDay, 1)}
-                            aria-label={"Povečaj leto"}
-                            disabled={isTermConfirmed}
-                          >
-                            +
-                          </button>
-                          <div className="text-base font-semibold tabular-nums">{baseYear}</div>
-                          <button
-                            type="button"
-                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
-                            onClick={() => setDateParts(baseYear - 1, baseMonth, baseDay, -1)}
-                            aria-label={"Zmanjšaj leto"}
-                            disabled={isTermConfirmed}
-                          >
-                            -
-                          </button>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <div className="flex flex-col items-center gap-0.5">
-                          <button
-                            type="button"
-                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
-                            onClick={() => updateTimeValue(hoursValue + 1, minutesValue)}
-                            aria-label={"Povečaj ure"}
-                            disabled={isTermConfirmed}
-                          >
-                            +
-                          </button>
-                          <div className="text-base font-semibold tabular-nums">{Number.isFinite(hoursValue) ? hoursValue : 0}</div>
-                          <button
-                            type="button"
-                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
-                            onClick={() => updateTimeValue(hoursValue - 1, minutesValue)}
-                            aria-label={"Zmanjšaj ure"}
-                            disabled={isTermConfirmed}
-                          >
-                            -
-                          </button>
-                        </div>
-                        <span className="text-base font-semibold">:</span>
-                        <div className="flex flex-col items-center gap-0.5">
-                          <button
-                            type="button"
-                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
-                            onClick={() => updateTimeValue(hoursValue, minutesValue + 5)}
-                            aria-label={"Povečaj minute"}
-                            disabled={isTermConfirmed}
-                          >
-                            +
-                          </button>
-                          <div className="text-base font-semibold tabular-nums">{pad2(Number.isFinite(minutesValue) ? minutesValue : 0)}</div>
-                          <button
-                            type="button"
-                            className="rounded-md border border-input px-2 py-0.5 text-[10px] hover:bg-muted"
-                            onClick={() => updateTimeValue(hoursValue, minutesValue - 5)}
-                            aria-label={"Zmanjšaj minute"}
-                            disabled={isTermConfirmed}
-                          >
-                            -
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isTermConfirmed ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={handleUnconfirmSchedule}
-                          disabled={savingWorkOrder}
-                        >
-                          Prekliči termin
-                        </Button>
-                      ) : resolvedSchedule ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={handleConfirmSchedule}
-                          disabled={!canConfirmSchedule || savingWorkOrder}
-                        >
-                          Potrdi termin
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  Ocena trajanja izvedbe: <span className="font-medium text-foreground">{durationLabel}</span>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Tehniki (ekipa)</label>
-                <div className="flex flex-wrap gap-2">
-                  {employees.filter((employee) => employee.active).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Ni zaposlenih.</p>
-                  ) : (
-                    employees
-                      .filter((employee) => employee.active)
-                      .map((employee) => {
-                        const isSelected = (workOrderForm.assignedEmployeeIds ?? []).includes(employee.id);
-                        return (
-                          <button
-                            key={employee.id}
-                            type="button"
-                            onClick={() => toggleAssignedEmployee(employee.id)}
-                            className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                              isSelected
-                                ? "border-primary bg-primary/10 !text-primary"
-                                : "border-border bg-card !text-muted-foreground hover:border-primary"
-                            }`}
-                          >
-                            {employee.name}
-                          </button>
-                        );
-                      })
-                  )}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Opombe</label>
-                <Textarea
-                  value={workOrderForm.notes ?? ""}
-                  onChange={(e) => handleWorkOrderChange("notes", e.target.value)}
-                  placeholder="Navodila za tehnika"
-                  rows={3}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Status materiala</label>
-                <p className="rounded-md border border-input bg-muted/50 px-3 py-2 text-sm">
-                  {effectiveMaterialStatusLabel ?? "-"}
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
         <div className="hidden overflow-hidden rounded-[var(--radius-card)] border bg-card md:block">
           <Table>
@@ -1482,10 +1442,10 @@ export function LogisticsPanel({
             </Button>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => handleSaveWorkOrder()} disabled={savingWorkOrder}>
+            <Button variant="outline" size="sm" onClick={() => handleSaveWorkOrder()} disabled={savingWorkOrder}>
               {savingWorkOrder ? "Shranjujem..." : "Shrani podatke"}
             </Button>
-            <Button onClick={handleIssueWorkOrder} disabled={!canIssueOrder || savingWorkOrder || issuingOrder}>
+            <Button size="sm" onClick={handleIssueWorkOrder} disabled={!canIssueOrder || savingWorkOrder || issuingOrder}>
               {issuingOrder ? "Izdajam..." : "Izdaj nalog"}
             </Button>
           </div>
@@ -1518,6 +1478,218 @@ export function LogisticsPanel({
       return;
     }
     setPendingMaterialOrderIds((prev) => ({ ...prev, [materialOrderId]: true }));
+  };
+
+  const renderTaskPreview = (workOrder: LogisticsWorkOrder | null) => {
+    const materialPreviewOrders =
+      materialOrdersForSelectedWorkOrder.length > 0
+        ? materialOrdersForSelectedWorkOrder
+        : materialOrderForm
+          ? [materialOrderForm]
+          : selectedMaterialOrder
+            ? [selectedMaterialOrder]
+            : [];
+    const previewMaterialItems = materialPreviewOrders.flatMap((order) => order.items ?? []);
+    const previewMaterialItemsById = new Map(previewMaterialItems.map((item) => [item.id, item]));
+    const supplierGroups = groupMaterialPreviewBySupplier(previewMaterialItems);
+    const previewWorkOrder = workOrder ?? selectedWorkOrder;
+    const previewTeamIds = Array.isArray(workOrderForm.assignedEmployeeIds) && workOrderForm.assignedEmployeeIds.length > 0
+      ? workOrderForm.assignedEmployeeIds
+      : previewWorkOrder?.assignedEmployeeIds ?? [];
+    const previewTeamNames = previewTeamIds
+      .map((id) => employees.find((employee) => employee.id === id)?.name)
+      .filter((value): value is string => Boolean(value));
+    const previewSchedule =
+      typeof workOrderForm.scheduledAt === "string" && workOrderForm.scheduledAt.trim().length > 0
+        ? workOrderForm.scheduledAt
+        : previewWorkOrder?.scheduledAt ?? null;
+    const previewExecutionNote =
+      typeof workOrderForm.notes === "string" && workOrderForm.notes.trim().length > 0
+        ? workOrderForm.notes.trim()
+        : previewWorkOrder?.notes?.trim() ?? "";
+    const previewItems =
+      Array.isArray(workOrderForm.items) && workOrderForm.items.length > 0
+        ? workOrderForm.items
+        : previewWorkOrder?.items ?? [];
+    const previewServiceCount = previewItems.filter((item) => {
+      const hasMaterialLine = previewMaterialItemsById.has(item.id);
+      return Boolean(item.isService) || (Boolean(item.productId) && !hasMaterialLine);
+    }).length;
+    const previewProductCount = previewItems.length - previewServiceCount;
+    const previewDurationLabel = formatExecutionDuration(previewItems);
+
+    const formatSchedule = (value?: string | null) =>
+      value
+        ? new Intl.DateTimeFormat("sl-SI", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }).format(new Date(value))
+        : "Ni določen";
+
+    const renderReadinessBadge = (readyCount: number, totalCount: number) => {
+      if (totalCount === 0 || readyCount === 0) {
+        return <Badge variant="outline">Ni pripravljeno</Badge>;
+      }
+      if (readyCount >= totalCount) {
+        return <Badge className="border-green-500/30 bg-green-500/10 text-green-700">Pripravljeno za prevzem</Badge>;
+      }
+      return <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-700">Delno pripravljeno</Badge>;
+    };
+
+    const renderPdfActionGroup = (
+      label: string,
+      onPreview: () => void,
+      onDownload: () => void,
+      downloading: boolean,
+    ) => (
+      <div className="inline-flex h-8 items-center rounded-md border border-border/70 bg-background">
+        <Button variant="ghost" size="sm" className="h-8 rounded-none border-r border-border/70 px-3" onClick={onPreview}>
+          {label}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 rounded-none"
+          onClick={onDownload}
+          disabled={downloading}
+          aria-label={`Prenesi ${label.toLowerCase()}`}
+        >
+          {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+        </Button>
+      </div>
+    );
+
+    return (
+      <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card className="rounded-none border border-border/70 shadow-sm">
+            <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
+              <div className="space-y-1">
+                <h4 className="text-sm font-semibold">Nalog za prevzem</h4>
+              </div>
+              {renderReadinessBadge(
+                supplierGroups.reduce((sum, group) => sum + group.readyCount, 0),
+                supplierGroups.reduce((sum, group) => sum + group.itemCount, 0),
+              )}
+            </CardHeader>
+            <CardContent className="flex h-full flex-col gap-3">
+              {supplierGroups.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Predogled naloga za prevzem bo na voljo po pripravi materiala.</p>
+              ) : (
+                supplierGroups.map((group) => (
+                  <div key={group.supplierLabel} className="rounded-none bg-card px-3 py-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">{group.supplierLabel}</p>
+                        <div className="space-y-1 text-sm text-muted-foreground">
+                          <p>Prevzem: {formatPickupMethodLabel(materialOrderForm?.pickupMethod ?? selectedMaterialOrder?.pickupMethod ?? null)}</p>
+                          <p>Lokacija: {materialOrderForm?.pickupLocation ?? selectedMaterialOrder?.pickupLocation ?? "Ni določena"}</p>
+                          <p>Odgovorna oseba: {employees.find((employee) => employee.id === (materialOrderForm?.logisticsOwnerId ?? selectedMaterialOrder?.logisticsOwnerId ?? ""))?.name ?? "Ni določena"}</p>
+                        </div>
+                      </div>
+                      {renderReadinessBadge(group.readyCount, group.itemCount)}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-3 text-sm text-muted-foreground">
+                      <span>Postavke: {group.itemCount}</span>
+                      <span>Naročeno {group.orderedCount} / {group.itemCount}</span>
+                      <span>Pripravljeno {group.readyCount} / {group.itemCount}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+              {selectedMaterialOrder?._id ? (
+                <div className="mt-auto flex justify-end pt-2">
+                  {renderPdfActionGroup(
+                    "Predogled naročilnice",
+                    () => openMaterialPdfPreview(selectedMaterialOrder._id, "PURCHASE_ORDER"),
+                    () => {
+                      void handleDownloadMaterialPdf(selectedMaterialOrder._id, "PURCHASE_ORDER");
+                    },
+                    materialDownloading === "PURCHASE_ORDER",
+                  )}
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-none border border-border/70 shadow-sm">
+            <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
+              <div className="space-y-1">
+                <h4 className="text-sm font-semibold">Delovni nalog za izvedbo</h4>
+              </div>
+              <Badge variant="outline">{previewItems.length} postavk</Badge>
+            </CardHeader>
+            <CardContent className="flex h-full flex-col gap-3">
+              <div className="grid gap-3 text-sm md:grid-cols-2">
+                <div className="space-y-1">
+                  <p className="text-muted-foreground">Termin izvedbe</p>
+                  <p className="font-medium">{formatSchedule(previewSchedule)}</p>
+                  <p className="text-sm text-muted-foreground">Ocena trajanja izvedbe: {previewDurationLabel}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-muted-foreground">Ekipa</p>
+                  <p className="font-medium">{previewTeamNames.length > 0 ? previewTeamNames.join(", ") : "Ni določena"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-muted-foreground">Število produktov</p>
+                  <p className="font-medium">{previewProductCount}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-muted-foreground">Število storitev</p>
+                  <p className="font-medium">{previewServiceCount}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-muted-foreground">Opombe za tehnika</p>
+                  <p className="font-medium">{previewExecutionNote || "Brez opomb"}</p>
+                </div>
+              </div>
+              {previewWorkOrder?._id ? (
+                <div className="mt-auto flex justify-end pt-2">
+                  {renderPdfActionGroup(
+                    "Predogled naloga",
+                    () => openWorkOrderPdfPreview("WORK_ORDER"),
+                    () => {
+                      void handleDownloadWorkOrderPdf("WORK_ORDER");
+                    },
+                    workOrderDownloading === "WORK_ORDER",
+                  )}
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  };
+
+  const handleConfirmPickup = async (materialOrderId: string) => {
+    const currentMaterial = resolveMaterialOrderById(materialOrderId);
+    if (!currentMaterial) return;
+    const confirmedAt = new Date().toISOString();
+    const nextItems = (currentMaterial.items ?? []).map((item) => {
+      const plannedQty = typeof item.quantity === "number" ? item.quantity : 0;
+      const takenQty = typeof item.deliveredQty === "number" ? item.deliveredQty : 0;
+      return {
+        ...item,
+        materialStep: item.isExtra ? "Prevzeto" : takenQty >= plannedQty ? "Prevzeto" : item.materialStep ?? "Za prevzem",
+      };
+    });
+    const nextMaterial: Partial<MaterialOrder> = {
+      _id: materialOrderId,
+      items: nextItems,
+      materialStatus: "Prevzeto",
+      pickupConfirmedAt: confirmedAt,
+      assignedEmployeeIds: Array.isArray(workOrderForm.assignedEmployeeIds) ? workOrderForm.assignedEmployeeIds : [],
+    };
+    updateMaterialOrderForm(materialOrderId, nextMaterial);
+    const saved = await handleSaveWorkOrder(nextMaterial);
+    if (saved) {
+      setPendingMaterialOrderIds((prev) => ({ ...prev, [materialOrderId]: false }));
+      toast.success("Prevzem materiala potrjen.");
+    }
   };
 
   const saveMaterialOrderChanges = async (materialOrderId: string): Promise<boolean> => {
@@ -1559,85 +1731,88 @@ export function LogisticsPanel({
     return (
       <div className="space-y-6">
         {section === "material" || section === "both" ? (
-          <Card id="dashboard-logistics-material">
-            <CardHeader className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Material</p>
-                <CardTitle className="mt-1">Naročilo za material</CardTitle>
-                <p className="text-sm text-muted-foreground">Upravljaj status naročila in spremljaj pripravo materiala.</p>
-              </div>
-            </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {materialOrdersForDisplay.length === 0 ? (
-                <span className="text-sm text-muted-foreground">Naročilo za material še ni ustvarjeno.</span>
-              ) : (
-                materialOrdersForDisplay.map((order) => (
-                  <MaterialOrderCard
-                    key={order._id}
-                    materialOrder={order}
-                    onAdvanceStep={(step) => {
-                      void handleAdvanceMaterialStepWithSave(order._id, step);
-                    }}
-                    savingWorkOrder={savingWorkOrder || advancingMaterialOrderId === order._id}
-                    employees={employees}
-                    assignedEmployeeIds={Array.isArray(order.assignedEmployeeIds) ? order.assignedEmployeeIds : []}
-                    onToggleAssignedEmployee={(employeeId) =>
-                      toggleMaterialAssignedEmployee(order._id, employeeId)
-                    }
-                    onDownloadPurchaseOrder={() => handleDownloadMaterialPdf(order._id, "PURCHASE_ORDER")}
-                    onDownloadDeliveryNote={() => handleDownloadMaterialPdf(order._id, "DELIVERY_NOTE")}
-                    onDeliveredQtyChange={(itemId, deliveredQty) => {
-                      void updateDeliveredQty(order._id, itemId, deliveredQty, false);
-                    }}
-                    onDeliveredQtyCommit={(itemId, deliveredQty) => {
-                      void updateDeliveredQty(order._id, itemId, deliveredQty, true);
-                    }}
-                    onSaveMaterialChanges={() => {
-                      void saveMaterialOrderChanges(order._id);
-                    }}
-                    hasPendingMaterialChanges={Boolean(pendingMaterialOrderIds[order._id])}
-                    canDownloadPdf={Boolean(order._id)}
-                    downloadingPdf={materialDownloading}
-                  />
-                ))
-              )}
-            </div>
-          </CardContent>
-          </Card>
+          <div id="dashboard-logistics-material" className="space-y-4">
+            {materialOrdersForDisplay.length === 0 ? (
+              <span className="text-sm text-muted-foreground">Naročilo za material še ni ustvarjeno.</span>
+            ) : (
+              materialOrdersForDisplay.map((order) => (
+                <MaterialOrderCard
+                  key={order._id}
+                  materialOrder={order}
+                  technicianNote={workOrderForm.notes ?? ""}
+                  executionDate={typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : selectedWorkOrder?.scheduledAt ?? null}
+                  executionDateConfirmedAt={
+                    typeof workOrderForm.scheduledConfirmedAt === "string"
+                      ? workOrderForm.scheduledConfirmedAt
+                      : selectedWorkOrder?.scheduledConfirmedAt ?? null
+                  }
+                  executionDateConfirmedBy={
+                    typeof workOrderForm.scheduledConfirmedBy === "string"
+                      ? workOrderForm.scheduledConfirmedBy
+                      : selectedWorkOrder?.scheduledConfirmedBy ?? null
+                  }
+                  executionDurationLabel={selectedExecutionDurationLabel}
+                  mainInstallerId={
+                    typeof workOrderForm.mainInstallerId === "string"
+                      ? workOrderForm.mainInstallerId
+                      : selectedWorkOrder?.mainInstallerId ?? null
+                  }
+                  executionTeamIds={Array.isArray(workOrderForm.assignedEmployeeIds) ? workOrderForm.assignedEmployeeIds : []}
+                  installerAvailability={installerAvailability}
+                  onExecutionDateChange={(value) => handleWorkOrderChange("scheduledAt", value)}
+                  onConfirmExecutionDate={() => {
+                    void handleConfirmSchedule();
+                  }}
+                  onUnconfirmExecutionDate={() => {
+                    void handleUnconfirmSchedule();
+                  }}
+                  onMainInstallerChange={handleMainInstallerChange}
+                  onToggleExecutionTeam={toggleAssignedEmployee}
+                  onPickupMethodChange={(value) => handlePickupMethodChange(order._id, value)}
+                  onPickupLocationChange={(value) => updateMaterialOrderForm(order._id, { pickupLocation: value })}
+                  onLogisticsOwnerChange={(employeeId) => updateMaterialOrderForm(order._id, { logisticsOwnerId: employeeId })}
+                  onTechnicianNoteChange={(value) => handleWorkOrderChange("notes", value)}
+                  onPickupNoteChange={(value) => updateMaterialOrderForm(order._id, { pickupNote: value })}
+                  onDeliveryNotePhotosChange={(photos) => updateMaterialOrderForm(order._id, { deliveryNotePhotos: photos })}
+                  onAddExtraMaterial={(draft) => addExtraMaterialItem(order._id, draft)}
+                  onConfirmPickup={() => {
+                    void handleConfirmPickup(order._id);
+                  }}
+                  onAdvanceStep={(step) => {
+                    void handleAdvanceMaterialStepWithSave(order._id, step);
+                  }}
+                  savingWorkOrder={savingWorkOrder || advancingMaterialOrderId === order._id}
+                  employees={employees}
+                  onPreviewPurchaseOrder={() => openMaterialPdfPreview(order._id, "PURCHASE_ORDER")}
+                  onDownloadPurchaseOrder={() => handleDownloadMaterialPdf(order._id, "PURCHASE_ORDER")}
+                  onDownloadDeliveryNote={() => handleDownloadMaterialPdf(order._id, "DELIVERY_NOTE")}
+                  onMaterialItemsChange={(items) => updateMaterialOrderForm(order._id, { items })}
+                  onDeliveredQtyChange={(itemId, deliveredQty) => {
+                    void updateDeliveredQty(order._id, itemId, deliveredQty, false);
+                  }}
+                  onDeliveredQtyCommit={(itemId, deliveredQty) => {
+                    void updateDeliveredQty(order._id, itemId, deliveredQty, true);
+                  }}
+                  onSaveMaterialChanges={() => {
+                    void saveMaterialOrderChanges(order._id);
+                  }}
+                  hasPendingMaterialChanges={Boolean(pendingMaterialOrderIds[order._id])}
+                  canDownloadPdf={Boolean(order._id)}
+                  downloadingPdf={materialDownloading}
+                />
+              ))
+            )}
+          </div>
         ) : null}
 
         {section === "workorder" || section === "both" ? (
           <Card id="dashboard-logistics-workorder">
-            <CardHeader className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Izvedba</p>
-                <CardTitle className="mt-1">Delovni nalog</CardTitle>
-                <p className="text-sm text-muted-foreground">Dodeli ekipo, spremljaj napredek in izvozi PDF.</p>
-              </div>
-              {selectedWorkOrder && (
-                <div className="flex flex-col gap-1 text-right">
-                  <span className="text-xs uppercase text-muted-foreground">Status naloga</span>
-                  <Select value={headerWorkOrderStatus} onValueChange={(value) => handleWorkOrderChange("status", value)}>
-                    <SelectTrigger className="h-10 w-[200px] border border-input bg-background focus:ring-0">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent align="end">
-                      {workOrderStatusOptions.map((status) => (
-                        <SelectItem key={status} value={status}>
-                          {workOrderStatusLabels[status]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </CardHeader>
+            <CardHeader className="hidden" />
             <CardContent className="space-y-4">
               {filteredWorkOrders.length === 0 ? (
                 <span className="text-sm text-muted-foreground">Delovni nalog še ni ustvarjen.</span>
               ) : null}
-              {renderWorkOrder(selectedWorkOrder)}
+              {renderTaskPreview(selectedWorkOrder)}
             </CardContent>
           </Card>
         ) : null}
@@ -1646,117 +1821,128 @@ export function LogisticsPanel({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-6 rounded-[var(--radius-card)] border border-border/60 bg-card/30 p-4">
-        {shouldShowOfferSelector && (
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-medium uppercase text-muted-foreground">Priprava za ponudbo</p>
-              <p className="text-base font-semibold">{selectedOfferLabel ?? "Izberi potrjeno ponudbo"}</p>
-            </div>
-            {shouldRenderOfferDropdown ? (
-              <Select value={selectedOfferVersionId ?? ""} onValueChange={(value) => setSelectedOfferVersionId(value)}>
-                <SelectTrigger className="w-[260px]">
-                  <SelectValue placeholder="Izberi potrjeno ponudbo" />
-                </SelectTrigger>
-                <SelectContent align="end">
-                  {offerSelectionOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              selectedOfferLabel && (
-                <Badge variant="outline" className="px-3 py-1 text-sm font-medium">
-                  {selectedOfferLabel}
-                </Badge>
-              )
-            )}
-          </div>
+    <div className="space-y-4">
+      {shouldShowOfferSelector && shouldRenderOfferDropdown && (
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <Select value={selectedOfferVersionId ?? ""} onValueChange={(value) => setSelectedOfferVersionId(value)}>
+            <SelectTrigger className="w-[260px]">
+              <SelectValue placeholder="Izberi potrjeno ponudbo" />
+            </SelectTrigger>
+            <SelectContent align="end">
+              {offerSelectionOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {materialOrdersForDisplay.length === 0 ? (
+          <span className="text-sm text-muted-foreground">Naročilo za material še ni ustvarjeno.</span>
+        ) : (
+          materialOrdersForDisplay.map((order) => (
+            <MaterialOrderCard
+              key={order._id}
+              materialOrder={order}
+              technicianNote={workOrderForm.notes ?? ""}
+              executionDate={typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : selectedWorkOrder?.scheduledAt ?? null}
+              executionDateConfirmedAt={
+                typeof workOrderForm.scheduledConfirmedAt === "string"
+                  ? workOrderForm.scheduledConfirmedAt
+                  : selectedWorkOrder?.scheduledConfirmedAt ?? null
+              }
+              executionDateConfirmedBy={
+                typeof workOrderForm.scheduledConfirmedBy === "string"
+                  ? workOrderForm.scheduledConfirmedBy
+                  : selectedWorkOrder?.scheduledConfirmedBy ?? null
+              }
+              executionDurationLabel={selectedExecutionDurationLabel}
+              mainInstallerId={
+                typeof workOrderForm.mainInstallerId === "string"
+                  ? workOrderForm.mainInstallerId
+                  : selectedWorkOrder?.mainInstallerId ?? null
+              }
+              executionTeamIds={Array.isArray(workOrderForm.assignedEmployeeIds) ? workOrderForm.assignedEmployeeIds : []}
+              installerAvailability={installerAvailability}
+              onExecutionDateChange={(value) => handleWorkOrderChange("scheduledAt", value)}
+              onConfirmExecutionDate={() => {
+                void handleConfirmSchedule();
+              }}
+              onUnconfirmExecutionDate={() => {
+                void handleUnconfirmSchedule();
+              }}
+              onMainInstallerChange={handleMainInstallerChange}
+              onToggleExecutionTeam={toggleAssignedEmployee}
+              onPickupMethodChange={(value) => handlePickupMethodChange(order._id, value)}
+              onPickupLocationChange={(value) => updateMaterialOrderForm(order._id, { pickupLocation: value })}
+              onLogisticsOwnerChange={(employeeId) => updateMaterialOrderForm(order._id, { logisticsOwnerId: employeeId })}
+              onTechnicianNoteChange={(value) => handleWorkOrderChange("notes", value)}
+              onPickupNoteChange={(value) => updateMaterialOrderForm(order._id, { pickupNote: value })}
+              onDeliveryNotePhotosChange={(photos) => updateMaterialOrderForm(order._id, { deliveryNotePhotos: photos })}
+              onAddExtraMaterial={(draft) => addExtraMaterialItem(order._id, draft)}
+              onConfirmPickup={() => {
+                void handleConfirmPickup(order._id);
+              }}
+              onAdvanceStep={(step) => {
+                void handleAdvanceMaterialStepWithSave(order._id, step);
+              }}
+              savingWorkOrder={savingWorkOrder || advancingMaterialOrderId === order._id}
+              employees={employees}
+              onPreviewPurchaseOrder={() => openMaterialPdfPreview(order._id, "PURCHASE_ORDER")}
+              onDownloadPurchaseOrder={() => handleDownloadMaterialPdf(order._id, "PURCHASE_ORDER")}
+              onDownloadDeliveryNote={() => handleDownloadMaterialPdf(order._id, "DELIVERY_NOTE")}
+              onMaterialItemsChange={(items) => updateMaterialOrderForm(order._id, { items })}
+              onDeliveredQtyChange={(itemId, deliveredQty) => {
+                void updateDeliveredQty(order._id, itemId, deliveredQty, false);
+              }}
+              onDeliveredQtyCommit={(itemId, deliveredQty) => {
+                void updateDeliveredQty(order._id, itemId, deliveredQty, true);
+              }}
+              onSaveMaterialChanges={() => {
+                void saveMaterialOrderChanges(order._id);
+              }}
+              hasPendingMaterialChanges={Boolean(pendingMaterialOrderIds[order._id])}
+              canDownloadPdf={Boolean(order._id)}
+              downloadingPdf={materialDownloading}
+            />
+          ))
         )}
-
-        <Card>
-          <CardHeader className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Material</p>
-              <CardTitle className="mt-1">Naročilo za material</CardTitle>
-              <p className="text-sm text-muted-foreground">Upravljaj status naročila in spremljaj pripravo materiala.</p>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {materialOrdersForDisplay.length === 0 ? (
-                <span className="text-sm text-muted-foreground">Naročilo za material še ni ustvarjeno.</span>
-              ) : (
-                materialOrdersForDisplay.map((order) => (
-                  <MaterialOrderCard
-                    key={order._id}
-                    materialOrder={order}
-                    onAdvanceStep={(step) => {
-                      void handleAdvanceMaterialStepWithSave(order._id, step);
-                    }}
-                    savingWorkOrder={savingWorkOrder || advancingMaterialOrderId === order._id}
-                    employees={employees}
-                    assignedEmployeeIds={Array.isArray(order.assignedEmployeeIds) ? order.assignedEmployeeIds : []}
-                    onToggleAssignedEmployee={(employeeId) =>
-                      toggleMaterialAssignedEmployee(order._id, employeeId)
-                    }
-                    onDownloadPurchaseOrder={() => handleDownloadMaterialPdf(order._id, "PURCHASE_ORDER")}
-                    onDownloadDeliveryNote={() => handleDownloadMaterialPdf(order._id, "DELIVERY_NOTE")}
-                    onDeliveredQtyChange={(itemId, deliveredQty) => {
-                      void updateDeliveredQty(order._id, itemId, deliveredQty, false);
-                    }}
-                    onDeliveredQtyCommit={(itemId, deliveredQty) => {
-                      void updateDeliveredQty(order._id, itemId, deliveredQty, true);
-                    }}
-                    onSaveMaterialChanges={() => {
-                      void saveMaterialOrderChanges(order._id);
-                    }}
-                    hasPendingMaterialChanges={Boolean(pendingMaterialOrderIds[order._id])}
-                    canDownloadPdf={Boolean(order._id)}
-                    downloadingPdf={materialDownloading}
-                  />
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Izvedba</p>
-              <CardTitle className="mt-1">Delovni nalog</CardTitle>
-              <p className="text-sm text-muted-foreground">Dodeli ekipo, spremljaj napredek in izvozi PDF.</p>
-            </div>
-            {selectedWorkOrder && (
-              <div className="flex flex-col gap-1 text-right">
-                <span className="text-xs uppercase text-muted-foreground">Status naloga</span>
-                <Select value={headerWorkOrderStatus} onValueChange={(value) => handleWorkOrderChange("status", value)}>
-                  <SelectTrigger className="h-10 w-[200px] border border-input bg-background focus:ring-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent align="end">
-                    {workOrderStatusOptions.map((status) => (
-                      <SelectItem key={status} value={status}>
-                        {workOrderStatusLabels[status]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {filteredWorkOrders.length === 0 ? (
-              <span className="text-sm text-muted-foreground">Delovni nalog še ni ustvarjen.</span>
-            ) : null}
-            {renderWorkOrder(selectedWorkOrder)}
-          </CardContent>
-        </Card>
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between gap-3 pb-0">
+          <h3 className="text-base font-semibold">Predogled nalogov</h3>
+          <div className="flex flex-wrap justify-end gap-2">
+            {issueRequirements.map((requirement) => (
+              <Badge
+                key={requirement.label}
+                variant="outline"
+                className={
+                  requirement.met
+                    ? "border-green-500/30 bg-green-500/10 text-green-700"
+                    : "border-amber-500/30 bg-amber-500/10 text-amber-700"
+                }
+              >
+                {requirement.met ? requirement.label : requirement.missingText}
+              </Badge>
+            ))}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {filteredWorkOrders.length === 0 ? (
+            <span className="text-sm text-muted-foreground">Delovni nalog še ni ustvarjen.</span>
+          ) : null}
+          {renderTaskPreview(selectedWorkOrder)}
+          <div className="flex justify-end border-t border-border/60 pt-4">
+            <Button size="sm" onClick={handleIssueWorkOrder} disabled={!canIssueWorkOrder || savingWorkOrder || issuingOrder}>
+              {issuingOrder ? "Izdajam..." : "Izdaj delovni nalog"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
