@@ -11,6 +11,7 @@ export interface LogisticsMaterialItem {
   dobavitelj?: string;
   naslovDobavitelja?: string;
   materialStep?: MaterialStep;
+  isExtra?: boolean;
 }
 
 export type MaterialStatus =
@@ -27,6 +28,12 @@ export type MaterialStep =
   | "Prevzeto"
   | "Pripravljeno";
 
+export type MaterialPickupMethod =
+  | "COMPANY_PICKUP"
+  | "SUPPLIER_PICKUP"
+  | "DIRECT_TO_INSTALLER"
+  | "DIRECT_TO_SITE";
+
 export interface MaterialOrder {
   _id: string;
   projectId: string;
@@ -36,6 +43,13 @@ export interface MaterialOrder {
   status: "draft" | "ordered" | "received" | "cancelled";
   materialStatus: MaterialStatus;
   assignedEmployeeIds?: string[];
+  pickupMethod?: MaterialPickupMethod | null;
+  pickupLocation?: string | null;
+  logisticsOwnerId?: string | null;
+  pickupNote?: string | null;
+  deliveryNotePhotos?: string[];
+  pickupConfirmedAt?: string | null;
+  pickupConfirmedBy?: string | null;
   cancelledAt?: string | null;
   reopened?: boolean;
   createdAt: string;

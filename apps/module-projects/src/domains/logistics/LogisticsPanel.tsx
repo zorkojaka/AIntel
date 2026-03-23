@@ -436,24 +436,44 @@ export function LogisticsPanel({
     });
   };
 
-  const toggleMaterialAssignedEmployee = async (materialOrderId: string, employeeId: string) => {
-    const currentMaterial = resolveMaterialOrderById(materialOrderId);
-    if (!currentMaterial) return;
-    const current = Array.isArray(currentMaterial.assignedEmployeeIds) ? currentMaterial.assignedEmployeeIds : [];
-    const next = current.includes(employeeId)
-      ? current.filter((id) => id !== employeeId)
-      : [...current, employeeId];
-    if (materialOrderForm?._id === materialOrderId) {
-      setMaterialOrderForm((prev) =>
-        prev ? { ...prev, assignedEmployeeIds: next } : { ...currentMaterial, assignedEmployeeIds: next },
-      );
-    }
-    await handleSaveWorkOrder({
-      _id: materialOrderId,
-      assignedEmployeeIds: next,
-      items: Array.isArray(currentMaterial.items) ? currentMaterial.items : [],
-    });
-  };
+  const updateMaterialOrderForm = useCallback(
+    (materialOrderId: string, updates: Partial<MaterialOrder>) => {
+      const currentMaterial = resolveMaterialOrderById(materialOrderId);
+      if (!currentMaterial) return;
+      setMaterialOrderForm((prev) => {
+        const base = prev && prev._id === materialOrderId ? prev : currentMaterial;
+        return { ...base, ...updates };
+      });
+      setPendingMaterialOrderIds((prev) => ({ ...prev, [materialOrderId]: true }));
+    },
+    [resolveMaterialOrderById],
+  );
+
+  const addExtraMaterialItem = useCallback(
+    (
+      materialOrderId: string,
+      draft: { productId: string | null; name: string; unit: string; quantity: number; note: string },
+    ) => {
+      const currentMaterial = resolveMaterialOrderById(materialOrderId);
+      if (!currentMaterial) return;
+      const extraItem = {
+        id: `extra-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        productId: draft.productId,
+        name: draft.name.trim(),
+        quantity: 0,
+        deliveredQty: Math.max(0, Number(draft.quantity) || 0),
+        unit: draft.unit.trim(),
+        note: draft.note.trim(),
+        dobavitelj: "",
+        naslovDobavitelja: "",
+        materialStep: "Prevzeto" as MaterialStep,
+        isExtra: true,
+      };
+      const nextItems = [...(Array.isArray(currentMaterial.items) ? currentMaterial.items : []), extraItem];
+      updateMaterialOrderForm(materialOrderId, { items: nextItems });
+    },
+    [resolveMaterialOrderById, updateMaterialOrderForm],
+  );
 
   const handleDownloadMaterialPdf = async (
     materialOrderId: string,
@@ -564,11 +584,22 @@ export function LogisticsPanel({
           items: Array.isArray(workOrderOverrides?.items) ? workOrderOverrides?.items : undefined,
           materialOrderId: materialOverrides?._id ?? currentMaterial?._id ?? null,
           materialStatus: materialOverrides?.materialStatus ?? currentMaterial?.materialStatus ?? undefined,
-          materialAssignedEmployeeIds: Array.isArray(materialOverrides?.assignedEmployeeIds)
-            ? materialOverrides?.assignedEmployeeIds
-            : Array.isArray(currentMaterial?.assignedEmployeeIds)
-              ? currentMaterial?.assignedEmployeeIds
+          materialAssignedEmployeeIds: Array.isArray(workOrderForm.assignedEmployeeIds)
+            ? workOrderForm.assignedEmployeeIds
+            : undefined,
+          pickupMethod: materialOverrides?.pickupMethod ?? currentMaterial?.pickupMethod ?? undefined,
+          pickupLocation: materialOverrides?.pickupLocation ?? currentMaterial?.pickupLocation ?? undefined,
+          logisticsOwnerId: materialOverrides?.logisticsOwnerId ?? currentMaterial?.logisticsOwnerId ?? undefined,
+          pickupNote: materialOverrides?.pickupNote ?? currentMaterial?.pickupNote ?? undefined,
+          deliveryNotePhotos: Array.isArray(materialOverrides?.deliveryNotePhotos)
+            ? materialOverrides?.deliveryNotePhotos
+            : Array.isArray(currentMaterial?.deliveryNotePhotos)
+              ? currentMaterial?.deliveryNotePhotos
               : undefined,
+          pickupConfirmedAt:
+            materialOverrides && Object.prototype.hasOwnProperty.call(materialOverrides, "pickupConfirmedAt")
+              ? materialOverrides.pickupConfirmedAt
+              : currentMaterial?.pickupConfirmedAt ?? undefined,
           materialItems: Array.isArray(materialOverrides?.items)
             ? materialOverrides?.items
             : Array.isArray(currentMaterial?.items)
@@ -1520,6 +1551,33 @@ export function LogisticsPanel({
     setPendingMaterialOrderIds((prev) => ({ ...prev, [materialOrderId]: true }));
   };
 
+  const handleConfirmPickup = async (materialOrderId: string) => {
+    const currentMaterial = resolveMaterialOrderById(materialOrderId);
+    if (!currentMaterial) return;
+    const confirmedAt = new Date().toISOString();
+    const nextItems = (currentMaterial.items ?? []).map((item) => {
+      const plannedQty = typeof item.quantity === "number" ? item.quantity : 0;
+      const takenQty = typeof item.deliveredQty === "number" ? item.deliveredQty : 0;
+      return {
+        ...item,
+        materialStep: item.isExtra ? "Prevzeto" : takenQty >= plannedQty ? "Prevzeto" : item.materialStep ?? "Za prevzem",
+      };
+    });
+    const nextMaterial: Partial<MaterialOrder> = {
+      _id: materialOrderId,
+      items: nextItems,
+      materialStatus: "Prevzeto",
+      pickupConfirmedAt: confirmedAt,
+      assignedEmployeeIds: Array.isArray(workOrderForm.assignedEmployeeIds) ? workOrderForm.assignedEmployeeIds : [],
+    };
+    updateMaterialOrderForm(materialOrderId, nextMaterial);
+    const saved = await handleSaveWorkOrder(nextMaterial);
+    if (saved) {
+      setPendingMaterialOrderIds((prev) => ({ ...prev, [materialOrderId]: false }));
+      toast.success("Prevzem materiala potrjen.");
+    }
+  };
+
   const saveMaterialOrderChanges = async (materialOrderId: string): Promise<boolean> => {
     const currentMaterial = resolveMaterialOrderById(materialOrderId);
     if (!currentMaterial) return false;
@@ -1576,15 +1634,35 @@ export function LogisticsPanel({
                   <MaterialOrderCard
                     key={order._id}
                     materialOrder={order}
+                    executionDate={typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : selectedWorkOrder?.scheduledAt ?? null}
+                    executionDateConfirmedAt={
+                      typeof workOrderForm.scheduledConfirmedAt === "string"
+                        ? workOrderForm.scheduledConfirmedAt
+                        : selectedWorkOrder?.scheduledConfirmedAt ?? null
+                    }
+                    executionTeamIds={Array.isArray(workOrderForm.assignedEmployeeIds) ? workOrderForm.assignedEmployeeIds : []}
+                    onExecutionDateChange={(value) => handleWorkOrderChange("scheduledAt", value)}
+                    onConfirmExecutionDate={() => {
+                      void handleConfirmSchedule();
+                    }}
+                    onUnconfirmExecutionDate={() => {
+                      void handleUnconfirmSchedule();
+                    }}
+                    onToggleExecutionTeam={toggleAssignedEmployee}
+                    onPickupMethodChange={(value) => updateMaterialOrderForm(order._id, { pickupMethod: value })}
+                    onPickupLocationChange={(value) => updateMaterialOrderForm(order._id, { pickupLocation: value })}
+                    onLogisticsOwnerChange={(employeeId) => updateMaterialOrderForm(order._id, { logisticsOwnerId: employeeId })}
+                    onPickupNoteChange={(value) => updateMaterialOrderForm(order._id, { pickupNote: value })}
+                    onDeliveryNotePhotosChange={(photos) => updateMaterialOrderForm(order._id, { deliveryNotePhotos: photos })}
+                    onAddExtraMaterial={(draft) => addExtraMaterialItem(order._id, draft)}
+                    onConfirmPickup={() => {
+                      void handleConfirmPickup(order._id);
+                    }}
                     onAdvanceStep={(step) => {
                       void handleAdvanceMaterialStepWithSave(order._id, step);
                     }}
                     savingWorkOrder={savingWorkOrder || advancingMaterialOrderId === order._id}
                     employees={employees}
-                    assignedEmployeeIds={Array.isArray(order.assignedEmployeeIds) ? order.assignedEmployeeIds : []}
-                    onToggleAssignedEmployee={(employeeId) =>
-                      toggleMaterialAssignedEmployee(order._id, employeeId)
-                    }
                     onDownloadPurchaseOrder={() => handleDownloadMaterialPdf(order._id, "PURCHASE_ORDER")}
                     onDownloadDeliveryNote={() => handleDownloadMaterialPdf(order._id, "DELIVERY_NOTE")}
                     onDeliveredQtyChange={(itemId, deliveredQty) => {
@@ -1694,15 +1772,35 @@ export function LogisticsPanel({
                   <MaterialOrderCard
                     key={order._id}
                     materialOrder={order}
+                    executionDate={typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : selectedWorkOrder?.scheduledAt ?? null}
+                    executionDateConfirmedAt={
+                      typeof workOrderForm.scheduledConfirmedAt === "string"
+                        ? workOrderForm.scheduledConfirmedAt
+                        : selectedWorkOrder?.scheduledConfirmedAt ?? null
+                    }
+                    executionTeamIds={Array.isArray(workOrderForm.assignedEmployeeIds) ? workOrderForm.assignedEmployeeIds : []}
+                    onExecutionDateChange={(value) => handleWorkOrderChange("scheduledAt", value)}
+                    onConfirmExecutionDate={() => {
+                      void handleConfirmSchedule();
+                    }}
+                    onUnconfirmExecutionDate={() => {
+                      void handleUnconfirmSchedule();
+                    }}
+                    onToggleExecutionTeam={toggleAssignedEmployee}
+                    onPickupMethodChange={(value) => updateMaterialOrderForm(order._id, { pickupMethod: value })}
+                    onPickupLocationChange={(value) => updateMaterialOrderForm(order._id, { pickupLocation: value })}
+                    onLogisticsOwnerChange={(employeeId) => updateMaterialOrderForm(order._id, { logisticsOwnerId: employeeId })}
+                    onPickupNoteChange={(value) => updateMaterialOrderForm(order._id, { pickupNote: value })}
+                    onDeliveryNotePhotosChange={(photos) => updateMaterialOrderForm(order._id, { deliveryNotePhotos: photos })}
+                    onAddExtraMaterial={(draft) => addExtraMaterialItem(order._id, draft)}
+                    onConfirmPickup={() => {
+                      void handleConfirmPickup(order._id);
+                    }}
                     onAdvanceStep={(step) => {
                       void handleAdvanceMaterialStepWithSave(order._id, step);
                     }}
                     savingWorkOrder={savingWorkOrder || advancingMaterialOrderId === order._id}
                     employees={employees}
-                    assignedEmployeeIds={Array.isArray(order.assignedEmployeeIds) ? order.assignedEmployeeIds : []}
-                    onToggleAssignedEmployee={(employeeId) =>
-                      toggleMaterialAssignedEmployee(order._id, employeeId)
-                    }
                     onDownloadPurchaseOrder={() => handleDownloadMaterialPdf(order._id, "PURCHASE_ORDER")}
                     onDownloadDeliveryNote={() => handleDownloadMaterialPdf(order._id, "DELIVERY_NOTE")}
                     onDeliveredQtyChange={(itemId, deliveredQty) => {
