@@ -18,10 +18,15 @@ import {
   updateProjectAssignments,
 } from '../controllers/project.controller';
 import {
+  applyOfferTemplate,
+  deleteOfferTemplate,
   exportOfferPdf,
+  renameOfferTemplate,
   saveOfferVersion,
+  saveOfferTemplate,
   sendOfferVersionStub,
   getActiveOffer,
+  listOfferTemplates,
   listOffersForProject,
   getOfferById,
   updateOfferVersion,
@@ -35,6 +40,7 @@ const router = Router();
 const requireProjectWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]);
 
 router.get('/', listProjects);
+router.get('/offer-templates', listOfferTemplates);
 router.post('/', requireProjectWrite, createProject);
 router.get('/:id', getProject);
 router.patch('/:id/assignments', requireProjectWrite, updateProjectAssignments);
@@ -48,6 +54,10 @@ router.put('/:id/items/:itemId', requireProjectWrite, updateItem);
 router.delete('/:id/items/:itemId', requireProjectWrite, deleteItem);
 router.post('/:projectId/offers', requireProjectWrite, saveOfferVersion);
 router.get('/:projectId/offers', listOffersForProject);
+router.post('/:projectId/offer-templates', requireProjectWrite, saveOfferTemplate);
+router.post('/:projectId/offer-templates/:templateId/apply', requireProjectWrite, applyOfferTemplate);
+router.put('/:projectId/offer-templates/:templateId', requireProjectWrite, renameOfferTemplate);
+router.delete('/:projectId/offer-templates/:templateId', requireProjectWrite, deleteOfferTemplate);
 router.get('/:projectId/offers/:offerId', getOfferById);
 router.put('/:projectId/offers/:offerId', requireProjectWrite, updateOfferVersion);
 router.delete('/:projectId/offers/:offerId', requireProjectWrite, deleteOfferVersion);

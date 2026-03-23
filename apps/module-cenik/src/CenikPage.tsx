@@ -1,6 +1,7 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, DataTable, Input, CategoryMultiSelect, TableRowActions } from '@aintel/ui';
-import { Save, X } from 'lucide-react';
+import { Pencil, Save, Trash2, X } from 'lucide-react';
+import { clearMobileTopbar, setMobileTopbar } from '@aintel/shared/utils/mobileTopbar';
 import FilterBar from './components/FilterBar';
 
 type Product = {
@@ -175,6 +176,7 @@ export const CenikPage: React.FC = () => {
   const [auditError, setAuditError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
+  const isMobileEditOpen = isModalOpen && Boolean(editingProduct);
 
   const loadProducts = async () => {
     setLoading(true);
@@ -213,6 +215,45 @@ export const CenikPage: React.FC = () => {
 
     fetchCategories();
   }, []);
+
+  useEffect(() => {
+    if (isMobileEditOpen) {
+      setMobileTopbar({
+        title: 'Cenik',
+        actions: [
+          {
+            id: 'cenik-cancel',
+            label: 'Prekliči',
+            variant: 'ghost',
+            onClick: handleCancel,
+            disabled: saving,
+          },
+          {
+            id: 'cenik-save',
+            label: 'Shrani',
+            variant: 'primary',
+            onClick: () => formRef.current?.requestSubmit(),
+            disabled: saving,
+          },
+        ],
+      });
+      return () => clearMobileTopbar();
+    }
+
+    setMobileTopbar({
+      title: 'Cenik',
+      actions: [
+        {
+          id: 'cenik-import',
+          label: '+ Uvoz',
+          variant: 'primary',
+          onClick: openImportModal,
+        },
+      ],
+    });
+
+    return () => clearMobileTopbar();
+  }, [isMobileEditOpen, saving]);
 
 
 
@@ -385,12 +426,10 @@ export const CenikPage: React.FC = () => {
 
   return (
     <section className="cenik-page-shell max-w-6xl mx-auto px-3 py-4 md:p-6 space-y-6">
-      <div className="sticky top-0 z-30 -mx-6 border-b border-border/40 bg-background/80 px-6 py-3 backdrop-blur cenik-sticky-bar">
+      <div className="hidden items-center justify-between gap-4 md:flex">
+        <h1 className="text-3xl font-semibold text-foreground">Cenik</h1>
         <Button onClick={openImportModal}>Uvoz produktov</Button>
       </div>
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold text-foreground">Cenik</h1>
-      </header>
 
       {status && (
         <div
@@ -416,7 +455,7 @@ export const CenikPage: React.FC = () => {
           <p className="text-sm text-muted-foreground">Nalaganje cenika …</p>
         ) : (
           <div className="flex flex-col gap-3">
-            <div className="overflow-x-auto">
+            <div className="hidden md:block overflow-x-auto">
               <DataTable
                 columns={[
                   { header: 'Ime', accessor: 'ime' },
@@ -449,6 +488,64 @@ export const CenikPage: React.FC = () => {
                 data={filteredProducts}
               />
             </div>
+            <div className="grid gap-3 md:hidden">
+              {filteredProducts.map((product) => (
+                <article
+                  key={product._id ?? `${product.ime}-${product.proizvajalec}`}
+                  className="rounded-xl border border-border bg-card p-3 shadow-sm"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="cenik-mobile-card-title text-sm font-semibold leading-5 text-foreground">
+                          {product.ime}
+                        </h3>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => startEdit(product)}
+                            aria-label={`Uredi ${product.ime}`}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => handleDelete(product._id)}
+                            disabled={deletingId === product._id}
+                            aria-label={`Izbriši ${product.ime}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <CategoryChipRow slugs={product.categorySlugs ?? []} lookup={categoryLookup} />
+
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                        <span className="font-semibold text-foreground">
+                          {formatCurrency(product.prodajnaCena)}
+                        </span>
+                        <span className="text-muted-foreground">•</span>
+                        <span className="min-w-0 truncate text-muted-foreground">
+                          <span className="font-medium text-foreground">Proizvajalec:</span>{" "}
+                          {product.proizvajalec?.trim() || 'Ni podatka'}
+                        </span>
+                      </div>
+
+                      <p className="cenik-mobile-card-description text-xs text-muted-foreground">
+                        {product.kratekOpis?.trim() || 'Brez opisa'}
+                      </p>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
             {filteredProducts.length === 0 && (
               <p className="text-center text-sm text-muted-foreground">Ni najdenih produktov.</p>
             )}
@@ -457,9 +554,9 @@ export const CenikPage: React.FC = () => {
       </Card>
 
       {isModalOpen && editingProduct && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4 py-6">
-          <div className="w-full max-w-3xl rounded-xl bg-card p-6 shadow-2xl shadow-black/40">
-            <div className="flex items-center justify-between gap-2">
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 px-3 pb-3 pt-16 md:items-center md:px-4 md:py-6">
+          <div className="cenik-product-modal flex w-full max-w-3xl flex-col rounded-xl bg-card shadow-2xl shadow-black/40">
+            <div className="hidden items-center justify-between gap-3 border-b border-border/60 bg-card px-4 py-3 md:sticky md:top-0 md:z-10 md:flex md:px-6 md:py-4">
               <h2 className="text-xl font-semibold text-foreground">
                 {editingProduct._id ? 'Uredi produkt' : 'Dodaj produkt'}
               </h2>
@@ -482,8 +579,12 @@ export const CenikPage: React.FC = () => {
                 </button>
               </div>
             </div>
-            <form ref={formRef} className="space-y-4 mt-4" onSubmit={handleSubmit}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <form
+              ref={formRef}
+              className="cenik-product-modal-form mt-0 space-y-2.5 px-4 py-3 md:space-y-4 md:px-6 md:py-5"
+              onSubmit={handleSubmit}
+            >
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-3">
                 <Input
                   label="Ime"
                   placeholder="Naziv produkta"
@@ -506,31 +607,35 @@ export const CenikPage: React.FC = () => {
                   </label>
                 </div>
                 <div className="col-span-1 md:col-span-2">
-                  <CategoryMultiSelect
-                    label="Kategorije"
-                    categories={categories}
-                    value={editingProduct.categorySlugs ?? []}
-                    onChange={(slugs) =>
-                      setEditingProduct((prev) => (prev ? { ...prev, categorySlugs: slugs } : prev))
-                    }
+                  <div className="cenik-category-picker">
+                    <CategoryMultiSelect
+                      label="Kategorije"
+                      categories={categories}
+                      value={editingProduct.categorySlugs ?? []}
+                      onChange={(slugs) =>
+                        setEditingProduct((prev) => (prev ? { ...prev, categorySlugs: slugs } : prev))
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="col-span-1 grid grid-cols-2 gap-2 md:col-span-2 md:gap-3">
+                  <Input
+                    label="Nabavna cena"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editingProduct.nabavnaCena}
+                    onChange={(event) => updateField('nabavnaCena', Number(event.target.value))}
+                  />
+                  <Input
+                    label="Prodajna cena"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editingProduct.prodajnaCena}
+                    onChange={(event) => updateField('prodajnaCena', Number(event.target.value))}
                   />
                 </div>
-                <Input
-                  label="Nabavna cena"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={editingProduct.nabavnaCena}
-                  onChange={(event) => updateField('nabavnaCena', Number(event.target.value))}
-                />
-                <Input
-                  label="Prodajna cena"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={editingProduct.prodajnaCena}
-                  onChange={(event) => updateField('prodajnaCena', Number(event.target.value))}
-                />
                 <Input
                   label="Proizvajalec"
                   placeholder="npr. BLEBOX"
@@ -569,7 +674,7 @@ export const CenikPage: React.FC = () => {
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1.5 md:space-y-2">
                 <label className="text-xs font-semibold">Kratek opis</label>
                 <textarea
                   className="w-full rounded border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
@@ -579,7 +684,7 @@ export const CenikPage: React.FC = () => {
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1.5 md:space-y-2">
                 <label className="text-xs font-semibold">Dolg opis</label>
                 <textarea
                   className="w-full rounded border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
@@ -589,7 +694,7 @@ export const CenikPage: React.FC = () => {
                 />
               </div>
 
-              <div className="flex flex-wrap gap-3">
+              <div className="hidden flex-wrap gap-3 pb-1 md:flex">
                 <Button type="submit" disabled={saving}>
                   Shrani
                 </Button>
@@ -649,7 +754,7 @@ export const CenikPage: React.FC = () => {
 
             <div className="mt-5 flex flex-wrap gap-3">
               <Button variant="ghost" type="button" onClick={closeImportModal} disabled={importLoading}>
-                Preklici
+                Prekliči
               </Button>
               <Button variant="outline" type="button" onClick={runAudit} disabled={auditLoading}>
                 {auditLoading ? 'Preverjam ...' : 'Preveri cenik (Audit)'}

@@ -43,6 +43,24 @@ body {
   box-shadow: var(--app-shadow-card);
 }
 
+.cenik-product-modal {
+  max-height: min(100dvh - 2rem, 960px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cenik-product-modal-form {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc(min(100dvh - 2rem, 960px) - 76px);
+  overflow-y: auto;
+}
+
+.cenik-category-picker {
+  min-height: 0;
+}
+
 @media (max-width: 767px) {
   .cenik-page-shell {
     padding: 0.85rem;
@@ -55,15 +73,31 @@ body {
     padding-right: 0.85rem;
   }
 
-  .cenik-card [class*='overflow-x-auto'] {
-    overflow-x: auto;
+  .cenik-mobile-card-title {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
-  .cenik-card table th,
-  .cenik-card table td {
-    font-size: 0.76rem;
-    padding: 0.45rem 0.4rem;
-    white-space: normal;
-    overflow-wrap: anywhere;
+  .cenik-mobile-card-description {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+  }
+
+  .cenik-product-modal {
+    max-height: calc(100dvh - 1rem);
+  }
+
+  .cenik-product-modal-form {
+    max-height: calc(100dvh - 5.75rem);
+  }
+
+  .cenik-category-picker {
+    max-height: 9.5rem;
+    overflow-y: auto;
+    padding-right: 0.25rem;
   }
 }

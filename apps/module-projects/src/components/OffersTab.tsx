@@ -5,16 +5,23 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Card } from "./ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "./ui/table";
 import { toast } from "sonner";
 
-import type { OfferLineItem, OfferVersion, OfferVersionSummary } from "@aintel/shared/types/offers";
+import type {
+  OfferLineItem,
+  OfferTemplate,
+  OfferTemplateSummary,
+  OfferVersion,
+  OfferVersionSummary,
+} from "@aintel/shared/types/offers";
 import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
 import type { ProjectDetails } from "../types";
 import type { User } from "@aintel/shared/types/user";
 import type { Employee } from "@aintel/shared/types/employee";
 
-import { Loader2, Trash } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, Pencil, Trash, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
@@ -29,6 +36,8 @@ import { useSettingsData } from "@aintel/module-settings";
 type OffersTabProps = {
   projectId: string;
   refreshKey?: number;
+  onDirtyChange?: (dirty: boolean) => void;
+  onRegisterSaveHandler?: (handler: (() => Promise<boolean>) | null) => void;
 };
 
 type OfferLineItemForm = {
@@ -128,7 +137,58 @@ const resolveUnitFromName = (name: string) => {
   return candidate || "kos";
 };
 
-export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
+function createOfferEditorSnapshot(input: {
+  title: string;
+  paymentTerms: string | null;
+  comment: string | null;
+  items: OfferLineItemForm[];
+  useGlobalDiscount: boolean;
+  usePerItemDiscount: boolean;
+  vatMode: 0 | 9.5 | 22;
+  globalDiscountPercent: number;
+}) {
+  const cleanItems = input.items
+    .filter((i) => !isEmptyOfferItem(i))
+    .filter((i) => i.name.trim() !== "" && i.unitPrice > 0)
+    .map((i) => ({
+      id: i.id,
+      productId: i.productId,
+      name: i.name.trim(),
+      quantity: i.quantity,
+      unit: i.unit,
+      unitPrice: i.unitPrice,
+      vatRate: i.vatRate,
+      totalNet: i.totalNet,
+      totalVat: i.totalVat,
+      totalGross: i.totalGross,
+      discountPercent: input.usePerItemDiscount ? i.discountPercent ?? 0 : 0,
+    }));
+
+  return JSON.stringify({
+    title: input.title.trim() || "Ponudba",
+    paymentTerms: input.paymentTerms ?? "",
+    comment: input.comment ?? "",
+    items: cleanItems,
+    discountPercent: input.useGlobalDiscount ? input.globalDiscountPercent : 0,
+    globalDiscountPercent: input.useGlobalDiscount ? input.globalDiscountPercent : 0,
+    useGlobalDiscount: input.useGlobalDiscount,
+    usePerItemDiscount: input.usePerItemDiscount,
+    vatMode: input.vatMode,
+  });
+}
+
+const EMPTY_OFFER_SNAPSHOT = createOfferEditorSnapshot({
+  title: "Ponudba",
+  paymentTerms: "",
+  comment: "",
+  items: [],
+  useGlobalDiscount: false,
+  usePerItemDiscount: false,
+  vatMode: 22,
+  globalDiscountPercent: 0,
+});
+
+export function OffersTab({ projectId, refreshKey = 0, onDirtyChange, onRegisterSaveHandler }: OffersTabProps) {
   const [items, setItems] = useState<OfferLineItemForm[]>([createEmptyItem()]);
 
   const [title, setTitle] = useState("Ponudba");
@@ -165,6 +225,25 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
 
   const [versions, setVersions] = useState<OfferVersionSummary[]>([]);
   const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<OfferTemplateSummary[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [templateCreating, setTemplateCreating] = useState(false);
+  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const [isTemplateNameDialogOpen, setIsTemplateNameDialogOpen] = useState(false);
+  const [templateDialogMode, setTemplateDialogMode] = useState<"create" | "rename">("create");
+  const [templateDialogTemplateId, setTemplateDialogTemplateId] = useState<string | null>(null);
+  const [templateNameDraft, setTemplateNameDraft] = useState("");
+  const [templateVatModeDraft, setTemplateVatModeDraft] = useState<0 | 9.5 | 22>(22);
+  const [templateApplyGlobalDiscount, setTemplateApplyGlobalDiscount] = useState(true);
+  const [templateApplyPerItemDiscount, setTemplateApplyPerItemDiscount] = useState(true);
+  const [templateGlobalDiscountDraft, setTemplateGlobalDiscountDraft] = useState("0");
+  const [templateStoredUseGlobalDiscount, setTemplateStoredUseGlobalDiscount] = useState(false);
+  const [templateStoredUsePerItemDiscount, setTemplateStoredUsePerItemDiscount] = useState(false);
+  const [isTemplateDeleteDialogOpen, setIsTemplateDeleteDialogOpen] = useState(false);
+  const [templateDeleteTarget, setTemplateDeleteTarget] = useState<OfferTemplateSummary | null>(null);
+  const [templateDeleting, setTemplateDeleting] = useState(false);
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState(EMPTY_OFFER_SNAPSHOT);
   const isDownloading = downloadingMode !== null;
   const lineItemsRef = useRef<HTMLDivElement | null>(null);
 
@@ -200,6 +279,10 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     return paymentNotes;
   }, [settings]);
   const defaultPaymentTerms = paymentTermsOptions[0]?.value ?? settings?.defaultPaymentTerms ?? "";
+  const selectedTemplate = useMemo(
+    () => templates.find((entry) => entry._id === selectedTemplateId) ?? null,
+    [templates, selectedTemplateId]
+  );
 
   useEffect(() => {
     if (paymentTermsOptions.length === 0) {
@@ -232,6 +315,7 @@ export function OffersTab({ projectId, refreshKey = 0 }: OffersTabProps) {
     setTotalNetAfterDiscount(0);
     setTotalGrossAfterDiscount(0);
     setDiscountAmount(0);
+    setLastSavedSnapshot(EMPTY_OFFER_SNAPSHOT);
   }, []);
 
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
@@ -319,6 +403,18 @@ const loadOfferById = useCallback(async (offerId: string) => {
       }));
 
       setItems(ensureTrailingBlank([...mapped]));
+      setLastSavedSnapshot(
+        createOfferEditorSnapshot({
+          title: offer.baseTitle || "Ponudba",
+          paymentTerms: offer.paymentTerms ?? "",
+          comment: offer.comment ?? "",
+          items: mapped,
+          useGlobalDiscount: offer.useGlobalDiscount ?? false,
+          usePerItemDiscount: offer.usePerItemDiscount ?? false,
+          vatMode: ((offer.vatMode as 0 | 9.5 | 22) ?? 22),
+          globalDiscountPercent: gPercent,
+        })
+      );
     } catch (error) {
       console.error(error);
     }
@@ -368,6 +464,28 @@ const loadOfferById = useCallback(async (offerId: string) => {
     [loadOfferById, projectId, resetToEmptyOffer],
   );
 
+  const refreshTemplates = useCallback(async (preferredId?: string | null) => {
+    try {
+      const response = await fetch(`/api/projects/offer-templates`);
+      const payload = await response.json();
+      if (!payload.success) return;
+
+      const list: OfferTemplateSummary[] = Array.isArray(payload.data) ? payload.data : [];
+      setTemplates(list);
+
+      if (preferredId && list.some((entry) => entry._id === preferredId)) {
+        setSelectedTemplateId(preferredId);
+        return;
+      }
+
+      setSelectedTemplateId((current) =>
+        current && list.some((entry) => entry._id === current) ? current : list[0]?._id ?? null
+      );
+    } catch (error) {
+      console.error(error);
+    }
+  }, [projectId]);
+
   const selectedOfferIdRef = useRef<string | null>(null);
   useEffect(() => {
     selectedOfferIdRef.current = selectedOfferId;
@@ -389,12 +507,15 @@ const loadOfferById = useCallback(async (offerId: string) => {
     previousProjectId.current = projectId;
     const preferredId = isProjectChange ? null : selectedOfferIdRef.current;
     refreshOffers(preferredId, true);
+    refreshTemplates();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, refreshKey, refreshOffers]);
+  }, [projectId, refreshKey, refreshOffers, refreshTemplates]);
 
   useEffect(() => {
     resetToEmptyOffer();
     setVersions([]);
+    setTemplates([]);
+    setSelectedTemplateId(null);
     setCurrentOffer(null);
     setOverriddenVatIds(new Set());
     setProjectDetails(null);
@@ -733,6 +854,65 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     };
   };
 
+  const currentOfferSnapshot = useMemo(
+    () =>
+      createOfferEditorSnapshot({
+        title,
+        paymentTerms,
+        comment,
+        items,
+        useGlobalDiscount,
+        usePerItemDiscount,
+        vatMode,
+        globalDiscountPercent,
+      }),
+    [title, paymentTerms, comment, items, useGlobalDiscount, usePerItemDiscount, vatMode, globalDiscountPercent]
+  );
+  const isDirty = currentOfferSnapshot !== lastSavedSnapshot;
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  useEffect(() => {
+    if (!isDirty) return undefined;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
+
+  const fillTemplateDialogFromCurrentOffer = () => {
+    setTemplateVatModeDraft(vatMode);
+    setTemplateApplyGlobalDiscount(useGlobalDiscount);
+    setTemplateApplyPerItemDiscount(usePerItemDiscount);
+    setTemplateGlobalDiscountDraft(String(useGlobalDiscount ? globalDiscountPercent ?? 0 : 0));
+    setTemplateStoredUseGlobalDiscount(useGlobalDiscount);
+    setTemplateStoredUsePerItemDiscount(usePerItemDiscount);
+  };
+
+  const fillTemplateDialogFromTemplate = (template: Pick<
+    OfferTemplate,
+    | "title"
+    | "applyGlobalDiscount"
+    | "applyPerItemDiscount"
+    | "globalDiscountPercent"
+    | "discountPercent"
+    | "vatMode"
+    | "useGlobalDiscount"
+    | "usePerItemDiscount"
+  >) => {
+    setTemplateNameDraft(template.title);
+    setTemplateVatModeDraft((template.vatMode as 0 | 9.5 | 22) ?? 22);
+    setTemplateApplyGlobalDiscount(template.applyGlobalDiscount ?? true);
+    setTemplateApplyPerItemDiscount(template.applyPerItemDiscount ?? true);
+    setTemplateGlobalDiscountDraft(String(template.globalDiscountPercent ?? template.discountPercent ?? 0));
+    setTemplateStoredUseGlobalDiscount(template.useGlobalDiscount ?? false);
+    setTemplateStoredUsePerItemDiscount(template.usePerItemDiscount ?? false);
+  };
+
   const handleSave = async () => {
     if (!validItems.length) {
       toast.error("Dodajte vsaj eno postavko z nazivom in ceno.");
@@ -767,6 +947,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         },
       );
       toast.success("Ponudba shranjena.");
+      setLastSavedSnapshot(currentOfferSnapshot);
       return created;
     } catch (error) {
       console.error(error);
@@ -814,6 +995,341 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     if (!json.success || !json.data) return;
     const created: OfferVersion = json.data;
     await refreshOffers(created._id ?? null);
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!validItems.length) {
+      toast.error("Dodajte vsaj eno postavko z nazivom in ceno.");
+      return;
+    }
+
+    const selectedTemplate = templates.find((entry) => entry._id === selectedTemplateId);
+    const templateName = window.prompt(
+      "Vnesi ime template-a",
+      selectedTemplate?.title ?? `${title.trim() || "Ponudba"} template`
+    )?.trim() ?? "";
+    if (!templateName) {
+      return;
+    }
+
+    setTemplateSaving(true);
+    try {
+      const payloadBody = buildPayloadFromCurrentState();
+      const response = await fetch(`/api/projects/${projectId}/offer-templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...payloadBody,
+          sourceOfferId: currentOffer?._id ?? null,
+          sourceTitle: title,
+          title: templateName,
+        }),
+      });
+      const payload = await response.json();
+      if (!payload.success || !payload.data) {
+        toast.error(payload.error ?? "Template ni bilo mogoče shraniti.");
+        return;
+      }
+
+      await refreshTemplates(payload.data._id ?? null);
+      toast.success("Template shranjen.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Template ni bilo mogoče shraniti.");
+    } finally {
+      setTemplateSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!onRegisterSaveHandler) return;
+    onRegisterSaveHandler(async () => Boolean(await handleSave()));
+    return () => onRegisterSaveHandler(null);
+  }, [onRegisterSaveHandler, handleSave]);
+
+  const openCreateTemplateDialog = () => {
+    if (!validItems.length) {
+      toast.error("Dodajte vsaj eno postavko z nazivom in ceno.");
+      return;
+    }
+    setTemplateDialogMode("create");
+    setTemplateDialogTemplateId(null);
+    setTemplateNameDraft(`${title.trim() || "Ponudba"} template`);
+    fillTemplateDialogFromCurrentOffer();
+    setIsTemplateNameDialogOpen(true);
+  };
+
+  const openRenameTemplateDialog = async (templateOverride?: OfferTemplateSummary | null) => {
+    const targetTemplate = templateOverride ?? selectedTemplate;
+    if (!targetTemplate) {
+      toast.error("Izberi template.");
+      return;
+    }
+    setTemplateSaving(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/offer-templates/${targetTemplate._id}/apply`, {
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!payload.success || !payload.data) {
+        toast.error(payload.error ?? "Template podatkov ni bilo mogoče naložiti.");
+        return;
+      }
+
+      setTemplateDialogMode("rename");
+      setTemplateDialogTemplateId(targetTemplate._id);
+      fillTemplateDialogFromTemplate(payload.data as OfferTemplate);
+      setIsTemplateNameDialogOpen(true);
+      setIsTemplatePickerOpen(false);
+    } catch (error) {
+      console.error(error);
+      toast.error("Template podatkov ni bilo mogoče naložiti.");
+    } finally {
+      setTemplateSaving(false);
+    }
+  };
+
+  const submitTemplateDialog = async () => {
+    const nextName = templateNameDraft.trim();
+    if (!nextName) {
+      toast.error("Ime template-a je obvezno.");
+      return;
+    }
+
+    const nextGlobalDiscountPercent = Math.max(0, Math.min(100, Number(templateGlobalDiscountDraft) || 0));
+    const shouldApplyGlobalDiscount = templateApplyGlobalDiscount;
+    const shouldApplyPerItemDiscount = templateApplyPerItemDiscount;
+    const effectiveUseGlobalDiscount = shouldApplyGlobalDiscount
+      ? nextGlobalDiscountPercent > 0
+      : templateStoredUseGlobalDiscount;
+    const effectiveUsePerItemDiscount = templateStoredUsePerItemDiscount;
+
+    setTemplateSaving(true);
+    try {
+      const response =
+        templateDialogMode === "create"
+          ? await fetch(`/api/projects/${projectId}/offer-templates`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                ...buildPayloadFromCurrentState(),
+                sourceOfferId: currentOffer?._id ?? null,
+                sourceTitle: title,
+                title: nextName,
+                applyGlobalDiscount: shouldApplyGlobalDiscount,
+                applyPerItemDiscount: shouldApplyPerItemDiscount,
+                useGlobalDiscount: effectiveUseGlobalDiscount,
+                usePerItemDiscount: effectiveUsePerItemDiscount,
+                vatMode: templateVatModeDraft,
+                globalDiscountPercent: nextGlobalDiscountPercent,
+                discountPercent: nextGlobalDiscountPercent,
+              }),
+            })
+          : await fetch(`/api/projects/${projectId}/offer-templates/${templateDialogTemplateId}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title: nextName,
+                applyGlobalDiscount: shouldApplyGlobalDiscount,
+                applyPerItemDiscount: shouldApplyPerItemDiscount,
+                useGlobalDiscount: effectiveUseGlobalDiscount,
+                usePerItemDiscount: effectiveUsePerItemDiscount,
+                vatMode: templateVatModeDraft,
+                globalDiscountPercent: nextGlobalDiscountPercent,
+                discountPercent: nextGlobalDiscountPercent,
+              }),
+            });
+
+      const payload = await response.json();
+      if (!payload.success || !payload.data) {
+        toast.error(
+          payload.error ??
+            (templateDialogMode === "create"
+              ? "Template ni bilo mogoče shraniti."
+              : "Template ni bilo mogoče preimenovati.")
+        );
+        return;
+      }
+
+      await refreshTemplates(payload.data._id ?? null);
+      setIsTemplateNameDialogOpen(false);
+      toast.success(templateDialogMode === "create" ? "Template shranjen." : "Template preimenovan.");
+    } catch (error) {
+      console.error(error);
+      toast.error(templateDialogMode === "create" ? "Template ni bilo mogoče shraniti." : "Template ni bilo mogoče preimenovati.");
+    } finally {
+      setTemplateSaving(false);
+    }
+  };
+
+  const openDeleteTemplateDialog = () => {
+    if (!selectedTemplate) {
+      toast.error("Izberi template.");
+      return;
+    }
+    setTemplateDeleteTarget(selectedTemplate);
+    setIsTemplateDeleteDialogOpen(true);
+  };
+
+  const openDeleteTemplateDialogForItem = (template: OfferTemplateSummary) => {
+    setTemplateDeleteTarget(template);
+    setIsTemplateDeleteDialogOpen(true);
+    setIsTemplatePickerOpen(false);
+  };
+
+  const confirmDeleteTemplate = async () => {
+    if (!templateDeleteTarget?._id) return;
+    const deletedId = templateDeleteTarget._id;
+    setTemplateDeleting(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/offer-templates/${deletedId}`, {
+        method: "DELETE",
+      });
+      const payload = await response.json();
+      if (!payload.success || !payload.data) {
+        toast.error(payload.error ?? "Template ni bilo mogoče izbrisati.");
+        return;
+      }
+
+      setIsTemplateDeleteDialogOpen(false);
+      setTemplateDeleteTarget(null);
+      await refreshTemplates(null);
+      setSelectedTemplateId((current) => (current === deletedId ? null : current));
+      toast.success("Template izbrisan.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Template ni bilo mogoče izbrisati.");
+    } finally {
+      setTemplateDeleting(false);
+    }
+  };
+
+  const handleCreateOfferFromTemplate = async () => {
+    if (!selectedTemplateId) {
+      toast.error("Izberi template.");
+      return;
+    }
+
+    setTemplateCreating(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/offer-templates/${selectedTemplateId}/create-offer`, {
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!payload.success || !payload.data) {
+        toast.error(payload.error ?? "Ponudbe iz template-a ni bilo mogoče ustvariti.");
+        return;
+      }
+
+      const created: OfferVersion = payload.data;
+      await refreshAfterMutation(
+        async () => {
+          await Promise.all([
+            refreshOffers(created._id ?? null),
+            refreshTemplates(selectedTemplateId),
+          ]);
+        },
+        async () => {
+          await fetchProjectDetails();
+        },
+      );
+      toast.success("Nova ponudba iz template-a je pripravljena.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Ponudbe iz template-a ni bilo mogoče ustvariti.");
+    } finally {
+      setTemplateCreating(false);
+    }
+  };
+
+  const handleApplyTemplate = async () => {
+    if (!selectedTemplateId) {
+      toast.error("Izberi template.");
+      return;
+    }
+
+    if (validItems.length > 0) {
+      const confirmed = window.confirm(
+        "Trenutna ponudba že vsebuje postavke. Želiš template podatke prepisati čez trenutno ponudbo?"
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setTemplateCreating(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/offer-templates/${selectedTemplateId}/apply`, {
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!payload.success || !payload.data) {
+        toast.error(payload.error ?? "Template podatkov ni bilo mogoče prenesti.");
+        return;
+      }
+
+      const template = payload.data as {
+        paymentTerms: string | null;
+        comment?: string | null;
+        applyGlobalDiscount: boolean;
+        applyPerItemDiscount: boolean;
+        useGlobalDiscount: boolean;
+        usePerItemDiscount: boolean;
+        vatMode: 0 | 9.5 | 22;
+        globalDiscountPercent?: number;
+        discountPercent: number;
+        items: OfferLineItem[];
+      };
+
+      setPaymentTerms(template.paymentTerms ?? "");
+      setComment(template.comment ?? "");
+      setVatMode(template.vatMode ?? 22);
+      if (template.applyGlobalDiscount) {
+        setUseGlobalDiscount(template.useGlobalDiscount ?? false);
+        setGlobalDiscountPercent(template.globalDiscountPercent ?? template.discountPercent ?? 0);
+      }
+      if (template.applyPerItemDiscount) {
+        setUsePerItemDiscount(template.usePerItemDiscount ?? false);
+      }
+      const currentFilledItems = items.filter((item) => !isEmptyOfferItem(item));
+      const currentDiscountsByIndex = currentFilledItems.map((item) => item.discountPercent ?? 0);
+      const currentDiscountsByKey = new Map(
+        currentFilledItems.map((item) => [
+          `${item.productId ?? ""}::${item.name.trim().toLowerCase()}`,
+          item.discountPercent ?? 0,
+        ])
+      );
+      setItems(
+        ensureTrailingBlank(
+          (template.items ?? []).map((item, index) =>
+            recalcItem({
+              id: crypto.randomUUID(),
+              productId: item.productId ?? null,
+              name: item.name,
+              quantity: item.quantity,
+              unit: item.unit,
+              unitPrice: item.unitPrice,
+              vatRate: item.vatRate,
+              totalNet: item.totalNet,
+              totalVat: item.totalVat,
+              totalGross: item.totalGross,
+              discountPercent: template.applyPerItemDiscount
+                ? item.discountPercent ?? 0
+                : currentDiscountsByKey.get(`${item.productId ?? ""}::${item.name.trim().toLowerCase()}`) ??
+                  currentDiscountsByIndex[index] ??
+                  0,
+            })
+          )
+        )
+      );
+
+      toast.success("Template podatki so bili preneseni v trenutno ponudbo.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Template podatkov ni bilo mogoče prenesti.");
+    } finally {
+      setTemplateCreating(false);
+    }
   };
 
   const handleChangeVersion = async (value: string) => {
@@ -1054,7 +1570,168 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm">
+        <hr className="my-4 border-border" />
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Template
+            </span>
+            <div className="hidden items-center gap-2">
+              <Select
+                value={selectedTemplateId ?? ""}
+                onValueChange={(value) => setSelectedTemplateId(value)}
+              >
+                <SelectTrigger className="min-w-[260px]">
+                  <SelectValue placeholder="Izberi template" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((template) => (
+                    <SelectItem key={template._id} value={template._id}>
+                      {template.title} {"-"} {formatCurrency(template.totalGrossAfterDiscount ?? template.totalWithVat ?? 0)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-9 shrink-0"
+                disabled={!selectedTemplateId}
+                onClick={openRenameTemplateDialog}
+                aria-label="Preimenuj template"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-9 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                disabled={!selectedTemplateId}
+                onClick={openDeleteTemplateDialog}
+                aria-label="Izbriši template"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+            <Popover open={isTemplatePickerOpen} onOpenChange={setIsTemplatePickerOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={isTemplatePickerOpen}
+                  className="min-w-[320px] justify-between"
+                >
+                  <span className="truncate text-left">
+                    {selectedTemplate
+                      ? `${selectedTemplate.title} - ${formatCurrency(selectedTemplate.totalGrossAfterDiscount ?? selectedTemplate.totalWithVat ?? 0)}`
+                      : "Izberi template"}
+                  </span>
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-[360px] p-2">
+                <div className="space-y-1">
+                  {templates.length === 0 ? (
+                    <div className="px-3 py-5 text-sm text-muted-foreground">Ni shranjenih template-ov.</div>
+                  ) : (
+                    templates.map((template) => {
+                      const isSelected = template._id === selectedTemplateId;
+                      return (
+                        <div
+                          key={template._id}
+                          role="button"
+                          tabIndex={0}
+                          className={`group flex items-center justify-between gap-3 rounded-md px-3 py-2 text-sm transition-colors ${
+                            isSelected ? "bg-accent text-accent-foreground" : "hover:bg-muted/70"
+                          }`}
+                          onClick={() => {
+                            setSelectedTemplateId(template._id);
+                            setIsTemplatePickerOpen(false);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelectedTemplateId(template._id);
+                              setIsTemplatePickerOpen(false);
+                            }
+                          }}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              {isSelected && <Check className="h-4 w-4 shrink-0 text-emerald-600" />}
+                              <span className="truncate font-medium">{template.title}</span>
+                            </div>
+                            <div className="mt-0.5 text-xs text-muted-foreground">
+                              {formatCurrency(template.totalGrossAfterDiscount ?? template.totalWithVat ?? 0)}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="size-8"
+                              aria-label={`Preimenuj ${template.title}`}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void openRenameTemplateDialog(template);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="size-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              aria-label={`Izbriši ${template.title}`}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openDeleteTemplateDialogForItem(template);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-sky-300 text-sky-700 hover:bg-sky-50"
+              onClick={openCreateTemplateDialog}
+              disabled={templateSaving}
+            >
+              {templateSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Shrani template
+            </Button>
+            <Button
+              size="sm"
+              className="bg-teal-600 text-white hover:bg-teal-700"
+              onClick={handleApplyTemplate}
+              disabled={!selectedTemplateId || templateCreating}
+            >
+              {templateCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Vnos podatkov
+            </Button>
+          </div>
+        </div>
+
+        <div className="hidden mt-3 flex-wrap items-center justify-between gap-3 text-sm">
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground">DDV način</span>
             <Select
@@ -1191,6 +1868,66 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         </div>
       </div>
 
+        <div className="rounded-lg border bg-muted/25 px-4 py-3">
+          <div className="flex flex-wrap items-start gap-4 lg:items-center lg:justify-between">
+            <div className="flex min-w-[180px] items-center gap-2">
+              <span className="text-sm text-muted-foreground">DDV način</span>
+              <Select
+                value={String(vatMode)}
+                onValueChange={(value) =>
+                  handleVatModeChange(Number(value) as 0 | 9.5 | 22)
+                }
+              >
+                <SelectTrigger className="w-[130px] bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="22">22 %</SelectItem>
+                  <SelectItem value="9.5">9,5 %</SelectItem>
+                  <SelectItem value="0">0 % (76. člen)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-1 flex-wrap items-center gap-4">
+              <label className="flex flex-wrap items-center gap-2">
+                <Checkbox
+                  checked={useGlobalDiscount}
+                  onChange={(e) =>
+                    handleToggleGlobalDiscount(e.target.checked)
+                  }
+                />
+                <span className="text-sm">Popust na celotno ponudbo</span>
+                {useGlobalDiscount && (
+                  <>
+                    <Input
+                      type="number"
+                      className="w-20 bg-background text-right"
+                      inputMode="decimal"
+                      value={globalDiscountPercent}
+                      onChange={(e) =>
+                        setGlobalDiscountPercent(
+                          Number(e.target.value) || 0
+                        )
+                      }
+                    />
+                    <span className="text-muted-foreground">%</span>
+                  </>
+                )}
+              </label>
+
+              <label className="flex flex-wrap items-center gap-2">
+                <Checkbox
+                  checked={usePerItemDiscount}
+                  onChange={(e) =>
+                    setUsePerItemDiscount(e.target.checked)
+                  }
+                />
+                <span className="text-sm">Popust po produktih</span>
+              </label>
+            </div>
+          </div>
+        </div>
       {/* TABELA POSTAVK */}
       <div ref={lineItemsRef} className="bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
         <Table className="w-full table-fixed">
@@ -1396,6 +2133,119 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           </TableFooter>
         </Table>
       </div>
+
+      <Dialog open={isTemplateNameDialogOpen} onOpenChange={setIsTemplateNameDialogOpen}>
+      <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{templateDialogMode === "create" ? "Shrani template" : "Preimenuj template"}</DialogTitle>
+            <DialogDescription>
+              {templateDialogMode === "create"
+                ? "Vnesi ime, pod katerim bo template viden v globalnem seznamu."
+                : "Posodobi ime izbranega template-a."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Ime template-a</label>
+              <Input
+                value={templateNameDraft}
+                onChange={(event) => setTemplateNameDraft(event.target.value)}
+                placeholder="npr. Standardna alarm ponudba"
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">DDV način</label>
+              <Select
+                value={String(templateVatModeDraft)}
+                onValueChange={(value) => setTemplateVatModeDraft(Number(value) as 0 | 9.5 | 22)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="22">22 %</SelectItem>
+                  <SelectItem value="9.5">9,5 %</SelectItem>
+                  <SelectItem value="0">0 % (76. člen)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50/60 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Popust na celotno ponudbo</label>
+                  <p className="text-xs text-muted-foreground">
+                    Če je izklopljen, trenutni globalni popust v ponudbi ostane nespremenjen.
+                  </p>
+                </div>
+                <Checkbox
+                  checked={templateApplyGlobalDiscount}
+                  onCheckedChange={(checked) => setTemplateApplyGlobalDiscount(Boolean(checked))}
+                />
+              </div>
+              {templateApplyGlobalDiscount && (
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-slate-600">Vrednost popusta (%)</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    value={templateGlobalDiscountDraft}
+                    onChange={(event) => setTemplateGlobalDiscountDraft(event.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50/60 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Popust po produktih</label>
+                  <p className="text-xs text-muted-foreground">
+                    Če je izklopljen, item discounti v trenutni ponudbi ostanejo takšni kot so.
+                  </p>
+                </div>
+                <Checkbox
+                  checked={templateApplyPerItemDiscount}
+                  onCheckedChange={(checked) => setTemplateApplyPerItemDiscount(Boolean(checked))}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsTemplateNameDialogOpen(false)}>
+              Prekliči
+            </Button>
+            <Button onClick={submitTemplateDialog} disabled={templateSaving}>
+              {templateSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Shrani
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isTemplateDeleteDialogOpen} onOpenChange={setIsTemplateDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Izbriši template</DialogTitle>
+            <DialogDescription>
+              Ali ste prepričani, da želite izbrisati ta template?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsTemplateDeleteDialogOpen(false)}>
+              Prekliči
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteTemplate} disabled={templateDeleting}>
+              {templateDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Izbriši
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
         <DialogContent className="sm:max-w-5xl max-h-[88vh] overflow-y-auto">
