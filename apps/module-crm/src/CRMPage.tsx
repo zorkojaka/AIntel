@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, DataTable } from '@aintel/ui';
+import { Button } from '@aintel/ui';
 import { ClientForm } from './components/ClientForm';
+import { ClientsCardsMobile } from './components/ClientsCardsMobile';
+import { ClientsTableDesktop } from './components/ClientsTableDesktop';
 import { Client, ClientFormPayload } from './types/client';
 import './styles.css';
 
@@ -182,7 +184,10 @@ export const CRMPage: React.FC = () => {
           </div>
           {clientsError && <p className="crm-clients__error">{clientsError}</p>}
           {visibleClients.length > 0 ? (
-            <DataTable columns={clientColumns} data={visibleClients} rowProps={clientRowProps} />
+            <>
+              <ClientsTableDesktop clients={visibleClients} columns={clientColumns} rowProps={clientRowProps} />
+              <ClientsCardsMobile clients={visibleClients} onEdit={handleEditClient} />
+            </>
           ) : (
             <p className="crm-clients__empty">
               {clientsLoading
