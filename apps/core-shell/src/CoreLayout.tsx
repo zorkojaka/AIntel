@@ -17,6 +17,7 @@ type ModuleNavItem = {
 type ModuleManifest = {
   id: string;
   name: string;
+  rootRoute?: string;
   navItems: ModuleNavItem[];
 };
 

@@ -530,13 +530,18 @@ export function LogisticsPanel({
     }
   };
 
-  const handleWorkOrderChange = (field: keyof LogisticsWorkOrder, value: unknown) => {
+  const handleWorkOrderChange = <K extends keyof LogisticsWorkOrder>(field: K, value: LogisticsWorkOrder[K]) => {
     if (field === "location") setLocationTouched(true);
     if (field === "customerEmail") setEmailTouched(true);
     if (field === "customerPhone") setPhoneTouched(true);
     setWorkOrderForm((prev) => {
       if (field === "scheduledAt") {
-        return { ...prev, [field]: value, scheduledConfirmedAt: null, scheduledConfirmedBy: null };
+        return {
+          ...prev,
+          [field]: value as LogisticsWorkOrder["scheduledAt"],
+          scheduledConfirmedAt: null,
+          scheduledConfirmedBy: null,
+        };
       }
       return { ...prev, [field]: value };
     });
@@ -1662,6 +1667,104 @@ export function LogisticsPanel({
           </Card>
         </div>
       </div>
+    );
+  };
+
+  const renderPickupTaskPreview = () => {
+    const materialPreviewOrders =
+      materialOrdersForSelectedWorkOrder.length > 0
+        ? materialOrdersForSelectedWorkOrder
+        : materialOrderForm
+          ? [materialOrderForm]
+          : selectedMaterialOrder
+            ? [selectedMaterialOrder]
+            : [];
+    const previewMaterialItems = materialPreviewOrders.flatMap((order) => order.items ?? []);
+    const supplierGroups = groupMaterialPreviewBySupplier(previewMaterialItems);
+
+    const renderReadinessBadge = (readyCount: number, totalCount: number) => {
+      if (totalCount === 0 || readyCount === 0) {
+        return <Badge variant="outline">Ni pripravljeno</Badge>;
+      }
+      if (readyCount >= totalCount) {
+        return <Badge className="border-green-500/30 bg-green-500/10 text-green-700">Pripravljeno za prevzem</Badge>;
+      }
+      return <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-700">Delno pripravljeno</Badge>;
+    };
+
+    const renderPdfActionGroup = (
+      label: string,
+      onPreview: () => void,
+      onDownload: () => void,
+      downloading: boolean,
+    ) => (
+      <div className="inline-flex h-8 items-center rounded-md border border-border/70 bg-background">
+        <Button variant="ghost" size="sm" className="h-8 rounded-none border-r border-border/70 px-3" onClick={onPreview}>
+          {label}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 rounded-none"
+          onClick={onDownload}
+          disabled={downloading}
+          aria-label={`Prenesi ${label.toLowerCase()}`}
+        >
+          {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+        </Button>
+      </div>
+    );
+
+    return (
+      <Card className="rounded-none border border-border/70 shadow-sm">
+        <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
+          <div className="space-y-1">
+            <h4 className="text-sm font-semibold">Nalog za prevzem</h4>
+          </div>
+          {renderReadinessBadge(
+            supplierGroups.reduce((sum, group) => sum + group.readyCount, 0),
+            supplierGroups.reduce((sum, group) => sum + group.itemCount, 0),
+          )}
+        </CardHeader>
+        <CardContent className="flex h-full flex-col gap-3">
+          {supplierGroups.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Predogled naloga za prevzem bo na voljo po pripravi materiala.</p>
+          ) : (
+            supplierGroups.map((group) => (
+              <div key={group.supplierLabel} className="rounded-none bg-card px-3 py-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">{group.supplierLabel}</p>
+                    <div className="space-y-1 text-sm text-muted-foreground">
+                      <p>Prevzem: {formatPickupMethodLabel(materialOrderForm?.pickupMethod ?? selectedMaterialOrder?.pickupMethod ?? null)}</p>
+                      <p>Lokacija: {materialOrderForm?.pickupLocation ?? selectedMaterialOrder?.pickupLocation ?? "Ni določena"}</p>
+                      <p>Odgovorna oseba: {employees.find((employee) => employee.id === (materialOrderForm?.logisticsOwnerId ?? selectedMaterialOrder?.logisticsOwnerId ?? ""))?.name ?? "Ni določena"}</p>
+                    </div>
+                  </div>
+                  {renderReadinessBadge(group.readyCount, group.itemCount)}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-3 text-sm text-muted-foreground">
+                  <span>Postavke: {group.itemCount}</span>
+                  <span>Naročeno {group.orderedCount} / {group.itemCount}</span>
+                  <span>Pripravljeno {group.readyCount} / {group.itemCount}</span>
+                </div>
+              </div>
+            ))
+          )}
+          {selectedMaterialOrder?._id ? (
+            <div className="mt-auto flex justify-end pt-2">
+              {renderPdfActionGroup(
+                "Predogled naročilnice",
+                () => openMaterialPdfPreview(selectedMaterialOrder._id, "PURCHASE_ORDER"),
+                () => {
+                  void handleDownloadMaterialPdf(selectedMaterialOrder._id, "PURCHASE_ORDER");
+                },
+                materialDownloading === "PURCHASE_ORDER",
+              )}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
     );
   };
 

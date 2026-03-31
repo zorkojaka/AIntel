@@ -31,6 +31,11 @@ const modules = [
 
 type ModuleId = (typeof modules)[number]['id'];
 
+function getModuleRootRoute(moduleId: ModuleId) {
+  const module = modules.find((item) => item.id === moduleId);
+  return module?.rootRoute ?? module?.navItems?.[0]?.path;
+}
+
 function getModuleIdFromPath(pathname: string): ModuleId {
   const match = modules.find((module) => module.routes?.some((route) => pathname.startsWith(route)));
   return (match?.id as ModuleId) ?? 'settings';
@@ -71,11 +76,13 @@ function AppContent() {
   const roles = me?.employee?.roles ?? [];
   const initialModule = useMemo(() => getModuleIdFromPath(window.location.pathname), []);
   const [activeModule, setActiveModule] = useState<ModuleId>(initialModule);
+  const [routeKey, setRouteKey] = useState(() => `${window.location.pathname}${window.location.search}`);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const handlePopState = () => {
       setActiveModule(getModuleIdFromPath(window.location.pathname));
+      setRouteKey(`${window.location.pathname}${window.location.search}`);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -114,7 +121,7 @@ function AppContent() {
     }
     if (isAuthRoute) {
       const nextModule = modules.find((module) => hasAccess(module.id as ModuleId, roles));
-      const navPath = nextModule?.navItems?.[0]?.path;
+      const navPath = nextModule ? getModuleRootRoute(nextModule.id as ModuleId) : undefined;
       if (navPath) {
         window.history.replaceState({ moduleId: nextModule.id }, '', navPath);
         setActiveModule(nextModule.id as ModuleId);
@@ -126,7 +133,7 @@ function AppContent() {
     if (status !== 'authenticated') {
       return;
     }
-    const navPath = modules.find((module) => module.id === activeModule)?.navItems?.[0]?.path;
+    const navPath = getModuleRootRoute(activeModule);
     if (navPath && !window.location.pathname.startsWith(navPath)) {
       window.history.replaceState({ moduleId: activeModule }, '', navPath);
     }
@@ -139,9 +146,11 @@ function AppContent() {
       return;
     }
     setActiveModule(moduleId);
-    const navPath = modules.find((module) => module.id === moduleId)?.navItems?.[0]?.path;
-    if (navPath && !window.location.pathname.startsWith(navPath)) {
+    const navPath = getModuleRootRoute(moduleId);
+    if (navPath) {
       window.history.pushState({ moduleId }, '', navPath);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: { moduleId } }));
+      window.scrollTo({ top: 0, behavior: 'auto' });
     }
   };
 
@@ -174,7 +183,11 @@ function AppContent() {
       onLogout={logout}
       userInfo={userInfo}
     >
-      {hasModuleAccess ? moduleComponents[activeModule] : <div>Ni dostopa.</div>}
+      {hasModuleAccess
+        ? React.cloneElement(moduleComponents[activeModule] as React.ReactElement, {
+            key: `${activeModule}:${routeKey}`,
+          })
+        : <div>Ni dostopa.</div>}
     </CoreLayout>
   );
 }

@@ -2,6 +2,7 @@ export const manifest = {
   id: "projects",
   name: "PROJEKTI",
   version: "0.1.0",
+  rootRoute: "/projects",
   navItems: [
     {
       label: "PROJEKTI",

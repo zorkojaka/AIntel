@@ -1,16 +1,17 @@
 ﻿import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Textarea } from "../../components/ui/textarea";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Checkbox } from "../../components/ui/checkbox";
-import { Loader2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import { Download, Loader2, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import type { MaterialOrder, WorkOrder, WorkOrderItem, WorkOrderStatus } from "@aintel/shared/types/logistics";
-import { normalizeMaterialStatusLabel } from "../logistics/materialStatus";
+import { cn } from "../../components/ui/utils";
+import { MaterialOrderCard } from "../logistics/MaterialOrderCard";
 import { SignaturePad } from "./SignaturePad";
 import { PriceListProductAutocomplete } from "../../components/PriceListProductAutocomplete";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
@@ -20,9 +21,17 @@ import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 
 interface ExecutionPanelProps {
   projectId: string;
+  projectDisplayId?: string;
   logistics?: ProjectLogistics | null;
-  onSaveSignature: (signature: string, signerName: string) => void | Promise<void>;
+  onSaveSignature: (
+    signature: string,
+    signerName: string,
+    workOrderId?: string,
+    customerRemark?: string,
+  ) => void | Promise<void>;
   onWorkOrderUpdated?: (workOrder: WorkOrder) => void;
+  onWorkOrderDraftChange?: (workOrder: WorkOrder) => void;
+  onRegisterSaveHandler?: (handler: (() => Promise<boolean>) | null) => void;
 }
 
 type WorkOrderDraft = {
@@ -32,6 +41,8 @@ type WorkOrderDraft = {
 };
 
 type WorkOrderItemDraft = WorkOrderItem;
+
+type ExecutionItemStatus = "completed" | "in_progress" | "exception" | "manual";
 
 function mergeDraftItems(
   serverItems: WorkOrderItemDraft[],
@@ -87,30 +98,125 @@ const STATUS_OPTIONS: { value: WorkOrderStatus; label: string }[] = [
   { value: "completed", label: "Zaključen" },
 ];
 
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return "Ni določen";
+function formatExecutionDateTime(value: string | null | undefined) {
+  if (!value) return null;
   const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return "Ni določen";
-  return date.toLocaleString("sl-SI", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  if (Number.isNaN(date.valueOf())) return null;
+  return new Intl.DateTimeFormat("sl-SI", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatExecutionDuration(items: WorkOrder["items"] | undefined) {
+  const totalMinutes = (items ?? []).reduce((sum, item) => {
+    const quantity = typeof item.quantity === "number" ? item.quantity : 0;
+    const casovnaNorma = typeof item.casovnaNorma === "number" ? item.casovnaNorma : 0;
+    return sum + quantity * casovnaNorma;
+  }, 0);
+
+  if (totalMinutes <= 0) return null;
+  if (totalMinutes < 60) return `${totalMinutes} min`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes > 0 ? `${hours} h ${minutes} min` : `${hours} h`;
 }
 
 function getMaterialForWorkOrder(materialOrders: MaterialOrder[], workOrderId: string) {
   return materialOrders.find((materialOrder) => materialOrder.workOrderId === workOrderId) ?? null;
 }
 
-export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOrderUpdated }: ExecutionPanelProps) {
+function getMaterialDraftValue(materialOrder: MaterialOrder | null, pending: Record<string, MaterialOrder>) {
+  if (!materialOrder?._id) return null;
+  return pending[materialOrder._id] ?? materialOrder;
+}
+
+function getExecutionItemStatus(item: WorkOrderItemDraft): ExecutionItemStatus {
+  if (item.isExtra) {
+    return "manual";
+  }
+
+  const planned = typeof item.offeredQuantity === "number" ? item.offeredQuantity : 0;
+  const executed = typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
+  const isCompleted = !!item.isCompleted;
+
+  if (!isCompleted) {
+    return "in_progress";
+  }
+
+  if (executed === planned) {
+    return "completed";
+  }
+
+  return "exception";
+}
+
+const executionItemStatusStyles: Record<
+  ExecutionItemStatus,
+  {
+    badgeClassName: string;
+    badgeLabel: string;
+    rowClassName: string;
+    quantityClassName: string;
+    cardClassName: string;
+  }
+> = {
+  completed: {
+    badgeClassName: "border-emerald-600/20 bg-emerald-600 text-white hover:bg-emerald-600",
+    badgeLabel: "Usklajeno",
+    rowClassName: "border-l-4 border-l-emerald-500 bg-emerald-500/5",
+    quantityClassName: "text-emerald-700",
+    cardClassName: "border-emerald-500/30 bg-emerald-500/5",
+  },
+  in_progress: {
+    badgeClassName: "border-amber-500/30 bg-amber-500/10 text-amber-700",
+    badgeLabel: "V teku",
+    rowClassName: "border-l-4 border-l-amber-500 bg-amber-500/5",
+    quantityClassName: "text-amber-700",
+    cardClassName: "border-amber-500/30 bg-amber-500/5",
+  },
+  exception: {
+    badgeClassName: "border-transparent bg-destructive text-white hover:bg-destructive",
+    badgeLabel: "Odstopanje",
+    rowClassName: "border-l-4 border-l-destructive bg-destructive/5",
+    quantityClassName: "text-destructive",
+    cardClassName: "border-destructive/25 bg-destructive/5",
+  },
+  manual: {
+    badgeClassName: "border-transparent bg-destructive text-white hover:bg-destructive",
+    badgeLabel: "Dodatno",
+    rowClassName: "border-l-4 border-l-destructive bg-destructive/5",
+    quantityClassName: "text-destructive",
+    cardClassName: "border-destructive/25 bg-destructive/5",
+  },
+};
+
+export function ExecutionPanel({
+  projectId,
+  projectDisplayId,
+  logistics,
+  onSaveSignature,
+  onWorkOrderUpdated,
+  onWorkOrderDraftChange,
+  onRegisterSaveHandler,
+}: ExecutionPanelProps) {
   const workOrders = logistics?.workOrders ?? [];
   const materialOrders = logistics?.materialOrders ?? [];
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
   const [pendingWorkOrders, setPendingWorkOrders] = useState<Record<string, WorkOrderDraft>>({});
+  const [pendingMaterialOrders, setPendingMaterialOrders] = useState<Record<string, MaterialOrder>>({});
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [savingStates, setSavingStates] = useState<Record<string, "saving" | "saved" | "error">>({});
   const [unsavedChanges, setUnsavedChanges] = useState<Record<string, boolean>>({});
+  const [unsavedMaterialChanges, setUnsavedMaterialChanges] = useState<Record<string, boolean>>({});
   const [downloadingWorkOrderId, setDownloadingWorkOrderId] = useState<string | null>(null);
+  const [signoffOrderId, setSignoffOrderId] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [sendingConfirmationOrderId, setSendingConfirmationOrderId] = useState<string | null>(null);
+  const [customerRemarkDraft, setCustomerRemarkDraft] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -203,12 +309,19 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
   ) => {
     setPendingWorkOrders((prev) => {
       const current = prev[order._id] ?? getInitialDraftValues(order);
+      const nextDraft = {
+        ...current,
+        ...values,
+      };
+      onWorkOrderDraftChange?.({
+        ...order,
+        status: nextDraft.status,
+        executionNote: nextDraft.executionNote,
+        items: nextDraft.items,
+      });
       return {
         ...prev,
-        [order._id]: {
-          ...current,
-          ...values,
-        },
+        [order._id]: nextDraft,
       };
     });
   };
@@ -230,6 +343,12 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
             }
           : item
       );
+      onWorkOrderDraftChange?.({
+        ...order,
+        status: current.status,
+        executionNote: current.executionNote,
+        items: nextItems,
+      });
       return {
         ...prev,
         [order._id]: {
@@ -284,7 +403,11 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
     }));
 
   const saveWorkOrder = useCallback(
-    async (orderId: string, overrides?: { status?: WorkOrderStatus }) => {
+    async (
+      orderId: string,
+      overrides?: { status?: WorkOrderStatus },
+      options?: { skipRefresh?: boolean },
+    ) => {
       const order = workOrders.find((candidate) => candidate._id === orderId);
       if (!order) return false;
       const draft = getDraftValues(order);
@@ -327,7 +450,9 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
           return next;
         });
         onWorkOrderUpdated?.(updated);
-        await refreshAfterMutation();
+        if (!options?.skipRefresh) {
+          await refreshAfterMutation();
+        }
         setSavingStates((prev) => ({ ...prev, [orderId]: "saved" }));
         setTimeout(() => {
           setSavingStates((prev) => {
@@ -388,30 +513,261 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
     setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
   };
 
+  const handleDeleteManualItem = (order: WorkOrder, item: WorkOrderItemDraft) => {
+    if (!item.isExtra) {
+      return;
+    }
+
+    const executedValue = typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
+    const confirmMessage =
+      executedValue > 0 || item.isCompleted
+        ? "Ta dodatna postavka že vsebuje izvedbo. Ali jo želiš vseeno izbrisati?"
+        : "Ali želiš izbrisati to postavko?";
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    updateDraft(order, {
+      items: getDraftValues(order).items.filter((candidate) => candidate.id !== item.id),
+    });
+    setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
+  };
+
+  const updateMaterialDraft = (materialOrder: MaterialOrder, updates: Partial<MaterialOrder>) => {
+    setPendingMaterialOrders((prev) => {
+      const base = prev[materialOrder._id] ?? materialOrder;
+      return { ...prev, [materialOrder._id]: { ...base, ...updates } };
+    });
+    setUnsavedMaterialChanges((prev) => ({ ...prev, [materialOrder._id]: true }));
+  };
+
+  const saveMaterialDraft = useCallback(
+    async (
+      order: WorkOrder,
+      materialOrder: MaterialOrder,
+      options?: { skipRefresh?: boolean },
+    ) => {
+      const draftMaterial = getMaterialDraftValue(materialOrder, pendingMaterialOrders) ?? materialOrder;
+      setSavingStates((prev) => ({ ...prev, [order._id]: "saving" }));
+      try {
+        const response = await fetch(`/api/projects/${projectId}/work-orders/${order._id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workOrderId: order._id,
+            materialOrderId: draftMaterial._id,
+            materialStatus: draftMaterial.materialStatus,
+            pickupMethod: draftMaterial.pickupMethod ?? null,
+            pickupLocation: draftMaterial.pickupLocation ?? null,
+            logisticsOwnerId: draftMaterial.logisticsOwnerId ?? null,
+            pickupConfirmedAt: draftMaterial.pickupConfirmedAt ?? null,
+            materialItems: draftMaterial.items ?? [],
+          }),
+        });
+        const payload = await response.json();
+        if (!payload.success) {
+          setSavingStates((prev) => ({ ...prev, [order._id]: "error" }));
+          toast.error(payload.error ?? "Shranjevanje prevzema ni uspelo.");
+          return false;
+        }
+        if (!options?.skipRefresh) {
+          await refreshAfterMutation();
+        }
+        setUnsavedMaterialChanges((prev) => {
+          const next = { ...prev };
+          delete next[materialOrder._id];
+          return next;
+        });
+        setPendingMaterialOrders((prev) => {
+          const next = { ...prev };
+          delete next[materialOrder._id];
+          return next;
+        });
+        setSavingStates((prev) => ({ ...prev, [order._id]: "saved" }));
+        return true;
+      } catch (error) {
+        console.error(error);
+        setSavingStates((prev) => ({ ...prev, [order._id]: "error" }));
+        toast.error("Shranjevanje prevzema ni uspelo.");
+        return false;
+      }
+    },
+    [pendingMaterialOrders, projectId, refreshAfterMutation],
+  );
+
+  const confirmPickup = async (order: WorkOrder, materialOrder: MaterialOrder) => {
+    const draftMaterial = getMaterialDraftValue(materialOrder, pendingMaterialOrders) ?? materialOrder;
+    const nextMaterial: MaterialOrder = {
+      ...draftMaterial,
+      pickupConfirmedAt: new Date().toISOString(),
+      materialStatus: "Prevzeto",
+    };
+    setPendingMaterialOrders((prev) => ({ ...prev, [materialOrder._id]: nextMaterial }));
+    const success = await saveMaterialDraft(order, nextMaterial);
+    if (success) {
+      toast.success("Prevzem potrjen.");
+    }
+  };
+
+  const handleSaveExecutionChanges = useCallback(async () => {
+    const dirtyWorkOrderIds = workOrders
+      .map((order) => order._id)
+      .filter((orderId) => Boolean(unsavedChanges[orderId]));
+    const dirtyMaterialEntries = workOrders
+      .map((order) => ({
+        order,
+        materialOrder: getMaterialForWorkOrder(materialOrders, order._id),
+      }))
+      .filter(
+        (
+          entry,
+        ): entry is {
+          order: WorkOrder;
+          materialOrder: MaterialOrder;
+        } => Boolean(entry.materialOrder?._id && unsavedMaterialChanges[entry.materialOrder._id]),
+      );
+
+    if (dirtyWorkOrderIds.length === 0 && dirtyMaterialEntries.length === 0) {
+      return true;
+    }
+
+    let hasFailure = false;
+    let hasSavedChanges = false;
+
+    for (const orderId of dirtyWorkOrderIds) {
+      const saved = await saveWorkOrder(orderId, undefined, { skipRefresh: true });
+      hasSavedChanges = hasSavedChanges || saved;
+      hasFailure = hasFailure || !saved;
+    }
+
+    for (const { order, materialOrder } of dirtyMaterialEntries) {
+      const saved = await saveMaterialDraft(order, materialOrder, { skipRefresh: true });
+      hasSavedChanges = hasSavedChanges || saved;
+      hasFailure = hasFailure || !saved;
+    }
+
+    if (hasSavedChanges) {
+      await refreshAfterMutation();
+    }
+
+    if (hasFailure) {
+      toast.error("Nekaterih sprememb izvedbe ni bilo mogoče shraniti.");
+      return false;
+    }
+
+    toast.success("Spremembe izvedbe shranjene.");
+    return true;
+  }, [
+    materialOrders,
+    refreshAfterMutation,
+    saveMaterialDraft,
+    saveWorkOrder,
+    unsavedChanges,
+    unsavedMaterialChanges,
+    workOrders,
+  ]);
+
+  useEffect(() => {
+    if (!onRegisterSaveHandler) return;
+    onRegisterSaveHandler(handleSaveExecutionChanges);
+    return () => onRegisterSaveHandler(null);
+  }, [handleSaveExecutionChanges, onRegisterSaveHandler]);
+
   const renderItemStatusBadge = (item: WorkOrderItemDraft) => {
-    const offered = typeof item.offeredQuantity === "number" ? item.offeredQuantity : 0;
-    const executed = typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
-    if (item.isExtra || offered === 0) {
-      return <Badge variant="outline">Dodatno</Badge>;
-    }
-    if (executed === offered) {
-      return <Badge variant="secondary">OK</Badge>;
-    }
-    if (executed < offered) {
-      return <Badge variant="destructive">Manj</Badge>;
-    }
-    return <Badge className="bg-amber-100 text-amber-900">Več</Badge>;
+    const status = getExecutionItemStatus(item);
+    const styles = executionItemStatusStyles[status];
+    return <Badge className={styles.badgeClassName}>{styles.badgeLabel}</Badge>;
   };
 
-  const getWorkOrderStatusLabel = (status: WorkOrderStatus) =>
-    STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status;
+  const selectedSignoffOrder = useMemo(
+    () => workOrders.find((order) => order._id === signoffOrderId) ?? null,
+    [signoffOrderId, workOrders],
+  );
+  const selectedSignoffExecutionDateLabel = useMemo(
+    () => formatExecutionDateTime(selectedSignoffOrder?.scheduledAt ?? null),
+    [selectedSignoffOrder],
+  );
+  const selectedSignoffExecutionDurationLabel = useMemo(
+    () => formatExecutionDuration(selectedSignoffOrder?.items),
+    [selectedSignoffOrder],
+  );
+  const selectedSignoffTeamLabel = useMemo(
+    () =>
+      (selectedSignoffOrder?.assignedEmployeeIds ?? [])
+        .map((employeeId) => employeeNameById.get(employeeId) ?? null)
+        .filter((name): name is string => Boolean(name))
+        .join(", "),
+    [employeeNameById, selectedSignoffOrder],
+  );
 
-  const getWorkOrderStatusBadgeClass = (status: WorkOrderStatus) => {
-    if (status === "completed") return "bg-emerald-100 text-emerald-900";
-    if (status === "in-progress") return "bg-amber-100 text-amber-900";
-    if (status === "issued") return "bg-blue-100 text-blue-900";
-    return "bg-muted text-muted-foreground";
-  };
+  useEffect(() => {
+    setCustomerRemarkDraft(selectedSignoffOrder?.customerRemark ?? "");
+  }, [selectedSignoffOrder]);
+
+  const openWorkOrderConfirmationPdf = useCallback((orderId: string) => {
+    const url = `/api/projects/${projectId}/work-orders/${orderId}/pdf?docType=WORK_ORDER_CONFIRMATION&mode=inline`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, [projectId]);
+
+  const downloadWorkOrderConfirmationPdf = useCallback(async (orderId: string) => {
+    try {
+      await downloadPdf(
+        `/api/projects/${projectId}/work-orders/${orderId}/pdf?docType=WORK_ORDER_CONFIRMATION&mode=download`,
+        `potrdilo-delovnega-naloga-${projectId}-${orderId}.pdf`,
+      );
+      toast.success("Potrdilo delovnega naloga preneseno.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Prenos potrdila delovnega naloga ni uspel.");
+    }
+  }, [projectId]);
+
+  const handleSendSignedConfirmation = useCallback(async (order: WorkOrder) => {
+    if (!order._id) {
+      return;
+    }
+    const email = order.customerEmail?.trim() ?? "";
+    if (!email) {
+      toast.error("Stranka nima vpisanega email naslova.");
+      return;
+    }
+
+    setSendingConfirmationOrderId(order._id);
+    try {
+      await downloadPdf(
+        `/api/projects/${projectId}/work-orders/${order._id}/pdf?docType=WORK_ORDER_CONFIRMATION&mode=download`,
+        `potrdilo-delovnega-naloga-${projectId}-${order._id}.pdf`,
+      );
+
+      const subject = encodeURIComponent(`Podpisano potrdilo delovnega naloga - ${order.title || projectId}`);
+      const body = encodeURIComponent(
+        [
+          "Pozdravljeni,",
+          "",
+          "v priponki pošiljamo podpisano potrdilo delovnega naloga.",
+          "",
+          "Lep pozdrav,",
+        ].join("\n"),
+      );
+      window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${body}`;
+      toast.success("Potrdilo preneseno in email osnutek pripravljen.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Priprava podpisanega potrdila za pošiljanje ni uspela.");
+    } finally {
+      setSendingConfirmationOrderId(null);
+    }
+  }, [projectId]);
+
+  const handleCustomerSignoff = useCallback(
+    async (signature: string, signerName: string) => {
+      if (!selectedSignoffOrder?._id) return;
+      await onSaveSignature(signature, signerName, selectedSignoffOrder._id, customerRemarkDraft);
+      setSignoffOrderId(null);
+    },
+    [customerRemarkDraft, onSaveSignature, selectedSignoffOrder],
+  );
 
   const hasWorkOrders = workOrders.length > 0;
 
@@ -424,102 +780,128 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
             return null;
           }
           return (
-            <Card key={statusOption.value}>
-              <CardHeader>
-                <CardTitle>{statusOption.label}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
+            <div key={statusOption.value} className="space-y-4">
                 {entries.map((order) => {
                   const draft = getDraftValues(order);
                   const materialOrder = getMaterialForWorkOrder(materialOrders, order._id);
+                  const materialDraft = getMaterialDraftValue(materialOrder, pendingMaterialOrders);
                   const items: WorkOrderItemDraft[] = (draft.items ?? []) as WorkOrderItemDraft[];
-                  const isOrderCompleted = (order.status ?? "draft") === "completed";
                   const allItemsCompleted =
                     items.length > 0 && items.every((item: WorkOrderItemDraft) => !!item.isCompleted);
+                  const isOrderCompleted = allItemsCompleted;
+                  const workOrderBadgeClass = isOrderCompleted
+                    ? "border-green-500/30 bg-green-500/10 text-green-700"
+                    : "border-orange-400/50 bg-orange-500/10 text-orange-700";
                   const isCompletingOrder = completingId === order._id;
                   const savingState = savingStates[order._id];
                   const isSavingOrder = savingState === "saving";
                   const orderHasUnsavedChanges = !!unsavedChanges[order._id];
-                  const assignedTeam =
-                    order.assignedEmployeeIds
-                      ?.map((id) => employeeNameById.get(id))
-                      .filter((name): name is string => !!name) ?? [];
+                  const executionDateLabel = formatExecutionDateTime(order.scheduledAt ?? null);
+                  const executionDurationLabel = formatExecutionDuration(items);
+                  const executionTeamLabel = (order.assignedEmployeeIds ?? [])
+                    .map((employeeId) => employeeNameById.get(employeeId) ?? null)
+                    .filter((name): name is string => Boolean(name))
+                    .join(", ");
                   return (
-                    <div key={order._id} className="rounded-lg border p-4 space-y-4">
-                      <div className="flex flex-col items-start justify-between gap-3 md:flex-row md:items-start">
-                        <div>
-                          <p className="text-sm font-medium">{order.customerName || "Neznana stranka"}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {order.customerAddress || "Naslov ni zapisan"}
-                          </p>
-                        </div>
-                        <div className="w-full space-y-1 text-sm text-muted-foreground md:w-auto md:text-right">
-                          <div>{formatDateTime(order.scheduledAt)}</div>
-                          <div>{assignedTeam.length > 0 ? assignedTeam.join(", ") : "Ni dodeljene ekipe"}</div>
-                        </div>
-                      </div>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground uppercase">Status materiala</p>
-                          <Badge variant="secondary">
-                            {normalizeMaterialStatusLabel(materialOrder?.materialStatus) ?? "Ni podatka"}
-                          </Badge>
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs text-muted-foreground uppercase">Status delovnega naloga</label>
-                          <Badge className={getWorkOrderStatusBadgeClass(draft.status)}>{getWorkOrderStatusLabel(draft.status)}</Badge>
-                          <Select
-                            value={draft.status}
-                            onValueChange={(value: string) =>
-                              applyDraftChange(order, { status: value as WorkOrderStatus })
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {STATUS_OPTIONS.map((option) => (
-                                <SelectItem key={option.value} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Opombe ob izvedbi</label>
-                        <Textarea
-                          value={draft.executionNote}
-                          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => applyDraftChange(order, { executionNote: event.target.value })}
-                          placeholder="Opis dodatnih del, materiala ali opažanj na terenu."
-                          rows={4}
+                    <div key={order._id} className="space-y-4">
+                      {materialOrder ? (
+                        <MaterialOrderCard
+                          mode="execution"
+                          materialOrder={materialDraft ?? materialOrder}
+                          technicianNote={order.notes ?? ""}
+                          executionDate={order.scheduledAt ?? null}
+                          executionDateConfirmedAt={order.scheduledConfirmedAt ?? null}
+                          executionDateConfirmedBy={order.scheduledConfirmedBy ?? null}
+                          executionDurationLabel={null}
+                          mainInstallerId={order.mainInstallerId ?? null}
+                          executionTeamIds={order.assignedEmployeeIds ?? []}
+                          installerAvailability={[]}
+                          employees={employees}
+                          onExecutionDateChange={() => {}}
+                          onConfirmExecutionDate={() => {}}
+                          onUnconfirmExecutionDate={() => {}}
+                          onMainInstallerChange={() => {}}
+                          onToggleExecutionTeam={() => {}}
+                          onPickupMethodChange={(value) => updateMaterialDraft(materialOrder, { pickupMethod: value })}
+                          onPickupLocationChange={(value) => updateMaterialDraft(materialOrder, { pickupLocation: value })}
+                          onLogisticsOwnerChange={(employeeId) => updateMaterialDraft(materialOrder, { logisticsOwnerId: employeeId })}
+                          onPickupNoteChange={() => {}}
+                          onDeliveryNotePhotosChange={() => {}}
+                          onAddExtraMaterial={() => {}}
+                          onConfirmPickup={() => {
+                            void confirmPickup(order, materialDraft ?? materialOrder);
+                          }}
+                          onAdvanceStep={() => {}}
+                          savingWorkOrder={isSavingOrder}
+                          onPreviewPurchaseOrder={() => window.open(`/api/projects/${projectId}/material-orders/${materialOrder._id}/pdf?docType=PURCHASE_ORDER&mode=inline`, "_blank", "noopener,noreferrer")}
+                          onDownloadPurchaseOrder={() => {
+                            void downloadPdf(`/api/projects/${projectId}/material-orders/${materialOrder._id}/pdf?docType=PURCHASE_ORDER&mode=download`, `narocilo-${projectId}-${materialOrder._id}.pdf`);
+                          }}
+                          onDownloadDeliveryNote={() => {}}
+                          onDeliveredQtyChange={(itemId, deliveredQty) => {
+                            const source = materialDraft ?? materialOrder;
+                            updateMaterialDraft(materialOrder, {
+                              items: (source.items ?? []).map((item) => (item.id === itemId ? { ...item, deliveredQty: Math.max(0, deliveredQty) } : item)),
+                            });
+                          }}
+                          onDeliveredQtyCommit={(itemId, deliveredQty) => {
+                            const source = materialDraft ?? materialOrder;
+                            updateMaterialDraft(materialOrder, {
+                              items: (source.items ?? []).map((item) => (item.id === itemId ? { ...item, deliveredQty: Math.max(0, deliveredQty) } : item)),
+                            });
+                          }}
+                          onMaterialItemsChange={(items) => updateMaterialDraft(materialOrder, { items })}
+                          onSaveMaterialChanges={() => {
+                            void saveMaterialDraft(order, materialDraft ?? materialOrder);
+                          }}
+                          hasPendingMaterialChanges={Boolean(materialOrder?._id && unsavedMaterialChanges[materialOrder._id])}
+                          canDownloadPdf={Boolean(materialOrder._id)}
+                          downloadingPdf={downloadingWorkOrderId === materialOrder._id ? "PURCHASE_ORDER" : null}
                         />
-                      </div>
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-medium">Postavke</p>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleAddExtraItem(order)}
-                          >
-                            + Dodaj dodatno postavko
-                          </Button>
-                        </div>
+                      ) : null}
+                      <Card className={cn("work-order-status-card overflow-hidden", isOrderCompleted ? "is-completed" : "is-in-progress")}>
+                        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-4">
+                          <div className="space-y-3">
+                            <CardTitle className="text-base font-semibold">Delovni nalog</CardTitle>
+                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                              <div className="space-y-1">
+                                <p className="text-xs uppercase tracking-wide text-muted-foreground">Ekipa</p>
+                                <p className="text-sm font-medium">{executionTeamLabel || "Ni določena"}</p>
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-xs uppercase tracking-wide text-muted-foreground">Termin izvedbe</p>
+                                <p className="text-sm font-medium">{executionDateLabel ?? "Ni določen"}</p>
+                                {executionDurationLabel ? (
+                                  <p className="text-xs text-muted-foreground">Ocena trajanja izvedbe: {executionDurationLabel}</p>
+                                ) : null}
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-xs uppercase tracking-wide text-muted-foreground">Stranka</p>
+                                <p className="text-sm font-medium">{order.customerName || "Neznana stranka"}</p>
+                                <p className="text-sm text-muted-foreground">{order.customerAddress || "Naslov ni zapisan"}</p>
+                                {order.customerPhone ? <p className="text-sm text-muted-foreground">{order.customerPhone}</p> : null}
+                              </div>
+                            </div>
+                          </div>
+                          <Badge className={workOrderBadgeClass}>
+                            {isOrderCompleted ? "Zaključeno" : "V teku"}
+                          </Badge>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
                         <div className="hidden overflow-x-auto rounded-md border md:block">
                           <table className="w-full min-w-[720px] text-sm">
                             <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                               <tr>
                                 <th className="p-2 text-center font-semibold">Dokončano</th>
-                                <th className="p-2 text-center font-semibold">X/Y</th>
+                                <th className="p-2 text-center font-semibold">IZVEDBA/NAROČILO</th>
                                 <th className="p-2 text-left font-semibold">Naziv</th>
+                                <th className="w-12 p-2 text-right font-semibold"></th>
                               </tr>
                             </thead>
                             <tbody>
                               {items.length === 0 && (
                                 <tr>
-                                  <td colSpan={3} className="p-3 text-center text-muted-foreground">
+                                  <td colSpan={4} className="p-3 text-center text-muted-foreground">
                                     Ni postavk za prikaz.
                                   </td>
                                 </tr>
@@ -532,19 +914,21 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                 const executedValue =
                                   typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
                                 const isCompleted = !!item.isCompleted;
+                                const itemStatus = getExecutionItemStatus(item);
+                                const itemStatusStyles = executionItemStatusStyles[itemStatus];
                                 const handleCompletionChange = (checked: boolean) => {
-                                  const updates: Partial<WorkOrder["items"][number]> = { isCompleted: checked };
-                                  if (
-                                    checked &&
-                                    offeredValue > 0 &&
-                                    (typeof item.executedQuantity !== "number" || item.executedQuantity === 0)
-                                  ) {
-                                    updates.executedQuantity = offeredValue;
-                                  }
+                                  const updates: Partial<WorkOrder["items"][number]> = {
+                                    isCompleted: checked,
+                                    executedQuantity: checked
+                                      ? executedValue > 0
+                                        ? executedValue
+                                        : offeredValue
+                                      : 0,
+                                  };
                                   applyItemChange(order, item.id, updates);
                                 };
                                 return (
-                                  <tr key={item.id} className="border-t">
+                                  <tr key={item.id} className={cn("border-t", itemStatusStyles.rowClassName)}>
                                     <td className="p-2 text-center align-middle">
                                       <Checkbox
                                         className="h-5 w-5"
@@ -564,10 +948,10 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                               executedQuantity: Number(event.target.value),
                                             })
                                           }
-                                          className="w-16 text-right"
+                                          className={cn("w-16 text-right", itemStatusStyles.quantityClassName)}
                                         />
-                                        <span className="px-0.5 text-muted-foreground">/</span>
-                                        <span className="text-right tabular-nums">
+                                        <span className={cn("px-0.5", itemStatusStyles.quantityClassName)}>/</span>
+                                        <span className={cn("text-right tabular-nums font-medium", itemStatusStyles.quantityClassName)}>
                                           {offeredValue.toLocaleString("sl-SI")}
                                         </span>
                                       </div>
@@ -593,23 +977,36 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                               })
                                             }
                                           />
-                                          {!hasCenikProduct ? (
-                                            <Input
-                                              value={item.unit ?? ""}
-                                              placeholder="Enota"
-                                              className="mt-2"
-                                              onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                                                applyItemChange(order, item.id, { unit: event.target.value })
-                                              }
-                                            />
-                                          ) : null}
+                                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                                            <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
+                                            {renderItemStatusBadge(item)}
+                                          </div>
                                         </div>
                                       ) : (
-                                        <div>
+                                        <div className="space-y-1">
                                           <p className="font-medium">{item.name || "-"}</p>
-                                          <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            {item.isExtra && offeredValue === 0 ? null : (
+                                              <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
+                                            )}
+                                            {renderItemStatusBadge(item)}
+                                          </div>
                                         </div>
                                       )}
+                                    </td>
+                                    <td className="p-2 text-right align-top">
+                                      {item.isExtra ? (
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                          onClick={() => handleDeleteManualItem(order, item)}
+                                          aria-label="Izbriši dodatno postavko"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      ) : null}
                                     </td>
                                   </tr>
                                 );
@@ -627,44 +1024,49 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                             const isExtraEditable = item.isExtra && offeredValue === 0;
                             const hasCenikProduct = typeof item.productId === "string" && item.productId.length > 0;
                             const isCompleted = !!item.isCompleted;
+                            const itemStatus = getExecutionItemStatus(item);
+                            const itemStatusStyles = executionItemStatusStyles[itemStatus];
                             const handleCompletionChange = (checked: boolean) => {
-                              const updates: Partial<WorkOrder["items"][number]> = { isCompleted: checked };
-                              if (
-                                checked &&
-                                offeredValue > 0 &&
-                                (typeof item.executedQuantity !== "number" || item.executedQuantity === 0)
-                              ) {
-                                updates.executedQuantity = offeredValue;
-                              }
+                              const updates: Partial<WorkOrder["items"][number]> = {
+                                isCompleted: checked,
+                                executedQuantity: checked
+                                  ? (typeof item.executedQuantity === "number" && item.executedQuantity > 0
+                                      ? item.executedQuantity
+                                      : offeredValue)
+                                  : 0,
+                              };
                               applyItemChange(order, item.id, updates);
                             };
 
                             return (
-                              <div key={item.id} className="space-y-3 rounded-md border p-3">
+                              <div key={item.id} className={cn("space-y-3 rounded-md border p-3", itemStatusStyles.cardClassName)}>
                                 <div className="space-y-1">
                                   {isExtraEditable ? (
-                                    <PriceListProductAutocomplete
-                                      value={item.name ?? ""}
-                                      onChange={(value) => applyItemChange(order, item.id, { name: value })}
-                                      onSelect={(product) =>
-                                        applyItemChange(order, item.id, {
-                                          productId: product.id,
-                                          name: product.name,
-                                          unit: product.unit,
-                                          offerItemId: item.offerItemId ?? null,
-                                        })
-                                      }
-                                      placeholder="Poišči iz cenika"
-                                    />
+                                    <div className="space-y-1">
+                                      <PriceListProductAutocomplete
+                                        value={item.name ?? ""}
+                                        onChange={(value) => applyItemChange(order, item.id, { name: value })}
+                                        onSelect={(product) =>
+                                          applyItemChange(order, item.id, {
+                                            productId: product.id,
+                                            name: product.name,
+                                            unit: product.unit,
+                                            offerItemId: item.offerItemId ?? null,
+                                          })
+                                        }
+                                        placeholder="Poišči iz cenika"
+                                      />
+                                      <div>{renderItemStatusBadge(item)}</div>
+                                    </div>
                                   ) : (
                                     <p className="text-sm font-medium">{item.name}</p>
                                   )}
-                                  <div>{renderItemStatusBadge(item)}</div>
+                                  {!isExtraEditable ? <div>{renderItemStatusBadge(item)}</div> : null}
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 text-sm">
                                   <div>
                                     <p className="text-xs text-muted-foreground">Ponujeno</p>
-                                    <p>{offeredValue.toLocaleString("sl-SI")}</p>
+                                    <p className={cn("font-medium", itemStatusStyles.quantityClassName)}>{offeredValue.toLocaleString("sl-SI")}</p>
                                   </div>
                                   <label className="space-y-1">
                                     <span className="text-xs text-muted-foreground">Izvedeno</span>
@@ -676,7 +1078,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                           executedQuantity: Number(event.target.value),
                                         })
                                       }
-                                      className="h-11"
+                                      className={cn("h-11", itemStatusStyles.quantityClassName)}
                                     />
                                   </label>
                                 </div>
@@ -691,7 +1093,7 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                     className="min-h-[56px]"
                                   />
                                 </label>
-                                <label className="flex min-h-[44px] items-center justify-between rounded-md bg-muted/40 px-3 text-sm">
+                                <label className={cn("flex min-h-[44px] items-center justify-between rounded-md px-3 text-sm", itemStatusStyles.cardClassName)}>
                                   <span>{isCompleted ? "Dokončano" : "Označi kot dokončano"}</span>
                                   <Checkbox
                                     className="h-5 w-5"
@@ -704,13 +1106,47 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                 {item.isExtra && !hasCenikProduct ? (
                                   <p className="text-xs text-muted-foreground">Dodajte izdelek iz cenika za pravilno poročanje.</p>
                                 ) : null}
+                                {item.isExtra ? (
+                                  <div className="flex justify-end">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                      onClick={() => handleDeleteManualItem(order, item)}
+                                      aria-label="Izbriši dodatno postavko"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                ) : null}
                               </div>
                             );
                           })}
                         </div>
 
-                        <div className="sticky bottom-2 z-10 -mx-2 rounded-lg border bg-background/95 p-2 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80 md:static md:mx-0 md:border-0 md:bg-transparent md:p-0 md:shadow-none">
-                          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                        <div className="grid gap-4 md:grid-cols-[minmax(220px,280px)_minmax(0,1fr)] md:items-start">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Opombe ob izvedbi</label>
+                            <Textarea
+                              value={draft.executionNote}
+                              onChange={(event: ChangeEvent<HTMLTextAreaElement>) => applyDraftChange(order, { executionNote: event.target.value })}
+                              placeholder="Opis dodatnih del, materiala ali opažanj na terenu."
+                              rows={4}
+                            />
+                          </div>
+                          <div className="flex items-start justify-start md:justify-end">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleAddExtraItem(order)}
+                            >
+                              + Dodaj dodatno postavko
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
                             <div className="text-xs text-muted-foreground">
                               {savingState === "saving" && "Shranjujem spremembe..."}
                               {savingState === "saved" && (
@@ -748,37 +1184,49 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
                                   "Shrani delovni nalog"
                                 )}
                               </Button>
-                              <Button
-                                variant="secondary"
-                                onClick={() => handleCompleteWorkOrder(order)}
-                                disabled={
-                                  items.length === 0 ||
-                                  !allItemsCompleted ||
-                                  isOrderCompleted ||
-                                  isCompletingOrder ||
-                                  isSavingOrder
-                                }
-                              >
-                                {isOrderCompleted ? (
-                                  "Delovni nalog je zaključen"
-                                ) : isCompletingOrder ? (
-                                  <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Zaključujem...
-                                  </>
-                                ) : (
-                                  "Zaključi delovni nalog"
-                                )}
-                              </Button>
+                              {isOrderCompleted && !order.customerSignedAt ? (
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => setSignoffOrderId(order._id)}
+                                >
+                                  Potrdilo delovnega naloga
+                                </Button>
+                              ) : null}
+                              {isOrderCompleted && order.customerSignedAt ? (
+                                <>
+                                  <Button
+                                    variant="secondary"
+                                    onClick={() => void downloadWorkOrderConfirmationPdf(order._id)}
+                                  >
+                                    Prenos potrjenega DN
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => void handleSendSignedConfirmation(order)}
+                                    disabled={sendingConfirmationOrderId === order._id}
+                                  >
+                                    {sendingConfirmationOrderId === order._id ? (
+                                      <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Pripravljam...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Send className="mr-2 h-4 w-4" />
+                                        Pošlji podpisano potrdilo stranki
+                                      </>
+                                    )}
+                                  </Button>
+                                </>
+                              ) : null}
                             </div>
-                          </div>
                         </div>
-                      </div>
+                        </CardContent>
+                      </Card>
                     </div>
                   );
                 })}
-              </CardContent>
-            </Card>
+            </div>
           );
         })}
         {!hasWorkOrders && (
@@ -790,12 +1238,125 @@ export function ExecutionPanel({ projectId, logistics, onSaveSignature, onWorkOr
         )}
       </div>
 
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Potrditev zaključka</h3>
-        <Card className="p-6">
-          <SignaturePad onSign={onSaveSignature} />
-        </Card>
-      </div>
+      <Dialog open={Boolean(selectedSignoffOrder)} onOpenChange={(open) => {
+        if (!open) {
+          setSignoffOrderId(null);
+        }
+      }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>
+              {`Potrdilo delovnega naloga - Projekt ${projectDisplayId || projectId}`}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedSignoffOrder ? (
+            <div className="space-y-6">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Ekipa</p>
+                  <p className="text-sm font-medium">{selectedSignoffTeamLabel || "Ni določena"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Termin izvedbe</p>
+                  <p className="text-sm font-medium">{selectedSignoffExecutionDateLabel ?? "Ni določen"}</p>
+                  {selectedSignoffExecutionDurationLabel ? (
+                    <p className="text-xs text-muted-foreground">
+                      Ocena trajanja izvedbe: {selectedSignoffExecutionDurationLabel}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Stranka</p>
+                  <p className="text-sm font-medium">{selectedSignoffOrder.customerName || "Neznana stranka"}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedSignoffOrder.customerAddress || "Naslov ni zapisan"}
+                  </p>
+                  {selectedSignoffOrder.customerPhone ? (
+                    <p className="text-sm text-muted-foreground">{selectedSignoffOrder.customerPhone}</p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="space-y-2 rounded-none border border-border/70 bg-card p-4">
+                <p className="text-sm font-medium">Izvedene postavke</p>
+                <div className="space-y-2">
+                  {(selectedSignoffOrder.items ?? []).map((item) => (
+                    <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-none border border-border/60 px-3 py-2">
+                      <div>
+                        <p className="text-sm font-medium">{item.name}</p>
+                        <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-medium tabular-nums">{typeof item.executedQuantity === "number" ? item.executedQuantity : 0}</span>
+                        <span className="text-muted-foreground">/</span>
+                        <span className="tabular-nums text-muted-foreground">{typeof item.offeredQuantity === "number" ? item.offeredQuantity : 0}</span>
+                        {renderItemStatusBadge(item as WorkOrderItemDraft)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {selectedSignoffOrder.customerSignedAt ? (
+                <div className="space-y-3 rounded-none border border-emerald-500/30 bg-emerald-500/5 p-4">
+                  <div>
+                    <p className="text-sm font-medium">Potrdilo je podpisano</p>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedSignoffOrder.customerSignerName || selectedSignoffOrder.customerName || "Stranka"} ·{" "}
+                      {formatExecutionDateTime(selectedSignoffOrder.customerSignedAt) ?? "Datum ni na voljo"}
+                    </p>
+                    {selectedSignoffOrder.customerRemark ? (
+                      <p className="mt-2 text-sm text-muted-foreground">{selectedSignoffOrder.customerRemark}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        onClick={() => openWorkOrderConfirmationPdf(selectedSignoffOrder._id)}
+                      >
+                        Predogled potrdila DN
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 rounded-none"
+                        onClick={() => void downloadWorkOrderConfirmationPdf(selectedSignoffOrder._id)}
+                        aria-label="Prenesi potrdilo delovnega naloga"
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <SignaturePad
+                  onSign={handleCustomerSignoff}
+                  signerName={selectedSignoffOrder.customerSignerName ?? selectedSignoffOrder.customerName ?? ""}
+                >
+                  <div className="rounded-none border border-border/70 bg-card p-4">
+                    <p className="text-sm font-medium">Potrditev izvedbe</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      S podpisom naročnik potrjuje, da so bila vsa dela izvedena, oprema dobavljena, pregledana in delujoča. Morebitne pripombe so navedene v tem dokumentu.
+                    </p>
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      S tem se projekt šteje za zaključen.
+                    </p>
+                    <div className="mt-4 space-y-2">
+                      <label className="text-sm font-medium">Opombe naročnika</label>
+                      <Textarea
+                        value={customerRemarkDraft}
+                        onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setCustomerRemarkDraft(event.target.value)}
+                        placeholder="Vnesite morebitne pripombe glede izvedbe ali montaže"
+                        rows={4}
+                      />
+                    </div>
+                  </div>
+                </SignaturePad>
+              )}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

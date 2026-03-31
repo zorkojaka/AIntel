@@ -10,7 +10,7 @@ import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import { renderTemplate, openPreview, downloadHTML } from "../domains/offers/TemplateRenderer";
 import { toast } from "sonner";
 import { ProjectDetails, ProjectOffer, ProjectOfferItem, Template } from "../types";
-import { fetchRequirementVariants } from "../api";
+import { downloadPdf, fetchRequirementVariants } from "../api";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
 import { LogisticsPanel } from "../domains/logistics/LogisticsPanel";
 import { useProject } from "../domains/core/useProject";
@@ -160,6 +160,7 @@ export function ProjectWorkspace({
   const pendingOfferNavigationRef = useRef<(() => void | Promise<void>) | null>(null);
   const offerSaveHandlerRef = useRef<(() => Promise<boolean>) | null>(null);
   const logisticsSaveHandlerRef = useRef<(() => Promise<boolean>) | null>(null);
+  const executionSaveHandlerRef = useRef<(() => Promise<boolean>) | null>(null);
   const invoiceSectionRef = useRef<HTMLDivElement | null>(null);
   const timelineSteps = useProjectTimeline(project);
   const allTabsConfig: { value: WorkspaceTabValue; label: string }[] = [
@@ -221,6 +222,9 @@ export function ProjectWorkspace({
   }, []);
   const registerLogisticsSaveHandler = useCallback((handler: (() => Promise<boolean>) | null) => {
     logisticsSaveHandlerRef.current = handler;
+  }, []);
+  const registerExecutionSaveHandler = useCallback((handler: (() => Promise<boolean>) | null) => {
+    executionSaveHandlerRef.current = handler;
   }, []);
 
   const closeUnsavedOfferDialog = useCallback(() => {
@@ -821,7 +825,7 @@ export function ProjectWorkspace({
   };
 
   const handleWorkOrderUpdated = useCallback(
-    async (updatedWorkOrder: LogisticsWorkOrder) => {
+    (updatedWorkOrder: LogisticsWorkOrder) => {
       setProject((prev) => {
         const previousLogistics = prev.logistics ?? null;
         const existingWorkOrders = previousLogistics?.workOrders ?? [];
@@ -846,9 +850,38 @@ export function ProjectWorkspace({
           logistics: nextLogistics,
         };
       });
-      await refresh();
     },
-    [setProject, refresh]
+    [setProject]
+  );
+
+  const handleWorkOrderDraftChange = useCallback(
+    (draftWorkOrder: LogisticsWorkOrder) => {
+      setProject((prev) => {
+        const previousLogistics = prev.logistics ?? null;
+        const existingWorkOrders = previousLogistics?.workOrders ?? [];
+        const hasOrder = existingWorkOrders.some((order) => order._id === draftWorkOrder._id);
+        const nextWorkOrders = hasOrder
+          ? existingWorkOrders.map((order) => (order._id === draftWorkOrder._id ? draftWorkOrder : order))
+          : [...existingWorkOrders, draftWorkOrder];
+        const nextLogistics: ProjectLogistics = {
+          workOrders: nextWorkOrders,
+          materialOrders: previousLogistics?.materialOrders ?? [],
+          materialOrder: previousLogistics?.materialOrder ?? null,
+          workOrder:
+            previousLogistics?.workOrder && previousLogistics.workOrder._id === draftWorkOrder._id
+              ? draftWorkOrder
+              : previousLogistics?.workOrder ?? null,
+          acceptedOfferId: previousLogistics?.acceptedOfferId,
+          confirmedOfferVersionId: previousLogistics?.confirmedOfferVersionId,
+          offerVersions: previousLogistics?.offerVersions,
+        };
+        return {
+          ...prev,
+          logistics: nextLogistics,
+        };
+      });
+    },
+    [setProject]
   );
 
   const handleMarkOfferAsSelected = async (offerId: string) => {
@@ -925,13 +958,38 @@ export function ProjectWorkspace({
     toast.success("Ponudba prenesena kot HTML");
   };
 
-  const handleSaveSignature = async (signature: string, signerName: string) => {
+  const handleSaveSignature = async (
+    signature: string,
+    signerName: string,
+    workOrderId?: string,
+    customerRemark?: string,
+  ) => {
     const updated = await onProjectUpdate(`${basePath}/signature`, {
       method: "POST",
-      body: JSON.stringify({ signerName, signature }),
+      body: JSON.stringify({
+        signerName,
+        signature,
+        workOrderId: workOrderId ?? null,
+        customerRemark: customerRemark ?? null,
+      }),
     });
     applyProjectUpdate(updated);
-    if (updated) toast.success(`Podpis shranjen: ${signerName}`);
+    if (!updated) return;
+    if (workOrderId) {
+      try {
+        await downloadPdf(
+          `/api/projects/${projectId}/work-orders/${workOrderId}/pdf?docType=WORK_ORDER_CONFIRMATION&mode=download`,
+          `potrdilo-delovnega-naloga-${projectId}.pdf`,
+        );
+      } catch (error) {
+        console.error(error);
+        toast.error("Podpis je shranjen, izvoz potrdila pa ni uspel.");
+      }
+    }
+    await refresh();
+    setOverrideStep("invoice");
+    setActiveTab("closing");
+    toast.success(`Podpis shranjen: ${signerName}`);
   };
 
   const renderContent = () => {
@@ -942,6 +1000,10 @@ export function ProjectWorkspace({
       }
       if (activeTab === "logistics" && logisticsSaveHandlerRef.current) {
         void logisticsSaveHandlerRef.current();
+        return;
+      }
+      if (activeTab === "execution" && executionSaveHandlerRef.current) {
+        void executionSaveHandlerRef.current();
         return;
       }
       void refresh();
@@ -990,7 +1052,7 @@ export function ProjectWorkspace({
           onBack={handleBackWithGuard}
           onPrimaryAction={handleHeaderPrimaryAction}
           onNewProject={handleNewProjectWithGuard}
-          primaryActionLabel={activeTab === "offers" || activeTab === "logistics" ? "Shrani" : "Osveži"}
+          primaryActionLabel={activeTab === "offers" || activeTab === "logistics" || activeTab === "execution" ? "Shrani" : "Osveži"}
         />
         <div className="max-w-[1280px] mx-auto px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6">
           <div className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground md:hidden">
@@ -1089,9 +1151,12 @@ export function ProjectWorkspace({
                 <TabsContent value="execution" className="mt-0 space-y-6">
                   <ExecutionPanel
                     projectId={project.id}
+                    projectDisplayId={projectDisplayId || project.id}
                     logistics={project.logistics}
                     onSaveSignature={handleSaveSignature}
                     onWorkOrderUpdated={handleWorkOrderUpdated}
+                    onWorkOrderDraftChange={handleWorkOrderDraftChange}
+                    onRegisterSaveHandler={registerExecutionSaveHandler}
                   />
                 </TabsContent>
                 ) : null}

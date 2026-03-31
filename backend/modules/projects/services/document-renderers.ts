@@ -10,10 +10,12 @@ export interface PreviewCustomerInfo {
 export interface PreviewItem {
   name: string;
   quantity: number;
+  plannedQuantity?: number | null;
   unit?: string;
   unitPrice?: number;
   total?: number;
   vatPercent?: number;
+  statusLabel?: string | null;
 }
 
 export interface PreviewTotals {
@@ -39,6 +41,13 @@ export interface PaymentInfoContext {
   notice?: string | null;
 }
 
+export interface PreviewSignature {
+  label?: string;
+  name?: string | null;
+  image?: string | null;
+  signedAt?: string | null;
+}
+
 export interface DocumentPreviewContext {
   docType: DocumentNumberingKind;
   documentNumber: string;
@@ -56,6 +65,10 @@ export interface DocumentPreviewContext {
   referenceNumber?: string | null;
   tasks?: PreviewTask[];
   paymentInfo?: PaymentInfoContext | null;
+  signatures?: {
+    left?: PreviewSignature | null;
+    right?: PreviewSignature | null;
+  } | null;
 }
 
 const baseStyles = `
@@ -77,6 +90,10 @@ const baseStyles = `
   .notes { margin-top: 16px; padding: 12px; background: #f9fafb; border: 1px dashed #e5e7eb; border-radius: 10px; }
   .signatures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
   .signature { padding: 12px; border: 1px dashed #cbd5e1; border-radius: 10px; text-align: center; }
+  .signature-image-wrap { height: 56px; margin-top: 10px; display:flex; align-items:center; justify-content:center; }
+  .signature-image { max-width: 100%; max-height: 56px; object-fit: contain; }
+  .signature-name { margin-top: 8px; font-size: 12px; font-weight: 600; color:#0f172a; }
+  .signature-meta { margin-top: 4px; font-size: 11px; color:#64748b; }
   .tasks { margin-top: 12px; }
   .task { padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
   .badge { display: inline-flex; padding: 4px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca; font-size: 12px; }
@@ -181,16 +198,50 @@ export function buildNotesBlockHtml(notes?: string[]) {
     </div>`;
 }
 
-export function buildSignatureBlock(options?: { leftLabel?: string; rightLabel?: string }) {
+export function buildSignatureBlock(options?: {
+  leftLabel?: string;
+  rightLabel?: string;
+  leftName?: string | null;
+  rightName?: string | null;
+  leftImage?: string | null;
+  rightImage?: string | null;
+  leftSignedAt?: string | null;
+  rightSignedAt?: string | null;
+}) {
+  const renderSignature = (config: {
+    label: string;
+    name?: string | null;
+    image?: string | null;
+    signedAt?: string | null;
+  }) => {
+    const formattedDate = config.signedAt ? new Date(config.signedAt).toLocaleString('sl-SI') : null;
+    const imageBlock = config.image
+      ? `<div class="signature-image-wrap"><img class="signature-image" src="${config.image}" alt="${escapeHtml(
+          config.label,
+        )}" /></div>`
+      : `<div style="height:40px;border-bottom:1px solid #e5e7eb;margin-top:18px;"></div>`;
+
+    return `<div class="signature">
+        <p class="muted">${escapeHtml(config.label)}</p>
+        ${imageBlock}
+        ${config.name ? `<div class="signature-name">${escapeHtml(config.name)}</div>` : ''}
+        ${formattedDate ? `<div class="signature-meta">${escapeHtml(formattedDate)}</div>` : ''}
+      </div>`;
+  };
+
   return `<div class="signatures">
-      <div class="signature">
-        <p class="muted">${options?.leftLabel ?? 'Podpis odgovorne osebe'}</p>
-        <div style="height:40px;border-bottom:1px solid #e5e7eb;margin-top:18px;"></div>
-      </div>
-      <div class="signature">
-        <p class="muted">${options?.rightLabel ?? 'Podpis stranke'}</p>
-        <div style="height:40px;border-bottom:1px solid #e5e7eb;margin-top:18px;"></div>
-      </div>
+      ${renderSignature({
+        label: options?.leftLabel ?? 'Podpis odgovorne osebe',
+        name: options?.leftName,
+        image: options?.leftImage,
+        signedAt: options?.leftSignedAt,
+      })}
+      ${renderSignature({
+        label: options?.rightLabel ?? 'Podpis stranke',
+        name: options?.rightName,
+        image: options?.rightImage,
+        signedAt: options?.rightSignedAt,
+      })}
     </div>`;
 }
 
@@ -547,11 +598,13 @@ export function renderWorkOrderPdf(context: DocumentPreviewContext) {
 }
 
 export function renderWorkOrderConfirmationPdf(context: DocumentPreviewContext) {
-  const tasks = context.tasks ?? (context.items ?? []).map((item) => ({ label: item.name, status: 'done' as const }));
-  const rows = tasks.map(
-    (task) => `<tr>
-        <td>${task.label}</td>
-        <td style="text-align:right;">${task.status ?? ''}</td>
+  const rows = (context.items ?? []).map(
+    (item) => `<tr>
+        <td>${item.name}</td>
+        <td style="text-align:right;">${item.quantity}${item.unit ? ` ${item.unit}` : ''} / ${item.plannedQuantity ?? 0}${
+          item.unit ? ` ${item.unit}` : ''
+        }</td>
+        <td style="text-align:right;">${item.statusLabel ?? ''}</td>
       </tr>`
   );
   const itemsRows = rows.length
@@ -560,7 +613,7 @@ export function renderWorkOrderConfirmationPdf(context: DocumentPreviewContext) 
   const notesBlock = buildNotesList(context.notes);
   const confirmationText = `<div class="offer-comment">
       <h4>Potrditev izvedbe</h4>
-      <p>Dela so bila izvedena skladno z dogovorjenimi specifikacijami.</p>
+      <p>S podpisom stranka potrjuje prevzem dejansko izvedenih del, prikazanih na tem potrdilu delovnega naloga.</p>
     </div>`;
   const extraSections = `${confirmationText}${buildSignatureBlock({ leftLabel: 'Izvajalec', rightLabel: 'Naročnik' })}`;
 
@@ -571,6 +624,48 @@ export function renderWorkOrderConfirmationPdf(context: DocumentPreviewContext) 
     customerEmptyText: 'Podatki o stranki se prikažejo ob izdaji potrdila.',
     tableHeadRows: `<tr>
         <th>Naloga</th>
+        <th style="text-align:right;">Status</th>
+      </tr>`,
+    tableBodyRows: itemsRows,
+    notesBlock,
+    extraSections,
+  });
+}
+
+export function renderSignedWorkOrderConfirmationPdf(context: DocumentPreviewContext) {
+  const rows = (context.items ?? []).map(
+    (item) => `<tr>
+        <td>${item.name}</td>
+        <td style="text-align:right;">${item.quantity}${item.unit ? ` ${item.unit}` : ''} / ${item.plannedQuantity ?? 0}${
+          item.unit ? ` ${item.unit}` : ''
+        }</td>
+        <td style="text-align:right;">${item.statusLabel ?? ''}</td>
+      </tr>`
+  );
+  const itemsRows = rows.length
+    ? rows.join('')
+    : `<tr><td colspan="3" style="text-align:center; color:#94a3b8;">Ni nalog za prikaz.</td></tr>`;
+  const notesBlock = buildNotesList(context.notes);
+  const confirmationText = `<div class="offer-comment">
+      <h4>Potrditev izvedbe</h4>
+      <p>S podpisom stranka potrjuje prevzem dejansko izvedenih del, prikazanih na tem potrdilu delovnega naloga.</p>
+    </div>`;
+  const extraSections = `${confirmationText}${buildSignatureBlock({
+    leftLabel: 'Izvajalec',
+    rightLabel: 'Naročnik',
+    rightName: context.signatures?.right?.name ?? null,
+    rightImage: context.signatures?.right?.image ?? null,
+    rightSignedAt: context.signatures?.right?.signedAt ?? null,
+  })}`;
+
+  return buildStandardDocument(context, {
+    docLabel: 'Potrdilo del. naloga',
+    pageTitle: 'Potrdilo delovnega naloga',
+    projectTitleFallback: 'Potrdilo delovnega naloga',
+    customerEmptyText: 'Podatki o stranki se prikažejo ob izdaji potrdila.',
+    tableHeadRows: `<tr>
+        <th>Postavka</th>
+        <th style="text-align:right;">Izvedba / Naročilo</th>
         <th style="text-align:right;">Status</th>
       </tr>`,
     tableBodyRows: itemsRows,
@@ -642,7 +737,7 @@ const DOC_RENDERERS: Record<DocumentNumberingKind, (context: DocumentPreviewCont
   PURCHASE_ORDER: renderPurchaseOrderPdf,
   DELIVERY_NOTE: renderDeliveryNotePdf,
   WORK_ORDER: renderWorkOrderPdf,
-  WORK_ORDER_CONFIRMATION: renderWorkOrderConfirmationPdf,
+  WORK_ORDER_CONFIRMATION: renderSignedWorkOrderConfirmationPdf,
   CREDIT_NOTE: renderCreditNotePdf,
 };
 

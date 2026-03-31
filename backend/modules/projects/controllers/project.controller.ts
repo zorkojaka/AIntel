@@ -19,6 +19,7 @@ import { generateRequirementsFromTemplates } from '../services/requirements-from
 import type { RequirementFieldType, RequirementFormulaConfig } from '../../shared/requirements.types';
 import { getOfferCandidatesFromRequirements } from '../services/offer-from-requirements';
 import { serializeProjectDetails } from '../services/project.service';
+import { createInvoiceFromClosing } from '../services/invoice.service';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
@@ -934,8 +935,31 @@ export async function saveSignature(req: Request, res: Response) {
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
   const signerName = req.body?.signerName;
+  const signature = typeof req.body?.signature === 'string' ? req.body.signature.trim() : '';
+  const workOrderId = typeof req.body?.workOrderId === 'string' ? req.body.workOrderId.trim() : '';
+  const customerRemark =
+    typeof req.body?.customerRemark === 'string' && req.body.customerRemark.trim().length > 0
+      ? req.body.customerRemark.trim()
+      : null;
   if (!signerName) {
     return res.fail('Manjka ime podpisnika.', 400);
+  }
+  if (!signature) {
+    return res.fail('Manjka podpis stranke.', 400);
+  }
+
+  let workOrder = null;
+  if (workOrderId) {
+    workOrder = await WorkOrderModel.findOne({ _id: workOrderId, projectId: project.id });
+    if (!workOrder) {
+      return res.fail('Delovni nalog ni najden.', 404);
+    }
+    workOrder.customerSignerName = signerName;
+    workOrder.customerSignature = signature;
+    workOrder.customerSignedAt = new Date();
+    workOrder.customerRemark = customerRemark;
+    workOrder.status = 'completed';
+    await workOrder.save();
   }
 
   project.status = 'completed';
@@ -946,7 +970,11 @@ export async function saveSignature(req: Request, res: Response) {
     description: `Podpisal: ${signerName}`,
     timestamp: new Date().toLocaleString('sl-SI'),
     user: 'Admin',
-    metadata: { signer: signerName },
+    metadata: {
+      signer: signerName,
+      workOrderId: workOrderId || '',
+      signedAt: new Date().toISOString(),
+    },
   });
 
   addTimeline(project, {
@@ -958,6 +986,7 @@ export async function saveSignature(req: Request, res: Response) {
   });
 
   await project.save();
+  await createInvoiceFromClosing(project.id);
 
   return res.success(await responseProject(project.toObject()));
 }

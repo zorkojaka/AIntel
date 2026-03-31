@@ -251,6 +251,14 @@
   box-shadow: var(--app-shadow-soft);
 }
 
+.projects-workspace-shell [data-slot="card"].work-order-status-card.is-in-progress {
+  border-color: #fb923c;
+}
+
+.projects-workspace-shell [data-slot="card"].work-order-status-card.is-completed {
+  border-color: #22c55e;
+}
+
 .projects-workspace-shell .sticky.top-0.z-20 {
   border-bottom-color: var(--app-border);
   backdrop-filter: blur(8px);

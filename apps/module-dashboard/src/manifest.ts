@@ -2,6 +2,7 @@ export const manifest = {
   id: 'dashboard',
   name: 'DASHBOARD',
   version: '0.1.0',
+  rootRoute: '/dashboard',
   navItems: [
     {
       label: 'DASHBOARD',
