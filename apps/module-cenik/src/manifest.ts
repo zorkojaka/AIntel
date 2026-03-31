@@ -2,6 +2,7 @@ export const manifest = {
   id: 'cenik',
   name: 'CENIK',
   version: '0.1.0',
+  rootRoute: '/cenik',
   navItems: [
     {
       label: 'CENIK',

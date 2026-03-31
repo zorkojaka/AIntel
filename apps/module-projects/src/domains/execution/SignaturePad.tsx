@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, type ReactNode } from "react";
 import { Button } from "../../components/ui/button";
 import { Label } from "../../components/ui/label";
 import { Input } from "../../components/ui/input";
@@ -7,9 +7,10 @@ import { X } from "lucide-react";
 interface SignaturePadProps {
   onSign: (signature: string, signerName: string) => void;
   signerName?: string;
+  children?: ReactNode;
 }
 
-export function SignaturePad({ onSign, signerName: initialSignerName = "" }: SignaturePadProps) {
+export function SignaturePad({ onSign, signerName: initialSignerName = "", children }: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [signerName, setSignerName] = useState(initialSignerName);
@@ -19,14 +20,42 @@ export function SignaturePad({ onSign, signerName: initialSignerName = "" }: Sig
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const configureCanvas = () => {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.round(rect.width * ratio));
+      const height = Math.max(1, Math.round(rect.height * ratio));
 
-    ctx.strokeStyle = "#111827";
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      ctx.strokeStyle = "#111827";
+      ctx.lineWidth = 2 * ratio;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+    };
+
+    configureCanvas();
+    window.addEventListener("resize", configureCanvas);
+    return () => window.removeEventListener("resize", configureCanvas);
   }, []);
+
+  const getCanvasPoint = (
+    clientX: number,
+    clientY: number,
+    canvas: HTMLCanvasElement,
+  ) => {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) * (canvas.width / rect.width),
+      y: (clientY - rect.top) * (canvas.height / rect.height),
+    };
+  };
 
   const startDrawing = (event: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -38,9 +67,11 @@ export function SignaturePad({ onSign, signerName: initialSignerName = "" }: Sig
     setIsDrawing(true);
     setHasSignature(true);
 
-    const rect = canvas.getBoundingClientRect();
-    const x = "touches" in event ? event.touches[0].clientX - rect.left : event.clientX - rect.left;
-    const y = "touches" in event ? event.touches[0].clientY - rect.top : event.clientY - rect.top;
+    const pointer = "touches" in event ? event.touches[0] : event;
+    if ("touches" in event) {
+      event.preventDefault();
+    }
+    const { x, y } = getCanvasPoint(pointer.clientX, pointer.clientY, canvas);
 
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -55,9 +86,11 @@ export function SignaturePad({ onSign, signerName: initialSignerName = "" }: Sig
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const x = "touches" in event ? event.touches[0].clientX - rect.left : event.clientX - rect.left;
-    const y = "touches" in event ? event.touches[0].clientY - rect.top : event.clientY - rect.top;
+    const pointer = "touches" in event ? event.touches[0] : event;
+    if ("touches" in event) {
+      event.preventDefault();
+    }
+    const { x, y } = getCanvasPoint(pointer.clientX, pointer.clientY, canvas);
 
     ctx.lineTo(x, y);
     ctx.stroke();
@@ -97,6 +130,8 @@ export function SignaturePad({ onSign, signerName: initialSignerName = "" }: Sig
           className="mt-1"
         />
       </div>
+
+      {children}
 
       <div className="space-y-2">
         <Label>Podpis</Label>

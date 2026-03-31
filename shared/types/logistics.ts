@@ -98,6 +98,10 @@ export interface WorkOrder {
   customerEmail?: string;
   customerPhone?: string;
   customerAddress?: string;
+  customerSignerName?: string | null;
+  customerSignature?: string | null;
+  customerSignedAt?: string | null;
+  customerRemark?: string | null;
   reopened?: boolean;
   executionNote?: string | null;
   workLogs?: WorkLogEntry[];

@@ -3,9 +3,13 @@ import { Button, Card, DataTable, Input, CategoryMultiSelect, TableRowActions } 
 import { Pencil, Save, Trash2, X } from 'lucide-react';
 import { clearMobileTopbar, setMobileTopbar } from '@aintel/shared/utils/mobileTopbar';
 import FilterBar from './components/FilterBar';
+import { ImportConflictReview } from './components/ImportConflictReview';
 
 type Product = {
   _id?: string;
+  externalSource?: string;
+  externalId?: string;
+  externalKey?: string;
   ime: string;
   nabavnaCena: number;
   prodajnaCena: number;
@@ -19,6 +23,9 @@ type Product = {
   casovnaNorma: string;
   categorySlugs?: string[];
   isService?: boolean;
+  isActive?: boolean;
+  status?: string;
+  mergedIntoProductId?: string;
 };
 
 type StatusBanner = {
@@ -32,32 +39,160 @@ type ApiEnvelope<T> = {
   error: string | null;
 };
 
-type ImportSource = 'aa_api' | 'services_sheet';
+type ImportSource = 'aa_api' | 'services_sheet' | 'dodatki';
 
-type ImportReport = {
-  source: string;
-  total: number;
-  created: number;
-  updated: number;
-  reactivated: number;
-  wouldDeactivate: number;
-  deactivated: number;
+type ImportPlanSummary = {
+  totalSourceRows: number;
+  matchedRows: number;
+  toCreateCount: number;
+  toUpdateCount: number;
+  toSkipCount: number;
+  conflictCount: number;
+  invalidCount: number;
 };
 
-type ImportError = {
+type ImportPlanRow = {
+  rowIndex: number;
+  rowId: string;
+  source: string;
+  sourceRecordId: string;
+  externalKey: string;
+  ime: string;
+  rowFingerprint: string;
+};
+
+type ImportUpdateRow = ImportPlanRow & {
+  productId: string;
+  matchType: 'external_key' | 'source_identifier' | 'strict_business_match';
+  changedFields: string[];
+};
+
+type ImportConflictRow = ImportPlanRow & {
+  reason: string;
+  incoming: {
+    ime: string;
+    proizvajalec: string;
+    dobavitelj: string;
+    categorySlugs: string[];
+    nabavnaCena: number;
+    prodajnaCena: number;
+    isService: boolean;
+  };
+  candidateMatches: Array<{
+    productId: string;
+    ime: string;
+    proizvajalec: string;
+    dobavitelj: string;
+    externalKey: string;
+    source: string;
+    isService: boolean;
+    nabavnaCena?: number;
+    prodajnaCena?: number;
+    matchExplanation: string;
+  }>;
+};
+
+type ImportInvalidError = {
   index: number;
   rowId: string;
   field: string;
   reason: string;
 };
 
+type ImportInvalidRow = ImportPlanRow & {
+  errors: ImportInvalidError[];
+};
+
+type ImportApplySummary = ImportPlanSummary & {
+  createdCount: number;
+  updatedCount: number;
+  skippedCount: number;
+  excludedConflictCount: number;
+  excludedInvalidCount: number;
+};
+
 type ImportResult = {
-  report: ImportReport | null;
-  errors: ImportError[];
+  mode: 'analyze' | 'apply';
+  source: string;
+  summary: ImportPlanSummary;
+  toCreate: ImportPlanRow[];
+  toUpdate: ImportUpdateRow[];
+  toSkip: ImportPlanRow[];
+  conflicts: ImportConflictRow[];
+  invalidRows: ImportInvalidRow[];
+  applied?: ImportApplySummary;
+  run?: ImportRun | null;
+};
+
+type ImportRun = {
+  id: string;
+  source: string;
+  mode: 'analyze' | 'apply';
+  startedAt: string;
+  finishedAt?: string;
+  triggeredBy?: string;
+  status: 'success' | 'partial' | 'failed';
+  totalSourceRows: number;
+  matchedRows: number;
+  toCreateCount: number;
+  toUpdateCount: number;
+  toSkipCount: number;
+  conflictCount: number;
+  invalidCount: number;
+  createdCount: number;
+  updatedCount: number;
+  skippedCount: number;
+  unresolvedConflictCount: number;
+  sourceFingerprint?: string;
+  warnings: string[];
+  errorSummary?: string;
+};
+
+type ProductCandidateMatch = {
+  productId: string;
+  ime: string;
+  proizvajalec: string;
+  dobavitelj: string;
+  externalKey: string;
+  source: string;
+  isService: boolean;
+  nabavnaCena?: number;
+  prodajnaCena?: number;
+  matchExplanation: string;
+};
+
+type ProductPrecheckResult = {
+  status: 'safe_create' | 'existing_match_found' | 'conflict_found';
+  reason: string;
+  candidateMatches: ProductCandidateMatch[];
+};
+
+type DuplicateCandidateProduct = {
+  productId: string;
+  ime: string;
+  proizvajalec: string;
+  dobavitelj: string;
+  prodajnaCena: number;
+  isService: boolean;
+  externalKey: string;
+  source: string;
+  isActive: boolean;
+};
+
+type DuplicateCandidateGroup = {
+  groupKey: string;
+  reasons: string[];
+  products: DuplicateCandidateProduct[];
 };
 
 type AuditReport = {
-  totals: { products: number };
+  totals: {
+    products: number;
+    activeProducts: number;
+    inactiveProducts: number;
+    mergedProducts: number;
+    incompleteProducts: number;
+  };
   countsBySource: Array<{ source: string; count: number }>;
   duplicates: {
     externalKey: { groupCount: number };
@@ -109,6 +244,160 @@ const emptyProduct = (): Product => ({
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('sl-SI', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 }).format(value);
+
+const formatDateTime = (value?: string) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('sl-SI', {
+    dateStyle: 'short',
+    timeStyle: 'short'
+  }).format(date);
+};
+
+const statusBadgeClasses: Record<ImportRun['status'], string> = {
+  success: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+  partial: 'border-amber-300 bg-amber-50 text-amber-800',
+  failed: 'border-destructive/30 bg-destructive/10 text-destructive'
+};
+
+function parseBooleanLike(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'da' || normalized === 'yes';
+}
+
+function parseNumberLike(value: string) {
+  const normalized = value.trim().replace(',', '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseDelimitedLine(line: string, delimiter: ',' | '\t' | ';') {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const nextChar = line[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        current += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (!inQuotes && char === delimiter) {
+      values.push(current.trim());
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current.trim());
+  return values;
+}
+
+function normalizeImportHeader(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function mapImportHeader(header: string) {
+  const normalized = normalizeImportHeader(header);
+  const mapping: Record<string, string> = {
+    externalid: 'externalId',
+    ime: 'ime',
+    name: 'ime',
+    naziv: 'ime',
+    categories: 'categorySlugs',
+    category: 'categorySlugs',
+    categoryslugs: 'categorySlugs',
+    kategorije: 'categorySlugs',
+    kategorija: 'categorySlugs',
+    nabavnacena: 'nabavnaCena',
+    purchaseprice: 'nabavnaCena',
+    purchasepricewithoutvat: 'nabavnaCena',
+    prodajnacena: 'prodajnaCena',
+    saleprice: 'prodajnaCena',
+    price: 'prodajnaCena',
+    proizvajalec: 'proizvajalec',
+    manufacturer: 'proizvajalec',
+    dobavitelj: 'dobavitelj',
+    supplier: 'dobavitelj',
+    isservice: 'isService',
+    service: 'isService',
+    kratekopis: 'kratekOpis',
+    shortdescription: 'kratekOpis',
+    dolgisopis: 'dolgOpis',
+    dolgopis: 'dolgOpis',
+    description: 'dolgOpis',
+    povezavadoslike: 'povezavaDoSlike',
+    imageurl: 'povezavaDoSlike',
+    povezavadoprodukta: 'povezavaDoProdukta',
+    producturl: 'povezavaDoProdukta',
+    naslovdobavitelja: 'naslovDobavitelja',
+    supplieraddress: 'naslovDobavitelja',
+    casovnanorma: 'casovnaNorma',
+    timenorm: 'casovnaNorma',
+  };
+  return mapping[normalized] ?? normalized;
+}
+
+function splitCategoryCell(value: string) {
+  return value
+    .split(/[|;]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseBulkAdditionInput(input: string) {
+  const lines = input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 2) {
+    return [] as Record<string, unknown>[];
+  }
+
+  const headerLine = lines[0];
+  const delimiter: ',' | '\t' | ';' = headerLine.includes('\t')
+    ? '\t'
+    : headerLine.includes(';')
+      ? ';'
+      : ',';
+  const headers = parseDelimitedLine(headerLine, delimiter).map(mapImportHeader);
+
+  return lines.slice(1).map((line) => {
+    const cells = parseDelimitedLine(line, delimiter);
+    const row: Record<string, unknown> = {};
+
+    headers.forEach((header, index) => {
+      const rawValue = cells[index] ?? '';
+      if (header === 'categorySlugs') {
+        row.categorySlugs = splitCategoryCell(rawValue);
+      } else if (header === 'nabavnaCena' || header === 'prodajnaCena') {
+        row[header] = parseNumberLike(rawValue);
+      } else if (header === 'isService') {
+        row.isService = parseBooleanLike(rawValue);
+      } else if (rawValue !== '') {
+        row[header] = rawValue;
+      }
+    });
+
+    return row;
+  });
+}
 
 const MAX_VISIBLE_CATEGORY_CHIPS = 10;
 
@@ -167,13 +456,31 @@ export const CenikPage: React.FC = () => {
   const [status, setStatus] = useState<StatusBanner | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [importSource, setImportSource] = useState<ImportSource>('aa_api');
   const [importLoading, setImportLoading] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [resolvingConflictKey, setResolvingConflictKey] = useState<string | null>(null);
+  const [bulkAdditionsText, setBulkAdditionsText] = useState('');
+  const [importRuns, setImportRuns] = useState<ImportRun[]>([]);
+  const [runsLoading, setRunsLoading] = useState(false);
+  const [runsError, setRunsError] = useState<string | null>(null);
+  const [selectedRun, setSelectedRun] = useState<ImportRun | null>(null);
+  const [selectedRunLoading, setSelectedRunLoading] = useState(false);
+  const [duplicateGroups, setDuplicateGroups] = useState<DuplicateCandidateGroup[]>([]);
+  const [duplicateAuditLoading, setDuplicateAuditLoading] = useState(false);
+  const [duplicateAuditError, setDuplicateAuditError] = useState<string | null>(null);
+  const [mergingDuplicateKey, setMergingDuplicateKey] = useState<string | null>(null);
+  const [manualPrecheck, setManualPrecheck] = useState<ProductPrecheckResult | null>(null);
+  const [manualPrecheckLoading, setManualPrecheckLoading] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditResult, setAuditResult] = useState<AuditReport | null>(null);
   const [auditError, setAuditError] = useState<string | null>(null);
+  const [reviewConflictSource, setReviewConflictSource] = useState<ImportSource>('aa_api');
+  const [reviewConflictResult, setReviewConflictResult] = useState<ImportResult | null>(null);
+  const [reviewConflictLoading, setReviewConflictLoading] = useState(false);
+  const [reviewConflictError, setReviewConflictError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
   const isMobileEditOpen = isModalOpen && Boolean(editingProduct);
@@ -200,6 +507,15 @@ export const CenikPage: React.FC = () => {
 
   useEffect(() => {
     loadProducts();
+  }, []);
+
+  useEffect(() => {
+    if (!isImportOpen) return;
+    loadImportRuns();
+  }, [isImportOpen]);
+
+  useEffect(() => {
+    loadDuplicateCandidates();
   }, []);
 
   useEffect(() => {
@@ -249,6 +565,12 @@ export const CenikPage: React.FC = () => {
           variant: 'primary',
           onClick: openImportModal,
         },
+        {
+          id: 'cenik-review',
+          label: 'Pregled',
+          variant: 'ghost',
+          onClick: openReviewModal,
+        },
       ],
     });
 
@@ -277,6 +599,7 @@ export const CenikPage: React.FC = () => {
   }, [products, filters]);
 
   const startEdit = (product?: Product) => {
+    setManualPrecheck(null);
     setEditingProduct(
       product
         ? {
@@ -318,40 +641,49 @@ export const CenikPage: React.FC = () => {
     }
 
     setSaving(true);
-    const { _id, ...rest } = editingProduct;
-    const payload = {
-      ...rest,
-      categorySlugs: editingProduct.categorySlugs ?? []
-    } as Omit<Product, '_id'>;
-    const method = editingProduct._id ? 'PUT' : 'POST';
-    const url = editingProduct._id
-      ? `/api/cenik/products/${editingProduct._id}`
-      : '/api/cenik/products';
 
     try {
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await parseEnvelope<Product>(response);
-      setProducts((prev) => {
-        if (editingProduct._id) {
-          return prev.map((product) => (product._id === data._id ? data : product));
+      if (editingProduct._id) {
+        const { _id, ...rest } = editingProduct;
+        const payload = {
+          ...rest,
+          categorySlugs: editingProduct.categorySlugs ?? []
+        } as Omit<Product, '_id'>;
+        const response = await fetch(`/api/cenik/products/${editingProduct._id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await parseEnvelope<Product>(response);
+        setProducts((prev) => prev.map((product) => (product._id === data._id ? data : product)));
+        setStatus({ variant: 'success', text: 'Produkt posodobljen.' });
+        setEditingProduct(null);
+        setIsModalOpen(false);
+      } else {
+        const payload = {
+          ...editingProduct,
+          categorySlugs: editingProduct.categorySlugs ?? []
+        };
+        const precheckResponse = await fetch('/api/cenik/products/precheck', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const precheck = await parseEnvelope<ProductPrecheckResult>(precheckResponse);
+
+        if (precheck.status === 'safe_create') {
+          await createManualProduct(false);
+        } else {
+          setManualPrecheck(precheck);
         }
-        return [data, ...prev];
-      });
-      setStatus({
-        variant: 'success',
-        text: editingProduct._id ? 'Produkt posodobljen.' : 'Produkt dodan.'
-      });
-      setEditingProduct(null);
-      setIsModalOpen(false);
+      }
     } catch (error) {
-      setStatus({
-        variant: 'error',
-        text: 'Napaka pri shranjevanju produkta. Preveri podatke in poskusi znova.'
-      });
+      if (!manualPrecheck) {
+        setStatus({
+          variant: 'error',
+          text: 'Napaka pri shranjevanju produkta. Preveri podatke in poskusi znova.'
+        });
+      }
     } finally {
       setSaving(false);
     }
@@ -364,15 +696,27 @@ export const CenikPage: React.FC = () => {
   const handleCancel = () => {
     setIsModalOpen(false);
     setEditingProduct(null);
+    setManualPrecheck(null);
   };
 
   const openImportModal = () => {
     setImportSource('aa_api');
     setImportResult(null);
     setImportError(null);
+    setResolvingConflictKey(null);
+    setBulkAdditionsText('');
+    setSelectedRun(null);
     setAuditResult(null);
     setAuditError(null);
     setIsImportOpen(true);
+  };
+
+  const openReviewModal = () => {
+    setIsReviewOpen(true);
+    setReviewConflictSource('aa_api');
+    setReviewConflictResult(null);
+    setReviewConflictError(null);
+    void Promise.all([loadDuplicateCandidates(), loadImportRuns(), runAudit(), loadReviewConflicts('aa_api')]);
   };
 
   const closeImportModal = () => {
@@ -380,26 +724,197 @@ export const CenikPage: React.FC = () => {
     setIsImportOpen(false);
   };
 
-  const runImport = async () => {
+  const closeReviewModal = () => {
+    if (reviewConflictLoading || duplicateAuditLoading || runsLoading || auditLoading) return;
+    setIsReviewOpen(false);
+  };
+
+  const loadImportRuns = async () => {
+    setRunsLoading(true);
+    setRunsError(null);
+    try {
+      const response = await fetch('/api/admin/import/products/runs?limit=8');
+      const data = await parseEnvelope<ImportRun[]>(response);
+      setImportRuns(data);
+    } catch (error) {
+      setRunsError('Zgodovine uvozov ni bilo mogoce naloziti.');
+    } finally {
+      setRunsLoading(false);
+    }
+  };
+
+  const loadImportRunDetail = async (runId: string) => {
+    setSelectedRunLoading(true);
+    try {
+      const response = await fetch(`/api/admin/import/products/runs/${runId}`);
+      const data = await parseEnvelope<ImportRun>(response);
+      setSelectedRun(data);
+    } catch (error) {
+      setRunsError('Podrobnosti uvoza ni bilo mogoce naloziti.');
+    } finally {
+      setSelectedRunLoading(false);
+    }
+  };
+
+  const loadDuplicateCandidates = async () => {
+    setDuplicateAuditLoading(true);
+    setDuplicateAuditError(null);
+    try {
+      const response = await fetch('/api/admin/products/duplicate-candidates');
+      const data = await parseEnvelope<{ groups: DuplicateCandidateGroup[] }>(response);
+      setDuplicateGroups(data.groups ?? []);
+    } catch (error) {
+      setDuplicateAuditError('Duplikatov ni bilo mogoce naloziti.');
+    } finally {
+      setDuplicateAuditLoading(false);
+    }
+  };
+
+  const mergeDuplicate = async (sourceProductId: string, targetProductId: string) => {
+    const mergeKey = `${sourceProductId}:${targetProductId}`;
+    setMergingDuplicateKey(mergeKey);
+    setDuplicateAuditError(null);
+    try {
+      const response = await fetch('/api/admin/products/merge-duplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceProductId, targetProductId })
+      });
+      await parseEnvelope(response);
+      await Promise.all([loadDuplicateCandidates(), loadProducts()]);
+      setStatus({ variant: 'success', text: 'Duplikat je bil varno deaktiviran in oznacen kot merged.' });
+    } catch (error) {
+      setDuplicateAuditError('Zdruzitev duplikata ni uspela.');
+    } finally {
+      setMergingDuplicateKey(null);
+    }
+  };
+
+  const runImportAnalyze = async () => {
     setImportLoading(true);
     setImportResult(null);
     setImportError(null);
     try {
+      const items = importSource === 'dodatki' ? parseBulkAdditionInput(bulkAdditionsText) : undefined;
+      if (importSource === 'dodatki' && (!items || items.length === 0)) {
+        setImportError('Za Dodatke prilepi vrstice ali nalozi CSV/TSV datoteko.');
+        return;
+      }
       const response = await fetch('/api/admin/import/products/from-git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: importSource, confirm: false })
+        body: JSON.stringify({ source: importSource, mode: 'analyze', items })
       });
-      const payload: ApiEnvelope<ImportResult> = await response.json();
-      if (!payload.success) {
-        setImportResult(payload.data ?? { report: null, errors: [] });
-        setImportError(payload.error ?? 'Uvoz ni uspel.');
+      const data = await parseEnvelope<ImportResult>(response);
+      setImportResult(data);
+      if (data.run) {
+        setSelectedRun(data.run);
+      }
+      await loadImportRuns();
+    } catch (error) {
+      setImportError('Analiza uvoza ni uspela. Poskusi znova.');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const loadReviewConflicts = async (source: ImportSource) => {
+    if (source === 'dodatki') {
+      setReviewConflictResult(null);
+      setReviewConflictError('Konflikti za Dodatke niso na voljo brez konkretnega lokalnega vnosa.');
+      return;
+    }
+
+    setReviewConflictLoading(true);
+    setReviewConflictError(null);
+    try {
+      const response = await fetch('/api/admin/import/products/from-git', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source, mode: 'analyze' })
+      });
+      const data = await parseEnvelope<ImportResult>(response);
+      setReviewConflictResult(data);
+    } catch (error) {
+      setReviewConflictError('Konfliktov ni bilo mogoce naloziti.');
+    } finally {
+      setReviewConflictLoading(false);
+    }
+  };
+
+  const resolveImportConflict = async ({
+    source,
+    conflict,
+    action,
+    targetProductId
+  }: {
+    source: ImportSource;
+    conflict: ImportConflictRow;
+    action: 'link_existing' | 'create_new' | 'skip';
+    targetProductId?: string;
+  }) => {
+    const rowKey = conflict.externalKey || `${conflict.sourceRecordId}:${conflict.rowIndex}`;
+    setResolvingConflictKey(rowKey);
+    setImportError(null);
+    try {
+      const response = await fetch('/api/admin/import/products/resolve-conflict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source,
+          externalKey: conflict.externalKey,
+          sourceRecordId: conflict.sourceRecordId,
+          rowFingerprint: conflict.rowFingerprint,
+          action,
+          targetProductId
+        })
+      });
+      await parseEnvelope(response);
+
+      const analyzeResponse = await fetch('/api/admin/import/products/from-git', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source, mode: 'analyze' })
+      });
+      const data = await parseEnvelope<ImportResult>(analyzeResponse);
+      setImportResult(data);
+      if (data.run) {
+        setSelectedRun(data.run);
+      }
+      await loadImportRuns();
+      if (source !== 'dodatki') {
+        await loadReviewConflicts(source);
+      }
+    } catch (error) {
+      setImportError('Shranjevanje razresitve konflikta ni uspelo. Poskusi znova.');
+    } finally {
+      setResolvingConflictKey(null);
+    }
+  };
+
+  const runImportApply = async () => {
+    setImportLoading(true);
+    setImportError(null);
+    try {
+      const items = importSource === 'dodatki' ? parseBulkAdditionInput(bulkAdditionsText) : undefined;
+      if (importSource === 'dodatki' && (!items || items.length === 0)) {
+        setImportError('Za Dodatke prilepi vrstice ali nalozi CSV/TSV datoteko.');
         return;
       }
-      setImportResult(payload.data);
+      const response = await fetch('/api/admin/import/products/from-git', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: importSource, mode: 'apply', items })
+      });
+      const data = await parseEnvelope<ImportResult>(response);
+      setImportResult(data);
+      if (data.run) {
+        setSelectedRun(data.run);
+      }
       await loadProducts();
+      await loadImportRuns();
     } catch (error) {
-      setImportError('Uvoz ni uspel. Poskusi znova.');
+      setImportError('Potrditev uvoza ni uspela. Poskusi znova.');
     } finally {
       setImportLoading(false);
     }
@@ -424,11 +939,97 @@ export const CenikPage: React.FC = () => {
     }
   };
 
+  const openExistingProductFromCandidate = async (productId: string) => {
+    const existing = products.find((product) => product._id === productId);
+    if (existing) {
+      startEdit(existing);
+      setManualPrecheck(null);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/cenik/products/${productId}`);
+      const data = await parseEnvelope<Product>(response);
+      startEdit(data);
+      setManualPrecheck(null);
+    } catch (error) {
+      setStatus({ variant: 'error', text: 'Ne morem odpreti obstojecega produkta.' });
+    }
+  };
+
+  const openProductEditById = async (productId: string) => {
+    try {
+      const response = await fetch(`/api/cenik/products/${productId}`);
+      const data = await parseEnvelope<Product>(response);
+      startEdit(data);
+      setIsReviewOpen(false);
+    } catch (error) {
+      setStatus({ variant: 'error', text: 'Ne morem odpreti produkta.' });
+    }
+  };
+
+  const createManualProduct = async (allowDuplicateCreate = false) => {
+    if (!editingProduct) return;
+    setManualPrecheckLoading(true);
+    try {
+      const { _id, ...rest } = editingProduct;
+      const payload = {
+        ...rest,
+        categorySlugs: editingProduct.categorySlugs ?? [],
+        allowDuplicateCreate
+      } as Omit<Product, '_id'> & { allowDuplicateCreate?: boolean };
+
+      const response = await fetch('/api/cenik/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.status === 409) {
+        const payload409 = (await response.json()) as ApiEnvelope<ProductPrecheckResult>;
+        setManualPrecheck(payload409.data);
+        throw new Error(payload409.error ?? 'Mozen duplikat produkta.');
+      }
+
+      const data = await parseEnvelope<Product>(response);
+      setProducts((prev) => [data, ...prev]);
+      setStatus({ variant: 'success', text: 'Produkt dodan.' });
+      setManualPrecheck(null);
+      setEditingProduct(null);
+      setIsModalOpen(false);
+    } finally {
+      setManualPrecheckLoading(false);
+    }
+  };
+
+  const handleBulkAdditionFile = async (file: File | null) => {
+    if (!file) return;
+    const text = await file.text();
+    setBulkAdditionsText(text);
+    setImportResult(null);
+    setImportError(null);
+  };
+
+  const canApplyImport =
+    importResult?.mode === 'analyze' && importResult.source === importSource && !importLoading;
+
+  const importSummary = importResult?.summary ?? null;
+  const importPreviewRows = {
+    toCreate: importResult?.toCreate.slice(0, 6) ?? [],
+    toUpdate: importResult?.toUpdate.slice(0, 6) ?? [],
+    toSkip: importResult?.toSkip.slice(0, 6) ?? [],
+    conflicts: importResult?.conflicts.slice(0, 6) ?? [],
+    invalidRows: importResult?.invalidRows.slice(0, 6) ?? []
+  };
+
   return (
     <section className="cenik-page-shell max-w-6xl mx-auto px-3 py-4 md:p-6 space-y-6">
       <div className="hidden items-center justify-between gap-4 md:flex">
         <h1 className="text-3xl font-semibold text-foreground">Cenik</h1>
-        <Button onClick={openImportModal}>Uvoz produktov</Button>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={openReviewModal}>Pregled produktov</Button>
+          <Button onClick={openImportModal}>Uvoz produktov</Button>
+        </div>
       </div>
 
       {status && (
@@ -707,9 +1308,359 @@ export const CenikPage: React.FC = () => {
         </div>
       )}
 
+      {isModalOpen && manualPrecheck && editingProduct && !editingProduct._id && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6">
+          <div className="w-full max-w-xl rounded-xl bg-card p-5 shadow-2xl shadow-black/40">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-semibold text-foreground">Preverjanje duplikata</h3>
+              <button
+                type="button"
+                aria-label="Zapri"
+                onClick={() => setManualPrecheck(null)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded border border-border/70 bg-card text-foreground transition hover:border-primary hover:text-primary"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-3 text-sm">
+              <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2">
+                <div className="font-medium text-foreground">
+                  {manualPrecheck.status === 'existing_match_found' ? 'Najden obstojec produkt' : 'Mozen konflikt'}
+                </div>
+                <div className="text-xs text-muted-foreground">{manualPrecheck.reason}</div>
+              </div>
+
+              <div className="space-y-2">
+                {manualPrecheck.candidateMatches.map((candidate) => (
+                  <div key={candidate.productId} className="rounded-lg border border-border/60 px-3 py-3">
+                    <div className="space-y-1">
+                      <div className="font-medium text-foreground">{candidate.ime}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {candidate.proizvajalec || 'Brez proizvajalca'} | {candidate.dobavitelj || 'Brez dobavitelja'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {candidate.externalKey || 'Brez externalKey'} | {candidate.source || 'brez vira'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">{candidate.matchExplanation}</div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button type="button" onClick={() => void openExistingProductFromCandidate(candidate.productId)}>
+                        Uporabi obstoječi
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    void createManualProduct(true).catch(() => {
+                      setStatus({
+                        variant: 'error',
+                        text: 'Napaka pri shranjevanju produkta. Preveri podatke in poskusi znova.'
+                      });
+                    });
+                  }}
+                  disabled={manualPrecheckLoading}
+                >
+                  Ustvari anyway
+                </Button>
+                <Button variant="ghost" type="button" onClick={() => setManualPrecheck(null)}>
+                  Preklici
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isReviewOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-6 md:items-center">
+          <div className="w-full max-w-5xl rounded-xl bg-card p-6 shadow-2xl shadow-black/40 max-h-[calc(100vh-3rem)] overflow-y-auto">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-xl font-semibold text-foreground">Pregled produktov</h2>
+              <button
+                type="button"
+                aria-label="Zapri"
+                onClick={closeReviewModal}
+                className="inline-flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-card text-foreground transition hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-5">
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-foreground">Zdravje kataloga</h3>
+                  <Button variant="outline" type="button" onClick={runAudit} disabled={auditLoading}>
+                    {auditLoading ? 'Osvezujem ...' : 'Osvezi'}
+                  </Button>
+                </div>
+                {auditError && <div className="mt-3 text-xs text-destructive">{auditError}</div>}
+                {auditResult && (
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-foreground md:grid-cols-3">
+                    <span>Skupaj produktov: {auditResult.totals.products}</span>
+                    <span>Aktivni: {auditResult.totals.activeProducts}</span>
+                    <span>Neaktivni: {auditResult.totals.inactiveProducts}</span>
+                    <span>Merged: {auditResult.totals.mergedProducts}</span>
+                    <span>Duplikati: {duplicateGroups.length}</span>
+                    <span>Nepopolni: {auditResult.totals.incompleteProducts}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-foreground">Duplikati</h3>
+                  <Button variant="outline" type="button" onClick={loadDuplicateCandidates} disabled={duplicateAuditLoading}>
+                    {duplicateAuditLoading ? 'Osvezujem ...' : 'Osvezi'}
+                  </Button>
+                </div>
+                {duplicateAuditError && <div className="mt-3 text-xs text-destructive">{duplicateAuditError}</div>}
+                <div className="mt-3 space-y-4">
+                  {duplicateAuditLoading && duplicateGroups.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">Preverjam duplicate kandidate ...</div>
+                  ) : duplicateGroups.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">Ni najdenih exact duplicate skupin.</div>
+                  ) : (
+                    duplicateGroups.map((group) => (
+                      <div key={group.groupKey} className="rounded-lg border border-border/60 bg-background p-3">
+                        <div className="text-sm font-medium text-foreground">{group.products[0]?.ime || group.groupKey}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{group.reasons.join(', ')}</div>
+                        <div className="mt-3 space-y-2">
+                          {group.products.map((product) => (
+                            <div key={product.productId} className="rounded border border-border/60 px-3 py-3">
+                              <div className="grid gap-2 md:grid-cols-[1.8fr_1fr_1fr_auto] md:items-start">
+                                <div className="space-y-1">
+                                  <div className="text-sm font-medium text-foreground">{product.ime}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {product.proizvajalec || 'Brez proizvajalca'} | {product.dobavitelj || 'Brez dobavitelja'}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {product.source || 'brez vira'} | {product.externalKey || 'brez externalKey'}
+                                  </div>
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  <div>{formatCurrency(product.prodajnaCena)}</div>
+                                  <div>{product.isService ? 'Storitev' : 'Produkt'}</div>
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  <div>ID: {product.productId}</div>
+                                  <div>{product.isActive ? 'Aktiven' : 'Neaktiven'}</div>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {group.products
+                                    .filter((candidate) => candidate.productId !== product.productId)
+                                    .map((candidate) => {
+                                      const mergeKey = `${product.productId}:${candidate.productId}`;
+                                      return (
+                                        <Button
+                                          key={mergeKey}
+                                          type="button"
+                                          variant="outline"
+                                          onClick={() => mergeDuplicate(product.productId, candidate.productId)}
+                                          disabled={mergingDuplicateKey === mergeKey}
+                                        >
+                                          {mergingDuplicateKey === mergeKey ? 'Merge ...' : `Merge v ${candidate.ime}`}
+                                        </Button>
+                                      );
+                                    })}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-foreground">Konflikti iz uvoza</h3>
+                  <div className="flex items-center gap-2">
+                    <select
+                      className="rounded border border-border/70 bg-background px-3 py-2 text-xs"
+                      value={reviewConflictSource}
+                      onChange={(event) => setReviewConflictSource(event.target.value as ImportSource)}
+                    >
+                      <option value="aa_api">AA API</option>
+                      <option value="services_sheet">Storitve</option>
+                      <option value="dodatki">Dodatki</option>
+                    </select>
+                    <Button
+                      variant="outline"
+                      type="button"
+                      onClick={() => void loadReviewConflicts(reviewConflictSource)}
+                      disabled={reviewConflictLoading}
+                    >
+                      {reviewConflictLoading ? 'Osvezujem ...' : 'Osvezi konflikte'}
+                    </Button>
+                  </div>
+                </div>
+                {reviewConflictError && <div className="mt-3 text-xs text-destructive">{reviewConflictError}</div>}
+                {reviewConflictResult && (reviewConflictResult.conflicts.length > 0 ? (
+                  <div className="mt-3">
+                    <ImportConflictReview
+                      source={reviewConflictSource}
+                      conflicts={reviewConflictResult.conflicts}
+                      resolvingKey={resolvingConflictKey}
+                      onResolve={resolveImportConflict}
+                    />
+                  </div>
+                ) : (
+                  <div className="mt-3 text-xs text-muted-foreground">Ni nerazresenih konfliktov za izbran vir.</div>
+                ))}
+              </div>
+
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-foreground">Manjkajoci podatki</h3>
+                  <Button variant="outline" type="button" onClick={runAudit} disabled={auditLoading}>
+                    {auditLoading ? 'Osvezujem ...' : 'Osvezi'}
+                  </Button>
+                </div>
+                {auditResult && (
+                  <div className="mt-3 grid gap-4 md:grid-cols-2">
+                    {Object.entries(auditResult.missingFields).map(([key, value]) => (
+                      <div key={`review-missing-${key}`} className="rounded border border-border/60 bg-background p-3">
+                        <div className="text-sm font-medium text-foreground">
+                          {key} <span className="text-xs text-muted-foreground">({value?.count ?? 0})</span>
+                        </div>
+                        <div className="mt-2 space-y-2">
+                          {(value?.samples ?? []).slice(0, 5).map((sample) => (
+                            <div key={String(sample._id ?? `${key}-sample`)} className="flex items-center justify-between gap-3 rounded border border-border/60 px-3 py-2 text-xs">
+                              <div className="min-w-0">
+                                <div className="truncate font-medium text-foreground">{String(sample.ime ?? sample._id ?? '')}</div>
+                                <div className="truncate text-muted-foreground">
+                                  {String(sample.externalKey ?? sample.externalSource ?? '')}
+                                </div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => void openProductEditById(String(sample._id ?? ''))}
+                              >
+                                Uredi
+                              </Button>
+                            </div>
+                          ))}
+                          {(value?.samples ?? []).length === 0 && (
+                            <div className="text-xs text-muted-foreground">Ni vzorcev.</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-foreground">Zgodovina uvozov</h3>
+                  <Button variant="outline" type="button" onClick={loadImportRuns} disabled={runsLoading}>
+                    {runsLoading ? 'Osvezujem ...' : 'Osvezi'}
+                  </Button>
+                </div>
+                <div className="mt-3 space-y-3">
+                  {runsError && <div className="text-xs text-destructive">{runsError}</div>}
+                  {runsLoading && importRuns.length === 0 && (
+                    <div className="text-xs text-muted-foreground">Nalaganje zgodovine ...</div>
+                  )}
+                  {!runsLoading && importRuns.length === 0 && !runsError && (
+                    <div className="text-xs text-muted-foreground">Zgodovina uvozov je prazna.</div>
+                  )}
+                  {importRuns.length > 0 && (
+                    <div className="space-y-2">
+                      {importRuns.map((run) => (
+                        <button
+                          key={run.id}
+                          type="button"
+                          onClick={() => loadImportRunDetail(run.id)}
+                          className="grid w-full grid-cols-1 gap-2 rounded-lg border border-border/60 px-3 py-3 text-left text-xs hover:border-primary md:grid-cols-[1.4fr_0.8fr_0.8fr_2fr]"
+                        >
+                          <div className="space-y-1">
+                            <div className="font-medium text-foreground">{formatDateTime(run.startedAt)}</div>
+                            <div className="text-muted-foreground">{run.source} | {run.mode}</div>
+                          </div>
+                          <div>
+                            <span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold ${statusBadgeClasses[run.status]}`}>
+                              {run.status}
+                            </span>
+                          </div>
+                          <div className="text-muted-foreground">{run.triggeredBy?.trim() || 'system'}</div>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-muted-foreground">
+                            <span>+{run.createdCount || run.toCreateCount}</span>
+                            <span>~{run.updatedCount || run.toUpdateCount}</span>
+                            <span>={run.skippedCount || run.toSkipCount}</span>
+                            <span>!{run.conflictCount}/{run.invalidCount}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {selectedRun && (
+                    <div className="rounded-lg border border-border/60 bg-background p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-foreground">{selectedRun.source} | {selectedRun.mode}</div>
+                          <div className="text-xs text-muted-foreground">
+                            Zacetek: {formatDateTime(selectedRun.startedAt)} | Konec: {formatDateTime(selectedRun.finishedAt)}
+                          </div>
+                        </div>
+                        <span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold ${statusBadgeClasses[selectedRun.status]}`}>
+                          {selectedRun.status}
+                        </span>
+                      </div>
+                      {selectedRunLoading && <div className="mt-3 text-xs text-muted-foreground">Nalaganje podrobnosti ...</div>}
+                      {!selectedRunLoading && (
+                        <div className="mt-3 space-y-3">
+                          <div className="grid grid-cols-2 gap-2 text-xs text-foreground md:grid-cols-3">
+                            <span>Skupaj: {selectedRun.totalSourceRows}</span>
+                            <span>Ujemanja: {selectedRun.matchedRows}</span>
+                            <span>Za create: {selectedRun.toCreateCount}</span>
+                            <span>Za update: {selectedRun.toUpdateCount}</span>
+                            <span>Za skip: {selectedRun.toSkipCount}</span>
+                            <span>Konflikti: {selectedRun.conflictCount}</span>
+                            <span>Neveljavne: {selectedRun.invalidCount}</span>
+                            <span>Ustvarjeni: {selectedRun.createdCount}</span>
+                            <span>Posodobljeni: {selectedRun.updatedCount}</span>
+                            <span>Preskoceni: {selectedRun.skippedCount}</span>
+                            <span>Nerazreseni konflikti: {selectedRun.unresolvedConflictCount}</span>
+                          </div>
+                          {selectedRun.warnings.length > 0 && (
+                            <div className="space-y-1 text-xs text-amber-900">
+                              <div className="font-semibold">Opozorila</div>
+                              {selectedRun.warnings.map((warning, index) => (
+                                <div key={`${selectedRun.id}-warning-${index}`}>{warning}</div>
+                              ))}
+                            </div>
+                          )}
+                          {selectedRun.errorSummary && (
+                            <div className="text-xs text-destructive">
+                              <span className="font-semibold">Napaka:</span> {selectedRun.errorSummary}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isImportOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
-          <div className="w-full max-w-xl rounded-xl bg-card p-6 shadow-2xl shadow-black/40">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-6 md:items-center">
+          <div className="w-full max-w-3xl rounded-xl bg-card p-6 shadow-2xl shadow-black/40 max-h-[calc(100vh-3rem)] overflow-y-auto">
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-xl font-semibold text-foreground">Uvoz produktov</h2>
               <button
@@ -727,7 +1678,12 @@ export const CenikPage: React.FC = () => {
               <div className="grid gap-3">
                 <button
                   type="button"
-                  onClick={() => setImportSource('aa_api')}
+                  onClick={() => {
+                    setImportSource('aa_api');
+                    setImportResult(null);
+                    setImportError(null);
+                    setResolvingConflictKey(null);
+                  }}
                   className={`rounded-lg border px-4 py-3 text-left transition ${
                     importSource === 'aa_api'
                       ? 'border-primary bg-primary/10 text-foreground'
@@ -739,7 +1695,12 @@ export const CenikPage: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setImportSource('services_sheet')}
+                  onClick={() => {
+                    setImportSource('services_sheet');
+                    setImportResult(null);
+                    setImportError(null);
+                    setResolvingConflictKey(null);
+                  }}
                   className={`rounded-lg border px-4 py-3 text-left transition ${
                     importSource === 'services_sheet'
                       ? 'border-primary bg-primary/10 text-foreground'
@@ -749,93 +1710,157 @@ export const CenikPage: React.FC = () => {
                   <div className="text-sm font-semibold">Storitve</div>
                   <div className="text-xs text-muted-foreground">Uvoz storitev iz cenika</div>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImportSource('dodatki');
+                    setImportResult(null);
+                    setImportError(null);
+                    setResolvingConflictKey(null);
+                  }}
+                  className={`rounded-lg border px-4 py-3 text-left transition ${
+                    importSource === 'dodatki'
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border/70 text-foreground hover:border-primary'
+                  }`}
+                >
+                  <div className="text-sm font-semibold">Dodatki</div>
+                  <div className="text-xs text-muted-foreground">Lokalni CSV ali prilepljene dodatne vrstice</div>
+                </button>
               </div>
             </div>
+
+            {importSource === 'dodatki' && (
+              <div className="mt-4 space-y-3 rounded-lg border border-border/60 bg-muted/20 p-4">
+                <div className="text-xs text-muted-foreground">
+                  Podprti stolpci: <code>externalId</code>, <code>ime</code>, <code>categorySlugs</code>,
+                  <code> nabavnaCena</code>, <code>prodajnaCena</code>, <code>proizvajalec</code>,
+                  <code> dobavitelj</code>, <code>isService</code>. Kategorije loci z <code>|</code> ali <code>;</code>.
+                </div>
+                <input
+                  type="file"
+                  accept=".csv,.tsv,text/csv,text/tab-separated-values"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    void handleBulkAdditionFile(file);
+                    event.currentTarget.value = '';
+                  }}
+                  className="block w-full text-xs text-foreground"
+                />
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Prilepi vrstice (CSV ali TSV)</label>
+                  <textarea
+                    className="min-h-40 w-full rounded border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                    placeholder={'ime,categorySlugs,nabavnaCena,prodajnaCena,proizvajalec,dobavitelj,isService'}
+                    value={bulkAdditionsText}
+                    onChange={(event) => {
+                      setBulkAdditionsText(event.target.value);
+                      setImportResult(null);
+                      setImportError(null);
+                    }}
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="mt-5 flex flex-wrap gap-3">
               <Button variant="ghost" type="button" onClick={closeImportModal} disabled={importLoading}>
                 Prekliči
               </Button>
-              <Button variant="outline" type="button" onClick={runAudit} disabled={auditLoading}>
-                {auditLoading ? 'Preverjam ...' : 'Preveri cenik (Audit)'}
+              <Button variant="outline" type="button" onClick={runImportAnalyze} disabled={importLoading}>
+                {importLoading ? 'Analiziram ...' : 'Analiziraj uvoz'}
               </Button>
-              <Button type="button" onClick={runImport} disabled={importLoading}>
-                {importLoading ? 'Uvozim ...' : 'Posodobi'}
+              <Button type="button" onClick={runImportApply} disabled={!canApplyImport}>
+                {importLoading ? 'UvaÅ¾am ...' : 'Potrdi uvoz'}
               </Button>
             </div>
-
-            {(auditError || auditResult) && (
-              <div className="mt-5 rounded-lg border border-border/60 bg-muted/30 p-4 text-sm">
-                {auditError && <p className="text-destructive">{auditError}</p>}
-                {auditResult && (
-                  <div className="space-y-3">
-                    <div
-                      className={`text-sm font-semibold ${
-                        isAuditOk(auditResult) ? 'text-emerald-600' : 'text-destructive'
-                      }`}
-                    >
-                      {isAuditOk(auditResult) ? 'Vse OK' : 'Napake'}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-foreground">
-                      <span>Skupaj produktov: {auditResult.totals.products}</span>
-                      <span>Viri: {auditResult.countsBySource.length}</span>
-                      {auditResult.countsBySource.map((entry) => (
-                        <span key={entry.source || 'unknown'}>
-                          {entry.source || 'unknown'}: {entry.count}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-foreground">
-                      <span>Duplikati (externalKey): {auditResult.duplicates.externalKey.groupCount}</span>
-                      <span>
-                        Duplikati (source+id): {auditResult.duplicates.externalSourceExternalId.groupCount}
-                      </span>
-                      <span>
-                        Duplikati (ime/proizv./dobav.): {auditResult.duplicates.nameManufacturerSupplier.groupCount}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-foreground">
-                      {Object.entries(auditResult.missingFields).map(([key, value]) => (
-                        <span key={`missing-${key}`}>
-                          Manjka {key}: {value?.count ?? 0}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-foreground">
-                      {Object.entries(auditResult.priceAnomalies).map(([key, value]) => (
-                        <span key={`price-${key}`}>
-                          {key}: {value?.count ?? 0}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
 
             {(importError || importResult) && (
               <div className="mt-5 rounded-lg border border-border/60 bg-muted/30 p-4 text-sm">
                 {importError && <p className="text-destructive">{importError}</p>}
-                {importResult?.report && (
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-foreground">
-                    <span>Ustvarjeni: {importResult.report.created}</span>
-                    <span>Posodobljeni: {importResult.report.updated}</span>
-                    <span>Reaktivirani: {importResult.report.reactivated}</span>
-                    <span>Deaktivirani: {importResult.report.deactivated}</span>
-                  </div>
-                )}
-                {importResult?.errors?.length > 0 && (
-                  <div className="mt-3 space-y-1 text-xs text-destructive">
-                    {importResult.errors.slice(0, 8).map((error) => (
-                      <div key={`${error.index}-${error.field}`}>
-                        [{error.index}] {error.rowId} {error.field}: {error.reason}
+                {importSummary && (
+                  <div className="mt-3 space-y-4">
+                    <div className="grid grid-cols-2 gap-2 text-xs text-foreground">
+                      <span>Skupaj vrstic iz vira: {importSummary.totalSourceRows}</span>
+                      <span>Ujemanja: {importSummary.matchedRows}</span>
+                      <span>Za ustvariti: {importSummary.toCreateCount}</span>
+                      <span>Za posodobiti: {importSummary.toUpdateCount}</span>
+                      <span>Nespremenjeni: {importSummary.toSkipCount}</span>
+                      <span>Konflikti: {importSummary.conflictCount}</span>
+                      <span>Neveljavne vrstice: {importSummary.invalidCount}</span>
+                    </div>
+
+                    {(importResult?.conflicts.length ?? 0) > 0 && (
+                      <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                        Konflikti so izkljuÄeni iz samodejnega create toka. Veljavne vrstice lahko vseeno nadaljujejo v uvoz.
                       </div>
-                    ))}
-                    {importResult.errors.length > 8 && <div>...in se {importResult.errors.length - 8} napak</div>}
+                    )}
+
+                    {importResult?.applied && (
+                      <div className="grid grid-cols-2 gap-2 text-xs text-foreground">
+                        <span>Ustvarjeni: {importResult.applied.createdCount}</span>
+                        <span>Posodobljeni: {importResult.applied.updatedCount}</span>
+                        <span>Nespremenjeni: {importResult.applied.skippedCount}</span>
+                        <span>IzkljuÄeni konflikti: {importResult.applied.excludedConflictCount}</span>
+                        <span>IzkljuÄene neveljavne: {importResult.applied.excludedInvalidCount}</span>
+                      </div>
+                    )}
+
+                    {importPreviewRows.toCreate.length > 0 && (
+                      <div className="space-y-1 text-xs text-foreground">
+                        <div className="font-semibold">Za ustvariti</div>
+                        {importPreviewRows.toCreate.map((row) => (
+                          <div key={`create-${row.externalKey}`}>{row.ime}</div>
+                        ))}
+                      </div>
+                    )}
+
+                    {importPreviewRows.toUpdate.length > 0 && (
+                      <div className="space-y-1 text-xs text-foreground">
+                        <div className="font-semibold">Za posodobiti</div>
+                        {importPreviewRows.toUpdate.map((row) => (
+                          <div key={`update-${row.externalKey}`}>
+                            {row.ime} - {row.changedFields.join(', ')}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {importPreviewRows.toSkip.length > 0 && (
+                      <div className="space-y-1 text-xs text-foreground">
+                        <div className="font-semibold">Nespremenjeni</div>
+                        {importPreviewRows.toSkip.map((row) => (
+                          <div key={`skip-${row.externalKey}`}>{row.ime}</div>
+                        ))}
+                      </div>
+                    )}
+
+                    {importPreviewRows.conflicts.length > 0 && (
+                      <div className="space-y-1 text-xs text-destructive">
+                        <div className="font-semibold">Konflikti</div>
+                        {importPreviewRows.conflicts.map((row) => (
+                          <div key={`conflict-${row.externalKey || row.rowId}`}>
+                            {row.ime} - {row.reason}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {importPreviewRows.invalidRows.length > 0 && (
+                      <div className="space-y-1 text-xs text-destructive">
+                        <div className="font-semibold">Neveljavne vrstice</div>
+                        {importPreviewRows.invalidRows.map((row) => (
+                          <div key={`invalid-${row.rowIndex}`}>
+                            [{row.rowIndex}] {row.ime || row.rowId} - {row.errors[0]?.field}: {row.errors[0]?.reason}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             )}
+
           </div>
         </div>
       )}

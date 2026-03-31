@@ -6,6 +6,7 @@ import { renderHtmlToPdf } from './html-pdf.service';
 import { renderDocumentHtml, type DocumentPreviewContext, type PreviewTask } from './document-renderers';
 import { getCompanySettings, getPdfDocumentSettings } from './pdf-settings.service';
 import { getSettings } from '../../settings/settings.service';
+import { EmployeeModel } from '../../employees/schemas/employee';
 import type { DocumentNumberingKind } from './document-numbering.service';
 
 type MaterialDocType = 'PURCHASE_ORDER' | 'DELIVERY_NOTE';
@@ -124,6 +125,89 @@ function buildNotes(defaultTexts?: { paymentTerms?: string; disclaimer?: string 
   return notes;
 }
 
+function buildConfiguredNotes(
+  settings: Awaited<ReturnType<typeof getSettings>>,
+  settingsKey: 'workOrder' | 'workOrderConfirmation',
+  defaultTexts?: { paymentTerms?: string; disclaimer?: string },
+  extra?: Array<string | null | undefined>,
+) {
+  const noteLookup = new Map((settings.notes ?? []).map((note) => [note.id, note]));
+  const selectedIds = settings.noteDefaultsByDoc?.[settingsKey] ?? [];
+  const configuredNotes = selectedIds
+    .map((id) => noteLookup.get(id))
+    .filter((note): note is NonNullable<typeof settings.notes>[number] => !!note)
+    .map((note) => note.text?.trim() || note.title?.trim() || '')
+    .filter((note): note is string => !!note);
+
+  return buildNotes(defaultTexts, [
+    ...configuredNotes,
+    ...((extra ?? []).map((value) => value?.trim() ?? '').filter(Boolean)),
+  ]);
+}
+
+function buildWorkOrderItemStatusLabel(item: NonNullable<Awaited<ReturnType<typeof WorkOrderModel.findOne>>>['items'][number]) {
+  const isCompleted = !!item.isCompleted;
+  const executedQuantity = typeof item.executedQuantity === 'number' ? item.executedQuantity : 0;
+  const offeredQuantity =
+    typeof item.offeredQuantity === 'number'
+      ? item.offeredQuantity
+      : typeof item.plannedQuantity === 'number'
+        ? item.plannedQuantity
+        : typeof item.quantity === 'number'
+          ? item.quantity
+          : 0;
+
+  if (!isCompleted) {
+    return 'V teku';
+  }
+
+  if (executedQuantity === offeredQuantity) {
+    return 'Usklajeno';
+  }
+
+  return 'Odstopanje';
+}
+
+async function resolveWorkOrderExecutorLabel(
+  workOrder: NonNullable<Awaited<ReturnType<typeof WorkOrderModel.findOne>>>,
+  companyName: string,
+) {
+  const assignedIds = Array.isArray(workOrder.assignedEmployeeIds)
+    ? workOrder.assignedEmployeeIds.map((id) => String(id)).filter(Boolean)
+    : [];
+  const mainInstallerId = workOrder.mainInstallerId ? String(workOrder.mainInstallerId) : '';
+  const lookupIds = Array.from(new Set([...assignedIds, ...(mainInstallerId ? [mainInstallerId] : [])]));
+
+  if (lookupIds.length === 0) {
+    return companyName;
+  }
+
+  const employees = await EmployeeModel.find({ _id: { $in: lookupIds } }).select('name').lean();
+  const nameById = new Map(
+    employees.map((employee: any) => [
+      String(employee._id),
+      typeof employee.name === 'string' ? employee.name.trim() : '',
+    ]),
+  );
+
+  const assignedNames = assignedIds
+    .map((id) => nameById.get(id) ?? '')
+    .filter((name) => name.length > 0);
+
+  if (assignedNames.length > 0) {
+    return assignedNames.join(', ');
+  }
+
+  if (mainInstallerId) {
+    const mainInstallerName = nameById.get(mainInstallerId) ?? '';
+    if (mainInstallerName) {
+      return mainInstallerName;
+    }
+  }
+
+  return companyName;
+}
+
 export async function generateMaterialOrderDocumentPdf(projectId: string, materialOrderId: string, docType: MaterialDocType) {
   const [project, materialOrder] = await Promise.all([
     ProjectModel.findOne({ id: projectId }).lean(),
@@ -210,14 +294,40 @@ export async function generateWorkOrderDocumentPdf(projectId: string, workOrderI
   });
 
   const tasks = mapWorkOrderTasks(existingOrder, docType);
-  const items: DocumentPreviewContext['items'] = (existingOrder.items ?? []).map((item) => ({
-    name: item.name ?? 'Neimenovana postavka',
-    quantity: typeof item.plannedQuantity === 'number' ? item.plannedQuantity : item.quantity ?? 0,
-    unit: item.unit ?? '',
-  }));
+  const items: DocumentPreviewContext['items'] = (existingOrder.items ?? []).map((item) => {
+    const offeredQuantity =
+      typeof item.offeredQuantity === 'number'
+        ? item.offeredQuantity
+        : typeof item.plannedQuantity === 'number'
+          ? item.plannedQuantity
+          : item.quantity ?? 0;
+    const executedQuantity =
+      typeof item.executedQuantity === 'number'
+        ? item.executedQuantity
+        : typeof item.plannedQuantity === 'number'
+          ? item.plannedQuantity
+          : item.quantity ?? 0;
 
-  const notes = buildNotes(documentSettings.defaultTexts, existingOrder.notes ? [existingOrder.notes] : undefined);
+    return {
+      name: item.name ?? 'Neimenovana postavka',
+      quantity: docType === 'WORK_ORDER_CONFIRMATION' ? executedQuantity : offeredQuantity,
+      plannedQuantity: docType === 'WORK_ORDER_CONFIRMATION' ? offeredQuantity : undefined,
+      unit: item.unit ?? '',
+      statusLabel: docType === 'WORK_ORDER_CONFIRMATION' ? buildWorkOrderItemStatusLabel(item) : null,
+    };
+  });
+
+  const notes = buildConfiguredNotes(
+    globalSettings,
+    docType === 'WORK_ORDER_CONFIRMATION' ? 'workOrderConfirmation' : 'workOrder',
+    documentSettings.defaultTexts,
+    [docType === 'WORK_ORDER_CONFIRMATION' ? existingOrder.customerRemark ?? null : existingOrder.notes ?? null],
+  );
   const comment = existingOrder.executionNote ?? existingOrder.notes ?? null;
+  const executorLabel =
+    docType === 'WORK_ORDER_CONFIRMATION'
+      ? await resolveWorkOrderExecutorLabel(existingOrder, companyProfile.companyName)
+      : null;
 
   const context: DocumentPreviewContext = {
     docType,
@@ -234,6 +344,21 @@ export async function generateWorkOrderDocumentPdf(projectId: string, workOrderI
     tasks,
     comment,
     notes,
+    signatures:
+      docType === 'WORK_ORDER_CONFIRMATION'
+        ? {
+            left: {
+              label: 'Izvajalec',
+              name: executorLabel,
+            },
+            right: {
+              label: 'Naročnik',
+              name: existingOrder.customerSignerName ?? existingOrder.customerName ?? null,
+              image: existingOrder.customerSignature ?? null,
+              signedAt: existingOrder.customerSignedAt ? new Date(existingOrder.customerSignedAt).toISOString() : null,
+            },
+          }
+        : null,
   };
 
   const html = renderDocumentHtml(context);

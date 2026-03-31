@@ -10,6 +10,10 @@ type CountSample = {
 export type AuditReport = {
   totals: {
     products: number;
+    activeProducts: number;
+    inactiveProducts: number;
+    mergedProducts: number;
+    incompleteProducts: number;
   };
   countsBySource: Array<{
     source: string;
@@ -269,7 +273,12 @@ async function buildPriceAnomaliesReport() {
 }
 
 export async function auditProducts(): Promise<AuditReport> {
-  const totalProducts = await ProductModel.countDocuments();
+  const [totalProducts, activeProducts, inactiveProducts, mergedProducts] = await Promise.all([
+    ProductModel.countDocuments(),
+    ProductModel.countDocuments({ isActive: { $ne: false } }),
+    ProductModel.countDocuments({ isActive: false }),
+    ProductModel.countDocuments({ status: 'merged' }),
+  ]);
   const countsBySource = await ProductModel.aggregate([
     { $group: { _id: { $ifNull: ['$externalSource', ''] }, count: { $sum: 1 } } },
     { $sort: { _id: 1 } }
@@ -278,10 +287,25 @@ export async function auditProducts(): Promise<AuditReport> {
   const duplicates = await buildDuplicateReport();
   const missingFields = await buildMissingFieldsReport();
   const priceAnomalies = await buildPriceAnomaliesReport();
+  const incompleteProducts = await ProductModel.countDocuments({
+    $or: [
+      { proizvajalec: { $exists: false } },
+      { proizvajalec: '' },
+      { dobavitelj: { $exists: false } },
+      { dobavitelj: '' },
+      { prodajnaCena: { $exists: false } },
+      { categorySlugs: { $exists: false } },
+      { categorySlugs: { $size: 0 } },
+    ],
+  });
 
   return {
     totals: {
-      products: totalProducts
+      products: totalProducts,
+      activeProducts,
+      inactiveProducts,
+      mergedProducts,
+      incompleteProducts,
     },
     countsBySource: countsBySource.map((entry) => ({
       source: normalizeString(entry._id),

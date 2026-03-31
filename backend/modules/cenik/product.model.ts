@@ -22,6 +22,8 @@ export interface ProductDocument extends Document {
   casovnaNorma?: string;
   isService: boolean;
   isActive?: boolean;
+  mergedIntoProductId?: mongoose.Types.ObjectId;
+  status?: 'active' | 'merged';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -48,7 +50,9 @@ const ProductSchema = new Schema<ProductDocument>(
     naslovDobavitelja: { type: String, trim: true, default: '' },
     casovnaNorma: { type: String, trim: true, default: '' },
     isService: { type: Boolean, default: false },
-    isActive: { type: Boolean, default: true }
+    isActive: { type: Boolean, default: true },
+    mergedIntoProductId: { type: Schema.Types.ObjectId, ref: 'Product', default: undefined },
+    status: { type: String, enum: ['active', 'merged'], default: 'active' }
   },
   {
     timestamps: true

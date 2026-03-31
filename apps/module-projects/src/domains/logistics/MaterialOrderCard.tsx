@@ -28,6 +28,7 @@ type InstallerAvailabilityEntry = {
 
 interface MaterialOrderCardProps {
   materialOrder: MaterialOrder | null;
+  mode?: "preparation" | "execution";
   technicianNote?: string;
   executionDate: string | null;
   executionDateConfirmedAt: string | null;
@@ -80,22 +81,9 @@ const PICKUP_METHOD_LABELS: Record<MaterialPickupMethod, string> = {
 
 function resolveSupplier(item: MaterialLine) {
   const supplier = typeof item.dobavitelj === "string" ? item.dobavitelj.trim() : "";
-  const supplierAddress =
-    typeof item.naslovDobavitelja === "string" ? item.naslovDobavitelja.trim() : "";
-  if (!supplier) {
-    return {
-      key: "missing-supplier",
-      label: "MANJKA DOBAVITELJ",
-      address: "",
-      isMissing: true,
-    };
-  }
-  return {
-    key: supplier.toLowerCase(),
-    label: supplier,
-    address: supplierAddress,
-    isMissing: false,
-  };
+  const supplierAddress = typeof item.naslovDobavitelja === "string" ? item.naslovDobavitelja.trim() : "";
+  if (!supplier) return { key: "missing-supplier", label: "MANJKA DOBAVITELJ", address: "", isMissing: true };
+  return { key: supplier.toLowerCase(), label: supplier, address: supplierAddress, isMissing: false };
 }
 
 function groupMaterialLines(lines: MaterialLine[]): SupplierGroup[] {
@@ -107,11 +95,8 @@ function groupMaterialLines(lines: MaterialLine[]): SupplierGroup[] {
       existing.lines.push(line);
       if (!isMissing) {
         const previous = existing.supplierAddress ?? "";
-        if (!previous) {
-          existing.supplierAddress = address;
-        } else if (address && previous !== address) {
-          existing.supplierAddress = "(različni naslovi)";
-        }
+        if (!previous) existing.supplierAddress = address;
+        else if (address && previous !== address) existing.supplierAddress = "(različni naslovi)";
       }
       return;
     }
@@ -122,7 +107,6 @@ function groupMaterialLines(lines: MaterialLine[]): SupplierGroup[] {
       lines: [line],
     });
   });
-
   return Array.from(groups.values()).sort((a, b) => a.supplierLabel.localeCompare(b.supplierLabel));
 }
 
@@ -133,12 +117,12 @@ function resolveMaterialStep(value?: string | null): MaterialStep {
   return "Za naročiti";
 }
 
-function isOrdered(step: MaterialStep) {
-  return step !== "Za naročiti";
-}
-
 function resolveOrderedQty(item: MaterialLine) {
   return typeof item.orderedQty === "number" && Number.isFinite(item.orderedQty) ? Math.max(0, item.orderedQty) : 0;
+}
+
+function resolveDeliveredQty(item: MaterialLine) {
+  return typeof item.deliveredQty === "number" && Number.isFinite(item.deliveredQty) ? Math.max(0, item.deliveredQty) : 0;
 }
 
 function resolvePlanQty(item: MaterialLine) {
@@ -157,23 +141,21 @@ function isReadyForPickup(step: MaterialStep) {
   return step === "Za prevzem" || step === "Prevzeto" || step === "Pripravljeno";
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "Ni določeno";
+  return new Intl.DateTimeFormat("sl-SI", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
 function getOverallStatus(readyCount: number, totalCount: number) {
-  if (totalCount === 0 || readyCount === 0) {
-    return {
-      label: "Ni pripravljeno",
-      className: "border-red-500/30 bg-red-500/10 text-red-700",
-    };
-  }
-  if (readyCount >= totalCount) {
-    return {
-      label: "Pripravljeno za prevzem",
-      className: "border-green-500/30 bg-green-500/10 text-green-700",
-    };
-  }
-  return {
-    label: "Delno pripravljeno",
-    className: "border-amber-500/30 bg-amber-500/10 text-amber-700",
-  };
+  if (totalCount === 0 || readyCount === 0) return { label: "Ni pripravljeno", className: "border-orange-400/50 bg-orange-500/10 text-orange-700" };
+  if (readyCount >= totalCount) return { label: "Pripravljeno za prevzem", className: "border-green-500/30 bg-green-500/10 text-green-700" };
+  return { label: "Delno pripravljeno", className: "border-orange-400/50 bg-orange-500/10 text-orange-700" };
 }
 
 function getStepForFlags(nextOrdered: boolean, nextReady: boolean): MaterialStep {
@@ -184,6 +166,7 @@ function getStepForFlags(nextOrdered: boolean, nextReady: boolean): MaterialStep
 
 export function MaterialOrderCard({
   materialOrder,
+  mode = "preparation",
   technicianNote,
   executionDate,
   executionDateConfirmedAt,
@@ -202,6 +185,8 @@ export function MaterialOrderCard({
   onPickupLocationChange,
   onLogisticsOwnerChange,
   onTechnicianNoteChange,
+  onConfirmPickup,
+  onDeliveredQtyCommit,
   onMaterialItemsChange,
   onSaveMaterialChanges,
   hasPendingMaterialChanges,
@@ -215,36 +200,36 @@ export function MaterialOrderCard({
     return <p className="text-sm text-muted-foreground">Naročilo za material bo ustvarjeno ob potrditvi ponudbe.</p>;
   }
 
+  const isExecutionMode = mode === "execution";
   const activeEmployees = employees.filter((employee) => employee.active);
   const employeeNameById = new Map(employees.map((employee) => [employee.id, employee.name]));
   const selectedMainInstaller = mainInstallerId && mainInstallerId.trim().length > 0 ? mainInstallerId : null;
-  const mainInstallerOptions: Array<{ id: string; name: string }> = selectedMainInstaller
+  const mainInstallerOptions = selectedMainInstaller
     ? activeEmployees.some((employee) => employee.id === selectedMainInstaller)
       ? activeEmployees
-      : [
-          ...activeEmployees,
-          { id: selectedMainInstaller, name: employeeNameById.get(selectedMainInstaller) ?? "Glavni monter" },
-        ]
+      : [...activeEmployees, { id: selectedMainInstaller, name: employeeNameById.get(selectedMainInstaller) ?? "Glavni monter" }]
     : activeEmployees;
   const plannedLines = (materialOrder.items ?? []).filter((item) => !item.isExtra);
   const groupedBySupplier = groupMaterialLines(plannedLines);
   const orderedCount = plannedLines.filter((item) => resolveOrderedStatus(item) === "DA").length;
   const readyCount = plannedLines.filter((item) => resolveOrderedStatus(item) === "DA" && isReadyForPickup(resolveMaterialStep(item.materialStep))).length;
+  const pickedUpCount = plannedLines.filter((item) => resolveOrderedQty(item) > 0 && resolveDeliveredQty(item) >= resolveOrderedQty(item)).length;
   const totalCount = plannedLines.length;
   const overallStatus = getOverallStatus(readyCount, totalCount);
+  const pickupStatus =
+    totalCount === 0 || pickedUpCount === 0
+      ? { label: "Ni prevzeto", className: "border-orange-400/50 bg-orange-500/10 text-orange-700" }
+      : pickedUpCount >= orderedCount
+        ? { label: "Vse prevzeto", className: "border-green-500/30 bg-green-500/10 text-green-700" }
+        : { label: "Delno prevzeto", className: "border-orange-400/50 bg-orange-500/10 text-orange-700" };
   const materialCardClass =
-    totalCount > 0 && orderedCount >= totalCount && readyCount >= totalCount
-      ? "border-green-500/40 shadow-[0_0_0_1px_rgba(34,197,94,0.12)]"
-      : "border-orange-400/50 shadow-[0_0_0_1px_rgba(251,146,60,0.14)]";
-  const executionDateConfirmationLabel = executionDateConfirmedAt
-    ? `Termin potrjen ${new Intl.DateTimeFormat("sl-SI", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(new Date(executionDateConfirmedAt))}${executionDateConfirmedBy ? ` (${executionDateConfirmedBy})` : ""}`
-    : "Termin še ni potrjen";
+    isExecutionMode
+      ? orderedCount > 0 && pickedUpCount >= orderedCount
+        ? "border-green-500/40 shadow-[0_0_0_1px_rgba(34,197,94,0.12)]"
+        : "border-orange-400/50 shadow-[0_0_0_1px_rgba(251,146,60,0.14)]"
+      : totalCount > 0 && orderedCount >= totalCount && readyCount >= totalCount
+        ? "border-green-500/40 shadow-[0_0_0_1px_rgba(34,197,94,0.12)]"
+        : "border-orange-400/50 shadow-[0_0_0_1px_rgba(251,146,60,0.14)]";
   const hasExecutionDate = Boolean(executionDate);
   const hasExecutionTeam = executionTeamIds.length > 0;
   const executionDateCardClass =
@@ -258,6 +243,9 @@ export function MaterialOrderCard({
     hasExecutionDate && executionDateConfirmedAt
       ? "border-green-500/40 focus-visible:border-green-500 focus-visible:ring-green-500/20"
       : "border-orange-400/50 focus-visible:border-orange-500 focus-visible:ring-orange-500/20";
+  const executionDateConfirmationLabel = executionDateConfirmedAt
+    ? `Termin potrjen ${formatDateTime(executionDateConfirmedAt)}${executionDateConfirmedBy ? ` (${executionDateConfirmedBy})` : ""}`
+    : "Termin še ni potrjen";
   const pickupMethodLabel =
     materialOrder.pickupMethod && PICKUP_METHOD_LABELS[materialOrder.pickupMethod]
       ? PICKUP_METHOD_LABELS[materialOrder.pickupMethod]
@@ -265,7 +253,6 @@ export function MaterialOrderCard({
   const logisticsOwnerLabel = materialOrder.logisticsOwnerId
     ? employeeNameById.get(materialOrder.logisticsOwnerId) ?? "Ni določeno"
     : "Ni določeno";
-
   const selectedPickupLocation = materialOrder.pickupLocation?.trim() || "Ni določeno";
 
   const updateMaterialStep = (itemId: string, nextOrderedStatus: "DA" | "NE", nextReady: boolean) => {
@@ -273,25 +260,30 @@ export function MaterialOrderCard({
       if (item.id !== itemId) return item;
       const planQty = resolvePlanQty(item);
       const nextOrderedQty = nextOrderedStatus === "DA" ? planQty : 0;
-      const nextOrdered = nextOrderedQty > 0;
       return {
         ...item,
         orderedQty: nextOrderedQty,
-        isOrdered: nextOrdered,
-        materialStep: getStepForFlags(nextOrdered, nextReady),
+        isOrdered: nextOrderedQty > 0,
+        materialStep: getStepForFlags(nextOrderedQty > 0, nextReady),
       };
     });
     onMaterialItemsChange(nextItems);
   };
 
   const updateOrderedQty = (itemId: string, nextOrderedQty: number) => {
+    const nextItems = (materialOrder.items ?? []).map((item) => (item.id === itemId ? { ...item, orderedQty: Math.max(0, nextOrderedQty), isOrdered: Math.max(0, nextOrderedQty) > 0 } : item));
+    onMaterialItemsChange(nextItems);
+  };
+
+  const updateDeliveredQtyLocal = (itemId: string, nextDeliveredQty: number) => {
     const nextItems = (materialOrder.items ?? []).map((item) => {
       if (item.id !== itemId) return item;
-      const normalizedOrderedQty = Math.max(0, nextOrderedQty);
+      const deliveredQty = Math.max(0, nextDeliveredQty);
+      const orderedQty = resolveOrderedQty(item);
       return {
         ...item,
-        orderedQty: normalizedOrderedQty,
-        isOrdered: normalizedOrderedQty > 0,
+        deliveredQty,
+        materialStep: orderedQty > 0 && deliveredQty >= orderedQty ? ("Prevzeto" as MaterialStep) : orderedQty > 0 ? ("Za prevzem" as MaterialStep) : resolveMaterialStep(item.materialStep),
       };
     });
     onMaterialItemsChange(nextItems);
@@ -299,13 +291,13 @@ export function MaterialOrderCard({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-none border border-border/70 bg-card p-4 shadow-sm">
-        <h3 className="text-base font-semibold">Organizacija izvedbe</h3>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <div className={`order-1 rounded-none border bg-card p-4 ${executionTeamCardClass}`}>
-            <div className="space-y-4">
-              <h4 className="text-sm font-semibold">Izvedbena ekipa</h4>
-              <div className="space-y-2">
+      {!isExecutionMode ? (
+        <div className="rounded-none border border-border/70 bg-card p-4 shadow-sm">
+          <h3 className="text-base font-semibold">Organizacija izvedbe</h3>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <div className={`rounded-none border bg-card p-4 ${executionTeamCardClass}`}>
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold">Izvedbena ekipa</h4>
                 <div className="flex flex-wrap gap-2">
                   {activeEmployees.length === 0 ? (
                     <p className="text-sm text-muted-foreground">Ni aktivnih zaposlenih.</p>
@@ -318,9 +310,7 @@ export function MaterialOrderCard({
                           type="button"
                           onClick={() => onToggleExecutionTeam(employee.id)}
                           className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                            isSelected
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border bg-card text-muted-foreground hover:border-primary"
+                            isSelected ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary"
                           }`}
                         >
                           {employee.name}
@@ -329,380 +319,240 @@ export function MaterialOrderCard({
                     })
                   )}
                 </div>
-              </div>
-              <div className="space-y-2 rounded-none border border-border/60 bg-muted/10 px-3 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium">Zasedenost monterja</span>
-                  <div className="w-full max-w-[220px]">
-                    <Select
-                      value={selectedMainInstaller ?? "none"}
-                      onValueChange={(value) => onMainInstallerChange(value === "none" ? null : value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Izberi monterja" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Ni izbran</SelectItem>
-                        {mainInstallerOptions.map((employee) => (
-                          <SelectItem key={employee.id} value={employee.id}>
-                            {employee.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                <div className="space-y-2 rounded-none border border-border/60 bg-muted/10 px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium">Zasedenost monterja</span>
+                    <div className="w-full max-w-[220px]">
+                      <Select value={selectedMainInstaller ?? "none"} onValueChange={(value) => onMainInstallerChange(value === "none" ? null : value)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Izberi monterja" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Ni izbran</SelectItem>
+                          {mainInstallerOptions.map((employee) => (
+                            <SelectItem key={employee.id} value={employee.id}>
+                              {employee.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
+                  {!selectedMainInstaller ? (
+                    <p className="text-sm text-muted-foreground">Najprej izberi glavnega monterja.</p>
+                  ) : installerAvailability.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Ni evidentiranih prihodnjih terminov.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {installerAvailability.map((entry) => (
+                        <div key={entry.workOrderId} className="flex flex-wrap items-center justify-between gap-2 rounded-none border border-border/50 bg-background px-3 py-2">
+                          <span className="text-sm font-medium">{formatDateTime(entry.scheduledAt)}</span>
+                          <span className="text-sm text-muted-foreground">
+                            {entry.projectCode}
+                            {entry.title ? ` - ${entry.title}` : entry.projectTitle ? ` - ${entry.projectTitle}` : ""}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                {!selectedMainInstaller ? (
-                  <p className="text-sm text-muted-foreground">Najprej izberi glavnega monterja.</p>
-                ) : installerAvailability.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Ni evidentiranih prihodnjih terminov.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {installerAvailability.map((entry) => (
-                      <div
-                        key={entry.workOrderId}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-none border border-border/50 bg-background px-3 py-2"
-                      >
-                        <span className="text-sm font-medium">
-                          {entry.scheduledAt
-                            ? new Intl.DateTimeFormat("sl-SI", {
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              }).format(new Date(entry.scheduledAt))
-                            : "Ni določeno"}
-                        </span>
-                        <span className="text-sm text-muted-foreground">
-                          {entry.projectCode}
-                          {entry.title ? ` - ${entry.title}` : entry.projectTitle ? ` - ${entry.projectTitle}` : ""}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
-          </div>
 
-          <div className={`order-2 rounded-none border bg-card p-4 ${executionDateCardClass}`}>
-            <div className="space-y-4">
-              <h4 className="text-sm font-semibold">Termin izvedbe</h4>
-              <div className="flex flex-wrap items-start gap-3">
-                <label className="min-w-0 flex-1 space-y-1">
-                  <Input
-                    type="datetime-local"
-                    value={executionDate ?? ""}
-                    onChange={(event) => onExecutionDateChange(event.target.value)}
-                    className={`h-12 text-lg font-semibold tracking-tight ${executionDateInputClass}`}
-                  />
-                </label>
-                {executionDateConfirmedAt ? (
-                  <Button type="button" size="sm" variant="outline" onClick={onUnconfirmExecutionDate} disabled={savingWorkOrder}>
-                    Prekliči termin
-                  </Button>
-                ) : executionDate ? (
-                  <Button type="button" size="sm" variant="outline" onClick={onConfirmExecutionDate} disabled={savingWorkOrder}>
-                    Potrdi termin
-                  </Button>
-                ) : null}
-              </div>
-              <div>
+            <div className={`rounded-none border bg-card p-4 ${executionDateCardClass}`}>
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold">Termin izvedbe</h4>
+                <div className="flex flex-wrap items-start gap-3">
+                  <label className="min-w-0 flex-1">
+                    <Input type="datetime-local" value={executionDate ?? ""} onChange={(event) => onExecutionDateChange(event.target.value)} className={`h-12 text-lg font-semibold tracking-tight ${executionDateInputClass}`} />
+                  </label>
+                  {executionDateConfirmedAt ? (
+                    <Button type="button" size="sm" variant="outline" onClick={onUnconfirmExecutionDate} disabled={savingWorkOrder}>
+                      Prekliči termin
+                    </Button>
+                  ) : executionDate ? (
+                    <Button type="button" size="sm" variant="outline" onClick={onConfirmExecutionDate} disabled={savingWorkOrder}>
+                      Potrdi termin
+                    </Button>
+                  ) : null}
+                </div>
                 <span className="text-sm text-muted-foreground">{executionDateConfirmationLabel}</span>
-              </div>
-              {executionDurationLabel ? (
-                <div>
+                {executionDurationLabel ? (
                   <span className="text-sm text-muted-foreground">
                     Ocena trajanja izvedbe: <span className="font-medium text-foreground">{executionDurationLabel}</span>
                   </span>
-                </div>
-              ) : null}
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      ) : null}
 
       <div className={`rounded-none border bg-card p-4 shadow-sm ${materialCardClass}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="text-base font-semibold">Material</h3>
-          </div>
-          <Badge className={overallStatus.className}>{overallStatus.label}</Badge>
+          <h3 className="text-base font-semibold">Material</h3>
+          <Badge className={isExecutionMode ? pickupStatus.className : overallStatus.className}>{isExecutionMode ? pickupStatus.label : overallStatus.label}</Badge>
         </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <label className="space-y-1">
-            <span className="text-sm font-medium">Način prevzema / dostave</span>
-            <Select
-              value={materialOrder.pickupMethod ?? "SUPPLIER_PICKUP"}
-              onValueChange={(value) => onPickupMethodChange(value as MaterialPickupMethod)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Izberi način prevzema" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="COMPANY_PICKUP">Prevzem v firmi</SelectItem>
-                <SelectItem value="SUPPLIER_PICKUP">Prevzem pri dobavitelju</SelectItem>
-                <SelectItem value="DIRECT_TO_INSTALLER">Direktna dostava monterju</SelectItem>
-                <SelectItem value="DIRECT_TO_SITE">Direktna dostava na objekt</SelectItem>
-              </SelectContent>
-            </Select>
-          </label>
-          <label className="space-y-1">
-            <span className="text-sm font-medium">Lokacija prevzema</span>
-            <Input
-              value={materialOrder.pickupLocation ?? ""}
-              onChange={(event) => onPickupLocationChange(event.target.value)}
-              placeholder="Npr. skladišče, dobavitelj ali objekt"
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-sm font-medium">Odgovorna oseba</span>
-            <Select
-              value={materialOrder.logisticsOwnerId ?? "__none__"}
-              onValueChange={(value) => onLogisticsOwnerChange(value === "__none__" ? null : value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Izberi odgovorno osebo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">Ni izbrano</SelectItem>
-                {activeEmployees.map((employee) => (
-                  <SelectItem key={employee.id} value={employee.id}>
-                    {employee.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-        </div>
-
         <div className="mt-4 space-y-4">
-          {groupedBySupplier.map((group) => {
-            return (
-              <section key={group.supplierKey} className="rounded-none border border-border/70 bg-card">
-                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 px-4 py-3">
-                  <div className="space-y-1">
-                    <h4 className="text-sm font-semibold">{group.supplierLabel}</h4>
-                    {group.supplierAddress ? (
-                      <p className="text-sm text-muted-foreground">{group.supplierAddress}</p>
-                    ) : null}
-                    <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                      <span>Prevzem: {pickupMethodLabel}</span>
-                      <span>Lokacija: {selectedPickupLocation}</span>
-                      <span>Odgovorna oseba: {logisticsOwnerLabel}</span>
-                    </div>
+          {groupedBySupplier.map((group) => (
+            <section key={group.supplierKey} className="rounded-none border border-border/70 bg-card">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 px-4 py-3">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold">{group.supplierLabel}</h4>
+                  {group.supplierAddress ? <p className="text-sm text-muted-foreground">{group.supplierAddress}</p> : null}
+                  <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                    <span>Prevzem: {pickupMethodLabel}</span>
+                    <span>Lokacija: {selectedPickupLocation}</span>
+                    <span>Odgovorna oseba: {logisticsOwnerLabel}</span>
                   </div>
                 </div>
-
-                <div className="hidden md:block">
-                  <Table className="table-fixed w-full">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Postavka</TableHead>
-                        <TableHead className="w-[90px] text-center">Plan</TableHead>
-                        <TableHead className="w-[120px] text-center">Naročeno qty</TableHead>
-                        <TableHead className="w-[100px] text-center">Razlika</TableHead>
-                        <TableHead className="w-[140px] text-center">Naročeno</TableHead>
-                        <TableHead className="w-[180px] text-center">Pripravljeno za prevzem</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {group.lines.map((item) => {
-                        const step = resolveMaterialStep(item.materialStep);
-                        const orderedQty = resolveOrderedQty(item);
-                        const planQty = resolvePlanQty(item);
-                        const orderedStatus = resolveOrderedStatus(item);
-                        const ordered = orderedStatus !== "NE";
-                        const ready = isReadyForPickup(step) && ordered;
-                        const diff = orderedQty - planQty;
-                        const displayDiff = diff > 0 ? `+${diff}` : `${diff}`;
-                        const diffClass = diff < 0 ? "text-red-600" : diff > 0 ? "text-amber-600" : "text-foreground";
-                        const orderedButtonClass =
-                          orderedStatus === "DA"
-                            ? "border-green-500/30 bg-green-500/10 text-green-700"
-                            : orderedStatus === "DELNO"
-                              ? "border-amber-500/30 bg-amber-500/10 text-amber-700 hover:border-amber-500/60"
-                              : "border-orange-400/50 bg-orange-500/10 text-orange-700 hover:border-orange-500/60";
-                        const readyButtonClass = !ordered
-                          ? "border-border bg-muted/60 text-muted-foreground"
-                          : ready
-                            ? "border-green-500/30 bg-green-500/10 text-green-700"
-                            : "border-orange-400/50 bg-orange-500/10 text-orange-700 hover:border-orange-500/60";
-                        return (
-                          <TableRow key={item.id}>
-                            <TableCell className="font-medium">
-                              <div className="space-y-1">
-                                <span>{item.name}</span>
-                                {item.note ? <p className="text-xs text-muted-foreground">{item.note}</p> : null}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-center tabular-nums">{planQty}</TableCell>
+              </div>
+              <div className="hidden md:block">
+                <Table className="table-fixed w-full">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Postavka</TableHead>
+                      <TableHead className="w-[90px] text-center">{isExecutionMode ? "Naročeno" : "Plan"}</TableHead>
+                      <TableHead className="w-[120px] text-center">{isExecutionMode ? "Prevzeto" : "Naročeno qty"}</TableHead>
+                      <TableHead className="w-[100px] text-center">Razlika</TableHead>
+                      <TableHead className={`${isExecutionMode ? "w-[180px]" : "w-[140px]"} text-center`}>{isExecutionMode ? "Prevzem" : "Naročeno"}</TableHead>
+                      {!isExecutionMode ? <TableHead className="w-[180px] text-center">Pripravljeno za prevzem</TableHead> : null}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {group.lines.map((item) => {
+                      const step = resolveMaterialStep(item.materialStep);
+                      const planQty = resolvePlanQty(item);
+                      const orderedQty = resolveOrderedQty(item);
+                      const deliveredQty = resolveDeliveredQty(item);
+                      const orderedStatus = resolveOrderedStatus(item);
+                      const ordered = orderedStatus !== "NE";
+                      const ready = isReadyForPickup(step) && ordered;
+                      const pickedUp = orderedQty > 0 && deliveredQty >= orderedQty;
+                      const diff = isExecutionMode ? deliveredQty - orderedQty : orderedQty - planQty;
+                      const displayDiff = diff > 0 ? `+${diff}` : `${diff}`;
+                      const diffClass = diff < 0 ? "text-red-600" : diff > 0 ? "text-amber-600" : "text-foreground";
+                      const orderedButtonClass = orderedStatus === "DA" ? "border-green-500/30 bg-green-500/10 text-green-700" : orderedStatus === "DELNO" ? "border-red-500/30 bg-red-500/10 text-red-700 hover:border-red-500/60" : "border-orange-400/50 bg-orange-500/10 text-orange-700 hover:border-orange-500/60";
+                      const readyButtonClass = !ordered ? "border-border bg-muted/60 text-muted-foreground" : ready ? "border-green-500/30 bg-green-500/10 text-green-700" : "border-orange-400/50 bg-orange-500/10 text-orange-700 hover:border-orange-500/60";
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell className="font-medium"><div className="space-y-1"><span>{item.name}</span>{item.note ? <p className="text-xs text-muted-foreground">{item.note}</p> : null}</div></TableCell>
+                          <TableCell className="text-center tabular-nums">{isExecutionMode ? orderedQty : planQty}</TableCell>
+                          <TableCell className="text-center">
+                            <Input type="number" min={0} step="1" value={isExecutionMode ? deliveredQty : orderedQty} onChange={(event) => isExecutionMode ? updateDeliveredQtyLocal(item.id, Number(event.target.value) || 0) : updateOrderedQty(item.id, Number(event.target.value) || 0)} onBlur={(event) => { if (isExecutionMode) onDeliveredQtyCommit(item.id, Number(event.target.value) || 0); }} className="h-8 text-center tabular-nums" />
+                          </TableCell>
+                          <TableCell className={`text-center tabular-nums ${diffClass}`}>{displayDiff}</TableCell>
+                          <TableCell className="text-center">
+                            {isExecutionMode ? (
+                              <button type="button" onClick={() => { const nextQty = pickedUp ? 0 : orderedQty; updateDeliveredQtyLocal(item.id, nextQty); onDeliveredQtyCommit(item.id, nextQty); }} className={`inline-flex h-8 min-w-[96px] items-center justify-center rounded-md border px-3 text-xs font-medium transition ${pickedUp ? "border-green-500/30 bg-green-500/10 text-green-700" : "border-orange-400/50 bg-orange-500/10 text-orange-700 hover:border-orange-500/60"}`} disabled={orderedQty <= 0}>{pickedUp ? "Prevzeto" : "Potrdi prevzem"}</button>
+                            ) : (
+                              <button type="button" onClick={() => updateMaterialStep(item.id, orderedStatus === "DA" ? "NE" : "DA", orderedStatus === "DA" ? false : ready)} className={`inline-flex h-8 min-w-[84px] items-center justify-center rounded-md border px-3 text-xs font-medium transition ${orderedButtonClass}`}>{orderedStatus}</button>
+                            )}
+                          </TableCell>
+                          {!isExecutionMode ? (
                             <TableCell className="text-center">
-                              <Input
-                                type="number"
-                                min={0}
-                                step="1"
-                                value={orderedQty}
-                                onChange={(event) => updateOrderedQty(item.id, Number(event.target.value) || 0)}
-                                className="h-8 text-center tabular-nums"
-                              />
+                              <button type="button" onClick={() => { if (!ordered) return; updateMaterialStep(item.id, "DA", !ready); }} className={`inline-flex h-8 min-w-[148px] items-center justify-center rounded-md border px-3 text-xs font-medium transition ${readyButtonClass}`} disabled={!ordered}>{ready ? "Pripravljeno" : "Označi pripravljeno"}</button>
                             </TableCell>
-                            <TableCell className={`text-center tabular-nums ${diffClass}`}>{displayDiff}</TableCell>
-                            <TableCell className="text-center">
-                              <button
-                                type="button"
-                                onClick={() => updateMaterialStep(item.id, orderedStatus === "DA" ? "NE" : "DA", orderedStatus === "DA" ? false : ready)}
-                                className={`inline-flex h-8 min-w-[84px] items-center justify-center rounded-md border px-3 text-xs font-medium transition ${orderedButtonClass}`}
-                              >
-                                {orderedStatus}
-                              </button>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (!ordered) return;
-                                  updateMaterialStep(item.id, "DA", !ready);
-                                }}
-                                className={`inline-flex h-8 min-w-[148px] items-center justify-center rounded-md border px-3 text-xs font-medium transition ${readyButtonClass}`}
-                                disabled={!ordered}
-                              >
-                                {ready ? "Pripravljeno" : "Označi pripravljeno"}
-                              </button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                <div className="space-y-3 p-4 md:hidden">
-                  {group.lines.map((item) => {
-                    const step = resolveMaterialStep(item.materialStep);
-                    const orderedQty = resolveOrderedQty(item);
-                    const planQty = resolvePlanQty(item);
-                    const orderedStatus = resolveOrderedStatus(item);
-                    const ordered = orderedStatus !== "NE";
-                    const ready = isReadyForPickup(step) && ordered;
-                    const diff = orderedQty - planQty;
-                    const displayDiff = diff > 0 ? `+${diff}` : `${diff}`;
-                    const diffClass = diff < 0 ? "text-red-600" : diff > 0 ? "text-amber-600" : "text-foreground";
-                    const orderedButtonClass =
-                      orderedStatus === "DA"
-                        ? "border-green-500/30 bg-green-500/10 text-green-700"
-                        : orderedStatus === "DELNO"
-                          ? "border-amber-500/30 bg-amber-500/10 text-amber-700"
-                          : "border-orange-400/50 bg-orange-500/10 text-orange-700";
-                    const readyButtonClass = !ordered
-                      ? "border-border bg-muted/60 text-muted-foreground"
-                      : ready
-                        ? "border-green-500/30 bg-green-500/10 text-green-700"
-                        : "border-orange-400/50 bg-orange-500/10 text-orange-700";
-                    return (
-                      <div key={item.id} className="space-y-3 rounded-none border border-border/60 bg-background p-3">
+                          ) : null}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="space-y-3 p-4 md:hidden">
+                {group.lines.map((item) => {
+                  const step = resolveMaterialStep(item.materialStep);
+                  const planQty = resolvePlanQty(item);
+                  const orderedQty = resolveOrderedQty(item);
+                  const deliveredQty = resolveDeliveredQty(item);
+                  const orderedStatus = resolveOrderedStatus(item);
+                  const ordered = orderedStatus !== "NE";
+                  const ready = isReadyForPickup(step) && ordered;
+                  const pickedUp = orderedQty > 0 && deliveredQty >= orderedQty;
+                  const diff = isExecutionMode ? deliveredQty - orderedQty : orderedQty - planQty;
+                  const displayDiff = diff > 0 ? `+${diff}` : `${diff}`;
+                  const diffClass = diff < 0 ? "text-red-600" : diff > 0 ? "text-amber-600" : "text-foreground";
+                  const orderedButtonClass = orderedStatus === "DA" ? "border-green-500/30 bg-green-500/10 text-green-700" : orderedStatus === "DELNO" ? "border-red-500/30 bg-red-500/10 text-red-700" : "border-orange-400/50 bg-orange-500/10 text-orange-700";
+                  const readyButtonClass = !ordered ? "border-border bg-muted/60 text-muted-foreground" : ready ? "border-green-500/30 bg-green-500/10 text-green-700" : "border-orange-400/50 bg-orange-500/10 text-orange-700";
+                  return (
+                    <div key={item.id} className="space-y-3 rounded-none border border-border/60 bg-background p-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">{item.name}</p>
+                        {item.note ? <p className="text-xs text-muted-foreground">{item.note}</p> : null}
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 text-sm">
                         <div className="space-y-1">
-                          <p className="text-sm font-medium">{item.name}</p>
-                          {item.note ? <p className="text-xs text-muted-foreground">{item.note}</p> : null}
+                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{isExecutionMode ? "Naročeno" : "Plan"}</p>
+                          <p className="font-medium tabular-nums">{isExecutionMode ? orderedQty : planQty}</p>
                         </div>
-                        <div className="grid grid-cols-3 gap-3 text-sm">
-                          <div className="space-y-1">
-                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Plan</p>
-                            <p className="font-medium tabular-nums">{planQty}</p>
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Naročeno qty</p>
-                            <Input
-                              type="number"
-                              min={0}
-                              step="1"
-                              value={orderedQty}
-                              onChange={(event) => updateOrderedQty(item.id, Number(event.target.value) || 0)}
-                              className="h-9 text-center tabular-nums"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Razlika</p>
-                            <p className={`font-medium tabular-nums ${diffClass}`}>{displayDiff}</p>
-                          </div>
+                        <div className="space-y-1">
+                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{isExecutionMode ? "Prevzeto" : "Naročeno qty"}</p>
+                          <Input type="number" min={0} step="1" value={isExecutionMode ? deliveredQty : orderedQty} onChange={(event) => isExecutionMode ? updateDeliveredQtyLocal(item.id, Number(event.target.value) || 0) : updateOrderedQty(item.id, Number(event.target.value) || 0)} onBlur={(event) => { if (isExecutionMode) onDeliveredQtyCommit(item.id, Number(event.target.value) || 0); }} className="h-9 text-center tabular-nums" />
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => updateMaterialStep(item.id, orderedStatus === "DA" ? "NE" : "DA", orderedStatus === "DA" ? false : ready)}
-                            className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-xs font-medium transition ${orderedButtonClass}`}
-                          >
-                            Naročeno: {orderedStatus}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!ordered) return;
-                              updateMaterialStep(item.id, "DA", !ready);
-                            }}
-                            className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-xs font-medium transition ${readyButtonClass}`}
-                            disabled={!ordered}
-                          >
-                            {ready ? "Pripravljeno za prevzem" : "Označi pripravljeno"}
-                          </button>
+                        <div className="space-y-1">
+                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Razlika</p>
+                          <p className={`font-medium tabular-nums ${diffClass}`}>{displayDiff}</p>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
+                      <div className="flex flex-wrap gap-2">
+                        {isExecutionMode ? (
+                          <button type="button" onClick={() => { const nextQty = pickedUp ? 0 : orderedQty; updateDeliveredQtyLocal(item.id, nextQty); onDeliveredQtyCommit(item.id, nextQty); }} className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-xs font-medium transition ${pickedUp ? "border-green-500/30 bg-green-500/10 text-green-700" : "border-orange-400/50 bg-orange-500/10 text-orange-700"}`} disabled={orderedQty <= 0}>{pickedUp ? "Prevzeto" : "Potrdi prevzem"}</button>
+                        ) : (
+                          <>
+                            <button type="button" onClick={() => updateMaterialStep(item.id, orderedStatus === "DA" ? "NE" : "DA", orderedStatus === "DA" ? false : ready)} className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-xs font-medium transition ${orderedButtonClass}`}>Naročeno: {orderedStatus}</button>
+                            <button type="button" onClick={() => { if (!ordered) return; updateMaterialStep(item.id, "DA", !ready); }} className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-xs font-medium transition ${readyButtonClass}`} disabled={!ordered}>{ready ? "Pripravljeno za prevzem" : "Označi pripravljeno"}</button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
         </div>
 
-        {onTechnicianNoteChange ? (
+        {!isExecutionMode && onTechnicianNoteChange ? (
           <div className="mt-4 flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
             <label className="shrink-0 text-sm font-medium">Opombe</label>
-            <Input
-              value={technicianNote ?? ""}
-              onChange={(event) => onTechnicianNoteChange(event.target.value)}
-              placeholder="Navodila za tehnika"
-              className="flex-1"
-            />
+            <Input value={technicianNote ?? ""} onChange={(event) => onTechnicianNoteChange(event.target.value)} placeholder="Navodila za tehnika" className="flex-1" />
           </div>
         ) : null}
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span>Naročeno {orderedCount} / {totalCount}</span>
-            <span>Pripravljeno za prevzem {readyCount} / {totalCount}</span>
+            {!isExecutionMode ? (
+              <>
+                <span>Naročeno {orderedCount} / {totalCount}</span>
+                <span>Pripravljeno za prevzem {readyCount} / {totalCount}</span>
+              </>
+            ) : (
+              <>
+                <span>Naročeno {orderedCount} / {totalCount}</span>
+                <span>Prevzeto {pickedUpCount} / {orderedCount}</span>
+              </>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             {canDownloadPdf ? (
               <div className="inline-flex h-8 items-center rounded-md border border-border/70 bg-background">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 rounded-none border-r border-border/70 px-3"
-                  onClick={onPreviewPurchaseOrder}
-                  disabled={downloadingPdf !== null && downloadingPdf !== "PURCHASE_ORDER"}
-                >
+                <Button type="button" variant="ghost" size="sm" className="h-8 rounded-none border-r border-border/70 px-3" onClick={onPreviewPurchaseOrder} disabled={downloadingPdf !== null && downloadingPdf !== "PURCHASE_ORDER"}>
                   Predogled naročilnice
                 </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-none"
-                  onClick={onDownloadPurchaseOrder}
-                  disabled={downloadingPdf !== null && downloadingPdf !== "PURCHASE_ORDER"}
-                  aria-label="Prenesi naročilnico"
-                >
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 rounded-none" onClick={onDownloadPurchaseOrder} disabled={downloadingPdf !== null && downloadingPdf !== "PURCHASE_ORDER"} aria-label="Prenesi naročilnico">
                   {downloadingPdf === "PURCHASE_ORDER" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                 </Button>
               </div>
             ) : null}
             <Button type="button" size="sm" onClick={onSaveMaterialChanges} disabled={!hasPendingMaterialChanges || savingWorkOrder}>
-              {savingWorkOrder ? "Shranjujem..." : "Shrani pripravo"}
+              {savingWorkOrder ? "Shranjujem..." : isExecutionMode ? "Shrani prevzem" : "Shrani pripravo"}
             </Button>
+            {isExecutionMode ? (
+              <Button type="button" size="sm" onClick={onConfirmPickup} disabled={savingWorkOrder || orderedCount === 0 || pickedUpCount < orderedCount}>
+                Potrdi prevzem
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>

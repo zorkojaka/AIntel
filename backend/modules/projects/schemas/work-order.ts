@@ -42,6 +42,10 @@ interface WorkOrderDocument extends Document {
   customerEmail?: string;
   customerPhone?: string;
   customerAddress?: string;
+  customerSignerName?: string | null;
+  customerSignature?: string | null;
+  customerSignedAt?: Date | null;
+  customerRemark?: string | null;
   cancelledAt?: Date | null;
   reopened?: boolean;
   executionNote?: string | null;
@@ -101,6 +105,10 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
     customerEmail: { type: String },
     customerPhone: { type: String },
     customerAddress: { type: String },
+    customerSignerName: { type: String, default: null },
+    customerSignature: { type: String, default: null },
+    customerSignedAt: { type: Date, default: null },
+    customerRemark: { type: String, default: null },
     cancelledAt: { type: Date, default: null },
     reopened: { type: Boolean, default: false },
     executionNote: { type: String, default: null },

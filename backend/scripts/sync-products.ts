@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 
 import { connectToMongo } from '../db/mongo';
 import { loadEnvironment } from '../loadEnv';
-import { ProductSyncValidationError, syncProductsFromItems } from '../modules/cenik/services/product-sync.service';
+import { applyProductImportFromItems } from '../modules/cenik/services/product-sync.service';
 
 type RawInput = {
   meta?: unknown;
@@ -79,32 +79,43 @@ function loadSnapshot(inputPath: string) {
   return parsed.products;
 }
 
-function summarizeValidationErrors(errors: Array<{ index: number; rowId: string; field: string; reason: string }>) {
-  const limit = 40;
-  const head = errors.slice(0, limit);
-  const lines = head.map((error) => `[${error.index}] ${error.rowId} ${error.field}: ${error.reason}`);
-  const suffix = errors.length > limit ? `\n...and ${errors.length - limit} more` : '';
-  return `${lines.join('\n')}${suffix}`;
-}
-
 async function runSync({ source, inputPath, confirm }: SyncOptions) {
   loadEnvironment();
   await connectToMongo();
 
   const rawProducts = loadSnapshot(inputPath);
 
-  const report = await syncProductsFromItems({ source, items: rawProducts, confirm });
+  const result = await applyProductImportFromItems({ source, items: rawProducts });
 
-  console.log(`SYNC source: ${report.source}`);
-  console.log(`INPUT products: ${report.total}`);
-  console.log(`CREATED: ${report.created}`);
-  console.log(`UPDATED: ${report.updated}`);
-  console.log(`REACTIVATED: ${report.reactivated}`);
-  console.log(`WOULD_DEACTIVATE: ${report.wouldDeactivate}`);
-  if (confirm) {
-    console.log(`DEACTIVATED: ${report.deactivated}`);
-  } else {
-    console.log('CONFIRM mode not enabled. Skipping deactivation.');
+  console.log(`SYNC source: ${result.source}`);
+  console.log(`TOTAL_SOURCE_ROWS: ${result.summary.totalSourceRows}`);
+  console.log(`MATCHED_ROWS: ${result.summary.matchedRows}`);
+  console.log(`TO_CREATE: ${result.summary.toCreateCount}`);
+  console.log(`TO_UPDATE: ${result.summary.toUpdateCount}`);
+  console.log(`TO_SKIP: ${result.summary.toSkipCount}`);
+  console.log(`CONFLICTS: ${result.summary.conflictCount}`);
+  console.log(`INVALID: ${result.summary.invalidCount}`);
+  console.log(`CREATED: ${result.applied.createdCount}`);
+  console.log(`UPDATED: ${result.applied.updatedCount}`);
+  console.log(`SKIPPED: ${result.applied.skippedCount}`);
+
+  if (result.conflicts.length > 0) {
+    console.log('CONFLICT_SAMPLE:');
+    result.conflicts.slice(0, 10).forEach((row) => {
+      console.log(`  [${row.rowIndex}] ${row.rowId} ${row.ime} -> ${row.reason}`);
+    });
+  }
+
+  if (result.invalidRows.length > 0) {
+    console.log('INVALID_SAMPLE:');
+    result.invalidRows.slice(0, 10).forEach((row) => {
+      const firstError = row.errors[0];
+      console.log(`  [${row.rowIndex}] ${row.rowId} ${firstError?.field ?? 'row'}: ${firstError?.reason ?? 'invalid'}`);
+    });
+  }
+
+  if (!confirm) {
+    console.log('Note: deactivation is not part of the full re-sync flow.');
   }
 }
 
@@ -112,12 +123,6 @@ const options = parseArgs();
 
 runSync(options)
   .catch((error) => {
-    if (error instanceof ProductSyncValidationError) {
-      console.error(`VALIDATION_FAILED: ${error.errors.length} issue(s)`);
-      console.error(`Errors:\n${summarizeValidationErrors(error.errors)}`);
-      process.exitCode = 1;
-      return;
-    }
     console.error('Product sync failed:', error);
     process.exitCode = 1;
   })

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { ProductDocument, ProductModel } from '../product.model';
 import type { PriceListSearchItem } from '../../../../shared/types/price-list';
+import { precheckProductCandidate } from '../services/product-sync.service';
 
 type ProductPayload = Pick<
   ProductDocument,
@@ -22,6 +23,12 @@ type ProductPayload = Pick<
 
 type ProductResponse = ProductPayload & {
   _id: ProductDocument['_id'];
+  externalSource?: string;
+  externalId?: string;
+  externalKey?: string;
+  isActive?: boolean;
+  status?: string;
+  mergedIntoProductId?: string;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -98,6 +105,9 @@ function buildPayload(body: Partial<ProductPayload>): ProductPayload {
 function sanitizeProduct(product: ProductDocument): ProductResponse {
   return {
     _id: product._id,
+    externalSource: product.externalSource ?? '',
+    externalId: product.externalId ?? '',
+    externalKey: product.externalKey ?? '',
     ime: product.ime,
     categorySlugs: product.categorySlugs ?? [],
     isService: product.isService,
@@ -112,6 +122,9 @@ function sanitizeProduct(product: ProductDocument): ProductResponse {
     povezavaDoProdukta: product.povezavaDoProdukta ?? '',
     naslovDobavitelja: product.naslovDobavitelja ?? '',
     casovnaNorma: product.casovnaNorma ?? '',
+    isActive: product.isActive !== false,
+    status: product.status ?? (product.isActive === false ? 'merged' : 'active'),
+    mergedIntoProductId: product.mergedIntoProductId ? String(product.mergedIntoProductId) : '',
     createdAt: product.createdAt,
     updatedAt: product.updatedAt
   };
@@ -134,7 +147,9 @@ function sortBySuggested(products: ProductResponse[], suggested: string[]) {
 
 export async function getAllProducts(_req: Request, res: Response) {
   try {
-    const products = await ProductModel.find().lean();
+    const includeInactive = String(_req.query?.includeInactive ?? '').toLowerCase() === 'true';
+    const filter = includeInactive ? {} : { isActive: { $ne: false } };
+    const products = await ProductModel.find(filter).lean();
     const sanitized = products.map((product) => sanitizeProduct(product));
     const query = _req.query?.suggestForCategories;
     if (!query) {
@@ -170,10 +185,45 @@ export async function createProduct(req: Request, res: Response) {
     if (!payload.ime || !payload.categorySlugs.length) {
       return res.fail('Ime in vsaj ena kategorija sta obvezni', 400);
     }
+    const allowDuplicateCreate = req.body?.allowDuplicateCreate === true;
+    if (!allowDuplicateCreate) {
+      const precheck = await precheckProductCandidate({
+        ...payload,
+        externalSource: castText((req.body as any)?.externalSource) || undefined,
+        externalId: castText((req.body as any)?.externalId) || undefined,
+        externalKey: castText((req.body as any)?.externalKey) || undefined,
+      });
+      if (precheck.status !== 'safe_create') {
+        return res.status(409).json({
+          success: false,
+          data: precheck,
+          error: 'Mozen duplikat produkta. Pred create preveri ujemanja.'
+        });
+      }
+    }
     const created = await ProductModel.create(payload);
     res.success(sanitizeProduct(created), 201);
   } catch (error) {
     res.fail('Napaka pri dodajanju produkta');
+  }
+}
+
+export async function precheckCreateProduct(req: Request, res: Response) {
+  try {
+    const payload = buildPayload(req.body);
+    if (!payload.ime || !payload.categorySlugs.length) {
+      return res.fail('Ime in vsaj ena kategorija sta obvezni', 400);
+    }
+
+    const result = await precheckProductCandidate({
+      ...payload,
+      externalSource: castText((req.body as any)?.externalSource) || undefined,
+      externalId: castText((req.body as any)?.externalId) || undefined,
+      externalKey: castText((req.body as any)?.externalKey) || undefined,
+    });
+    res.success(result);
+  } catch (error) {
+    res.fail(error instanceof Error ? error.message : 'Precheck ni uspel.', 400);
   }
 }
 
@@ -214,7 +264,9 @@ export async function searchPriceListItems(req: Request, res: Response) {
   }
 
   try {
-    const products = await ProductModel.find()
+    const includeInactive = String(req.query?.includeInactive ?? '').toLowerCase() === 'true';
+    const filter = includeInactive ? {} : { isActive: { $ne: false } };
+    const products = await ProductModel.find(filter)
       .select({
         ime: 1,
         kategorija: 1,
