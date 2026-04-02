@@ -2,6 +2,7 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export type PdfDocumentType =
   | 'OFFER'
+  | 'PROJECT'
   | 'INVOICE'
   | 'PURCHASE_ORDER'
   | 'DELIVERY_NOTE'
@@ -64,6 +65,10 @@ export interface PdfDocumentSettings {
   docType: PdfDocumentType;
   numberingRule: PdfNumberingRule;
   defaultTexts: PdfDocumentDefaultTexts;
+  appearance?: {
+    headerText?: string;
+    footerText?: string;
+  };
   templateHtml?: string | null;
 }
 
@@ -86,6 +91,10 @@ const PdfDocumentSettingsSchema = new Schema<PdfDocumentSettingsDocument>(
     defaultTexts: {
       paymentTerms: { type: String, default: '' },
       disclaimer: { type: String, default: '' },
+    },
+    appearance: {
+      headerText: { type: String, default: '' },
+      footerText: { type: String, default: '' },
     },
     templateHtml: { type: String, default: null },
   },
@@ -153,6 +162,10 @@ export const DEFAULT_DOCUMENT_SETTINGS: PdfDocumentSettings = {
   defaultTexts: {
     paymentTerms: 'Placilo v 15 dneh po izstavitvi racuna.',
     disclaimer: 'Ponudba je informativne narave. Prosimo, preverite podatke pred potrditvijo.',
+  },
+  appearance: {
+    headerText: '',
+    footerText: '',
   },
   templateHtml: null,
 };

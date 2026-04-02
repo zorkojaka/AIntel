@@ -59,6 +59,8 @@ export interface MaterialOrder {
 }
 
 export type WorkOrderStatus = "draft" | "issued" | "in-progress" | "confirmed" | "completed";
+export type WorkOrderConfirmationState = "unsigned" | "signed_active" | "resign_required";
+export type WorkOrderConfirmationVersionState = "active" | "archived" | "superseded";
 
 export interface WorkOrderItem extends LogisticsMaterialItem {
   offerItemId?: string | null;
@@ -75,6 +77,16 @@ export interface WorkOrderItem extends LogisticsMaterialItem {
 export interface WorkLogEntry {
   employeeId: string;
   hours: number;
+}
+
+export interface WorkOrderConfirmationVersionSummary {
+  id: string;
+  versionNumber: number;
+  state: WorkOrderConfirmationVersionState;
+  signerName: string;
+  customerRemark?: string | null;
+  signature?: string | null;
+  signedAt?: string | null;
 }
 
 export interface WorkOrder {
@@ -105,6 +117,10 @@ export interface WorkOrder {
   reopened?: boolean;
   executionNote?: string | null;
   workLogs?: WorkLogEntry[];
+  confirmationState?: WorkOrderConfirmationState;
+  confirmationActiveVersionId?: string | null;
+  activeConfirmationVersion?: WorkOrderConfirmationVersionSummary | null;
+  confirmationVersions?: WorkOrderConfirmationVersionSummary[];
   createdAt: string;
   updatedAt: string;
 }

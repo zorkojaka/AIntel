@@ -8,6 +8,7 @@ import { getCompanySettings, getPdfDocumentSettings } from './pdf-settings.servi
 import { getSettings } from '../../settings/settings.service';
 import { EmployeeModel } from '../../employees/schemas/employee';
 import type { DocumentNumberingKind } from './document-numbering.service';
+import { getActiveSignedConfirmationVersion, getConfirmationVersionById } from './work-order-confirmation.service';
 
 type MaterialDocType = 'PURCHASE_ORDER' | 'DELIVERY_NOTE';
 type WorkDocType = 'WORK_ORDER' | 'WORK_ORDER_CONFIRMATION';
@@ -273,7 +274,12 @@ function mapWorkOrderTasks(
   });
 }
 
-export async function generateWorkOrderDocumentPdf(projectId: string, workOrderId: string, docType: WorkDocType) {
+export async function generateWorkOrderDocumentPdf(
+  projectId: string,
+  workOrderId: string,
+  docType: WorkDocType,
+  confirmationVersionId?: string | null,
+) {
   const [project, workOrder] = await Promise.all([
     ProjectModel.findOne({ id: projectId }).lean(),
     WorkOrderModel.findOne({ _id: workOrderId, projectId }).lean(),
@@ -288,13 +294,23 @@ export async function generateWorkOrderDocumentPdf(projectId: string, workOrderI
   ]);
 
   const companyProfile = buildCompanyProfile(company, globalSettings);
+  const confirmationVersion =
+    docType === 'WORK_ORDER_CONFIRMATION'
+      ? confirmationVersionId
+        ? getConfirmationVersionById(existingOrder, confirmationVersionId)
+        : getActiveSignedConfirmationVersion(existingOrder)
+      : null;
+  if (docType === 'WORK_ORDER_CONFIRMATION' && !confirmationVersion) {
+    throw new Error('Aktivno podpisano potrdilo delovnega naloga ni na voljo. Zahtevan je nov podpis.');
+  }
   const customer = buildCustomer(existingProject, {
-    name: existingOrder.customerName ?? undefined,
-    address: existingOrder.customerAddress ?? undefined,
+    name: confirmationVersion?.customerName ?? existingOrder.customerName ?? undefined,
+    address: confirmationVersion?.customerAddress ?? existingOrder.customerAddress ?? undefined,
   });
 
-  const tasks = mapWorkOrderTasks(existingOrder, docType);
-  const items: DocumentPreviewContext['items'] = (existingOrder.items ?? []).map((item) => {
+  const sourceItems = confirmationVersion?.items ?? existingOrder.items ?? [];
+  const tasks = mapWorkOrderTasks({ ...existingOrder, items: sourceItems }, docType);
+  const items: DocumentPreviewContext['items'] = sourceItems.map((item) => {
     const offeredQuantity =
       typeof item.offeredQuantity === 'number'
         ? item.offeredQuantity
@@ -321,22 +337,29 @@ export async function generateWorkOrderDocumentPdf(projectId: string, workOrderI
     globalSettings,
     docType === 'WORK_ORDER_CONFIRMATION' ? 'workOrderConfirmation' : 'workOrder',
     documentSettings.defaultTexts,
-    [docType === 'WORK_ORDER_CONFIRMATION' ? existingOrder.customerRemark ?? null : existingOrder.notes ?? null],
+    [docType === 'WORK_ORDER_CONFIRMATION' ? confirmationVersion?.customerRemark ?? null : existingOrder.notes ?? null],
   );
-  const comment = existingOrder.executionNote ?? existingOrder.notes ?? null;
+  const comment = confirmationVersion?.executionNote ?? existingOrder.executionNote ?? existingOrder.notes ?? null;
   const executorLabel =
     docType === 'WORK_ORDER_CONFIRMATION'
-      ? await resolveWorkOrderExecutorLabel(existingOrder, companyProfile.companyName)
+      ? await resolveWorkOrderExecutorLabel(
+          {
+            ...existingOrder,
+            assignedEmployeeIds: confirmationVersion?.assignedEmployeeIds ?? existingOrder.assignedEmployeeIds,
+            mainInstallerId: confirmationVersion?.mainInstallerId ?? existingOrder.mainInstallerId,
+          } as any,
+          companyProfile.companyName,
+        )
       : null;
 
   const context: DocumentPreviewContext = {
     docType,
     documentNumber: buildDocumentNumber(
       docType,
-      existingOrder.code ?? undefined,
+      confirmationVersion?.workOrderCode ?? existingOrder.code ?? undefined,
       existingOrder._id ?? undefined,
     ),
-    issueDate: formatDate(existingOrder.createdAt),
+    issueDate: formatDate(confirmationVersion?.signedAt ?? confirmationVersion?.workOrderCreatedAt ?? existingOrder.createdAt),
     company: companyProfile,
     customer,
     projectTitle: existingProject.title ?? existingProject.id,
@@ -353,9 +376,14 @@ export async function generateWorkOrderDocumentPdf(projectId: string, workOrderI
             },
             right: {
               label: 'Naročnik',
-              name: existingOrder.customerSignerName ?? existingOrder.customerName ?? null,
-              image: existingOrder.customerSignature ?? null,
-              signedAt: existingOrder.customerSignedAt ? new Date(existingOrder.customerSignedAt).toISOString() : null,
+              name: confirmationVersion?.signerName ?? existingOrder.customerSignerName ?? existingOrder.customerName ?? null,
+              image: confirmationVersion?.signature ?? existingOrder.customerSignature ?? null,
+              signedAt:
+                confirmationVersion?.signedAt
+                  ? new Date(confirmationVersion.signedAt).toISOString()
+                  : existingOrder.customerSignedAt
+                    ? new Date(existingOrder.customerSignedAt).toISOString()
+                    : null,
             },
           }
         : null,

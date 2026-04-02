@@ -18,6 +18,7 @@ import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
 import type { Employee } from "@aintel/shared/types/employee";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
+import { WorkOrderConfirmationComposeDialog } from "../communication/WorkOrderConfirmationComposeDialog";
 
 interface ExecutionPanelProps {
   projectId: string;
@@ -109,6 +110,27 @@ function formatExecutionDateTime(value: string | null | undefined) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function getOrderConfirmationState(order: WorkOrder) {
+  return order.confirmationState ?? "unsigned";
+}
+
+function getActiveSignedConfirmation(order: WorkOrder) {
+  const activeConfirmation = order.activeConfirmationVersion ?? null;
+  if (order.confirmationState !== "signed_active") {
+    return null;
+  }
+  if (!order.confirmationActiveVersionId || !activeConfirmation) {
+    return null;
+  }
+  if (activeConfirmation.id !== order.confirmationActiveVersionId) {
+    return null;
+  }
+  if (activeConfirmation.state !== "active" || !activeConfirmation.signedAt) {
+    return null;
+  }
+  return activeConfirmation;
 }
 
 function formatExecutionDuration(items: WorkOrder["items"] | undefined) {
@@ -203,7 +225,7 @@ export function ExecutionPanel({
   onWorkOrderDraftChange,
   onRegisterSaveHandler,
 }: ExecutionPanelProps) {
-  const workOrders = logistics?.workOrders ?? [];
+  const rawWorkOrders = logistics?.workOrders ?? [];
   const materialOrders = logistics?.materialOrders ?? [];
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
   const [pendingWorkOrders, setPendingWorkOrders] = useState<Record<string, WorkOrderDraft>>({});
@@ -214,9 +236,13 @@ export function ExecutionPanel({
   const [unsavedMaterialChanges, setUnsavedMaterialChanges] = useState<Record<string, boolean>>({});
   const [downloadingWorkOrderId, setDownloadingWorkOrderId] = useState<string | null>(null);
   const [signoffOrderId, setSignoffOrderId] = useState<string | null>(null);
+  const [confirmationEmailOrderId, setConfirmationEmailOrderId] = useState<string | null>(null);
+  const [correctionOrderId, setCorrectionOrderId] = useState<string | null>(null);
+  const [startingCorrectionId, setStartingCorrectionId] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [sendingConfirmationOrderId, setSendingConfirmationOrderId] = useState<string | null>(null);
   const [customerRemarkDraft, setCustomerRemarkDraft] = useState("");
+
+  const workOrders = useMemo(() => rawWorkOrders, [rawWorkOrders]);
 
   useEffect(() => {
     let alive = true;
@@ -307,22 +333,22 @@ export function ExecutionPanel({
       items: WorkOrder["items"];
     }>
   ) => {
+    const current = pendingWorkOrders[order._id] ?? getInitialDraftValues(order);
+    const nextDraft = {
+      ...current,
+      ...values,
+    };
     setPendingWorkOrders((prev) => {
-      const current = prev[order._id] ?? getInitialDraftValues(order);
-      const nextDraft = {
-        ...current,
-        ...values,
-      };
-      onWorkOrderDraftChange?.({
-        ...order,
-        status: nextDraft.status,
-        executionNote: nextDraft.executionNote,
-        items: nextDraft.items,
-      });
       return {
         ...prev,
         [order._id]: nextDraft,
       };
+    });
+    onWorkOrderDraftChange?.({
+      ...order,
+      status: nextDraft.status,
+      executionNote: nextDraft.executionNote,
+      items: nextDraft.items,
     });
   };
 
@@ -331,24 +357,18 @@ export function ExecutionPanel({
     itemId: string,
     values: Partial<WorkOrder["items"][number]>
   ) => {
+    const current = pendingWorkOrders[order._id] ?? getInitialDraftValues(order);
+    const nextItems = current.items.map((item: WorkOrderItemDraft) =>
+      item.id === itemId
+        ? {
+            ...item,
+            ...values,
+            quantity:
+              typeof values.plannedQuantity === "number" ? values.plannedQuantity : item.quantity,
+          }
+        : item
+    );
     setPendingWorkOrders((prev) => {
-      const current = prev[order._id] ?? getInitialDraftValues(order);
-      const nextItems = current.items.map((item: WorkOrderItemDraft) =>
-        item.id === itemId
-          ? {
-              ...item,
-              ...values,
-              quantity:
-                typeof values.plannedQuantity === "number" ? values.plannedQuantity : item.quantity,
-            }
-          : item
-      );
-      onWorkOrderDraftChange?.({
-        ...order,
-        status: current.status,
-        executionNote: current.executionNote,
-        items: nextItems,
-      });
       return {
         ...prev,
         [order._id]: {
@@ -357,9 +377,18 @@ export function ExecutionPanel({
         },
       };
     });
+    onWorkOrderDraftChange?.({
+      ...order,
+      status: current.status,
+      executionNote: current.executionNote,
+      items: nextItems,
+    });
   };
 
   const handleAddExtraItem = (order: WorkOrder) => {
+    if (getOrderConfirmationState(order) === "signed_active") {
+      return;
+    }
     const id =
       typeof globalThis.crypto !== "undefined" && typeof globalThis.crypto.randomUUID === "function"
         ? globalThis.crypto.randomUUID()
@@ -410,6 +439,10 @@ export function ExecutionPanel({
     ) => {
       const order = workOrders.find((candidate) => candidate._id === orderId);
       if (!order) return false;
+      if (getOrderConfirmationState(order) === "signed_active") {
+        toast.error("Potrdilo delovnega naloga je podpisano. Izvedbenih vrednosti ni več mogoče spreminjati.");
+        return false;
+      }
       const draft = getDraftValues(order);
       setSavingStates((prev) => ({ ...prev, [orderId]: "saving" }));
       try {
@@ -474,6 +507,10 @@ export function ExecutionPanel({
   );
 
   const handleCompleteWorkOrder = async (order: WorkOrder) => {
+    if (getOrderConfirmationState(order) === "signed_active") {
+      toast.error("Potrdilo delovnega naloga je podpisano. Delovni nalog je zaklenjen.");
+      return;
+    }
     setCompletingId(order._id);
     const success = await saveWorkOrder(order._id, { status: "completed" });
     if (success) {
@@ -500,6 +537,9 @@ export function ExecutionPanel({
   };
 
   const applyDraftChange = (order: WorkOrder, values: Partial<{ status: WorkOrderStatus; executionNote: string }>) => {
+    if (getOrderConfirmationState(order) === "signed_active") {
+      return;
+    }
     updateDraft(order, values);
     setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
   };
@@ -509,11 +549,17 @@ export function ExecutionPanel({
     itemId: string,
     values: Partial<WorkOrder["items"][number]>
   ) => {
+    if (getOrderConfirmationState(order) === "signed_active") {
+      return;
+    }
     updateDraftItem(order, itemId, values);
     setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
   };
 
   const handleDeleteManualItem = (order: WorkOrder, item: WorkOrderItemDraft) => {
+    if (getOrderConfirmationState(order) === "signed_active") {
+      return;
+    }
     if (!item.isExtra) {
       return;
     }
@@ -684,6 +730,14 @@ export function ExecutionPanel({
     () => workOrders.find((order) => order._id === signoffOrderId) ?? null,
     [signoffOrderId, workOrders],
   );
+  const selectedConfirmationEmailOrder = useMemo(
+    () => workOrders.find((order) => order._id === confirmationEmailOrderId) ?? null,
+    [confirmationEmailOrderId, workOrders],
+  );
+  const selectedSignoffActiveConfirmation = useMemo(
+    () => (selectedSignoffOrder ? getActiveSignedConfirmation(selectedSignoffOrder) : null),
+    [selectedSignoffOrder],
+  );
   const selectedSignoffExecutionDateLabel = useMemo(
     () => formatExecutionDateTime(selectedSignoffOrder?.scheduledAt ?? null),
     [selectedSignoffOrder],
@@ -705,15 +759,29 @@ export function ExecutionPanel({
     setCustomerRemarkDraft(selectedSignoffOrder?.customerRemark ?? "");
   }, [selectedSignoffOrder]);
 
-  const openWorkOrderConfirmationPdf = useCallback((orderId: string) => {
-    const url = `/api/projects/${projectId}/work-orders/${orderId}/pdf?docType=WORK_ORDER_CONFIRMATION&mode=inline`;
+  const openWorkOrderConfirmationPdf = useCallback((orderId: string, confirmationVersionId?: string | null) => {
+    const params = new URLSearchParams({
+      docType: "WORK_ORDER_CONFIRMATION",
+      mode: "inline",
+    });
+    if (confirmationVersionId) {
+      params.set("confirmationVersionId", confirmationVersionId);
+    }
+    const url = `/api/projects/${projectId}/work-orders/${orderId}/pdf?${params.toString()}`;
     window.open(url, "_blank", "noopener,noreferrer");
   }, [projectId]);
 
-  const downloadWorkOrderConfirmationPdf = useCallback(async (orderId: string) => {
+  const downloadWorkOrderConfirmationPdf = useCallback(async (orderId: string, confirmationVersionId?: string | null) => {
     try {
+      const params = new URLSearchParams({
+        docType: "WORK_ORDER_CONFIRMATION",
+        mode: "download",
+      });
+      if (confirmationVersionId) {
+        params.set("confirmationVersionId", confirmationVersionId);
+      }
       await downloadPdf(
-        `/api/projects/${projectId}/work-orders/${orderId}/pdf?docType=WORK_ORDER_CONFIRMATION&mode=download`,
+        `/api/projects/${projectId}/work-orders/${orderId}/pdf?${params.toString()}`,
         `potrdilo-delovnega-naloga-${projectId}-${orderId}.pdf`,
       );
       toast.success("Potrdilo delovnega naloga preneseno.");
@@ -723,42 +791,79 @@ export function ExecutionPanel({
     }
   }, [projectId]);
 
-  const handleSendSignedConfirmation = useCallback(async (order: WorkOrder) => {
+  const handleSendSignedConfirmation = useCallback((order: WorkOrder) => {
     if (!order._id) {
       return;
     }
-    const email = order.customerEmail?.trim() ?? "";
-    if (!email) {
-      toast.error("Stranka nima vpisanega email naslova.");
+    if (getOrderConfirmationState(order) !== "signed_active" || !getActiveSignedConfirmation(order)) {
+      toast.error("Aktivno podpisano potrdilo ni na voljo. Pred pošiljanjem je potreben nov podpis.");
       return;
     }
+    setConfirmationEmailOrderId(order._id);
+  }, []);
 
-    setSendingConfirmationOrderId(order._id);
+  const handleStartCorrection = useCallback(async (order: WorkOrder) => {
+    if (!order._id) return;
+    setStartingCorrectionId(order._id);
     try {
-      await downloadPdf(
-        `/api/projects/${projectId}/work-orders/${order._id}/pdf?docType=WORK_ORDER_CONFIRMATION&mode=download`,
-        `potrdilo-delovnega-naloga-${projectId}-${order._id}.pdf`,
-      );
-
-      const subject = encodeURIComponent(`Podpisano potrdilo delovnega naloga - ${order.title || projectId}`);
-      const body = encodeURIComponent(
-        [
-          "Pozdravljeni,",
-          "",
-          "v priponki pošiljamo podpisano potrdilo delovnega naloga.",
-          "",
-          "Lep pozdrav,",
-        ].join("\n"),
-      );
-      window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${body}`;
-      toast.success("Potrdilo preneseno in email osnutek pripravljen.");
+      const response = await fetch(`/api/projects/${projectId}/work-orders/${order._id}/start-correction`, {
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!payload.success) {
+        toast.error(payload.error ?? "Potrdila ni mogoče odkleniti za popravek.");
+        return;
+      }
+      setCorrectionOrderId(null);
+      await refreshAfterMutation();
+      toast.success("Potrdilo je odklenjeno za popravek. Za trenutno stanje je potreben nov podpis.");
     } catch (error) {
       console.error(error);
-      toast.error("Priprava podpisanega potrdila za pošiljanje ni uspela.");
+      toast.error("Potrdila ni mogoče odkleniti za popravek.");
     } finally {
-      setSendingConfirmationOrderId(null);
+      setStartingCorrectionId(null);
     }
-  }, [projectId]);
+  }, [projectId, refreshAfterMutation]);
+
+  const renderConfirmationDialogActions = useCallback(
+    (order: WorkOrder, disabled = false, confirmationVersionId?: string | null) => (
+      <>
+        <div className="flex items-center overflow-hidden rounded-none border border-border/70">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 rounded-none border-r border-border/70 px-3"
+            disabled={disabled}
+            onClick={() => openWorkOrderConfirmationPdf(order._id, confirmationVersionId)}
+          >
+            Poglej potrdilo
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 rounded-none"
+            disabled={disabled}
+            onClick={() => void downloadWorkOrderConfirmationPdf(order._id, confirmationVersionId)}
+            aria-label="Prenesi potrdilo delovnega naloga"
+          >
+            <Download className="h-4 w-4" />
+          </Button>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={disabled}
+          onClick={() => handleSendSignedConfirmation(order)}
+        >
+          <Send className="mr-2 h-4 w-4" />
+          Pošlji email s potrdilom stranki
+        </Button>
+      </>
+    ),
+    [downloadWorkOrderConfirmationPdf, handleSendSignedConfirmation, openWorkOrderConfirmationPdf],
+  );
 
   const handleCustomerSignoff = useCallback(
     async (signature: string, signerName: string) => {
@@ -789,6 +894,11 @@ export function ExecutionPanel({
                   const allItemsCompleted =
                     items.length > 0 && items.every((item: WorkOrderItemDraft) => !!item.isCompleted);
                   const isOrderCompleted = allItemsCompleted;
+                  const confirmationState = getOrderConfirmationState(order);
+                  const isConfirmationLocked = confirmationState === "signed_active";
+                  const requiresResign = confirmationState === "resign_required";
+                  const activeConfirmation = getActiveSignedConfirmation(order);
+                  const confirmationHistory = order.confirmationVersions ?? [];
                   const workOrderBadgeClass = isOrderCompleted
                     ? "border-green-500/30 bg-green-500/10 text-green-700"
                     : "border-orange-400/50 bg-orange-500/10 text-orange-700";
@@ -888,6 +998,101 @@ export function ExecutionPanel({
                           </Badge>
                         </CardHeader>
                         <CardContent className="space-y-4">
+                        {isConfirmationLocked ? (
+                          <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-900">
+                            Potrdilo delovnega naloga je podpisano. Potrjene izvedbene vrednosti so zaklenjene.
+                          </div>
+                        ) : null}
+                        {requiresResign ? (
+                          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900">
+                            Popravek potrdila je v teku. Trenutne izvedbene vrednosti so odklenjene, vendar še niso aktivno podpisane. Pred pošiljanjem ali uporabo kot veljavnega potrdila je potreben nov podpis stranke.
+                          </div>
+                        ) : null}
+                        {(activeConfirmation || confirmationHistory.length > 0) ? (
+                          <div className="space-y-3 rounded-md border border-border/70 bg-muted/20 p-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium">Podpisano potrdilo delovnega naloga</p>
+                                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                  <Badge className={isConfirmationLocked ? "border-emerald-600/20 bg-emerald-600 text-white" : "border-amber-500/30 bg-amber-500/10 text-amber-700"}>
+                                    {isConfirmationLocked ? "Podpisano in zaklenjeno" : "Nov podpis potreben"}
+                                  </Badge>
+                                  {activeConfirmation ? <span>Aktivna verzija V{activeConfirmation.versionNumber}</span> : null}
+                                </div>
+                              </div>
+                              {activeConfirmation ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {renderConfirmationDialogActions(order, false)}
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => setCorrectionOrderId(order._id)}
+                                  >
+                                    Popravi potrdilo
+                                  </Button>
+                                </div>
+                              ) : null}
+                            </div>
+                            {activeConfirmation ? (
+                              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+                                <div className="space-y-2 text-sm">
+                                  <div>
+                                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Podpisnik</p>
+                                    <p className="font-medium">{activeConfirmation.signerName || order.customerName || "Neznana stranka"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Podpisano</p>
+                                    <p>{formatExecutionDateTime(activeConfirmation.signedAt ?? null) ?? "Datum ni na voljo"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Opombe naročnika</p>
+                                    <p className="whitespace-pre-wrap">{activeConfirmation.customerRemark?.trim() || "Brez opomb."}</p>
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Podpis</p>
+                                  <div className="rounded-md border border-border/70 bg-background p-3">
+                                    {activeConfirmation.signature ? (
+                                      <img
+                                        src={activeConfirmation.signature}
+                                        alt="Podpis naročnika"
+                                        className="mx-auto max-h-[140px] w-full object-contain"
+                                      />
+                                    ) : (
+                                      <div className="flex min-h-[96px] items-center justify-center text-sm text-muted-foreground">
+                                        Podpis je shranjen.
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : null}
+                            {confirmationHistory.length > 0 ? (
+                              <details className="rounded-md border border-border/60 bg-background/70 p-3">
+                                <summary className="cursor-pointer text-sm font-medium">
+                                  Prejšnja potrjena potrdila ({confirmationHistory.length})
+                                </summary>
+                                <div className="mt-3 space-y-2">
+                                  {confirmationHistory
+                                    .filter((version) => !activeConfirmation || version.id !== activeConfirmation.id)
+                                    .slice()
+                                    .sort((a, b) => (b.versionNumber ?? 0) - (a.versionNumber ?? 0))
+                                    .map((version) => (
+                                      <div key={version.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-2">
+                                        <div className="space-y-1 text-sm">
+                                          <p className="font-medium">V{version.versionNumber}</p>
+                                          <p className="text-muted-foreground">
+                                            {version.signerName || "Neznan podpisnik"} · {formatExecutionDateTime(version.signedAt ?? null) ?? "Datum ni na voljo"}
+                                          </p>
+                                        </div>
+                                        {renderConfirmationDialogActions(order, false, version.id)}
+                                      </div>
+                                    ))}
+                                </div>
+                              </details>
+                            ) : null}
+                          </div>
+                        ) : null}
                         <div className="hidden overflow-x-auto rounded-md border md:block">
                           <table className="w-full min-w-[720px] text-sm">
                             <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
@@ -933,6 +1138,7 @@ export function ExecutionPanel({
                                       <Checkbox
                                         className="h-5 w-5"
                                         checked={isCompleted}
+                                        disabled={isConfirmationLocked}
                                         onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                           handleCompletionChange(event.target.checked)
                                         }
@@ -943,6 +1149,7 @@ export function ExecutionPanel({
                                         <Input
                                           type="number"
                                           value={item.executedQuantity ?? ""}
+                                          disabled={isConfirmationLocked}
                                           onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                             applyItemChange(order, item.id, {
                                               executedQuantity: Number(event.target.value),
@@ -963,6 +1170,7 @@ export function ExecutionPanel({
                                             value={item.name}
                                             placeholder="Naziv ali iskanje v ceniku"
                                             inputClassName="text-left"
+                                            disabled={isConfirmationLocked}
                                             onChange={(name) =>
                                               applyItemChange(order, item.id, { name, productId: null })
                                             }
@@ -1001,6 +1209,7 @@ export function ExecutionPanel({
                                           variant="ghost"
                                           size="icon"
                                           className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                          disabled={isConfirmationLocked}
                                           onClick={() => handleDeleteManualItem(order, item)}
                                           aria-label="Izbriši dodatno postavko"
                                         >
@@ -1073,6 +1282,7 @@ export function ExecutionPanel({
                                     <Input
                                       type="number"
                                       value={item.executedQuantity ?? ""}
+                                      disabled={isConfirmationLocked}
                                       onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                         applyItemChange(order, item.id, {
                                           executedQuantity: Number(event.target.value),
@@ -1086,6 +1296,7 @@ export function ExecutionPanel({
                                   <span className="text-xs text-muted-foreground">Opomba</span>
                                   <Textarea
                                     value={item.itemNote ?? ""}
+                                    disabled={isConfirmationLocked}
                                     onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
                                       applyItemChange(order, item.id, { itemNote: event.target.value })
                                     }
@@ -1098,6 +1309,7 @@ export function ExecutionPanel({
                                   <Checkbox
                                     className="h-5 w-5"
                                     checked={isCompleted}
+                                    disabled={isConfirmationLocked}
                                     onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                       handleCompletionChange(event.target.checked)
                                     }
@@ -1113,6 +1325,7 @@ export function ExecutionPanel({
                                       variant="ghost"
                                       size="icon"
                                       className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                      disabled={isConfirmationLocked}
                                       onClick={() => handleDeleteManualItem(order, item)}
                                       aria-label="Izbriši dodatno postavko"
                                     >
@@ -1130,6 +1343,7 @@ export function ExecutionPanel({
                             <label className="text-sm font-medium">Opombe ob izvedbi</label>
                             <Textarea
                               value={draft.executionNote}
+                              disabled={isConfirmationLocked}
                               onChange={(event: ChangeEvent<HTMLTextAreaElement>) => applyDraftChange(order, { executionNote: event.target.value })}
                               placeholder="Opis dodatnih del, materiala ali opažanj na terenu."
                               rows={4}
@@ -1139,6 +1353,7 @@ export function ExecutionPanel({
                             <Button
                               variant="outline"
                               size="sm"
+                              disabled={isConfirmationLocked}
                               onClick={() => handleAddExtraItem(order)}
                             >
                               + Dodaj dodatno postavko
@@ -1173,7 +1388,7 @@ export function ExecutionPanel({
                               </Button>
                               <Button
                                 onClick={() => saveWorkOrder(order._id)}
-                                disabled={!orderHasUnsavedChanges || isSavingOrder || isCompletingOrder}
+                                disabled={!orderHasUnsavedChanges || isSavingOrder || isCompletingOrder || isConfirmationLocked}
                               >
                                 {isSavingOrder ? (
                                   <>
@@ -1184,38 +1399,30 @@ export function ExecutionPanel({
                                   "Shrani delovni nalog"
                                 )}
                               </Button>
-                              {isOrderCompleted && !order.customerSignedAt ? (
+                              {isOrderCompleted && !isConfirmationLocked ? (
                                 <Button
                                   variant="secondary"
                                   onClick={() => setSignoffOrderId(order._id)}
                                 >
-                                  Potrdilo delovnega naloga
+                                  {requiresResign ? "Novo potrdilo delovnega naloga" : "Potrdilo delovnega naloga"}
                                 </Button>
                               ) : null}
-                              {isOrderCompleted && order.customerSignedAt ? (
+                              {isOrderCompleted && isConfirmationLocked ? (
                                 <>
-                                  <Button
-                                    variant="secondary"
-                                    onClick={() => void downloadWorkOrderConfirmationPdf(order._id)}
-                                  >
-                                    Prenos potrjenega DN
-                                  </Button>
+                                  {renderConfirmationDialogActions(order, false)}
                                   <Button
                                     variant="outline"
-                                    onClick={() => void handleSendSignedConfirmation(order)}
-                                    disabled={sendingConfirmationOrderId === order._id}
+                                    onClick={() => handleSendSignedConfirmation(order)}
                                   >
-                                    {sendingConfirmationOrderId === order._id ? (
-                                      <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Pripravljam...
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Send className="mr-2 h-4 w-4" />
-                                        Pošlji podpisano potrdilo stranki
-                                      </>
-                                    )}
+                                    <Send className="mr-2 h-4 w-4" />
+                                    Pošlji email s potrdilom stranki
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => setCorrectionOrderId(order._id)}
+                                  >
+                                    Popravi potrdilo
                                   </Button>
                                 </>
                               ) : null}
@@ -1295,36 +1502,48 @@ export function ExecutionPanel({
                   ))}
                 </div>
               </div>
-              {selectedSignoffOrder.customerSignedAt ? (
-                <div className="space-y-3 rounded-none border border-emerald-500/30 bg-emerald-500/5 p-4">
-                  <div>
-                    <p className="text-sm font-medium">Potrdilo je podpisano</p>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedSignoffOrder.customerSignerName || selectedSignoffOrder.customerName || "Stranka"} ·{" "}
-                      {formatExecutionDateTime(selectedSignoffOrder.customerSignedAt) ?? "Datum ni na voljo"}
+              {getOrderConfirmationState(selectedSignoffOrder) === "signed_active" && selectedSignoffActiveConfirmation ? (
+                <div className="space-y-4">
+                  <div className="rounded-none border border-border/70 bg-card p-4">
+                    <p className="text-sm font-medium">Potrditev izvedbe</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      S podpisom naročnik potrjuje, da so bila vsa dela izvedena, oprema dobavljena, pregledana in delujoča. Morebitne pripombe so navedene v tem dokumentu.
                     </p>
-                    {selectedSignoffOrder.customerRemark ? (
-                      <p className="mt-2 text-sm text-muted-foreground">{selectedSignoffOrder.customerRemark}</p>
-                    ) : null}
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      S tem se projekt šteje za zaključen.
+                    </p>
+                    <div className="mt-4 space-y-2">
+                      <label className="text-sm font-medium">Opombe naročnika</label>
+                      <div className="min-h-[104px] whitespace-pre-wrap rounded-md border border-border bg-muted/20 px-3 py-3 text-sm text-foreground">
+                        {selectedSignoffActiveConfirmation.customerRemark?.trim() || "Brez opomb."}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="outline"
-                        onClick={() => openWorkOrderConfirmationPdf(selectedSignoffOrder._id)}
-                      >
-                        Predogled potrdila DN
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9 rounded-none"
-                        onClick={() => void downloadWorkOrderConfirmationPdf(selectedSignoffOrder._id)}
-                        aria-label="Prenesi potrdilo delovnega naloga"
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Podpis</label>
+                      <div className="rounded-lg border-2 border-dashed border-emerald-500/30 bg-emerald-500/5 p-4">
+                      {selectedSignoffActiveConfirmation.signature ? (
+                        <img
+                          src={selectedSignoffActiveConfirmation.signature}
+                          alt="Podpis naročnika"
+                          className="mx-auto max-h-[200px] w-full object-contain"
+                        />
+                      ) : (
+                        <div className="flex min-h-[120px] items-center justify-center text-sm text-muted-foreground">
+                          Podpis je shranjen.
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedSignoffActiveConfirmation.signerName || selectedSignoffOrder.customerName || "Stranka"} ·{" "}
+                      {formatExecutionDateTime(selectedSignoffActiveConfirmation.signedAt ?? null) ?? "Datum ni na voljo"}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-3 border-t pt-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {renderConfirmationDialogActions(selectedSignoffOrder, false)}
                     </div>
                   </div>
                 </div>
@@ -1332,6 +1551,7 @@ export function ExecutionPanel({
                 <SignaturePad
                   onSign={handleCustomerSignoff}
                   signerName={selectedSignoffOrder.customerSignerName ?? selectedSignoffOrder.customerName ?? ""}
+                  footerActions={renderConfirmationDialogActions(selectedSignoffOrder, true)}
                 >
                   <div className="rounded-none border border-border/70 bg-card p-4">
                     <p className="text-sm font-medium">Potrditev izvedbe</p>
@@ -1357,6 +1577,86 @@ export function ExecutionPanel({
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={Boolean(correctionOrderId)}
+        onOpenChange={(open) => {
+          if (!open && !startingCorrectionId) {
+            setCorrectionOrderId(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Popravi potrdilo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm text-muted-foreground">
+            <p>Obstoječe podpisano potrdilo bo ostalo shranjeno v zgodovini.</p>
+            <p>Trenutne potrjene izvedbene vrednosti bodo odklenjene za popravek.</p>
+            <p>Po popravkih bo potreben nov podpis stranke, preden bo potrdilo znova veljavno.</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={Boolean(startingCorrectionId)}
+              onClick={() => setCorrectionOrderId(null)}
+            >
+              Prekliči
+            </Button>
+            <Button
+              type="button"
+              disabled={!correctionOrderId || Boolean(startingCorrectionId)}
+              onClick={() => {
+                const targetOrder = workOrders.find((order) => order._id === correctionOrderId);
+                if (targetOrder) {
+                  void handleStartCorrection(targetOrder);
+                }
+              }}
+            >
+              {startingCorrectionId ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Nadaljujem...
+                </span>
+              ) : (
+                "Nadaljuj"
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <WorkOrderConfirmationComposeDialog
+        open={Boolean(selectedConfirmationEmailOrder)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmationEmailOrderId(null);
+          }
+        }}
+        projectId={projectId}
+        workOrderId={selectedConfirmationEmailOrder?._id ?? null}
+        customerName={selectedConfirmationEmailOrder?.customerName ?? ""}
+        customerEmail={selectedConfirmationEmailOrder?.customerEmail ?? ""}
+        projectName={projectDisplayId || projectId}
+        workOrderIdentifier={
+          selectedConfirmationEmailOrder?.code
+            || selectedConfirmationEmailOrder?.title
+            || projectDisplayId
+            || projectId
+        }
+        confirmationDate={
+          formatExecutionDateTime(selectedConfirmationEmailOrder?.activeConfirmationVersion?.signedAt ?? null) ?? ""
+        }
+        confirmationSignedAt={selectedConfirmationEmailOrder?.activeConfirmationVersion?.signedAt ?? null}
+        canSendConfirmation={Boolean(
+          selectedConfirmationEmailOrder && getOrderConfirmationState(selectedConfirmationEmailOrder) === "signed_active" && getActiveSignedConfirmation(selectedConfirmationEmailOrder)
+        )}
+        companyName=""
+        onSent={async () => {
+          await refreshAfterMutation();
+        }}
+      />
     </div>
   );
 }

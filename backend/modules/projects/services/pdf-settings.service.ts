@@ -11,6 +11,7 @@ import {
 
 const ALLOWED_DOC_TYPES: PdfDocumentType[] = [
   'OFFER',
+  'PROJECT',
   'INVOICE',
   'PURCHASE_ORDER',
   'DELIVERY_NOTE',
@@ -21,6 +22,19 @@ const ALLOWED_DOC_TYPES: PdfDocumentType[] = [
 
 const DOC_DEFAULTS: Record<PdfDocumentType, PdfDocumentSettings> = {
   OFFER: DEFAULT_DOCUMENT_SETTINGS,
+  PROJECT: {
+    ...DEFAULT_DOCUMENT_SETTINGS,
+    docType: 'PROJECT',
+    numberingRule: { ...DEFAULT_DOCUMENT_SETTINGS.numberingRule, prefix: 'PROJ' },
+    defaultTexts: {
+      paymentTerms: '',
+      disclaimer: '',
+    },
+    appearance: {
+      headerText: 'Projektni opisi',
+      footerText: '',
+    },
+  },
   INVOICE: {
     ...DEFAULT_DOCUMENT_SETTINGS,
     docType: 'INVOICE',
@@ -104,6 +118,7 @@ function sanitizeCompanyPayload(payload: Partial<PdfCompanySettings>): Partial<P
 function sanitizeDocumentPayload(payload: Partial<PdfDocumentSettings>): Partial<PdfDocumentSettings> {
   const numbering = (payload.numberingRule ?? {}) as Partial<PdfDocumentSettings['numberingRule']>;
   const texts = (payload.defaultTexts ?? {}) as Partial<PdfDocumentSettings['defaultTexts']>;
+  const appearance = (payload.appearance ?? {}) as NonNullable<PdfDocumentSettings['appearance']>;
 
   const normalizedNumbering = {
     prefix: normalizeString(numbering.prefix) ?? DEFAULT_DOCUMENT_SETTINGS.numberingRule.prefix,
@@ -129,12 +144,23 @@ function sanitizeDocumentPayload(payload: Partial<PdfDocumentSettings>): Partial
     normalizedTexts.disclaimer = disclaimer;
   }
 
+  const normalizedAppearance: NonNullable<PdfDocumentSettings['appearance']> = {};
+  const headerText = normalizeString(appearance.headerText);
+  if (headerText !== undefined) {
+    normalizedAppearance.headerText = headerText;
+  }
+  const footerText = normalizeString(appearance.footerText);
+  if (footerText !== undefined) {
+    normalizedAppearance.footerText = footerText;
+  }
+
   const sanitizedTemplate =
     typeof payload.templateHtml === 'string' ? payload.templateHtml : payload.templateHtml === null ? null : undefined;
 
   return {
     numberingRule: normalizedNumbering,
     defaultTexts: normalizedTexts,
+    appearance: normalizedAppearance,
     templateHtml: sanitizedTemplate,
   };
 }
@@ -184,6 +210,10 @@ export async function getPdfDocumentSettings(docType?: string) {
       ...DOC_DEFAULTS[normalizedType].defaultTexts,
       ...(existing.defaultTexts ?? {}),
     },
+    appearance: {
+      ...(DOC_DEFAULTS[normalizedType].appearance ?? {}),
+      ...(existing.appearance ?? {}),
+    },
   };
 }
 
@@ -202,6 +232,11 @@ export async function updatePdfDocumentSettings(docType: string | undefined, pay
   doc.defaultTexts = {
     ...(doc.defaultTexts ?? DOC_DEFAULTS[normalizedType].defaultTexts),
     ...(sanitized.defaultTexts ?? {}),
+  };
+
+  doc.appearance = {
+    ...(doc.appearance ?? DOC_DEFAULTS[normalizedType].appearance ?? {}),
+    ...(sanitized.appearance ?? {}),
   };
 
   if (sanitized.templateHtml !== undefined) {

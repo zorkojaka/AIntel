@@ -76,6 +76,13 @@ export interface ApiEnvelope<T> {
   error: string | null;
 }
 
+export type {
+  CommunicationAttachmentType,
+  CommunicationCategory,
+  CommunicationSenderSettings,
+  CommunicationTemplate,
+} from '@aintel/shared/types/communication';
+
 export interface PdfCompanySettingsDto {
   companyName: string;
   address: string;
@@ -102,11 +109,15 @@ export interface PdfNumberingRuleDto {
 }
 
 export interface PdfDocumentSettingsDto {
-  docType: 'OFFER';
+  docType: 'OFFER' | 'PROJECT' | 'INVOICE' | 'PURCHASE_ORDER' | 'DELIVERY_NOTE' | 'WORK_ORDER' | 'WORK_ORDER_CONFIRMATION' | 'CREDIT_NOTE';
   numberingRule: PdfNumberingRuleDto;
   defaultTexts: {
     paymentTerms?: string;
     disclaimer?: string;
+  };
+  appearance?: {
+    headerText?: string;
+    footerText?: string;
   };
   templateHtml?: string | null;
 }

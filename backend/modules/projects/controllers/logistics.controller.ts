@@ -19,7 +19,18 @@ import {
   generateMaterialOrderDocumentPdf,
   generateWorkOrderDocumentPdf,
 } from '../services/project-document-pdf.service';
+import {
+  ensureConfirmationVersionHistory,
+  getActiveSignedConfirmationVersion,
+  getConfirmationVersions,
+  isConfirmationLocked,
+  resolveConfirmationState,
+} from '../services/work-order-confirmation.service';
 import { canEditPreparation } from '../../../../shared/utils/preparationAccess';
+import {
+  buildActorDisplayName,
+  recordOfferConfirmedCommunicationEvent,
+} from '../../communication/services/communication.service';
 
 function calculateOfferTotalsFromSnapshot(offer: {
   items: OfferLineItem[];
@@ -354,6 +365,9 @@ function serializeMaterialOrder(order: any): MaterialOrder | null {
 
 function serializeWorkOrder(order: any): WorkOrder | null {
   if (!order) return null;
+  const confirmationState = resolveConfirmationState(order);
+  const activeConfirmationVersion = getActiveSignedConfirmationVersion(order);
+  const confirmationVersions = getConfirmationVersions(order);
   return {
     _id: String(order._id),
     projectId: order.projectId,
@@ -409,6 +423,10 @@ function serializeWorkOrder(order: any): WorkOrder | null {
     customerEmail: order.customerEmail ?? '',
     customerPhone: order.customerPhone ?? '',
     customerAddress: order.customerAddress ?? '',
+    customerSignerName: activeConfirmationVersion?.signerName ?? null,
+    customerSignature: activeConfirmationVersion?.signature ?? null,
+    customerSignedAt: activeConfirmationVersion?.signedAt ? new Date(activeConfirmationVersion.signedAt).toISOString() : null,
+    customerRemark: activeConfirmationVersion?.customerRemark ?? null,
     executionNote:
       typeof order.executionNote === 'string'
         ? order.executionNote
@@ -420,6 +438,28 @@ function serializeWorkOrder(order: any): WorkOrder | null {
     workLogs: (order.workLogs ?? []).map((log: any) => ({
       employeeId: typeof log.employeeId === 'string' ? log.employeeId : '',
       hours: typeof log.hours === 'number' ? log.hours : 0,
+    })),
+    confirmationState,
+    confirmationActiveVersionId: activeConfirmationVersion?.id ?? null,
+    activeConfirmationVersion: activeConfirmationVersion
+      ? {
+          id: activeConfirmationVersion.id,
+          versionNumber: activeConfirmationVersion.versionNumber,
+          state: activeConfirmationVersion.state,
+          signerName: activeConfirmationVersion.signerName,
+          customerRemark: activeConfirmationVersion.customerRemark ?? null,
+          signature: activeConfirmationVersion.signature,
+          signedAt: activeConfirmationVersion.signedAt ? new Date(activeConfirmationVersion.signedAt).toISOString() : null,
+        }
+      : null,
+    confirmationVersions: confirmationVersions.map((version) => ({
+      id: version.id,
+      versionNumber: version.versionNumber,
+      state: version.state,
+      signerName: version.signerName,
+      customerRemark: version.customerRemark ?? null,
+      signature: version.signature,
+      signedAt: version.signedAt ? new Date(version.signedAt).toISOString() : null,
     })),
     createdAt: order.createdAt ? new Date(order.createdAt).toISOString() : '',
     updatedAt: order.updatedAt ? new Date(order.updatedAt).toISOString() : '',
@@ -600,18 +640,26 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       items: logisticsItems,
     });
 
-    if (updatedProject) {
-      addTimeline(updatedProject, {
-        type: 'offer',
-        title: previousStatus === 'cancelled' ? 'Ponovno potrjena ponudba' : 'Ponudba potrjena',
-        description: `Verzija ${offer.title || offer.baseTitle || offerId}`,
-        timestamp: new Date().toISOString(),
-        user: 'system',
-      });
-      await updatedProject.save();
-    }
+      if (updatedProject) {
+        addTimeline(updatedProject, {
+          type: 'offer',
+          title: previousStatus === 'cancelled' ? 'Ponovno potrjena ponudba' : 'Ponudba potrjena',
+          description: `Verzija ${offer.title || offer.baseTitle || offerId}`,
+          timestamp: new Date().toISOString(),
+          user: 'system',
+        });
+        await updatedProject.save();
+      }
 
-    const finalProject = updatedProject ?? project;
+      await recordOfferConfirmedCommunicationEvent({
+        projectId,
+        offerId,
+        title: previousStatus === 'cancelled' ? 'Ponudba ponovno potrjena' : 'Ponudba potrjena',
+        description: `Verzija ${offer.title || offer.baseTitle || offerId}`,
+        user: buildActorDisplayName(req as any),
+      });
+
+      const finalProject = updatedProject ?? project;
     const payload = await serializeProjectDetails(finalProject, projectClient);
     return res.success(payload);
   } catch (err) {
@@ -802,6 +850,14 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     }
 
     const payload = req.body ?? {};
+    ensureConfirmationVersionHistory(existing);
+    const confirmationLocked = isConfirmationLocked(existing);
+    const lockedConfirmationFields = ['status', 'executionNote', 'items'] as const;
+    const hasLockedConfirmationMutation = confirmationLocked
+      && lockedConfirmationFields.some((field) => field in payload);
+    if (hasLockedConfirmationMutation) {
+      return res.fail('Potrdilo delovnega naloga je že podpisano. Potrjenih izvedbenih vrednosti ni več mogoče spreminjati.', 409);
+    }
     if (hasPreparationPayload(payload) && !canEditPreparation(getContextRoles(req))) {
       return res.fail('Ni dostopa do faze Priprava.', 403);
     }
@@ -1194,6 +1250,57 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
   }
 }
 
+export async function startWorkOrderConfirmationCorrection(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { projectId, workOrderId } = req.params;
+    const workOrder = await WorkOrderModel.findOne({ _id: workOrderId, projectId });
+    if (!workOrder) {
+      return res.fail('Delovni nalog ni najden.', 404);
+    }
+
+    ensureConfirmationVersionHistory(workOrder);
+    const activeConfirmationVersion = getActiveSignedConfirmationVersion(workOrder);
+    if (!activeConfirmationVersion) {
+      return res.fail('Aktivno podpisano potrdilo delovnega naloga ni na voljo.', 409);
+    }
+
+    workOrder.confirmationVersions = (workOrder.confirmationVersions ?? []).map((version) => ({
+      ...version,
+      state: version.id === activeConfirmationVersion.id ? 'archived' : version.state === 'active' ? 'superseded' : version.state,
+    }));
+    workOrder.confirmationActiveVersionId = null;
+    workOrder.confirmationState = 'resign_required';
+    workOrder.customerSignerName = null;
+    workOrder.customerSignature = null;
+    workOrder.customerSignedAt = null;
+    workOrder.customerRemark = null;
+    workOrder.markModified('confirmationVersions');
+    await workOrder.save();
+
+    const project = await ProjectModel.findOne({ id: projectId });
+    if (project) {
+      addTimeline(project, {
+        type: 'execution',
+        title: 'Popravek potrdila delovnega naloga',
+        description: `Aktivna verzija V${activeConfirmationVersion.versionNumber} je arhivirana. Zahtevan je nov podpis stranke.`,
+        timestamp: new Date().toLocaleString('sl-SI'),
+        user: buildActorDisplayName(req as any),
+        metadata: {
+          workOrderId,
+          archivedVersionId: activeConfirmationVersion.id,
+          archivedVersionNumber: String(activeConfirmationVersion.versionNumber),
+        },
+      });
+      await project.save();
+    }
+
+    const refreshed = await WorkOrderModel.findOne({ _id: workOrderId, projectId }).lean();
+    return res.success(serializeWorkOrder(refreshed));
+  } catch (err) {
+    next(err);
+  }
+}
+
 function parseMaterialDocType(value?: string | string[] | null): 'PURCHASE_ORDER' | 'DELIVERY_NOTE' {
   const normalized = Array.isArray(value) ? value[0] : value;
   if (typeof normalized === 'string' && normalized.toUpperCase() === 'DELIVERY_NOTE') {
@@ -1426,7 +1533,16 @@ export async function exportWorkOrderPdf(req: Request, res: Response, next: Next
   try {
     const docType = parseWorkDocType(req.query.docType);
     const mode = parsePdfResponseMode(req.query.mode);
-    const buffer = await generateWorkOrderDocumentPdf(req.params.projectId, req.params.workOrderId, docType);
+    const confirmationVersionId =
+      typeof req.query.confirmationVersionId === 'string' && req.query.confirmationVersionId.trim().length > 0
+        ? req.query.confirmationVersionId.trim()
+        : null;
+    const buffer = await generateWorkOrderDocumentPdf(
+      req.params.projectId,
+      req.params.workOrderId,
+      docType,
+      confirmationVersionId,
+    );
     res.setHeader('Content-Type', 'application/pdf');
     const slug = docType === 'WORK_ORDER_CONFIRMATION' ? 'work-order-confirmation' : 'work-order';
     res.setHeader('Content-Disposition', `${mode}; filename="${slug}-${req.params.workOrderId}.pdf"`);
