@@ -23,7 +23,40 @@ export interface WorkLogEntry {
   hours: number;
 }
 
-interface WorkOrderDocument extends Document {
+export type WorkOrderConfirmationState = 'unsigned' | 'signed_active' | 'resign_required';
+export type WorkOrderConfirmationVersionState = 'active' | 'archived' | 'superseded';
+
+export interface WorkOrderConfirmationVersionItem extends WorkOrderItem {}
+
+export interface WorkOrderConfirmationVersion {
+  id: string;
+  workOrderId: string;
+  projectId: string;
+  offerVersionId: string;
+  versionNumber: number;
+  state: WorkOrderConfirmationVersionState;
+  signerName: string;
+  customerRemark?: string | null;
+  signature: string;
+  signedAt?: Date | null;
+  items: WorkOrderConfirmationVersionItem[];
+  executionNote?: string | null;
+  notes?: string | null;
+  customerName?: string | null;
+  customerEmail?: string | null;
+  customerPhone?: string | null;
+  customerAddress?: string | null;
+  scheduledAt?: string | null;
+  mainInstallerId?: string | null;
+  assignedEmployeeIds?: string[];
+  location?: string | null;
+  workOrderCode?: string | null;
+  workOrderTitle?: string | null;
+  workOrderCreatedAt?: Date | null;
+  createdAt?: Date | null;
+}
+
+export interface WorkOrderDocument extends Document {
   projectId: string;
   offerVersionId: string;
   sequence?: number;
@@ -50,6 +83,9 @@ interface WorkOrderDocument extends Document {
   reopened?: boolean;
   executionNote?: string | null;
   workLogs: WorkLogEntry[];
+  confirmationState?: WorkOrderConfirmationState;
+  confirmationActiveVersionId?: string | null;
+  confirmationVersions?: WorkOrderConfirmationVersion[];
 }
 
 const workOrderItemSchema = new Schema<WorkOrderItem>(
@@ -77,6 +113,41 @@ const workLogSchema = new Schema<WorkLogEntry>(
   {
     employeeId: { type: String, required: true },
     hours: { type: Number, required: true, default: 0 },
+  },
+  { _id: false }
+);
+
+const workOrderConfirmationVersionSchema = new Schema<WorkOrderConfirmationVersion>(
+  {
+    id: { type: String, required: true },
+    workOrderId: { type: String, required: true },
+    projectId: { type: String, required: true },
+    offerVersionId: { type: String, required: true },
+    versionNumber: { type: Number, required: true },
+    state: {
+      type: String,
+      enum: ['active', 'archived', 'superseded'],
+      default: 'archived',
+    },
+    signerName: { type: String, required: true },
+    customerRemark: { type: String, default: null },
+    signature: { type: String, required: true },
+    signedAt: { type: Date, default: null },
+    items: { type: [workOrderItemSchema], default: [] },
+    executionNote: { type: String, default: null },
+    notes: { type: String, default: null },
+    customerName: { type: String, default: null },
+    customerEmail: { type: String, default: null },
+    customerPhone: { type: String, default: null },
+    customerAddress: { type: String, default: null },
+    scheduledAt: { type: String, default: null },
+    mainInstallerId: { type: String, default: null },
+    assignedEmployeeIds: { type: [String], default: [] },
+    location: { type: String, default: null },
+    workOrderCode: { type: String, default: null },
+    workOrderTitle: { type: String, default: null },
+    workOrderCreatedAt: { type: Date, default: null },
+    createdAt: { type: Date, default: Date.now },
   },
   { _id: false }
 );
@@ -113,6 +184,13 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
     reopened: { type: Boolean, default: false },
     executionNote: { type: String, default: null },
     workLogs: { type: [workLogSchema], default: [] },
+    confirmationState: {
+      type: String,
+      enum: ['unsigned', 'signed_active', 'resign_required'],
+      default: 'unsigned',
+    },
+    confirmationActiveVersionId: { type: String, default: null },
+    confirmationVersions: { type: [workOrderConfirmationVersionSchema], default: [] },
   },
   { timestamps: true }
 );

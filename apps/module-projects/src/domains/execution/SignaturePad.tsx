@@ -8,9 +8,15 @@ interface SignaturePadProps {
   onSign: (signature: string, signerName: string) => void;
   signerName?: string;
   children?: ReactNode;
+  footerActions?: ReactNode;
 }
 
-export function SignaturePad({ onSign, signerName: initialSignerName = "", children }: SignaturePadProps) {
+export function SignaturePad({
+  onSign,
+  signerName: initialSignerName = "",
+  children,
+  footerActions,
+}: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [signerName, setSignerName] = useState(initialSignerName);
@@ -162,13 +168,18 @@ export function SignaturePad({ onSign, signerName: initialSignerName = "", child
         </div>
       </div>
 
-      <div className="flex gap-2">
-        <Button onClick={saveSignature} disabled={!hasSignature || !signerName.trim()}>
-          Potrdi podpis
-        </Button>
-        <Button variant="outline" onClick={clearSignature}>
-          Počisti
-        </Button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          {footerActions}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={saveSignature} disabled={!hasSignature || !signerName.trim()}>
+            Potrdi podpis
+          </Button>
+          <Button variant="outline" onClick={clearSignature}>
+            Počisti
+          </Button>
+        </div>
       </div>
     </div>
   );

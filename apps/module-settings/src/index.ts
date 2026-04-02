@@ -1,5 +1,26 @@
 export { SettingsPage } from './SettingsPage';
 export { manifest } from './manifest';
 export { useSettingsData } from './hooks/useSettings';
-export { applySettingsTheme, DEFAULT_SETTINGS, DOCUMENT_PREFIX_LABELS, createEmptySettings, fetchSettings, saveSettings } from './api';
-export type { SettingsDto, DocumentPrefix, DocumentPrefixKey } from './types';
+export {
+  applySettingsTheme,
+  createCommunicationTemplate,
+  createEmptySettings,
+  DEFAULT_SETTINGS,
+  deleteCommunicationTemplate,
+  DOCUMENT_PREFIX_LABELS,
+  fetchCommunicationSettings,
+  fetchCommunicationTemplates,
+  fetchSettings,
+  saveCommunicationSettings,
+  saveSettings,
+  updateCommunicationTemplate,
+} from './api';
+export type {
+  CommunicationAttachmentType,
+  CommunicationCategory,
+  CommunicationSenderSettings,
+  CommunicationTemplate,
+  SettingsDto,
+  DocumentPrefix,
+  DocumentPrefixKey,
+} from './types';

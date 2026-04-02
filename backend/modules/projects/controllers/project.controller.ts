@@ -27,6 +27,15 @@ import { resolveTenantId } from '../../../utils/tenant';
 import { ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_SALES } from '../../../utils/roles';
 import { UserModel } from '../../users/schemas/user';
 import { EmployeeModel } from '../../employees/schemas/employee';
+import {
+  buildActorDisplayName,
+  recordSignatureCompletedCommunicationEvent,
+} from '../../communication/services/communication.service';
+import {
+  buildConfirmationVersionSnapshot,
+  ensureConfirmationVersionHistory,
+  getActiveSignedConfirmationVersion,
+} from '../services/work-order-confirmation.service';
 
 function normalizeSlug(value: string) {
   return value
@@ -954,11 +963,34 @@ export async function saveSignature(req: Request, res: Response) {
     if (!workOrder) {
       return res.fail('Delovni nalog ni najden.', 404);
     }
+    ensureConfirmationVersionHistory(workOrder);
+    if (getActiveSignedConfirmationVersion(workOrder)) {
+      return res.fail('Potrdilo delovnega naloga je že podpisano in zaklenjeno.', 409);
+    }
+    const signedAt = new Date();
+    const nextVersionNumber =
+      Math.max(0, ...(workOrder.confirmationVersions ?? []).map((version) => Number(version.versionNumber) || 0)) + 1;
+    workOrder.confirmationVersions = (workOrder.confirmationVersions ?? []).map((version) => ({
+      ...version,
+      state: version.state === 'active' || version.state === 'archived' ? 'superseded' : version.state,
+    }));
+    const nextVersion = buildConfirmationVersionSnapshot(workOrder, {
+      signerName,
+      signature,
+      signedAt,
+      customerRemark,
+      state: 'active',
+      versionNumber: nextVersionNumber,
+    });
+    workOrder.confirmationVersions.push(nextVersion);
+    workOrder.confirmationActiveVersionId = nextVersion.id;
+    workOrder.confirmationState = 'signed_active';
     workOrder.customerSignerName = signerName;
     workOrder.customerSignature = signature;
-    workOrder.customerSignedAt = new Date();
+    workOrder.customerSignedAt = signedAt;
     workOrder.customerRemark = customerRemark;
     workOrder.status = 'completed';
+    workOrder.markModified('confirmationVersions');
     await workOrder.save();
   }
 
@@ -974,6 +1006,9 @@ export async function saveSignature(req: Request, res: Response) {
       signer: signerName,
       workOrderId: workOrderId || '',
       signedAt: new Date().toISOString(),
+      confirmationVersionId: workOrder?.confirmationActiveVersionId ?? '',
+      confirmationVersionNumber:
+        workOrder?.confirmationVersions?.find((version) => version.id === workOrder?.confirmationActiveVersionId)?.versionNumber?.toString() ?? '',
     },
   });
 
@@ -987,6 +1022,13 @@ export async function saveSignature(req: Request, res: Response) {
 
   await project.save();
   await createInvoiceFromClosing(project.id);
+
+  await recordSignatureCompletedCommunicationEvent({
+    projectId: project.id,
+    offerId: project.confirmedOfferVersionId ?? null,
+    signerName: String(signerName),
+    user: buildActorDisplayName(req as any),
+  });
 
   return res.success(await responseProject(project.toObject()));
 }

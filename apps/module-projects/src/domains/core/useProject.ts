@@ -47,6 +47,16 @@ export function mapProject(data: any): ProjectDetails {
       : !Array.isArray(data.requirements) && typeof data.requirements === "string"
         ? data.requirements
         : "";
+  const customerBase = data.customer ?? { name: data.customer ?? "" };
+  const client = data.client ?? null;
+  const mergedCustomerDetail = {
+    ...customerBase,
+    id: customerBase?.id ?? client?.id,
+    name: customerBase?.name ?? client?.name ?? "",
+    address: customerBase?.address ?? client?.address ?? "",
+    email: customerBase?.email ?? client?.email ?? "",
+    phone: customerBase?.phone ?? client?.phone ?? "",
+  };
   return {
     id: data.id,
     title: data.title,
@@ -60,7 +70,7 @@ export function mapProject(data: any): ProjectDetails {
     createdAt: data.createdAt,
     salesUserId: data.salesUserId ?? null,
     assignedEmployeeIds: Array.isArray(data.assignedEmployeeIds) ? data.assignedEmployeeIds : [],
-    customerDetail: data.customer ?? { name: data.customer ?? "" },
+    customerDetail: mergedCustomerDetail,
     requirements: requirementsArray,
     requirementsText,
     items: data.items ?? [],

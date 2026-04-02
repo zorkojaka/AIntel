@@ -14,6 +14,8 @@ import pdfSettingsRoutes from './modules/projects/routes/pdf-settings.routes';
 import offerPreviewRoutes from './modules/projects/routes/offer-preview.routes';
 import employeeProfilesRoutes from './modules/employee-profiles/routes/employee-profiles.routes';
 import adminRoutes from './modules/admin/routes/admin.routes';
+import communicationSettingsRoutes from './modules/communication/routes/settings.routes';
+import communicationProjectRoutes from './modules/communication/routes/project.routes';
 import { requireRoles } from './middlewares/auth';
 import { ROLE_ADMIN, ROLE_FINANCE, ROLE_SALES } from './utils/roles';
 
@@ -25,9 +27,11 @@ router.use('/cenik', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), cenik
 router.use('/price-list', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), priceListRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/settings', pdfSettingsRoutes);
+router.use('/settings/communication', communicationSettingsRoutes);
 router.use('/finance', financeRoutes);
 router.use('/categories', categoriesRoutes);
 router.use('/projects', projectsRoutes);
+router.use('/projects', communicationProjectRoutes);
 router.use('/requirement-templates', requirementTemplatesRoutes);
 router.use('/employees', requireRoles([ROLE_ADMIN]), employeesRoutes);
 router.use('/users', requireRoles([ROLE_ADMIN]), usersRoutes);

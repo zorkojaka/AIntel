@@ -33,12 +33,15 @@ import { downloadPdf } from "../api";
 import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
+import { OfferCommunicationComposeDialog } from "../domains/communication/OfferCommunicationComposeDialog";
+import { OfferSentMessagesTable } from "../domains/communication/OfferSentMessagesTable";
 
 type OffersTabProps = {
   projectId: string;
   refreshKey?: number;
   onDirtyChange?: (dirty: boolean) => void;
   onRegisterSaveHandler?: (handler: (() => Promise<boolean>) | null) => void;
+  onCommunicationChanged?: () => void;
 };
 
 type OfferLineItemForm = {
@@ -189,7 +192,13 @@ const EMPTY_OFFER_SNAPSHOT = createOfferEditorSnapshot({
   globalDiscountPercent: 0,
 });
 
-export function OffersTab({ projectId, refreshKey = 0, onDirtyChange, onRegisterSaveHandler }: OffersTabProps) {
+export function OffersTab({
+  projectId,
+  refreshKey = 0,
+  onDirtyChange,
+  onRegisterSaveHandler,
+  onCommunicationChanged,
+}: OffersTabProps) {
   const [items, setItems] = useState<OfferLineItemForm[]>([createEmptyItem()]);
 
   const [title, setTitle] = useState("Ponudba");
@@ -216,8 +225,10 @@ export function OffersTab({ projectId, refreshKey = 0, onDirtyChange, onRegister
 
   const [saving, setSaving] = useState(false);
   const [downloadingMode, setDownloadingMode] = useState<"offer" | "both" | "descriptions" | null>(null);
-  const [sending, setSending] = useState(false);
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
+  const [sending, setSending] = useState(false);
+  const [isComposeOpen, setIsComposeOpen] = useState(false);
+  const [communicationRefreshKey, setCommunicationRefreshKey] = useState(0);
   const [users, setUsers] = useState<User[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [salesUserId, setSalesUserId] = useState("");
@@ -1522,6 +1533,27 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     }
   };
 
+  const handleOpenSendDialog = async () => {
+    try {
+      const saved = await ensureSavedOffer();
+      if (!saved?._id) return;
+      setCurrentOffer(saved);
+      setSelectedOfferId(saved._id);
+      setIsComposeOpen(true);
+    } catch (error) {
+      console.error(error);
+      toast.error("Posiljanja ni mogoce odpreti.");
+    }
+  };
+
+  const handleCommunicationSent = async () => {
+    await refreshOffers(selectedOfferId ?? currentOffer?._id ?? null, true);
+    setCommunicationRefreshKey((value) => value + 1);
+    onCommunicationChanged?.();
+    toast.success("Email je bil uspesno poslan.");
+  };
+
+
   const handleConfirmCurrentOffer = useCallback(async () => {
     const saved = await ensureSavedOffer();
     if (!saved?._id) return;
@@ -1534,12 +1566,6 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
   const canConfirmCurrentOffer =
     !!currentOffer?._id && !isCurrentAccepted && !isCurrentCancelled;
   const isConfirmingCurrentOffer = confirmingId !== null;
-  const sentAtValue = currentOffer?.sentAt ? new Date(currentOffer.sentAt) : null;
-  const sentAtLabel =
-    sentAtValue && !Number.isNaN(sentAtValue.valueOf())
-      ? sentAtValue.toLocaleString("sl-SI")
-      : "";
-  const isSent = Boolean(currentOffer?.sentAt);
   const importMatchedCount = importRows.filter((row) => row.status === "matched").length;
   const importNeedsReviewCount = importRows.filter((row) => row.status === "needs_review").length;
   const importInvalidCount = importRows.filter((row) => row.status === "invalid").length;
@@ -2471,6 +2497,20 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         </DialogContent>
       </Dialog>
 
+      <OfferCommunicationComposeDialog
+        open={isComposeOpen}
+        onOpenChange={setIsComposeOpen}
+        projectId={projectId}
+        offerId={currentOffer?._id ?? selectedOfferId}
+        customerName={projectDetails?.customerDetail?.name ?? ""}
+        customerEmail={projectDetails?.customerDetail?.email ?? ""}
+        projectName={projectDetails?.title ?? ""}
+        offerNumber={currentOffer?.documentNumber ?? currentOffer?.title ?? currentOffer?.baseTitle ?? ""}
+        offerTotal={Number(currentOffer?.totalWithVat ?? currentOffer?.totalGrossAfterDiscount ?? currentOffer?.totalGross ?? 0)}
+        companyName={settings?.companyName ?? ""}
+        onSent={handleCommunicationSent}
+      />
+
       {/* GUMBI */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
@@ -2495,17 +2535,11 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           </Button>
           <Button
             variant="outline"
-            onClick={handleSend}
-            disabled={sending}
+            onClick={handleOpenSendDialog}
+            disabled={saving}
           >
-            {sending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isSent ? "Ponovno pošlji" : "Pošlji ponudbo stranki"}
+            Pošlji email stranki
           </Button>
-          {isSent && (
-            <span className="text-xs text-emerald-600">
-              Poslano{sentAtLabel ? ` ${sentAtLabel}` : ""}
-            </span>
-          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -2526,7 +2560,15 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           </Button>
         </div>
       </div>
+      <OfferSentMessagesTable
+        projectId={projectId}
+        offerId={currentOffer?._id ?? selectedOfferId}
+        refreshKey={communicationRefreshKey}
+      />
+
     </Card>
   );
 }
+
+
 

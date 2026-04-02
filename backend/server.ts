@@ -2,8 +2,10 @@ import { loadEnvironment } from './loadEnv';
 import { createApp } from './core/app';
 import { connectToMongo } from './db/mongo';
 import { bootstrapAdminUser } from './modules/auth/services/bootstrap';
+import { logSmtpDiagnostics } from './modules/communication/services/email-transport.service';
 
 loadEnvironment();
+logSmtpDiagnostics('startup');
 
 const port = Number(process.env.PORT ?? 3000);
 

@@ -1,14 +1,32 @@
 import React, { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Button, Card, ColorPicker, FileUpload, Input } from '@aintel/ui';
-import { applySettingsTheme, saveSettings } from './api';
+import { Button, Card, ColorPicker, FileUpload, Input, Textarea } from '@aintel/ui';
+import {
+  applySettingsTheme,
+  createCommunicationTemplate,
+  deleteCommunicationTemplate,
+  fetchCommunicationSettings,
+  fetchCommunicationTemplates,
+  fetchPdfDocumentSettings,
+  saveCommunicationSettings,
+  savePdfDocumentSettings,
+  saveSettings,
+  updateCommunicationTemplate,
+} from './api';
+import { OfferRulesSection } from './OfferRulesSection';
+import { RequirementTemplatesSection } from './RequirementTemplatesSection';
+import { CommunicationSenderSection } from './components/CommunicationSenderSection';
+import { CommunicationTemplatesSection } from './components/CommunicationTemplatesSection';
 import { DocumentPreview } from './components/DocumentPreview';
 import { DocumentSettingsTab } from './components/DocumentSettingsTab';
 import { useSettingsData } from './hooks/useSettings';
 import {
+  CommunicationSenderSettings,
+  CommunicationTemplate,
   DocumentTypeKey,
   NoteDto,
-  SettingsDto,
   OfferPdfPreviewPayload,
+  PdfDocumentSettingsDto,
+  SettingsDto,
 } from './types';
 
 interface StatusBanner {
@@ -16,9 +34,48 @@ interface StatusBanner {
   text: string;
 }
 
-type FormSaveScope = 'company' | 'documents';
-
+type FormSaveScope = 'company' | 'documents' | 'sales';
 type DocumentTabKey = DocumentTypeKey;
+type SettingsSectionKey = 'company' | 'documents' | 'communication' | 'sales' | 'system';
+
+const SECTION_QUERY_PARAM = 'section';
+const SETTINGS_SECTIONS: Array<{
+  key: SettingsSectionKey;
+  label: string;
+  title: string;
+  description: string;
+}> = [
+  {
+    key: 'company',
+    label: 'Podjetje',
+    title: 'Podjetje',
+    description: 'Osnovni poslovni podatki, kontakti in vizualna identiteta.',
+  },
+  {
+    key: 'documents',
+    label: 'Dokumenti',
+    title: 'Dokumenti',
+    description: 'Številčenje, PDF nastavitve in privzete vsebine dokumentov.',
+  },
+  {
+    key: 'communication',
+    label: 'Komunikacija',
+    title: 'Komunikacija',
+    description: 'Pošiljatelj in email predloge za komunikacijo s strankami.',
+  },
+  {
+    key: 'sales',
+    label: 'Prodaja',
+    title: 'Prodaja',
+    description: 'Prodajna pravila, predloge zahtev in prodajni privzeti teksti.',
+  },
+  {
+    key: 'system',
+    label: 'Sistem',
+    title: 'Sistem',
+    description: 'Napredne sistemske informacije in tehnično stanje nastavitev.',
+  },
+];
 
 const documentTabs: { key: DocumentTabKey; label: string; implemented: boolean }[] = [
   { key: 'offer', label: 'Ponudba', implemented: true },
@@ -27,7 +84,7 @@ const documentTabs: { key: DocumentTabKey; label: string; implemented: boolean }
   { key: 'materialOrder', label: 'Naročilnica', implemented: true },
   { key: 'deliveryNote', label: 'Dobavnica', implemented: true },
   { key: 'workOrderConfirmation', label: 'Potrdilo del. naloga', implemented: true },
-  { key: 'creditNote', label: 'Dobropis', implemented: true }
+  { key: 'creditNote', label: 'Dobropis', implemented: true },
 ];
 
 const DOCUMENT_PREVIEW_TYPES: Record<DocumentTabKey, OfferPdfPreviewPayload['docType']> = {
@@ -40,20 +97,33 @@ const DOCUMENT_PREVIEW_TYPES: Record<DocumentTabKey, OfferPdfPreviewPayload['doc
   creditNote: 'CREDIT_NOTE',
 };
 
-const createEmptyNoteDefaults = (): Record<DocumentTabKey, string[]> => ({
-  offer: [],
-  invoice: [],
-  workOrder: [],
-  materialOrder: [],
-  deliveryNote: [],
-  workOrderConfirmation: [],
-  creditNote: []
-});
+const DEFAULT_NUMBER_PATTERNS: Record<DocumentTabKey, string> = {
+  offer: 'PONUDBA-{YYYY}-{SEQ:000}',
+  invoice: 'RACUN-{YYYY}-{SEQ:000}',
+  materialOrder: 'NAROCILO-{YYYY}-{SEQ:000}',
+  deliveryNote: 'DOBAVNICA-{YYYY}-{SEQ:000}',
+  workOrder: 'DELO-{YYYY}-{SEQ:000}',
+  workOrderConfirmation: 'POTRDILO-{YYYY}-{SEQ:000}',
+  creditNote: 'DOBROPIS-{YYYY}-{SEQ:000}',
+};
+const NUMBER_TOKEN_REGEX = /\{([^}]+)\}/g;
 
-const sanitizeNoteDefaults = (
+function createEmptyNoteDefaults(): Record<DocumentTabKey, string[]> {
+  return {
+    offer: [],
+    invoice: [],
+    workOrder: [],
+    materialOrder: [],
+    deliveryNote: [],
+    workOrderConfirmation: [],
+    creditNote: [],
+  };
+}
+
+function sanitizeNoteDefaults(
   defaults: Partial<Record<DocumentTabKey, string[]>> | undefined,
   notes: NoteDto[]
-): Record<DocumentTabKey, string[]> => {
+): Record<DocumentTabKey, string[]> {
   const result = createEmptyNoteDefaults();
   const order = notes.map((note) => note.id);
   const orderMap = new Map(order.map((id, index) => [id, index]));
@@ -72,18 +142,7 @@ const sanitizeNoteDefaults = (
   });
 
   return result;
-};
-
-const DEFAULT_NUMBER_PATTERNS: Record<DocumentTabKey, string> = {
-  offer: 'PONUDBA-{YYYY}-{SEQ:000}',
-  invoice: 'RACUN-{YYYY}-{SEQ:000}',
-  materialOrder: 'NAROCILO-{YYYY}-{SEQ:000}',
-  deliveryNote: 'DOBAVNICA-{YYYY}-{SEQ:000}',
-  workOrder: 'DELO-{YYYY}-{SEQ:000}',
-  workOrderConfirmation: 'POTRDILO-{YYYY}-{SEQ:000}',
-  creditNote: 'DOBROPIS-{YYYY}-{SEQ:000}',
-};
-const NUMBER_TOKEN_REGEX = /\{([^}]+)\}/g;
+}
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -131,20 +190,97 @@ function formatNumberPreview(
   });
 }
 
+function getInitialSection(): SettingsSectionKey {
+  if (typeof window === 'undefined') {
+    return 'company';
+  }
+  const section = new URLSearchParams(window.location.search).get(SECTION_QUERY_PARAM);
+  return SETTINGS_SECTIONS.some((entry) => entry.key === section) ? (section as SettingsSectionKey) : 'company';
+}
+
+function updateSectionQueryParam(section: SettingsSectionKey) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const nextUrl = new URL(window.location.href);
+  nextUrl.searchParams.set(SECTION_QUERY_PARAM, section);
+  window.history.replaceState({}, '', nextUrl.toString());
+}
+
 export const SettingsPage: React.FC = () => {
   const { settings, loading, error, refresh } = useSettingsData();
   const [form, setForm] = useState<SettingsDto>(settings);
+  const [communicationSettings, setCommunicationSettings] = useState<CommunicationSenderSettings | null>(null);
+  const [communicationTemplates, setCommunicationTemplates] = useState<CommunicationTemplate[]>([]);
   const [status, setStatus] = useState<StatusBanner | null>(null);
   const [savingScope, setSavingScope] = useState<FormSaveScope | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [activeDocumentTab, setActiveDocumentTab] = useState<DocumentTabKey>('offer');
+  const [activeSection, setActiveSection] = useState<SettingsSectionKey>(getInitialSection);
+  const [projectPdfSettings, setProjectPdfSettings] = useState<PdfDocumentSettingsDto | null>(null);
 
   useEffect(() => {
     setForm(settings);
   }, [settings]);
 
-  const numberPatterns = useMemo(() => {
-    return {
+  useEffect(() => {
+    updateSectionQueryParam(activeSection);
+  }, [activeSection]);
+
+  useEffect(() => {
+    let active = true;
+    const loadCommunication = async () => {
+      try {
+        const [sender, templates] = await Promise.all([
+          fetchCommunicationSettings(),
+          fetchCommunicationTemplates(),
+        ]);
+        if (!active) return;
+        setCommunicationSettings(sender);
+        setCommunicationTemplates(templates);
+      } catch (communicationError) {
+        if (!active) return;
+        setStatus({
+          variant: 'error',
+          text:
+            communicationError instanceof Error
+              ? communicationError.message
+              : 'Komunikacijskih nastavitev ni mogoče naložiti.',
+        });
+      }
+    };
+    void loadCommunication();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadProjectPdfSettings = async () => {
+      try {
+        const settings = await fetchPdfDocumentSettings('PROJECT');
+        if (!active) return;
+        setProjectPdfSettings(settings);
+      } catch (projectPdfError) {
+        if (!active) return;
+        setStatus({
+          variant: 'error',
+          text:
+            projectPdfError instanceof Error
+              ? projectPdfError.message
+              : 'Nastavitev Project PDF ni mogoče naložiti.',
+        });
+      }
+    };
+    void loadProjectPdfSettings();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const numberPatterns = useMemo(
+    () => ({
       offer: form.documentNumbering?.offer?.pattern ?? DEFAULT_NUMBER_PATTERNS.offer,
       invoice: form.documentNumbering?.invoice?.pattern ?? DEFAULT_NUMBER_PATTERNS.invoice,
       workOrder: form.documentNumbering?.workOrder?.pattern ?? DEFAULT_NUMBER_PATTERNS.workOrder,
@@ -153,8 +289,9 @@ export const SettingsPage: React.FC = () => {
       workOrderConfirmation:
         form.documentNumbering?.workOrderConfirmation?.pattern ?? DEFAULT_NUMBER_PATTERNS.workOrderConfirmation,
       creditNote: form.documentNumbering?.creditNote?.pattern ?? DEFAULT_NUMBER_PATTERNS.creditNote,
-    };
-  }, [form.documentNumbering]);
+    }),
+    [form.documentNumbering]
+  );
 
   const numberExamples = useMemo(() => {
     const now = new Date();
@@ -165,14 +302,16 @@ export const SettingsPage: React.FC = () => {
     }, {} as Record<DocumentTabKey, string>);
   }, [numberPatterns]);
 
-  const activeNumberPattern = numberPatterns[activeDocumentTab];
-  const activeNumberExample = numberExamples[activeDocumentTab];
-
   const notes = form.notes ?? [];
   const noteDefaultsByDoc = useMemo(
     () => sanitizeNoteDefaults(form.noteDefaultsByDoc, notes),
     [form.noteDefaultsByDoc, notes]
   );
+
+  const activeSectionMeta = SETTINGS_SECTIONS.find((entry) => entry.key === activeSection) ?? SETTINGS_SECTIONS[0];
+  const activeDocumentPattern = numberPatterns[activeDocumentTab];
+  const activeDocumentExample = numberExamples[activeDocumentTab];
+  const activeDocumentMeta = documentTabs.find((tab) => tab.key === activeDocumentTab) ?? documentTabs[0];
 
   const handleFieldChange = <K extends keyof Omit<SettingsDto, 'documentPrefix'>>(
     field: K,
@@ -206,29 +345,28 @@ export const SettingsPage: React.FC = () => {
       const dataUrl = await readFileAsDataUrl(file);
       setForm((prev) => ({ ...prev, logoUrl: dataUrl }));
     } catch (uploadError) {
-      setStatus({ variant: 'error', text: uploadError instanceof Error ? uploadError.message : 'Napaka pri nalaganju logotipa.' });
+      setStatus({
+        variant: 'error',
+        text: uploadError instanceof Error ? uploadError.message : 'Napaka pri nalaganju logotipa.',
+      });
     }
   };
 
   const handleNotesChange = (nextNotes: NoteDto[]) => {
-    setForm((prev) => {
-      const sanitizedDefaults = sanitizeNoteDefaults(prev.noteDefaultsByDoc, nextNotes);
-      return {
-        ...prev,
-        notes: nextNotes,
-        noteDefaultsByDoc: sanitizedDefaults
-      };
-    });
+    setForm((prev) => ({
+      ...prev,
+      notes: nextNotes,
+      noteDefaultsByDoc: sanitizeNoteDefaults(prev.noteDefaultsByDoc, nextNotes),
+    }));
   };
 
   const handleNoteDefaultsChange = (docKey: DocumentTabKey, defaults: string[]) => {
     setForm((prev) => {
-      const notes = prev.notes ?? [];
-      const sanitized = sanitizeNoteDefaults(prev.noteDefaultsByDoc, notes);
+      const sanitized = sanitizeNoteDefaults(prev.noteDefaultsByDoc, prev.notes ?? []);
       sanitized[docKey] = defaults;
       return {
         ...prev,
-        noteDefaultsByDoc: sanitized
+        noteDefaultsByDoc: sanitized,
       };
     });
   };
@@ -242,8 +380,10 @@ export const SettingsPage: React.FC = () => {
       setForm(updated);
       await refresh();
     } catch (submitError) {
-      const message = submitError instanceof Error ? submitError.message : 'Nastavitev ni mogoče shraniti.';
-      setStatus({ variant: 'error', text: message });
+      setStatus({
+        variant: 'error',
+        text: submitError instanceof Error ? submitError.message : 'Nastavitev ni mogoče shraniti.',
+      });
     } finally {
       setSavingScope((current) => (current === scope ? null : current));
     }
@@ -263,101 +403,271 @@ export const SettingsPage: React.FC = () => {
     await persistSettings('documents');
   };
 
-  const companySaving = savingScope === 'company';
-  const documentSaving = savingScope === 'documents';
-  const activeDocumentMeta = documentTabs.find((tab) => tab.key === activeDocumentTab) ?? documentTabs[0];
+  const handleSalesSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await persistSettings('sales');
+  };
+
+  const handleSaveCommunicationSettings = async (payload: CommunicationSenderSettings) => {
+    try {
+      const updated = await saveCommunicationSettings(payload);
+      setCommunicationSettings(updated);
+      setStatus({ variant: 'success', text: 'Nastavitve pošiljatelja so shranjene.' });
+    } catch (submitError) {
+      setStatus({
+        variant: 'error',
+        text:
+          submitError instanceof Error
+            ? submitError.message
+            : 'Nastavitev pošiljatelja ni mogoče shraniti.',
+      });
+      throw submitError;
+    }
+  };
+
+  const handleCreateCommunicationTemplate = async (
+    payload: Omit<CommunicationTemplate, 'id' | 'createdAt' | 'updatedAt'>
+  ) => {
+    try {
+      const created = await createCommunicationTemplate(payload);
+      setCommunicationTemplates((prev) => [...prev, created]);
+      setStatus({ variant: 'success', text: 'Predloga je bila ustvarjena.' });
+    } catch (submitError) {
+      setStatus({
+        variant: 'error',
+        text: submitError instanceof Error ? submitError.message : 'Predloge ni mogoče ustvariti.',
+      });
+      throw submitError;
+    }
+  };
+
+  const handleUpdateCommunicationTemplate = async (
+    templateId: string,
+    payload: Omit<CommunicationTemplate, 'id' | 'createdAt' | 'updatedAt'>
+  ) => {
+    try {
+      const updated = await updateCommunicationTemplate(templateId, payload);
+      setCommunicationTemplates((prev) => prev.map((template) => (template.id === templateId ? updated : template)));
+      setStatus({ variant: 'success', text: 'Predloga je bila posodobljena.' });
+    } catch (submitError) {
+      setStatus({
+        variant: 'error',
+        text: submitError instanceof Error ? submitError.message : 'Predloge ni mogoče posodobiti.',
+      });
+      throw submitError;
+    }
+  };
+
+  const handleDeleteCommunicationTemplate = async (templateId: string) => {
+    try {
+      await deleteCommunicationTemplate(templateId);
+      setCommunicationTemplates((prev) => prev.filter((template) => template.id !== templateId));
+      setStatus({ variant: 'success', text: 'Predloga je bila izbrisana.' });
+    } catch (submitError) {
+      setStatus({
+        variant: 'error',
+        text: submitError instanceof Error ? submitError.message : 'Predloge ni mogoče izbrisati.',
+      });
+      throw submitError;
+    }
+  };
+
+  const handleSaveProjectPdfSettings = async (payload: PdfDocumentSettingsDto) => {
+    setSavingScope('documents');
+    try {
+      const updated = await savePdfDocumentSettings('PROJECT', payload);
+      setProjectPdfSettings(updated);
+      setStatus({ variant: 'success', text: 'Nastavitve Project PDF so shranjene.' });
+    } catch (submitError) {
+      setStatus({
+        variant: 'error',
+        text:
+          submitError instanceof Error
+            ? submitError.message
+            : 'Nastavitev Project PDF ni mogoče shraniti.',
+      });
+      throw submitError;
+    } finally {
+      setSavingScope((current) => (current === 'documents' ? null : current));
+    }
+  };
+
+  const renderActiveSection = () => {
+    switch (activeSection) {
+      case 'company':
+        return (
+          <CompanySettingsForm
+            form={form}
+            handleFieldChange={handleFieldChange}
+            handleLogoUpload={handleLogoUpload}
+            handleSubmit={handleCompanySubmit}
+            saving={savingScope === 'company'}
+            loading={loading}
+          />
+        );
+      case 'documents':
+        return (
+          <section className="space-y-4">
+            <div className="flex flex-wrap gap-2 overflow-x-auto pb-1">
+              {documentTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveDocumentTab(tab.key)}
+                  className={`shrink-0 rounded-md border px-4 py-2 text-sm font-medium transition ${
+                    activeDocumentTab === tab.key
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {activeDocumentMeta.implemented ? (
+              <div className="space-y-6">
+                <DocumentSettingsTab
+                  docType={activeDocumentTab}
+                  label={activeDocumentMeta.label}
+                  pattern={activeDocumentPattern}
+                  patternExample={activeDocumentExample}
+                  onPatternChange={(value) => handlePatternChange(activeDocumentTab, value)}
+                  notes={notes}
+                  activeDocDefaults={noteDefaultsByDoc[activeDocumentTab] ?? []}
+                  onDocDefaultsChange={(defaults) => handleNoteDefaultsChange(activeDocumentTab, defaults)}
+                  onNotesChange={handleNotesChange}
+                  onSubmit={handleDocumentSubmit}
+                  saving={savingScope === 'documents'}
+                  loading={loading}
+                  previewVisible={previewVisible}
+                  onTogglePreview={() => setPreviewVisible((prev) => !prev)}
+                  preview={<DocumentPreview docType={DOCUMENT_PREVIEW_TYPES[activeDocumentTab]} visible={previewVisible} />}
+                />
+                <ProjectPdfSettingsSection
+                  value={projectPdfSettings}
+                  onSave={handleSaveProjectPdfSettings}
+                  saving={savingScope === 'documents'}
+                  loading={loading}
+                />
+              </div>
+            ) : (
+              <Card title={activeDocumentMeta.label}>
+                <p className="text-sm text-muted-foreground">Nastavitve za ta dokument še niso na voljo.</p>
+              </Card>
+            )}
+          </section>
+        );
+      case 'communication':
+        return (
+          <div className="space-y-4">
+            <CommunicationSenderSection
+              value={communicationSettings}
+              company={{
+                companyName: form.companyName,
+                website: form.website,
+                address: form.address,
+                email: form.email,
+                phone: form.phone,
+                logoUrl: form.logoUrl,
+              }}
+              onSave={handleSaveCommunicationSettings}
+            />
+            <CommunicationTemplatesSection
+              templates={communicationTemplates}
+              onCreate={handleCreateCommunicationTemplate}
+              onUpdate={handleUpdateCommunicationTemplate}
+              onDelete={handleDeleteCommunicationTemplate}
+            />
+          </div>
+        );
+      case 'sales':
+        return (
+          <div className="space-y-6">
+            <SalesDefaultsSection
+              form={form}
+              onFieldChange={handleFieldChange}
+              onSubmit={handleSalesSubmit}
+              saving={savingScope === 'sales'}
+              loading={loading}
+            />
+            <OfferRulesSection />
+            <RequirementTemplatesSection />
+          </div>
+        );
+      case 'system':
+        return (
+          <Card title="Sistemsko stanje">
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <p>To območje je namenjeno tehničnim in naprednim nastavitvam.</p>
+              <p>Trenutno dodatne sistemske nastavitve še niso uvedene v uporabniški vmesnik.</p>
+            </div>
+          </Card>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
-    <section className="max-w-6xl mx-auto px-3 py-4 md:p-6 space-y-6 md:space-y-8">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold text-foreground">Nastavitve</h1>
-        <p className="text-muted-foreground">
-          Centralno upravljanje podjetja in dokumentnih predlog na enem mestu.
-        </p>
-      </header>
+    <section className="mx-auto max-w-6xl px-3 py-4 md:p-6">
+      <div className="space-y-6 md:space-y-8">
+        <header className="space-y-2">
+          <h1 className="text-3xl font-semibold text-foreground">Nastavitve</h1>
+          <p className="text-muted-foreground">
+            Upravljanje nastavitev po jasnih sklopih, brez dolgih neprekinjenih obrazcev.
+          </p>
+        </header>
 
-      {status && (
-        <div
-          className={`rounded-md border px-4 py-2 text-sm ${
-            status.variant === 'success' ? 'border-success text-success' : 'border-destructive text-destructive'
-          }`}
-        >
-          {status.text}
-        </div>
-      )}
+        {status && (
+          <div
+            className={`rounded-md border px-4 py-2 text-sm ${
+              status.variant === 'success' ? 'border-success text-success' : 'border-destructive text-destructive'
+            }`}
+          >
+            {status.text}
+          </div>
+        )}
 
-      {error && (
-        <div className="rounded-md border border-destructive px-4 py-2 text-sm text-destructive">
-          {error}
-        </div>
-      )}
+        {error && (
+          <div className="rounded-md border border-destructive px-4 py-2 text-sm text-destructive">
+            {error}
+          </div>
+        )}
 
-      {loading && (
-        <div className="rounded-md border border-border px-4 py-2 text-sm text-muted-foreground">
-          Nalagam nastavitve ...
-        </div>
-      )}
+        {loading && (
+          <div className="rounded-md border border-border px-4 py-2 text-sm text-muted-foreground">
+            Nalagam nastavitve ...
+          </div>
+        )}
 
-      <CompanySettingsForm
-        form={form}
-        handleFieldChange={handleFieldChange}
-        handleLogoUpload={handleLogoUpload}
-        handleSubmit={handleCompanySubmit}
-        saving={companySaving}
-        loading={loading}
-      />
-
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-semibold text-foreground">Dokumenti</h2>
-            <p className="text-sm text-muted-foreground">
-              Upravljaj številčenje, privzete tekste in predoglede dokumentov.
-            </p>
+        <div className="sticky top-0 z-10 -mx-3 overflow-x-auto border-y border-border/80 bg-background/95 px-3 py-3 backdrop-blur md:mx-0 md:rounded-xl md:border">
+          <div className="flex min-w-max gap-2">
+            {SETTINGS_SECTIONS.map((section) => (
+              <button
+                key={section.key}
+                type="button"
+                onClick={() => setActiveSection(section.key)}
+                className={`shrink-0 rounded-md border px-4 py-2 text-sm font-medium transition ${
+                  activeSection === section.key
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                }`}
+              >
+                {section.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          {documentTabs.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setActiveDocumentTab(tab.key)}
-              className={`rounded-md border px-4 py-2 text-sm font-medium transition ${
-                activeDocumentTab === tab.key
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {activeDocumentMeta?.implemented ? (
-          <DocumentSettingsTab
-            docType={activeDocumentTab}
-            label={activeDocumentMeta?.label ?? 'Dokument'}
-            pattern={activeNumberPattern}
-            patternExample={activeNumberExample}
-            onPatternChange={(value) => handlePatternChange(activeDocumentTab, value)}
-            notes={notes}
-            activeDocDefaults={noteDefaultsByDoc[activeDocumentTab] ?? []}
-            onDocDefaultsChange={(defaults) => handleNoteDefaultsChange(activeDocumentTab, defaults)}
-            onNotesChange={handleNotesChange}
-            onSubmit={handleDocumentSubmit}
-            saving={documentSaving}
-            loading={loading}
-            previewVisible={previewVisible}
-            onTogglePreview={() => setPreviewVisible((prev) => !prev)}
-            preview={<DocumentPreview docType={DOCUMENT_PREVIEW_TYPES[activeDocumentTab]} visible={previewVisible} />}
-          />
-        ) : (
-          <Card title={activeDocumentMeta?.label ?? 'Dokument'}>
-            <p className="text-sm text-muted-foreground">Nastavitve za ta dokument še niso na voljo.</p>
-          </Card>
-        )}
-      </section>
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-2xl font-semibold text-foreground">{activeSectionMeta.title}</h2>
+            <p className="text-sm text-muted-foreground">{activeSectionMeta.description}</p>
+          </div>
+          {renderActiveSection()}
+        </section>
+      </div>
     </section>
   );
 };
@@ -380,7 +690,7 @@ const CompanySettingsForm: React.FC<CompanySettingsFormProps> = ({
   handleLogoUpload,
   handleSubmit,
   saving,
-  loading
+  loading,
 }) => (
   <form className="space-y-6" onSubmit={handleSubmit}>
     <Card title="Osnovni podatki podjetja">
@@ -480,6 +790,138 @@ const CompanySettingsForm: React.FC<CompanySettingsFormProps> = ({
     <div className="flex flex-wrap items-center gap-3">
       <Button type="submit" disabled={saving || loading}>
         {saving ? 'Shranjujem ...' : 'Shrani podjetje'}
+      </Button>
+    </div>
+  </form>
+);
+
+interface ProjectPdfSettingsSectionProps {
+  value: PdfDocumentSettingsDto | null;
+  onSave: (value: PdfDocumentSettingsDto) => Promise<void>;
+  saving: boolean;
+  loading: boolean;
+}
+
+function ProjectPdfSettingsSection({
+  value,
+  onSave,
+  saving,
+  loading,
+}: ProjectPdfSettingsSectionProps) {
+  const [form, setForm] = useState<PdfDocumentSettingsDto | null>(value);
+
+  useEffect(() => {
+    setForm(value);
+  }, [value]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!form) {
+      return;
+    }
+    await onSave(form);
+  };
+
+  return (
+    <form className="space-y-4" onSubmit={handleSubmit}>
+      <Card title="Project PDF">
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Nastavitve za PDF opisov projekta, ki se uporablja pri izvozu in kot priloga v komunikaciji.
+          </p>
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <Textarea
+            label="Glava dokumenta"
+            rows={5}
+            value={form?.appearance?.headerText ?? ''}
+            onChange={(event) =>
+              setForm((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      appearance: {
+                        ...(prev.appearance ?? {}),
+                        headerText: event.target.value,
+                      },
+                    }
+                  : prev
+              )
+            }
+            placeholder="Naslov ali uvodno besedilo Project PDF."
+          />
+          <Textarea
+            label="Noga dokumenta"
+            rows={5}
+            value={form?.appearance?.footerText ?? ''}
+            onChange={(event) =>
+              setForm((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      appearance: {
+                        ...(prev.appearance ?? {}),
+                        footerText: event.target.value,
+                      },
+                    }
+                  : prev
+              )
+            }
+            placeholder="Zaključno besedilo ali kontaktni blok."
+          />
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button type="submit" disabled={saving || loading || !form}>
+            {saving ? 'Shranjujem ...' : 'Shrani Project PDF'}
+          </Button>
+        </div>
+      </Card>
+    </form>
+  );
+}
+
+interface SalesDefaultsSectionProps {
+  form: SettingsDto;
+  onFieldChange: <K extends keyof Omit<SettingsDto, 'documentPrefix'>>(
+    field: K,
+    value: Omit<SettingsDto, 'documentPrefix'>[K]
+  ) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  saving: boolean;
+  loading: boolean;
+}
+
+const SalesDefaultsSection: React.FC<SalesDefaultsSectionProps> = ({
+  form,
+  onFieldChange,
+  onSubmit,
+  saving,
+  loading,
+}) => (
+  <form className="space-y-6" onSubmit={onSubmit}>
+    <Card title="Prodajni privzeti podatki">
+      <div className="grid gap-4 md:grid-cols-2">
+        <Input
+          label="Privzeti plačilni pogoji"
+          value={form.defaultPaymentTerms ?? ''}
+          onChange={(event) => onFieldChange('defaultPaymentTerms', event.target.value)}
+          placeholder="npr. 50% avans, 50% po izvedbi"
+        />
+      </div>
+      <div className="mt-4">
+        <label className="mb-2 block text-sm font-medium text-foreground">Izjava / opomba</label>
+        <Textarea
+          value={form.disclaimer ?? ''}
+          onChange={(event) => onFieldChange('disclaimer', event.target.value)}
+          rows={5}
+          placeholder="Besedilo, ki se uporablja kot prodajni privzeti tekst."
+        />
+      </div>
+    </Card>
+
+    <div className="flex flex-wrap items-center gap-3">
+      <Button type="submit" disabled={saving || loading}>
+        {saving ? 'Shranjujem ...' : 'Shrani prodajne nastavitve'}
       </Button>
     </div>
   </form>

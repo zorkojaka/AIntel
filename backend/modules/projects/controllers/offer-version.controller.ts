@@ -12,6 +12,7 @@ import { renderHtmlToPdf } from '../services/html-pdf.service';
 import { renderProductDescriptionsHtml, type ProductDescriptionEntry } from '../services/document-renderers';
 import { generateOfferDocumentPdf } from '../services/offer-pdf-preview.service';
 import { generateOfferDocumentNumber, type DocumentNumberingKind } from '../services/document-numbering.service';
+import { generateOfferDescriptionsPdf } from '../services/offer-description-pdf.service';
 import { resolveActorId } from '../../../utils/tenant';
 
 function clampNumber(value: unknown, fallback = 0, min = 0) {
@@ -1604,15 +1605,12 @@ export async function exportOfferPdf(req: Request, res: Response) {
     return res.fail('Ponudba ni najdena.', 404);
   }
 
-  const actorId = resolveActorId(req);
-  offer.sentAt = new Date();
-  offer.sentByUserId = actorId ?? offer.sentByUserId ?? null;
-  offer.sentVia = 'email';
-  await offer.save();
-
   if (variantParam === 'descriptions') {
     try {
-      await renderOfferDescriptionsPdf(res, offer);
+      const buffer = await generateOfferDescriptionsPdf(offer as OfferVersion);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="product-descriptions-${offer._id}.pdf"`);
+      res.end(buffer);
     } catch (error) {
       console.error('Descriptions PDF failed', error);
       res.fail('Izvoz dokumenta ni uspel. Poskusite znova.', 500);
@@ -1886,15 +1884,6 @@ async function appendProjectSection(doc: PDFDocumentInstance, entries: ProjectEn
   });
 }
 
-async function renderOfferDescriptionsPdf(res: Response, offer: OfferVersion) {
-  const entries = await buildDescriptionEntries(offer);
-  const html = renderProductDescriptionsHtml(entries);
-  const buffer = await renderHtmlToPdf(html);
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="product-descriptions-${offer._id}.pdf"`);
-  res.end(buffer);
-}
-
 function sanitizeDescription(value: string) {
   if (!value) return '';
   return value.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
@@ -1957,25 +1946,6 @@ function ensureSpace(doc: PDFDocumentInstance, requiredHeight: number) {
   }
 }
 
-export async function sendOfferVersionStub(req: Request, res: Response) {
-  const { projectId, offerVersionId } = req.params;
-  const offer = await OfferVersionModel.findOne({ _id: offerVersionId, projectId });
-  if (!offer) {
-    return res.fail('Ponudba ni najdena.', 404);
-  }
-
-  const actorId = resolveActorId(req);
-  offer.sentAt = new Date();
-  offer.sentByUserId = actorId ?? offer.sentByUserId ?? null;
-  offer.sentVia = 'email';
-  await offer.save();
-
-  // TODO: implementirati dejansko pošiljanje emaila
-  return res.success({
-    sent: true,
-    sentAt: offer.sentAt ? offer.sentAt.toISOString() : null,
-    sentByUserId: offer.sentByUserId ?? null,
-    sentVia: offer.sentVia ?? null,
-    message: 'Email sending not implemented yet',
-  });
+export async function sendOfferVersionStub(_req: Request, res: Response) {
+  return res.fail('Legacy send stub disabled.', 410);
 }

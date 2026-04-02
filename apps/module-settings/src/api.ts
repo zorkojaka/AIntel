@@ -1,5 +1,8 @@
 import {
   ApiEnvelope,
+  CommunicationCategory,
+  CommunicationSenderSettings,
+  CommunicationTemplate,
   DocumentPrefixKey,
   DocumentTypeKey,
   NoteDto,
@@ -324,6 +327,64 @@ export async function deleteRequirementTemplateGroup(id: string): Promise<void> 
     method: 'DELETE'
   });
   await parseEnvelope(response);
+}
+
+export async function fetchCommunicationSettings(): Promise<CommunicationSenderSettings> {
+  const response = await fetch('/api/settings/communication');
+  return parseEnvelope<CommunicationSenderSettings>(response);
+}
+
+export async function saveCommunicationSettings(
+  payload: CommunicationSenderSettings
+): Promise<CommunicationSenderSettings> {
+  const response = await fetch('/api/settings/communication', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return parseEnvelope<CommunicationSenderSettings>(response);
+}
+
+export async function fetchCommunicationTemplates(
+  category?: CommunicationCategory
+): Promise<CommunicationTemplate[]> {
+  const params = new URLSearchParams();
+  if (category) {
+    params.set('category', category);
+  }
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const response = await fetch(`/api/settings/communication/templates${query}`);
+  return parseEnvelope<CommunicationTemplate[]>(response);
+}
+
+export async function createCommunicationTemplate(
+  payload: Omit<CommunicationTemplate, 'id' | 'createdAt' | 'updatedAt'>
+): Promise<CommunicationTemplate> {
+  const response = await fetch('/api/settings/communication/templates', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return parseEnvelope<CommunicationTemplate>(response);
+}
+
+export async function updateCommunicationTemplate(
+  templateId: string,
+  payload: Partial<Omit<CommunicationTemplate, 'id' | 'createdAt' | 'updatedAt'>>
+): Promise<CommunicationTemplate> {
+  const response = await fetch(`/api/settings/communication/templates/${templateId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return parseEnvelope<CommunicationTemplate>(response);
+}
+
+export async function deleteCommunicationTemplate(templateId: string): Promise<boolean> {
+  const response = await fetch(`/api/settings/communication/templates/${templateId}`, {
+    method: 'DELETE',
+  });
+  return parseEnvelope<boolean>(response);
 }
 
 export async function fetchRequirementVariants(

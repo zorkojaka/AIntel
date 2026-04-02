@@ -761,10 +761,21 @@ export type ProductDescriptionEntry = {
   imageUrl?: string;
 };
 
-export function renderProductDescriptionsHtml(entries: ProductDescriptionEntry[]) {
+export function renderProductDescriptionsHtml(
+  entries: ProductDescriptionEntry[],
+  options?: {
+    companyName?: string;
+    projectTitle?: string;
+    headerText?: string;
+    footerText?: string;
+  }
+) {
   const extraStyles = `
     @page { size: A4; margin: 22mm 18mm; }
     body { font-family: Arial, sans-serif; color: #111; }
+    .descriptions-header { margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid #dbe2ea; }
+    .descriptions-header h1 { margin: 0 0 6px 0; font-size: 22px; }
+    .descriptions-header p { margin: 0; color: #475569; font-size: 12px; white-space: pre-wrap; }
     .product { margin: 0 0 18px 0; break-inside: avoid; page-break-inside: avoid; }
     .title { margin: 0 0 10px 0; font-size: 18px; font-weight: 700; }
     .row { display: flex; gap: 14px; align-items: flex-start; flex-direction: row-reverse; }
@@ -776,7 +787,25 @@ export function renderProductDescriptionsHtml(entries: ProductDescriptionEntry[]
     .product.noImage .col.desc { font-size: 11px; }
     .product.noDesc .row { display: block; }
     .product.noDesc .col.image { width: 45%; }
+    .descriptions-footer { margin-top: 20px; padding-top: 12px; border-top: 1px solid #dbe2ea; color: #475569; font-size: 12px; white-space: pre-wrap; }
   `;
+
+  const headerHtml = options?.headerText?.trim() || options?.projectTitle?.trim() || options?.companyName?.trim()
+    ? `<header class="descriptions-header">
+        <h1>${escapeHtml(options?.projectTitle?.trim() || "Projekt")}</h1>
+        ${
+          options?.headerText?.trim()
+            ? `<p>${escapeHtml(options.headerText.trim())}</p>`
+            : options?.companyName?.trim()
+              ? `<p>${escapeHtml(options.companyName.trim())}</p>`
+              : ""
+        }
+      </header>`
+    : "";
+
+  const footerHtml = options?.footerText?.trim()
+    ? `<footer class="descriptions-footer">${escapeHtml(options.footerText.trim())}</footer>`
+    : "";
 
   const content = entries.length
     ? entries
@@ -809,5 +838,5 @@ export function renderProductDescriptionsHtml(entries: ProductDescriptionEntry[]
         <h2 class="title">Ni produktnih opisov za izbrane postavke.</h2>
       </section>`;
 
-  return wrapDocument('Produktni opisi', `<div>${content}</div>`, extraStyles);
+  return wrapDocument('Produktni opisi', `<div>${headerHtml}${content}${footerHtml}</div>`, extraStyles);
 }

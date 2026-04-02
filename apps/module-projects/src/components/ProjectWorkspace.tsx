@@ -10,7 +10,7 @@ import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import { renderTemplate, openPreview, downloadHTML } from "../domains/offers/TemplateRenderer";
 import { toast } from "sonner";
 import { ProjectDetails, ProjectOffer, ProjectOfferItem, Template } from "../types";
-import { downloadPdf, fetchRequirementVariants } from "../api";
+import { fetchRequirementVariants } from "../api";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
 import { LogisticsPanel } from "../domains/logistics/LogisticsPanel";
 import { useProject } from "../domains/core/useProject";
@@ -19,6 +19,7 @@ import { ProjectQuickNav } from "../domains/core/ProjectQuickNav";
 import { useProjectTimeline, type StepKey, type StepStatus, type TimelineStep } from "../domains/core/useProjectTimeline";
 import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
 import { PhaseRibbon, type PhaseRibbonStatus } from "./PhaseRibbon";
+import { CommunicationPanel } from "../domains/communication/CommunicationPanel";
 
 type WorkspaceTabValue = "items" | "offers" | "logistics" | "execution" | "closing";
 type WorkspaceCSSVars = CSSProperties & { "--brand-color"?: string };
@@ -155,6 +156,7 @@ export function ProjectWorkspace({
   const [selectedVariantSlug, setSelectedVariantSlug] = useState<string>(project?.requirementsTemplateVariantSlug ?? "");
   const showVariantWizard = variantOptions.length > 0 && !project?.requirementsTemplateVariantSlug;
   const [offersRefreshKey, setOffersRefreshKey] = useState(0);
+  const [communicationRefreshKey, setCommunicationRefreshKey] = useState(0);
   const [isOfferEditorDirty, setIsOfferEditorDirty] = useState(false);
   const [isUnsavedOfferDialogOpen, setIsUnsavedOfferDialogOpen] = useState(false);
   const pendingOfferNavigationRef = useRef<(() => void | Promise<void>) | null>(null);
@@ -975,20 +977,11 @@ export function ProjectWorkspace({
     });
     applyProjectUpdate(updated);
     if (!updated) return;
-    if (workOrderId) {
-      try {
-        await downloadPdf(
-          `/api/projects/${projectId}/work-orders/${workOrderId}/pdf?docType=WORK_ORDER_CONFIRMATION&mode=download`,
-          `potrdilo-delovnega-naloga-${projectId}.pdf`,
-        );
-      } catch (error) {
-        console.error(error);
-        toast.error("Podpis je shranjen, izvoz potrdila pa ni uspel.");
-      }
-    }
     await refresh();
-    setOverrideStep("invoice");
-    setActiveTab("closing");
+    if (!workOrderId) {
+      setOverrideStep("invoice");
+      setActiveTab("closing");
+    }
     toast.success(`Podpis shranjen: ${signerName}`);
   };
 
@@ -1086,6 +1079,13 @@ export function ProjectWorkspace({
                   onSelectStep={handleNavigateStep}
                 />
               </Card>
+
+              <div className="hidden lg:block">
+                <CommunicationPanel
+                  projectId={project.id}
+                  refreshKey={communicationRefreshKey}
+                />
+              </div>
             </div>
 
             <div className="min-w-0 lg:col-span-9">
@@ -1132,6 +1132,7 @@ export function ProjectWorkspace({
                       refreshKey={offersRefreshKey}
                       onDirtyChange={setIsOfferEditorDirty}
                       onRegisterSaveHandler={registerOfferSaveHandler}
+                      onCommunicationChanged={() => setCommunicationRefreshKey((value) => value + 1)}
                     />
                   ) : null}
                 </TabsContent>
