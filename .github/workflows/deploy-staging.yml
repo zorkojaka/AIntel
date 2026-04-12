@@ -25,13 +25,5 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh -i ~/.ssh/id_rsa "$SSH_USER@178.104.24.47" <<EOF
           set -e
-          cd /home/jaka/apps/aintel-staging/AIntel
-          git fetch origin
-          git reset --hard origin/${GITHUB_REF_NAME}
-          pnpm install --no-frozen-lockfile
-          pnpm -r build
-          sudo rm -rf /var/www/aintel-staging/*
-          sudo cp -r apps/core-shell/dist/* /var/www/aintel-staging/
-          cd backend && pnpm run build && cd ..
-          pm2 restart aintel-staging
+          bash /home/jaka/deploy-aintel-staging.sh ${GITHUB_REF_NAME}
           EOF
