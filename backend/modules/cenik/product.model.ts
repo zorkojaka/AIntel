@@ -21,6 +21,8 @@ export interface ProductDocument extends Document {
   naslovDobavitelja?: string;
   casovnaNorma?: string;
   isService: boolean;
+  defaultExecutionMode?: 'simple' | 'per_unit' | 'measured';
+  defaultInstructionsTemplate?: string;
   isActive?: boolean;
   mergedIntoProductId?: mongoose.Types.ObjectId;
   status?: 'active' | 'merged';
@@ -50,6 +52,12 @@ const ProductSchema = new Schema<ProductDocument>(
     naslovDobavitelja: { type: String, trim: true, default: '' },
     casovnaNorma: { type: String, trim: true, default: '' },
     isService: { type: Boolean, default: false },
+    defaultExecutionMode: {
+      type: String,
+      enum: ['simple', 'per_unit', 'measured'],
+      default: undefined,
+    },
+    defaultInstructionsTemplate: { type: String, trim: true, default: '' },
     isActive: { type: Boolean, default: true },
     mergedIntoProductId: { type: Schema.Types.ObjectId, ref: 'Product', default: undefined },
     status: { type: String, enum: ['active', 'merged'], default: 'active' }

@@ -2,6 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, DataTable, Input, CategoryMultiSelect, TableRowActions } from '@aintel/ui';
 import { Pencil, Save, Trash2, X } from 'lucide-react';
 import { clearMobileTopbar, setMobileTopbar } from '@aintel/shared/utils/mobileTopbar';
+import type { ProductServiceLink, ProductServiceLinkQuantityMode } from '@aintel/shared/types/product-service-link';
 import FilterBar from './components/FilterBar';
 import { ImportConflictReview } from './components/ImportConflictReview';
 
@@ -21,12 +22,16 @@ type Product = {
   povezavaDoProdukta: string;
   naslovDobavitelja: string;
   casovnaNorma: string;
+  defaultExecutionMode?: "simple" | "per_unit" | "measured";
+  defaultInstructionsTemplate?: string;
   categorySlugs?: string[];
   isService?: boolean;
   isActive?: boolean;
   status?: string;
   mergedIntoProductId?: string;
 };
+
+type ProductServiceLinkDraft = ProductServiceLink;
 
 type StatusBanner = {
   variant: 'success' | 'error';
@@ -185,6 +190,9 @@ type DuplicateCandidateGroup = {
   products: DuplicateCandidateProduct[];
 };
 
+type CatalogView = 'cenik' | 'produkti' | 'storitve';
+type CenikQuickFilter = 'all' | 'products' | 'services';
+
 type AuditReport = {
   totals: {
     products: number;
@@ -238,6 +246,8 @@ const emptyProduct = (): Product => ({
   povezavaDoProdukta: '',
   naslovDobavitelja: '',
   casovnaNorma: '',
+  defaultExecutionMode: 'simple',
+  defaultInstructionsTemplate: '',
   categorySlugs: [],
   isService: false
 });
@@ -448,6 +458,8 @@ async function parseEnvelope<T>(response: Response) {
 
 export const CenikPage: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
+  const [catalogView, setCatalogView] = useState<CatalogView>('cenik');
+  const [cenikQuickFilter, setCenikQuickFilter] = useState<CenikQuickFilter>('all');
   const [filters, setFilters] = useState<{ q: string; category: string | null }>({ q: '', category: null });
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
@@ -482,6 +494,9 @@ export const CenikPage: React.FC = () => {
   const [reviewConflictLoading, setReviewConflictLoading] = useState(false);
   const [reviewConflictError, setReviewConflictError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [productServiceLinks, setProductServiceLinks] = useState<ProductServiceLinkDraft[]>([]);
+  const [initialProductServiceLinks, setInitialProductServiceLinks] = useState<ProductServiceLinkDraft[]>([]);
+  const [loadingProductServiceLinks, setLoadingProductServiceLinks] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const isMobileEditOpen = isModalOpen && Boolean(editingProduct);
 
@@ -494,7 +509,9 @@ export const CenikPage: React.FC = () => {
         data.map((product) => ({
           ...product,
           categorySlugs: product.categorySlugs ?? [],
-          isService: product.isService ?? false
+          isService: product.isService ?? false,
+          defaultExecutionMode: product.defaultExecutionMode ?? 'simple',
+          defaultInstructionsTemplate: product.defaultInstructionsTemplate ?? ''
         }))
       );
       setStatus(null);
@@ -533,9 +550,11 @@ export const CenikPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const workspaceTitle =
+      catalogView === 'produkti' ? 'Urejanje produktov' : catalogView === 'storitve' ? 'Urejanje storitev' : 'Cenik';
     if (isMobileEditOpen) {
       setMobileTopbar({
-        title: 'Cenik',
+        title: workspaceTitle,
         actions: [
           {
             id: 'cenik-cancel',
@@ -557,7 +576,7 @@ export const CenikPage: React.FC = () => {
     }
 
     setMobileTopbar({
-      title: 'Cenik',
+      title: workspaceTitle,
       actions: [
         {
           id: 'cenik-import',
@@ -575,7 +594,7 @@ export const CenikPage: React.FC = () => {
     });
 
     return () => clearMobileTopbar();
-  }, [isMobileEditOpen, saving]);
+  }, [catalogView, isMobileEditOpen, saving]);
 
 
 
@@ -585,31 +604,257 @@ export const CenikPage: React.FC = () => {
     return map;
   }, [categories]);
 
+  const availableServices = useMemo(
+    () =>
+      products
+        .filter((product) => product.isService)
+        .slice()
+        .sort((a, b) => a.ime.localeCompare(b.ime)),
+    [products],
+  );
+
 
 
   const filteredProducts = useMemo(() => {
     const query = filters.q.trim().toLowerCase();
     return products.filter((product) => {
+      const matchesView =
+        catalogView === 'cenik'
+          ? cenikQuickFilter === 'all'
+            ? true
+            : cenikQuickFilter === 'products'
+              ? !product.isService
+              : !!product.isService
+          : catalogView === 'produkti'
+            ? !product.isService
+            : !!product.isService;
       const matchesCategory = filters.category
         ? (product.categorySlugs ?? []).includes(filters.category)
         : true;
       const matchesSearch = query ? product.ime.toLowerCase().includes(query) : true;
-      return matchesCategory && matchesSearch;
+      return matchesView && matchesCategory && matchesSearch;
     });
-  }, [products, filters]);
+  }, [catalogView, cenikQuickFilter, products, filters]);
+
+  const legacyViewMeta = useMemo(() => {
+    if (catalogView === 'produkti') {
+      return {
+        description: 'Pogled za fizične artikle in opremo iz istega osnovnega cenika.',
+        listTitle: 'Seznam produktov',
+      };
+    }
+    if (catalogView === 'storitve') {
+      return {
+        description: 'Specializiran pogled za storitve in privzete nastavitve izvedbe.',
+        listTitle: 'Seznam storitev',
+      };
+    }
+    return {
+      description: 'Osnovni pregled celotnega cenika z vsemi produkti in storitvami.',
+      listTitle: 'Seznam postavk cenika',
+    };
+  }, [catalogView]);
+
+  const viewMeta = useMemo(() => {
+    if (catalogView === 'produkti') {
+      return {
+        title: 'Urejanje produktov',
+        description: 'Delovna povrsina za urejanje in vzdrzevanje produktnih zapisov iz skupnega kataloga.',
+        listTitle: 'Seznam produktov za urejanje',
+        addLabel: '+ Dodaj produkt',
+        emptyLabel: 'Ni najdenih produktov.',
+      };
+    }
+    if (catalogView === 'storitve') {
+      return {
+        title: 'Urejanje storitev',
+        description: 'Delovna povrsina za urejanje storitev in privzetih nastavitev izvedbe v katalogu.',
+        listTitle: 'Seznam storitev za urejanje',
+        addLabel: '+ Dodaj storitev',
+        emptyLabel: 'Ni najdenih storitev.',
+      };
+    }
+    return {
+      title: 'Cenik',
+      description: 'Operativni pregled celotnega kataloga za hitro iskanje, filtriranje, uvoz in osnovni CRUD.',
+      listTitle: 'Seznam postavk cenika',
+      addLabel: '+ Dodaj postavko',
+      emptyLabel:
+        cenikQuickFilter === 'services'
+          ? 'Ni najdenih storitev.'
+          : cenikQuickFilter === 'products'
+            ? 'Ni najdenih produktov.'
+            : 'Ni najdenih postavk cenika.',
+    };
+  }, [catalogView, cenikQuickFilter]);
+
+  const startCreateForCurrentView = () => {
+    if (catalogView === 'produkti') {
+      startEdit({ ...emptyProduct(), isService: false });
+      return;
+    }
+    if (catalogView === 'storitve') {
+      startEdit({ ...emptyProduct(), isService: true, defaultExecutionMode: 'simple' });
+      return;
+    }
+    startEdit();
+  };
 
   const startEdit = (product?: Product) => {
     setManualPrecheck(null);
+    setProductServiceLinks([]);
+    setInitialProductServiceLinks([]);
     setEditingProduct(
       product
         ? {
             ...product,
             categorySlugs: product.categorySlugs ?? [],
-            isService: product.isService ?? false
+            isService: product.isService ?? false,
+            defaultExecutionMode: product.defaultExecutionMode ?? 'simple',
+            defaultInstructionsTemplate: product.defaultInstructionsTemplate ?? ''
           }
         : emptyProduct()
     );
     setIsModalOpen(true);
+  };
+
+  useEffect(() => {
+    if (!isModalOpen || !editingProduct?._id || editingProduct.isService) {
+      setProductServiceLinks([]);
+      setInitialProductServiceLinks([]);
+      setLoadingProductServiceLinks(false);
+      return;
+    }
+
+    let alive = true;
+    setLoadingProductServiceLinks(true);
+
+    const loadLinks = async () => {
+      try {
+        const response = await fetch(`/api/cenik/product-service-links?productId=${encodeURIComponent(editingProduct._id!)}`);
+        const data = await parseEnvelope<ProductServiceLink[]>(response);
+        if (!alive) return;
+        setProductServiceLinks(data);
+        setInitialProductServiceLinks(data);
+      } catch (_error) {
+        if (!alive) return;
+        setStatus({ variant: 'error', text: 'Ne morem naložiti povezanih storitev.' });
+        setProductServiceLinks([]);
+        setInitialProductServiceLinks([]);
+      } finally {
+        if (alive) {
+          setLoadingProductServiceLinks(false);
+        }
+      }
+    };
+
+    void loadLinks();
+
+    return () => {
+      alive = false;
+    };
+  }, [editingProduct?._id, editingProduct?.isService, isModalOpen]);
+
+  const addDraftProductServiceLink = () => {
+    const firstService = availableServices[0];
+    if (!firstService?._id) {
+      setStatus({ variant: 'error', text: 'Najprej dodaj vsaj eno storitev v cenik.' });
+      return;
+    }
+
+    setProductServiceLinks((prev) => [
+      ...prev,
+      {
+        id: `draft-${crypto.randomUUID()}`,
+        productId: editingProduct?._id ?? '',
+        serviceProductId: firstService._id,
+        quantityMode: 'same_as_product',
+        fixedQuantity: null,
+        isDefault: true,
+        sortOrder: prev.length,
+        note: '',
+        serviceProduct: {
+          id: firstService._id,
+          name: firstService.ime,
+          unitPrice: firstService.prodajnaCena,
+        },
+      },
+    ]);
+  };
+
+  const updateDraftProductServiceLink = (
+    id: string,
+    changes: Partial<ProductServiceLinkDraft>,
+  ) => {
+    setProductServiceLinks((prev) =>
+      prev.map((link) => {
+        if (link.id !== id) return link;
+        const next = { ...link, ...changes };
+        if (changes.serviceProductId) {
+          const selectedService = availableServices.find((service) => service._id === changes.serviceProductId);
+          next.serviceProduct = selectedService?._id
+            ? {
+                id: selectedService._id,
+                name: selectedService.ime,
+                unitPrice: selectedService.prodajnaCena,
+              }
+            : undefined;
+        }
+        if (next.quantityMode !== 'fixed') {
+          next.fixedQuantity = null;
+        }
+        return next;
+      }),
+    );
+  };
+
+  const removeDraftProductServiceLink = (id: string) => {
+    setProductServiceLinks((prev) => prev.filter((link) => link.id !== id));
+  };
+
+  const syncProductServiceLinks = async (productId: string) => {
+    const initialById = new Map(initialProductServiceLinks.map((link) => [link.id, link]));
+    const currentById = new Map(productServiceLinks.filter((link) => !link.id.startsWith('draft-')).map((link) => [link.id, link]));
+    const removedIds = [...initialById.keys()].filter((id) => !currentById.has(id));
+
+    for (const link of productServiceLinks) {
+      const payload = {
+        productId,
+        serviceProductId: link.serviceProductId,
+        quantityMode: link.quantityMode,
+        fixedQuantity: link.quantityMode === 'fixed' ? Number(link.fixedQuantity ?? 0) : undefined,
+        isDefault: link.isDefault,
+        sortOrder: Number(link.sortOrder ?? 0),
+        note: link.note ?? '',
+      };
+
+      if (link.id.startsWith('draft-')) {
+        await parseEnvelope<ProductServiceLink>(
+          await fetch('/api/cenik/product-service-links', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          }),
+        );
+        continue;
+      }
+
+      await parseEnvelope<ProductServiceLink>(
+        await fetch(`/api/cenik/product-service-links/${link.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }),
+      );
+    }
+
+    for (const linkId of removedIds) {
+      await parseEnvelope<{ id: string }>(
+        await fetch(`/api/cenik/product-service-links/${linkId}`, {
+          method: 'DELETE',
+        }),
+      );
+    }
   };
 
   const handleDelete = async (productId: string | undefined) => {
@@ -655,6 +900,9 @@ export const CenikPage: React.FC = () => {
           body: JSON.stringify(payload)
         });
         const data = await parseEnvelope<Product>(response);
+        if (!data.isService) {
+          await syncProductServiceLinks(data._id!);
+        }
         setProducts((prev) => prev.map((product) => (product._id === data._id ? data : product)));
         setStatus({ variant: 'success', text: 'Produkt posodobljen.' });
         setEditingProduct(null);
@@ -689,7 +937,10 @@ export const CenikPage: React.FC = () => {
     }
   };
 
-  const updateField = (field: keyof Product, value: string | number) => {
+  const updateField = (
+    field: keyof Product,
+    value: string | number | boolean | Product['defaultExecutionMode'],
+  ) => {
     setEditingProduct((prev) => (prev ? { ...prev, [field]: value } : prev));
   };
 
@@ -697,6 +948,8 @@ export const CenikPage: React.FC = () => {
     setIsModalOpen(false);
     setEditingProduct(null);
     setManualPrecheck(null);
+    setProductServiceLinks([]);
+    setInitialProductServiceLinks([]);
   };
 
   const openImportModal = () => {
@@ -992,6 +1245,9 @@ export const CenikPage: React.FC = () => {
       }
 
       const data = await parseEnvelope<Product>(response);
+      if (!data.isService) {
+        await syncProductServiceLinks(data._id!);
+      }
       setProducts((prev) => [data, ...prev]);
       setStatus({ variant: 'success', text: 'Produkt dodan.' });
       setManualPrecheck(null);
@@ -1025,7 +1281,10 @@ export const CenikPage: React.FC = () => {
   return (
     <section className="cenik-page-shell max-w-6xl mx-auto px-3 py-4 md:p-6 space-y-6">
       <div className="hidden items-center justify-between gap-4 md:flex">
-        <h1 className="text-3xl font-semibold text-foreground">Cenik</h1>
+        <div className="space-y-1">
+          <h1 className="text-3xl font-semibold text-foreground">{viewMeta.title}</h1>
+          <p className="text-sm text-muted-foreground">{viewMeta.description}</p>
+        </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" onClick={openReviewModal}>Pregled produktov</Button>
           <Button onClick={openImportModal}>Uvoz produktov</Button>
@@ -1042,16 +1301,62 @@ export const CenikPage: React.FC = () => {
         </div>
       )}
 
+      <Card title="Delovni prostori kataloga" className="cenik-card">
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {([
+              { id: 'cenik', label: 'Cenik' },
+              { id: 'produkti', label: 'Urejanje produktov' },
+              { id: 'storitve', label: 'Urejanje storitev' }
+            ] as Array<{ id: CatalogView; label: string }>).map((view) => (
+              <Button
+                key={view.id}
+                type="button"
+                variant={catalogView === view.id ? 'default' : 'outline'}
+                onClick={() => setCatalogView(view.id)}
+              >
+                {view.label}
+              </Button>
+            ))}
+          </div>
+          <div className="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
+            <div className="text-sm font-semibold text-foreground">{viewMeta.title}</div>
+            <p className="mt-1 text-sm text-muted-foreground">{viewMeta.description}</p>
+          </div>
+        </div>
+      </Card>
 
-      <Card title="Iskanje in filtriranje" className="cenik-card">
+
+      <Card title={catalogView === 'cenik' ? 'Iskanje in filtriranje cenika' : `Orodja za ${viewMeta.title.toLowerCase()}`} className="cenik-card">
+        <div className="space-y-4">
+          {catalogView === 'cenik' ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {([
+                { id: 'all', label: 'Vse' },
+                { id: 'products', label: 'Produkti' },
+                { id: 'services', label: 'Storitve' },
+              ] as Array<{ id: CenikQuickFilter; label: string }>).map((option) => (
+                <Button
+                  key={option.id}
+                  type="button"
+                  variant={cenikQuickFilter === option.id ? 'default' : 'outline'}
+                  onClick={() => setCenikQuickFilter(option.id)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          ) : null}
         <FilterBar
           categories={categories}
           value={{ q: filters.q, category: filters.category }}
           onChange={setFilters}
-          onAddProduct={() => startEdit()}
+          onAddProduct={startCreateForCurrentView}
+          addLabel={viewMeta.addLabel}
         />
+        </div>
       </Card>
-      <Card title="Seznam produktov" className="cenik-card">
+      <Card title={viewMeta.listTitle} className="cenik-card">
         {loading ? (
           <p className="text-sm text-muted-foreground">Nalaganje cenika …</p>
         ) : (
@@ -1148,7 +1453,9 @@ export const CenikPage: React.FC = () => {
               ))}
             </div>
             {filteredProducts.length === 0 && (
-              <p className="text-center text-sm text-muted-foreground">Ni najdenih produktov.</p>
+              <p className="text-center text-sm text-muted-foreground">
+                {viewMeta.emptyLabel}
+              </p>
             )}
           </div>
         )}
@@ -1159,7 +1466,13 @@ export const CenikPage: React.FC = () => {
           <div className="cenik-product-modal flex w-full max-w-3xl flex-col rounded-xl bg-card shadow-2xl shadow-black/40">
             <div className="hidden items-center justify-between gap-3 border-b border-border/60 bg-card px-4 py-3 md:sticky md:top-0 md:z-10 md:flex md:px-6 md:py-4">
               <h2 className="text-xl font-semibold text-foreground">
-                {editingProduct._id ? 'Uredi produkt' : 'Dodaj produkt'}
+                {editingProduct.isService
+                  ? editingProduct._id
+                    ? 'Uredi storitev'
+                    : 'Dodaj storitev'
+                  : editingProduct._id
+                    ? 'Uredi produkt'
+                    : 'Dodaj produkt'}
               </h2>
               <div className="flex items-center gap-2">
                 <button
@@ -1273,6 +1586,40 @@ export const CenikPage: React.FC = () => {
                   value={editingProduct.casovnaNorma}
                   onChange={(event) => updateField('casovnaNorma', event.target.value)}
                 />
+                <div className="col-span-1 md:col-span-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+                  <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Privzete nastavitve izvedbe za storitev
+                  </div>
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    Uporablja se predvsem pri storitvah za pripravo delovnega naloga.
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label className="space-y-1.5">
+                      <span className="text-xs font-semibold">Privzeti način izvedbe storitve</span>
+                      <select
+                        className="w-full rounded border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                        value={editingProduct.defaultExecutionMode ?? 'simple'}
+                        onChange={(event) =>
+                          updateField('defaultExecutionMode', event.target.value as Product['defaultExecutionMode'])
+                        }
+                      >
+                        <option value="simple">Enostavno</option>
+                        <option value="per_unit">Po enotah</option>
+                        <option value="measured">Merjeno</option>
+                      </select>
+                    </label>
+                    <label className="space-y-1.5 md:col-span-2">
+                      <span className="text-xs font-semibold">Privzeta navodila za izvedbo</span>
+                      <textarea
+                        className="w-full rounded border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                        rows={3}
+                        value={editingProduct.defaultInstructionsTemplate ?? ''}
+                        onChange={(event) => updateField('defaultInstructionsTemplate', event.target.value)}
+                        placeholder="Navodila, ki se ob potrditvi ponudbe prenesejo na delovni nalog."
+                      />
+                    </label>
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-1.5 md:space-y-2">
@@ -1294,6 +1641,105 @@ export const CenikPage: React.FC = () => {
                   onChange={(event) => updateField('dolgOpis', event.target.value)}
                 />
               </div>
+
+              {!editingProduct.isService && (
+                <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="text-sm font-semibold text-foreground">Povezane storitve</div>
+                      <p className="text-xs text-muted-foreground">
+                        Povezave služijo samo kot predlogi v ponudbi. Uporabnik jih mora potrditi ročno.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addDraftProductServiceLink}
+                      disabled={availableServices.length === 0}
+                    >
+                      Dodaj povezano storitev
+                    </Button>
+                  </div>
+
+                  {loadingProductServiceLinks ? (
+                    <p className="text-xs text-muted-foreground">Nalaganje povezanih storitev ...</p>
+                  ) : productServiceLinks.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">Ni nastavljenih povezanih storitev.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {productServiceLinks.map((link, index) => (
+                        <div
+                          key={link.id}
+                          className="grid grid-cols-1 gap-2 rounded-lg border border-border/60 bg-background p-3 md:grid-cols-[minmax(0,1.3fr)_220px_150px_auto]"
+                        >
+                          <label className="space-y-1">
+                            <span className="text-xs font-semibold">Storitev</span>
+                            <select
+                              className="w-full rounded border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                              value={link.serviceProductId}
+                              onChange={(event) =>
+                                updateDraftProductServiceLink(link.id, {
+                                  serviceProductId: event.target.value,
+                                })
+                              }
+                            >
+                              {availableServices.map((service) => (
+                                <option key={service._id} value={service._id}>
+                                  {service.ime}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="space-y-1">
+                            <span className="text-xs font-semibold">Količina</span>
+                            <select
+                              className="w-full rounded border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                              value={link.quantityMode}
+                              onChange={(event) =>
+                                updateDraftProductServiceLink(link.id, {
+                                  quantityMode: event.target.value as ProductServiceLinkQuantityMode,
+                                })
+                              }
+                            >
+                              <option value="same_as_product">Enako kot produkt</option>
+                              <option value="fixed">Fiksna količina</option>
+                            </select>
+                          </label>
+
+                          <Input
+                            label="Fiksna količina"
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={link.quantityMode === 'fixed' ? Number(link.fixedQuantity ?? 1) : ''}
+                            disabled={link.quantityMode !== 'fixed'}
+                            onChange={(event) =>
+                              updateDraftProductServiceLink(link.id, {
+                                fixedQuantity: Number(event.target.value),
+                              })
+                            }
+                          />
+
+                          <div className="flex items-end justify-end">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              onClick={() => removeDraftProductServiceLink(link.id)}
+                              aria-label={`Odstrani povezano storitev ${index + 1}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="hidden flex-wrap gap-3 pb-1 md:flex">
                 <Button type="submit" disabled={saving}>

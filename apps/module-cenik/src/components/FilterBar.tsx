@@ -12,6 +12,7 @@ type Props = {
   value?: FilterValue;
   onChange: (v: FilterValue) => void;
   onAddProduct: () => void;
+  addLabel?: string;
   className?: string;
 };
 
@@ -20,6 +21,7 @@ export default function FilterBar({
   value = { q: '', category: null },
   onChange,
   onAddProduct,
+  addLabel = '+ Dodaj produkt',
   className = '',
 }: Props) {
   const [q, setQ] = useState(value.q ?? '');
@@ -88,7 +90,7 @@ export default function FilterBar({
         onClick={onAddProduct}
         className="w-full rounded-xl px-4 py-2 font-medium text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 filter-add-button md:w-auto"
       >
-        + Dodaj produkt
+        {addLabel}
       </button>
     </div>
   );

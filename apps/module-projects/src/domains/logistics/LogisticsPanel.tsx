@@ -6,6 +6,8 @@ import type {
   MaterialStatus,
   MaterialStep,
   ProjectLogisticsSnapshot,
+  WorkOrderExecutionSpec,
+  WorkOrderExecutionUnit,
   WorkOrder as LogisticsWorkOrder,
   WorkOrderStatus,
 } from "@aintel/shared/types/logistics";
@@ -15,13 +17,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
+import { Checkbox } from "../../components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { MaterialOrderCard } from "./MaterialOrderCard";
 import { normalizeMaterialStatusLabel } from "./materialStatus";
 import { useConfirmOffer } from "../core/useConfirmOffer";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
-import { AlertTriangle, Check, Download, Loader2, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Download, Loader2, Trash2, X } from "lucide-react";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
 
@@ -197,6 +201,85 @@ function formatExecutionDuration(items: LogisticsWorkOrder["items"] | undefined)
   return minutes > 0 ? `${hours} h ${minutes} min` : `${hours} h`;
 }
 
+function normalizeExecutionMode(value: WorkOrderExecutionSpec["mode"] | undefined) {
+  return value === "per_unit" || value === "measured" ? value : "simple";
+}
+
+function sanitizeExecutionUnits(units: WorkOrderExecutionSpec["executionUnits"] | undefined) {
+  return Array.isArray(units)
+    ? units.map((unit) => ({
+        id: unit.id,
+        label: unit.label ?? "",
+        location: unit.location ?? "",
+        instructions: unit.instructions ?? "",
+        isCompleted: !!unit.isCompleted,
+        note: unit.note ?? "",
+      }))
+    : [];
+}
+
+function ensureExecutionSpec(spec: WorkOrderExecutionSpec | null | undefined): WorkOrderExecutionSpec {
+  return {
+    mode: normalizeExecutionMode(spec?.mode),
+    locationSummary: spec?.locationSummary ?? "",
+    instructions: spec?.instructions ?? "",
+    trackingUnitLabel: spec?.trackingUnitLabel ?? "",
+    executionUnits: sanitizeExecutionUnits(spec?.executionUnits),
+  };
+}
+
+function getExecutionModeLabel(mode: WorkOrderExecutionSpec["mode"] | undefined) {
+  if (mode === "per_unit") return "Po enotah";
+  if (mode === "measured") return "Merjeno";
+  return "Enostavno";
+}
+
+function getPerUnitSummary(spec: WorkOrderExecutionSpec) {
+  const totalUnits = spec.executionUnits?.length ?? 0;
+  const completedUnits = (spec.executionUnits ?? []).filter((unit) => unit.isCompleted).length;
+  if (totalUnits === 0) return "Enote: 0";
+  return `Enote: ${completedUnits}/${totalUnits}`;
+}
+
+function getPreparedUnitsSummary(item: LogisticsWorkOrder["items"][number]) {
+  const spec = ensureExecutionSpec(item.executionSpec);
+  const definedUnits = spec.executionUnits?.length ?? 0;
+  const targetCount = typeof item.quantity === "number" && Number.isFinite(item.quantity) ? Math.max(0, item.quantity) : 0;
+  if (targetCount > 0) {
+    return `Enote: ${definedUnits}/${targetCount}`;
+  }
+  return `Enote: ${definedUnits}`;
+}
+
+function isMeasurementLikeUnit(unit?: string | null) {
+  const normalized = (unit ?? "").trim().toLowerCase();
+  return ["km", "h", "ura", "ur", "min", "m", "m2", "m3", "kg", "g", "l"].includes(normalized);
+}
+
+function isServiceWorkOrderItem(item: LogisticsWorkOrder["items"][number]) {
+  return item.isService === true;
+}
+
+function isProductWorkOrderItem(item: LogisticsWorkOrder["items"][number]) {
+  return !isServiceWorkOrderItem(item);
+}
+
+function canRenderLocationDefinition(item: LogisticsWorkOrder["items"][number]) {
+  return isProductWorkOrderItem(item) && !isMeasurementLikeUnit(item.unit);
+}
+
+function isLocationDefinitionItem(item: LogisticsWorkOrder["items"][number]) {
+  return canRenderLocationDefinition(item);
+}
+
+function getDesiredLocationUnitCount(item: LogisticsWorkOrder["items"][number]) {
+  if (!isLocationDefinitionItem(item)) return 0;
+  const quantity = typeof item.quantity === "number" && Number.isFinite(item.quantity) ? Math.max(0, item.quantity) : 0;
+  if (quantity <= 1) return 1;
+  if (Number.isInteger(quantity)) return quantity;
+  return 1;
+}
+
 export function LogisticsPanel({
   projectId,
   client,
@@ -225,6 +308,7 @@ export function LogisticsPanel({
   const [materialDownloading, setMaterialDownloading] = useState<"PURCHASE_ORDER" | "DELIVERY_NOTE" | null>(null);
   const [workOrderDownloading, setWorkOrderDownloading] = useState<"WORK_ORDER" | "WORK_ORDER_CONFIRMATION" | null>(null);
   const [pendingMaterialOrderIds, setPendingMaterialOrderIds] = useState<Record<string, boolean>>({});
+  const [expandedExecutionItems, setExpandedExecutionItems] = useState<Record<string, boolean>>({});
 
   const hasConfirmed = useMemo(() => !!snapshot?.confirmedOfferVersionId, [snapshot]);
   const confirmedOffers = useMemo(
@@ -832,6 +916,11 @@ export function LogisticsPanel({
           : workOrderForm.scheduledConfirmedAt === null
             ? null
             : undefined;
+      const resolvedItems = Array.isArray(workOrderOverrides?.items)
+        ? workOrderOverrides.items
+        : Array.isArray(workOrderForm.items)
+          ? workOrderForm.items
+          : undefined;
       const response = await fetch(`/api/projects/${projectId}/work-orders/${selectedWorkOrder._id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -847,7 +936,7 @@ export function LogisticsPanel({
           location: workOrderForm.location ?? "",
           notes: workOrderForm.notes ?? "",
           status: workOrderOverrides?.status ?? workOrderForm.status ?? undefined,
-          items: Array.isArray(workOrderOverrides?.items) ? workOrderOverrides?.items : undefined,
+          items: resolvedItems,
           materialOrderId: materialOverrides?._id ?? currentMaterial?._id ?? null,
           materialStatus: materialOverrides?.materialStatus ?? currentMaterial?.materialStatus ?? undefined,
           materialAssignedEmployeeIds: Array.isArray(workOrderForm.assignedEmployeeIds)
@@ -1071,6 +1160,315 @@ export function LogisticsPanel({
     }
   };
 
+  const toggleExecutionDetails = (itemId: string) => {
+    setExpandedExecutionItems((prev) => ({ ...prev, [itemId]: !prev[itemId] }));
+  };
+
+  const updateWorkOrderItems = (updater: (items: LogisticsWorkOrder["items"]) => LogisticsWorkOrder["items"]) => {
+    setWorkOrderForm((prev) => {
+      const baseItems =
+        Array.isArray(prev.items) && prev.items.length > 0
+          ? prev.items
+          : Array.isArray(selectedWorkOrder?.items)
+            ? selectedWorkOrder.items
+            : [];
+      return { ...prev, items: updater(baseItems) };
+    });
+  };
+
+  const updateExecutionSpecForItem = (itemId: string, changes: Partial<WorkOrderExecutionSpec>) => {
+    updateWorkOrderItems((items) =>
+      items.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              executionSpec: {
+                ...ensureExecutionSpec(item.executionSpec),
+                ...changes,
+                executionUnits:
+                  changes.executionUnits !== undefined
+                    ? sanitizeExecutionUnits(changes.executionUnits)
+                    : ensureExecutionSpec(item.executionSpec).executionUnits,
+              },
+            }
+          : item,
+      ),
+    );
+  };
+
+  const updateExecutionUnitForItem = (
+    itemId: string,
+    unitId: string,
+    changes: Partial<WorkOrderExecutionUnit>,
+  ) => {
+    const currentItems =
+      Array.isArray(workOrderForm.items) && workOrderForm.items.length > 0
+        ? workOrderForm.items
+        : Array.isArray(selectedWorkOrder?.items)
+          ? selectedWorkOrder.items
+          : [];
+    const currentItem = currentItems.find((item) => item.id === itemId);
+    const spec = ensureExecutionSpec(currentItem?.executionSpec);
+    const nextUnits = (spec.executionUnits ?? []).map((unit) => (unit.id === unitId ? { ...unit, ...changes } : unit));
+    updateExecutionSpecForItem(itemId, { executionUnits: nextUnits });
+  };
+
+  const addExecutionUnitForItem = (itemId: string) => {
+    const currentItems =
+      Array.isArray(workOrderForm.items) && workOrderForm.items.length > 0
+        ? workOrderForm.items
+        : Array.isArray(selectedWorkOrder?.items)
+          ? selectedWorkOrder.items
+          : [];
+    const currentItem = currentItems.find((item) => item.id === itemId);
+    const spec = ensureExecutionSpec(currentItem?.executionSpec);
+    const nextUnit: WorkOrderExecutionUnit = {
+      id:
+        typeof globalThis.crypto !== "undefined" && typeof globalThis.crypto.randomUUID === "function"
+          ? globalThis.crypto.randomUUID()
+          : `unit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      label: "",
+      location: "",
+      instructions: "",
+      isCompleted: false,
+      note: "",
+    };
+    updateExecutionSpecForItem(itemId, {
+      mode: "per_unit",
+      executionUnits: [...(spec.executionUnits ?? []), nextUnit],
+    });
+    setExpandedExecutionItems((prev) => ({ ...prev, [itemId]: true }));
+  };
+
+  const deleteExecutionUnitForItem = (itemId: string, unitId: string) => {
+    const currentItems =
+      Array.isArray(workOrderForm.items) && workOrderForm.items.length > 0
+        ? workOrderForm.items
+        : Array.isArray(selectedWorkOrder?.items)
+          ? selectedWorkOrder.items
+          : [];
+    const currentItem = currentItems.find((item) => item.id === itemId);
+    const spec = ensureExecutionSpec(currentItem?.executionSpec);
+    updateExecutionSpecForItem(itemId, {
+      executionUnits: (spec.executionUnits ?? []).filter((unit) => unit.id !== unitId),
+    });
+  };
+
+  const buildProductLocationUnits = (item: LogisticsWorkOrder["items"][number]) => {
+    const spec = ensureExecutionSpec(item.executionSpec);
+    const targetCount = getDesiredLocationUnitCount(item);
+    return Array.from({ length: targetCount }, (_, index) => {
+      const existing = spec.executionUnits?.[index];
+      return {
+        id: existing?.id ?? `draft-${item.id}-${index}`,
+        label: String(index + 1),
+        location: existing?.location ?? "",
+        instructions: existing?.instructions ?? "",
+        isCompleted: !!existing?.isCompleted,
+        note: existing?.note ?? "",
+      };
+    });
+  };
+
+  const updateProductLocationUnit = (
+    item: LogisticsWorkOrder["items"][number],
+    index: number,
+    changes: Partial<WorkOrderExecutionUnit>,
+  ) => {
+    const units = buildProductLocationUnits(item).map((unit, unitIndex) =>
+      unitIndex === index
+        ? {
+            ...unit,
+            ...changes,
+          }
+        : unit,
+    );
+    updateExecutionSpecForItem(item.id, {
+      executionUnits: units.map((unit) => ({
+        id: unit.id,
+        label: unit.label,
+        location: unit.location ?? "",
+        instructions: unit.instructions ?? "",
+        isCompleted: !!unit.isCompleted,
+        note: unit.note ?? "",
+      })),
+    });
+  };
+
+  const renderPreparationExecutionDetails = (
+    item: LogisticsWorkOrder["items"][number],
+    compact = false,
+    options?: { showToggle?: boolean },
+  ) => {
+    const spec = ensureExecutionSpec(item.executionSpec);
+    const isExpanded = !!expandedExecutionItems[item.id];
+    const isPerUnit = spec.mode === "per_unit";
+    const unitLabel = spec.trackingUnitLabel?.trim() || "Enota";
+
+    return (
+      <div className="space-y-3 rounded-md border border-border/70 bg-muted/20 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Detajli izvedbe</p>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>Način izvedbe: {getExecutionModeLabel(spec.mode)}</span>
+              {isPerUnit ? <span>{getPreparedUnitsSummary(item)}</span> : null}
+            </div>
+          </div>
+          {options?.showToggle !== false ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              onClick={() => toggleExecutionDetails(item.id)}
+            >
+              {isExpanded ? <ChevronDown className="mr-1 h-4 w-4" /> : <ChevronRight className="mr-1 h-4 w-4" />}
+              {isExpanded ? "Skrij detajle" : "Odpri detajle"}
+            </Button>
+          ) : null}
+        </div>
+        {isExpanded ? (
+          <div className="space-y-3">
+            <div className={compact ? "space-y-3" : "grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]"}>
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Način izvedbe</span>
+                <Select
+                  value={spec.mode ?? "simple"}
+                  onValueChange={(value) =>
+                    updateExecutionSpecForItem(item.id, {
+                      mode: value as WorkOrderExecutionSpec["mode"],
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Izberi način izvedbe" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="simple">Enostavno</SelectItem>
+                    <SelectItem value="per_unit">Po enotah</SelectItem>
+                    <SelectItem value="measured">Merjeno</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
+              {!isPerUnit ? (
+                <label className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Lokacija</span>
+                  <Input
+                    value={spec.locationSummary ?? ""}
+                    onChange={(event) =>
+                      updateExecutionSpecForItem(item.id, { locationSummary: event.target.value })
+                    }
+                    placeholder="Npr. dnevna soba, vhod nad vrati"
+                  />
+                </label>
+              ) : null}
+            </div>
+            {isPerUnit ? (
+              <div className="space-y-3 rounded-md border border-dashed border-border/70 bg-background/80 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Razčlenitev po enotah</p>
+                    <p className="text-xs text-muted-foreground">Glavni vnos: oznaka, lokacija, opomba.</p>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => addExecutionUnitForItem(item.id)}>
+                    Dodaj enoto
+                  </Button>
+                </div>
+                <div className={compact ? "space-y-3" : "grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]"}>
+                  <label className="space-y-1">
+                    <span className="text-xs text-muted-foreground">Privzeta oznaka enote</span>
+                    <Input
+                      value={spec.trackingUnitLabel ?? ""}
+                      onChange={(event) =>
+                        updateExecutionSpecForItem(item.id, { trackingUnitLabel: event.target.value })
+                      }
+                      placeholder="Npr. senzor"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs text-muted-foreground">Splošna opomba</span>
+                    <Input
+                      value={spec.instructions ?? ""}
+                      onChange={(event) =>
+                        updateExecutionSpecForItem(item.id, { instructions: event.target.value })
+                      }
+                      placeholder="Kratka skupna opomba za to postavko."
+                    />
+                  </label>
+                </div>
+                {(spec.executionUnits?.length ?? 0) === 0 ? (
+                  <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                    Ni pripravljenih enot. Dodaj enoto za vsako lokacijo montaže.
+                  </div>
+                ) : null}
+                <div className="space-y-2">
+                  <div className="hidden grid-cols-[minmax(140px,1fr)_minmax(220px,1.6fr)_minmax(180px,1.2fr)_auto] gap-2 px-1 text-xs text-muted-foreground md:grid">
+                    <span>Oznaka</span>
+                    <span>Lokacija</span>
+                    <span>Opomba</span>
+                    <span></span>
+                  </div>
+                  {(spec.executionUnits ?? []).map((unit, index) => (
+                    <div key={unit.id} className="rounded-md border border-border/70 bg-muted/10 p-2">
+                      <div className={compact ? "space-y-2" : "grid gap-2 md:grid-cols-[minmax(140px,1fr)_minmax(220px,1.6fr)_minmax(180px,1.2fr)_auto]"}>
+                        <Input
+                          value={unit.label ?? ""}
+                          onChange={(event) =>
+                            updateExecutionUnitForItem(item.id, unit.id, { label: event.target.value })
+                          }
+                          placeholder={`${unitLabel} ${index + 1}`}
+                        />
+                        <Input
+                          value={unit.location ?? ""}
+                          onChange={(event) =>
+                            updateExecutionUnitForItem(item.id, unit.id, { location: event.target.value })
+                          }
+                          placeholder="Npr. dnevna soba"
+                        />
+                        <Input
+                          value={unit.instructions ?? ""}
+                          onChange={(event) =>
+                            updateExecutionUnitForItem(item.id, unit.id, { instructions: event.target.value })
+                          }
+                          placeholder="Opomba"
+                        />
+                        <div className="flex items-center justify-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            onClick={() => deleteExecutionUnitForItem(item.id, unit.id)}
+                            aria-label="Izbriši enoto"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {!isPerUnit ? (
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">Splošna opomba</span>
+                <Input
+                  value={spec.instructions ?? ""}
+                  onChange={(event) =>
+                    updateExecutionSpecForItem(item.id, { instructions: event.target.value })
+                  }
+                  placeholder="Kratka opomba za izvedbo."
+                />
+              </label>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   const renderWorkOrder = (workOrder: LogisticsWorkOrder | null) => {
     if (!workOrder) {
       return <p className="text-sm text-muted-foreground">Delovni nalog bo ustvarjen ob potrditvi ponudbe.</p>;
@@ -1141,19 +1539,27 @@ export function LogisticsPanel({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(workOrder.items ?? []).map((item) => {
+              {workOrderItems.map((item) => {
                 const requiredQty = typeof item.quantity === "number" ? item.quantity : 0;
+                const executionSpec = ensureExecutionSpec(item.executionSpec);
                 if (workOrderMode !== "execute") {
                   const materialKey = item.offerItemId ?? item.id;
                   const materialItem = materialItemsById.get(materialKey);
-                  const isService = Boolean(item.isService) || (Boolean(item.productId) && !materialItem);
+                  const isService = isServiceWorkOrderItem(item);
                   const materialRequired =
                     typeof materialItem?.quantity === "number" ? materialItem.quantity : requiredQty;
                   const deliveredQty = typeof materialItem?.deliveredQty === "number" ? materialItem.deliveredQty : 0;
                   const isReady = isService ? hasAssignedTeam : deliveredQty - materialRequired >= 0;
                   return (
                     <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{item.name}</span>
+                          {executionSpec.mode === "per_unit" ? (
+                            <Badge variant="outline">{getPreparedUnitsSummary(item)}</Badge>
+                          ) : null}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-center tabular-nums w-[90px]">{item.quantity}</TableCell>
                       <TableCell className="text-center tabular-nums w-[90px]">{item.unit}</TableCell>
                       <TableCell className="text-center">
@@ -1269,12 +1675,13 @@ export function LogisticsPanel({
           </Table>
         </div>
         <div className="space-y-3 md:hidden">
-          {(workOrder.items ?? []).map((item) => {
+          {workOrderItems.map((item) => {
             const requiredQty = typeof item.quantity === "number" ? item.quantity : 0;
+            const executionSpec = ensureExecutionSpec(item.executionSpec);
             if (workOrderMode !== "execute") {
               const materialKey = item.offerItemId ?? item.id;
               const materialItem = materialItemsById.get(materialKey);
-              const isService = Boolean(item.isService) || (Boolean(item.productId) && !materialItem);
+              const isService = isServiceWorkOrderItem(item);
               const materialRequired =
                 typeof materialItem?.quantity === "number" ? materialItem.quantity : requiredQty;
               const deliveredQty = typeof materialItem?.deliveredQty === "number" ? materialItem.deliveredQty : 0;
@@ -1284,7 +1691,12 @@ export function LogisticsPanel({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold leading-5">{item.name}</p>
-                      <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
+                        {executionSpec.mode === "per_unit" ? (
+                          <Badge variant="outline">{getPreparedUnitsSummary(item)}</Badge>
+                        ) : null}
+                      </div>
                     </div>
                     <span
                       className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 ${
@@ -1495,7 +1907,6 @@ export function LogisticsPanel({
             ? [selectedMaterialOrder]
             : [];
     const previewMaterialItems = materialPreviewOrders.flatMap((order) => order.items ?? []);
-    const previewMaterialItemsById = new Map(previewMaterialItems.map((item) => [item.id, item]));
     const supplierGroups = groupMaterialPreviewBySupplier(previewMaterialItems);
     const previewWorkOrder = workOrder ?? selectedWorkOrder;
     const previewTeamIds = Array.isArray(workOrderForm.assignedEmployeeIds) && workOrderForm.assignedEmployeeIds.length > 0
@@ -1516,10 +1927,7 @@ export function LogisticsPanel({
       Array.isArray(workOrderForm.items) && workOrderForm.items.length > 0
         ? workOrderForm.items
         : previewWorkOrder?.items ?? [];
-    const previewServiceCount = previewItems.filter((item) => {
-      const hasMaterialLine = previewMaterialItemsById.has(item.id);
-      return Boolean(item.isService) || (Boolean(item.productId) && !hasMaterialLine);
-    }).length;
+    const previewServiceCount = previewItems.filter((item) => isServiceWorkOrderItem(item)).length;
     const previewProductCount = previewItems.length - previewServiceCount;
     const previewDurationLabel = formatExecutionDuration(previewItems);
 
@@ -1670,6 +2078,147 @@ export function LogisticsPanel({
     );
   };
 
+  const renderExecutionDefinition = (workOrder: LogisticsWorkOrder | null) => {
+    const sourceWorkOrder = workOrder ?? selectedWorkOrder;
+    if (!sourceWorkOrder) {
+      return (
+        <Card>
+          <CardHeader className="pb-0">
+            <h3 className="text-base font-semibold">Definicija izvedbe</h3>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">Delovni nalog še ni pripravljen za definiranje izvedbe.</p>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    const sourceItems =
+      Array.isArray(workOrderForm.items) && workOrderForm.items.length > 0
+        ? workOrderForm.items
+        : Array.isArray(sourceWorkOrder.items)
+          ? sourceWorkOrder.items
+          : [];
+    const prioritizedItems = sourceItems
+      .map((item, index) => ({ item, index }))
+      .sort((a, b) => {
+        const aService = isServiceWorkOrderItem(a.item) ? 1 : 0;
+        const bService = isServiceWorkOrderItem(b.item) ? 1 : 0;
+        if (aService !== bService) return aService - bService;
+        return a.index - b.index;
+      })
+      .map(({ item }) => item);
+
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between gap-3 pb-0">
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold">Definicija izvedbe</h3>
+            <p className="text-sm text-muted-foreground">Določi lokacije za posamezne produktne enote.</p>
+          </div>
+          <Badge variant="outline">{prioritizedItems.length} postavk</Badge>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {prioritizedItems.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Ni postavk za pripravo definicije izvedbe.</p>
+          ) : (
+            <div className="space-y-3">
+              {prioritizedItems.map((item) => {
+                const isServiceRow = isServiceWorkOrderItem(item);
+                const isProductCandidate = isProductWorkOrderItem(item);
+                const canDefineLocations = canRenderLocationDefinition(item);
+                const locationUnits = canDefineLocations ? buildProductLocationUnits(item) : [];
+                const isExpanded = isServiceRow ? !!expandedExecutionItems[item.id] : expandedExecutionItems[item.id] !== false;
+                return (
+                  <div key={item.id} className="rounded-lg border border-border/70 bg-card p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-semibold">{item.name}</p>
+                          {isServiceRow ? <Badge variant="outline">Storitev</Badge> : null}
+                          {isProductCandidate ? <Badge variant="outline">Produkt</Badge> : null}
+                          {canDefineLocations ? <Badge variant="outline">{getPreparedUnitsSummary(item)}</Badge> : null}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Količina: {item.quantity ?? 0} {item.unit || ""}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-xs"
+                        onClick={() =>
+                          setExpandedExecutionItems((prev) => ({
+                            ...prev,
+                            [item.id]: !isExpanded,
+                          }))
+                        }
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="mr-1 h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="mr-1 h-4 w-4" />
+                        )}
+                        Detajli izvedbe
+                      </Button>
+                    </div>
+                    {isExpanded ? (
+                      <div className="mt-3 space-y-3">
+                        {canDefineLocations ? (
+                          <div className="space-y-2">
+                            {locationUnits.length === 0 ? (
+                              <div className="text-sm text-muted-foreground">Ni pripravljenih enot.</div>
+                            ) : null}
+                            {locationUnits.map((unit, index) => (
+                              <div key={unit.id} className="rounded-md border border-border/70 bg-muted/10 p-2">
+                                <div className="grid gap-2 md:grid-cols-[120px_minmax(240px,1.8fr)_minmax(180px,1.2fr)_140px]">
+                                  <div className="flex items-center text-sm font-medium">{unit.label}</div>
+                                  <Input
+                                    value={unit.location ?? ""}
+                                    onChange={(event) =>
+                                      updateProductLocationUnit(item, index, { location: event.target.value })
+                                    }
+                                    placeholder="Lokacija"
+                                  />
+                                  <Input
+                                    value={unit.instructions ?? ""}
+                                    onChange={(event) =>
+                                      updateProductLocationUnit(item, index, { instructions: event.target.value })
+                                    }
+                                    placeholder="Opomba"
+                                  />
+                                  <Button type="button" variant="outline" size="sm" disabled title="Kmalu">
+                                    Fotografija
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                            {isServiceRow
+                              ? "Lokacije se v tej fazi definirajo pri povezanih produktih, ne na storitvi."
+                              : "Za to postavko lokacijska razčlenitev v tej fazi ni potrebna."}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div className="flex justify-end border-t border-border/60 pt-4">
+            <Button variant="outline" size="sm" onClick={() => void handleSaveWorkOrder()} disabled={savingWorkOrder}>
+              {savingWorkOrder ? "Shranjujem definicijo..." : "Shrani definicijo izvedbe"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   const renderPickupTaskPreview = () => {
     const materialPreviewOrders =
       materialOrdersForSelectedWorkOrder.length > 0
@@ -1808,6 +2357,18 @@ export function LogisticsPanel({
     return saved;
   };
 
+  const applyMaterialItemsAndSave = async (materialOrderId: string, items: MaterialOrder["items"]): Promise<boolean> => {
+    updateMaterialOrderForm(materialOrderId, { items });
+    const saved = await handleSaveWorkOrder({
+      _id: materialOrderId,
+      items,
+    });
+    if (saved) {
+      setPendingMaterialOrderIds((prev) => ({ ...prev, [materialOrderId]: false }));
+    }
+    return saved;
+  };
+
   const handleAdvanceMaterialStepWithSave = async (materialOrderId: string, targetStep: MaterialStep) => {
     if (pendingMaterialOrderIds[materialOrderId]) {
       const saved = await saveMaterialOrderChanges(materialOrderId);
@@ -1899,6 +2460,12 @@ export function LogisticsPanel({
                   onSaveMaterialChanges={() => {
                     void saveMaterialOrderChanges(order._id);
                   }}
+                  onBulkMarkOrdered={(items) => {
+                    void applyMaterialItemsAndSave(order._id, items);
+                  }}
+                  onBulkMarkReady={(items) => {
+                    void applyMaterialItemsAndSave(order._id, items);
+                  }}
                   hasPendingMaterialChanges={Boolean(pendingMaterialOrderIds[order._id])}
                   canDownloadPdf={Boolean(order._id)}
                   downloadingPdf={materialDownloading}
@@ -1909,15 +2476,18 @@ export function LogisticsPanel({
         ) : null}
 
         {section === "workorder" || section === "both" ? (
-          <Card id="dashboard-logistics-workorder">
-            <CardHeader className="hidden" />
-            <CardContent className="space-y-4">
-              {filteredWorkOrders.length === 0 ? (
-                <span className="text-sm text-muted-foreground">Delovni nalog še ni ustvarjen.</span>
-              ) : null}
-              {renderTaskPreview(selectedWorkOrder)}
-            </CardContent>
-          </Card>
+          <>
+            <Card id="dashboard-logistics-workorder">
+              <CardHeader className="hidden" />
+              <CardContent className="space-y-4">
+                {filteredWorkOrders.length === 0 ? (
+                  <span className="text-sm text-muted-foreground">Delovni nalog še ni ustvarjen.</span>
+                ) : null}
+                {renderTaskPreview(selectedWorkOrder)}
+              </CardContent>
+            </Card>
+            {renderExecutionDefinition(selectedWorkOrder)}
+          </>
         ) : null}
       </div>
     );
@@ -2007,6 +2577,12 @@ export function LogisticsPanel({
               onSaveMaterialChanges={() => {
                 void saveMaterialOrderChanges(order._id);
               }}
+              onBulkMarkOrdered={(items) => {
+                void applyMaterialItemsAndSave(order._id, items);
+              }}
+              onBulkMarkReady={(items) => {
+                void applyMaterialItemsAndSave(order._id, items);
+              }}
               hasPendingMaterialChanges={Boolean(pendingMaterialOrderIds[order._id])}
               canDownloadPdf={Boolean(order._id)}
               downloadingPdf={materialDownloading}
@@ -2046,6 +2622,7 @@ export function LogisticsPanel({
           </div>
         </CardContent>
       </Card>
+      {renderExecutionDefinition(selectedWorkOrder)}
     </div>
   );
 }

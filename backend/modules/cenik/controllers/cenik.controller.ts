@@ -19,6 +19,8 @@ type ProductPayload = Pick<
   | 'povezavaDoProdukta'
   | 'naslovDobavitelja'
   | 'casovnaNorma'
+  | 'defaultExecutionMode'
+  | 'defaultInstructionsTemplate'
 >;
 
 type ProductResponse = ProductPayload & {
@@ -65,6 +67,13 @@ const parseBoolean = (value: unknown, fallback = false) => {
   return fallback;
 };
 
+const parseExecutionMode = (value: unknown): ProductDocument['defaultExecutionMode'] => {
+  if (value === 'simple' || value === 'per_unit' || value === 'measured') {
+    return value;
+  }
+  return undefined;
+};
+
 function normalizeSlug(value: string) {
   return value
     .trim()
@@ -98,7 +107,9 @@ function buildPayload(body: Partial<ProductPayload>): ProductPayload {
     dobavitelj: castText(body.dobavitelj),
     povezavaDoProdukta: castText(body.povezavaDoProdukta),
     naslovDobavitelja: castText(body.naslovDobavitelja),
-    casovnaNorma: castText(body.casovnaNorma)
+    casovnaNorma: castText(body.casovnaNorma),
+    defaultExecutionMode: parseExecutionMode(body.defaultExecutionMode),
+    defaultInstructionsTemplate: castText(body.defaultInstructionsTemplate),
   };
 }
 
@@ -122,6 +133,8 @@ function sanitizeProduct(product: ProductDocument): ProductResponse {
     povezavaDoProdukta: product.povezavaDoProdukta ?? '',
     naslovDobavitelja: product.naslovDobavitelja ?? '',
     casovnaNorma: product.casovnaNorma ?? '',
+    defaultExecutionMode: product.defaultExecutionMode,
+    defaultInstructionsTemplate: product.defaultInstructionsTemplate ?? '',
     isActive: product.isActive !== false,
     status: product.status ?? (product.isActive === false ? 'merged' : 'active'),
     mergedIntoProductId: product.mergedIntoProductId ? String(product.mergedIntoProductId) : '',
