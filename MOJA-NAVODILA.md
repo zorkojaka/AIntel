@@ -78,3 +78,12 @@ cd backend
 pnpm run db:sync-services
 pnpm run db:sync-aa
 pnpm run db:sync-all
+
+
+
+Staging workflow
+
+Codex dela na codex/* vejah
+Ti delaš na dev/* vejah
+Vsak push na te veje → avtomatski deploy na testaintel.inteligent.si
+Ko zadovoljen → merge na main → aintel.inteligent.si
