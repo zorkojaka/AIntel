@@ -8,3 +8,5 @@ export { ColorPicker } from './components/ColorPicker/ColorPicker';
 export { FileUpload } from './components/FileUpload/FileUpload';
 export { CategoryMultiSelect } from './components/CategoryMultiSelect/CategoryMultiSelect';
 export { TableRowActions } from './components/TableRowActions/TableRowActions';
+export { PhotoCapture } from './components/PhotoCapture/PhotoCapture';
+export type { PhotoCaptureProps, UploadedPhoto } from './components/PhotoCapture/PhotoCapture';

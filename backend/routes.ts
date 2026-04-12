@@ -16,6 +16,7 @@ import employeeProfilesRoutes from './modules/employee-profiles/routes/employee-
 import adminRoutes from './modules/admin/routes/admin.routes';
 import communicationSettingsRoutes from './modules/communication/routes/settings.routes';
 import communicationProjectRoutes from './modules/communication/routes/project.routes';
+import filesRoutes from './modules/files/routes';
 import { requireRoles } from './middlewares/auth';
 import { ROLE_ADMIN, ROLE_FINANCE, ROLE_SALES } from './utils/roles';
 
@@ -38,6 +39,7 @@ router.use('/users', requireRoles([ROLE_ADMIN]), usersRoutes);
 router.use('/employee-profiles', requireRoles([ROLE_ADMIN]), employeeProfilesRoutes);
 router.use('/admin', requireRoles([ROLE_ADMIN]), adminRoutes);
 router.use('/offers', offerPreviewRoutes);
+router.use('/files', filesRoutes);
 
 router.get('/', (_req, res) => {
   res.success({ status: 'AIntel CORE backend pripravljen' });
