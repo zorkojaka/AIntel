@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
+const devApiProxyTarget = process.env.AINTEL_DEV_API_PROXY_TARGET ?? `http://127.0.0.1:${process.env.AINTEL_BACKEND_PORT ?? '3000'}`;
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -9,15 +11,15 @@ export default defineConfig({
       { find: '@', replacement: path.resolve(__dirname, 'src') },
       { find: /^@aintel\/shared\/(.*)$/, replacement: path.resolve(__dirname, '../../shared/$1') },
       { find: '@aintel/shared', replacement: path.resolve(__dirname, '../../shared') },
-    ]
+    ],
   },
   server: {
     port: 4173,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
-        changeOrigin: true
-      }
-    }
-  }
+        target: devApiProxyTarget,
+        changeOrigin: true,
+      },
+    },
+  },
 });

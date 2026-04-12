@@ -1,249 +1,196 @@
-import { FilterQuery } from 'mongoose';
-import { ProjectModel } from '../../projects/schemas/project';
-import { WorkOrderModel } from '../../projects/schemas/work-order';
-import { ProductModel } from '../../cenik/product.model';
-import { EmployeeModel, type EmployeeDocument } from '../../employees/schemas/employee';
+import { FinanceSnapshotModel } from '../schemas/finance-snapshot';
+import { OfferVersionModel } from '../../projects/schemas/offer-version';
+import { EmployeeModel } from '../../employees/schemas/employee';
 
 type DateRange = { from?: Date; to?: Date };
 
-type InvoiceVersion = {
-  _id: string;
-  status: string;
-  issuedAt?: string | null;
-  summary?: { baseWithoutVat?: number; discountedBase?: number; vatAmount?: number; totalWithVat?: number };
-  items?: { totalWithVat?: number; totalWithoutVat?: number; vatPercent?: number }[];
-};
-
-type ProjectLike = {
-  id: string;
-  title?: string;
-  customer?: { name?: string };
-  invoiceVersions?: InvoiceVersion[];
-};
-
-function normalizeDate(value?: string | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? null : date;
-}
-
-function isWithinRange(value: Date | null, range: DateRange) {
-  if (!value) return false;
-  if (range.from && value < range.from) return false;
-  if (range.to && value > range.to) return false;
-  return true;
-}
-
-function safeNumber(value: unknown, fallback = 0) {
+function toNumber(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function getRevenueFromInvoice(invoice: InvoiceVersion) {
-  if (invoice.summary?.totalWithVat !== undefined) {
-    return {
-      revenueWithVat: safeNumber(invoice.summary.totalWithVat),
-      revenueWithoutVat: safeNumber(invoice.summary.discountedBase ?? invoice.summary.baseWithoutVat ?? 0),
-    };
-  }
-  const items = invoice.items ?? [];
-  const revenueWithVat = items.reduce((sum, item) => sum + safeNumber(item.totalWithVat), 0);
-  const revenueWithoutVat = items.reduce((sum, item) => sum + safeNumber(item.totalWithoutVat), 0);
-  return { revenueWithVat, revenueWithoutVat };
+function normalizeRange(range: DateRange) {
+  const issuedAt: Record<string, Date> = {};
+  if (range.from) issuedAt.$gte = range.from;
+  if (range.to) issuedAt.$lte = range.to;
+  return Object.keys(issuedAt).length ? issuedAt : null;
 }
 
-export async function getProjectsSummary(range: DateRange, tenantId?: string | null) {
-  const employeeFilter: FilterQuery<EmployeeDocument> = { deletedAt: null };
-  if (tenantId) {
-    employeeFilter.tenantId = tenantId;
-  }
-
-  const [projects, workOrders, products, employees] = await Promise.all([
-    ProjectModel.find().lean(),
-    WorkOrderModel.find().lean(),
-    ProductModel.find().lean(),
-    EmployeeModel.find(employeeFilter).lean(),
-  ]);
-
-  const productPriceMap = new Map<string, number>();
-  products.forEach((product: any) => {
-    const purchase = product.purchasePriceWithoutVat ?? product.nabavnaCena ?? 0;
-    productPriceMap.set(String(product._id ?? product.id), purchase);
-  });
-
-  const employeeMap = new Map<string, { name: string; rate: number }>();
-  employees.forEach((employee: any) => {
-    employeeMap.set(String(employee._id ?? employee.id), {
-      name: employee.name ?? '',
-      rate: safeNumber(employee.hourRateWithoutVat, 0),
-    });
-  });
-
-  const workOrdersByProject = new Map<string, any[]>();
-  workOrders.forEach((order: any) => {
-    const projectId = order.projectId;
-    if (!workOrdersByProject.has(projectId)) {
-      workOrdersByProject.set(projectId, []);
-    }
-    workOrdersByProject.get(projectId)!.push(order);
-  });
-
-  return (projects as ProjectLike[]).map((project) => {
-    const issuedInvoices = (project.invoiceVersions ?? []).filter((invoice) => invoice.status === 'issued');
-    const filteredInvoices = issuedInvoices.filter((invoice) =>
-      isWithinRange(normalizeDate(invoice.issuedAt ?? null), range)
-    );
-    const revenue = filteredInvoices.reduce(
-      (acc, invoice) => {
-        const { revenueWithVat, revenueWithoutVat } = getRevenueFromInvoice(invoice);
-        acc.revenueWithVat += revenueWithVat;
-        acc.revenueWithoutVat += revenueWithoutVat;
-        return acc;
+export async function getMonthlySummary(year: number) {
+  const from = new Date(Date.UTC(year, 0, 1));
+  const to = new Date(Date.UTC(year + 1, 0, 1));
+  return FinanceSnapshotModel.aggregate([
+    { $match: { superseded: { $ne: true }, issuedAt: { $gte: from, $lt: to } } },
+    {
+      $group: {
+        _id: { $month: '$issuedAt' },
+        totalSaleWithVat: { $sum: '$summary.totalSaleWithVat' },
+        totalSaleWithoutVat: { $sum: '$summary.totalSaleWithoutVat' },
+        totalPurchase: { $sum: '$summary.totalPurchase' },
+        totalMargin: { $sum: '$summary.totalMargin' },
+        projectIds: { $addToSet: '$projectId' },
       },
-      { revenueWithVat: 0, revenueWithoutVat: 0 }
-    );
-
-    const materialCost = (workOrdersByProject.get(project.id) ?? []).reduce((sum, order) => {
-      return sum + (order.items ?? []).reduce((itemSum: number, item: any) => {
-        const price = productPriceMap.get(String(item.productId)) ?? 0;
-        const executed = safeNumber(item.executedQuantity, 0);
-        return itemSum + executed * price;
-      }, 0);
-    }, 0);
-
-    const labourDetails = (workOrdersByProject.get(project.id) ?? []).reduce(
-      (acc, order) => {
-        (order.workLogs ?? []).forEach((log: any) => {
-          const rate = employeeMap.get(String(log.employeeId))?.rate ?? 0;
-          acc.labourCost += safeNumber(log.hours, 0) * rate;
-          acc.names.add(employeeMap.get(String(log.employeeId))?.name || String(log.employeeId));
-          acc.hours += safeNumber(log.hours, 0);
-        });
-        return acc;
+    },
+    {
+      $project: {
+        _id: 0,
+        month: '$_id',
+        totalSaleWithVat: 1,
+        totalSaleWithoutVat: 1,
+        totalPurchase: 1,
+        totalMargin: 1,
+        projectCount: { $size: '$projectIds' },
       },
-      { labourCost: 0, names: new Set<string>(), hours: 0 }
-    );
-
-    const profitWithoutVat = revenue.revenueWithoutVat - (materialCost + labourDetails.labourCost);
-    const profitMarginPercent = revenue.revenueWithoutVat > 0
-      ? (profitWithoutVat / revenue.revenueWithoutVat) * 100
-      : 0;
-
-    return {
-      projectId: project.id,
-      projectName: project.title ?? project.id,
-      company: '',
-      revenueWithVat: revenue.revenueWithVat,
-      materialCostWithoutVat: materialCost,
-      labourCostWithoutVat: labourDetails.labourCost,
-      otherCostWithoutVat: 0,
-      profitWithoutVat,
-      profitMarginPercent,
-      mainTechnicianNames: Array.from(labourDetails.names),
-      totalHours: labourDetails.hours,
-    };
-  });
-}
-
-export async function getMonthlySummary(range: DateRange, tenantId?: string | null) {
-  const projects = await getProjectsSummary(range, tenantId);
-  const buckets = new Map<string, any>();
-
-  projects.forEach((project) => {
-    const key = 'aggregate';
-    if (!buckets.has(key)) {
-      buckets.set(key, {
-        yearMonth: key,
-        projectCount: 0,
-        revenueWithVat: 0,
-        materialCostWithoutVat: 0,
-        labourCostWithoutVat: 0,
-        profitWithoutVat: 0,
-      });
-    }
-    const bucket = buckets.get(key)!;
-    bucket.projectCount += 1;
-    bucket.revenueWithVat += project.revenueWithVat;
-    bucket.materialCostWithoutVat += project.materialCostWithoutVat;
-    bucket.labourCostWithoutVat += project.labourCostWithoutVat;
-    bucket.profitWithoutVat += project.profitWithoutVat;
-  });
-
-  return Array.from(buckets.values());
-}
-
-export async function getEmployeesSummary(range: DateRange, tenantId?: string | null) {
-  const employeeFilter: FilterQuery<EmployeeDocument> = { deletedAt: null };
-  if (tenantId) employeeFilter.tenantId = tenantId;
-
-  const [workOrders, employees] = await Promise.all([
-    WorkOrderModel.find().lean(),
-    EmployeeModel.find(employeeFilter).lean(),
+    },
+    { $sort: { month: 1 } },
   ]);
+}
 
-  const employeeMap = new Map<string, { name: string; rate: number }>();
-  employees.forEach((employee: any) => {
-    employeeMap.set(String(employee._id ?? employee.id), {
-      name: employee.name ?? '',
-      rate: safeNumber(employee.hourRateWithoutVat, 0),
+export async function getProductFrequency(range: DateRange, limit: number) {
+  const issuedAt = normalizeRange(range);
+  return FinanceSnapshotModel.aggregate([
+    { $match: { superseded: { $ne: true }, ...(issuedAt ? { issuedAt } : {}) } },
+    { $unwind: '$items' },
+    {
+      $group: {
+        _id: { productId: '$items.productId', name: '$items.name' },
+        totalQuantity: { $sum: '$items.quantity' },
+        totalRevenue: { $sum: '$items.totalSale' },
+        totalPurchase: { $sum: '$items.totalPurchase' },
+        totalMargin: { $sum: '$items.margin' },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        productId: '$_id.productId',
+        name: '$_id.name',
+        totalQuantity: 1,
+        totalRevenue: 1,
+        totalPurchase: 1,
+        totalMargin: 1,
+      },
+    },
+    { $sort: { totalRevenue: -1 } },
+    { $limit: limit },
+  ]);
+}
+
+export async function getBasketAnalysis(minSupport: number, includeServices: boolean) {
+  const snapshots = await FinanceSnapshotModel.find({ superseded: { $ne: true } }).lean();
+  const pairs = new Map<string, { productA: string; productB: string; coOccurrenceCount: number; projectIds: string[] }>();
+
+  snapshots.forEach((snapshot) => {
+    const productSet = new Set<string>();
+    (snapshot.items ?? []).forEach((item) => {
+      if (!item.productId) return;
+      if (!includeServices && item.isService) return;
+      productSet.add(item.productId);
     });
-  });
-
-  const totals = new Map<
-    string,
-    { employeeId: string; name: string; hours: number; projects: Set<string>; labourCost: number }
-  >();
-
-  workOrders.forEach((order: any) => {
-    (order.workLogs ?? []).forEach((log: any) => {
-      const key = String(log.employeeId);
-      const bucket =
-        totals.get(key) ?? {
-          employeeId: key,
-          name: employeeMap.get(key)?.name || key,
-          hours: 0,
-          projects: new Set<string>(),
-          labourCost: 0,
-        };
-      bucket.hours += safeNumber(log.hours, 0);
-      bucket.labourCost += safeNumber(log.hours, 0) * (employeeMap.get(key)?.rate ?? 0);
-      if (order.projectId) {
-        bucket.projects.add(String(order.projectId));
+    const ids = Array.from(productSet).sort();
+    for (let i = 0; i < ids.length; i += 1) {
+      for (let j = i + 1; j < ids.length; j += 1) {
+        const productA = ids[i];
+        const productB = ids[j];
+        const key = `${productA}::${productB}`;
+        const current = pairs.get(key) ?? { productA, productB, coOccurrenceCount: 0, projectIds: [] };
+        current.coOccurrenceCount += 1;
+        current.projectIds.push(snapshot.projectId);
+        pairs.set(key, current);
       }
-      totals.set(key, bucket as any);
-    });
+    }
   });
 
-  return Array.from(totals.values()).map((entry) => ({
-    employeeId: entry.employeeId,
-    employeeName: entry.name,
-    totalHours: entry.hours,
-    projectsCount: entry.projects.size,
-    labourCostWithoutVat: entry.labourCost,
-    revenueWithVatApprox: 0,
+  return Array.from(pairs.values())
+    .filter((row) => row.coOccurrenceCount >= minSupport)
+    .sort((a, b) => b.coOccurrenceCount - a.coOccurrenceCount);
+}
+
+export async function getEmployeesSummary(range: DateRange) {
+  const issuedAt = normalizeRange(range);
+  const aggregated = await FinanceSnapshotModel.aggregate([
+    { $match: { superseded: { $ne: true }, ...(issuedAt ? { issuedAt } : {}) } },
+    { $unwind: '$employeeEarnings' },
+    {
+      $group: {
+        _id: '$employeeEarnings.employeeId',
+        totalEarned: { $sum: '$employeeEarnings.earnings' },
+        totalPaid: {
+          $sum: {
+            $cond: [{ $eq: ['$employeeEarnings.isPaid', true] }, '$employeeEarnings.earnings', 0],
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        employeeId: '$_id',
+        totalEarned: 1,
+        totalPaid: 1,
+        totalUnpaid: { $subtract: ['$totalEarned', '$totalPaid'] },
+      },
+    },
+  ]);
+
+  const employeeIds = aggregated.map((row) => row.employeeId).filter(Boolean);
+  const employees = await EmployeeModel.find({ _id: { $in: employeeIds } }).lean();
+  const employeeMap = new Map<string, string>();
+  employees.forEach((employee) => {
+    employeeMap.set(String(employee._id), employee.name);
+  });
+
+  return aggregated.map((row) => ({
+    ...row,
+    employeeName: employeeMap.get(String(row.employeeId)) ?? String(row.employeeId),
   }));
 }
 
-export async function getIssuedInvoices(range: DateRange) {
-  const projects = await ProjectModel.find().lean();
-  const results: any[] = [];
-  projects.forEach((project: any) => {
-    (project.invoiceVersions ?? [])
-      .filter((invoice: InvoiceVersion) => invoice.status === 'issued')
-      .forEach((invoice: InvoiceVersion) => {
-        const issuedAt = normalizeDate(invoice.issuedAt ?? null);
-        if (!isWithinRange(issuedAt, range)) return;
-        const { revenueWithVat } = getRevenueFromInvoice(invoice);
-        results.push({
-          invoiceId: invoice._id,
-          projectId: project.id,
-          projectName: project.title ?? project.id,
-          dateIssued: issuedAt ? issuedAt.toISOString() : null,
-          customerName: project.customer?.name ?? '',
-          totalWithVat: revenueWithVat,
-          pdfAvailable: true,
-        });
-      });
+export async function getPipelineSummary() {
+  const offers = await OfferVersionModel.find().lean();
+  const byStatus = new Map<string, { count: number; totalGross: number }>();
+  const bySalesUser = new Map<string, { count: number; totalGross: number }>();
+  const decisionDurations: number[] = [];
+
+  offers.forEach((offer) => {
+    const status = offer.status ?? 'draft';
+    const current = byStatus.get(status) ?? { count: 0, totalGross: 0 };
+    current.count += 1;
+    current.totalGross += toNumber(offer.totalGross, 0);
+    byStatus.set(status, current);
+
+    const salesUserId = offer.sentByUserId ? String(offer.sentByUserId) : 'unassigned';
+    const byUser = bySalesUser.get(salesUserId) ?? { count: 0, totalGross: 0 };
+    byUser.count += 1;
+    byUser.totalGross += toNumber(offer.totalGross, 0);
+    bySalesUser.set(salesUserId, byUser);
+
+    if (['accepted', 'rejected', 'cancelled'].includes(status) && offer.sentAt && offer.updatedAt) {
+      const diffDays = (new Date(offer.updatedAt).valueOf() - new Date(offer.sentAt).valueOf()) / (1000 * 60 * 60 * 24);
+      if (Number.isFinite(diffDays) && diffDays >= 0) {
+        decisionDurations.push(diffDays);
+      }
+    }
   });
-  return results;
+
+  const accepted = byStatus.get('accepted')?.count ?? 0;
+  const rejected = byStatus.get('rejected')?.count ?? 0;
+  const cancelled = byStatus.get('cancelled')?.count ?? 0;
+  const denominator = accepted + rejected + cancelled;
+
+  return {
+    statuses: ['draft', 'offered', 'accepted', 'rejected', 'cancelled'].map((status) => ({
+      status,
+      count: byStatus.get(status)?.count ?? 0,
+      totalGross: byStatus.get(status)?.totalGross ?? 0,
+    })),
+    winRate: denominator > 0 ? (accepted / denominator) * 100 : 0,
+    averageDaysToDecision: decisionDurations.length
+      ? decisionDurations.reduce((sum, value) => sum + value, 0) / decisionDurations.length
+      : 0,
+    perSalesUser: Array.from(bySalesUser.entries()).map(([salesUserId, values]) => ({
+      salesUserId,
+      ...values,
+    })),
+  };
 }
