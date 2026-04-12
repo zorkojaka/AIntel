@@ -4,9 +4,7 @@ on:
   push:
     branches:
       - 'codex/**'
-      - 'dev'
       - 'dev/**'
-      - 'staging'
 
 jobs:
   deploy:
