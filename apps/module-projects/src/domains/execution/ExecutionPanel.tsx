@@ -6,10 +6,17 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
-import { Download, Loader2, Send, Trash2 } from "lucide-react";
+import { Camera, ChevronDown, ChevronRight, Download, Loader2, Pencil, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
-import type { MaterialOrder, WorkOrder, WorkOrderItem, WorkOrderStatus } from "@aintel/shared/types/logistics";
+import type {
+  MaterialOrder,
+  WorkOrder,
+  WorkOrderExecutionSpec,
+  WorkOrderExecutionUnit,
+  WorkOrderItem,
+  WorkOrderStatus,
+} from "@aintel/shared/types/logistics";
 import { cn } from "../../components/ui/utils";
 import { MaterialOrderCard } from "../logistics/MaterialOrderCard";
 import { SignaturePad } from "./SignaturePad";
@@ -44,21 +51,116 @@ type WorkOrderDraft = {
 type WorkOrderItemDraft = WorkOrderItem;
 
 type ExecutionItemStatus = "completed" | "in_progress" | "exception" | "manual";
+type ActiveUnitNoteEditor = {
+  orderId: string;
+  itemId: string;
+  unitId: string;
+  value: string;
+} | null;
+
+function normalizeExecutionMode(value: WorkOrderExecutionSpec["mode"] | undefined) {
+  return value === "per_unit" || value === "measured" ? value : "simple";
+}
+
+function sanitizeExecutionUnits(units: WorkOrderExecutionSpec["executionUnits"] | undefined) {
+  return Array.isArray(units)
+    ? units.map((unit) => ({
+        id: unit.id,
+        label: unit.label ?? "",
+        location: unit.location ?? "",
+        instructions: unit.instructions ?? "",
+        isCompleted: !!unit.isCompleted,
+        note: unit.note ?? "",
+      }))
+    : [];
+}
+
+function ensureExecutionSpec(spec: WorkOrderExecutionSpec | null | undefined): WorkOrderExecutionSpec {
+  return {
+    mode: normalizeExecutionMode(spec?.mode),
+    locationSummary: spec?.locationSummary ?? "",
+    instructions: spec?.instructions ?? "",
+    trackingUnitLabel: spec?.trackingUnitLabel ?? "",
+    executionUnits: sanitizeExecutionUnits(spec?.executionUnits),
+  };
+}
+
+function getExecutionModeLabel(mode: WorkOrderExecutionSpec["mode"] | undefined) {
+  if (mode === "per_unit") return "Po enotah";
+  if (mode === "measured") return "Merjeno";
+  return "Enostavno";
+}
+
+function getPerUnitSummary(spec: WorkOrderExecutionSpec) {
+  const totalUnits = spec.executionUnits?.length ?? 0;
+  const completedUnits = (spec.executionUnits ?? []).filter((unit) => unit.isCompleted).length;
+  if (totalUnits === 0) return "Enote: 0";
+  return `Enote: ${completedUnits}/${totalUnits}`;
+}
+
+function hasExecutionContent(spec: WorkOrderExecutionSpec) {
+  return Boolean(
+    spec.locationSummary?.trim() ||
+      spec.instructions?.trim() ||
+      spec.trackingUnitLabel?.trim() ||
+      (spec.executionUnits?.length ?? 0) > 0,
+  );
+}
+
+function hasInlineExecutionUnits(item: WorkOrderItemDraft) {
+  if (item.isService) return false;
+  return (ensureExecutionSpec(item.executionSpec).executionUnits?.length ?? 0) > 0;
+}
+
+function syncItemCompletionFromUnits(item: WorkOrderItemDraft, units: WorkOrderExecutionUnit[]): WorkOrderItemDraft {
+  const totalUnits = units.length;
+  if (totalUnits === 0) {
+    return {
+      ...item,
+      executionSpec: {
+        ...ensureExecutionSpec(item.executionSpec),
+        executionUnits: units,
+      },
+    };
+  }
+
+  const completedUnits = units.filter((unit) => unit.isCompleted).length;
+  const offeredQuantity = typeof item.offeredQuantity === "number" ? item.offeredQuantity : 0;
+  const fullQuantity = offeredQuantity > 0 ? offeredQuantity : totalUnits;
+  const partialQuantity = offeredQuantity > 0 ? Math.min(completedUnits, offeredQuantity) : completedUnits;
+  const allCompleted = completedUnits === totalUnits;
+
+  return {
+    ...item,
+    isCompleted: allCompleted,
+    executedQuantity: allCompleted ? fullQuantity : partialQuantity,
+    executionSpec: {
+      ...ensureExecutionSpec(item.executionSpec),
+      executionUnits: units,
+    },
+  };
+}
 
 function mergeDraftItems(
   serverItems: WorkOrderItemDraft[],
   previousItems: WorkOrderItemDraft[],
 ): WorkOrderItemDraft[] {
   if (previousItems.length === 0) {
-    return serverItems;
+    return serverItems.map((item) =>
+      hasInlineExecutionUnits(item)
+        ? syncItemCompletionFromUnits(item, ensureExecutionSpec(item.executionSpec).executionUnits ?? [])
+        : item,
+    );
   }
   const previousById = new Map(previousItems.map((item) => [item.id, item]));
   return serverItems.map((serverItem) => {
     const previousItem = previousById.get(serverItem.id);
     if (!previousItem) {
-      return serverItem;
+      return hasInlineExecutionUnits(serverItem)
+        ? syncItemCompletionFromUnits(serverItem, ensureExecutionSpec(serverItem.executionSpec).executionUnits ?? [])
+        : serverItem;
     }
-    return {
+    const mergedItem = {
       ...previousItem,
       ...serverItem,
       offeredQuantity:
@@ -87,7 +189,11 @@ function mergeDraftItems(
         typeof serverItem.isCompleted === "boolean"
           ? serverItem.isCompleted
           : previousItem.isCompleted,
+      executionSpec: ensureExecutionSpec(serverItem.executionSpec ?? previousItem.executionSpec),
     };
+    return hasInlineExecutionUnits(mergedItem)
+      ? syncItemCompletionFromUnits(mergedItem, ensureExecutionSpec(mergedItem.executionSpec).executionUnits ?? [])
+      : mergedItem;
   });
 }
 
@@ -241,6 +347,9 @@ export function ExecutionPanel({
   const [startingCorrectionId, setStartingCorrectionId] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [customerRemarkDraft, setCustomerRemarkDraft] = useState("");
+  const [expandedExecutionItems, setExpandedExecutionItems] = useState<Record<string, boolean>>({});
+  const [editingUnitNotes, setEditingUnitNotes] = useState<Record<string, boolean>>({});
+  const [activeUnitNoteEditor, setActiveUnitNoteEditor] = useState<ActiveUnitNoteEditor>(null);
 
   const workOrders = useMemo(() => rawWorkOrders, [rawWorkOrders]);
 
@@ -294,30 +403,36 @@ export function ExecutionPanel({
   const getInitialDraftValues = (order: WorkOrder) => ({
     status: order.status,
     executionNote: order.executionNote ?? "",
-    items: (order.items ?? []).map((item: WorkOrderItemDraft) => ({
-      ...item,
-      offeredQuantity:
-        typeof item.offeredQuantity === "number"
-          ? item.offeredQuantity
-          : typeof item.quantity === "number"
-            ? item.quantity
-            : 0,
-      plannedQuantity:
-        typeof item.plannedQuantity === "number"
-          ? item.plannedQuantity
-          : typeof item.quantity === "number"
-            ? item.quantity
-            : 0,
-      executedQuantity:
-        typeof item.executedQuantity === "number"
-          ? item.executedQuantity
-          : typeof item.quantity === "number"
-            ? item.quantity
-            : 0,
-      itemNote: item.itemNote ?? "",
-      isExtra: !!item.isExtra,
-      isCompleted: !!item.isCompleted,
-    })),
+    items: (order.items ?? []).map((item: WorkOrderItemDraft) => {
+      const normalizedItem: WorkOrderItemDraft = {
+        ...item,
+        offeredQuantity:
+          typeof item.offeredQuantity === "number"
+            ? item.offeredQuantity
+            : typeof item.quantity === "number"
+              ? item.quantity
+              : 0,
+        plannedQuantity:
+          typeof item.plannedQuantity === "number"
+            ? item.plannedQuantity
+            : typeof item.quantity === "number"
+              ? item.quantity
+              : 0,
+        executedQuantity:
+          typeof item.executedQuantity === "number"
+            ? item.executedQuantity
+            : typeof item.quantity === "number"
+              ? item.quantity
+              : 0,
+        itemNote: item.itemNote ?? "",
+        isExtra: !!item.isExtra,
+        isCompleted: !!item.isCompleted,
+        executionSpec: ensureExecutionSpec(item.executionSpec),
+      };
+      return hasInlineExecutionUnits(normalizedItem)
+        ? syncItemCompletionFromUnits(normalizedItem, ensureExecutionSpec(normalizedItem.executionSpec).executionUnits ?? [])
+        : normalizedItem;
+    }),
   });
 
   const getDraftValues = useCallback(
@@ -385,6 +500,92 @@ export function ExecutionPanel({
     });
   };
 
+  const toggleExecutionDetails = (itemId: string) => {
+    setExpandedExecutionItems((prev) => ({ ...prev, [itemId]: !prev[itemId] }));
+  };
+
+  const updateExecutionSpec = (
+    order: WorkOrder,
+    itemId: string,
+    changes: Partial<WorkOrderExecutionSpec>,
+  ) => {
+    const current = getDraftValues(order);
+    const nextItems = current.items.map((item: WorkOrderItemDraft) =>
+      item.id === itemId
+        ? {
+            ...item,
+            executionSpec: {
+              ...ensureExecutionSpec(item.executionSpec),
+              ...changes,
+              executionUnits:
+                changes.executionUnits !== undefined
+                  ? sanitizeExecutionUnits(changes.executionUnits)
+                  : ensureExecutionSpec(item.executionSpec).executionUnits,
+            },
+          }
+        : item,
+    );
+    updateDraft(order, { items: nextItems });
+    setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
+  };
+
+  const updateExecutionUnit = (
+    order: WorkOrder,
+    itemId: string,
+    unitId: string,
+    changes: Partial<WorkOrderExecutionUnit>,
+  ) => {
+    const current = getDraftValues(order);
+    const nextItems = current.items.map((item: WorkOrderItemDraft) => {
+      if (item.id !== itemId) return item;
+      const spec = ensureExecutionSpec(item.executionSpec);
+      const nextUnits = (spec.executionUnits ?? []).map((unit) =>
+        unit.id === unitId ? { ...unit, ...changes } : unit,
+      );
+      if (hasInlineExecutionUnits(item)) {
+        return syncItemCompletionFromUnits(item, nextUnits);
+      }
+      return {
+        ...item,
+        executionSpec: {
+          ...spec,
+          executionUnits: nextUnits,
+        },
+      };
+    });
+    updateDraft(order, { items: nextItems });
+    setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
+  };
+
+  const addExecutionUnit = (order: WorkOrder, itemId: string) => {
+    const item = getDraftValues(order).items.find((entry) => entry.id === itemId);
+    const spec = ensureExecutionSpec(item?.executionSpec);
+    const nextUnit: WorkOrderExecutionUnit = {
+      id:
+        typeof globalThis.crypto !== "undefined" && typeof globalThis.crypto.randomUUID === "function"
+          ? globalThis.crypto.randomUUID()
+          : `unit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      label: "",
+      location: "",
+      instructions: "",
+      isCompleted: false,
+      note: "",
+    };
+    updateExecutionSpec(order, itemId, {
+      mode: spec.mode ?? "per_unit",
+      executionUnits: [...(spec.executionUnits ?? []), nextUnit],
+    });
+    setExpandedExecutionItems((prev) => ({ ...prev, [itemId]: true }));
+  };
+
+  const deleteExecutionUnit = (order: WorkOrder, itemId: string, unitId: string) => {
+    const item = getDraftValues(order).items.find((entry) => entry.id === itemId);
+    const spec = ensureExecutionSpec(item?.executionSpec);
+    updateExecutionSpec(order, itemId, {
+      executionUnits: (spec.executionUnits ?? []).filter((unit) => unit.id !== unitId),
+    });
+  };
+
   const handleAddExtraItem = (order: WorkOrder) => {
     if (getOrderConfirmationState(order) === "signed_active") {
       return;
@@ -407,6 +608,7 @@ export function ExecutionPanel({
       isExtra: true,
       itemNote: "",
       isCompleted: false,
+      executionSpec: ensureExecutionSpec(null),
     };
     updateDraft(order, {
       items: [...getDraftValues(order).items, newItem],
@@ -429,6 +631,7 @@ export function ExecutionPanel({
       isExtra: !!item.isExtra,
       itemNote: item.itemNote && item.itemNote.length > 0 ? item.itemNote : null,
       isCompleted: !!item.isCompleted,
+      executionSpec: ensureExecutionSpec(item.executionSpec),
     }));
 
   const saveWorkOrder = useCallback(
@@ -656,6 +859,33 @@ export function ExecutionPanel({
     }
   };
 
+  const confirmAllPickups = async (order: WorkOrder, materialOrder: MaterialOrder) => {
+    const draftMaterial = getMaterialDraftValue(materialOrder, pendingMaterialOrders) ?? materialOrder;
+    const nextItems = (draftMaterial.items ?? []).map((item) => {
+      const orderedQty =
+        typeof item.orderedQty === "number" && Number.isFinite(item.orderedQty) ? Math.max(0, item.orderedQty) : 0;
+      const deliveredQty =
+        typeof item.deliveredQty === "number" && Number.isFinite(item.deliveredQty) ? Math.max(0, item.deliveredQty) : 0;
+      if (orderedQty <= 0 || deliveredQty >= orderedQty) {
+        return item;
+      }
+      return {
+        ...item,
+        deliveredQty: orderedQty,
+        materialStep: "Prevzeto" as const,
+      };
+    });
+    const nextMaterial: MaterialOrder = {
+      ...draftMaterial,
+      items: nextItems,
+    };
+    setPendingMaterialOrders((prev) => ({ ...prev, [materialOrder._id]: nextMaterial }));
+    const success = await saveMaterialDraft(order, nextMaterial);
+    if (success) {
+      toast.success("Vsi prevzemi potrjeni.");
+    }
+  };
+
   const handleSaveExecutionChanges = useCallback(async () => {
     const dirtyWorkOrderIds = workOrders
       .map((order) => order._id)
@@ -724,6 +954,236 @@ export function ExecutionPanel({
     const status = getExecutionItemStatus(item);
     const styles = executionItemStatusStyles[status];
     return <Badge className={styles.badgeClassName}>{styles.badgeLabel}</Badge>;
+  };
+
+  const openUnitNoteEditor = (order: WorkOrder, item: WorkOrderItemDraft, unit: WorkOrderExecutionUnit) => {
+    setActiveUnitNoteEditor({
+      orderId: order._id,
+      itemId: item.id,
+      unitId: unit.id,
+      value: unit.instructions ?? "",
+    });
+  };
+
+  const saveUnitNoteEditor = () => {
+    if (!activeUnitNoteEditor) return;
+    const order = workOrders.find((candidate) => candidate._id === activeUnitNoteEditor.orderId);
+    if (!order) {
+      setActiveUnitNoteEditor(null);
+      return;
+    }
+    updateExecutionUnit(order, activeUnitNoteEditor.itemId, activeUnitNoteEditor.unitId, {
+      instructions: activeUnitNoteEditor.value,
+    });
+    setActiveUnitNoteEditor(null);
+  };
+
+  const renderInlineExecutionUnits = (
+    order: WorkOrder,
+    item: WorkOrderItemDraft,
+    options?: { compact?: boolean; disabled?: boolean },
+  ) => {
+    const spec = ensureExecutionSpec(item.executionSpec);
+    const unitLabel = spec.trackingUnitLabel?.trim() || "Enota";
+    const units = spec.executionUnits ?? [];
+    const isLocked = !!options?.disabled;
+
+    if (units.length === 0) return null;
+
+    return (
+      <div className={cn("space-y-1.5", options?.compact ? "pt-1" : "pt-2")}>
+        {units.map((unit, index) => {
+          const unitKey = `${item.id}:${unit.id}`;
+          const isEditingNote = !!editingUnitNotes[unitKey];
+          const noteText = unit.instructions?.trim() || "";
+          return (
+            <div
+              key={unit.id}
+              className={cn(
+                "grid items-center gap-2 rounded-md border border-border/60 bg-background/70 px-3 py-2",
+                options?.compact
+                  ? "grid-cols-[minmax(0,1fr)_auto]"
+                  : "grid-cols-[32px_minmax(0,1fr)_auto]",
+              )}
+            >
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">
+                  {(unit.label?.trim() || index + 1) + " "}
+                  {unit.location?.trim() || `${unitLabel} ${index + 1}`}
+                </div>
+                {!options?.compact && isEditingNote ? (
+                  <Input
+                    autoFocus
+                    value={unit.instructions ?? ""}
+                    disabled={isLocked}
+                    onChange={(event) =>
+                      updateExecutionUnit(order, item.id, unit.id, { instructions: event.target.value })
+                    }
+                    onBlur={() =>
+                      setEditingUnitNotes((prev) => ({
+                        ...prev,
+                        [unitKey]: false,
+                      }))
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        setEditingUnitNotes((prev) => ({
+                          ...prev,
+                          [unitKey]: false,
+                        }));
+                      }
+                    }}
+                    placeholder="Dodaj opombo"
+                    className="mt-1 h-8"
+                  />
+                ) : noteText ? <div className="truncate text-xs text-muted-foreground">{noteText}</div> : null}
+              </div>
+              <div className="flex items-center gap-1 justify-self-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground"
+                  disabled={isLocked}
+                  onClick={() =>
+                    options?.compact
+                      ? openUnitNoteEditor(order, item, unit)
+                      : setEditingUnitNotes((prev) => ({
+                          ...prev,
+                          [unitKey]: !prev[unitKey],
+                        }))
+                  }
+                  aria-label="Uredi opombo"
+                  title="Uredi opombo"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground"
+                  onClick={() => console.info("Unit photo placeholder", { orderId: order._id, itemId: item.id, unitId: unit.id })}
+                  aria-label="Fotografija kmalu"
+                  title="Fotografija kmalu"
+                >
+                  <Camera className="h-4 w-4" />
+                </Button>
+                <Checkbox
+                  className="h-4 w-4"
+                  checked={!!unit.isCompleted}
+                  disabled={isLocked}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                    updateExecutionUnit(order, item.id, unit.id, {
+                      isCompleted: event.target.checked,
+                    })
+                  }
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderExecutionDetails = (
+    order: WorkOrder,
+    item: WorkOrderItemDraft,
+    options?: { compact?: boolean; className?: string; showToggle?: boolean; disabled?: boolean },
+  ) => {
+    const spec = ensureExecutionSpec(item.executionSpec);
+    const isLocked = !!options?.disabled;
+    const isPerUnit = spec.mode === "per_unit";
+    const hasUnitList = (spec.executionUnits?.length ?? 0) > 0;
+    const isExpanded = !!expandedExecutionItems[item.id];
+    const unitLabel = spec.trackingUnitLabel?.trim() || "Enota";
+    const completedUnits = (spec.executionUnits ?? []).filter((unit) => unit.isCompleted).length;
+    const hasContent = hasExecutionContent(spec);
+
+    return (
+      <div className={cn("space-y-3 rounded-md border border-border/70 bg-muted/20 p-3", options?.className)}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Detajli izvedbe</p>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>Način izvedbe: {getExecutionModeLabel(spec.mode)}</span>
+              {hasUnitList ? (
+                <span>
+                  Enote: {completedUnits}/{spec.executionUnits?.length ?? 0}
+                </span>
+              ) : null}
+            </div>
+          </div>
+          {options?.showToggle !== false ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              onClick={() => toggleExecutionDetails(item.id)}
+            >
+              {isExpanded ? <ChevronDown className="mr-1 h-4 w-4" /> : <ChevronRight className="mr-1 h-4 w-4" />}
+              {isExpanded ? "Skrij" : "Prikaži"}
+            </Button>
+          ) : null}
+        </div>
+        {isExpanded ? (
+          <div className="space-y-3 text-sm">
+            {!hasContent ? (
+              <div className="text-muted-foreground">Ni pripravljenih detajlov izvedbe.</div>
+            ) : null}
+            {!isPerUnit && spec.locationSummary?.trim() ? (
+              <div className="text-sm">
+                <span className="text-muted-foreground">Lokacija: </span>
+                <span>{spec.locationSummary}</span>
+              </div>
+            ) : null}
+            {hasUnitList ? (
+              <div className="space-y-2">
+                {(spec.executionUnits?.length ?? 0) === 0 ? (
+                  <div className="text-muted-foreground">Ni pripravljenih enot.</div>
+                ) : null}
+                {(spec.executionUnits ?? []).map((unit, index) => (
+                  <div key={unit.id} className="flex flex-wrap items-start justify-between gap-2 rounded-md border border-border/60 bg-background/70 px-3 py-2">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="font-medium">
+                        {unit.label?.trim() || `${unitLabel} ${index + 1}`}
+                        {unit.location?.trim() ? ` — ${unit.location}` : ""}
+                      </div>
+                      {(unit.instructions?.trim() || unit.note?.trim()) ? (
+                        <div className="text-xs text-muted-foreground">
+                          Opomba: {unit.instructions?.trim() || unit.note?.trim()}
+                        </div>
+                      ) : null}
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>Dokončano</span>
+                      <Checkbox
+                        className="h-4 w-4"
+                        checked={!!unit.isCompleted}
+                        disabled={isLocked}
+                        onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                          updateExecutionUnit(order, item.id, unit.id, {
+                            isCompleted: event.target.checked,
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {spec.instructions?.trim() ? (
+              <div className="text-sm">
+                <span className="text-muted-foreground">Splošna opomba: </span>
+                <span className="whitespace-pre-wrap">{spec.instructions}</span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
   };
 
   const selectedSignoffOrder = useMemo(
@@ -964,6 +1424,11 @@ export function ExecutionPanel({
                           onSaveMaterialChanges={() => {
                             void saveMaterialDraft(order, materialDraft ?? materialOrder);
                           }}
+                          onBulkConfirmPickupAll={() => {
+                            void confirmAllPickups(order, materialDraft ?? materialOrder);
+                          }}
+                          onBulkMarkOrdered={() => {}}
+                          onBulkMarkReady={() => {}}
                           hasPendingMaterialChanges={Boolean(materialOrder?._id && unsavedMaterialChanges[materialOrder._id])}
                           canDownloadPdf={Boolean(materialOrder._id)}
                           downloadingPdf={downloadingWorkOrderId === materialOrder._id ? "PURCHASE_ORDER" : null}
@@ -1115,13 +1580,28 @@ export function ExecutionPanel({
                                 const offeredValue =
                                   typeof item.offeredQuantity === "number" ? item.offeredQuantity : 0;
                                 const isExtraEditable = item.isExtra && offeredValue === 0;
-                                const hasCenikProduct = typeof item.productId === "string" && item.productId.length > 0;
                                 const executedValue =
                                   typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
                                 const isCompleted = !!item.isCompleted;
                                 const itemStatus = getExecutionItemStatus(item);
                                 const itemStatusStyles = executionItemStatusStyles[itemStatus];
+                                const executionSpec = ensureExecutionSpec(item.executionSpec);
+                                const hasVisibleInlineUnits = hasInlineExecutionUnits(item);
+                                const isExecutionExpanded = !!expandedExecutionItems[item.id];
                                 const handleCompletionChange = (checked: boolean) => {
+                                  if (hasVisibleInlineUnits) {
+                                    const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => ({
+                                      ...unit,
+                                      isCompleted: checked,
+                                    }));
+                                    const syncedItem = syncItemCompletionFromUnits(item, nextUnits);
+                                    applyItemChange(order, item.id, {
+                                      isCompleted: syncedItem.isCompleted,
+                                      executedQuantity: syncedItem.executedQuantity,
+                                      executionSpec: syncedItem.executionSpec,
+                                    });
+                                    return;
+                                  }
                                   const updates: Partial<WorkOrder["items"][number]> = {
                                     isCompleted: checked,
                                     executedQuantity: checked
@@ -1132,93 +1612,133 @@ export function ExecutionPanel({
                                   };
                                   applyItemChange(order, item.id, updates);
                                 };
-                                return (
-                                  <tr key={item.id} className={cn("border-t", itemStatusStyles.rowClassName)}>
-                                    <td className="p-2 text-center align-middle">
-                                      <Checkbox
-                                        className="h-5 w-5"
-                                        checked={isCompleted}
-                                        disabled={isConfirmationLocked}
-                                        onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                                          handleCompletionChange(event.target.checked)
-                                        }
-                                      />
-                                    </td>
-                                    <td className="p-2 align-middle">
-                                      <div className="flex items-center justify-center gap-0">
-                                        <Input
-                                          type="number"
-                                          value={item.executedQuantity ?? ""}
+                                return [
+                                    <tr key={`${item.id}-main`} className={cn("border-t", itemStatusStyles.rowClassName)}>
+                                      <td className="p-2 text-center align-middle">
+                                        <Checkbox
+                                          className="h-5 w-5"
+                                          checked={isCompleted}
                                           disabled={isConfirmationLocked}
                                           onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                                            applyItemChange(order, item.id, {
-                                              executedQuantity: Number(event.target.value),
-                                            })
+                                            handleCompletionChange(event.target.checked)
                                           }
-                                          className={cn("w-16 text-right", itemStatusStyles.quantityClassName)}
                                         />
-                                        <span className={cn("px-0.5", itemStatusStyles.quantityClassName)}>/</span>
-                                        <span className={cn("text-right tabular-nums font-medium", itemStatusStyles.quantityClassName)}>
-                                          {offeredValue.toLocaleString("sl-SI")}
-                                        </span>
-                                      </div>
-                                    </td>
-                                    <td className="p-2 align-top">
-                                      {isExtraEditable ? (
-                                        <div>
-                                          <PriceListProductAutocomplete
-                                            value={item.name}
-                                            placeholder="Naziv ali iskanje v ceniku"
-                                            inputClassName="text-left"
-                                            disabled={isConfirmationLocked}
-                                            onChange={(name) =>
-                                              applyItemChange(order, item.id, { name, productId: null })
-                                            }
-                                            onCustomSelected={() =>
-                                              applyItemChange(order, item.id, { productId: null })
-                                            }
-                                            onProductSelected={(product) =>
+                                      </td>
+                                      <td className="p-2 align-middle">
+                                        <div className="flex items-center justify-center gap-0">
+                                          <Input
+                                            type="number"
+                                            value={item.executedQuantity ?? ""}
+                                            disabled={isConfirmationLocked || hasVisibleInlineUnits}
+                                            onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                               applyItemChange(order, item.id, {
-                                                name: product.name,
-                                                unit: product.unit ?? item.unit ?? "",
-                                                productId: product.id,
+                                                executedQuantity: Number(event.target.value),
                                               })
                                             }
+                                            className={cn("w-16 text-right", itemStatusStyles.quantityClassName)}
                                           />
-                                          <div className="mt-2 flex flex-wrap items-center gap-2">
-                                            <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
-                                            {renderItemStatusBadge(item)}
-                                          </div>
+                                          <span className={cn("px-0.5", itemStatusStyles.quantityClassName)}>/</span>
+                                          <span className={cn("text-right tabular-nums font-medium", itemStatusStyles.quantityClassName)}>
+                                            {offeredValue.toLocaleString("sl-SI")}
+                                          </span>
                                         </div>
-                                      ) : (
-                                        <div className="space-y-1">
-                                          <p className="font-medium">{item.name || "-"}</p>
-                                          <div className="flex flex-wrap items-center gap-2">
-                                            {item.isExtra && offeredValue === 0 ? null : (
+                                      </td>
+                                      <td className="p-2 align-top">
+                                        {isExtraEditable ? (
+                                          <div>
+                                            <PriceListProductAutocomplete
+                                              value={item.name}
+                                              placeholder="Naziv ali iskanje v ceniku"
+                                              inputClassName="text-left"
+                                              disabled={isConfirmationLocked}
+                                              onChange={(name) =>
+                                                applyItemChange(order, item.id, { name, productId: null })
+                                              }
+                                              onCustomSelected={() =>
+                                                applyItemChange(order, item.id, { productId: null })
+                                              }
+                                              onProductSelected={(product) =>
+                                                applyItemChange(order, item.id, {
+                                                  name: product.name,
+                                                  unit: product.unit ?? item.unit ?? "",
+                                                  productId: product.id,
+                                                })
+                                              }
+                                            />
+                                            <div className="mt-2 flex flex-wrap items-center gap-2">
                                               <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
-                                            )}
-                                            {renderItemStatusBadge(item)}
+                                              {renderItemStatusBadge(item)}
+                                            </div>
                                           </div>
-                                        </div>
-                                      )}
-                                    </td>
-                                    <td className="p-2 text-right align-top">
-                                      {item.isExtra ? (
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                          disabled={isConfirmationLocked}
-                                          onClick={() => handleDeleteManualItem(order, item)}
-                                          aria-label="Izbriši dodatno postavko"
-                                        >
-                                          <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                      ) : null}
-                                    </td>
-                                  </tr>
-                                );
+                                        ) : (
+                                          <div className="space-y-2">
+                                            <div className="space-y-1">
+                                              <p className="font-medium">{item.name || "-"}</p>
+                                              <div className="flex flex-wrap items-center gap-2">
+                                                {item.isExtra && offeredValue === 0 ? null : (
+                                                  <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
+                                                )}
+                                                {renderItemStatusBadge(item)}
+                                                {hasVisibleInlineUnits ? (
+                                                  <Badge variant="outline">{getPerUnitSummary(executionSpec)}</Badge>
+                                                ) : null}
+                                              </div>
+                                            </div>
+                                            {!hasVisibleInlineUnits ? (
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-8 px-2 text-xs"
+                                                onClick={() => toggleExecutionDetails(item.id)}
+                                              >
+                                                {isExecutionExpanded ? (
+                                                  <ChevronDown className="mr-1 h-4 w-4" />
+                                                ) : (
+                                                  <ChevronRight className="mr-1 h-4 w-4" />
+                                                )}
+                                                Detajli izvedbe
+                                              </Button>
+                                            ) : null}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="p-2 text-right align-top">
+                                        {item.isExtra ? (
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                            disabled={isConfirmationLocked}
+                                            onClick={() => handleDeleteManualItem(order, item)}
+                                            aria-label="Izbriši dodatno postavko"
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </Button>
+                                        ) : null}
+                                      </td>
+                                    </tr>,
+                                    hasVisibleInlineUnits ? (
+                                      <tr key={`${item.id}-inline-units`} className={cn("border-t", itemStatusStyles.rowClassName)}>
+                                        <td colSpan={4} className="px-2 pb-2 pt-0">
+                                          {renderInlineExecutionUnits(order, item, {
+                                            disabled: isConfirmationLocked,
+                                          })}
+                                        </td>
+                                      </tr>
+                                    ) : null,
+                                    !hasVisibleInlineUnits && isExecutionExpanded ? (
+                                      <tr key={`${item.id}-details`} className={cn("border-t", itemStatusStyles.rowClassName)}>
+                                        <td colSpan={4} className="p-2 pt-0">
+                                          {renderExecutionDetails(order, item, {
+                                            showToggle: false,
+                                            disabled: isConfirmationLocked,
+                                          })}
+                                        </td>
+                                      </tr>
+                                    ) : null,
+                                ];
                               })}
                             </tbody>
                           </table>
@@ -1235,7 +1755,23 @@ export function ExecutionPanel({
                             const isCompleted = !!item.isCompleted;
                             const itemStatus = getExecutionItemStatus(item);
                             const itemStatusStyles = executionItemStatusStyles[itemStatus];
+                            const executionSpec = ensureExecutionSpec(item.executionSpec);
+                            const hasVisibleInlineUnits = hasInlineExecutionUnits(item);
+                            const isExecutionExpanded = !!expandedExecutionItems[item.id];
                             const handleCompletionChange = (checked: boolean) => {
+                              if (hasVisibleInlineUnits) {
+                                const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => ({
+                                  ...unit,
+                                  isCompleted: checked,
+                                }));
+                                const syncedItem = syncItemCompletionFromUnits(item, nextUnits);
+                                applyItemChange(order, item.id, {
+                                  isCompleted: syncedItem.isCompleted,
+                                  executedQuantity: syncedItem.executedQuantity,
+                                  executionSpec: syncedItem.executionSpec,
+                                });
+                                return;
+                              }
                               const updates: Partial<WorkOrder["items"][number]> = {
                                 isCompleted: checked,
                                 executedQuantity: checked
@@ -1249,7 +1785,8 @@ export function ExecutionPanel({
 
                             return (
                               <div key={item.id} className={cn("space-y-3 rounded-md border p-3", itemStatusStyles.cardClassName)}>
-                                <div className="space-y-1">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0 flex-1 space-y-1">
                                   {isExtraEditable ? (
                                     <div className="space-y-1">
                                       <PriceListProductAutocomplete
@@ -1270,51 +1807,73 @@ export function ExecutionPanel({
                                   ) : (
                                     <p className="text-sm font-medium">{item.name}</p>
                                   )}
-                                  {!isExtraEditable ? <div>{renderItemStatusBadge(item)}</div> : null}
-                                </div>
-                                <div className="grid grid-cols-2 gap-2 text-sm">
-                                  <div>
-                                    <p className="text-xs text-muted-foreground">Ponujeno</p>
-                                    <p className={cn("font-medium", itemStatusStyles.quantityClassName)}>{offeredValue.toLocaleString("sl-SI")}</p>
+                                  {!isExtraEditable ? (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      {renderItemStatusBadge(item)}
+                                      {hasVisibleInlineUnits ? <Badge variant="outline">Izvedeno {getPerUnitSummary(executionSpec).replace("Enote: ", "")}</Badge> : null}
+                                    </div>
+                                  ) : null}
                                   </div>
-                                  <label className="space-y-1">
-                                    <span className="text-xs text-muted-foreground">Izvedeno</span>
-                                    <Input
-                                      type="number"
-                                      value={item.executedQuantity ?? ""}
-                                      disabled={isConfirmationLocked}
-                                      onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                                        applyItemChange(order, item.id, {
-                                          executedQuantity: Number(event.target.value),
-                                        })
-                                      }
-                                      className={cn("h-11", itemStatusStyles.quantityClassName)}
-                                    />
-                                  </label>
-                                </div>
-                                <label className="space-y-1">
-                                  <span className="text-xs text-muted-foreground">Opomba</span>
-                                  <Textarea
-                                    value={item.itemNote ?? ""}
-                                    disabled={isConfirmationLocked}
-                                    onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-                                      applyItemChange(order, item.id, { itemNote: event.target.value })
-                                    }
-                                    rows={2}
-                                    className="min-h-[56px]"
-                                  />
-                                </label>
-                                <label className={cn("flex min-h-[44px] items-center justify-between rounded-md px-3 text-sm", itemStatusStyles.cardClassName)}>
-                                  <span>{isCompleted ? "Dokončano" : "Označi kot dokončano"}</span>
                                   <Checkbox
-                                    className="h-5 w-5"
+                                    className="mt-1 h-5 w-5 shrink-0"
                                     checked={isCompleted}
                                     disabled={isConfirmationLocked}
                                     onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                       handleCompletionChange(event.target.checked)
                                     }
                                   />
-                                </label>
+                                </div>
+                                {hasVisibleInlineUnits ? (
+                                  renderInlineExecutionUnits(order, item, {
+                                    compact: true,
+                                    disabled: isConfirmationLocked,
+                                  })
+                                ) : (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-background/60 px-3 py-2 text-sm">
+                                      <span className="text-muted-foreground">Izvedeno</span>
+                                      <div className="flex items-center gap-1 font-medium tabular-nums">
+                                        <Input
+                                          type="number"
+                                          value={item.executedQuantity ?? ""}
+                                          disabled={isConfirmationLocked}
+                                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                                            applyItemChange(order, item.id, {
+                                              executedQuantity: Number(event.target.value),
+                                            })
+                                          }
+                                          className={cn("h-9 w-16 text-right", itemStatusStyles.quantityClassName)}
+                                        />
+                                        <span>/</span>
+                                        <span className={itemStatusStyles.quantityClassName}>{offeredValue.toLocaleString("sl-SI")}</span>
+                                      </div>
+                                    </div>
+                                    {item.itemNote?.trim() ? (
+                                      <div className="text-xs text-muted-foreground">{item.itemNote}</div>
+                                    ) : null}
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 px-2 text-xs"
+                                      onClick={() => toggleExecutionDetails(item.id)}
+                                    >
+                                      {isExecutionExpanded ? (
+                                        <ChevronDown className="mr-1 h-4 w-4" />
+                                      ) : (
+                                        <ChevronRight className="mr-1 h-4 w-4" />
+                                      )}
+                                      Detajli izvedbe
+                                    </Button>
+                                    {isExecutionExpanded
+                                      ? renderExecutionDetails(order, item, {
+                                          compact: true,
+                                          showToggle: false,
+                                          disabled: isConfirmationLocked,
+                                        })
+                                      : null}
+                                  </div>
+                                )}
                                 {item.isExtra && !hasCenikProduct ? (
                                   <p className="text-xs text-muted-foreground">Dodajte izdelek iz cenika za pravilno poročanje.</p>
                                 ) : null}
@@ -1444,6 +2003,36 @@ export function ExecutionPanel({
           </Card>
         )}
       </div>
+
+      <Dialog open={Boolean(activeUnitNoteEditor)} onOpenChange={(open) => {
+        if (!open) {
+          setActiveUnitNoteEditor(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Opomba enote</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={activeUnitNoteEditor?.value ?? ""}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                setActiveUnitNoteEditor((prev) => (prev ? { ...prev, value: event.target.value } : prev))
+              }
+              placeholder="Dodaj opombo"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setActiveUnitNoteEditor(null)}>
+                Prekliči
+              </Button>
+              <Button type="button" onClick={saveUnitNoteEditor}>
+                Shrani
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(selectedSignoffOrder)} onOpenChange={(open) => {
         if (!open) {

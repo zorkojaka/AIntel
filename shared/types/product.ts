@@ -6,4 +6,6 @@ export interface Product {
   description?: string;
   supplier?: string;
   isService: boolean;
+  defaultExecutionMode?: 'simple' | 'per_unit' | 'measured';
+  defaultInstructionsTemplate?: string;
 }

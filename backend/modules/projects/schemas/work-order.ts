@@ -16,6 +16,20 @@ interface WorkOrderItem {
   itemNote?: string | null;
   isCompleted?: boolean;
   casovnaNorma?: number;
+  executionSpec?: {
+    mode?: 'simple' | 'per_unit' | 'measured';
+    locationSummary?: string | null;
+    instructions?: string | null;
+    trackingUnitLabel?: string | null;
+    executionUnits?: Array<{
+      id: string;
+      label: string;
+      location?: string | null;
+      instructions?: string | null;
+      isCompleted: boolean;
+      note?: string | null;
+    }>;
+  } | null;
 }
 
 export interface WorkLogEntry {
@@ -105,6 +119,38 @@ const workOrderItemSchema = new Schema<WorkOrderItem>(
     itemNote: { type: String, default: null },
     isCompleted: { type: Boolean, default: false },
     casovnaNorma: { type: Number, default: 0 },
+    executionSpec: {
+      type: new Schema(
+        {
+          mode: {
+            type: String,
+            enum: ['simple', 'per_unit', 'measured'],
+            default: 'simple',
+          },
+          locationSummary: { type: String, default: null },
+          instructions: { type: String, default: null },
+          trackingUnitLabel: { type: String, default: null },
+          executionUnits: {
+            type: [
+              new Schema(
+                {
+                  id: { type: String, required: true },
+                  label: { type: String, required: true },
+                  location: { type: String, default: null },
+                  instructions: { type: String, default: null },
+                  isCompleted: { type: Boolean, default: false },
+                  note: { type: String, default: null },
+                },
+                { _id: false }
+              ),
+            ],
+            default: [],
+          },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
   },
   { _id: false }
 );

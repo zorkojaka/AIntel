@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
@@ -17,6 +17,7 @@ import type {
   OfferVersionSummary,
 } from "@aintel/shared/types/offers";
 import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
+import type { ProductServiceLink } from "@aintel/shared/types/product-service-link";
 import type { ProjectDetails } from "../types";
 import type { User } from "@aintel/shared/types/user";
 import type { Employee } from "@aintel/shared/types/employee";
@@ -267,6 +268,8 @@ export function OffersTab({
   const [importLoading, setImportLoading] = useState(false);
   const [importError, setImportError] = useState("");
   const [showImportMappingHint, setShowImportMappingHint] = useState(false);
+  const [linkedServiceSuggestions, setLinkedServiceSuggestions] = useState<Record<string, ProductServiceLink[]>>({});
+  const [loadingLinkedServiceSuggestions, setLoadingLinkedServiceSuggestions] = useState<Record<string, boolean>>({});
 
   const paymentTermsInitRef = useRef<Record<string, boolean>>({});
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -337,6 +340,8 @@ export function OffersTab({
     setTotalGrossAfterDiscount(0);
     setDiscountAmount(0);
     setLastSavedSnapshot(EMPTY_OFFER_SNAPSHOT);
+    setLinkedServiceSuggestions({});
+    setLoadingLinkedServiceSuggestions({});
   }, []);
 
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
@@ -424,6 +429,8 @@ const loadOfferById = useCallback(async (offerId: string) => {
       }));
 
       setItems(ensureTrailingBlank([...mapped]));
+      setLinkedServiceSuggestions({});
+      setLoadingLinkedServiceSuggestions({});
       setLastSavedSnapshot(
         createOfferEditorSnapshot({
           title: offer.baseTitle || "Ponudba",
@@ -584,6 +591,21 @@ const loadOfferById = useCallback(async (offerId: string) => {
   };
 
   const updateItem = (id: string, changes: Partial<OfferLineItemForm>) => {
+    if (changes.productId === null) {
+      setLinkedServiceSuggestions((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      setLoadingLinkedServiceSuggestions((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
+
     setItems((prev) => {
       const idx = prev.findIndex((item) => item.id === id);
       if (idx === -1) return prev;
@@ -597,6 +619,18 @@ const loadOfferById = useCallback(async (offerId: string) => {
   };
 
   const deleteRow = (id: string) => {
+    setLinkedServiceSuggestions((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setLoadingLinkedServiceSuggestions((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     setItems((prev) => {
       if (prev.length === 1) return ensureTrailingBlank([]);
       const filtered = prev.filter((item) => item.id !== id);
@@ -748,12 +782,184 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       unitPrice: product.unitPrice,
       vatRate: product.vatRate ?? 22,
     });
-
+    void loadLinkedServiceSuggestions(rowId, product.id);
   };
 
   const handleSelectCustomItem = (rowId: string) => {
     updateItem(rowId, { productId: null });
   };
+
+  const loadLinkedServiceSuggestions = useCallback(async (rowId: string, productId: string) => {
+    setLoadingLinkedServiceSuggestions((prev) => ({ ...prev, [rowId]: true }));
+    try {
+      const response = await fetch(`/api/cenik/product-service-links?productId=${encodeURIComponent(productId)}`);
+      const payload = await response.json();
+      const links: ProductServiceLink[] =
+        payload?.success && Array.isArray(payload?.data) ? payload.data : [];
+      setLinkedServiceSuggestions((prev) => ({ ...prev, [rowId]: links }));
+    } catch {
+      setLinkedServiceSuggestions((prev) => ({ ...prev, [rowId]: [] }));
+    } finally {
+      setLoadingLinkedServiceSuggestions((prev) => ({ ...prev, [rowId]: false }));
+    }
+  }, []);
+
+  const resolveSuggestedServiceQuantity = useCallback(
+    (item: OfferLineItemForm, link: ProductServiceLink) => {
+      if (link.quantityMode === "fixed") {
+        return Math.max(1, Number(link.fixedQuantity ?? 1));
+      }
+      return Math.max(1, Number(item.quantity ?? 1));
+    },
+    [],
+  );
+
+  const isSuggestedServiceAlreadyAdded = useCallback(
+    (serviceProductId: string, sourceRowId: string) =>
+      items.some(
+        (entry) =>
+          entry.id !== sourceRowId &&
+          entry.productId === serviceProductId &&
+          !isEmptyOfferItem(entry),
+      ),
+    [items],
+  );
+
+  const addSuggestedServicesToOffer = useCallback(
+    (rowId: string, links: ProductServiceLink[], addAll = false) => {
+      const item = items.find((entry) => entry.id === rowId);
+      if (!item) return;
+
+      const pendingLinks = addAll
+        ? links.filter((link) => !isSuggestedServiceAlreadyAdded(link.serviceProductId, rowId))
+        : links.slice(0, 1);
+
+      if (pendingLinks.length === 0) {
+        toast.message("Predlagane storitve so že dodane.");
+        return;
+      }
+
+      setItems((prev) => {
+        const anchorIndex = prev.findIndex((entry) => entry.id === rowId);
+        if (anchorIndex === -1) return prev;
+        const anchor = prev[anchorIndex];
+        const next = [...prev];
+        let insertIndex = anchorIndex + 1;
+
+        for (const link of pendingLinks) {
+          const duplicateExists = next.some(
+            (entry) =>
+              entry.id !== rowId &&
+              entry.productId === link.serviceProductId &&
+              !isEmptyOfferItem(entry),
+          );
+          if (duplicateExists) {
+            continue;
+          }
+
+          const quantity = resolveSuggestedServiceQuantity(anchor, link);
+          const serviceName = link.serviceProduct?.name?.trim() || "Storitev";
+          const servicePrice = Number(link.serviceProduct?.unitPrice ?? 0);
+
+          const nextItem = recalcItem({
+            id: crypto.randomUUID(),
+            productId: link.serviceProductId,
+            name: serviceName,
+            quantity,
+            unit: "kos",
+            unitPrice: servicePrice,
+            vatRate: vatMode,
+            discountPercent: 0,
+            totalNet: 0,
+            totalVat: 0,
+            totalGross: 0,
+          });
+
+          next.splice(insertIndex, 0, nextItem);
+          insertIndex += 1;
+        }
+
+        return ensureTrailingBlank(next);
+      });
+    },
+    [items, isSuggestedServiceAlreadyAdded, resolveSuggestedServiceQuantity, vatMode],
+  );
+
+  const renderLinkedServiceSuggestions = useCallback(
+    (item: OfferLineItemForm) => {
+      const loadingSuggestions = loadingLinkedServiceSuggestions[item.id];
+      const links = linkedServiceSuggestions[item.id] ?? [];
+      if (!item.productId && !loadingSuggestions) return null;
+      if (!loadingSuggestions && links.length === 0) return null;
+
+      const canAddAny = links.some((link) => !isSuggestedServiceAlreadyAdded(link.serviceProductId, item.id));
+
+      return (
+        <div className="mt-2 rounded-md border border-border/60 bg-muted/30 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Predlagane storitve
+            </div>
+            {links.length > 1 ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!canAddAny}
+                onClick={() => addSuggestedServicesToOffer(item.id, links, true)}
+              >
+                Dodaj vse
+              </Button>
+            ) : null}
+          </div>
+
+          {loadingSuggestions ? (
+            <p className="mt-2 text-xs text-muted-foreground">Nalaganje predlogov ...</p>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {links.map((link) => {
+                const quantity = resolveSuggestedServiceQuantity(item, link);
+                const alreadyAdded = isSuggestedServiceAlreadyAdded(link.serviceProductId, item.id);
+                const serviceName = link.serviceProduct?.name ?? "Storitev";
+
+                return (
+                  <div
+                    key={link.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded border border-border/50 bg-background px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-foreground">
+                        {serviceName} ({quantity}x)
+                      </div>
+                      {alreadyAdded ? (
+                        <div className="text-xs text-muted-foreground">Že dodano v ponudbo.</div>
+                      ) : null}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={alreadyAdded}
+                      onClick={() => addSuggestedServicesToOffer(item.id, [link])}
+                    >
+                      Dodaj
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    },
+    [
+      addSuggestedServicesToOffer,
+      isSuggestedServiceAlreadyAdded,
+      linkedServiceSuggestions,
+      loadingLinkedServiceSuggestions,
+      resolveSuggestedServiceQuantity,
+    ],
+  );
 
   const openImportModal = () => {
     setImportError("");
@@ -2005,6 +2211,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           onDeleteItem={deleteRow}
           onSelectProduct={handleSelectProduct}
           onSelectCustomItem={handleSelectCustomItem}
+          renderSuggestions={(item) => renderLinkedServiceSuggestions(item as OfferLineItemForm)}
         />
 
         <div className="hidden md:block bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
@@ -2048,7 +2255,10 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items.map((item, index) => (
+            {items.map((item, index) => {
+              const suggestionContent = renderLinkedServiceSuggestions(item);
+              return (
+              <Fragment key={item.id}>
               <TableRow key={item.id} className="h-11">
                 <TableCell className="text-left pl-4 align-middle min-w-0">
                   <div className="min-w-0">
@@ -2142,7 +2352,16 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                   )}
                 </TableCell>
               </TableRow>
-            ))}
+              {suggestionContent ? (
+                <TableRow key={`${item.id}-suggestions`}>
+                  <TableCell colSpan={totalColumns} className="px-4 pb-4 pt-0">
+                    {suggestionContent}
+                  </TableCell>
+                </TableRow>
+              ) : null}
+              </Fragment>
+              );
+            })}
           </TableBody>
           <TableFooter>
             <TableRow className="border-t">

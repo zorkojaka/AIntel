@@ -56,10 +56,13 @@ interface MaterialOrderCardProps {
   onPreviewPurchaseOrder: () => void;
   onDownloadPurchaseOrder: () => void;
   onDownloadDeliveryNote: () => void;
+  onBulkConfirmPickupAll?: () => void;
   onDeliveredQtyChange: (itemId: string, deliveredQty: number) => void;
   onDeliveredQtyCommit: (itemId: string, deliveredQty: number) => void;
   onMaterialItemsChange: (items: MaterialLine[]) => void;
   onSaveMaterialChanges: () => void;
+  onBulkMarkOrdered: (items: MaterialLine[]) => void;
+  onBulkMarkReady: (items: MaterialLine[]) => void;
   hasPendingMaterialChanges: boolean;
   canDownloadPdf: boolean;
   downloadingPdf: "PURCHASE_ORDER" | "DELIVERY_NOTE" | null;
@@ -186,9 +189,12 @@ export function MaterialOrderCard({
   onLogisticsOwnerChange,
   onTechnicianNoteChange,
   onConfirmPickup,
+  onBulkConfirmPickupAll,
   onDeliveredQtyCommit,
   onMaterialItemsChange,
   onSaveMaterialChanges,
+  onBulkMarkOrdered,
+  onBulkMarkReady,
   hasPendingMaterialChanges,
   savingWorkOrder,
   onPreviewPurchaseOrder,
@@ -254,6 +260,10 @@ export function MaterialOrderCard({
     ? employeeNameById.get(materialOrder.logisticsOwnerId) ?? "Ni določeno"
     : "Ni določeno";
   const selectedPickupLocation = materialOrder.pickupLocation?.trim() || "Ni določeno";
+  const allPlannedItemsOrdered = totalCount > 0 && plannedLines.every((item) => resolveOrderedStatus(item) === "DA");
+  const allPlannedItemsReady =
+    totalCount > 0 &&
+    plannedLines.every((item) => resolveOrderedStatus(item) === "DA" && isReadyForPickup(resolveMaterialStep(item.materialStep)));
 
   const updateMaterialStep = (itemId: string, nextOrderedStatus: "DA" | "NE", nextReady: boolean) => {
     const nextItems = (materialOrder.items ?? []).map((item) => {
@@ -269,6 +279,31 @@ export function MaterialOrderCard({
     });
     onMaterialItemsChange(nextItems);
   };
+
+  const buildBulkOrderedItems = () =>
+    (materialOrder.items ?? []).map((item) => {
+      const planQty = resolvePlanQty(item);
+      const nextOrderedQty = planQty;
+      const nextReady = isReadyForPickup(resolveMaterialStep(item.materialStep));
+      return {
+        ...item,
+        orderedQty: nextOrderedQty,
+        isOrdered: nextOrderedQty > 0,
+        materialStep: getStepForFlags(nextOrderedQty > 0, nextReady),
+      };
+    });
+
+  const buildBulkReadyItems = () =>
+    (materialOrder.items ?? []).map((item) => {
+      const planQty = resolvePlanQty(item);
+      const nextOrderedQty = planQty;
+      return {
+        ...item,
+        orderedQty: nextOrderedQty,
+        isOrdered: nextOrderedQty > 0,
+        materialStep: getStepForFlags(nextOrderedQty > 0, true),
+      };
+    });
 
   const updateOrderedQty = (itemId: string, nextOrderedQty: number) => {
     const nextItems = (materialOrder.items ?? []).map((item) => (item.id === itemId ? { ...item, orderedQty: Math.max(0, nextOrderedQty), isOrdered: Math.max(0, nextOrderedQty) > 0 } : item));
@@ -391,7 +426,21 @@ export function MaterialOrderCard({
       <div className={`rounded-none border bg-card p-4 shadow-sm ${materialCardClass}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h3 className="text-base font-semibold">Material</h3>
-          <Badge className={isExecutionMode ? pickupStatus.className : overallStatus.className}>{isExecutionMode ? pickupStatus.label : overallStatus.label}</Badge>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Badge className={isExecutionMode ? pickupStatus.className : overallStatus.className}>{isExecutionMode ? pickupStatus.label : overallStatus.label}</Badge>
+            {isExecutionMode ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 md:hidden"
+                onClick={onBulkConfirmPickupAll}
+                disabled={savingWorkOrder || orderedCount === 0 || pickedUpCount >= orderedCount}
+              >
+                Prevzemi vse
+              </Button>
+            ) : null}
+          </div>
         </div>
         <div className="mt-4 space-y-4">
           {groupedBySupplier.map((group) => (
@@ -415,8 +464,45 @@ export function MaterialOrderCard({
                       <TableHead className="w-[90px] text-center">{isExecutionMode ? "Naročeno" : "Plan"}</TableHead>
                       <TableHead className="w-[120px] text-center">{isExecutionMode ? "Prevzeto" : "Naročeno qty"}</TableHead>
                       <TableHead className="w-[100px] text-center">Razlika</TableHead>
-                      <TableHead className={`${isExecutionMode ? "w-[180px]" : "w-[140px]"} text-center`}>{isExecutionMode ? "Prevzem" : "Naročeno"}</TableHead>
-                      {!isExecutionMode ? <TableHead className="w-[180px] text-center">Pripravljeno za prevzem</TableHead> : null}
+                      <TableHead className={`${isExecutionMode ? "w-[180px]" : "w-[140px]"} text-center`}>
+                        {isExecutionMode ? (
+                          <Button
+                            type="button"
+                            variant={pickedUpCount >= orderedCount && orderedCount > 0 ? "secondary" : "outline"}
+                            size="sm"
+                            className="h-8 px-3"
+                            onClick={onBulkConfirmPickupAll}
+                            disabled={savingWorkOrder || orderedCount === 0 || pickedUpCount >= orderedCount}
+                          >
+                            Prevzem ✔
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            variant={allPlannedItemsOrdered ? "secondary" : "outline"}
+                            size="sm"
+                            className="h-8 px-3"
+                            onClick={() => onBulkMarkOrdered(buildBulkOrderedItems())}
+                            disabled={savingWorkOrder || totalCount === 0 || allPlannedItemsOrdered}
+                          >
+                            Naročeno ✔
+                          </Button>
+                        )}
+                      </TableHead>
+                      {!isExecutionMode ? (
+                        <TableHead className="w-[180px] text-center">
+                          <Button
+                            type="button"
+                            variant={allPlannedItemsReady ? "secondary" : "outline"}
+                            size="sm"
+                            className="h-8 px-3"
+                            onClick={() => onBulkMarkReady(buildBulkReadyItems())}
+                            disabled={savingWorkOrder || totalCount === 0 || allPlannedItemsReady}
+                          >
+                            Pripravljeno ✔
+                          </Button>
+                        </TableHead>
+                      ) : null}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -460,7 +546,7 @@ export function MaterialOrderCard({
                   </TableBody>
                 </Table>
               </div>
-              <div className="space-y-3 p-4 md:hidden">
+              <div className="space-y-2 p-4 md:hidden">
                 {group.lines.map((item) => {
                   const step = resolveMaterialStep(item.materialStep);
                   const planQty = resolvePlanQty(item);
@@ -472,16 +558,21 @@ export function MaterialOrderCard({
                   const pickedUp = orderedQty > 0 && deliveredQty >= orderedQty;
                   const diff = isExecutionMode ? deliveredQty - orderedQty : orderedQty - planQty;
                   const displayDiff = diff > 0 ? `+${diff}` : `${diff}`;
-                  const diffClass = diff < 0 ? "text-red-600" : diff > 0 ? "text-amber-600" : "text-foreground";
+                  const diffClass = diff === 0 ? "text-foreground" : diff > 0 ? "text-emerald-600" : "text-red-600";
                   const orderedButtonClass = orderedStatus === "DA" ? "border-green-500/30 bg-green-500/10 text-green-700" : orderedStatus === "DELNO" ? "border-red-500/30 bg-red-500/10 text-red-700" : "border-orange-400/50 bg-orange-500/10 text-orange-700";
                   const readyButtonClass = !ordered ? "border-border bg-muted/60 text-muted-foreground" : ready ? "border-green-500/30 bg-green-500/10 text-green-700" : "border-orange-400/50 bg-orange-500/10 text-orange-700";
                   return (
-                    <div key={item.id} className="space-y-3 rounded-none border border-border/60 bg-background p-3">
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium">{item.name}</p>
-                        {item.note ? <p className="text-xs text-muted-foreground">{item.note}</p> : null}
+                    <div key={item.id} className={isExecutionMode ? "rounded-none border border-border/60 bg-background px-3 py-2" : "space-y-3 rounded-none border border-border/60 bg-background p-3"}>
+                      <div className={isExecutionMode ? "flex items-center justify-between gap-3" : "space-y-1"}>
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <p className="truncate text-sm font-medium">{item.name}{isExecutionMode ? <span className="text-muted-foreground"> ({orderedQty})</span> : null}</p>
+                          {item.note ? <p className="truncate text-xs text-muted-foreground">{item.note}</p> : null}
+                        </div>
+                        {isExecutionMode ? (
+                          <button type="button" onClick={() => { const nextQty = pickedUp ? 0 : orderedQty; updateDeliveredQtyLocal(item.id, nextQty); onDeliveredQtyCommit(item.id, nextQty); }} className={`inline-flex h-9 shrink-0 items-center justify-center rounded-md border px-3 text-xs font-medium transition ${pickedUp ? "border-green-500/30 bg-green-500/10 text-green-700" : "border-orange-400/50 bg-orange-500/10 text-orange-700"}`} disabled={orderedQty <= 0}>{pickedUp ? "Prevzeto" : "Prevzemi"}</button>
+                        ) : null}
                       </div>
-                      <div className="grid grid-cols-3 gap-3 text-sm">
+                      {!isExecutionMode ? <div className="grid grid-cols-3 gap-3 text-sm">
                         <div className="space-y-1">
                           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{isExecutionMode ? "Naročeno" : "Plan"}</p>
                           <p className="font-medium tabular-nums">{isExecutionMode ? orderedQty : planQty}</p>
@@ -494,8 +585,8 @@ export function MaterialOrderCard({
                           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Razlika</p>
                           <p className={`font-medium tabular-nums ${diffClass}`}>{displayDiff}</p>
                         </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
+                      </div> : null}
+                      {!isExecutionMode ? <div className="flex flex-wrap gap-2">
                         {isExecutionMode ? (
                           <button type="button" onClick={() => { const nextQty = pickedUp ? 0 : orderedQty; updateDeliveredQtyLocal(item.id, nextQty); onDeliveredQtyCommit(item.id, nextQty); }} className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-xs font-medium transition ${pickedUp ? "border-green-500/30 bg-green-500/10 text-green-700" : "border-orange-400/50 bg-orange-500/10 text-orange-700"}`} disabled={orderedQty <= 0}>{pickedUp ? "Prevzeto" : "Potrdi prevzem"}</button>
                         ) : (
@@ -504,7 +595,7 @@ export function MaterialOrderCard({
                             <button type="button" onClick={() => { if (!ordered) return; updateMaterialStep(item.id, "DA", !ready); }} className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-xs font-medium transition ${readyButtonClass}`} disabled={!ordered}>{ready ? "Pripravljeno za prevzem" : "Označi pripravljeno"}</button>
                           </>
                         )}
-                      </div>
+                      </div> : null}
                     </div>
                   );
                 })}

@@ -178,7 +178,135 @@ function mapOfferItemsToLogistics(items: OfferLineItem[]) {
 
 type LogisticsItems = ReturnType<typeof mapOfferItemsToLogistics>;
 
-function mapOfferItemsToWorkOrderItems(items: OfferLineItem[], serviceProductIds: Set<string>) {
+function normalizeExecutionMode(value: unknown): 'simple' | 'per_unit' | 'measured' {
+  return value === 'per_unit' || value === 'measured' ? value : 'simple';
+}
+
+function sanitizeExecutionSpec(input: any) {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+  return {
+    mode: normalizeExecutionMode(input.mode),
+    locationSummary:
+      typeof input.locationSummary === 'string'
+        ? input.locationSummary
+        : input.locationSummary === null
+          ? null
+          : null,
+    instructions:
+      typeof input.instructions === 'string'
+        ? input.instructions
+        : input.instructions === null
+          ? null
+          : null,
+    trackingUnitLabel:
+      typeof input.trackingUnitLabel === 'string'
+        ? input.trackingUnitLabel
+        : input.trackingUnitLabel === null
+          ? null
+          : null,
+    executionUnits: Array.isArray(input.executionUnits)
+      ? input.executionUnits.map((unit: any) => ({
+          id:
+            typeof unit?.id === 'string' && unit.id.trim().length > 0
+              ? unit.id
+              : new Types.ObjectId().toString(),
+          label: typeof unit?.label === 'string' ? unit.label : '',
+          location: typeof unit?.location === 'string' ? unit.location : unit?.location === null ? null : null,
+          instructions:
+            typeof unit?.instructions === 'string'
+              ? unit.instructions
+              : unit?.instructions === null
+                ? null
+                : null,
+          isCompleted: !!unit?.isCompleted,
+          note: typeof unit?.note === 'string' ? unit.note : unit?.note === null ? null : null,
+        }))
+      : [],
+  };
+}
+
+function buildDefaultExecutionSpec(product: any) {
+  const mode =
+    product?.defaultExecutionMode === 'simple' ||
+    product?.defaultExecutionMode === 'per_unit' ||
+    product?.defaultExecutionMode === 'measured'
+      ? product.defaultExecutionMode
+      : 'simple';
+  const instructions =
+    typeof product?.defaultInstructionsTemplate === 'string' ? product.defaultInstructionsTemplate : '';
+  return {
+    mode,
+    locationSummary: '',
+    instructions,
+    trackingUnitLabel: null,
+    executionUnits: [],
+  };
+}
+
+function mergeExecutionSpec(existing: any, fallbackProduct: any) {
+  const normalizedExisting = sanitizeExecutionSpec(existing);
+  if (normalizedExisting) {
+    return normalizedExisting;
+  }
+  return buildDefaultExecutionSpec(fallbackProduct);
+}
+
+function mergeGeneratedWorkOrderItems(existingItems: any[], generatedItems: any[], productDefaultsById: Map<string, any>) {
+  const existingByOfferItemId = new Map<string, any>();
+  const existingById = new Map<string, any>();
+
+  existingItems.forEach((item) => {
+    const plain = item?.toObject ? item.toObject() : item;
+    if (plain?.offerItemId) existingByOfferItemId.set(String(plain.offerItemId), plain);
+    if (plain?.id) existingById.set(String(plain.id), plain);
+  });
+
+  const mergedGenerated = generatedItems.map((item) => {
+    const existing =
+      (item.offerItemId ? existingByOfferItemId.get(String(item.offerItemId)) : null) ??
+      (item.id ? existingById.get(String(item.id)) : null) ??
+      null;
+    const productDefaults = item.productId ? productDefaultsById.get(String(item.productId)) : null;
+    return {
+      ...item,
+      plannedQuantity:
+        typeof existing?.plannedQuantity === 'number' ? existing.plannedQuantity : item.plannedQuantity,
+      quantity: typeof existing?.plannedQuantity === 'number' ? existing.plannedQuantity : item.quantity,
+      executedQuantity:
+        typeof existing?.executedQuantity === 'number' ? existing.executedQuantity : item.executedQuantity,
+      itemNote:
+        typeof existing?.itemNote === 'string' || existing?.itemNote === null ? existing.itemNote : item.itemNote,
+      isCompleted: typeof existing?.isCompleted === 'boolean' ? existing.isCompleted : item.isCompleted,
+      executionSpec: mergeExecutionSpec(existing?.executionSpec, productDefaults),
+    };
+  });
+
+  const mergedIds = new Set(
+    mergedGenerated.flatMap((item) => [item.id ? String(item.id) : '', item.offerItemId ? String(item.offerItemId) : ''])
+  );
+  const extraExistingItems = existingItems
+    .map((item) => (item?.toObject ? item.toObject() : item))
+    .filter((item) => item?.isExtra)
+    .filter(
+      (item) =>
+        !mergedIds.has(item?.id ? String(item.id) : '') &&
+        !mergedIds.has(item?.offerItemId ? String(item.offerItemId) : '')
+    )
+    .map((item) => ({
+      ...item,
+      executionSpec: sanitizeExecutionSpec(item?.executionSpec),
+    }));
+
+  return [...mergedGenerated, ...extraExistingItems];
+}
+
+function mapOfferItemsToWorkOrderItems(
+  items: OfferLineItem[],
+  serviceProductIds: Set<string>,
+  productDefaultsById: Map<string, any>
+) {
   return items.map((item) => {
     const quantity = typeof item.quantity === 'number' ? item.quantity : 0;
     const generatedId = item.id ?? new Types.ObjectId().toString();
@@ -186,6 +314,7 @@ function mapOfferItemsToWorkOrderItems(items: OfferLineItem[], serviceProductIds
     const isService =
       Boolean((item as any).isService) ||
       (item.productId ? serviceProductIds.has(String(item.productId)) : false);
+    const productDefaults = item.productId ? productDefaultsById.get(String(item.productId)) : null;
     return {
       id: generatedId,
       productId: item.productId ?? null,
@@ -204,6 +333,7 @@ function mapOfferItemsToWorkOrderItems(items: OfferLineItem[], serviceProductIds
       casovnaNorma: typeof (item as any).casovnaNorma === 'number' && Number.isFinite((item as any).casovnaNorma)
         ? (item as any).casovnaNorma
         : 0,
+      executionSpec: buildDefaultExecutionSpec(productDefaults),
     };
   });
 }
@@ -216,15 +346,16 @@ async function ensureWorkOrderForOffer(params: {
   customerEmail: string;
   customerPhone: string;
   customerAddress: string;
+  productDefaultsById: Map<string, any>;
 }) {
-  const { projectId, offerId, items, customerName, customerEmail, customerPhone, customerAddress } = params;
+  const { projectId, offerId, items, customerName, customerEmail, customerPhone, customerAddress, productDefaultsById } = params;
   let workOrder = await WorkOrderModel.findOne({ projectId, offerVersionId: offerId }).sort({ sequence: 1, createdAt: 1 });
 
   if (workOrder) {
     if ((workOrder as any).status === 'cancelled') {
       (workOrder as any).status = 'draft';
     }
-    workOrder.items = items;
+    workOrder.items = mergeGeneratedWorkOrderItems(workOrder.items ?? [], items, productDefaultsById);
     workOrder.cancelledAt = null;
     workOrder.reopened = false;
     workOrder.customerName = customerName;
@@ -363,6 +494,86 @@ function serializeMaterialOrder(order: any): MaterialOrder | null {
   };
 }
 
+async function buildProductServiceFlagMap(productIds: Array<string | null | undefined>) {
+  const uniqueIds = Array.from(
+    new Set(
+      productIds
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        .map((value) => value.trim())
+    )
+  );
+  const productServiceFlags = new Map<string, boolean>();
+  if (uniqueIds.length === 0) return productServiceFlags;
+
+  const products = await ProductModel.find({ _id: { $in: uniqueIds } }).select('_id isService').lean();
+  products.forEach((product) => {
+    productServiceFlags.set(String(product._id), product.isService === true);
+  });
+  return productServiceFlags;
+}
+
+function normalizeWorkOrderItemsWithProductTruth(items: any[], productServiceFlags: Map<string, boolean>) {
+  let changed = false;
+  const normalizedItems = (Array.isArray(items) ? items : []).map((item) => {
+    const normalizedProductId =
+      typeof item?.productId === 'string' && item.productId.trim().length > 0 ? item.productId.trim() : null;
+    const nextIsService = normalizedProductId
+      ? productServiceFlags.get(normalizedProductId) ?? (typeof item?.isService === 'boolean' ? item.isService : false)
+      : typeof item?.isService === 'boolean'
+        ? item.isService
+        : false;
+
+    if (item?.productId !== normalizedProductId || item?.isService !== nextIsService) {
+      changed = true;
+    }
+
+    return {
+      ...(item?.toObject ? item.toObject() : item),
+      productId: normalizedProductId,
+      isService: nextIsService,
+    };
+  });
+
+  return { normalizedItems, changed };
+}
+
+async function normalizeAndPersistWorkOrdersServiceFlags(workOrders: any[]) {
+  if (!Array.isArray(workOrders) || workOrders.length === 0) return [];
+
+  const productServiceFlags = await buildProductServiceFlagMap(
+    workOrders.flatMap((workOrder) =>
+      Array.isArray(workOrder?.items) ? workOrder.items.map((item: any) => item?.productId ?? null) : []
+    )
+  );
+
+  const normalizedEntries = workOrders.map((workOrder) => {
+    const { normalizedItems, changed } = normalizeWorkOrderItemsWithProductTruth(workOrder?.items ?? [], productServiceFlags);
+    return {
+      workOrder,
+      changed,
+      normalized: {
+        ...(workOrder?.toObject ? workOrder.toObject() : workOrder),
+        items: normalizedItems,
+      },
+    };
+  });
+
+  const bulkUpdates = normalizedEntries
+    .filter((entry) => entry.changed && entry.normalized?._id)
+    .map((entry) => ({
+      updateOne: {
+        filter: { _id: entry.normalized._id },
+        update: { $set: { items: entry.normalized.items } },
+      },
+    }));
+
+  if (bulkUpdates.length > 0) {
+    await WorkOrderModel.bulkWrite(bulkUpdates, { ordered: false });
+  }
+
+  return normalizedEntries.map((entry) => entry.normalized);
+}
+
 function serializeWorkOrder(order: any): WorkOrder | null {
   if (!order) return null;
   const confirmationState = resolveConfirmationState(order);
@@ -383,6 +594,7 @@ function serializeWorkOrder(order: any): WorkOrder | null {
           name: item.name,
           quantity: fallbackQuantity,
           unit: item.unit,
+          isService: item.isService === true,
           note: item.note ?? undefined,
           offerItemId: item.offerItemId ?? null,
           offeredQuantity:
@@ -403,6 +615,7 @@ function serializeWorkOrder(order: any): WorkOrder | null {
             typeof item.casovnaNorma === 'number' && Number.isFinite(item.casovnaNorma)
               ? item.casovnaNorma
               : 0,
+          executionSpec: sanitizeExecutionSpec(item.executionSpec),
         };
       }),
     status: order.status,
@@ -466,6 +679,59 @@ function serializeWorkOrder(order: any): WorkOrder | null {
   };
 }
 
+function sanitizeIncomingExecutionSpec(input: any) {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+  const executionUnits = Array.isArray(input.executionUnits)
+    ? input.executionUnits
+        .map((unit: any) => {
+          const label = typeof unit?.label === 'string' ? unit.label.trim() : '';
+          if (!label) return null;
+          return {
+            id:
+              typeof unit?.id === 'string' && unit.id.trim().length > 0
+                ? unit.id.trim()
+                : new Types.ObjectId().toString(),
+            label,
+            location: typeof unit?.location === 'string' ? unit.location : unit?.location === null ? null : null,
+            instructions:
+              typeof unit?.instructions === 'string'
+                ? unit.instructions
+                : unit?.instructions === null
+                  ? null
+                  : null,
+            isCompleted: !!unit?.isCompleted,
+            note: typeof unit?.note === 'string' ? unit.note : unit?.note === null ? null : null,
+          };
+        })
+        .filter((unit): unit is NonNullable<typeof unit> => unit !== null)
+    : [];
+
+  return {
+    mode: normalizeExecutionMode(input.mode),
+    locationSummary:
+      typeof input.locationSummary === 'string'
+        ? input.locationSummary
+        : input.locationSummary === null
+          ? null
+          : null,
+    instructions:
+      typeof input.instructions === 'string'
+        ? input.instructions
+        : input.instructions === null
+          ? null
+          : null,
+    trackingUnitLabel:
+      typeof input.trackingUnitLabel === 'string'
+        ? input.trackingUnitLabel
+        : input.trackingUnitLabel === null
+          ? null
+          : null,
+    executionUnits,
+  };
+}
+
 function resolveScheduleConfirmerLabel(req: Request) {
   const authEmployeeName =
     typeof (req as any).authEmployee?.name === 'string' ? (req as any).authEmployee.name.trim() : '';
@@ -520,6 +786,7 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
     MaterialOrderModel.find(materialOrderQuery).sort({ createdAt: 1 }).lean(),
     WorkOrderModel.find(workOrderQuery).sort({ sequence: 1, createdAt: 1 }).lean(),
   ]);
+  const normalizedWorkOrderDocs = await normalizeAndPersistWorkOrdersServiceFlags(workOrderDocs);
 
   const resolveTotalWithVat = (offer: any) => {
     const sumFromItems =
@@ -536,7 +803,7 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
   const serializedMaterialOrders: MaterialOrder[] = materialOrderDocs
     .map(serializeMaterialOrder)
     .filter((order): order is MaterialOrder => order !== null);
-  const serializedWorkOrders: WorkOrder[] = workOrderDocs
+  const serializedWorkOrders: WorkOrder[] = normalizedWorkOrderDocs
     .map(serializeWorkOrder)
     .filter((order): order is WorkOrder => order !== null);
 
@@ -605,9 +872,13 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       .map((item) => (item.productId ? String(item.productId) : null))
       .filter((id): id is string => Boolean(id));
     const serviceProductIds = new Set<string>();
+    const productDefaultsById = new Map<string, any>();
     if (productIds.length > 0) {
-      const products = await ProductModel.find({ _id: { $in: productIds } }).select('_id isService').lean();
+      const products = await ProductModel.find({ _id: { $in: productIds } })
+        .select('_id isService defaultExecutionMode defaultInstructionsTemplate')
+        .lean();
       products.forEach((product) => {
+        productDefaultsById.set(String(product._id), product);
         if (product.isService) {
           serviceProductIds.add(String(product._id));
         }
@@ -617,7 +888,7 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       (item) => !item.productId || !serviceProductIds.has(String(item.productId))
     );
     const logisticsItems = mapOfferItemsToLogistics(materialOfferItems);
-    const workOrderItems = mapOfferItemsToWorkOrderItems(offerItems, serviceProductIds);
+    const workOrderItems = mapOfferItemsToWorkOrderItems(offerItems, serviceProductIds, productDefaultsById);
     const customerName = project.customer?.name ?? projectClient?.name ?? '';
     const customerEmail = projectClient?.email ?? '';
     const customerPhone = projectClient?.phone ?? '';
@@ -631,6 +902,7 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       customerEmail,
       customerPhone,
       customerAddress,
+      productDefaultsById,
     });
 
     await ensureMaterialOrderForOffer({
@@ -963,6 +1235,9 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
             if (typeof incoming.offerItemId === 'string' || incoming.offerItemId === null) {
               target.offerItemId = incoming.offerItemId ?? null;
             }
+            if ('executionSpec' in incoming) {
+              target.executionSpec = sanitizeIncomingExecutionSpec(incoming.executionSpec);
+            }
             return;
           }
         }
@@ -994,10 +1269,12 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
             typeof incoming.casovnaNorma === 'number' && Number.isFinite(incoming.casovnaNorma)
               ? incoming.casovnaNorma
               : 0,
+          executionSpec: sanitizeIncomingExecutionSpec(incoming.executionSpec),
         });
       });
 
-      updates.items = nextItems;
+      const productServiceFlags = await buildProductServiceFlagMap(nextItems.map((item: any) => item.productId ?? null));
+      updates.items = normalizeWorkOrderItemsWithProductTruth(nextItems, productServiceFlags).normalizedItems;
     }
       if (Array.isArray(payload.workLogs)) {
         updates.workLogs = payload.workLogs
@@ -1019,6 +1296,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
   }
 
   const updated = await WorkOrderModel.findOneAndUpdate({ _id: workOrderId, projectId }, { $set: updates }, { new: true });
+  const [normalizedUpdated] = await normalizeAndPersistWorkOrdersServiceFlags(updated ? [updated] : []);
 
   const materialOrderId = typeof payload.materialOrderId === 'string' ? payload.materialOrderId : null;
   if (materialOrderId) {
@@ -1244,7 +1522,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     }
   }
 
-    return res.success(serializeWorkOrder(updated));
+    return res.success(serializeWorkOrder(normalizedUpdated ?? updated));
   } catch (err) {
     next(err);
   }
@@ -1295,7 +1573,8 @@ export async function startWorkOrderConfirmationCorrection(req: Request, res: Re
     }
 
     const refreshed = await WorkOrderModel.findOne({ _id: workOrderId, projectId }).lean();
-    return res.success(serializeWorkOrder(refreshed));
+    const [normalizedRefreshed] = await normalizeAndPersistWorkOrdersServiceFlags(refreshed ? [refreshed] : []);
+    return res.success(serializeWorkOrder(normalizedRefreshed ?? refreshed));
   } catch (err) {
     next(err);
   }

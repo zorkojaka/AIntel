@@ -61,6 +61,24 @@ export interface MaterialOrder {
 export type WorkOrderStatus = "draft" | "issued" | "in-progress" | "confirmed" | "completed";
 export type WorkOrderConfirmationState = "unsigned" | "signed_active" | "resign_required";
 export type WorkOrderConfirmationVersionState = "active" | "archived" | "superseded";
+export type WorkOrderExecutionMode = "simple" | "per_unit" | "measured";
+
+export interface WorkOrderExecutionUnit {
+  id: string;
+  label: string;
+  location?: string;
+  instructions?: string;
+  isCompleted: boolean;
+  note?: string;
+}
+
+export interface WorkOrderExecutionSpec {
+  mode?: WorkOrderExecutionMode;
+  locationSummary?: string;
+  instructions?: string;
+  trackingUnitLabel?: string;
+  executionUnits?: WorkOrderExecutionUnit[];
+}
 
 export interface WorkOrderItem extends LogisticsMaterialItem {
   offerItemId?: string | null;
@@ -72,6 +90,7 @@ export interface WorkOrderItem extends LogisticsMaterialItem {
   itemNote?: string | null;
   isCompleted?: boolean;
   casovnaNorma?: number;
+  executionSpec?: WorkOrderExecutionSpec | null;
 }
 
 export interface WorkLogEntry {

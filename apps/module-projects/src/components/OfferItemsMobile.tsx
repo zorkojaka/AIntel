@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Plus, Trash2 } from "lucide-react";
 
 import { Button } from "./ui/button";
@@ -42,6 +42,7 @@ type OfferItemsMobileProps = {
   onDeleteItem: (id: string) => void;
   onSelectProduct: (rowId: string, product: PriceListSearchItem, rowIndex: number) => void;
   onSelectCustomItem: (rowId: string) => void;
+  renderSuggestions?: (item: OfferItemsMobileItem, rowIndex: number) => ReactNode;
 };
 
 export function OfferItemsMobile({
@@ -57,6 +58,7 @@ export function OfferItemsMobile({
   onDeleteItem,
   onSelectProduct,
   onSelectCustomItem,
+  renderSuggestions,
 }: OfferItemsMobileProps) {
   const blankItemRef = useRef<HTMLDivElement | null>(null);
 
@@ -199,6 +201,8 @@ export function OfferItemsMobile({
                 <span className="text-sm text-muted-foreground">Skupaj</span>
                 <span className="text-base font-semibold">{formatCurrency(item.totalGross || 0)}</span>
               </div>
+
+              {renderSuggestions ? renderSuggestions(item, index) : null}
             </div>
           );
         })}

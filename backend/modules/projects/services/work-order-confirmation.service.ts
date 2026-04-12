@@ -36,6 +36,52 @@ function asString(value: unknown) {
   return typeof value === 'string' ? value : value == null ? '' : String(value);
 }
 
+function mapExecutionSpec(input: any) {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+  return {
+    mode:
+      input.mode === 'simple' || input.mode === 'per_unit' || input.mode === 'measured'
+        ? input.mode
+        : 'simple',
+    locationSummary:
+      typeof input.locationSummary === 'string'
+        ? input.locationSummary
+        : input.locationSummary === null
+          ? null
+          : null,
+    instructions:
+      typeof input.instructions === 'string'
+        ? input.instructions
+        : input.instructions === null
+          ? null
+          : null,
+    trackingUnitLabel:
+      typeof input.trackingUnitLabel === 'string'
+        ? input.trackingUnitLabel
+        : input.trackingUnitLabel === null
+          ? null
+          : null,
+    executionUnits: Array.isArray(input.executionUnits)
+      ? input.executionUnits.map((unit: any) => ({
+          id: asString(unit?.id),
+          label: typeof unit?.label === 'string' ? unit.label : '',
+          location:
+            typeof unit?.location === 'string' ? unit.location : unit?.location === null ? null : null,
+          instructions:
+            typeof unit?.instructions === 'string'
+              ? unit.instructions
+              : unit?.instructions === null
+                ? null
+                : null,
+          isCompleted: !!unit?.isCompleted,
+          note: typeof unit?.note === 'string' ? unit.note : unit?.note === null ? null : null,
+        }))
+      : [],
+  };
+}
+
 function mapItems(items: unknown[] | undefined) {
   return Array.isArray(items)
     ? items.map((item: any) => ({
@@ -54,6 +100,7 @@ function mapItems(items: unknown[] | undefined) {
         itemNote: typeof item?.itemNote === 'string' ? item.itemNote : item?.itemNote === null ? null : null,
         isCompleted: !!item?.isCompleted,
         casovnaNorma: typeof item?.casovnaNorma === 'number' ? item.casovnaNorma : 0,
+        executionSpec: mapExecutionSpec(item?.executionSpec),
       }))
     : [];
 }
