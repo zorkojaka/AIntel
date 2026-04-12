@@ -1,0 +1,39 @@
+name: Deploy Staging to Hetzner
+
+on:
+  push:
+    branches:
+      - 'codex/**'
+      - 'dev'
+      - 'dev/**'
+      - 'staging'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Add server to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H 178.104.24.47 >> ~/.ssh/known_hosts
+
+      - name: Deploy staging via SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          SSH_USER: ${{ secrets.HETZNER_USER }}
+        run: |
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh -i ~/.ssh/id_rsa "$SSH_USER@178.104.24.47" <<EOF
+          set -e
+          cd /home/jaka/apps/aintel-staging/AIntel
+          git fetch origin
+          git reset --hard origin/${GITHUB_REF_NAME}
+          pnpm install --no-frozen-lockfile
+          pnpm -r build
+          sudo rm -rf /var/www/aintel-staging/*
+          sudo cp -r apps/core-shell/dist/* /var/www/aintel-staging/
+          cd backend && pnpm run build && cd ..
+          pm2 restart aintel-staging
+          EOF
