@@ -7,10 +7,13 @@ import {
   listFinanceEntries,
 } from '../controllers/financeController';
 import {
+  basketAnalysis,
   employeesSummary,
-  invoicesSummary,
   monthlySummary,
-  projectsSummary,
+  pipelineSummary,
+  productFrequency,
+  snapshotByProject,
+  snapshotsList,
 } from '../controllers/finance-analytics.controller';
 
 const router = Router();
@@ -20,9 +23,13 @@ router.post('/addFromInvoice', addFromInvoice);
 router.get('/yearly-summary', getYearlySummary);
 router.get('/project/:id', getProjectFinance);
 router.get('/client/:id', getClientFinance);
-router.get('/projects-summary', projectsSummary);
+
+router.get('/snapshots', snapshotsList);
+router.get('/snapshots/:projectId', snapshotByProject);
 router.get('/monthly-summary', monthlySummary);
+router.get('/product-frequency', productFrequency);
+router.get('/basket-analysis', basketAnalysis);
 router.get('/employees-summary', employeesSummary);
-router.get('/invoices', invoicesSummary);
+router.get('/pipeline', pipelineSummary);
 
 export default router;
