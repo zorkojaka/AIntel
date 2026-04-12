@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 export interface PhotoCaptureProps {
   entityType: string;
@@ -42,6 +42,16 @@ export function PhotoCapture({
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
+  useEffect(() => {
+    if (!cameraActive || !stream || !videoRef.current) return;
+
+    const video = videoRef.current;
+    video.srcObject = stream;
+    void video.play().catch((error) => {
+      console.error('Video preview failed to start:', error);
+    });
+  }, [cameraActive, stream]);
+
   const startCamera = async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -52,6 +62,9 @@ export function PhotoCapture({
       setCameraActive(true);
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
+        void videoRef.current.play().catch((error) => {
+          console.error('Video preview failed to start:', error);
+        });
       }
     } catch (error) {
       console.error('Camera access denied:', error);
@@ -280,20 +293,26 @@ export function PhotoCapture({
     <div className="flex flex-col gap-4">
       {cameraActive ? (
         <div className="relative w-full max-w-[640px] mx-auto">
-          <video ref={videoRef} autoPlay playsInline className="w-full h-auto rounded-lg bg-black" />
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-64 rounded-lg bg-black object-cover sm:h-80"
+          />
           <canvas ref={canvasRef} style={{ display: 'none' }} />
           <div className="flex gap-2 justify-center mt-4">
             <button
               type="button"
               onClick={capturePhoto}
-              className="px-6 py-3 border-none rounded-md text-base font-medium cursor-pointer transition-all bg-blue-600 text-white hover:bg-blue-700"
+              className="px-6 py-3 border border-blue-700 rounded-md text-base font-semibold cursor-pointer transition-all bg-blue-600 text-white shadow-sm hover:bg-blue-700"
             >
               Zajemi
             </button>
             <button
               type="button"
               onClick={stopCamera}
-              className="px-6 py-3 border-none rounded-md text-base font-medium cursor-pointer transition-all bg-gray-300 text-gray-900 hover:bg-gray-400"
+              className="px-6 py-3 border border-gray-400 rounded-md text-base font-semibold cursor-pointer transition-all bg-white text-gray-900 shadow-sm hover:bg-gray-100"
             >
               Prekliči
             </button>
