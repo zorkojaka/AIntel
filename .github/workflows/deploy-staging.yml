@@ -1,9 +1,10 @@
-name: Deploy to Hetzner Staging
+name: Deploy Staging to Hetzner
 
 on:
   push:
     branches:
-      - staging
+      - 'codex/**'
+      - 'dev/**'
 
 jobs:
   deploy:
@@ -15,11 +16,14 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H 178.104.24.47 >> ~/.ssh/known_hosts
 
-      - name: Deploy via SSH
+      - name: Deploy staging via SSH
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_STAGING_SSH_KEY }}
-          SSH_USER: ${{ secrets.HETZNER_STAGING_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          SSH_USER: ${{ secrets.HETZNER_USER }}
         run: |
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh -i ~/.ssh/id_rsa "$SSH_USER@178.104.24.47" "cd /home/jaka && bash deploy-aintel-staging.sh"
+          ssh -i ~/.ssh/id_rsa "$SSH_USER@178.104.24.47" <<EOF
+          set -e
+          bash /home/jaka/deploy-aintel-staging.sh ${GITHUB_REF_NAME}
+          EOF
