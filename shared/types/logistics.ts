@@ -70,6 +70,8 @@ export interface WorkOrderExecutionUnit {
   instructions?: string;
   isCompleted: boolean;
   note?: string;
+  unitPhotos?: string[];
+  prepPhotos?: string[];
 }
 
 export interface WorkOrderExecutionSpec {

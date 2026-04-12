@@ -20,6 +20,7 @@ import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { MaterialOrderCard } from "./MaterialOrderCard";
 import { normalizeMaterialStatusLabel } from "./materialStatus";
 import { useConfirmOffer } from "../core/useConfirmOffer";
@@ -28,6 +29,7 @@ import { downloadPdf } from "../../api";
 import { AlertTriangle, Check, ChevronDown, ChevronRight, Download, Loader2, Trash2, X } from "lucide-react";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
+import { PhotoCapture } from "@aintel/ui";
 
 interface LogisticsPanelProps {
   projectId: string;
@@ -214,6 +216,8 @@ function sanitizeExecutionUnits(units: WorkOrderExecutionSpec["executionUnits"] 
         instructions: unit.instructions ?? "",
         isCompleted: !!unit.isCompleted,
         note: unit.note ?? "",
+        unitPhotos: Array.isArray(unit.unitPhotos) ? unit.unitPhotos : [],
+        prepPhotos: Array.isArray(unit.prepPhotos) ? unit.prepPhotos : [],
       }))
     : [];
 }
@@ -309,6 +313,11 @@ export function LogisticsPanel({
   const [workOrderDownloading, setWorkOrderDownloading] = useState<"WORK_ORDER" | "WORK_ORDER_CONFIRMATION" | null>(null);
   const [pendingMaterialOrderIds, setPendingMaterialOrderIds] = useState<Record<string, boolean>>({});
   const [expandedExecutionItems, setExpandedExecutionItems] = useState<Record<string, boolean>>({});
+  const [activeUnitPhotoCapture, setActiveUnitPhotoCapture] = useState<{
+    workOrderId: string;
+    itemId: string;
+    unitId: string;
+  } | null>(null);
 
   const hasConfirmed = useMemo(() => !!snapshot?.confirmedOfferVersionId, [snapshot]);
   const confirmedOffers = useMemo(
@@ -2188,7 +2197,12 @@ export function LogisticsPanel({
                                     }
                                     placeholder="Opomba"
                                   />
-                                  <Button type="button" variant="outline" size="sm" disabled title="Kmalu">
+                                  <Button 
+                                    type="button" 
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={() => setActiveUnitPhotoCapture({ workOrderId: sourceWorkOrder._id, itemId: item.id, unitId: unit.id })}
+                                  >
                                     Fotografija
                                   </Button>
                                 </div>
@@ -2623,8 +2637,60 @@ export function LogisticsPanel({
         </CardContent>
       </Card>
       {renderExecutionDefinition(selectedWorkOrder)}
+
+      <Dialog open={Boolean(activeUnitPhotoCapture)} onOpenChange={(open) => {
+        if (!open) {
+          setActiveUnitPhotoCapture(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Fotografije enote</DialogTitle>
+          </DialogHeader>
+          {activeUnitPhotoCapture ? (
+            <PhotoCapture
+              entityType="execution-unit-prep"
+              entityId={activeUnitPhotoCapture.unitId}
+              onPhotosChange={async (photos) => {
+                console.log("Photos uploaded for unit:", activeUnitPhotoCapture.unitId, photos);
+                
+                // Save each photo URL to the execution unit
+                for (const photo of photos) {
+                  try {
+                    const response = await fetch(
+                      `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.workOrderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos`,
+                      {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          ...buildTenantHeaders(),
+                        },
+                        body: JSON.stringify({
+                          photoUrl: photo.fileUrl,
+                          photoType: 'prepPhotos',
+                        }),
+                      }
+                    );
+                    
+                    if (!response.ok) {
+                      throw new Error('Failed to save photo');
+                    }
+                  } catch (error) {
+                    console.error('Error saving photo:', error);
+                    toast.error('Napaka pri shranjevanju fotografije');
+                    return;
+                  }
+                }
+                
+                toast.success(`${photos.length} fotografij shranjenih.`);
+                await refreshAfterMutation(fetchSnapshot);
+              }}
+              maxPhotos={10}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
 

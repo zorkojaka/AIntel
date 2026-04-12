@@ -8,6 +8,7 @@ import { Checkbox } from "../../components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Camera, ChevronDown, ChevronRight, Download, Loader2, Pencil, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { PhotoCapture, type UploadedPhoto } from "@aintel/ui";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import type {
   MaterialOrder,
@@ -58,6 +59,12 @@ type ActiveUnitNoteEditor = {
   value: string;
 } | null;
 
+type ActiveUnitPhotoCapture = {
+  orderId: string;
+  itemId: string;
+  unitId: string;
+} | null;
+
 function normalizeExecutionMode(value: WorkOrderExecutionSpec["mode"] | undefined) {
   return value === "per_unit" || value === "measured" ? value : "simple";
 }
@@ -71,6 +78,8 @@ function sanitizeExecutionUnits(units: WorkOrderExecutionSpec["executionUnits"] 
         instructions: unit.instructions ?? "",
         isCompleted: !!unit.isCompleted,
         note: unit.note ?? "",
+        unitPhotos: Array.isArray(unit.unitPhotos) ? unit.unitPhotos : [],
+        prepPhotos: Array.isArray(unit.prepPhotos) ? unit.prepPhotos : [],
       }))
     : [];
 }
@@ -350,6 +359,7 @@ export function ExecutionPanel({
   const [expandedExecutionItems, setExpandedExecutionItems] = useState<Record<string, boolean>>({});
   const [editingUnitNotes, setEditingUnitNotes] = useState<Record<string, boolean>>({});
   const [activeUnitNoteEditor, setActiveUnitNoteEditor] = useState<ActiveUnitNoteEditor>(null);
+  const [activeUnitPhotoCapture, setActiveUnitPhotoCapture] = useState<ActiveUnitPhotoCapture>(null);
 
   const workOrders = useMemo(() => rawWorkOrders, [rawWorkOrders]);
 
@@ -999,18 +1009,10 @@ export function ExecutionPanel({
           return (
             <div
               key={unit.id}
-              className={cn(
-                "grid items-center gap-2 rounded-md border border-border/60 bg-background/70 px-3 py-2",
-                options?.compact
-                  ? "grid-cols-[minmax(0,1fr)_auto]"
-                  : "grid-cols-[32px_minmax(0,1fr)_auto]",
-              )}
+              className="grid items-center gap-2 rounded-md border border-border/60 bg-background/70 px-3 py-2"
+              style={{ gridTemplateColumns: "minmax(0,1fr) 96px 40px" }}
             >
               <div className="min-w-0">
-                <div className="truncate text-sm font-medium">
-                  {(unit.label?.trim() || index + 1) + " "}
-                  {unit.location?.trim() || `${unitLabel} ${index + 1}`}
-                </div>
                 {!options?.compact && isEditingNote ? (
                   <Input
                     autoFocus
@@ -1036,9 +1038,16 @@ export function ExecutionPanel({
                     placeholder="Dodaj opombo"
                     className="mt-1 h-8"
                   />
-                ) : noteText ? <div className="truncate text-xs text-muted-foreground">{noteText}</div> : null}
+                ) : (
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                    <span className="font-medium">{unit.label?.trim() || index + 1}</span>
+                    {unit.location?.trim() && <span className="text-muted-foreground">·</span>}
+                    {unit.location?.trim() && <span className="font-medium">{unit.location}</span>}
+                    {noteText && <span className="text-xs text-muted-foreground">{noteText}</span>}
+                  </div>
+                )}
               </div>
-              <div className="flex items-center gap-1 justify-self-end">
+              <div className="flex items-center gap-2 justify-self-end">
                 <Button
                   type="button"
                   variant="ghost"
@@ -1058,19 +1067,28 @@ export function ExecutionPanel({
                 >
                   <Pencil className="h-4 w-4" />
                 </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground"
-                  onClick={() => console.info("Unit photo placeholder", { orderId: order._id, itemId: item.id, unitId: unit.id })}
-                  aria-label="Fotografija kmalu"
-                  title="Fotografija kmalu"
-                >
-                  <Camera className="h-4 w-4" />
-                </Button>
+                <div className="relative">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground"
+                    onClick={() => setActiveUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: unit.id })}
+                    aria-label="Dodaj fotografijo"
+                    title="Dodaj fotografijo"
+                  >
+                    <Camera className="h-4 w-4" />
+                  </Button>
+                  {(unit.unitPhotos?.length ?? 0) > 0 && (
+                    <Badge className="absolute -right-1 -top-1 h-4 min-w-4 px-1 text-[10px]" variant="secondary">
+                      {unit.unitPhotos?.length}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-center">
                 <Checkbox
-                  className="h-4 w-4"
+                  className="h-5 w-5"
                   checked={!!unit.isCompleted}
                   disabled={isLocked}
                   onChange={(event: ChangeEvent<HTMLInputElement>) =>
@@ -1562,9 +1580,9 @@ export function ExecutionPanel({
                           <table className="w-full min-w-[720px] text-sm">
                             <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                               <tr>
-                                <th className="p-2 text-center font-semibold">Dokončano</th>
-                                <th className="p-2 text-center font-semibold">IZVEDBA/NAROČILO</th>
                                 <th className="p-2 text-left font-semibold">Naziv</th>
+                                <th className="p-2 text-center font-semibold">IZVEDBA/NAROČILO</th>
+                                <th className="p-2 text-center font-semibold">Dokončano</th>
                                 <th className="w-12 p-2 text-right font-semibold"></th>
                               </tr>
                             </thead>
@@ -1614,35 +1632,6 @@ export function ExecutionPanel({
                                 };
                                 return [
                                     <tr key={`${item.id}-main`} className={cn("border-t", itemStatusStyles.rowClassName)}>
-                                      <td className="p-2 text-center align-middle">
-                                        <Checkbox
-                                          className="h-5 w-5"
-                                          checked={isCompleted}
-                                          disabled={isConfirmationLocked}
-                                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                                            handleCompletionChange(event.target.checked)
-                                          }
-                                        />
-                                      </td>
-                                      <td className="p-2 align-middle">
-                                        <div className="flex items-center justify-center gap-0">
-                                          <Input
-                                            type="number"
-                                            value={item.executedQuantity ?? ""}
-                                            disabled={isConfirmationLocked || hasVisibleInlineUnits}
-                                            onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                                              applyItemChange(order, item.id, {
-                                                executedQuantity: Number(event.target.value),
-                                              })
-                                            }
-                                            className={cn("w-16 text-right", itemStatusStyles.quantityClassName)}
-                                          />
-                                          <span className={cn("px-0.5", itemStatusStyles.quantityClassName)}>/</span>
-                                          <span className={cn("text-right tabular-nums font-medium", itemStatusStyles.quantityClassName)}>
-                                            {offeredValue.toLocaleString("sl-SI")}
-                                          </span>
-                                        </div>
-                                      </td>
                                       <td className="p-2 align-top">
                                         {isExtraEditable ? (
                                           <div>
@@ -1671,37 +1660,98 @@ export function ExecutionPanel({
                                             </div>
                                           </div>
                                         ) : (
-                                          <div className="space-y-2">
-                                            <div className="space-y-1">
-                                              <p className="font-medium">{item.name || "-"}</p>
-                                              <div className="flex flex-wrap items-center gap-2">
-                                                {item.isExtra && offeredValue === 0 ? null : (
-                                                  <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
-                                                )}
-                                                {renderItemStatusBadge(item)}
-                                                {hasVisibleInlineUnits ? (
-                                                  <Badge variant="outline">{getPerUnitSummary(executionSpec)}</Badge>
-                                                ) : null}
-                                              </div>
+                                          <div className="space-y-1">
+                                            <p className="font-medium">{item.name || "-"}</p>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                              {item.isExtra && offeredValue === 0 ? null : (
+                                                <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
+                                              )}
+                                              {renderItemStatusBadge(item)}
+                                              {hasVisibleInlineUnits ? (
+                                                <Badge variant="outline">{getPerUnitSummary(executionSpec)}</Badge>
+                                              ) : null}
+                                              {!hasVisibleInlineUnits ? (
+                                                <Button
+                                                  type="button"
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  className="h-8 px-2 text-xs"
+                                                  onClick={() => toggleExecutionDetails(item.id)}
+                                                >
+                                                  {isExecutionExpanded ? (
+                                                    <ChevronDown className="mr-1 h-4 w-4" />
+                                                  ) : (
+                                                    <ChevronRight className="mr-1 h-4 w-4" />
+                                                  )}
+                                                  Detajli izvedbe
+                                                </Button>
+                                              ) : null}
                                             </div>
-                                            {!hasVisibleInlineUnits ? (
-                                              <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                className="h-8 px-2 text-xs"
-                                                onClick={() => toggleExecutionDetails(item.id)}
-                                              >
-                                                {isExecutionExpanded ? (
-                                                  <ChevronDown className="mr-1 h-4 w-4" />
-                                                ) : (
-                                                  <ChevronRight className="mr-1 h-4 w-4" />
-                                                )}
-                                                Detajli izvedbe
-                                              </Button>
-                                            ) : null}
                                           </div>
                                         )}
+                                      </td>
+                                      <td className="p-2 align-middle">
+                                        <div className="flex items-center gap-0">
+                                          <Input
+                                            type="number"
+                                            value={item.executedQuantity ?? ""}
+                                            disabled={isConfirmationLocked || hasVisibleInlineUnits}
+                                            onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                                              applyItemChange(order, item.id, {
+                                                executedQuantity: Number(event.target.value),
+                                              })
+                                            }
+                                            className={cn("w-16 text-right", itemStatusStyles.quantityClassName)}
+                                          />
+                                          <span className={cn("px-0.5", itemStatusStyles.quantityClassName)}>/</span>
+                                          <span className={cn("text-right tabular-nums font-medium", itemStatusStyles.quantityClassName)}>
+                                            {offeredValue.toLocaleString("sl-SI")}
+                                          </span>
+                                        </div>
+                                      </td>
+                                      <td className="p-2 align-middle" style={{ width: "96px" }}>
+                                        {!hasVisibleInlineUnits ? (
+                                          <div className="flex items-center justify-center gap-2">
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-8 w-8 text-muted-foreground"
+                                              disabled={isConfirmationLocked}
+                                              onClick={() => setActiveUnitNoteEditor({
+                                                orderId: order._id,
+                                                itemId: item.id,
+                                                unitId: item.id,
+                                                value: executionSpec.instructions ?? "",
+                                              })}
+                                              aria-label="Uredi opombo"
+                                              title="Uredi opombo"
+                                            >
+                                              <Pencil className="h-4 w-4" />
+                                            </Button>
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-8 w-8 text-muted-foreground"
+                                              onClick={() => setActiveUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: item.id })}
+                                              aria-label="Dodaj fotografijo"
+                                              title="Dodaj fotografijo"
+                                            >
+                                              <Camera className="h-4 w-4" />
+                                            </Button>
+                                          </div>
+                                        ) : null}
+                                      </td>
+                                      <td className="p-2 text-center align-middle" style={{ width: "40px" }}>
+                                        <Checkbox
+                                          className="h-5 w-5"
+                                          checked={isCompleted}
+                                          disabled={isConfirmationLocked}
+                                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                                            handleCompletionChange(event.target.checked)
+                                          }
+                                        />
                                       </td>
                                       <td className="p-2 text-right align-top">
                                         {item.isExtra ? (
@@ -1792,7 +1842,8 @@ export function ExecutionPanel({
                                       <PriceListProductAutocomplete
                                         value={item.name ?? ""}
                                         onChange={(value) => applyItemChange(order, item.id, { name: value })}
-                                        onSelect={(product) =>
+                                        onCustomSelected={() => applyItemChange(order, item.id, { productId: null })}
+                                        onProductSelected={(product) =>
                                           applyItemChange(order, item.id, {
                                             productId: product.id,
                                             name: product.name,
@@ -1851,20 +1902,50 @@ export function ExecutionPanel({
                                     {item.itemNote?.trim() ? (
                                       <div className="text-xs text-muted-foreground">{item.itemNote}</div>
                                     ) : null}
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 px-2 text-xs"
-                                      onClick={() => toggleExecutionDetails(item.id)}
-                                    >
-                                      {isExecutionExpanded ? (
-                                        <ChevronDown className="mr-1 h-4 w-4" />
-                                      ) : (
-                                        <ChevronRight className="mr-1 h-4 w-4" />
-                                      )}
-                                      Detajli izvedbe
-                                    </Button>
+                                    <div className="flex items-center gap-2">
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-muted-foreground"
+                                        disabled={isConfirmationLocked}
+                                        onClick={() => setActiveUnitNoteEditor({
+                                          orderId: order._id,
+                                          itemId: item.id,
+                                          unitId: item.id,
+                                          value: executionSpec.instructions ?? "",
+                                        })}
+                                        aria-label="Uredi opombo"
+                                        title="Uredi opombo"
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-muted-foreground"
+                                        onClick={() => setActiveUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: item.id })}
+                                        aria-label="Dodaj fotografijo"
+                                        title="Dodaj fotografijo"
+                                      >
+                                        <Camera className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 px-2 text-xs"
+                                        onClick={() => toggleExecutionDetails(item.id)}
+                                      >
+                                        {isExecutionExpanded ? (
+                                          <ChevronDown className="mr-1 h-4 w-4" />
+                                        ) : (
+                                          <ChevronRight className="mr-1 h-4 w-4" />
+                                        )}
+                                        Detajli izvedbe
+                                      </Button>
+                                    </div>
                                     {isExecutionExpanded
                                       ? renderExecutionDetails(order, item, {
                                           compact: true,
@@ -2246,6 +2327,59 @@ export function ExecutionPanel({
           await refreshAfterMutation();
         }}
       />
+
+      <Dialog open={Boolean(activeUnitPhotoCapture)} onOpenChange={(open) => {
+        if (!open) {
+          setActiveUnitPhotoCapture(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Fotografije enote</DialogTitle>
+          </DialogHeader>
+          {activeUnitPhotoCapture ? (
+            <PhotoCapture
+              entityType="execution-unit"
+              entityId={activeUnitPhotoCapture.unitId}
+              onPhotosChange={async (photos) => {
+                console.log("Photos uploaded for unit:", activeUnitPhotoCapture.unitId, photos);
+                
+                // Save each photo URL to the execution unit
+                for (const photo of photos) {
+                  try {
+                    const response = await fetch(
+                      `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos`,
+                      {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          ...buildTenantHeaders(),
+                        },
+                        body: JSON.stringify({
+                          photoUrl: photo.fileUrl,
+                          photoType: 'unitPhotos',
+                        }),
+                      }
+                    );
+                    
+                    if (!response.ok) {
+                      throw new Error('Failed to save photo');
+                    }
+                  } catch (error) {
+                    console.error('Error saving photo:', error);
+                    toast.error('Napaka pri shranjevanju fotografije');
+                    return;
+                  }
+                }
+                
+                toast.success(`${photos.length} fotografij shranjenih.`);
+                await refreshAfterMutation();
+              }}
+              maxPhotos={10}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
