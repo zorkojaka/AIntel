@@ -31,6 +31,8 @@ export function PhotoCapture({
   onPhotosChange,
   maxPhotos = 10,
 }: PhotoCaptureProps) {
+  const MAX_IMAGE_DIMENSION = 1920;
+  const JPEG_QUALITY = 0.8;
   const [photos, setPhotos] = useState<PhotoPreview[]>([]);
   const [cameraActive, setCameraActive] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -131,13 +133,66 @@ export function PhotoCapture({
     uploadPhoto(photoId, file);
   };
 
-  const uploadPhoto = async (photoId: string, file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('entityType', entityType);
-    formData.append('entityId', entityId);
+  const compressImage = (file: File): Promise<File> =>
+    new Promise((resolve, reject) => {
+      const image = new Image();
+      const objectUrl = URL.createObjectURL(file);
 
+      image.onload = () => {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+
+        if (!context) {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error('Canvas context unavailable'));
+          return;
+        }
+
+        const scale = Math.min(
+          1,
+          MAX_IMAGE_DIMENSION / image.width,
+          MAX_IMAGE_DIMENSION / image.height
+        );
+        const targetWidth = Math.max(1, Math.round(image.width * scale));
+        const targetHeight = Math.max(1, Math.round(image.height * scale));
+
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+        canvas.toBlob(
+          (blob) => {
+            URL.revokeObjectURL(objectUrl);
+
+            if (!blob) {
+              reject(new Error('Image compression failed'));
+              return;
+            }
+
+            const baseName = file.name.replace(/\.[^.]+$/, '') || 'photo';
+            resolve(new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' }));
+          },
+          'image/jpeg',
+          JPEG_QUALITY
+        );
+      };
+
+      image.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Image load failed'));
+      };
+
+      image.src = objectUrl;
+    });
+
+  const uploadPhoto = async (photoId: string, file: File) => {
     try {
+      const compressedFile = await compressImage(file);
+      const formData = new FormData();
+      formData.append('file', compressedFile);
+      formData.append('entityType', entityType);
+      formData.append('entityId', entityId);
+
       const response = await fetch('/api/files/upload', {
         method: 'POST',
         body: formData,

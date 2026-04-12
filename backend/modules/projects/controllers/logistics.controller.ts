@@ -222,6 +222,12 @@ function sanitizeExecutionSpec(input: any) {
                 : null,
           isCompleted: !!unit?.isCompleted,
           note: typeof unit?.note === 'string' ? unit.note : unit?.note === null ? null : null,
+          unitPhotos: Array.isArray(unit?.unitPhotos)
+            ? unit.unitPhotos.filter((photo: unknown): photo is string => typeof photo === 'string')
+            : [],
+          prepPhotos: Array.isArray(unit?.prepPhotos)
+            ? unit.prepPhotos.filter((photo: unknown): photo is string => typeof photo === 'string')
+            : [],
         }))
       : [],
   };
@@ -703,6 +709,12 @@ function sanitizeIncomingExecutionSpec(input: any) {
                   : null,
             isCompleted: !!unit?.isCompleted,
             note: typeof unit?.note === 'string' ? unit.note : unit?.note === null ? null : null,
+            unitPhotos: Array.isArray(unit?.unitPhotos)
+              ? unit.unitPhotos.filter((photo: unknown): photo is string => typeof photo === 'string')
+              : [],
+            prepPhotos: Array.isArray(unit?.prepPhotos)
+              ? unit.prepPhotos.filter((photo: unknown): photo is string => typeof photo === 'string')
+              : [],
           };
         })
         .filter((unit): unit is NonNullable<typeof unit> => unit !== null)
