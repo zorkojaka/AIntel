@@ -30,6 +30,7 @@ interface FinanceSnapshotItem {
   totalSale: number;
   totalPurchase: number;
   margin: number;
+  isService?: boolean;
 }
 
 interface SnapshotEmployeeEarning {
@@ -97,15 +98,6 @@ interface EmployeeProjectBreakdown {
   customerName: string;
   issuedAt: string;
   earnings: number;
-  isPaid: boolean;
-}
-
-interface ExecutionProjectEarningRow {
-  snapshotId: string;
-  projectId: string;
-  issuedAt: string;
-  servicesDone: string;
-  earnedAmount: number;
   isPaid: boolean;
 }
 
@@ -356,12 +348,17 @@ export const FinancePage: React.FC = () => {
         const employeeEarning = snapshot.employeeEarnings.find((entry) => entry.employeeId === employeeId);
         if (!employeeEarning) return null;
         const isPaid = paidByEmployee[employeeId] ?? employeeEarning.isPaid;
+        const servicesDone = snapshot.items
+          .filter((item) => item.isService)
+          .map((item) => `${item.name} (${item.quantity} ${item.unit})`)
+          .join(', ');
         return {
           id: snapshot._id,
           projectId: snapshot.projectId,
           invoiceNumber: snapshot.invoiceNumber,
           customerName: snapshot.customer?.name ?? '-',
           issuedAt: snapshot.issuedAt,
+          servicesDone: servicesDone || '-',
           earnings: employeeEarning.earnings,
           isPaid,
         };
@@ -602,6 +599,7 @@ export const FinancePage: React.FC = () => {
                     <div>
                       <h3>{project.projectId}</h3>
                       <p>{project.customerName} · {new Date(project.issuedAt).toLocaleDateString('sl-SI')}</p>
+                      <p>Opravljene storitve: {project.servicesDone}</p>
                     </div>
                     <div>
                       <strong>{currency.format(project.earnings)}</strong>
