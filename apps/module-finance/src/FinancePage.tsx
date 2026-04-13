@@ -3,8 +3,15 @@ import './FinancePage.css';
 
 type Role = 'ADMIN' | 'FINANCE' | 'EXECUTION' | 'SALES' | 'ORGANIZER';
 type TabKey = 'projekti' | 'zaposleni' | 'podjetje';
-type PeriodMode = 'week' | 'month' | 'quarter' | 'year';
-type ProjectStatusFilter = 'all' | 'paid' | 'pending';
+
+interface MePayload {
+  employeeId?: string | null;
+  roles?: string[];
+  employee?: {
+    id?: string;
+    roles?: string[];
+  } | null;
+}
 
 interface ApiEnvelope<T> {
   success: boolean;
@@ -12,22 +19,19 @@ interface ApiEnvelope<T> {
   error?: string;
 }
 
-interface MePayload {
-  employeeId?: string | null;
-  roles?: string[];
-}
-
 interface FinanceSnapshotItem {
+  productId: string | null;
   name: string;
   unit: string;
   quantity: number;
+  unitPriceSale: number;
+  unitPricePurchase: number;
   totalSale: number;
   totalPurchase: number;
   margin: number;
-  isService?: boolean;
 }
 
-interface EmployeeEarning {
+interface SnapshotEmployeeEarning {
   employeeId: string;
   earnings: number;
   isPaid: boolean;
@@ -40,12 +44,13 @@ interface FinanceSnapshot {
   issuedAt: string;
   customer: { name: string };
   summary: {
+    totalSaleWithVat: number;
     totalSaleWithoutVat: number;
     totalPurchase: number;
     totalMargin: number;
   };
   items: FinanceSnapshotItem[];
-  employeeEarnings: EmployeeEarning[];
+  employeeEarnings: SnapshotEmployeeEarning[];
 }
 
 interface SnapshotListEnvelope {
@@ -55,15 +60,14 @@ interface SnapshotListEnvelope {
 interface EmployeeSummary {
   employeeId: string;
   employeeName: string;
+  totalEarned: number;
+  totalPaid: number;
+  totalUnpaid: number;
 }
 
 interface MonthlySummary {
   month: number;
   totalSaleWithVat: number;
-  totalSaleWithoutVat: number;
-  totalPurchase: number;
-  totalMargin: number;
-  projectCount: number;
 }
 
 interface ProductFrequency {
@@ -79,146 +83,63 @@ interface PipelineSummary {
   winRate: number;
 }
 
-interface PeriodCardData {
-  key: 'previous' | 'current' | 'next';
-  label: string;
-  name: string;
-  revenue: number;
-  purchase: number;
-  margin: number;
-  marginPercent: number;
-  projects: number;
-  openOffers?: number;
-  pipelineDetails?: {
-    accepted: number;
-    draft: number;
-    offered: number;
-    expectedRevenue: number;
-  };
+interface EmployeeProjectBreakdown {
+  projectId: string;
+  invoiceNumber: string;
+  customerName: string;
+  issuedAt: string;
+  earnings: number;
+  isPaid: boolean;
 }
 
-interface EmployeeRow {
-  employeeId: string;
-  employeeName: string;
-  projectsCount: number;
-  servicesCount: number;
-  totalEarned: number;
-  totalPaid: number;
-  totalUnpaid: number;
-  breakdown: Array<{
-    projectId: string;
-    customer: string;
-    date: string;
-    servicesLabel: string;
-    earnings: number;
-    isPaid: boolean;
-  }>;
+interface ExecutionProjectEarningRow {
+  snapshotId: string;
+  projectId: string;
+  issuedAt: string;
+  servicesDone: string;
+  earnedAmount: number;
+  isPaid: boolean;
 }
 
-const currency = new Intl.NumberFormat('sl-SI', {
-  style: 'currency',
-  currency: 'EUR',
-  maximumFractionDigits: 0,
-});
+const currency = new Intl.NumberFormat('sl-SI', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 });
 
-async function getApi<T>(url: string): Promise<T> {
+async function fetchApi<T>(url: string): Promise<T> {
   const response = await fetch(url, {
     method: 'GET',
     credentials: 'include',
-    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    headers: {
+      Accept: 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+    },
   });
+
   const payload = (await response.json()) as ApiEnvelope<T>;
   if (!response.ok || !payload.success) {
-    throw new Error(payload.error ?? `API napaka (${response.status})`);
+    throw new Error(payload.error ?? `Napaka API (${response.status})`);
   }
   return payload.data;
 }
 
-function startOfWeek(date: Date) {
-  const value = new Date(date);
-  const day = value.getDay();
-  const diff = (day + 6) % 7;
-  value.setDate(value.getDate() - diff);
-  value.setHours(0, 0, 0, 0);
-  return value;
+function toIsoDay(value: string) {
+  return new Date(value).toISOString().slice(0, 10);
 }
 
-function addPeriod(date: Date, mode: PeriodMode, offset: number) {
-  const value = new Date(date);
-  if (mode === 'week') {
-    value.setDate(value.getDate() + offset * 7);
-    return value;
-  }
-  if (mode === 'month') {
-    value.setMonth(value.getMonth() + offset);
-    return value;
-  }
-  if (mode === 'quarter') {
-    value.setMonth(value.getMonth() + offset * 3);
-    return value;
-  }
-  value.setFullYear(value.getFullYear() + offset);
-  return value;
+function statusLabel(isPaid: boolean) {
+  return isPaid ? 'Plačano' : 'Čaka na plačilo';
 }
 
-function periodBounds(anchor: Date, mode: PeriodMode) {
-  if (mode === 'week') {
-    const start = startOfWeek(anchor);
-    const end = addPeriod(start, 'week', 1);
-    return { start, end };
-  }
-  if (mode === 'month') {
-    const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-    const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1);
-    return { start, end };
-  }
-  if (mode === 'quarter') {
-    const quarterStartMonth = Math.floor(anchor.getMonth() / 3) * 3;
-    const start = new Date(anchor.getFullYear(), quarterStartMonth, 1);
-    const end = new Date(anchor.getFullYear(), quarterStartMonth + 3, 1);
-    return { start, end };
-  }
-  const start = new Date(anchor.getFullYear(), 0, 1);
-  const end = new Date(anchor.getFullYear() + 1, 0, 1);
-  return { start, end };
+function marginClass(marginPercent: number) {
+  if (marginPercent > 40) return 'is-high';
+  if (marginPercent >= 20) return 'is-medium';
+  return 'is-low';
 }
 
-function periodLabel(mode: PeriodMode, key: 'previous' | 'current' | 'next') {
-  const map: Record<PeriodMode, Record<'previous' | 'current' | 'next', string>> = {
-    week: { previous: 'Prejšnji teden', current: 'Trenutni teden', next: 'Naslednji teden' },
-    month: { previous: 'Prejšnji mesec', current: 'Trenutni mesec', next: 'Naslednji mesec' },
-    quarter: { previous: 'Prejšnja četrtina', current: 'Trenutna četrtina', next: 'Naslednja četrtina' },
-    year: { previous: 'Prejšnje leto', current: 'Trenutno leto', next: 'Napoved' },
-  };
-  return map[mode][key];
-}
-
-function marginBadgeClass(value: number) {
-  if (value > 40) return 'badge-green';
-  if (value >= 20) return 'badge-amber';
-  return 'badge-red';
-}
-
-function statusClass(isPaid: boolean) {
-  return isPaid ? 'badge-green' : 'badge-amber';
-}
-
-function formatPeriodName(anchor: Date, mode: PeriodMode) {
-  if (mode === 'week') {
-    return `Teden ${anchor.toLocaleDateString('sl-SI', { day: '2-digit', month: '2-digit' })}`;
-  }
-  if (mode === 'month') {
-    return anchor.toLocaleDateString('sl-SI', { month: 'short', year: 'numeric' });
-  }
-  if (mode === 'quarter') {
-    return `Q${Math.floor(anchor.getMonth() / 3) + 1} ${anchor.getFullYear()}`;
-  }
-  return `${anchor.getFullYear()}`;
+function formatMonthLabel(month: number) {
+  return new Date(Date.UTC(new Date().getFullYear(), month - 1, 1)).toLocaleString('sl-SI', { month: 'long' });
 }
 
 export const FinancePage: React.FC = () => {
   const [tab, setTab] = useState<TabKey>('projekti');
-  const [periodMode, setPeriodMode] = useState<PeriodMode>('month');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -231,48 +152,49 @@ export const FinancePage: React.FC = () => {
   const [products, setProducts] = useState<ProductFrequency[]>([]);
   const [pipeline, setPipeline] = useState<PipelineSummary | null>(null);
 
+  const [projectSearch, setProjectSearch] = useState('');
   const [projectFrom, setProjectFrom] = useState('');
   const [projectTo, setProjectTo] = useState('');
-  const [projectSearch, setProjectSearch] = useState('');
-  const [projectStatusFilter, setProjectStatusFilter] = useState<ProjectStatusFilter>('all');
+  const [employeesFrom, setEmployeesFrom] = useState('');
+  const [employeesTo, setEmployeesTo] = useState('');
 
-  const [employeeFrom, setEmployeeFrom] = useState('');
-  const [employeeTo, setEmployeeTo] = useState('');
-  const [employeeFilter, setEmployeeFilter] = useState('all');
-
-  const [expandedProject, setExpandedProject] = useState<Record<string, boolean>>({});
-  const [expandedEmployee, setExpandedEmployee] = useState<Record<string, boolean>>({});
-  const [paidOverride, setPaidOverride] = useState<Record<string, boolean>>({});
+  const [expandedProjectRows, setExpandedProjectRows] = useState<Record<string, boolean>>({});
+  const [expandedEmployeeRows, setExpandedEmployeeRows] = useState<Record<string, boolean>>({});
+  const [paidByEmployee, setPaidByEmployee] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
-    async function loadData() {
+
+    async function load() {
       setLoading(true);
       setError(null);
       try {
-        const me = await getApi<MePayload>('/api/auth/me');
-        const resolvedRoles = (me.roles ?? []) as Role[];
-        const canSeeCompany = resolvedRoles.includes('ADMIN') || resolvedRoles.includes('FINANCE');
+        const me = await fetchApi<MePayload>('/api/auth/me');
+        const mappedRoles = (me.roles ?? []) as Role[];
+        const canSeeCompany = mappedRoles.includes('ADMIN') || mappedRoles.includes('FINANCE');
 
-        const [snapshotData, employeesData, monthlyData, productsData, pipelineData] = await Promise.all([
-          getApi<SnapshotListEnvelope>('/api/finance/snapshots?limit=300'),
-          getApi<EmployeeSummary[]>('/api/finance/employees-summary'),
-          canSeeCompany ? getApi<MonthlySummary[]>(`/api/finance/monthly-summary?year=${new Date().getFullYear()}`) : Promise.resolve([]),
-          canSeeCompany ? getApi<ProductFrequency[]>('/api/finance/product-frequency?limit=10') : Promise.resolve([]),
-          canSeeCompany ? getApi<PipelineSummary>('/api/finance/pipeline') : Promise.resolve(null),
+        const [snapshotData, employeeData, monthlyData, productData, pipelineData] = await Promise.all([
+          fetchApi<SnapshotListEnvelope>('/api/finance/snapshots?limit=300'),
+          fetchApi<EmployeeSummary[]>('/api/finance/employees-summary'),
+          canSeeCompany
+            ? fetchApi<MonthlySummary[]>(`/api/finance/monthly-summary?year=${new Date().getFullYear()}`)
+            : Promise.resolve([]),
+          canSeeCompany ? fetchApi<ProductFrequency[]>('/api/finance/product-frequency?limit=10') : Promise.resolve([]),
+          canSeeCompany ? fetchApi<PipelineSummary>('/api/finance/pipeline') : Promise.resolve(null),
         ]);
 
         if (cancelled) return;
-        setRoles(resolvedRoles);
+
+        setRoles(mappedRoles);
         setEmployeeId(me.employeeId ?? null);
         setSnapshots(snapshotData.items ?? []);
-        setEmployees(employeesData);
+        setEmployees(employeeData);
         setMonthly(monthlyData);
-        setProducts(productsData);
+        setProducts(productData);
         setPipeline(pipelineData);
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : 'Napaka pri nalaganju.');
+          setError(loadError instanceof Error ? loadError.message : 'Napaka pri nalaganju podatkov.');
         }
       } finally {
         if (!cancelled) {
@@ -281,7 +203,7 @@ export const FinancePage: React.FC = () => {
       }
     }
 
-    loadData();
+    load();
     return () => {
       cancelled = true;
     };
@@ -291,188 +213,138 @@ export const FinancePage: React.FC = () => {
     const roleSet = new Set(roles);
     return roleSet.has('EXECUTION') && !roleSet.has('ADMIN') && !roleSet.has('FINANCE');
   }, [roles]);
+  const isAdminOrFinance = useMemo(() => roles.includes('ADMIN') || roles.includes('FINANCE'), [roles]);
 
-  const roleBadge = isExecutionOnly ? 'MONTER' : 'ADMIN';
-
-  const snapshotsWithPayment = useMemo(() => {
-    return snapshots.map((snapshot) => {
-      const isPaid = snapshot.employeeEarnings.length > 0
-        ? snapshot.employeeEarnings.every((row) => paidOverride[row.employeeId] ?? row.isPaid)
-        : false;
-      return { ...snapshot, isPaid };
-    });
-  }, [paidOverride, snapshots]);
-
-  const filteredProjects = useMemo(() => {
+  const filteredSnapshots = useMemo(() => {
     const term = projectSearch.trim().toLowerCase();
-    return snapshotsWithPayment.filter((snapshot) => {
-      const date = new Date(snapshot.issuedAt).toISOString().slice(0, 10);
-      if (projectFrom && date < projectFrom) return false;
-      if (projectTo && date > projectTo) return false;
-      if (projectStatusFilter === 'paid' && !snapshot.isPaid) return false;
-      if (projectStatusFilter === 'pending' && snapshot.isPaid) return false;
+    return snapshots.filter((snapshot) => {
+      const day = toIsoDay(snapshot.issuedAt);
+      if (projectFrom && day < projectFrom) return false;
+      if (projectTo && day > projectTo) return false;
       if (!term) return true;
       return (
-        snapshot.projectId.toLowerCase().includes(term)
-        || snapshot.customer.name.toLowerCase().includes(term)
-        || snapshot.invoiceNumber.toLowerCase().includes(term)
+        snapshot.projectId.toLowerCase().includes(term) ||
+        snapshot.customer?.name?.toLowerCase().includes(term) ||
+        snapshot.invoiceNumber.toLowerCase().includes(term)
       );
     });
-  }, [projectFrom, projectSearch, projectStatusFilter, projectTo, snapshotsWithPayment]);
+  }, [projectFrom, projectSearch, projectTo, snapshots]);
 
-  const projectKpi = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const prevYear = currentYear - 1;
-    const current = filteredProjects.filter((row) => new Date(row.issuedAt).getFullYear() === currentYear);
-    const previous = filteredProjects.filter((row) => new Date(row.issuedAt).getFullYear() === prevYear);
+  const projectSummary = useMemo(() => {
+    const totalRevenue = filteredSnapshots.reduce((sum, row) => sum + row.summary.totalSaleWithoutVat, 0);
+    const totalMargin = filteredSnapshots.reduce((sum, row) => sum + row.summary.totalMargin, 0);
+    const avgMarginPercent = totalRevenue > 0 ? (totalMargin / totalRevenue) * 100 : 0;
+    return {
+      totalRevenue,
+      totalMargin,
+      avgMarginPercent,
+      projectCount: filteredSnapshots.length,
+    };
+  }, [filteredSnapshots]);
 
-    const revenue = filteredProjects.reduce((sum, row) => sum + row.summary.totalSaleWithoutVat, 0);
-    const margin = filteredProjects.reduce((sum, row) => sum + row.summary.totalMargin, 0);
-    const purchase = filteredProjects.reduce((sum, row) => sum + row.summary.totalPurchase, 0);
+  const employeeBreakdownMap = useMemo(() => {
+    const map = new Map<string, EmployeeProjectBreakdown[]>();
 
-    const currentRevenue = current.reduce((sum, row) => sum + row.summary.totalSaleWithoutVat, 0);
-    const previousRevenue = previous.reduce((sum, row) => sum + row.summary.totalSaleWithoutVat, 0);
-
-    const currentCount = current.length;
-    const previousCount = previous.length;
-
-    const revenueChange = previousRevenue > 0 ? ((currentRevenue - previousRevenue) / previousRevenue) * 100 : 0;
-    const invoiceChange = currentCount - previousCount;
-    const marginPercent = revenue > 0 ? (margin / revenue) * 100 : 0;
-    const purchasePercent = revenue > 0 ? (purchase / revenue) * 100 : 0;
-
-    return { revenue, margin, purchase, invoices: filteredProjects.length, revenueChange, invoiceChange, marginPercent, purchasePercent };
-  }, [filteredProjects]);
-
-  const employeeRows = useMemo(() => {
-    const mapByEmployee = new Map<string, EmployeeRow>();
-
-    snapshotsWithPayment.forEach((snapshot) => {
-      const snapshotDate = new Date(snapshot.issuedAt).toISOString().slice(0, 10);
-      if (employeeFrom && snapshotDate < employeeFrom) return;
-      if (employeeTo && snapshotDate > employeeTo) return;
-
-      const services = snapshot.items.filter((item) => item.isService);
-      const servicesCount = services.reduce((sum, item) => sum + item.quantity, 0);
-      const serviceLabel = services.length
-        ? services.map((item) => `${item.quantity}× ${item.name}`).join(', ')
-        : '—';
+    snapshots.forEach((snapshot) => {
+      const issuedDay = toIsoDay(snapshot.issuedAt);
+      if (employeesFrom && issuedDay < employeesFrom) return;
+      if (employeesTo && issuedDay > employeesTo) return;
 
       snapshot.employeeEarnings.forEach((earning) => {
-        if (isExecutionOnly && employeeId && earning.employeeId !== employeeId) return;
-        const key = earning.employeeId;
-
-        const existing = mapByEmployee.get(key) ?? {
-          employeeId: key,
-          employeeName: employees.find((employee) => employee.employeeId === key)?.employeeName ?? key,
-          projectsCount: 0,
-          servicesCount: 0,
-          totalEarned: 0,
-          totalPaid: 0,
-          totalUnpaid: 0,
-          breakdown: [],
-        };
-
-        const paid = paidOverride[key] ?? earning.isPaid;
-        existing.projectsCount += 1;
-        existing.servicesCount += servicesCount;
-        existing.totalEarned += earning.earnings;
-        existing.totalPaid += paid ? earning.earnings : 0;
-        existing.totalUnpaid += paid ? 0 : earning.earnings;
-        existing.breakdown.push({
+        const resolvedPaid = paidByEmployee[earning.employeeId] ?? earning.isPaid;
+        const entry: EmployeeProjectBreakdown = {
           projectId: snapshot.projectId,
-          customer: snapshot.customer.name,
-          date: snapshot.issuedAt,
-          servicesLabel: serviceLabel,
+          invoiceNumber: snapshot.invoiceNumber,
+          customerName: snapshot.customer?.name ?? '-',
+          issuedAt: snapshot.issuedAt,
           earnings: earning.earnings,
-          isPaid: paid,
-        });
-
-        mapByEmployee.set(key, existing);
+          isPaid: resolvedPaid,
+        };
+        const list = map.get(earning.employeeId) ?? [];
+        list.push(entry);
+        map.set(earning.employeeId, list);
       });
     });
 
-    const rows = Array.from(mapByEmployee.values());
-    if (employeeFilter !== 'all') {
-      return rows.filter((row) => row.employeeId === employeeFilter);
-    }
-    return rows;
-  }, [employeeFilter, employeeFrom, employeeId, employeeTo, employees, isExecutionOnly, paidOverride, snapshotsWithPayment]);
+    return map;
+  }, [employeesFrom, employeesTo, paidByEmployee, snapshots]);
 
-  const employeeKpi = useMemo(() => {
+  const employeeRows = useMemo(() => {
+    return employees
+      .map((employee) => {
+        const projects = employeeBreakdownMap.get(employee.employeeId) ?? [];
+        const totalEarned = projects.reduce((sum, project) => sum + project.earnings, 0);
+        const totalPaid = projects.filter((project) => project.isPaid).reduce((sum, project) => sum + project.earnings, 0);
+        return {
+          employeeId: employee.employeeId,
+          employeeName: employee.employeeName,
+          projectCount: new Set(projects.map((project) => project.projectId)).size,
+          totalEarned,
+          totalPaid,
+          totalUnpaid: totalEarned - totalPaid,
+          projects,
+        };
+      })
+      .filter((row) => (!isExecutionOnly ? true : row.employeeId === employeeId));
+  }, [employeeBreakdownMap, employeeId, employees, isExecutionOnly]);
+
+  const employeeSummary = useMemo(() => {
     const totalEarned = employeeRows.reduce((sum, row) => sum + row.totalEarned, 0);
     const totalPaid = employeeRows.reduce((sum, row) => sum + row.totalPaid, 0);
-    return { totalEarned, totalPaid, totalUnpaid: totalEarned - totalPaid };
+    return {
+      totalEarned,
+      totalPaid,
+      totalUnpaid: totalEarned - totalPaid,
+    };
   }, [employeeRows]);
 
-  const periodCards = useMemo(() => {
-    const currentDate = new Date();
-    const statuses = new Map((pipeline?.statuses ?? []).map((item) => [item.status, item]));
-
-    const buildCard = (key: 'previous' | 'current' | 'next', offset: number): PeriodCardData => {
-      const anchor = addPeriod(currentDate, periodMode, offset);
-      const bounds = periodBounds(anchor, periodMode);
-      const periodRows = snapshotsWithPayment.filter((snapshot) => {
-        const date = new Date(snapshot.issuedAt);
-        return date >= bounds.start && date < bounds.end;
-      });
-
-      const revenue = periodRows.reduce((sum, row) => sum + row.summary.totalSaleWithoutVat, 0);
-      const purchase = periodRows.reduce((sum, row) => sum + row.summary.totalPurchase, 0);
-      const margin = periodRows.reduce((sum, row) => sum + row.summary.totalMargin, 0);
-      const marginPercent = revenue > 0 ? (margin / revenue) * 100 : 0;
-
-      const base: PeriodCardData = {
-        key,
-        label: periodLabel(periodMode, key),
-        name: formatPeriodName(anchor, periodMode),
-        revenue,
-        purchase,
-        margin,
-        marginPercent,
-        projects: periodRows.length,
-      };
-
-      if (key === 'current') {
-        base.openOffers = (statuses.get('draft')?.totalGross ?? 0) + (statuses.get('offered')?.totalGross ?? 0);
-      }
-
-      if (key === 'next') {
-        base.pipelineDetails = {
-          accepted: statuses.get('accepted')?.count ?? 0,
-          draft: statuses.get('draft')?.count ?? 0,
-          offered: statuses.get('offered')?.count ?? 0,
-          expectedRevenue: statuses.get('offered')?.totalGross ?? 0,
+  const executionProjects = useMemo(() => {
+    if (!isExecutionOnly || !employeeId) return [];
+    return snapshots
+      .map((snapshot) => {
+        const employeeEarning = snapshot.employeeEarnings.find((entry) => entry.employeeId === employeeId);
+        if (!employeeEarning) return null;
+        const isPaid = paidByEmployee[employeeId] ?? employeeEarning.isPaid;
+        return {
+          id: snapshot._id,
+          projectId: snapshot.projectId,
+          invoiceNumber: snapshot.invoiceNumber,
+          customerName: snapshot.customer?.name ?? '-',
+          issuedAt: snapshot.issuedAt,
+          earnings: employeeEarning.earnings,
+          isPaid,
         };
-      }
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+  }, [employeeId, isExecutionOnly, paidByEmployee, snapshots]);
 
-      return base;
-    };
+  const monthlyMax = useMemo(() => monthly.reduce((max, row) => Math.max(max, row.totalSaleWithVat), 0), [monthly]);
 
-    return [buildCard('previous', -1), buildCard('current', 0), buildCard('next', 1)];
-  }, [periodMode, pipeline, snapshotsWithPayment]);
-
-  const pipelineMap = useMemo(() => {
-    return new Map((pipeline?.statuses ?? []).map((item) => [item.status, item]));
+  const pipelineByStatus = useMemo(() => {
+    const map = new Map<string, { count: number; totalGross: number }>();
+    (pipeline?.statuses ?? []).forEach((status) => {
+      map.set(status.status, status);
+    });
+    return map;
   }, [pipeline]);
 
-  const topProducts = useMemo(() => {
-    return products.map((product) => {
-      const marginPercent = product.totalRevenue > 0 ? (product.totalMargin / product.totalRevenue) * 100 : 0;
-      return { ...product, marginPercent };
-    });
-  }, [products]);
+  const totalOpenOfferValue = useMemo(() => {
+    const draft = pipelineByStatus.get('draft')?.totalGross ?? 0;
+    const offered = pipelineByStatus.get('offered')?.totalGross ?? 0;
+    return draft + offered;
+  }, [pipelineByStatus]);
 
-  const toggleProject = (id: string) => {
-    setExpandedProject((current) => ({ ...current, [id]: !current[id] }));
+  const toggleProjectRow = (id: string) => {
+    setExpandedProjectRows((current) => ({ ...current, [id]: !current[id] }));
   };
 
-  const toggleEmployee = (id: string) => {
-    setExpandedEmployee((current) => ({ ...current, [id]: !current[id] }));
+  const toggleEmployeeRow = (id: string) => {
+    setExpandedEmployeeRows((current) => ({ ...current, [id]: !current[id] }));
   };
 
-  const markPaid = (id: string) => {
-    setPaidOverride((current) => ({ ...current, [id]: true }));
+  const markEmployeePaid = (id: string) => {
+    if (!isAdminOrFinance) return;
+    setPaidByEmployee((current) => ({ ...current, [id]: true }));
   };
 
   if (loading) {
@@ -480,96 +352,95 @@ export const FinancePage: React.FC = () => {
       <div className="finance-page">
         <div className="finance-skeleton" />
         <div className="finance-skeleton" />
+        <div className="finance-skeleton" />
       </div>
     );
   }
 
   if (error) {
-    return <div className="finance-page"><div className="finance-error">{error}</div></div>;
+    return <div className="finance-page"><div className="finance-state finance-state--error">{error}</div></div>;
   }
 
   return (
     <div className="finance-page">
-      <header className="finance-top-bar">
-        <h1>Finance</h1>
-        <span className="role-pill">{roleBadge}</span>
+      <header className="finance-header-card">
+        <div>
+          <h1 className="finance-page__title">Finance</h1>
+          <p className="finance-page__subtitle">Pregled prihodkov, marž, zaslužkov ekip in prodajnega pipeline-a.</p>
+        </div>
+        <div className="finance-tabs" role="tablist" aria-label="Finance tabs">
+          <button className={tab === 'projekti' ? 'is-active' : ''} onClick={() => setTab('projekti')}>Projekti</button>
+          <button className={tab === 'zaposleni' ? 'is-active' : ''} onClick={() => setTab('zaposleni')}>Zaposleni</button>
+          {!isExecutionOnly && (
+            <button className={tab === 'podjetje' ? 'is-active' : ''} onClick={() => setTab('podjetje')}>Podjetje</button>
+          )}
+        </div>
       </header>
-
-      <nav className="finance-tabs" aria-label="Finance tabs">
-        <button className={tab === 'projekti' ? 'is-active' : ''} onClick={() => setTab('projekti')}>Projekti</button>
-        <button className={tab === 'zaposleni' ? 'is-active' : ''} onClick={() => setTab('zaposleni')}>Zaposleni</button>
-        {!isExecutionOnly && <button className={tab === 'podjetje' ? 'is-active' : ''} onClick={() => setTab('podjetje')}>Podjetje</button>}
-      </nav>
 
       {tab === 'projekti' && (
         <>
-          <section className="kpi-grid kpi-grid--four">
-            <article className="kpi-card"><span>Skupaj prihodki</span><strong>{currency.format(projectKpi.revenue)}</strong><small>{projectKpi.revenueChange.toFixed(0)}% vs lani</small></article>
-            <article className="kpi-card"><span>Marža skupaj</span><strong>{currency.format(projectKpi.margin)}</strong><small>{projectKpi.marginPercent.toFixed(0)}% avg</small></article>
-            <article className="kpi-card"><span>Nabavni stroški</span><strong>{currency.format(projectKpi.purchase)}</strong><small>{projectKpi.purchasePercent.toFixed(0)}% prihodkov</small></article>
-            <article className="kpi-card"><span>Izdani računi</span><strong>{projectKpi.invoices}</strong><small>{projectKpi.invoiceChange >= 0 ? '+' : ''}{projectKpi.invoiceChange} vs lani</small></article>
+          <section className="finance-cards-grid">
+            <article className="finance-card"><span>Skupaj prihodki</span><strong>{currency.format(projectSummary.totalRevenue)}</strong></article>
+            <article className="finance-card"><span>Skupaj marža</span><strong>{currency.format(projectSummary.totalMargin)}</strong></article>
+            <article className="finance-card"><span>Povp. marža %</span><strong>{projectSummary.avgMarginPercent.toFixed(2)}%</strong></article>
+            <article className="finance-card"><span>Število projektov</span><strong>{projectSummary.projectCount}</strong></article>
           </section>
 
-          <section className="finance-block">
-            <div className="filter-bar">
-              <input type="date" value={projectFrom} onChange={(event) => setProjectFrom(event.target.value)} />
-              <input type="date" value={projectTo} onChange={(event) => setProjectTo(event.target.value)} />
-              <input type="search" placeholder="Išči projekt / stranko / račun..." value={projectSearch} onChange={(event) => setProjectSearch(event.target.value)} />
-              <select value={projectStatusFilter} onChange={(event) => setProjectStatusFilter(event.target.value as ProjectStatusFilter)}>
-                <option value="all">Vsi statusi</option>
-                <option value="paid">Plačano</option>
-                <option value="pending">Čaka na plačilo</option>
-              </select>
+          <section className="finance-panel">
+            <div className="finance-filter-bar">
+              <input type="date" value={projectFrom} onChange={(event) => setProjectFrom(event.target.value)} aria-label="Datum od" />
+              <input type="date" value={projectTo} onChange={(event) => setProjectTo(event.target.value)} aria-label="Datum do" />
+              <input
+                type="search"
+                placeholder="Išči po stranki/projektu/računu"
+                value={projectSearch}
+                onChange={(event) => setProjectSearch(event.target.value)}
+              />
             </div>
 
-            {filteredProjects.length === 0 ? (
-              <div className="finance-empty">Še ni izdanih računov.</div>
+            {filteredSnapshots.length === 0 ? (
+              <div className="finance-state">Še ni izdanih računov za izbrane filtre.</div>
             ) : (
-              <div className="table-wrap">
+              <div className="finance-table-wrap">
                 <table className="finance-table">
                   <thead>
                     <tr>
-                      <th />
-                      <th>Projekt</th>
-                      <th>Stranka</th>
-                      <th>Račun</th>
-                      <th>Datum</th>
-                      <th>Prodaja</th>
-                      <th>Nabava</th>
-                      <th>Marža €</th>
-                      <th>Marža %</th>
-                      <th>Status</th>
+                      <th>Račun</th><th>Projekt</th><th>Stranka</th><th>Datum</th><th>Prodaja (brez DDV)</th><th>Nabavna vrednost</th><th>Marža €</th><th>Marža %</th><th>Status plačila</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredProjects.map((snapshot) => {
+                    {filteredSnapshots.map((snapshot) => {
                       const marginPercent = snapshot.summary.totalSaleWithoutVat > 0
                         ? (snapshot.summary.totalMargin / snapshot.summary.totalSaleWithoutVat) * 100
                         : 0;
+                      const isPaid = snapshot.employeeEarnings.length > 0
+                        ? snapshot.employeeEarnings.every((earning) => paidByEmployee[earning.employeeId] ?? earning.isPaid)
+                        : false;
                       return (
                         <React.Fragment key={snapshot._id}>
-                          <tr className="main-row" onClick={() => toggleProject(snapshot._id)}>
-                            <td>{expandedProject[snapshot._id] ? '▼' : '▶'}</td>
-                            <td className="strong">{snapshot.projectId}</td>
-                            <td>{snapshot.customer.name}</td>
-                            <td className="muted">{snapshot.invoiceNumber}</td>
+                          <tr className="is-clickable" onClick={() => toggleProjectRow(snapshot._id)}>
+                            <td>{snapshot.invoiceNumber}</td>
+                            <td>{snapshot.projectId}</td>
+                            <td>{snapshot.customer?.name ?? '-'}</td>
                             <td>{new Date(snapshot.issuedAt).toLocaleDateString('sl-SI')}</td>
                             <td>{currency.format(snapshot.summary.totalSaleWithoutVat)}</td>
                             <td>{currency.format(snapshot.summary.totalPurchase)}</td>
                             <td>{currency.format(snapshot.summary.totalMargin)}</td>
-                            <td><span className={`tag ${marginBadgeClass(marginPercent)}`}>{marginPercent.toFixed(0)}%</span></td>
-                            <td><span className={`tag ${statusClass(snapshot.isPaid)}`}>{snapshot.isPaid ? 'Plačano' : 'Čaka'}</span></td>
+                            <td><span className={`margin-badge ${marginClass(marginPercent)}`}>{marginPercent.toFixed(2)}%</span></td>
+                            <td><span className={`status-badge ${isPaid ? 'is-paid' : 'is-pending'}`}>{statusLabel(isPaid)}</span></td>
                           </tr>
-                          {expandedProject[snapshot._id] && (
-                            <tr>
-                              <td colSpan={10} className="inner-cell">
+                          {expandedProjectRows[snapshot._id] && (
+                            <tr className="expanded-row">
+                              <td colSpan={9}>
                                 <table className="inner-table">
                                   <thead>
-                                    <tr><th>Artikel</th><th>Količina</th><th>Prodajna cena</th><th>Nabavna cena</th><th>Marža</th></tr>
+                                    <tr>
+                                      <th>Artikel</th><th>Količina</th><th>Prodajna cena</th><th>Nabavna cena</th><th>Marža</th>
+                                    </tr>
                                   </thead>
                                   <tbody>
                                     {snapshot.items.map((item, index) => (
-                                      <tr key={`${snapshot._id}-${index}`}>
+                                      <tr key={`${snapshot._id}-${item.productId ?? 'x'}-${index}`}>
                                         <td>{item.name}</td>
                                         <td>{item.quantity} {item.unit}</td>
                                         <td>{currency.format(item.totalSale)}</td>
@@ -595,63 +466,57 @@ export const FinancePage: React.FC = () => {
 
       {tab === 'zaposleni' && !isExecutionOnly && (
         <>
-          <section className="kpi-grid">
-            <article className="kpi-card"><span>Skupaj zaslužki</span><strong>{currency.format(employeeKpi.totalEarned)}</strong></article>
-            <article className="kpi-card"><span>Plačano</span><strong className="value-green">{currency.format(employeeKpi.totalPaid)}</strong></article>
-            <article className="kpi-card"><span>Neplačano</span><strong className="value-amber">{currency.format(employeeKpi.totalUnpaid)}</strong></article>
+          <section className="finance-cards-grid">
+            <article className="finance-card"><span>Skupaj zaslužki</span><strong>{currency.format(employeeSummary.totalEarned)}</strong></article>
+            <article className="finance-card"><span>Plačano</span><strong>{currency.format(employeeSummary.totalPaid)}</strong></article>
+            <article className="finance-card"><span>Neplačano</span><strong>{currency.format(employeeSummary.totalUnpaid)}</strong></article>
           </section>
 
-          <section className="finance-block">
-            <div className="filter-bar">
-              <input type="date" value={employeeFrom} onChange={(event) => setEmployeeFrom(event.target.value)} />
-              <input type="date" value={employeeTo} onChange={(event) => setEmployeeTo(event.target.value)} />
-              <select value={employeeFilter} onChange={(event) => setEmployeeFilter(event.target.value)}>
-                <option value="all">Vsi zaposleni</option>
-                {employees.map((employee) => (
-                  <option key={employee.employeeId} value={employee.employeeId}>{employee.employeeName}</option>
-                ))}
-              </select>
+          <section className="finance-panel">
+            <div className="finance-filter-bar">
+              <input type="date" value={employeesFrom} onChange={(event) => setEmployeesFrom(event.target.value)} aria-label="Datum od" />
+              <input type="date" value={employeesTo} onChange={(event) => setEmployeesTo(event.target.value)} aria-label="Datum do" />
             </div>
 
             {employeeRows.length === 0 ? (
-              <div className="finance-empty">Ni podatkov o zaslužkih.</div>
+              <div className="finance-state">Ni zaslužkov za izbran datum.</div>
             ) : (
-              <div className="table-wrap">
+              <div className="finance-table-wrap">
                 <table className="finance-table">
                   <thead>
-                    <tr><th /> <th>Monter</th><th>Projekti</th><th>Storitve opravljene</th><th>Skupaj zasluženo</th><th>Plačano</th><th>Neplačano</th><th>Akcija</th></tr>
+                    <tr><th>Ime</th><th>Št. projektov</th><th>Skupaj</th><th>Plačano</th><th>Neplačano</th><th>Akcija</th></tr>
                   </thead>
                   <tbody>
                     {employeeRows.map((row) => (
                       <React.Fragment key={row.employeeId}>
-                        <tr className="main-row" onClick={() => toggleEmployee(row.employeeId)}>
-                          <td>{expandedEmployee[row.employeeId] ? '▼' : '▶'}</td>
-                          <td className="strong">{row.employeeName}</td>
-                          <td>{row.projectsCount}</td>
-                          <td>{row.servicesCount} stor.</td>
+                        <tr className="is-clickable" onClick={() => toggleEmployeeRow(row.employeeId)}>
+                          <td>{row.employeeName}</td>
+                          <td>{row.projectCount}</td>
                           <td>{currency.format(row.totalEarned)}</td>
-                          <td className="value-green">{currency.format(row.totalPaid)}</td>
-                          <td className="value-amber">{currency.format(row.totalUnpaid)}</td>
+                          <td>{currency.format(row.totalPaid)}</td>
+                          <td>{currency.format(row.totalUnpaid)}</td>
                           <td>
-                            <button className="action-btn" onClick={(event) => { event.stopPropagation(); markPaid(row.employeeId); }}>
-                              {row.totalUnpaid > 0 ? 'Označi plačano' : 'Plačano ✓'}
+                            <button type="button" className="finance-btn" onClick={(event) => { event.stopPropagation(); markEmployeePaid(row.employeeId); }}>
+                              Označi kot plačano
                             </button>
                           </td>
                         </tr>
-                        {expandedEmployee[row.employeeId] && (
-                          <tr>
-                            <td colSpan={8} className="inner-cell">
+                        {expandedEmployeeRows[row.employeeId] && (
+                          <tr className="expanded-row">
+                            <td colSpan={6}>
                               <table className="inner-table">
-                                <thead><tr><th>Projekt</th><th>Stranka</th><th>Datum</th><th>Storitve</th><th>Zaslužek</th><th>Status</th></tr></thead>
+                                <thead>
+                                  <tr><th>Projekt</th><th>Račun</th><th>Stranka</th><th>Datum</th><th>Zaslužek</th><th>Status</th></tr>
+                                </thead>
                                 <tbody>
-                                  {row.breakdown.map((item, index) => (
-                                    <tr key={`${row.employeeId}-${index}`}>
-                                      <td className="strong">{item.projectId}</td>
-                                      <td>{item.customer}</td>
-                                      <td>{new Date(item.date).toLocaleDateString('sl-SI')}</td>
-                                      <td>{item.servicesLabel}</td>
-                                      <td>{currency.format(item.earnings)}</td>
-                                      <td><span className={`tag ${statusClass(item.isPaid)}`}>{item.isPaid ? 'Plačano' : 'Čaka'}</span></td>
+                                  {row.projects.map((project) => (
+                                    <tr key={`${row.employeeId}-${project.invoiceNumber}-${project.projectId}`}>
+                                      <td>{project.projectId}</td>
+                                      <td>{project.invoiceNumber}</td>
+                                      <td>{project.customerName}</td>
+                                      <td>{new Date(project.issuedAt).toLocaleDateString('sl-SI')}</td>
+                                      <td>{currency.format(project.earnings)}</td>
+                                      <td><span className={`status-badge ${project.isPaid ? 'is-paid' : 'is-pending'}`}>{statusLabel(project.isPaid)}</span></td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -671,106 +536,93 @@ export const FinancePage: React.FC = () => {
 
       {tab === 'zaposleni' && isExecutionOnly && (
         <>
-          <section className="kpi-grid">
-            <article className="kpi-card"><span>Skupaj zasluženo</span><strong>{currency.format(employeeKpi.totalEarned)}</strong></article>
-            <article className="kpi-card"><span>Plačano</span><strong className="value-green">{currency.format(employeeKpi.totalPaid)}</strong></article>
-            <article className="kpi-card"><span>Čaka na plačilo</span><strong className="value-amber">{currency.format(employeeKpi.totalUnpaid)}</strong></article>
+          <section className="finance-cards-grid">
+            <article className="finance-card"><span>Skupaj zasluženo</span><strong>{currency.format(employeeSummary.totalEarned)}</strong></article>
+            <article className="finance-card"><span>Plačano</span><strong>{currency.format(employeeSummary.totalPaid)}</strong></article>
+            <article className="finance-card"><span>Čaka na plačilo</span><strong>{currency.format(employeeSummary.totalUnpaid)}</strong></article>
           </section>
-
-          <section className="execution-list">
-            {employeeRows.flatMap((row) => row.breakdown).map((item, index) => (
-              <article key={`${item.projectId}-${index}`} className="execution-card">
-                <div>
-                  <h3>{item.projectId}</h3>
-                  <p>{item.customer} · {new Date(item.date).toLocaleDateString('sl-SI')} · {item.servicesLabel}</p>
-                </div>
-                <div className="execution-right">
-                  <strong>{currency.format(item.earnings)}</strong>
-                  <span className={`tag ${statusClass(item.isPaid)}`}>{item.isPaid ? 'Plačano' : 'Čaka'}</span>
-                </div>
-              </article>
-            ))}
+          <section className="finance-panel">
+            {executionProjects.length === 0 ? (
+              <div className="finance-state">Trenutno nimaš zabeleženih zaslužkov.</div>
+            ) : (
+              <ul className="execution-project-list">
+                {executionProjects.map((project) => (
+                  <li key={project.id}>
+                    <div>
+                      <h3>{project.projectId}</h3>
+                      <p>{project.customerName} · {new Date(project.issuedAt).toLocaleDateString('sl-SI')}</p>
+                    </div>
+                    <div>
+                      <strong>{currency.format(project.earnings)}</strong>
+                      <span className={`status-badge ${project.isPaid ? 'is-paid' : 'is-pending'}`}>{statusLabel(project.isPaid)}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
         </>
       )}
 
       {tab === 'podjetje' && !isExecutionOnly && (
-        <>
-          <section className="period-header">
-            <span>Pregled poslovanja</span>
-            <div className="period-selector">
-              <button className={periodMode === 'week' ? 'is-active' : ''} onClick={() => setPeriodMode('week')}>Teden</button>
-              <button className={periodMode === 'month' ? 'is-active' : ''} onClick={() => setPeriodMode('month')}>Mesec</button>
-              <button className={periodMode === 'quarter' ? 'is-active' : ''} onClick={() => setPeriodMode('quarter')}>Četrtina</button>
-              <button className={periodMode === 'year' ? 'is-active' : ''} onClick={() => setPeriodMode('year')}>Leto</button>
-            </div>
-          </section>
+        <section className="finance-company-grid">
+          <article className="finance-panel">
+            <h2>Mesečni prihodki</h2>
+            {monthly.length === 0 ? (
+              <div className="finance-state">Ni podatkov za izbrano leto.</div>
+            ) : (
+              <div className="bar-chart">
+                {monthly.map((row) => {
+                  const width = monthlyMax > 0 ? Math.max(8, Math.round((row.totalSaleWithVat / monthlyMax) * 100)) : 0;
+                  return (
+                    <div key={row.month} className="bar-chart__row">
+                      <span>{formatMonthLabel(row.month)}</span>
+                      <div className="bar-chart__track"><div className="bar-chart__fill" style={{ width: `${width}%` }} /></div>
+                      <strong>{currency.format(row.totalSaleWithVat)}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </article>
 
-          <section className="period-cards">
-            {periodCards.map((card) => (
-              <article key={card.key} className={`period-card ${card.key === 'current' ? 'is-current' : ''}`}>
-                <header>
-                  <span>{card.label}</span>
-                  <strong>{card.name}</strong>
-                </header>
-                <div className="period-main">{currency.format(card.revenue)}</div>
-                <ul>
-                  <li><span>Nabava</span><strong>{currency.format(card.purchase)}</strong></li>
-                  <li><span>Marža</span><strong>{currency.format(card.margin)}</strong></li>
-                  <li><span>Marža %</span><strong>{card.marginPercent.toFixed(0)}%</strong></li>
-                  <li><span>Projekti</span><strong>{card.projects}</strong></li>
-                  {card.key === 'current' && <li><span>Odprte ponudbe</span><strong>{currency.format(card.openOffers ?? 0)}</strong></li>}
-                  {card.key === 'next' && card.pipelineDetails && (
-                    <>
-                      <li><span>Sprejete ponudbe</span><strong>{card.pipelineDetails.accepted}</strong></li>
-                      <li><span>V pripravi</span><strong>{card.pipelineDetails.draft}</strong></li>
-                      <li><span>Poslane</span><strong>{card.pipelineDetails.offered}</strong></li>
-                      <li><span>Pričakovani prihodki</span><strong>{currency.format(card.pipelineDetails.expectedRevenue)}</strong></li>
-                    </>
-                  )}
-                </ul>
-                <div className="mini-bars">
-                  <div><span>P</span><i style={{ width: '70%', background: '#2463D3' }} /><b>{currency.format(card.revenue)}</b></div>
-                  <div><span>N</span><i style={{ width: '45%', background: '#D94747' }} /><b>{currency.format(card.purchase)}</b></div>
-                  <div><span>M</span><i style={{ width: '60%', background: '#4E8B0D' }} /><b>{currency.format(card.margin)}</b></div>
-                </div>
-              </article>
-            ))}
-          </section>
-
-          <section className="company-bottom-grid">
-            <article className="finance-block">
-              <h3>Top 10 produktov</h3>
-              <div className="table-wrap">
+          <article className="finance-panel">
+            <h2>Top 10 produktov</h2>
+            {products.length === 0 ? (
+              <div className="finance-state">Ni produktnih podatkov.</div>
+            ) : (
+              <div className="finance-table-wrap">
                 <table className="finance-table">
-                  <thead><tr><th>Naziv</th><th>Količina</th><th>Prihodek</th><th>Marža %</th></tr></thead>
+                  <thead>
+                    <tr><th>Naziv</th><th>Prodana količina</th><th>Prihodek</th><th>Marža</th></tr>
+                  </thead>
                   <tbody>
-                    {topProducts.map((product) => (
+                    {products.map((product) => (
                       <tr key={`${product.productId ?? 'custom'}-${product.name}`}>
                         <td>{product.name}</td>
                         <td>{product.totalQuantity}</td>
                         <td>{currency.format(product.totalRevenue)}</td>
-                        <td><span className={`tag ${marginBadgeClass(product.marginPercent)}`}>{product.marginPercent.toFixed(0)}%</span></td>
+                        <td>{currency.format(product.totalMargin)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </article>
+            )}
+          </article>
 
-            <article className="finance-block">
-              <h3>Pipeline funnel</h3>
-              <div className="funnel-cards">
-                <div className="funnel-card"><span>Osnutki</span><strong>{pipelineMap.get('draft')?.count ?? 0}</strong><small>{currency.format(pipelineMap.get('draft')?.totalGross ?? 0)}</small></div>
-                <div className="funnel-card"><span>Poslane</span><strong>{pipelineMap.get('offered')?.count ?? 0}</strong><small>{currency.format(pipelineMap.get('offered')?.totalGross ?? 0)}</small></div>
-                <div className="funnel-card is-green"><span>Sprejeto</span><strong>{pipelineMap.get('accepted')?.count ?? 0}</strong><small>{currency.format(pipelineMap.get('accepted')?.totalGross ?? 0)}</small></div>
-                <div className="funnel-card is-red"><span>Zavrnjeno</span><strong>{pipelineMap.get('rejected')?.count ?? 0}</strong><small>{currency.format(pipelineMap.get('rejected')?.totalGross ?? 0)}</small></div>
-              </div>
-              <div className="win-rate-box">Win rate: {(pipeline?.winRate ?? 0).toFixed(0)}%</div>
-              <p>Open offers: {currency.format((pipelineMap.get('draft')?.totalGross ?? 0) + (pipelineMap.get('offered')?.totalGross ?? 0))}</p>
-            </article>
-          </section>
-        </>
+          <article className="finance-panel">
+            <h2>Pipeline funnel</h2>
+            <div className="pipeline-cards">
+              <div className="pipeline-card"><span>Osnutki</span><strong>{pipelineByStatus.get('draft')?.count ?? 0}</strong></div>
+              <div className="pipeline-card"><span>Poslane ponudbe</span><strong>{pipelineByStatus.get('offered')?.count ?? 0}</strong></div>
+              <div className="pipeline-card"><span>Sprejeto</span><strong>{pipelineByStatus.get('accepted')?.count ?? 0}</strong></div>
+              <div className="pipeline-card"><span>Zavrnjeno</span><strong>{pipelineByStatus.get('rejected')?.count ?? 0}</strong></div>
+            </div>
+            <div className="pipeline-highlight">Win rate: {(pipeline?.winRate ?? 0).toFixed(2)}%</div>
+            <div className="pipeline-sub">Skupna vrednost odprtih ponudb: <strong>{currency.format(totalOpenOfferValue)}</strong></div>
+          </article>
+        </section>
       )}
     </div>
   );
