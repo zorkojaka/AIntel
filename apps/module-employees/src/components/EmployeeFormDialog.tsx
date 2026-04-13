@@ -26,7 +26,9 @@ interface AuthMePayload {
 
 interface CenikProduct {
   _id: string;
-  name: string;
+  ime?: string;
+  name?: string;
+  prodajnaCena?: number;
   isService?: boolean;
 }
 
@@ -40,6 +42,7 @@ interface EmployeeServiceRate {
 interface ServiceRateRow {
   productId: string;
   productName: string;
+  salePrice: number;
   defaultPercent: string;
   overridePrice: string;
   isActive: boolean;
@@ -90,6 +93,7 @@ export function EmployeeFormDialog({
   const [copySourceEmployeeId, setCopySourceEmployeeId] = useState('');
   const [copyingServiceRates, setCopyingServiceRates] = useState(false);
   const [copyCandidates, setCopyCandidates] = useState<Array<{ id: string; name: string }>>([]);
+  const [bulkDefaultPercent, setBulkDefaultPercent] = useState('');
 
   const canManageServiceRates = useMemo(
     () => currentUserRoles.includes('ADMIN') || currentUserRoles.includes('FINANCE'),
@@ -133,6 +137,7 @@ export function EmployeeFormDialog({
     setActiveTab('osnovno');
     setServiceRows([]);
     setCopySourceEmployeeId('');
+    setBulkDefaultPercent('');
   }, [initialData, open]);
 
   useEffect(() => {
@@ -158,14 +163,14 @@ export function EmployeeFormDialog({
   }, [open]);
 
   useEffect(() => {
-    if (!open || !initialData?.id || !canManageServiceRates) return;
+    if (!open || !initialData?.id || !canManageServiceRates || activeTab !== 'cenik') return;
     let mounted = true;
 
     const loadServiceRates = async () => {
       setServiceRatesLoading(true);
       try {
         const [productsResponse, ratesResponse, employeesResponse] = await Promise.all([
-          fetch('/api/cenik/products', { credentials: 'include' }),
+          fetch('/api/cenik/products?isService=true', { credentials: 'include' }),
           fetch(`/api/employee-profiles/${initialData.id}/service-rates`, { credentials: 'include' }),
           fetch('/api/employees', { credentials: 'include' }),
         ]);
@@ -183,13 +188,19 @@ export function EmployeeFormDialog({
 
         const rows = products
           .filter((product) => product.isService)
-          .sort((a, b) => a.name.localeCompare(b.name, 'sl', { sensitivity: 'base' }))
+          .sort((a, b) =>
+            String(a.ime ?? a.name ?? '').localeCompare(String(b.ime ?? b.name ?? ''), 'sl', { sensitivity: 'base' })
+          )
           .map((product) => {
             const existingRate = rateByProductId.get(product._id);
             return {
               productId: product._id,
-              productName: product.name,
-              defaultPercent: String(existingRate?.defaultPercent ?? 0),
+              productName: String(product.ime ?? product.name ?? 'Neimenovana storitev'),
+              salePrice: Number(product.prodajnaCena ?? 0),
+              defaultPercent:
+                existingRate?.defaultPercent === null || existingRate?.defaultPercent === undefined
+                  ? ''
+                  : String(existingRate.defaultPercent),
               overridePrice:
                 existingRate?.overridePrice === null || existingRate?.overridePrice === undefined
                   ? ''
@@ -198,11 +209,22 @@ export function EmployeeFormDialog({
             } satisfies ServiceRateRow;
           });
 
-        setServiceRows(rows);
-        setCopyCandidates(
+        const sourceRates = await Promise.all(
           employees
             .filter((employee) => employee.id !== initialData.id)
-            .map((employee) => ({ id: employee.id, name: employee.name }))
+            .map(async (employee) => {
+              const response = await fetch(`/api/employee-profiles/${employee.id}/service-rates`, { credentials: 'include' });
+              const employeeRates = await parseEnvelope<EmployeeServiceRate[]>(response);
+              return { employee, hasRates: employeeRates.length > 0 };
+            })
+        );
+
+        if (!mounted) return;
+        setServiceRows(rows);
+        setCopyCandidates(
+          sourceRates
+            .filter((entry) => entry.hasRates)
+            .map((entry) => ({ id: entry.employee.id, name: entry.employee.name }))
             .sort((a, b) => a.name.localeCompare(b.name, 'sl', { sensitivity: 'base' }))
         );
       } catch (fetchError) {
@@ -218,7 +240,7 @@ export function EmployeeFormDialog({
     return () => {
       mounted = false;
     };
-  }, [canManageServiceRates, initialData?.id, open]);
+  }, [activeTab, canManageServiceRates, initialData?.id, open]);
 
   const toggleRole = (role: string) => {
     setRoles((prev) => (prev.includes(role) ? prev.filter((item) => item !== role) : [...prev, role]));
@@ -228,29 +250,41 @@ export function EmployeeFormDialog({
     setServiceRows((prev) => prev.map((row) => (row.productId === productId ? { ...row, ...patch } : row)));
   };
 
+  const applyBulkDefaultPercent = () => {
+    const parsed = Number(bulkDefaultPercent);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+      toast.error('Privzeti % mora biti med 0 in 100.');
+      return;
+    }
+    setServiceRows((prev) => prev.map((row) => ({ ...row, defaultPercent: String(parsed) })));
+  };
+
   const handleSaveServiceRates = async () => {
     if (!initialData?.id || !canManageServiceRates) return;
 
-    const ratesPayload = serviceRows.map((row) => {
-      const defaultPercent = Number(row.defaultPercent);
-      const parsedOverride = row.overridePrice.trim() ? Number(row.overridePrice) : null;
-      if (!Number.isFinite(defaultPercent) || defaultPercent < 0 || defaultPercent > 100) {
-        throw new Error(`Neveljaven % za storitev "${row.productName}".`);
-      }
-      if (parsedOverride !== null && (!Number.isFinite(parsedOverride) || parsedOverride < 0)) {
-        throw new Error(`Neveljavna override cena za storitev "${row.productName}".`);
-      }
-
-      return {
-        serviceProductId: row.productId,
-        defaultPercent,
-        overridePrice: parsedOverride,
-        isActive: row.isActive,
-      };
-    });
-
-    setServiceRatesSaving(true);
     try {
+      const ratesPayload = serviceRows.map((row) => {
+        const defaultPercent = Number(row.defaultPercent);
+        const parsedOverride = row.overridePrice.trim() ? Number(row.overridePrice) : null;
+        if (!Number.isFinite(defaultPercent) || defaultPercent < 0 || defaultPercent > 100) {
+          throw new Error(`Neveljaven % za storitev "${row.productName}".`);
+        }
+        if (row.isActive && defaultPercent <= 0) {
+          throw new Error(`Aktivna storitev "${row.productName}" mora imeti default % > 0.`);
+        }
+        if (parsedOverride !== null && (!Number.isFinite(parsedOverride) || parsedOverride < 0)) {
+          throw new Error(`Neveljavna override cena za storitev "${row.productName}".`);
+        }
+
+        return {
+          serviceProductId: row.productId,
+          defaultPercent,
+          overridePrice: parsedOverride,
+          isActive: row.isActive,
+        };
+      });
+
+      setServiceRatesSaving(true);
       const response = await fetch(`/api/employee-profiles/${initialData.id}/service-rates`, {
         method: 'POST',
         credentials: 'include',
@@ -284,30 +318,41 @@ export function EmployeeFormDialog({
         }
       );
 
-      const copiedRates = await parseEnvelope<EmployeeServiceRate[]>(response);
+      await parseEnvelope<EmployeeServiceRate[]>(response);
+      const sourceName = copyCandidates.find((candidate) => candidate.id === copySourceEmployeeId)?.name ?? 'izbranega zaposlenega';
+      setCopySourceEmployeeId('');
+      setServiceRatesLoading(true);
+      const [productsResponse, ratesResponse] = await Promise.all([
+        fetch('/api/cenik/products?isService=true', { credentials: 'include' }),
+        fetch(`/api/employee-profiles/${initialData.id}/service-rates`, { credentials: 'include' }),
+      ]);
+      const products = await parseEnvelope<CenikProduct[]>(productsResponse);
+      const rates = await parseEnvelope<EmployeeServiceRate[]>(ratesResponse);
       const copiedMap = new Map<string, EmployeeServiceRate>();
-      copiedRates.forEach((rate) => {
-        copiedMap.set(rate.serviceProductId, rate);
-      });
-
-      setServiceRows((prev) =>
-        prev.map((row) => {
-          const copied = copiedMap.get(row.productId);
-          if (!copied) return row;
-          return {
-            ...row,
-            defaultPercent: String(copied.defaultPercent ?? 0),
-            overridePrice:
-              copied.overridePrice === null || copied.overridePrice === undefined ? '' : String(copied.overridePrice),
-            isActive: copied.isActive ?? true,
-          };
-        })
+      rates.forEach((rate) => copiedMap.set(rate.serviceProductId, rate));
+      setServiceRows(
+        products
+          .filter((product) => product.isService)
+          .sort((a, b) =>
+            String(a.ime ?? a.name ?? '').localeCompare(String(b.ime ?? b.name ?? ''), 'sl', { sensitivity: 'base' })
+          )
+          .map((product) => {
+            const copied = copiedMap.get(product._id);
+            return {
+              productId: product._id,
+              productName: String(product.ime ?? product.name ?? 'Neimenovana storitev'),
+              salePrice: Number(product.prodajnaCena ?? 0),
+              defaultPercent: copied?.defaultPercent === null || copied?.defaultPercent === undefined ? '' : String(copied.defaultPercent),
+              overridePrice: copied?.overridePrice === null || copied?.overridePrice === undefined ? '' : String(copied.overridePrice),
+              isActive: copied?.isActive ?? true,
+            } satisfies ServiceRateRow;
+          })
       );
-
-      toast.success('Cenik storitev je kopiran.');
+      toast.success(`Cenik kopiran od ${sourceName}.`);
     } catch (copyError) {
       toast.error(copyError instanceof Error ? copyError.message : 'Kopiranje cenika ni uspelo.');
     } finally {
+      setServiceRatesLoading(false);
       setCopyingServiceRates(false);
     }
   };
@@ -635,6 +680,31 @@ export function EmployeeFormDialog({
                   />
                 </div>
                 <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700" htmlFor="bulkDefaultPercent">
+                    Default % za vse storitve
+                  </label>
+                  <input
+                    id="bulkDefaultPercent"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.01"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    value={bulkDefaultPercent}
+                    onChange={(event) => setBulkDefaultPercent(event.target.value)}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={applyBulkDefaultPercent}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Nastavi za vse
+                </button>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-[1fr_auto_auto] md:items-end">
+                <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700" htmlFor="copySourceEmployeeId">
                     Kopiraj od zaposlenega
                   </label>
@@ -671,39 +741,52 @@ export function EmployeeFormDialog({
                   <table className="min-w-full border-collapse text-sm">
                     <thead className="bg-slate-50 text-left">
                       <tr>
-                        <th className="border-b border-slate-200 px-3 py-2">Storitev</th>
-                        <th className="border-b border-slate-200 px-3 py-2">defaultPercent (%)</th>
-                        <th className="border-b border-slate-200 px-3 py-2">overridePrice (€)</th>
-                        <th className="border-b border-slate-200 px-3 py-2">Aktivno</th>
+                        <th className="border-b border-slate-200 px-2 py-1.5">Storitev</th>
+                        <th className="border-b border-slate-200 px-2 py-1.5">Prodajna cena</th>
+                        <th className="border-b border-slate-200 px-2 py-1.5">Default %</th>
+                        <th className="border-b border-slate-200 px-2 py-1.5">Zaslužek (izračunan)</th>
+                        <th className="border-b border-slate-200 px-2 py-1.5">Override cena (€)</th>
+                        <th className="border-b border-slate-200 px-2 py-1.5">Aktivno</th>
                       </tr>
                     </thead>
                     <tbody>
                       {serviceRows.map((row) => (
                         <tr key={row.productId} className="odd:bg-white even:bg-slate-50/40">
-                          <td className="border-b border-slate-100 px-3 py-2 text-slate-900">{row.productName}</td>
-                          <td className="border-b border-slate-100 px-3 py-2">
+                          <td className="border-b border-slate-100 px-2 py-1.5 text-xs text-slate-900">{row.productName}</td>
+                          <td className="border-b border-slate-100 px-2 py-1.5 text-xs text-slate-700">
+                            {row.salePrice.toLocaleString('sl-SI', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+                          </td>
+                          <td className="border-b border-slate-100 px-2 py-1.5">
                             <input
                               type="number"
                               min={0}
                               max={100}
                               step="0.01"
-                              className="w-32 rounded-lg border border-slate-200 px-2 py-1"
+                              className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-xs"
                               value={row.defaultPercent}
                               onChange={(event) => updateServiceRow(row.productId, { defaultPercent: event.target.value })}
                             />
                           </td>
-                          <td className="border-b border-slate-100 px-3 py-2">
+                          <td className="border-b border-green-100 bg-green-50 px-2 py-1.5 text-xs font-semibold text-green-700">
+                            {(
+                              (Number.isFinite(Number(row.defaultPercent)) ? Number(row.defaultPercent) : 0) *
+                              row.salePrice /
+                              100
+                            ).toLocaleString('sl-SI', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                            €
+                          </td>
+                          <td className="border-b border-slate-100 px-2 py-1.5">
                             <input
                               type="number"
                               min={0}
                               step="0.01"
-                              className="w-32 rounded-lg border border-slate-200 px-2 py-1"
+                              className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-xs"
                               value={row.overridePrice}
                               onChange={(event) => updateServiceRow(row.productId, { overridePrice: event.target.value })}
                               placeholder="Prazno = %"
                             />
                           </td>
-                          <td className="border-b border-slate-100 px-3 py-2">
+                          <td className="border-b border-slate-100 px-2 py-1.5">
                             <label className="inline-flex items-center gap-2">
                               <input
                                 type="checkbox"
