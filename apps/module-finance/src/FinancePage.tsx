@@ -1,433 +1,616 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import './FinancePage.css';
 
-export type RevenueCategory = 'storitev' | 'oprema' | 'vzdrževanje' | 'drugo';
-export type InvoiceStatus = 'plačano' | 'čaka na plačilo' | 'preklicano';
+type Role = 'ADMIN' | 'FINANCE' | 'EXECUTION' | 'SALES' | 'ORGANIZER';
+type TabKey = 'projekti' | 'zaposleni' | 'podjetje';
 
-export interface FinanceLineItem {
-  naziv: string;
-  kolicina: number;
-  cena_nabavna: number;
-  cena_prodajna: number;
+interface MePayload {
+  employeeId?: string | null;
+  roles?: string[];
 }
 
-export interface FinanceEntry {
-  id: string;
-  id_projekta: string;
-  id_racuna: string;
-  datum_izdaje: string;
-  znesek_skupaj: number;
-  ddv: number;
-  znesek_brez_ddv: number;
-  nabavna_vrednost: number;
-  dobicek: number;
-  stranka: string;
-  artikli: FinanceLineItem[];
-  kategorija_prihodka: RevenueCategory;
-  oznaka: InvoiceStatus;
+interface ApiEnvelope<T> {
+  success: boolean;
+  data: T;
+  error?: string;
 }
 
-const mockFinanceEntries: FinanceEntry[] = [
-  {
-    id: 'FIN-2024-001',
-    id_projekta: 'PRJ-001',
-    id_racuna: 'INV-2024-001',
-    datum_izdaje: '2024-12-18',
-    znesek_skupaj: 18450,
-    ddv: 3690,
-    znesek_brez_ddv: 14760,
-    nabavna_vrednost: 9800,
-    dobicek: 4960,
-    stranka: 'Kovinarstvo Novak d.o.o.',
-    artikli: [
-      { naziv: 'Montaža prezračevalnega sistema', kolicina: 1, cena_nabavna: 4200, cena_prodajna: 7800 },
-      { naziv: 'Prezračevalna enota VENTO', kolicina: 2, cena_nabavna: 2800, cena_prodajna: 6960 },
-    ],
-    kategorija_prihodka: 'oprema',
-    oznaka: 'plačano',
-  },
-  {
-    id: 'FIN-2025-002',
-    id_projekta: 'PRJ-004',
-    id_racuna: 'INV-2025-014',
-    datum_izdaje: '2025-02-10',
-    znesek_skupaj: 12600,
-    ddv: 2520,
-    znesek_brez_ddv: 10080,
-    nabavna_vrednost: 6120,
-    dobicek: 3960,
-    stranka: 'Hotel Panorama',
-    artikli: [
-      { naziv: 'Vzdrževalni servis HVAC', kolicina: 3, cena_nabavna: 480, cena_prodajna: 1020 },
-      { naziv: 'Rezervni filtri', kolicina: 15, cena_nabavna: 70, cena_prodajna: 120 },
-    ],
-    kategorija_prihodka: 'vzdrževanje',
-    oznaka: 'plačano',
-  },
-  {
-    id: 'FIN-2025-006',
-    id_projekta: 'PRJ-002',
-    id_racuna: 'INV-2025-030',
-    datum_izdaje: '2025-05-28',
-    znesek_skupaj: 21500,
-    ddv: 4300,
-    znesek_brez_ddv: 17200,
-    nabavna_vrednost: 12350,
-    dobicek: 4850,
-    stranka: 'Mesto Ljubljana',
-    artikli: [
-      { naziv: 'Inženiring – faza II', kolicina: 1, cena_nabavna: 6400, cena_prodajna: 9800 },
-      { naziv: 'Strojna oprema HVAC', kolicina: 1, cena_nabavna: 5950, cena_prodajna: 11700 },
-    ],
-    kategorija_prihodka: 'storitev',
-    oznaka: 'čaka na plačilo',
-  },
-  {
-    id: 'FIN-2025-009',
-    id_projekta: 'PRJ-006',
-    id_racuna: 'INV-2025-041',
-    datum_izdaje: '2025-07-03',
-    znesek_skupaj: 8600,
-    ddv: 1720,
-    znesek_brez_ddv: 6880,
-    nabavna_vrednost: 4720,
-    dobicek: 2160,
-    stranka: 'Ekosistem Plus',
-    artikli: [
-      { naziv: 'Termografski pregled', kolicina: 2, cena_nabavna: 480, cena_prodajna: 860 },
-      { naziv: 'Programska licenca Monitoring', kolicina: 1, cena_nabavna: 3800, cena_prodajna: 5160 },
-    ],
-    kategorija_prihodka: 'drugo',
-    oznaka: 'plačano',
-  },
-  {
-    id: 'FIN-2025-011',
-    id_projekta: 'PRJ-002',
-    id_racuna: 'INV-2025-052',
-    datum_izdaje: '2025-08-19',
-    znesek_skupaj: 14300,
-    ddv: 2860,
-    znesek_brez_ddv: 11440,
-    nabavna_vrednost: 8240,
-    dobicek: 3200,
-    stranka: 'Mesto Ljubljana',
-    artikli: [
-      { naziv: 'Integracija IoT senzorjev', kolicina: 12, cena_nabavna: 320, cena_prodajna: 640 },
-      { naziv: 'Konfiguracija SCADA', kolicina: 1, cena_nabavna: 1400, cena_prodajna: 3400 },
-    ],
-    kategorija_prihodka: 'storitev',
-    oznaka: 'čaka na plačilo',
-  },
-];
-
-const statusFilterOptions: Array<{ value: 'vsi' | InvoiceStatus; label: string }> = [
-  { value: 'vsi', label: 'Vsi statusi' },
-  { value: 'plačano', label: 'Plačano' },
-  { value: 'čaka na plačilo', label: 'Čaka na plačilo' },
-  { value: 'preklicano', label: 'Preklicano' },
-];
-
-const currencyFormatter = new Intl.NumberFormat('sl-SI', {
-  style: 'currency',
-  currency: 'EUR',
-  maximumFractionDigits: 0,
-});
-
-const monthFormatter = new Intl.DateTimeFormat('sl-SI', {
-  month: 'short',
-});
-
-function toMonthLabel(isoDate: string) {
-  const date = new Date(`${isoDate}-01`);
-  return `${monthFormatter.format(date)} ${date.getFullYear()}`;
+interface FinanceSnapshotItem {
+  productId: string | null;
+  name: string;
+  unit: string;
+  quantity: number;
+  unitPriceSale: number;
+  unitPricePurchase: number;
+  totalSale: number;
+  totalPurchase: number;
+  margin: number;
 }
 
-function useFinanceEntries() {
-  const [entries, setEntries] = useState<FinanceEntry[]>(mockFinanceEntries);
+interface SnapshotEmployeeEarning {
+  employeeId: string;
+  earnings: number;
+  isPaid: boolean;
+}
+
+interface FinanceSnapshot {
+  _id: string;
+  projectId: string;
+  invoiceNumber: string;
+  issuedAt: string;
+  customer: { name: string };
+  summary: {
+    totalSaleWithVat: number;
+    totalSaleWithoutVat: number;
+    totalPurchase: number;
+    totalMargin: number;
+  };
+  items: FinanceSnapshotItem[];
+  employeeEarnings: SnapshotEmployeeEarning[];
+}
+
+interface SnapshotListEnvelope {
+  items: FinanceSnapshot[];
+}
+
+interface EmployeeSummary {
+  employeeId: string;
+  employeeName: string;
+  totalEarned: number;
+  totalPaid: number;
+  totalUnpaid: number;
+}
+
+interface MonthlySummary {
+  month: number;
+  totalSaleWithVat: number;
+}
+
+interface ProductFrequency {
+  productId: string | null;
+  name: string;
+  totalQuantity: number;
+  totalRevenue: number;
+  totalMargin: number;
+}
+
+interface PipelineSummary {
+  statuses: Array<{ status: string; count: number; totalGross: number }>;
+  winRate: number;
+}
+
+interface EmployeeProjectBreakdown {
+  projectId: string;
+  invoiceNumber: string;
+  customerName: string;
+  issuedAt: string;
+  earnings: number;
+  isPaid: boolean;
+}
+
+const currency = new Intl.NumberFormat('sl-SI', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 });
+
+async function fetchApi<T>(url: string): Promise<T> {
+  const response = await fetch(url, {
+    method: 'GET',
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+  });
+
+  const payload = (await response.json()) as ApiEnvelope<T>;
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.error ?? `Napaka API (${response.status})`);
+  }
+  return payload.data;
+}
+
+function toIsoDay(value: string) {
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function statusLabel(isPaid: boolean) {
+  return isPaid ? 'Plačano' : 'Čaka na plačilo';
+}
+
+function marginClass(marginPercent: number) {
+  if (marginPercent > 40) return 'is-high';
+  if (marginPercent >= 20) return 'is-medium';
+  return 'is-low';
+}
+
+function formatMonthLabel(month: number) {
+  return new Date(Date.UTC(new Date().getFullYear(), month - 1, 1)).toLocaleString('sl-SI', { month: 'long' });
+}
+
+export const FinancePage: React.FC = () => {
+  const [tab, setTab] = useState<TabKey>('projekti');
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [employeeId, setEmployeeId] = useState<string | null>(null);
+
+  const [snapshots, setSnapshots] = useState<FinanceSnapshot[]>([]);
+  const [employees, setEmployees] = useState<EmployeeSummary[]>([]);
+  const [monthly, setMonthly] = useState<MonthlySummary[]>([]);
+  const [products, setProducts] = useState<ProductFrequency[]>([]);
+  const [pipeline, setPipeline] = useState<PipelineSummary | null>(null);
+
+  const [projectSearch, setProjectSearch] = useState('');
+  const [projectFrom, setProjectFrom] = useState('');
+  const [projectTo, setProjectTo] = useState('');
+  const [employeesFrom, setEmployeesFrom] = useState('');
+  const [employeesTo, setEmployeesTo] = useState('');
+
+  const [expandedProjectRows, setExpandedProjectRows] = useState<Record<string, boolean>>({});
+  const [expandedEmployeeRows, setExpandedEmployeeRows] = useState<Record<string, boolean>>({});
+  const [paidByEmployee, setPaidByEmployee] = useState<Record<string, boolean>>({});
+
   useEffect(() => {
-    let isMounted = true;
-    async function fetchEntries() {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
       try {
-        const response = await fetch('http://localhost:3000/finance');
-        if (!response.ok) {
-          throw new Error(`Napaka API: ${response.status}`);
+        const me = await fetchApi<MePayload>('/api/auth/me');
+        const mappedRoles = (me.roles ?? []) as Role[];
+        const canSeeCompany = mappedRoles.includes('ADMIN') || mappedRoles.includes('FINANCE');
+
+        const [snapshotData, employeeData, monthlyData, productData, pipelineData] = await Promise.all([
+          fetchApi<SnapshotListEnvelope>('/api/finance/snapshots?limit=300'),
+          fetchApi<EmployeeSummary[]>('/api/finance/employees-summary'),
+          canSeeCompany
+            ? fetchApi<MonthlySummary[]>(`/api/finance/monthly-summary?year=${new Date().getFullYear()}`)
+            : Promise.resolve([]),
+          canSeeCompany ? fetchApi<ProductFrequency[]>('/api/finance/product-frequency?limit=10') : Promise.resolve([]),
+          canSeeCompany ? fetchApi<PipelineSummary>('/api/finance/pipeline') : Promise.resolve(null),
+        ]);
+
+        if (cancelled) return;
+
+        setRoles(mappedRoles);
+        setEmployeeId(me.employeeId ?? null);
+        setSnapshots(snapshotData.items ?? []);
+        setEmployees(employeeData);
+        setMonthly(monthlyData);
+        setProducts(productData);
+        setPipeline(pipelineData);
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : 'Napaka pri nalaganju podatkov.');
         }
-        const payload = await response.json();
-        if (payload?.success && Array.isArray(payload.data) && isMounted) {
-          setEntries(payload.data as FinanceEntry[]);
-          setError(null);
-        } else if (isMounted) {
-          setError('Nepričakovan odgovor API. Prikazujemo demo podatke.');
-        }
-      } catch (err) {
-        if (isMounted) {
-          const reason = err instanceof Error ? err.message : 'Neznana napaka';
-          setError(`API ni dosegljiv (${reason}). Prikazujemo demo podatke.`);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
         }
       }
     }
 
-    fetchEntries();
+    load();
     return () => {
-      isMounted = false;
+      cancelled = true;
     };
   }, []);
 
-  return { entries, error };
-}
+  const isExecutionOnly = useMemo(() => {
+    const roleSet = new Set(roles);
+    return roleSet.has('EXECUTION') && !roleSet.has('ADMIN') && !roleSet.has('FINANCE');
+  }, [roles]);
+  const isAdminOrFinance = useMemo(() => roles.includes('ADMIN') || roles.includes('FINANCE'), [roles]);
 
-function filterInvoices(entries: FinanceEntry[], term: string, status: 'vsi' | InvoiceStatus) {
-  const normalizedTerm = term.trim().toLowerCase();
-  return entries.filter((entry) => {
-    const matchesTerm =
-      normalizedTerm.length === 0 ||
-      entry.stranka.toLowerCase().includes(normalizedTerm) ||
-      entry.id_racuna.toLowerCase().includes(normalizedTerm) ||
-      entry.id_projekta.toLowerCase().includes(normalizedTerm);
+  const filteredSnapshots = useMemo(() => {
+    const term = projectSearch.trim().toLowerCase();
+    return snapshots.filter((snapshot) => {
+      const day = toIsoDay(snapshot.issuedAt);
+      if (projectFrom && day < projectFrom) return false;
+      if (projectTo && day > projectTo) return false;
+      if (!term) return true;
+      return (
+        snapshot.projectId.toLowerCase().includes(term) ||
+        snapshot.customer?.name?.toLowerCase().includes(term) ||
+        snapshot.invoiceNumber.toLowerCase().includes(term)
+      );
+    });
+  }, [projectFrom, projectSearch, projectTo, snapshots]);
 
-    const matchesStatus = status === 'vsi' || entry.oznaka === status;
+  const projectSummary = useMemo(() => {
+    const totalRevenue = filteredSnapshots.reduce((sum, row) => sum + row.summary.totalSaleWithoutVat, 0);
+    const totalMargin = filteredSnapshots.reduce((sum, row) => sum + row.summary.totalMargin, 0);
+    const avgMarginPercent = totalRevenue > 0 ? (totalMargin / totalRevenue) * 100 : 0;
+    return {
+      totalRevenue,
+      totalMargin,
+      avgMarginPercent,
+      projectCount: filteredSnapshots.length,
+    };
+  }, [filteredSnapshots]);
 
-    return matchesTerm && matchesStatus;
-  });
-}
+  const employeeBreakdownMap = useMemo(() => {
+    const map = new Map<string, EmployeeProjectBreakdown[]>();
 
-function calculateSummary(entries: FinanceEntry[]) {
-  return entries.reduce(
-    (acc, entry) => {
-      acc.projects.add(entry.id_projekta);
-      acc.revenue += entry.znesek_skupaj;
-      acc.cost += entry.nabavna_vrednost;
-      acc.profit += entry.dobicek;
-      return acc;
-    },
-    { projects: new Set<string>(), revenue: 0, cost: 0, profit: 0 }
-  );
-}
+    snapshots.forEach((snapshot) => {
+      const issuedDay = toIsoDay(snapshot.issuedAt);
+      if (employeesFrom && issuedDay < employeesFrom) return;
+      if (employeesTo && issuedDay > employeesTo) return;
 
-function buildMonthlySeries(entries: FinanceEntry[]) {
-  const bucket = new Map<string, { prihodki: number; stroski: number; dobicek: number }>();
-  entries.forEach((entry) => {
-    const key = entry.datum_izdaje.slice(0, 7);
-    if (!bucket.has(key)) {
-      bucket.set(key, { prihodki: 0, stroski: 0, dobicek: 0 });
-    }
-    const month = bucket.get(key)!;
-    month.prihodki += entry.znesek_skupaj;
-    month.stroski += entry.nabavna_vrednost;
-    month.dobicek += entry.dobicek;
-  });
+      snapshot.employeeEarnings.forEach((earning) => {
+        const resolvedPaid = paidByEmployee[earning.employeeId] ?? earning.isPaid;
+        const entry: EmployeeProjectBreakdown = {
+          projectId: snapshot.projectId,
+          invoiceNumber: snapshot.invoiceNumber,
+          customerName: snapshot.customer?.name ?? '-',
+          issuedAt: snapshot.issuedAt,
+          earnings: earning.earnings,
+          isPaid: resolvedPaid,
+        };
+        const list = map.get(earning.employeeId) ?? [];
+        list.push(entry);
+        map.set(earning.employeeId, list);
+      });
+    });
 
-  return Array.from(bucket.entries())
-    .map(([month, values]) => ({ month, ...values }))
-    .sort((a, b) => a.month.localeCompare(b.month));
-}
+    return map;
+  }, [employeesFrom, employeesTo, paidByEmployee, snapshots]);
 
-function buildProjectProfit(entries: FinanceEntry[]) {
-  const bucket = new Map<string, number>();
-  entries.forEach((entry) => {
-    bucket.set(entry.id_projekta, (bucket.get(entry.id_projekta) ?? 0) + entry.dobicek);
-  });
-  return Array.from(bucket.entries())
-    .map(([projectId, value]) => ({ projectId, value }))
-    .sort((a, b) => b.value - a.value);
-}
+  const employeeRows = useMemo(() => {
+    return employees
+      .map((employee) => {
+        const projects = employeeBreakdownMap.get(employee.employeeId) ?? [];
+        const totalEarned = projects.reduce((sum, project) => sum + project.earnings, 0);
+        const totalPaid = projects.filter((project) => project.isPaid).reduce((sum, project) => sum + project.earnings, 0);
+        return {
+          employeeId: employee.employeeId,
+          employeeName: employee.employeeName,
+          projectCount: new Set(projects.map((project) => project.projectId)).size,
+          totalEarned,
+          totalPaid,
+          totalUnpaid: totalEarned - totalPaid,
+          projects,
+        };
+      })
+      .filter((row) => (!isExecutionOnly ? true : row.employeeId === employeeId));
+  }, [employeeBreakdownMap, employeeId, employees, isExecutionOnly]);
 
-interface ChartRow {
-  id: string;
-  label: string;
-  value: number;
-  variant: 'income' | 'cost' | 'profit';
-}
+  const employeeSummary = useMemo(() => {
+    const totalEarned = employeeRows.reduce((sum, row) => sum + row.totalEarned, 0);
+    const totalPaid = employeeRows.reduce((sum, row) => sum + row.totalPaid, 0);
+    return {
+      totalEarned,
+      totalPaid,
+      totalUnpaid: totalEarned - totalPaid,
+    };
+  }, [employeeRows]);
 
-const MIN_BAR_WIDTH = 6;
+  const executionProjects = useMemo(() => {
+    if (!isExecutionOnly || !employeeId) return [];
+    return snapshots
+      .map((snapshot) => {
+        const employeeEarning = snapshot.employeeEarnings.find((entry) => entry.employeeId === employeeId);
+        if (!employeeEarning) return null;
+        const isPaid = paidByEmployee[employeeId] ?? employeeEarning.isPaid;
+        return {
+          id: snapshot._id,
+          projectId: snapshot.projectId,
+          invoiceNumber: snapshot.invoiceNumber,
+          customerName: snapshot.customer?.name ?? '-',
+          issuedAt: snapshot.issuedAt,
+          earnings: employeeEarning.earnings,
+          isPaid,
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+  }, [employeeId, isExecutionOnly, paidByEmployee, snapshots]);
 
-function ChartBar({ label, value, max, variant }: ChartRow & { max: number }) {
-  const width = max === 0 ? 0 : Math.max(MIN_BAR_WIDTH, Math.round((value / max) * 100));
-  return (
-    <div className="chart-bar">
-      <span>{label}</span>
-      <div className="chart-bar__track">
-        <div className="chart-bar__fill" data-variant={variant === 'cost' ? 'cost' : variant === 'profit' ? 'profit' : undefined} style={{ width: `${width}%` }} />
+  const monthlyMax = useMemo(() => monthly.reduce((max, row) => Math.max(max, row.totalSaleWithVat), 0), [monthly]);
+
+  const pipelineByStatus = useMemo(() => {
+    const map = new Map<string, { count: number; totalGross: number }>();
+    (pipeline?.statuses ?? []).forEach((status) => {
+      map.set(status.status, status);
+    });
+    return map;
+  }, [pipeline]);
+
+  const totalOpenOfferValue = useMemo(() => {
+    const draft = pipelineByStatus.get('draft')?.totalGross ?? 0;
+    const offered = pipelineByStatus.get('offered')?.totalGross ?? 0;
+    return draft + offered;
+  }, [pipelineByStatus]);
+
+  const toggleProjectRow = (id: string) => {
+    setExpandedProjectRows((current) => ({ ...current, [id]: !current[id] }));
+  };
+
+  const toggleEmployeeRow = (id: string) => {
+    setExpandedEmployeeRows((current) => ({ ...current, [id]: !current[id] }));
+  };
+
+  const markEmployeePaid = (id: string) => {
+    if (!isAdminOrFinance) return;
+    setPaidByEmployee((current) => ({ ...current, [id]: true }));
+  };
+
+  if (loading) {
+    return (
+      <div className="finance-page">
+        <div className="finance-skeleton" />
+        <div className="finance-skeleton" />
+        <div className="finance-skeleton" />
       </div>
-      <span>{currencyFormatter.format(value)}</span>
-    </div>
-  );
-}
+    );
+  }
 
-function StatusPill({ status }: { status: InvoiceStatus }) {
-  const normalized =
-    status === 'plaÄano' ? 'placano' : status === 'Äaka na plaÄilo' ? 'caka na placilo' : 'preklicano';
-  return <span className="status-pill" data-status={normalized}>{status}</span>;
-}
-
-export const FinancePage: React.FC = () => {
-  const { entries, error } = useFinanceEntries();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'vsi' | InvoiceStatus>('vsi');
-
-  const filteredInvoices = useMemo(
-    () => filterInvoices(entries, searchTerm, statusFilter),
-    [entries, searchTerm, statusFilter]
-  );
-
-  const summary = useMemo(() => calculateSummary(filteredInvoices), [filteredInvoices]);
-
-  const monthlySeries = useMemo(() => buildMonthlySeries(filteredInvoices), [filteredInvoices]);
-  const monthlyChartRows: ChartRow[] = useMemo(
-    () =>
-      monthlySeries.flatMap<ChartRow>((item) => {
-        const label = toMonthLabel(item.month);
-        return [
-          { id: `${item.month}-income`, label: `${label} • Prihodki`, value: item.prihodki, variant: 'income' },
-          { id: `${item.month}-cost`, label: `${label} • Stroški`, value: item.stroski, variant: 'cost' },
-          { id: `${item.month}-profit`, label: `${label} • Dobiček`, value: item.dobicek, variant: 'profit' },
-        ];
-      }),
-    [monthlySeries]
-  );
-  const monthlyMax = useMemo(
-    () => monthlyChartRows.reduce((max, row) => Math.max(max, row.value), 0),
-    [monthlyChartRows]
-  );
-
-  const projectProfit = useMemo(() => buildProjectProfit(filteredInvoices), [filteredInvoices]);
-  const projectMax = useMemo(
-    () => projectProfit.reduce((max, item) => Math.max(max, item.value), 0),
-    [projectProfit]
-  );
+  if (error) {
+    return <div className="finance-page"><div className="finance-state finance-state--error">{error}</div></div>;
+  }
 
   return (
     <div className="finance-page">
-      <header className="finance-page__header">
-        <h1 className="finance-page__title">Finance</h1>
-        <p className="finance-page__subtitle">
-          Pregled izdaje računov, stroškov in dobičkov po projektih in strankah.
-        </p>
-        {error && <div className="finance-page__error">{error}</div>}
-        <div className="finance-page__filters">
-          <input
-            className="finance-page__input"
-            type="search"
-            placeholder="Išči po stranki, projektu ali računu..."
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-          />
-          <select
-            className="finance-page__select"
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as 'vsi' | InvoiceStatus)}
-          >
-            {statusFilterOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+      <header className="finance-header-card">
+        <div>
+          <h1 className="finance-page__title">Finance</h1>
+          <p className="finance-page__subtitle">Pregled prihodkov, marž, zaslužkov ekip in prodajnega pipeline-a.</p>
+        </div>
+        <div className="finance-tabs" role="tablist" aria-label="Finance tabs">
+          <button className={tab === 'projekti' ? 'is-active' : ''} onClick={() => setTab('projekti')}>Projekti</button>
+          <button className={tab === 'zaposleni' ? 'is-active' : ''} onClick={() => setTab('zaposleni')}>Zaposleni</button>
+          {!isExecutionOnly && (
+            <button className={tab === 'podjetje' ? 'is-active' : ''} onClick={() => setTab('podjetje')}>Podjetje</button>
+          )}
         </div>
       </header>
 
-      <section className="finance-page__cards">
-        <article className="finance-card">
-          <span className="finance-card__label">Aktivni projekti</span>
-          <span className="finance-card__value">{summary.projects.size}</span>
-          <span className="finance-card__delta">+4 letos</span>
-        </article>
-        <article className="finance-card">
-          <span className="finance-card__label">Prihodki</span>
-          <span className="finance-card__value">{currencyFormatter.format(summary.revenue)}</span>
-          <span className="finance-card__delta">+12% v primerjavi s 2024</span>
-        </article>
-        <article className="finance-card">
-          <span className="finance-card__label">Stroški</span>
-          <span className="finance-card__value">{currencyFormatter.format(summary.cost)}</span>
-          <span className="finance-card__delta" style={{ color: '#f97316' }}>-5% optimizacija nabave</span>
-        </article>
-        <article className="finance-card">
-          <span className="finance-card__label">Dobiček</span>
-          <span className="finance-card__value">{currencyFormatter.format(summary.profit)}</span>
-          <span className="finance-card__delta">+2,4% marža</span>
-        </article>
-      </section>
+      {tab === 'projekti' && (
+        <>
+          <section className="finance-cards-grid">
+            <article className="finance-card"><span>Skupaj prihodki</span><strong>{currency.format(projectSummary.totalRevenue)}</strong></article>
+            <article className="finance-card"><span>Skupaj marža</span><strong>{currency.format(projectSummary.totalMargin)}</strong></article>
+            <article className="finance-card"><span>Povp. marža %</span><strong>{projectSummary.avgMarginPercent.toFixed(2)}%</strong></article>
+            <article className="finance-card"><span>Število projektov</span><strong>{projectSummary.projectCount}</strong></article>
+          </section>
 
-      <section className="finance-page__grid">
-        <div className="finance-table">
-          <h2 className="chart-card__title">Izdani računi</h2>
-          {filteredInvoices.length === 0 ? (
-            <div className="finance-table__empty">Ni računov za izbrane filtre.</div>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Račun</th>
-                  <th className="finance-col--desktop">Projekt</th>
-                  <th>Stranka</th>
-                  <th className="finance-col--desktop">Datum</th>
-                  <th>Znesek</th>
-                  <th>Dobiček</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredInvoices.map((entry) => (
-                  <tr key={entry.id}>
-                    <td>{entry.id_racuna}</td>
-                    <td className="finance-col--desktop">{entry.id_projekta}</td>
-                    <td>{entry.stranka}</td>
-                    <td className="finance-col--desktop">{new Date(entry.datum_izdaje).toLocaleDateString('sl-SI')}</td>
-                    <td>{currencyFormatter.format(entry.znesek_skupaj)}</td>
-                    <td>{currencyFormatter.format(entry.dobicek)}</td>
-                    <td>
-                      <StatusPill status={entry.oznaka} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        <div className="chart-card">
-          <h2 className="chart-card__title">Prihodki in stroški po mesecih</h2>
-          <div className="chart-card__bars">
-            {monthlyChartRows.map((row) => (
-              <ChartBar key={row.id} {...row} max={monthlyMax} />
-            ))}
-          </div>
-          <div className="chart-card__legend">
-            <span>
-              <i className="legend-income" /> Prihodki
-            </span>
-            <span>
-              <i className="legend-cost" /> Stroški
-            </span>
-            <span>
-              <i className="legend-profit" /> Dobiček
-            </span>
-          </div>
-        </div>
-      </section>
-
-      <section className="chart-card">
-        <h2 className="chart-card__title">Dobiček po projektih</h2>
-        <div className="chart-card__bars">
-          {projectProfit.length === 0 ? (
-            <div className="finance-table__empty">Ni finančnih podatkov za izbrane filtre.</div>
-          ) : (
-            projectProfit.map((item) => (
-              <ChartBar
-                key={item.projectId}
-                id={item.projectId}
-                label={item.projectId}
-                value={item.value}
-                variant="profit"
-                max={projectMax}
+          <section className="finance-panel">
+            <div className="finance-filter-bar">
+              <input type="date" value={projectFrom} onChange={(event) => setProjectFrom(event.target.value)} aria-label="Datum od" />
+              <input type="date" value={projectTo} onChange={(event) => setProjectTo(event.target.value)} aria-label="Datum do" />
+              <input
+                type="search"
+                placeholder="Išči po stranki/projektu/računu"
+                value={projectSearch}
+                onChange={(event) => setProjectSearch(event.target.value)}
               />
-            ))
-          )}
-        </div>
-      </section>
+            </div>
+
+            {filteredSnapshots.length === 0 ? (
+              <div className="finance-state">Še ni izdanih računov za izbrane filtre.</div>
+            ) : (
+              <div className="finance-table-wrap">
+                <table className="finance-table">
+                  <thead>
+                    <tr>
+                      <th>Račun</th><th>Projekt</th><th>Stranka</th><th>Datum</th><th>Prodaja (brez DDV)</th><th>Nabavna vrednost</th><th>Marža €</th><th>Marža %</th><th>Status plačila</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSnapshots.map((snapshot) => {
+                      const marginPercent = snapshot.summary.totalSaleWithoutVat > 0
+                        ? (snapshot.summary.totalMargin / snapshot.summary.totalSaleWithoutVat) * 100
+                        : 0;
+                      const isPaid = snapshot.employeeEarnings.length > 0
+                        ? snapshot.employeeEarnings.every((earning) => paidByEmployee[earning.employeeId] ?? earning.isPaid)
+                        : false;
+                      return (
+                        <React.Fragment key={snapshot._id}>
+                          <tr className="is-clickable" onClick={() => toggleProjectRow(snapshot._id)}>
+                            <td>{snapshot.invoiceNumber}</td>
+                            <td>{snapshot.projectId}</td>
+                            <td>{snapshot.customer?.name ?? '-'}</td>
+                            <td>{new Date(snapshot.issuedAt).toLocaleDateString('sl-SI')}</td>
+                            <td>{currency.format(snapshot.summary.totalSaleWithoutVat)}</td>
+                            <td>{currency.format(snapshot.summary.totalPurchase)}</td>
+                            <td>{currency.format(snapshot.summary.totalMargin)}</td>
+                            <td><span className={`margin-badge ${marginClass(marginPercent)}`}>{marginPercent.toFixed(2)}%</span></td>
+                            <td><span className={`status-badge ${isPaid ? 'is-paid' : 'is-pending'}`}>{statusLabel(isPaid)}</span></td>
+                          </tr>
+                          {expandedProjectRows[snapshot._id] && (
+                            <tr className="expanded-row">
+                              <td colSpan={9}>
+                                <table className="inner-table">
+                                  <thead>
+                                    <tr>
+                                      <th>Artikel</th><th>Količina</th><th>Prodajna cena</th><th>Nabavna cena</th><th>Marža</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {snapshot.items.map((item, index) => (
+                                      <tr key={`${snapshot._id}-${item.productId ?? 'x'}-${index}`}>
+                                        <td>{item.name}</td>
+                                        <td>{item.quantity} {item.unit}</td>
+                                        <td>{currency.format(item.totalSale)}</td>
+                                        <td>{currency.format(item.totalPurchase)}</td>
+                                        <td>{currency.format(item.margin)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
+      {tab === 'zaposleni' && !isExecutionOnly && (
+        <>
+          <section className="finance-cards-grid">
+            <article className="finance-card"><span>Skupaj zaslužki</span><strong>{currency.format(employeeSummary.totalEarned)}</strong></article>
+            <article className="finance-card"><span>Plačano</span><strong>{currency.format(employeeSummary.totalPaid)}</strong></article>
+            <article className="finance-card"><span>Neplačano</span><strong>{currency.format(employeeSummary.totalUnpaid)}</strong></article>
+          </section>
+
+          <section className="finance-panel">
+            <div className="finance-filter-bar">
+              <input type="date" value={employeesFrom} onChange={(event) => setEmployeesFrom(event.target.value)} aria-label="Datum od" />
+              <input type="date" value={employeesTo} onChange={(event) => setEmployeesTo(event.target.value)} aria-label="Datum do" />
+            </div>
+
+            {employeeRows.length === 0 ? (
+              <div className="finance-state">Ni zaslužkov za izbran datum.</div>
+            ) : (
+              <div className="finance-table-wrap">
+                <table className="finance-table">
+                  <thead>
+                    <tr><th>Ime</th><th>Št. projektov</th><th>Skupaj</th><th>Plačano</th><th>Neplačano</th><th>Akcija</th></tr>
+                  </thead>
+                  <tbody>
+                    {employeeRows.map((row) => (
+                      <React.Fragment key={row.employeeId}>
+                        <tr className="is-clickable" onClick={() => toggleEmployeeRow(row.employeeId)}>
+                          <td>{row.employeeName}</td>
+                          <td>{row.projectCount}</td>
+                          <td>{currency.format(row.totalEarned)}</td>
+                          <td>{currency.format(row.totalPaid)}</td>
+                          <td>{currency.format(row.totalUnpaid)}</td>
+                          <td>
+                            <button type="button" className="finance-btn" onClick={(event) => { event.stopPropagation(); markEmployeePaid(row.employeeId); }}>
+                              Označi kot plačano
+                            </button>
+                          </td>
+                        </tr>
+                        {expandedEmployeeRows[row.employeeId] && (
+                          <tr className="expanded-row">
+                            <td colSpan={6}>
+                              <table className="inner-table">
+                                <thead>
+                                  <tr><th>Projekt</th><th>Račun</th><th>Stranka</th><th>Datum</th><th>Zaslužek</th><th>Status</th></tr>
+                                </thead>
+                                <tbody>
+                                  {row.projects.map((project) => (
+                                    <tr key={`${row.employeeId}-${project.invoiceNumber}-${project.projectId}`}>
+                                      <td>{project.projectId}</td>
+                                      <td>{project.invoiceNumber}</td>
+                                      <td>{project.customerName}</td>
+                                      <td>{new Date(project.issuedAt).toLocaleDateString('sl-SI')}</td>
+                                      <td>{currency.format(project.earnings)}</td>
+                                      <td><span className={`status-badge ${project.isPaid ? 'is-paid' : 'is-pending'}`}>{statusLabel(project.isPaid)}</span></td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
+      {tab === 'zaposleni' && isExecutionOnly && (
+        <>
+          <section className="finance-cards-grid">
+            <article className="finance-card"><span>Skupaj zasluženo</span><strong>{currency.format(employeeSummary.totalEarned)}</strong></article>
+            <article className="finance-card"><span>Plačano</span><strong>{currency.format(employeeSummary.totalPaid)}</strong></article>
+            <article className="finance-card"><span>Čaka na plačilo</span><strong>{currency.format(employeeSummary.totalUnpaid)}</strong></article>
+          </section>
+          <section className="finance-panel">
+            {executionProjects.length === 0 ? (
+              <div className="finance-state">Trenutno nimaš zabeleženih zaslužkov.</div>
+            ) : (
+              <ul className="execution-project-list">
+                {executionProjects.map((project) => (
+                  <li key={project.id}>
+                    <div>
+                      <h3>{project.projectId}</h3>
+                      <p>{project.customerName} · {new Date(project.issuedAt).toLocaleDateString('sl-SI')}</p>
+                    </div>
+                    <div>
+                      <strong>{currency.format(project.earnings)}</strong>
+                      <span className={`status-badge ${project.isPaid ? 'is-paid' : 'is-pending'}`}>{statusLabel(project.isPaid)}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
+      )}
+
+      {tab === 'podjetje' && !isExecutionOnly && (
+        <section className="finance-company-grid">
+          <article className="finance-panel">
+            <h2>Mesečni prihodki</h2>
+            {monthly.length === 0 ? (
+              <div className="finance-state">Ni podatkov za izbrano leto.</div>
+            ) : (
+              <div className="bar-chart">
+                {monthly.map((row) => {
+                  const width = monthlyMax > 0 ? Math.max(8, Math.round((row.totalSaleWithVat / monthlyMax) * 100)) : 0;
+                  return (
+                    <div key={row.month} className="bar-chart__row">
+                      <span>{formatMonthLabel(row.month)}</span>
+                      <div className="bar-chart__track"><div className="bar-chart__fill" style={{ width: `${width}%` }} /></div>
+                      <strong>{currency.format(row.totalSaleWithVat)}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </article>
+
+          <article className="finance-panel">
+            <h2>Top 10 produktov</h2>
+            {products.length === 0 ? (
+              <div className="finance-state">Ni produktnih podatkov.</div>
+            ) : (
+              <div className="finance-table-wrap">
+                <table className="finance-table">
+                  <thead>
+                    <tr><th>Naziv</th><th>Prodana količina</th><th>Prihodek</th><th>Marža</th></tr>
+                  </thead>
+                  <tbody>
+                    {products.map((product) => (
+                      <tr key={`${product.productId ?? 'custom'}-${product.name}`}>
+                        <td>{product.name}</td>
+                        <td>{product.totalQuantity}</td>
+                        <td>{currency.format(product.totalRevenue)}</td>
+                        <td>{currency.format(product.totalMargin)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </article>
+
+          <article className="finance-panel">
+            <h2>Pipeline funnel</h2>
+            <div className="pipeline-cards">
+              <div className="pipeline-card"><span>Osnutki</span><strong>{pipelineByStatus.get('draft')?.count ?? 0}</strong></div>
+              <div className="pipeline-card"><span>Poslane ponudbe</span><strong>{pipelineByStatus.get('offered')?.count ?? 0}</strong></div>
+              <div className="pipeline-card"><span>Sprejeto</span><strong>{pipelineByStatus.get('accepted')?.count ?? 0}</strong></div>
+              <div className="pipeline-card"><span>Zavrnjeno</span><strong>{pipelineByStatus.get('rejected')?.count ?? 0}</strong></div>
+            </div>
+            <div className="pipeline-highlight">Win rate: {(pipeline?.winRate ?? 0).toFixed(2)}%</div>
+            <div className="pipeline-sub">Skupna vrednost odprtih ponudb: <strong>{currency.format(totalOpenOfferValue)}</strong></div>
+          </article>
+        </section>
+      )}
     </div>
   );
 };

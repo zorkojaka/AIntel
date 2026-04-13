@@ -302,7 +302,7 @@ const ProjectSchema = new Schema<ProjectDocument>(
       address: { type: String, trim: true },
       paymentTerms: { type: String, trim: true },
     },
-    status: { type: String, required: true },
+    status: { type: String, required: true, enum: ['draft', 'offered', 'ordered', 'in-progress', 'completed', 'invoiced'] },
     offerAmount: { type: Number, required: true, default: 0 },
     quotedTotal: { type: Number, required: true, default: 0 },
     quotedVat: { type: Number, required: true, default: 0 },

@@ -8,6 +8,7 @@ import {
   nextFinanceId,
   type FinanceEntry,
 } from '../../finance/schemas/financeEntry';
+import { createFinanceSnapshot } from '../../finance/services/finance-snapshot.service';
 
 type InvoiceStatus = 'draft' | 'issued' | 'cancelled';
 type InvoiceItemType = 'Osnovno' | 'Dodatno' | 'Manj';
@@ -293,9 +294,11 @@ export async function issueInvoiceVersion(projectId: string, versionId: string):
     });
     return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id, includeProjectStatus: true });
   }
+  const cancelledIssuedVersionIds: string[] = [];
   (project.invoiceVersions ?? []).forEach((entry) => {
     if (entry._id !== version._id && entry.status === 'issued') {
       entry.status = 'cancelled';
+      cancelledIssuedVersionIds.push(String(entry._id));
     }
   });
   version.status = 'issued';
@@ -311,18 +314,49 @@ export async function issueInvoiceVersion(projectId: string, versionId: string):
       error,
     });
   }
-  if (project.status !== 'completed') {
-    const executionCompleted = await hasCompletedExecution(project.id);
-    if (executionCompleted) {
-      project.status = 'completed';
-      addTimeline(project, {
-        type: 'status-change',
-        title: 'Status spremenjen',
-        description: "Projekt prešel v fazo 'Zaključen' po izdaji računa",
-        timestamp: new Date().toISOString(),
-        user: 'system',
-      });
-    }
+  try {
+    await createFinanceSnapshot({
+      project: {
+        id: project.id,
+        customer: project.customer,
+        confirmedOfferVersionId: project.confirmedOfferVersionId ?? null,
+        salesUserId: project.salesUserId ? String(project.salesUserId) : null,
+      },
+      invoiceVersion: {
+        _id: version._id,
+        versionNumber: version.versionNumber,
+        issuedAt: version.issuedAt,
+        items: version.items.map((item) => ({
+          id: item.id,
+          name: item.name,
+          unit: item.unit,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          vatPercent: item.vatPercent,
+          totalWithoutVat: item.totalWithoutVat,
+          type: item.type,
+        })),
+        summary: version.summary,
+      },
+      correctedFromInvoiceVersionId: cancelledIssuedVersionIds[0] ?? null,
+    });
+  } catch (error) {
+    console.error('[invoice] finance-snapshot failed', {
+      projectId,
+      invoiceVersionId: versionId,
+      error,
+    });
+  }
+
+  if (project.status !== 'invoiced') {
+    project.status = 'invoiced';
+    addTimeline(project, {
+      type: 'status-change',
+      title: 'Status spremenjen',
+      description: "Projekt prešel v fazo 'Računano' po izdaji računa",
+      timestamp: new Date().toISOString(),
+      user: 'system',
+    });
   }
 
   await project.save();
