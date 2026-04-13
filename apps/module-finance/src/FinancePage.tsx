@@ -7,6 +7,10 @@ type TabKey = 'projekti' | 'zaposleni' | 'podjetje';
 interface MePayload {
   employeeId?: string | null;
   roles?: string[];
+  employee?: {
+    id?: string;
+    roles?: string[];
+  } | null;
 }
 
 interface ApiEnvelope<T> {
@@ -85,6 +89,15 @@ interface EmployeeProjectBreakdown {
   customerName: string;
   issuedAt: string;
   earnings: number;
+  isPaid: boolean;
+}
+
+interface ExecutionProjectEarningRow {
+  snapshotId: string;
+  projectId: string;
+  issuedAt: string;
+  servicesDone: string;
+  earnedAmount: number;
   isPaid: boolean;
 }
 
