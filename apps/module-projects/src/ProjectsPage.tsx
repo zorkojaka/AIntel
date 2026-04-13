@@ -5,6 +5,8 @@ import { useSettingsData } from "@aintel/module-settings";
 import { Plus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectList } from "./components/ProjectList";
+import { ProjectFilters } from "./components/ProjectFilters";
+import { ProjectKanban } from "./components/ProjectKanban";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
 import { Toaster } from "./components/ui/sonner";
 import { Button } from "./components/ui/button";
@@ -14,6 +16,7 @@ import { mapProject } from "./domains/core/useProject";
 import { canAccessPreparation } from "@aintel/shared/utils/preparationAccess";
 
 const API_PREFIX = "/api/projects";
+const VIEW_STORAGE_KEY = "projects:view-mode";
 const VALID_TABS = ["items", "offers", "logistics", "execution", "closing"] as const;
 type WorkspaceTab = (typeof VALID_TABS)[number];
 const shownForbiddenProjectToasts = new Set<string>();
@@ -60,6 +63,10 @@ export function ProjectsPage() {
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [projectsViewMode, setProjectsViewMode] = useState<"list" | "kanban">("list");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [phaseFilter, setPhaseFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [newProjectCategorySlugs, setNewProjectCategorySlugs] = useState<string[]>([]);
   const [newProjectDefaults, setNewProjectDefaults] = useState({
     title: "Nov projekt",
@@ -88,6 +95,13 @@ export function ProjectsPage() {
   useEffect(() => {
     if (typeof document !== "undefined") {
       setClientPortalContainer(document.body);
+    }
+  }, []);
+
+  useEffect(() => {
+    const persisted = window.localStorage.getItem(VIEW_STORAGE_KEY);
+    if (persisted === "list" || persisted === "kanban") {
+      setProjectsViewMode(persisted);
     }
   }, []);
 
@@ -546,6 +560,65 @@ export function ProjectsPage() {
     [setProjectDetails, setProjects, setTemplates],
   );
 
+  const categoryLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    categories.forEach((category) => map.set(category.slug, category.name));
+    return map;
+  }, [categories]);
+
+  const filteredProjects = useMemo(() => {
+    return projects.filter((project) => {
+      const normalizedQuery = searchQuery.trim().toLowerCase();
+      const matchesSearch =
+        normalizedQuery.length === 0 ||
+        project.title.toLowerCase().includes(normalizedQuery) ||
+        project.customer.toLowerCase().includes(normalizedQuery);
+      const matchesPhase =
+        phaseFilter === "all" ||
+        project.status === phaseFilter ||
+        (phaseFilter === "completed" && project.status === "invoiced");
+      const matchesCategory =
+        categoryFilter === "all" || project.categories.some((categorySlug) => categorySlug === categoryFilter);
+      return matchesSearch && matchesPhase && matchesCategory;
+    });
+  }, [projects, searchQuery, phaseFilter, categoryFilter]);
+
+  const handleViewModeChange = (mode: "list" | "kanban") => {
+    setProjectsViewMode(mode);
+    window.localStorage.setItem(VIEW_STORAGE_KEY, mode);
+  };
+
+  const handleProjectDrop = useCallback(
+    async (projectId: string, nextStatus: ProjectStatus) => {
+      const previous = projects;
+      const project = projects.find((entry) => entry.id === projectId);
+      if (!project || project.status === nextStatus) return;
+
+      const nextProjects = projects.map((entry) =>
+        entry.id === projectId ? { ...entry, status: nextStatus } : entry
+      );
+      setProjects(nextProjects);
+
+      try {
+        const response = await fetch(`${API_PREFIX}/${projectId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: nextStatus }),
+        });
+        const result = await response.json();
+        if (!result.success) {
+          setProjects(previous);
+          toast.error(result.error ?? "Statusa ni bilo mogoče posodobiti.");
+          return;
+        }
+      } catch {
+        setProjects(previous);
+        toast.error("Statusa ni bilo mogoče posodobiti.");
+      }
+    },
+    [projects],
+  );
+
   return (
     <>
       {currentView === "list" && (
@@ -553,27 +626,69 @@ export function ProjectsPage() {
           <div className="projects-page-shell">
             <div className="projects-page-topbar mb-4 flex flex-col gap-3 md:mb-6 md:flex-row md:items-center md:justify-between">
               <h1 className="m-0">Projekti</h1>
-              {!isExecutionOnlyViewer ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button onClick={openNewProjectDialog}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Nov projekt
-                  </Button>
-                  <Button variant="ghost" onClick={handleAddClient}>
-                    <UserPlus className="mr-2 h-4 w-4" />
-                    Dodaj stranko
-                  </Button>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <div className="view-toggle">
+                  <button
+                    className={`vt-btn ${projectsViewMode === "list" ? "active" : ""}`}
+                    id="vt-list"
+                    type="button"
+                    onClick={() => handleViewModeChange("list")}
+                  >
+                    ☰ Seznam
+                  </button>
+                  <button
+                    className={`vt-btn ${projectsViewMode === "kanban" ? "active" : ""}`}
+                    id="vt-kanban"
+                    type="button"
+                    onClick={() => handleViewModeChange("kanban")}
+                  >
+                    ⊞ Kanban
+                  </button>
                 </div>
-              ) : null}
+                {!isExecutionOnlyViewer ? (
+                  <>
+                    <Button onClick={openNewProjectDialog}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Nov projekt
+                    </Button>
+                    <Button variant="ghost" onClick={handleAddClient}>
+                      <UserPlus className="mr-2 h-4 w-4" />
+                      Dodaj stranko
+                    </Button>
+                  </>
+                ) : null}
+              </div>
             </div>
-            <ProjectList
-              projects={projects}
-              onSelectProject={handleSelectProject}
-              categories={categories}
-              onEditProject={handleEditProject}
-              onDeleteProject={handleDeleteProject}
-              readOnly={isExecutionOnlyViewer}
-            />
+            <div className="mb-4">
+              <ProjectFilters
+                searchQuery={searchQuery}
+                onSearchQueryChange={setSearchQuery}
+                phaseFilter={phaseFilter}
+                onPhaseFilterChange={setPhaseFilter}
+                categoryFilter={categoryFilter}
+                onCategoryFilterChange={setCategoryFilter}
+                categories={categories}
+              />
+            </div>
+            {projectsViewMode === "list" ? (
+              <ProjectList
+                projects={projects}
+                filteredProjects={filteredProjects}
+                hideFilters
+                onSelectProject={handleSelectProject}
+                categories={categories}
+                onEditProject={handleEditProject}
+                onDeleteProject={handleDeleteProject}
+                readOnly={isExecutionOnlyViewer}
+              />
+            ) : (
+              <ProjectKanban
+                projects={filteredProjects}
+                categoryLookup={categoryLookup}
+                onSelectProject={handleSelectProject}
+                onProjectDrop={handleProjectDrop}
+              />
+            )}
           </div>
         </div>
       )}
@@ -635,6 +750,5 @@ export function ProjectsPage() {
     </>
   );
 }
-
 
 

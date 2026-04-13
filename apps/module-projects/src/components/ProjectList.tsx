@@ -1,9 +1,7 @@
-import { CalendarDays, Pencil, Search, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { CalendarDays, Pencil, Trash2 } from "lucide-react";
+import { useMemo } from "react";
 import { TableRowActions } from "@aintel/ui";
 import { Badge } from "./ui/badge";
-import { Input } from "./ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Category, ProjectStatus, ProjectSummary } from "../types";
 
@@ -14,6 +12,8 @@ interface ProjectListProps {
   onEditProject: (project: ProjectSummary) => void;
   onDeleteProject: (project: ProjectSummary) => void;
   readOnly?: boolean;
+  hideFilters?: boolean;
+  filteredProjects?: ProjectSummary[];
 }
 
 const statusColors: Record<ProjectStatus, string> = {
@@ -57,52 +57,21 @@ export function ProjectList({
   onEditProject,
   onDeleteProject,
   readOnly = false,
+  hideFilters = false,
+  filteredProjects: externalFilteredProjects,
 }: ProjectListProps) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-
   const categoryLookup = useMemo(() => {
     const map = new Map<string, string>();
     categories.forEach((category) => map.set(category.slug, category.name));
     return map;
   }, [categories]);
 
-  const filteredProjects = projects.filter((project) => {
-    const matchesSearch =
-      project.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      project.customer.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === "all" || project.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const filteredProjects = externalFilteredProjects ?? projects;
 
   if (filteredProjects.length === 0) {
     return (
       <div className="space-y-4">
-        <div className="flex flex-col gap-3 md:flex-row">
-          <div className="relative flex-1">
-            <Search className="text-muted-foreground absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
-            <Input
-              placeholder="Išči po nazivu ali stranki..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full md:w-48">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Vsi statusi</SelectItem>
-              <SelectItem value="draft">Osnutek</SelectItem>
-              <SelectItem value="offered">Ponujeno</SelectItem>
-              <SelectItem value="ordered">Naročeno</SelectItem>
-              <SelectItem value="in-progress">V teku</SelectItem>
-              <SelectItem value="completed">Zaključeno</SelectItem>
-              <SelectItem value="invoiced">Zaračunano</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {!hideFilters ? <div className="text-sm text-muted-foreground">Filtri so na voljo v glavi seznama.</div> : null}
         <div className="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
           Ni najdenih projektov.
         </div>
@@ -112,32 +81,6 @@ export function ProjectList({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 md:flex-row">
-        <div className="relative flex-1">
-          <Search className="text-muted-foreground absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
-          <Input
-            placeholder="Išči po nazivu ali stranki..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full md:w-48">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Vsi statusi</SelectItem>
-            <SelectItem value="draft">Osnutek</SelectItem>
-            <SelectItem value="offered">Ponujeno</SelectItem>
-            <SelectItem value="ordered">Naročeno</SelectItem>
-            <SelectItem value="in-progress">V teku</SelectItem>
-            <SelectItem value="completed">Zaključeno</SelectItem>
-            <SelectItem value="invoiced">Zaračunano</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
       <div className="projects-table-shell hidden rounded-[var(--radius-card)] border bg-card overflow-hidden md:block">
         <Table>
           <TableHeader>
