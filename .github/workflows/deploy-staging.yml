@@ -1,0 +1,25 @@
+name: Deploy to Hetzner Staging
+
+on:
+  push:
+    branches:
+      - staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Add server to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H 178.104.24.47 >> ~/.ssh/known_hosts
+
+      - name: Deploy via SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_STAGING_SSH_KEY }}
+          SSH_USER: ${{ secrets.HETZNER_STAGING_USER }}
+        run: |
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh -i ~/.ssh/id_rsa "$SSH_USER@178.104.24.47" "cd /home/jaka && bash deploy-aintel-staging.sh"
