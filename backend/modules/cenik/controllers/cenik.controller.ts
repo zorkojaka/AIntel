@@ -161,7 +161,12 @@ function sortBySuggested(products: ProductResponse[], suggested: string[]) {
 export async function getAllProducts(_req: Request, res: Response) {
   try {
     const includeInactive = String(_req.query?.includeInactive ?? '').toLowerCase() === 'true';
-    const filter = includeInactive ? {} : { isActive: { $ne: false } };
+    const isServiceQuery = _req.query?.isService;
+    const hasIsServiceFilter = typeof isServiceQuery === 'string' && isServiceQuery.trim() !== '';
+    const filter: Record<string, unknown> = includeInactive ? {} : { isActive: { $ne: false } };
+    if (hasIsServiceFilter) {
+      filter.isService = parseBoolean(isServiceQuery);
+    }
     const products = await ProductModel.find(filter).lean();
     const sanitized = products.map((product) => sanitizeProduct(product));
     const query = _req.query?.suggestForCategories;
