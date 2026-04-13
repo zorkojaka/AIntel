@@ -306,3 +306,7 @@
     text-align: right;
   }
 }
+
+.finance-page__cards--compact {
+  margin: 16px 0 20px;
+}
