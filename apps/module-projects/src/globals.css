@@ -259,6 +259,96 @@
   border-color: #22c55e;
 }
 
+.view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.vt-btn {
+  border: 0;
+  background: transparent;
+  color: var(--app-muted);
+  padding: 0.45rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.vt-btn.active {
+  background: #E6F1FB;
+  color: #185FA5;
+}
+
+.kanban {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(220px, 1fr));
+  gap: 8px;
+  overflow-x: auto;
+  align-items: start;
+}
+
+.kb-col {
+  background: var(--secondary);
+  border-radius: var(--app-radius-md);
+  overflow: hidden;
+  min-height: 240px;
+  border: 1px solid transparent;
+}
+
+.kb-col.is-over {
+  border-color: var(--app-brand);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-brand) 45%, transparent 55%);
+}
+
+.kb-header {
+  border-top: 3px solid #185FA5;
+  padding: 0.55rem 0.65rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: color-mix(in srgb, var(--app-surface) 92%, #ffffff 8%);
+}
+
+.kb-card {
+  background: #fff;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  padding: 8px;
+  cursor: grab;
+}
+
+.kb-card:hover {
+  border-color: color-mix(in srgb, var(--app-border) 30%, var(--app-brand) 70%);
+}
+
+.kb-card-progress {
+  height: 3px;
+  border-radius: 2px;
+  margin-top: 5px;
+}
+
+.kb-add {
+  border-top: 1px dashed var(--app-border);
+}
+
+.kb-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kb-pill {
+  font-size: 0.8rem;
+  border: 1px solid var(--app-border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  color: var(--app-muted);
+}
+
 .projects-workspace-shell .sticky.top-0.z-20 {
   border-bottom-color: var(--app-border);
   backdrop-filter: blur(8px);
