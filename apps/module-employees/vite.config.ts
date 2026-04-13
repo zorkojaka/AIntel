@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 
+const devApiProxyTarget = process.env.AINTEL_DEV_API_PROXY_TARGET ?? `http://127.0.0.1:${process.env.AINTEL_BACKEND_PORT ?? '3000'}`;
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -15,7 +17,7 @@ export default defineConfig({
     port: 5177,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: devApiProxyTarget,
         changeOrigin: true,
       },
     },
