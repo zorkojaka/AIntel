@@ -24,6 +24,29 @@ function readExecutionUnitId(unit: unknown): string {
   return '';
 }
 
+function collectExecutionUnitIds(workOrder: { items?: unknown[] }): string[] {
+  const ids: string[] = [];
+
+  if (!Array.isArray(workOrder.items)) {
+    return ids;
+  }
+
+  for (const item of workOrder.items) {
+    if (!item || typeof item !== 'object') continue;
+    const executionSpec = (item as { executionSpec?: { executionUnits?: unknown[] } }).executionSpec;
+    if (!Array.isArray(executionSpec?.executionUnits)) continue;
+
+    for (const unit of executionSpec.executionUnits) {
+      const executionUnitId = readExecutionUnitId(unit);
+      if (executionUnitId) {
+        ids.push(executionUnitId);
+      }
+    }
+  }
+
+  return ids;
+}
+
 /**
  * POST /projects/:projectId/work-orders/:workOrderId/execution-units/:unitId/photos
  * Save photo URL to execution unit
@@ -47,41 +70,48 @@ export async function saveExecutionUnitPhoto(req: Request, res: Response, next: 
       return res.fail('Delovni nalog ni najden.', 404);
     }
 
-    // Find the item and execution unit
-    let unitFound = false;
-    let updatedPhotos: string[] = [];
-    for (const item of workOrder.items) {
-      if (item.executionSpec?.executionUnits) {
-        const unit = item.executionSpec.executionUnits.find((executionUnit) => readExecutionUnitId(executionUnit) === targetUnitId);
-        if (unit) {
-          unitFound = true;
-          // Initialize arrays if they don't exist
-          if (!unit.unitPhotos) {
-            unit.unitPhotos = [];
-          }
-          if (!unit.prepPhotos) {
-            unit.prepPhotos = [];
-          }
+    const allExecutionUnitIds = collectExecutionUnitIds(workOrder);
+    console.log(
+      '[execution-unit-photos] upload lookup',
+      JSON.stringify({
+        projectId,
+        workOrderId,
+        requestedUnitId: targetUnitId,
+        knownUnitIds: allExecutionUnitIds,
+      })
+    );
 
-          // Add photo URL to the appropriate array
-          if (photoType === 'unitPhotos') {
-            if (!unit.unitPhotos.includes(photoUrl)) {
-              unit.unitPhotos.push(photoUrl);
-            }
-            updatedPhotos = [...unit.unitPhotos];
-          } else {
-            if (!unit.prepPhotos.includes(photoUrl)) {
-              unit.prepPhotos.push(photoUrl);
-            }
-            updatedPhotos = [...unit.prepPhotos];
-          }
-          break;
-        }
-      }
+    // Find the unit across all items -> executionSpec -> executionUnits
+    const matchingEntry = workOrder.items
+      .flatMap((item) => item.executionSpec?.executionUnits ?? [])
+      .map((unit) => ({ unit, unitId: readExecutionUnitId(unit) }))
+      .find(({ unitId }) => unitId === targetUnitId);
+
+    if (!matchingEntry?.unit) {
+      return res.fail('Execution unit not found', 404);
+    }
+    const unit = matchingEntry.unit;
+    let updatedPhotos: string[] = [];
+
+    // Initialize arrays if they don't exist
+    if (!unit.unitPhotos) {
+      unit.unitPhotos = [];
+    }
+    if (!unit.prepPhotos) {
+      unit.prepPhotos = [];
     }
 
-    if (!unitFound) {
-      return res.fail('Execution unit not found', 404);
+    // Add photo URL to the appropriate array
+    if (photoType === 'unitPhotos') {
+      if (!unit.unitPhotos.includes(photoUrl)) {
+        unit.unitPhotos.push(photoUrl);
+      }
+      updatedPhotos = [...unit.unitPhotos];
+    } else {
+      if (!unit.prepPhotos.includes(photoUrl)) {
+        unit.prepPhotos.push(photoUrl);
+      }
+      updatedPhotos = [...unit.prepPhotos];
     }
 
     // Save the work order
@@ -125,32 +155,39 @@ export async function deleteExecutionUnitPhoto(req: Request, res: Response, next
       return res.fail('Delovni nalog ni najden.', 404);
     }
 
-    let unitFound = false;
+    const allExecutionUnitIds = collectExecutionUnitIds(workOrder);
+    console.log(
+      '[execution-unit-photos] delete lookup',
+      JSON.stringify({
+        projectId,
+        workOrderId,
+        requestedUnitId: targetUnitId,
+        knownUnitIds: allExecutionUnitIds,
+      })
+    );
+
+    const matchingEntry = workOrder.items
+      .flatMap((item) => item.executionSpec?.executionUnits ?? [])
+      .map((unit) => ({ unit, unitId: readExecutionUnitId(unit) }))
+      .find(({ unitId }) => unitId === targetUnitId);
+
+    if (!matchingEntry?.unit) {
+      return res.fail('Execution unit not found', 404);
+    }
+    const unit = matchingEntry.unit;
     let photoRemoved = false;
     let updatedPhotos: string[] = [];
 
-    for (const item of workOrder.items) {
-      if (!item.executionSpec?.executionUnits) continue;
-      const unit = item.executionSpec.executionUnits.find((executionUnit) => readExecutionUnitId(executionUnit) === targetUnitId);
-      if (!unit) continue;
-
-      unitFound = true;
-      if (photoType === 'unitPhotos') {
-        const initialLength = unit.unitPhotos?.length ?? 0;
-        unit.unitPhotos = (unit.unitPhotos ?? []).filter((entry) => entry !== photoUrl);
-        photoRemoved = (unit.unitPhotos?.length ?? 0) !== initialLength;
-        updatedPhotos = [...(unit.unitPhotos ?? [])];
-      } else {
-        const initialLength = unit.prepPhotos?.length ?? 0;
-        unit.prepPhotos = (unit.prepPhotos ?? []).filter((entry) => entry !== photoUrl);
-        photoRemoved = (unit.prepPhotos?.length ?? 0) !== initialLength;
-        updatedPhotos = [...(unit.prepPhotos ?? [])];
-      }
-      break;
-    }
-
-    if (!unitFound) {
-      return res.fail('Execution unit not found', 404);
+    if (photoType === 'unitPhotos') {
+      const initialLength = unit.unitPhotos?.length ?? 0;
+      unit.unitPhotos = (unit.unitPhotos ?? []).filter((entry) => entry !== photoUrl);
+      photoRemoved = (unit.unitPhotos?.length ?? 0) !== initialLength;
+      updatedPhotos = [...(unit.unitPhotos ?? [])];
+    } else {
+      const initialLength = unit.prepPhotos?.length ?? 0;
+      unit.prepPhotos = (unit.prepPhotos ?? []).filter((entry) => entry !== photoUrl);
+      photoRemoved = (unit.prepPhotos?.length ?? 0) !== initialLength;
+      updatedPhotos = [...(unit.prepPhotos ?? [])];
     }
 
     if (!photoRemoved) {

@@ -883,14 +883,31 @@ export function ExecutionPanel({
     [getDraftValues, workOrders],
   );
 
+  const hasExistingExecutionUnit = useCallback(
+    (target: ActiveUnitPhotoCapture) => {
+      if (!target) return false;
+      const order = workOrders.find((candidate) => candidate._id === target.orderId);
+      if (!order) return false;
+      const item = getDraftValues(order).items.find((candidate) => candidate.id === target.itemId);
+      if (!item) return false;
+      return (ensureExecutionSpec(item.executionSpec).executionUnits ?? []).some(
+        (candidate) => candidate.id === target.unitId,
+      );
+    },
+    [getDraftValues, workOrders],
+  );
+
   const activeExecutionUnitPhotoUrls = useMemo(
     () => getExecutionUnitPhotoUrls(activeUnitPhotoCapture),
     [activeUnitPhotoCapture, getExecutionUnitPhotoUrls],
   );
 
   const canOpenActiveUnitPhotoCapture = useMemo(
-    () => (activeUnitPhotoCapture ? hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId) : false),
-    [activeUnitPhotoCapture],
+    () =>
+      activeUnitPhotoCapture
+        ? hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId) && hasExistingExecutionUnit(activeUnitPhotoCapture)
+        : false,
+    [activeUnitPhotoCapture, hasExistingExecutionUnit],
   );
 
   const syncExecutionUnitPhotos = useCallback(
@@ -2003,31 +2020,17 @@ export function ExecutionPanel({
                                             >
                                               <Pencil className="h-4 w-4" />
                                             </Button>
-                                            {hasSavedExecutionUnitId(item.id) ? (
-                                              <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 text-muted-foreground"
-                                                onClick={() => openUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: item.id })}
-                                                aria-label="Dodaj fotografijo"
-                                                title="Dodaj fotografijo"
-                                              >
-                                                <Camera className="h-4 w-4" />
-                                              </Button>
-                                            ) : (
-                                              <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 text-muted-foreground"
-                                                disabled
-                                                aria-label="Shranite enoto za dodajanje fotografij"
-                                                title="Shranite enoto za dodajanje fotografij"
-                                              >
-                                                <Camera className="h-4 w-4" />
-                                              </Button>
-                                            )}
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-8 w-8 text-muted-foreground"
+                                              disabled
+                                              aria-label="Fotografije so na voljo le za izvedbene enote"
+                                              title="Fotografije so na voljo le za izvedbene enote"
+                                            >
+                                              <Camera className="h-4 w-4" />
+                                            </Button>
                                           </div>
                                         ) : null}
                                       </td>
@@ -2203,31 +2206,17 @@ export function ExecutionPanel({
                                       >
                                         <Pencil className="h-4 w-4" />
                                       </Button>
-                                      {hasSavedExecutionUnitId(item.id) ? (
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-muted-foreground"
-                                          onClick={() => openUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: item.id })}
-                                          aria-label="Dodaj fotografijo"
-                                          title="Dodaj fotografijo"
-                                        >
-                                          <Camera className="h-4 w-4" />
-                                        </Button>
-                                      ) : (
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-muted-foreground"
-                                          disabled
-                                          aria-label="Shranite enoto za dodajanje fotografij"
-                                          title="Shranite enoto za dodajanje fotografij"
-                                        >
-                                          <Camera className="h-4 w-4" />
-                                        </Button>
-                                      )}
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-muted-foreground"
+                                        disabled
+                                        aria-label="Fotografije so na voljo le za izvedbene enote"
+                                        title="Fotografije so na voljo le za izvedbene enote"
+                                      >
+                                        <Camera className="h-4 w-4" />
+                                      </Button>
                                       <Button
                                         type="button"
                                         variant="ghost"
@@ -2649,6 +2638,9 @@ export function ExecutionPanel({
                   if (!hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId)) {
                     throw new Error("Execution unit must be saved before uploading photos");
                   }
+                  if (!hasExistingExecutionUnit(activeUnitPhotoCapture)) {
+                    throw new Error("Execution unit id does not exist on the current work order item");
+                  }
                   const response = await fetch(
                     `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos`,
                     {
@@ -2685,6 +2677,9 @@ export function ExecutionPanel({
                 try {
                   if (!hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId)) {
                     throw new Error("Execution unit must be saved before deleting photos");
+                  }
+                  if (!hasExistingExecutionUnit(activeUnitPhotoCapture)) {
+                    throw new Error("Execution unit id does not exist on the current work order item");
                   }
                   const response = await fetch(
                     `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos`,
@@ -2730,4 +2725,3 @@ export function ExecutionPanel({
     </div>
   );
 }
-
