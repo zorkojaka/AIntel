@@ -793,6 +793,52 @@ export function ExecutionPanel({
     [activeUnitPhotoCapture, getExecutionUnitPhotoUrls],
   );
 
+  const syncExecutionUnitPhotos = useCallback(
+    (
+      orderId: string,
+      itemId: string,
+      unitId: string,
+      photoType: "unitPhotos" | "prepPhotos",
+      updater: (photos: string[]) => string[],
+    ) => {
+      setPendingWorkOrders((prev) => {
+        const order = workOrders.find((candidate) => candidate._id === orderId);
+        if (!order) return prev;
+
+        const currentDraft = prev[orderId] ?? getInitialDraftValues(order);
+        const nextItems = currentDraft.items.map((item: WorkOrderItemDraft) => {
+          if (item.id !== itemId) return item;
+
+          const executionSpec = ensureExecutionSpec(item.executionSpec);
+          const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => {
+            if (unit.id !== unitId) return unit;
+            return {
+              ...unit,
+              [photoType]: updater(Array.isArray(unit[photoType]) ? unit[photoType] : []),
+            };
+          });
+
+          return {
+            ...item,
+            executionSpec: {
+              ...executionSpec,
+              executionUnits: nextUnits,
+            },
+          };
+        });
+
+        return {
+          ...prev,
+          [orderId]: {
+            ...currentDraft,
+            items: nextItems,
+          },
+        };
+      });
+    },
+    [workOrders],
+  );
+
   const handleDeleteManualItem = (order: WorkOrder, item: WorkOrderItemDraft) => {
     if (getOrderConfirmationState(order) === "signed_active") {
       return;
@@ -2392,6 +2438,13 @@ export function ExecutionPanel({
                   if (!payload.success) {
                     throw new Error(payload.error ?? "Failed to save photo");
                   }
+                  syncExecutionUnitPhotos(
+                    activeUnitPhotoCapture.orderId,
+                    activeUnitPhotoCapture.itemId,
+                    activeUnitPhotoCapture.unitId,
+                    "unitPhotos",
+                    (photos) => (photos.includes(photo.fileUrl) ? photos : [...photos, photo.fileUrl]),
+                  );
                   toast.success("Fotografija shranjena.");
                 } catch (error) {
                   console.error("Error saving photo:", error);
@@ -2421,6 +2474,13 @@ export function ExecutionPanel({
                   if (!payload.success) {
                     throw new Error(payload.error ?? "Failed to delete photo");
                   }
+                  syncExecutionUnitPhotos(
+                    activeUnitPhotoCapture.orderId,
+                    activeUnitPhotoCapture.itemId,
+                    activeUnitPhotoCapture.unitId,
+                    "unitPhotos",
+                    (photos) => photos.filter((entry) => entry !== photo.fileUrl),
+                  );
                   toast.success("Fotografija izbrisana.");
                 } catch (error) {
                   console.error("Error deleting photo:", error);
@@ -2429,9 +2489,6 @@ export function ExecutionPanel({
                 } finally {
                   await refreshAfterMutation();
                 }
-              }}
-              onPhotosChange={async () => {
-                await refreshAfterMutation();
               }}
               maxPhotos={10}
             />

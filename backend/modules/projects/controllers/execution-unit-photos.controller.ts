@@ -26,6 +26,7 @@ export async function saveExecutionUnitPhoto(req: Request, res: Response, next: 
 
     // Find the item and execution unit
     let unitFound = false;
+    let updatedPhotos: string[] = [];
     for (const item of workOrder.items) {
       if (item.executionSpec?.executionUnits) {
         const unit = item.executionSpec.executionUnits.find((u) => u.id === unitId);
@@ -44,10 +45,12 @@ export async function saveExecutionUnitPhoto(req: Request, res: Response, next: 
             if (!unit.unitPhotos.includes(photoUrl)) {
               unit.unitPhotos.push(photoUrl);
             }
+            updatedPhotos = [...unit.unitPhotos];
           } else {
             if (!unit.prepPhotos.includes(photoUrl)) {
               unit.prepPhotos.push(photoUrl);
             }
+            updatedPhotos = [...unit.prepPhotos];
           }
           break;
         }
@@ -66,6 +69,7 @@ export async function saveExecutionUnitPhoto(req: Request, res: Response, next: 
       unitId,
       photoUrl,
       photoType,
+      photos: updatedPhotos,
     });
   } catch (err) {
     next(err);
@@ -99,6 +103,7 @@ export async function deleteExecutionUnitPhoto(req: Request, res: Response, next
 
     let unitFound = false;
     let photoRemoved = false;
+    let updatedPhotos: string[] = [];
 
     for (const item of workOrder.items) {
       if (!item.executionSpec?.executionUnits) continue;
@@ -110,10 +115,12 @@ export async function deleteExecutionUnitPhoto(req: Request, res: Response, next
         const initialLength = unit.unitPhotos?.length ?? 0;
         unit.unitPhotos = (unit.unitPhotos ?? []).filter((entry) => entry !== photoUrl);
         photoRemoved = (unit.unitPhotos?.length ?? 0) !== initialLength;
+        updatedPhotos = [...(unit.unitPhotos ?? [])];
       } else {
         const initialLength = unit.prepPhotos?.length ?? 0;
         unit.prepPhotos = (unit.prepPhotos ?? []).filter((entry) => entry !== photoUrl);
         photoRemoved = (unit.prepPhotos?.length ?? 0) !== initialLength;
+        updatedPhotos = [...(unit.prepPhotos ?? [])];
       }
       break;
     }
@@ -134,6 +141,7 @@ export async function deleteExecutionUnitPhoto(req: Request, res: Response, next
       unitId,
       photoUrl,
       photoType,
+      photos: updatedPhotos,
     });
   } catch (err) {
     next(err);

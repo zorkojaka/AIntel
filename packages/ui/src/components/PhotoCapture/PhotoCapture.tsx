@@ -103,12 +103,19 @@ export function PhotoCapture({
   const JPEG_QUALITY = 0.8;
   const [photos, setPhotos] = useState<PhotoPreview[]>(() => existingPhotoUrls.map(buildExistingPhotoPreview));
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
+  const photosRef = useRef<PhotoPreview[]>(existingPhotoUrls.map(buildExistingPhotoPreview));
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setPhotos((prev) => mergePhotos(existingPhotoUrls, prev));
+    const nextPhotos = mergePhotos(existingPhotoUrls, photosRef.current);
+    photosRef.current = nextPhotos;
+    setPhotos(nextPhotos);
   }, [existingPhotoUrls]);
+
+  useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
 
   const uploadedCount = useMemo(
     () => getUploadedPhotos(photos).length,
@@ -186,56 +193,48 @@ export function PhotoCapture({
       }
 
       const uploadedPhoto: UploadedPhoto = result.data;
-      let nextPhotos: PhotoPreview[] = [];
-
-      setPhotos((prev) => {
-        nextPhotos = prev.map((photo) =>
-          photo.id === photoId
-            ? {
-                ...photo,
-                uploading: false,
-                progress: 100,
-                uploaded: uploadedPhoto,
-                error: undefined,
-              }
-            : photo,
-        );
-        return nextPhotos;
-      });
-
-      notifyPhotosChange(
-        nextPhotos.map((photo) =>
-          photo.id === photoId
-            ? {
-                ...photo,
-                uploading: false,
-                progress: 100,
-                uploaded: uploadedPhoto,
-                error: undefined,
-              }
-            : photo,
-        ),
+      const nextPhotos = photosRef.current.map((photo) =>
+        photo.id === photoId
+          ? {
+              ...photo,
+              uploading: false,
+              progress: 100,
+              uploaded: uploadedPhoto,
+              error: undefined,
+            }
+          : photo,
       );
+      photosRef.current = nextPhotos;
+      setPhotos(nextPhotos);
+
+      notifyPhotosChange(nextPhotos);
 
       await onPhotoUploaded?.(uploadedPhoto);
+
+      const mergedPhotos = mergePhotos(existingPhotoUrls, photosRef.current);
+      if (mergedPhotos !== photosRef.current) {
+        photosRef.current = mergedPhotos;
+        setPhotos(mergedPhotos);
+        notifyPhotosChange(mergedPhotos);
+      }
     } catch (error) {
       console.error('Upload error:', error);
-      setPhotos((prev) =>
-        prev.map((photo) =>
-          photo.id === photoId
-            ? {
-                ...photo,
-                uploading: false,
-                error: error instanceof Error ? error.message : 'Upload failed',
-              }
-            : photo,
-        ),
+      const nextPhotos = photosRef.current.map((photo) =>
+        photo.id === photoId
+          ? {
+              ...photo,
+              uploading: false,
+              error: error instanceof Error ? error.message : 'Upload failed',
+            }
+          : photo,
       );
+      photosRef.current = nextPhotos;
+      setPhotos(nextPhotos);
     }
   };
 
   const addPhotoToQueue = (file: File, dataUrl: string) => {
-    if (photos.length >= maxPhotos) {
+    if (photosRef.current.length >= maxPhotos) {
       alert(`Maksimalno število fotografij je ${maxPhotos}.`);
       return;
     }
@@ -247,8 +246,9 @@ export function PhotoCapture({
       uploading: true,
       progress: 0,
     };
-
-    setPhotos((prev) => [...prev, newPhoto]);
+    const nextPhotos = [...photosRef.current, newPhoto];
+    photosRef.current = nextPhotos;
+    setPhotos(nextPhotos);
     void uploadPhoto(photoId, file);
   };
 
@@ -276,7 +276,7 @@ export function PhotoCapture({
   };
 
   const deletePhoto = async (photoId: string) => {
-    const photo = photos.find((preview) => preview.id === photoId);
+    const photo = photosRef.current.find((preview) => preview.id === photoId);
     if (!photo?.uploaded) return;
 
     try {
@@ -298,7 +298,8 @@ export function PhotoCapture({
       return;
     }
 
-    const nextPhotos = photos.filter((preview) => preview.id !== photoId);
+    const nextPhotos = photosRef.current.filter((preview) => preview.id !== photoId);
+    photosRef.current = nextPhotos;
     setPhotos(nextPhotos);
     if (previewPhotoUrl === photo.dataUrl) {
       setPreviewPhotoUrl(null);
