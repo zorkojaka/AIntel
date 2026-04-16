@@ -2,6 +2,28 @@ import { Request, Response, NextFunction } from 'express';
 import { WorkOrderModel } from '../schemas/work-order';
 import { deleteFile } from '../../../utils/fileUpload';
 
+function normalizeExecutionUnitId(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function readExecutionUnitId(unit: unknown): string {
+  if (!unit || typeof unit !== 'object') {
+    return '';
+  }
+
+  const candidate = unit as { id?: unknown; get?: (path: string) => unknown };
+  const directId = normalizeExecutionUnitId(candidate.id);
+  if (directId) {
+    return directId;
+  }
+
+  if (typeof candidate.get === 'function') {
+    return normalizeExecutionUnitId(candidate.get('id'));
+  }
+
+  return '';
+}
+
 /**
  * POST /projects/:projectId/work-orders/:workOrderId/execution-units/:unitId/photos
  * Save photo URL to execution unit
@@ -10,6 +32,7 @@ export async function saveExecutionUnitPhoto(req: Request, res: Response, next: 
   try {
     const { projectId, workOrderId, unitId } = req.params;
     const { photoUrl, photoType } = req.body;
+    const targetUnitId = normalizeExecutionUnitId(unitId);
 
     if (!photoUrl || typeof photoUrl !== 'string') {
       return res.fail('photoUrl is required', 400);
@@ -29,7 +52,7 @@ export async function saveExecutionUnitPhoto(req: Request, res: Response, next: 
     let updatedPhotos: string[] = [];
     for (const item of workOrder.items) {
       if (item.executionSpec?.executionUnits) {
-        const unit = item.executionSpec.executionUnits.find((u) => u.id === unitId);
+        const unit = item.executionSpec.executionUnits.find((executionUnit) => readExecutionUnitId(executionUnit) === targetUnitId);
         if (unit) {
           unitFound = true;
           // Initialize arrays if they don't exist
@@ -83,6 +106,7 @@ export async function saveExecutionUnitPhoto(req: Request, res: Response, next: 
 export async function deleteExecutionUnitPhoto(req: Request, res: Response, next: NextFunction) {
   try {
     const { projectId, workOrderId, unitId } = req.params;
+    const targetUnitId = normalizeExecutionUnitId(unitId);
     const photoUrlValue = req.body?.photoUrl ?? req.query?.photoUrl;
     const photoTypeValue = req.body?.photoType ?? req.query?.photoType;
     const photoUrl = typeof photoUrlValue === 'string' ? photoUrlValue : null;
@@ -107,7 +131,7 @@ export async function deleteExecutionUnitPhoto(req: Request, res: Response, next
 
     for (const item of workOrder.items) {
       if (!item.executionSpec?.executionUnits) continue;
-      const unit = item.executionSpec.executionUnits.find((executionUnit) => executionUnit.id === unitId);
+      const unit = item.executionSpec.executionUnits.find((executionUnit) => readExecutionUnitId(executionUnit) === targetUnitId);
       if (!unit) continue;
 
       unitFound = true;
