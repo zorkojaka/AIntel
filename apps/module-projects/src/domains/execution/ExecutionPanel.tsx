@@ -5,7 +5,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Checkbox } from "../../components/ui/checkbox";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Camera, ChevronDown, ChevronRight, Download, Loader2, Pencil, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PhotoCapture, type UploadedPhoto } from "@aintel/ui";
@@ -2364,6 +2364,9 @@ export function ExecutionPanel({
           <DialogHeader>
             <DialogTitle>Fotografije enote</DialogTitle>
           </DialogHeader>
+          <DialogDescription className="sr-only">
+            Upravljanje fotografij izvedbene enote
+          </DialogDescription>
           {activeUnitPhotoCapture ? (
             <PhotoCapture
               entityType="execution-unit"

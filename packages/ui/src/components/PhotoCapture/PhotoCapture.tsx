@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { Camera, Image as ImageIcon, X } from 'lucide-react';
 
 export interface PhotoCaptureProps {
   entityType: string;
@@ -21,7 +22,6 @@ export interface UploadedPhoto {
 interface PhotoPreview {
   id: string;
   dataUrl: string;
-  file?: File;
   uploading: boolean;
   progress: number;
   uploaded?: UploadedPhoto;
@@ -58,10 +58,36 @@ function buildUploadedPhotoFromUrl(fileUrl: string): UploadedPhoto {
   };
 }
 
+function buildExistingPhotoPreview(fileUrl: string): PhotoPreview {
+  return {
+    id: `existing-${fileUrl}`,
+    dataUrl: fileUrl,
+    uploading: false,
+    progress: 100,
+    uploaded: buildUploadedPhotoFromUrl(fileUrl),
+    isExisting: true,
+  };
+}
+
 function getUploadedPhotos(previews: PhotoPreview[]): UploadedPhoto[] {
   return previews
     .map((preview) => preview.uploaded)
     .filter((photo): photo is UploadedPhoto => photo !== undefined);
+}
+
+function mergePhotos(existingPhotoUrls: string[], currentPhotos: PhotoPreview[]): PhotoPreview[] {
+  const existingPreviews = existingPhotoUrls.map(buildExistingPhotoPreview);
+  const localPhotos = currentPhotos.filter((photo) => !photo.isExisting);
+  const merged = [...existingPreviews, ...localPhotos];
+  const seenUrls = new Set<string>();
+
+  return merged.filter((photo) => {
+    const fileUrl = photo.uploaded?.fileUrl;
+    if (!fileUrl) return true;
+    if (seenUrls.has(fileUrl)) return false;
+    seenUrls.add(fileUrl);
+    return true;
+  });
 }
 
 export function PhotoCapture({
@@ -75,30 +101,23 @@ export function PhotoCapture({
 }: PhotoCaptureProps) {
   const MAX_IMAGE_DIMENSION = 1920;
   const JPEG_QUALITY = 0.8;
-  const [photos, setPhotos] = useState<PhotoPreview[]>([]);
-
-  const existingPhotoPreviews = useMemo<PhotoPreview[]>(
-    () =>
-      existingPhotoUrls.map((fileUrl) => ({
-        id: `existing-${fileUrl}`,
-        dataUrl: fileUrl,
-        uploading: false,
-        progress: 100,
-        uploaded: buildUploadedPhotoFromUrl(fileUrl),
-        isExisting: true,
-      })),
-    [existingPhotoUrls]
-  );
+  const [photos, setPhotos] = useState<PhotoPreview[]>(() => existingPhotoUrls.map(buildExistingPhotoPreview));
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setPhotos((prev) => {
-      const existingUrls = new Set(existingPhotoPreviews.map((photo) => photo.uploaded?.fileUrl));
-      const localPhotos = prev.filter(
-        (photo) => !photo.isExisting && (!photo.uploaded || !existingUrls.has(photo.uploaded.fileUrl))
-      );
-      return [...existingPhotoPreviews, ...localPhotos];
-    });
-  }, [existingPhotoPreviews]);
+    setPhotos((prev) => mergePhotos(existingPhotoUrls, prev));
+  }, [existingPhotoUrls]);
+
+  const uploadedCount = useMemo(
+    () => getUploadedPhotos(photos).length,
+    [photos],
+  );
+
+  const notifyPhotosChange = (nextPhotos: PhotoPreview[]) => {
+    onPhotosChange?.(getUploadedPhotos(nextPhotos));
+  };
 
   const compressImage = (file: File): Promise<File> =>
     new Promise((resolve, reject) => {
@@ -136,7 +155,7 @@ export function PhotoCapture({
             resolve(new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' }));
           },
           'image/jpeg',
-          JPEG_QUALITY
+          JPEG_QUALITY,
         );
       };
 
@@ -160,8 +179,8 @@ export function PhotoCapture({
         method: 'POST',
         body: formData,
       });
-
       const result = await response.json();
+
       if (!result.success) {
         throw new Error(result.error || 'Upload failed');
       }
@@ -172,14 +191,33 @@ export function PhotoCapture({
       setPhotos((prev) => {
         nextPhotos = prev.map((photo) =>
           photo.id === photoId
-            ? { ...photo, uploading: false, progress: 100, uploaded: uploadedPhoto }
-            : photo
+            ? {
+                ...photo,
+                uploading: false,
+                progress: 100,
+                uploaded: uploadedPhoto,
+                error: undefined,
+              }
+            : photo,
         );
         return nextPhotos;
       });
 
+      notifyPhotosChange(
+        nextPhotos.map((photo) =>
+          photo.id === photoId
+            ? {
+                ...photo,
+                uploading: false,
+                progress: 100,
+                uploaded: uploadedPhoto,
+                error: undefined,
+              }
+            : photo,
+        ),
+      );
+
       await onPhotoUploaded?.(uploadedPhoto);
-      onPhotosChange?.(getUploadedPhotos(nextPhotos));
     } catch (error) {
       console.error('Upload error:', error);
       setPhotos((prev) =>
@@ -190,8 +228,8 @@ export function PhotoCapture({
                 uploading: false,
                 error: error instanceof Error ? error.message : 'Upload failed',
               }
-            : photo
-        )
+            : photo,
+        ),
       );
     }
   };
@@ -206,7 +244,6 @@ export function PhotoCapture({
     const newPhoto: PhotoPreview = {
       id: photoId,
       dataUrl,
-      file,
       uploading: true,
       progress: 0,
     };
@@ -215,7 +252,7 @@ export function PhotoCapture({
     void uploadPhoto(photoId, file);
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files) return;
 
@@ -248,7 +285,7 @@ export function PhotoCapture({
       } else {
         const response = await fetch(
           `/api/files/${photo.uploaded.filename}?entityType=${entityType}&entityId=${entityId}`,
-          { method: 'DELETE' }
+          { method: 'DELETE' },
         );
         const result = await response.json();
         if (!result.success) {
@@ -261,87 +298,136 @@ export function PhotoCapture({
       return;
     }
 
-    const remainingPhotos = photos.filter((preview) => preview.id !== photoId);
-    setPhotos(remainingPhotos);
-    onPhotosChange?.(getUploadedPhotos(remainingPhotos));
+    const nextPhotos = photos.filter((preview) => preview.id !== photoId);
+    setPhotos(nextPhotos);
+    if (previewPhotoUrl === photo.dataUrl) {
+      setPreviewPhotoUrl(null);
+    }
+    notifyPhotosChange(nextPhotos);
   };
 
-  const actionButtonClassName =
-    'relative inline-flex min-h-11 items-center justify-center overflow-hidden rounded-md border px-4 py-2 text-sm font-medium transition-colors focus-within:outline-none focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2';
-  const disabled = photos.length >= maxPhotos;
+  const buttonClassName =
+    'inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50';
+  const isAtLimit = photos.length >= maxPhotos;
 
   return (
-    <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pr-1">
-      <div className="flex flex-wrap gap-3">
-        <label
-          className={`${actionButtonClassName} ${
-            disabled
-              ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-              : 'cursor-pointer border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
-          }`}
-        >
-          Kamera
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            multiple
-            onChange={handleFileSelect}
-            disabled={disabled}
-            aria-label="Kamera"
-            className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
-          />
-        </label>
-        <label
-          className={`${actionButtonClassName} ${
-            disabled
-              ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-              : 'cursor-pointer border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-          }`}
-        >
-          Galerija
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleFileSelect}
-            disabled={disabled}
-            aria-label="Galerija"
-            className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
-          />
-        </label>
+    <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto">
+      <div className="space-y-1">
+        <p className="text-sm font-medium">{uploadedCount} shranjenih slik</p>
+        <p className="text-xs text-muted-foreground">Dodaj fotografije ali odpri obstoječe v povečanem prikazu.</p>
       </div>
 
-      {photos.length > 0 ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3">
+      {photos.length === 0 ? (
+        <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/20 px-6 py-8 text-center">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-border bg-background">
+            <Camera className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <p className="text-sm font-medium">Še ni fotografij</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-3">
           {photos.map((photo) => (
-            <div
-              key={photo.id}
-              className="relative aspect-square overflow-hidden rounded-md border-2 border-gray-300 bg-gray-100"
-            >
-              <img src={photo.dataUrl} alt="Preview" className="h-full w-full object-cover" />
+            <div key={photo.id} className="relative aspect-square overflow-hidden rounded-xl border bg-muted/20">
+              <button
+                type="button"
+                className="h-full w-full"
+                onClick={() => {
+                  if (!photo.uploading && !photo.error) {
+                    setPreviewPhotoUrl(photo.dataUrl);
+                  }
+                }}
+                disabled={photo.uploading}
+              >
+                <img src={photo.dataUrl} alt="Fotografija enote" className="h-full w-full object-cover" />
+              </button>
+
               {photo.uploading ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/45">
                   <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-white/30 border-t-white" />
                 </div>
               ) : null}
+
               {photo.error ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-red-600/90 text-2xl text-white">
-                  <span>!</span>
+                <div className="absolute inset-0 flex items-center justify-center bg-destructive/90 px-2 text-center text-xs font-medium text-destructive-foreground">
+                  Napaka pri nalaganju
                 </div>
               ) : null}
+
               {photo.uploaded ? (
                 <button
                   type="button"
                   onClick={() => void deletePhoto(photo.id)}
-                  className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-red-600/90 text-xl leading-none text-white transition-all hover:scale-110 hover:bg-red-600"
-                  aria-label="Izbriši"
+                  className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-red-600 text-white shadow-sm transition-colors hover:bg-red-700"
+                  aria-label="Izbriši fotografijo"
                 >
-                  ×
+                  <X className="h-4 w-4" />
                 </button>
               ) : null}
             </div>
           ))}
+        </div>
+      )}
+
+      <div className="mt-auto border-t pt-4">
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            className={buttonClassName}
+            onClick={() => cameraInputRef.current?.click()}
+            disabled={isAtLimit}
+          >
+            <Camera className="h-4 w-4" />
+            Kamera
+          </button>
+          <button
+            type="button"
+            className={buttonClassName}
+            onClick={() => galleryInputRef.current?.click()}
+            disabled={isAtLimit}
+          >
+            <ImageIcon className="h-4 w-4" />
+            Galerija
+          </button>
+        </div>
+      </div>
+
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        multiple
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+
+      {previewPhotoUrl ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setPreviewPhotoUrl(null)}
+        >
+          <button
+            type="button"
+            className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-black/80"
+            onClick={() => setPreviewPhotoUrl(null)}
+            aria-label="Zapri predogled"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={previewPhotoUrl}
+            alt="Povečan predogled fotografije"
+            className="max-h-full max-w-full rounded-lg object-contain"
+            onClick={(event) => event.stopPropagation()}
+          />
         </div>
       ) : null}
     </div>
