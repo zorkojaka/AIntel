@@ -5,7 +5,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Checkbox } from "../../components/ui/checkbox";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Camera, ChevronDown, ChevronRight, Download, Loader2, Pencil, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PhotoCapture, type UploadedPhoto } from "@aintel/ui";
@@ -64,6 +64,14 @@ type ActiveUnitPhotoCapture = {
   itemId: string;
   unitId: string;
 } | null;
+
+function hasSavedExecutionUnitId(unitId: string) {
+  return !unitId.startsWith("draft-");
+}
+
+function isPhotoArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
 
 function normalizeExecutionMode(value: WorkOrderExecutionSpec["mode"] | undefined) {
   return value === "per_unit" || value === "measured" ? value : "simple";
@@ -769,6 +777,88 @@ export function ExecutionPanel({
     setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
   };
 
+  const getExecutionUnitPhotoUrls = useCallback(
+    (target: ActiveUnitPhotoCapture) => {
+      if (!target) return [];
+      const order = workOrders.find((candidate) => candidate._id === target.orderId);
+      if (!order) return [];
+      const item = getDraftValues(order).items.find((candidate) => candidate.id === target.itemId);
+      if (!item) return [];
+      const executionUnit = ensureExecutionSpec(item.executionSpec).executionUnits?.find(
+        (candidate) => candidate.id === target.unitId,
+      );
+      return executionUnit?.unitPhotos ?? [];
+    },
+    [getDraftValues, workOrders],
+  );
+
+  const activeExecutionUnitPhotoUrls = useMemo(
+    () => getExecutionUnitPhotoUrls(activeUnitPhotoCapture),
+    [activeUnitPhotoCapture, getExecutionUnitPhotoUrls],
+  );
+
+  const canOpenActiveUnitPhotoCapture = useMemo(
+    () => (activeUnitPhotoCapture ? hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId) : false),
+    [activeUnitPhotoCapture],
+  );
+
+  const syncExecutionUnitPhotos = useCallback(
+    (
+      orderId: string,
+      itemId: string,
+      unitId: string,
+      photoType: "unitPhotos" | "prepPhotos",
+      updater: (photos: string[]) => string[],
+    ) => {
+      setPendingWorkOrders((prev) => {
+        const order = workOrders.find((candidate) => candidate._id === orderId);
+        if (!order) return prev;
+
+        const currentDraft = prev[orderId] ?? getInitialDraftValues(order);
+        const nextItems = currentDraft.items.map((item: WorkOrderItemDraft) => {
+          if (item.id !== itemId) return item;
+
+          const executionSpec = ensureExecutionSpec(item.executionSpec);
+          const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => {
+            if (unit.id !== unitId) return unit;
+            return {
+              ...unit,
+              [photoType]: updater(Array.isArray(unit[photoType]) ? unit[photoType] : []),
+            };
+          });
+
+          return {
+            ...item,
+            executionSpec: {
+              ...executionSpec,
+              executionUnits: nextUnits,
+            },
+          };
+        });
+
+        return {
+          ...prev,
+          [orderId]: {
+            ...currentDraft,
+            items: nextItems,
+          },
+        };
+      });
+    },
+    [workOrders],
+  );
+
+  const openUnitPhotoCapture = useCallback(
+    (payload: NonNullable<ActiveUnitPhotoCapture>) => {
+      if (!hasSavedExecutionUnitId(payload.unitId)) {
+        toast.error("Najprej shranite enoto.");
+        return;
+      }
+      setActiveUnitPhotoCapture(payload);
+    },
+    [],
+  );
+
   const handleDeleteManualItem = (order: WorkOrder, item: WorkOrderItemDraft) => {
     if (getOrderConfirmationState(order) === "signed_active") {
       return;
@@ -1068,17 +1158,19 @@ export function ExecutionPanel({
                   <Pencil className="h-4 w-4" />
                 </Button>
                 <div className="relative">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground"
-                    onClick={() => setActiveUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: unit.id })}
-                    aria-label="Dodaj fotografijo"
-                    title="Dodaj fotografijo"
-                  >
-                    <Camera className="h-4 w-4" />
-                  </Button>
+                  <span title={hasSavedExecutionUnitId(unit.id) ? "Dodaj fotografijo" : "Najprej shranite enoto"}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground"
+                      disabled={!hasSavedExecutionUnitId(unit.id)}
+                      onClick={() => openUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: unit.id })}
+                      aria-label="Dodaj fotografijo"
+                    >
+                      <Camera className="h-4 w-4" />
+                    </Button>
+                  </span>
                   {(unit.unitPhotos?.length ?? 0) > 0 && (
                     <Badge className="absolute -right-1 -top-1 h-4 min-w-4 px-1 text-[10px]" variant="secondary">
                       {unit.unitPhotos?.length}
@@ -1729,17 +1821,19 @@ export function ExecutionPanel({
                                             >
                                               <Pencil className="h-4 w-4" />
                                             </Button>
-                                            <Button
-                                              type="button"
-                                              variant="ghost"
-                                              size="icon"
-                                              className="h-8 w-8 text-muted-foreground"
-                                              onClick={() => setActiveUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: item.id })}
-                                              aria-label="Dodaj fotografijo"
-                                              title="Dodaj fotografijo"
-                                            >
-                                              <Camera className="h-4 w-4" />
-                                            </Button>
+                                            <span title={hasSavedExecutionUnitId(item.id) ? "Dodaj fotografijo" : "Najprej shranite enoto"}>
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-muted-foreground"
+                                                disabled={!hasSavedExecutionUnitId(item.id)}
+                                                onClick={() => openUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: item.id })}
+                                                aria-label="Dodaj fotografijo"
+                                              >
+                                                <Camera className="h-4 w-4" />
+                                              </Button>
+                                            </span>
                                           </div>
                                         ) : null}
                                       </td>
@@ -1920,17 +2014,19 @@ export function ExecutionPanel({
                                       >
                                         <Pencil className="h-4 w-4" />
                                       </Button>
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8 text-muted-foreground"
-                                        onClick={() => setActiveUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: item.id })}
-                                        aria-label="Dodaj fotografijo"
-                                        title="Dodaj fotografijo"
-                                      >
-                                        <Camera className="h-4 w-4" />
-                                      </Button>
+                                      <span title={hasSavedExecutionUnitId(item.id) ? "Dodaj fotografijo" : "Najprej shranite enoto"}>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-8 w-8 text-muted-foreground"
+                                          disabled={!hasSavedExecutionUnitId(item.id)}
+                                          onClick={() => openUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: item.id })}
+                                          aria-label="Dodaj fotografijo"
+                                        >
+                                          <Camera className="h-4 w-4" />
+                                        </Button>
+                                      </span>
                                       <Button
                                         type="button"
                                         variant="ghost"
@@ -2331,52 +2427,101 @@ export function ExecutionPanel({
       <Dialog open={Boolean(activeUnitPhotoCapture)} onOpenChange={(open) => {
         if (!open) {
           setActiveUnitPhotoCapture(null);
+          void refreshAfterMutation();
         }
       }}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Fotografije enote</DialogTitle>
           </DialogHeader>
-          {activeUnitPhotoCapture ? (
+          <DialogDescription className="sr-only">
+            Upravljanje fotografij izvedbene enote
+          </DialogDescription>
+          {activeUnitPhotoCapture && canOpenActiveUnitPhotoCapture ? (
             <PhotoCapture
               entityType="execution-unit"
               entityId={activeUnitPhotoCapture.unitId}
-              onPhotosChange={async (photos) => {
-                console.log("Photos uploaded for unit:", activeUnitPhotoCapture.unitId, photos);
-                
-                // Save each photo URL to the execution unit
-                for (const photo of photos) {
-                  try {
-                    const response = await fetch(
-                      `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos`,
-                      {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          ...buildTenantHeaders(),
-                        },
-                        body: JSON.stringify({
-                          photoUrl: photo.fileUrl,
-                          photoType: 'unitPhotos',
-                        }),
-                      }
-                    );
-                    
-                    if (!response.ok) {
-                      throw new Error('Failed to save photo');
-                    }
-                  } catch (error) {
-                    console.error('Error saving photo:', error);
-                    toast.error('Napaka pri shranjevanju fotografije');
-                    return;
+              existingPhotoUrls={activeExecutionUnitPhotoUrls}
+              onPhotoUploaded={async (photo: UploadedPhoto) => {
+                try {
+                  if (!hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId)) {
+                    throw new Error("Execution unit must be saved before uploading photos");
                   }
+                  const response = await fetch(
+                    `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos`,
+                    {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        ...buildTenantHeaders(),
+                      },
+                      body: JSON.stringify({
+                        photoUrl: photo.fileUrl,
+                        photoType: "unitPhotos",
+                      }),
+                    },
+                  );
+                  const payload = await response.json();
+                  if (!payload.success) {
+                    throw new Error(payload.error ?? "Failed to save photo");
+                  }
+                  syncExecutionUnitPhotos(
+                    activeUnitPhotoCapture.orderId,
+                    activeUnitPhotoCapture.itemId,
+                    activeUnitPhotoCapture.unitId,
+                    "unitPhotos",
+                    () => (isPhotoArray(payload.data?.photos) ? payload.data.photos : [photo.fileUrl]),
+                  );
+                  toast.success("Fotografija shranjena.");
+                } catch (error) {
+                  console.error("Error saving photo:", error);
+                  toast.error("Napaka pri shranjevanju fotografije");
+                  throw error;
                 }
-                
-                toast.success(`${photos.length} fotografij shranjenih.`);
-                await refreshAfterMutation();
+              }}
+              onDeletePhoto={async (photo: UploadedPhoto) => {
+                try {
+                  if (!hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId)) {
+                    throw new Error("Execution unit must be saved before deleting photos");
+                  }
+                  const response = await fetch(
+                    `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos`,
+                    {
+                      method: "DELETE",
+                      headers: {
+                        "Content-Type": "application/json",
+                        ...buildTenantHeaders(),
+                      },
+                      body: JSON.stringify({
+                        photoUrl: photo.fileUrl,
+                        photoType: "unitPhotos",
+                      }),
+                    },
+                  );
+                  const payload = await response.json();
+                  if (!payload.success) {
+                    throw new Error(payload.error ?? "Failed to delete photo");
+                  }
+                  syncExecutionUnitPhotos(
+                    activeUnitPhotoCapture.orderId,
+                    activeUnitPhotoCapture.itemId,
+                    activeUnitPhotoCapture.unitId,
+                    "unitPhotos",
+                    () => (isPhotoArray(payload.data?.photos) ? payload.data.photos : []),
+                  );
+                  toast.success("Fotografija izbrisana.");
+                } catch (error) {
+                  console.error("Error deleting photo:", error);
+                  toast.error("Napaka pri brisanju fotografije");
+                  throw error;
+                }
               }}
               maxPhotos={10}
             />
+          ) : activeUnitPhotoCapture ? (
+            <div className="rounded-md border border-border/60 bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
+              Najprej shranite enoto.
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>
