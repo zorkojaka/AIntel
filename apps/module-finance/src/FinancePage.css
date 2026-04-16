@@ -1,4 +1,8 @@
 .finance-page {
+  background: var(--color-background-primary, #f4f6f8);
+  color: var(--color-text-primary, #0f172a);
+  min-height: 100vh;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -107,6 +111,7 @@
 .finance-table {
   width: 100%;
   border-collapse: collapse;
+  font-size: 11px;
 }
 
 .finance-table th,
