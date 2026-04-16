@@ -21,7 +21,6 @@ import type {
 import { cn } from "../../components/ui/utils";
 import { MaterialOrderCard } from "../logistics/MaterialOrderCard";
 import { SignaturePad } from "./SignaturePad";
-import { PriceListProductAutocomplete } from "../../components/PriceListProductAutocomplete";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
 import type { Employee } from "@aintel/shared/types/employee";
@@ -64,6 +63,7 @@ type ActiveUnitPhotoCapture = {
   itemId: string;
   unitId: string;
 } | null;
+type NewExtraItemsState = Record<string, Record<string, boolean>>;
 
 function hasSavedExecutionUnitId(unitId: string) {
   return !unitId.startsWith("draft-");
@@ -368,6 +368,7 @@ export function ExecutionPanel({
   const [editingUnitNotes, setEditingUnitNotes] = useState<Record<string, boolean>>({});
   const [activeUnitNoteEditor, setActiveUnitNoteEditor] = useState<ActiveUnitNoteEditor>(null);
   const [activeUnitPhotoCapture, setActiveUnitPhotoCapture] = useState<ActiveUnitPhotoCapture>(null);
+  const [newExtraItems, setNewExtraItems] = useState<NewExtraItemsState>({});
 
   const workOrders = useMemo(() => rawWorkOrders, [rawWorkOrders]);
 
@@ -616,23 +617,51 @@ export function ExecutionPanel({
       id,
       productId: null,
       name: "",
-      quantity: 0,
-      unit: "",
+      quantity: 1,
+      unit: "kos",
       note: "",
       offerItemId: null,
-      offeredQuantity: 0,
-      plannedQuantity: 0,
+      offeredQuantity: 1,
+      plannedQuantity: 1,
       executedQuantity: 0,
       isExtra: true,
       itemNote: "",
       isCompleted: false,
-      executionSpec: ensureExecutionSpec(null),
+      executionSpec: ensureExecutionSpec({
+        mode: "simple",
+        locationSummary: "",
+        instructions: "",
+        trackingUnitLabel: "",
+        executionUnits: [],
+      }),
     };
     updateDraft(order, {
       items: [...getDraftValues(order).items, newItem],
     });
+    setNewExtraItems((prev) => ({
+      ...prev,
+      [order._id]: {
+        ...(prev[order._id] ?? {}),
+        [id]: true,
+      },
+    }));
     setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
   };
+
+  const clearNewExtraItemFlag = useCallback((orderId: string, itemId: string) => {
+    setNewExtraItems((prev) => {
+      if (!prev[orderId]?.[itemId]) return prev;
+      const nextOrderState = { ...prev[orderId] };
+      delete nextOrderState[itemId];
+      const next = { ...prev };
+      if (Object.keys(nextOrderState).length === 0) {
+        delete next[orderId];
+      } else {
+        next[orderId] = nextOrderState;
+      }
+      return next;
+    });
+  }, []);
 
 
 
@@ -697,6 +726,12 @@ export function ExecutionPanel({
             items: mergedItems,
           },
         }));
+        setNewExtraItems((prev) => {
+          if (!prev[orderId]) return prev;
+          const next = { ...prev };
+          delete next[orderId];
+          return next;
+        });
         setUnsavedChanges((prev) => {
           if (!prev[orderId]) return prev;
           const next = { ...prev };
@@ -725,6 +760,32 @@ export function ExecutionPanel({
       }
     },
     [workOrders, projectId, onWorkOrderUpdated, getDraftValues, refreshAfterMutation],
+  );
+
+  const saveNewExtraItem = useCallback(
+    async (order: WorkOrder, item: WorkOrderItemDraft) => {
+      if (!item.name.trim()) {
+        toast.error("Naziv naloge je obvezen.");
+        return false;
+      }
+
+      const quantity = typeof item.plannedQuantity === "number" && Number.isFinite(item.plannedQuantity)
+        ? Math.max(0, item.plannedQuantity)
+        : 0;
+
+      if (quantity <= 0) {
+        toast.error("Količina mora biti večja od 0.");
+        return false;
+      }
+
+      const success = await saveWorkOrder(order._id);
+      if (success) {
+        clearNewExtraItemFlag(order._id, item.id);
+        toast.success("Dodatna naloga shranjena.");
+      }
+      return success;
+    },
+    [clearNewExtraItemFlag, saveWorkOrder],
   );
 
   const handleCompleteWorkOrder = async (order: WorkOrder) => {
@@ -775,6 +836,36 @@ export function ExecutionPanel({
     }
     updateDraftItem(order, itemId, values);
     setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
+  };
+
+  const applyExtraExecutionFieldChange = (
+    order: WorkOrder,
+    item: WorkOrderItemDraft,
+    values: Partial<{
+      name: string;
+      quantity: number;
+      unit: string;
+      location: string;
+      instructions: string;
+    }>,
+  ) => {
+    const executionSpec = ensureExecutionSpec(item.executionSpec);
+    applyItemChange(order, item.id, {
+      ...(values.name !== undefined ? { name: values.name } : {}),
+      ...(values.quantity !== undefined
+        ? {
+            quantity: values.quantity,
+            offeredQuantity: values.quantity,
+            plannedQuantity: values.quantity,
+          }
+        : {}),
+      ...(values.unit !== undefined ? { unit: values.unit } : {}),
+      executionSpec: {
+        ...executionSpec,
+        ...(values.location !== undefined ? { locationSummary: values.location } : {}),
+        ...(values.instructions !== undefined ? { instructions: values.instructions } : {}),
+      },
+    });
   };
 
   const getExecutionUnitPhotoUrls = useCallback(
@@ -866,6 +957,10 @@ export function ExecutionPanel({
     if (!item.isExtra) {
       return;
     }
+    if (item.isCompleted) {
+      toast.error("Dokončane dodatne naloge ni mogoče izbrisati.");
+      return;
+    }
 
     const executedValue = typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
     const confirmMessage =
@@ -880,6 +975,7 @@ export function ExecutionPanel({
     updateDraft(order, {
       items: getDraftValues(order).items.filter((candidate) => candidate.id !== item.id),
     });
+    clearNewExtraItemFlag(order._id, item.id);
     setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
   };
 
@@ -1296,6 +1392,106 @@ export function ExecutionPanel({
     );
   };
 
+  const renderExtraExecutionItemEditor = (
+    order: WorkOrder,
+    item: WorkOrderItemDraft,
+    options?: { compact?: boolean; disabled?: boolean },
+  ) => {
+    const executionSpec = ensureExecutionSpec(item.executionSpec);
+    const isDisabled = !!options?.disabled;
+    const quantityValue =
+      typeof item.plannedQuantity === "number" && Number.isFinite(item.plannedQuantity) ? item.plannedQuantity : 1;
+
+    return (
+      <div className={cn("space-y-3 rounded-md border border-border/70 bg-background/80 p-3", options?.compact ? "mt-2" : "")}>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-2 md:col-span-2">
+            <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Naziv naloge
+            </label>
+            <Input
+              value={item.name ?? ""}
+              disabled={isDisabled}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                applyExtraExecutionFieldChange(order, item, { name: event.target.value })
+              }
+              placeholder="Vnesite naziv naloge"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Lokacija
+            </label>
+            <Input
+              value={executionSpec.locationSummary ?? ""}
+              disabled={isDisabled}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                applyExtraExecutionFieldChange(order, item, { location: event.target.value })
+              }
+              placeholder="Lokacija izvedbe"
+            />
+          </div>
+          <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-3">
+            <div className="space-y-2">
+              <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Količina
+              </label>
+              <Input
+                type="number"
+                min={1}
+                value={quantityValue}
+                disabled={isDisabled}
+                onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                  applyExtraExecutionFieldChange(order, item, {
+                    quantity: Math.max(1, Number(event.target.value) || 1),
+                  })
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Enota
+              </label>
+              <Input
+                value={item.unit ?? "kos"}
+                disabled={isDisabled}
+                onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                  applyExtraExecutionFieldChange(order, item, { unit: event.target.value })
+                }
+                placeholder="kos"
+              />
+            </div>
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Navodila
+            </label>
+            <Textarea
+              value={executionSpec.instructions ?? ""}
+              disabled={isDisabled}
+              onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+                applyExtraExecutionFieldChange(order, item, { instructions: event.target.value })
+              }
+              placeholder="Dodatna navodila za izvedbo"
+              rows={3}
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">Dodatna naloga bo shranjena v delovni nalog z oznako dodatno.</p>
+          <Button
+            type="button"
+            size="sm"
+            disabled={isDisabled}
+            onClick={() => void saveNewExtraItem(order, item)}
+          >
+            Shrani
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
   const selectedSignoffOrder = useMemo(
     () => workOrders.find((order) => order._id === signoffOrderId) ?? null,
     [signoffOrderId, workOrders],
@@ -1681,7 +1877,7 @@ export function ExecutionPanel({
                             <tbody>
                               {items.length === 0 && (
                                 <tr>
-                                  <td colSpan={4} className="p-3 text-center text-muted-foreground">
+                                  <td colSpan={5} className="p-3 text-center text-muted-foreground">
                                     Ni postavk za prikaz.
                                   </td>
                                 </tr>
@@ -1689,7 +1885,7 @@ export function ExecutionPanel({
                               {items.map((item: WorkOrderItemDraft) => {
                                 const offeredValue =
                                   typeof item.offeredQuantity === "number" ? item.offeredQuantity : 0;
-                                const isExtraEditable = item.isExtra && offeredValue === 0;
+                                const isNewExtraItem = !!newExtraItems[order._id]?.[item.id];
                                 const executedValue =
                                   typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
                                 const isCompleted = !!item.isCompleted;
@@ -1725,39 +1921,16 @@ export function ExecutionPanel({
                                 return [
                                     <tr key={`${item.id}-main`} className={cn("border-t", itemStatusStyles.rowClassName)}>
                                       <td className="p-2 align-top">
-                                        {isExtraEditable ? (
-                                          <div>
-                                            <PriceListProductAutocomplete
-                                              value={item.name}
-                                              placeholder="Naziv ali iskanje v ceniku"
-                                              inputClassName="text-left"
-                                              disabled={isConfirmationLocked}
-                                              onChange={(name) =>
-                                                applyItemChange(order, item.id, { name, productId: null })
-                                              }
-                                              onCustomSelected={() =>
-                                                applyItemChange(order, item.id, { productId: null })
-                                              }
-                                              onProductSelected={(product) =>
-                                                applyItemChange(order, item.id, {
-                                                  name: product.name,
-                                                  unit: product.unit ?? item.unit ?? "",
-                                                  productId: product.id,
-                                                })
-                                              }
-                                            />
-                                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                                              <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
-                                              {renderItemStatusBadge(item)}
-                                            </div>
+                                        {isNewExtraItem ? (
+                                          <div className="space-y-1">
+                                            <p className="font-medium">Nova dodatna naloga</p>
+                                            {renderItemStatusBadge(item)}
                                           </div>
                                         ) : (
                                           <div className="space-y-1">
                                             <p className="font-medium">{item.name || "-"}</p>
                                             <div className="flex flex-wrap items-center gap-2">
-                                              {item.isExtra && offeredValue === 0 ? null : (
-                                                <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
-                                              )}
+                                              <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
                                               {renderItemStatusBadge(item)}
                                               {hasVisibleInlineUnits ? (
                                                 <Badge variant="outline">{getPerUnitSummary(executionSpec)}</Badge>
@@ -1787,7 +1960,7 @@ export function ExecutionPanel({
                                           <Input
                                             type="number"
                                             value={item.executedQuantity ?? ""}
-                                            disabled={isConfirmationLocked || hasVisibleInlineUnits}
+                                            disabled={isConfirmationLocked || hasVisibleInlineUnits || isNewExtraItem}
                                             onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                               applyItemChange(order, item.id, {
                                                 executedQuantity: Number(event.target.value),
@@ -1854,7 +2027,7 @@ export function ExecutionPanel({
                                             variant="ghost"
                                             size="icon"
                                             className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                            disabled={isConfirmationLocked}
+                                            disabled={isConfirmationLocked || item.isCompleted}
                                             onClick={() => handleDeleteManualItem(order, item)}
                                             aria-label="Izbriši dodatno postavko"
                                           >
@@ -1872,9 +2045,18 @@ export function ExecutionPanel({
                                         </td>
                                       </tr>
                                     ) : null,
+                                    isNewExtraItem ? (
+                                      <tr key={`${item.id}-new-extra`} className={cn("border-t", itemStatusStyles.rowClassName)}>
+                                        <td colSpan={5} className="p-2 pt-0">
+                                          {renderExtraExecutionItemEditor(order, item, {
+                                            disabled: isConfirmationLocked,
+                                          })}
+                                        </td>
+                                      </tr>
+                                    ) : null,
                                     !hasVisibleInlineUnits && isExecutionExpanded ? (
                                       <tr key={`${item.id}-details`} className={cn("border-t", itemStatusStyles.rowClassName)}>
-                                        <td colSpan={4} className="p-2 pt-0">
+                                        <td colSpan={5} className="p-2 pt-0">
                                           {renderExecutionDetails(order, item, {
                                             showToggle: false,
                                             disabled: isConfirmationLocked,
@@ -1894,8 +2076,7 @@ export function ExecutionPanel({
                           ) : null}
                           {items.map((item: WorkOrderItemDraft) => {
                             const offeredValue = typeof item.offeredQuantity === "number" ? item.offeredQuantity : 0;
-                            const isExtraEditable = item.isExtra && offeredValue === 0;
-                            const hasCenikProduct = typeof item.productId === "string" && item.productId.length > 0;
+                            const isNewExtraItem = !!newExtraItems[order._id]?.[item.id];
                             const isCompleted = !!item.isCompleted;
                             const itemStatus = getExecutionItemStatus(item);
                             const itemStatusStyles = executionItemStatusStyles[itemStatus];
@@ -1931,28 +2112,15 @@ export function ExecutionPanel({
                               <div key={item.id} className={cn("space-y-3 rounded-md border p-3", itemStatusStyles.cardClassName)}>
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0 flex-1 space-y-1">
-                                  {isExtraEditable ? (
+                                  {isNewExtraItem ? (
                                     <div className="space-y-1">
-                                      <PriceListProductAutocomplete
-                                        value={item.name ?? ""}
-                                        onChange={(value) => applyItemChange(order, item.id, { name: value })}
-                                        onCustomSelected={() => applyItemChange(order, item.id, { productId: null })}
-                                        onProductSelected={(product) =>
-                                          applyItemChange(order, item.id, {
-                                            productId: product.id,
-                                            name: product.name,
-                                            unit: product.unit,
-                                            offerItemId: item.offerItemId ?? null,
-                                          })
-                                        }
-                                        placeholder="Poišči iz cenika"
-                                      />
+                                      <p className="text-sm font-medium">Nova dodatna naloga</p>
                                       <div>{renderItemStatusBadge(item)}</div>
                                     </div>
                                   ) : (
                                     <p className="text-sm font-medium">{item.name}</p>
                                   )}
-                                  {!isExtraEditable ? (
+                                  {!isNewExtraItem ? (
                                     <div className="flex flex-wrap items-center gap-2">
                                       {renderItemStatusBadge(item)}
                                       {hasVisibleInlineUnits ? <Badge variant="outline">Izvedeno {getPerUnitSummary(executionSpec).replace("Enote: ", "")}</Badge> : null}
@@ -1962,7 +2130,7 @@ export function ExecutionPanel({
                                   <Checkbox
                                     className="mt-1 h-5 w-5 shrink-0"
                                     checked={isCompleted}
-                                    disabled={isConfirmationLocked}
+                                    disabled={isConfirmationLocked || isNewExtraItem}
                                     onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                       handleCompletionChange(event.target.checked)
                                     }
@@ -1981,7 +2149,7 @@ export function ExecutionPanel({
                                         <Input
                                           type="number"
                                           value={item.executedQuantity ?? ""}
-                                          disabled={isConfirmationLocked}
+                                          disabled={isConfirmationLocked || isNewExtraItem}
                                           onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                             applyItemChange(order, item.id, {
                                               executedQuantity: Number(event.target.value),
@@ -2051,9 +2219,10 @@ export function ExecutionPanel({
                                       : null}
                                   </div>
                                 )}
-                                {item.isExtra && !hasCenikProduct ? (
-                                  <p className="text-xs text-muted-foreground">Dodajte izdelek iz cenika za pravilno poročanje.</p>
-                                ) : null}
+                                {isNewExtraItem ? renderExtraExecutionItemEditor(order, item, {
+                                  compact: true,
+                                  disabled: isConfirmationLocked,
+                                }) : null}
                                 {item.isExtra ? (
                                   <div className="flex justify-end">
                                     <Button
@@ -2061,7 +2230,7 @@ export function ExecutionPanel({
                                       variant="ghost"
                                       size="icon"
                                       className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                      disabled={isConfirmationLocked}
+                                      disabled={isConfirmationLocked || item.isCompleted}
                                       onClick={() => handleDeleteManualItem(order, item)}
                                       aria-label="Izbriši dodatno postavko"
                                     >
@@ -2092,7 +2261,7 @@ export function ExecutionPanel({
                               disabled={isConfirmationLocked}
                               onClick={() => handleAddExtraItem(order)}
                             >
-                              + Dodaj dodatno postavko
+                              + Dodaj nalogo
                             </Button>
                           </div>
                         </div>
