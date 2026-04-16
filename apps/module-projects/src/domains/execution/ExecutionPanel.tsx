@@ -850,10 +850,7 @@ export function ExecutionPanel({
 
   const openUnitPhotoCapture = useCallback(
     (payload: NonNullable<ActiveUnitPhotoCapture>) => {
-      if (!hasSavedExecutionUnitId(payload.unitId)) {
-        toast.error("Najprej shranite enoto.");
-        return;
-      }
+      if (!hasSavedExecutionUnitId(payload.unitId)) return;
       setActiveUnitPhotoCapture(payload);
     },
     [],
@@ -1158,19 +1155,31 @@ export function ExecutionPanel({
                   <Pencil className="h-4 w-4" />
                 </Button>
                 <div className="relative">
-                  <span title={hasSavedExecutionUnitId(unit.id) ? "Dodaj fotografijo" : "Najprej shranite enoto"}>
+                  {hasSavedExecutionUnitId(unit.id) ? (
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 text-muted-foreground"
-                      disabled={!hasSavedExecutionUnitId(unit.id)}
                       onClick={() => openUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: unit.id })}
                       aria-label="Dodaj fotografijo"
+                      title="Dodaj fotografijo"
                     >
                       <Camera className="h-4 w-4" />
                     </Button>
-                  </span>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground"
+                      disabled
+                      aria-label="Shranite enoto za dodajanje fotografij"
+                      title="Shranite enoto za dodajanje fotografij"
+                    >
+                      <Camera className="h-4 w-4" />
+                    </Button>
+                  )}
                   {(unit.unitPhotos?.length ?? 0) > 0 && (
                     <Badge className="absolute -right-1 -top-1 h-4 min-w-4 px-1 text-[10px]" variant="secondary">
                       {unit.unitPhotos?.length}
@@ -1821,19 +1830,31 @@ export function ExecutionPanel({
                                             >
                                               <Pencil className="h-4 w-4" />
                                             </Button>
-                                            <span title={hasSavedExecutionUnitId(item.id) ? "Dodaj fotografijo" : "Najprej shranite enoto"}>
+                                            {hasSavedExecutionUnitId(item.id) ? (
                                               <Button
                                                 type="button"
                                                 variant="ghost"
                                                 size="icon"
                                                 className="h-8 w-8 text-muted-foreground"
-                                                disabled={!hasSavedExecutionUnitId(item.id)}
                                                 onClick={() => openUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: item.id })}
                                                 aria-label="Dodaj fotografijo"
+                                                title="Dodaj fotografijo"
                                               >
                                                 <Camera className="h-4 w-4" />
                                               </Button>
-                                            </span>
+                                            ) : (
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-muted-foreground"
+                                                disabled
+                                                aria-label="Shranite enoto za dodajanje fotografij"
+                                                title="Shranite enoto za dodajanje fotografij"
+                                              >
+                                                <Camera className="h-4 w-4" />
+                                              </Button>
+                                            )}
                                           </div>
                                         ) : null}
                                       </td>
@@ -2014,19 +2035,31 @@ export function ExecutionPanel({
                                       >
                                         <Pencil className="h-4 w-4" />
                                       </Button>
-                                      <span title={hasSavedExecutionUnitId(item.id) ? "Dodaj fotografijo" : "Najprej shranite enoto"}>
+                                      {hasSavedExecutionUnitId(item.id) ? (
                                         <Button
                                           type="button"
                                           variant="ghost"
                                           size="icon"
                                           className="h-8 w-8 text-muted-foreground"
-                                          disabled={!hasSavedExecutionUnitId(item.id)}
                                           onClick={() => openUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: item.id })}
                                           aria-label="Dodaj fotografijo"
+                                          title="Dodaj fotografijo"
                                         >
                                           <Camera className="h-4 w-4" />
                                         </Button>
-                                      </span>
+                                      ) : (
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-8 w-8 text-muted-foreground"
+                                          disabled
+                                          aria-label="Shranite enoto za dodajanje fotografij"
+                                          title="Shranite enoto za dodajanje fotografij"
+                                        >
+                                          <Camera className="h-4 w-4" />
+                                        </Button>
+                                      )}
                                       <Button
                                         type="button"
                                         variant="ghost"
@@ -2520,7 +2553,7 @@ export function ExecutionPanel({
             />
           ) : activeUnitPhotoCapture ? (
             <div className="rounded-md border border-border/60 bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
-              Najprej shranite enoto.
+              Shranite enoto za dodajanje fotografij.
             </div>
           ) : null}
         </DialogContent>
