@@ -6,22 +6,13 @@ function normalizeExecutionUnitId(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function readExecutionUnitId(unit: unknown): string {
+function readExecutionUnitId(unit: unknown): unknown {
   if (!unit || typeof unit !== 'object') {
     return '';
   }
 
   const candidate = unit as { id?: unknown; get?: (path: string) => unknown };
-  const directId = normalizeExecutionUnitId(candidate.id);
-  if (directId) {
-    return directId;
-  }
-
-  if (typeof candidate.get === 'function') {
-    return normalizeExecutionUnitId(candidate.get('id'));
-  }
-
-  return '';
+  return candidate.id ?? candidate.get?.('id') ?? '';
 }
 
 function parsePhotoType(rawType: unknown): 'unitPhotos' | 'prepPhotos' | null {
@@ -31,12 +22,14 @@ function parsePhotoType(rawType: unknown): 'unitPhotos' | 'prepPhotos' | null {
 }
 
 function findExecutionUnit(workOrder: { items: Array<{ executionSpec?: { executionUnits?: unknown[] } }> }, targetUnitId: string) {
+  console.log('Looking for unitId:', targetUnitId);
   for (const item of workOrder.items) {
     const units = item.executionSpec?.executionUnits ?? [];
     for (const unit of units) {
-      const unitId = readExecutionUnitId(unit);
-      console.log('[execution-unit-photos] compare', JSON.stringify({ requestedUnitId: targetUnitId, candidateUnitId: unitId }));
-      if (unitId === targetUnitId) {
+      const storedId = readExecutionUnitId(unit);
+      console.log('Found unit id:', storedId, typeof storedId);
+      const match = String(storedId) === String(targetUnitId);
+      if (match) {
         return unit;
       }
     }
@@ -64,6 +57,7 @@ export async function saveExecutionUnitPhoto(req: Request, res: Response, next: 
     }
 
     const workOrder = await WorkOrderModel.findOne({ _id: workOrderId, projectId });
+    console.log('WorkOrder found:', !!workOrder, 'items count:', workOrder?.items?.length);
     if (!workOrder) {
       return res.fail('Delovni nalog ni najden.', 404);
     }
@@ -131,6 +125,7 @@ export async function deleteExecutionUnitPhoto(req: Request, res: Response, next
     }
 
     const workOrder = await WorkOrderModel.findOne({ _id: workOrderId, projectId });
+    console.log('WorkOrder found:', !!workOrder, 'items count:', workOrder?.items?.length);
     if (!workOrder) {
       return res.fail('Delovni nalog ni najden.', 404);
     }
