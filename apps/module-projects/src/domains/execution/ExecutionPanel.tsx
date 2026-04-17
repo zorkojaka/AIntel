@@ -8,7 +8,7 @@ import { Checkbox } from "../../components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Camera, ChevronDown, ChevronRight, Download, Loader2, Pencil, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { PhotoCapture, type UploadedPhoto } from "@aintel/ui";
+import { PhotoCapture } from "@aintel/ui";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import type {
   MaterialOrder,
@@ -67,10 +67,6 @@ type NewExtraItemsState = Record<string, Record<string, boolean>>;
 
 function hasSavedExecutionUnitId(unitId: string) {
   return !unitId.startsWith("draft-");
-}
-
-function isPhotoArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
 function normalizeExecutionMode(value: WorkOrderExecutionSpec["mode"] | undefined) {
@@ -2630,88 +2626,21 @@ export function ExecutionPanel({
           </DialogDescription>
           {activeUnitPhotoCapture && canOpenActiveUnitPhotoCapture ? (
             <PhotoCapture
-              entityType="execution-unit"
-              entityId={activeUnitPhotoCapture.unitId}
-              existingPhotoUrls={activeExecutionUnitPhotoUrls}
-              onPhotoUploaded={async (photo: UploadedPhoto) => {
-                try {
-                  if (!hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId)) {
-                    throw new Error("Execution unit must be saved before uploading photos");
-                  }
-                  if (!hasExistingExecutionUnit(activeUnitPhotoCapture)) {
-                    throw new Error("Execution unit id does not exist on the current work order item");
-                  }
-                  const response = await fetch(
-                    `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos`,
-                    {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                        ...buildTenantHeaders(),
-                      },
-                      body: JSON.stringify({
-                        photoUrl: photo.fileUrl,
-                        photoType: "unitPhotos",
-                      }),
-                    },
-                  );
-                  const payload = await response.json();
-                  if (!payload.success) {
-                    throw new Error(payload.error ?? "Failed to save photo");
-                  }
-                  syncExecutionUnitPhotos(
-                    activeUnitPhotoCapture.orderId,
-                    activeUnitPhotoCapture.itemId,
-                    activeUnitPhotoCapture.unitId,
-                    "unitPhotos",
-                    () => (isPhotoArray(payload.data?.photos) ? payload.data.photos : [photo.fileUrl]),
-                  );
-                  toast.success("Fotografija shranjena.");
-                } catch (error) {
-                  console.error("Error saving photo:", error);
-                  toast.error("Napaka pri shranjevanju fotografije");
-                  throw error;
-                }
-              }}
-              onDeletePhoto={async (photo: UploadedPhoto) => {
-                try {
-                  if (!hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId)) {
-                    throw new Error("Execution unit must be saved before deleting photos");
-                  }
-                  if (!hasExistingExecutionUnit(activeUnitPhotoCapture)) {
-                    throw new Error("Execution unit id does not exist on the current work order item");
-                  }
-                  const response = await fetch(
-                    `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos`,
-                    {
-                      method: "DELETE",
-                      headers: {
-                        "Content-Type": "application/json",
-                        ...buildTenantHeaders(),
-                      },
-                      body: JSON.stringify({
-                        photoUrl: photo.fileUrl,
-                        photoType: "unitPhotos",
-                      }),
-                    },
-                  );
-                  const payload = await response.json();
-                  if (!payload.success) {
-                    throw new Error(payload.error ?? "Failed to delete photo");
-                  }
-                  syncExecutionUnitPhotos(
-                    activeUnitPhotoCapture.orderId,
-                    activeUnitPhotoCapture.itemId,
-                    activeUnitPhotoCapture.unitId,
-                    "unitPhotos",
-                    () => (isPhotoArray(payload.data?.photos) ? payload.data.photos : []),
-                  );
-                  toast.success("Fotografija izbrisana.");
-                } catch (error) {
-                  console.error("Error deleting photo:", error);
-                  toast.error("Napaka pri brisanju fotografije");
-                  throw error;
-                }
+              title="Fotografije enote"
+              uploadUrl="/api/files/upload"
+              saveUrl={`/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos?type=unit`}
+              deleteUrl={(photoUrl) =>
+                `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos/${encodeURIComponent(photoUrl)}?type=unit`
+              }
+              existingPhotos={activeExecutionUnitPhotoUrls}
+              onPhotosChange={(photos) => {
+                syncExecutionUnitPhotos(
+                  activeUnitPhotoCapture.orderId,
+                  activeUnitPhotoCapture.itemId,
+                  activeUnitPhotoCapture.unitId,
+                  "unitPhotos",
+                  () => photos,
+                );
               }}
               maxPhotos={10}
             />

@@ -24,27 +24,24 @@ function readExecutionUnitId(unit: unknown): string {
   return '';
 }
 
-function collectExecutionUnitIds(workOrder: { items?: unknown[] }): string[] {
-  const ids: string[] = [];
+function parsePhotoType(rawType: unknown): 'unitPhotos' | 'prepPhotos' | null {
+  if (rawType === 'prep') return 'prepPhotos';
+  if (rawType === undefined || rawType === null || rawType === '' || rawType === 'unit') return 'unitPhotos';
+  return null;
+}
 
-  if (!Array.isArray(workOrder.items)) {
-    return ids;
-  }
-
+function findExecutionUnit(workOrder: { items: Array<{ executionSpec?: { executionUnits?: unknown[] } }> }, targetUnitId: string) {
   for (const item of workOrder.items) {
-    if (!item || typeof item !== 'object') continue;
-    const executionSpec = (item as { executionSpec?: { executionUnits?: unknown[] } }).executionSpec;
-    if (!Array.isArray(executionSpec?.executionUnits)) continue;
-
-    for (const unit of executionSpec.executionUnits) {
-      const executionUnitId = readExecutionUnitId(unit);
-      if (executionUnitId) {
-        ids.push(executionUnitId);
+    const units = item.executionSpec?.executionUnits ?? [];
+    for (const unit of units) {
+      const unitId = readExecutionUnitId(unit);
+      console.log('[execution-unit-photos] compare', JSON.stringify({ requestedUnitId: targetUnitId, candidateUnitId: unitId }));
+      if (unitId === targetUnitId) {
+        return unit;
       }
     }
   }
-
-  return ids;
+  return null;
 }
 
 /**
@@ -54,15 +51,16 @@ function collectExecutionUnitIds(workOrder: { items?: unknown[] }): string[] {
 export async function saveExecutionUnitPhoto(req: Request, res: Response, next: NextFunction) {
   try {
     const { projectId, workOrderId, unitId } = req.params;
-    const { photoUrl, photoType } = req.body;
+    const { photoUrl } = req.body;
     const targetUnitId = normalizeExecutionUnitId(unitId);
+    const photoType = parsePhotoType(req.query?.type);
 
     if (!photoUrl || typeof photoUrl !== 'string') {
       return res.fail('photoUrl is required', 400);
     }
 
-    if (!photoType || (photoType !== 'unitPhotos' && photoType !== 'prepPhotos')) {
-      return res.fail('photoType must be either "unitPhotos" or "prepPhotos"', 400);
+    if (!photoType) {
+      return res.fail('Query param "type" must be "unit" or "prep"', 400);
     }
 
     const workOrder = await WorkOrderModel.findOne({ _id: workOrderId, projectId });
@@ -70,27 +68,10 @@ export async function saveExecutionUnitPhoto(req: Request, res: Response, next: 
       return res.fail('Delovni nalog ni najden.', 404);
     }
 
-    const allExecutionUnitIds = collectExecutionUnitIds(workOrder);
-    console.log(
-      '[execution-unit-photos] upload lookup',
-      JSON.stringify({
-        projectId,
-        workOrderId,
-        requestedUnitId: targetUnitId,
-        knownUnitIds: allExecutionUnitIds,
-      })
-    );
-
-    // Find the unit across all items -> executionSpec -> executionUnits
-    const matchingEntry = workOrder.items
-      .flatMap((item) => item.executionSpec?.executionUnits ?? [])
-      .map((unit) => ({ unit, unitId: readExecutionUnitId(unit) }))
-      .find(({ unitId }) => unitId === targetUnitId);
-
-    if (!matchingEntry?.unit) {
+    const unit = findExecutionUnit(workOrder, targetUnitId);
+    if (!unit) {
       return res.fail('Execution unit not found', 404);
     }
-    const unit = matchingEntry.unit;
     let updatedPhotos: string[] = [];
 
     // Initialize arrays if they don't exist
@@ -121,7 +102,7 @@ export async function saveExecutionUnitPhoto(req: Request, res: Response, next: 
       message: 'Photo saved successfully',
       unitId,
       photoUrl,
-      photoType,
+      photoType: req.query?.type ?? 'unit',
       photos: updatedPhotos,
     });
   } catch (err) {
@@ -137,17 +118,16 @@ export async function deleteExecutionUnitPhoto(req: Request, res: Response, next
   try {
     const { projectId, workOrderId, unitId } = req.params;
     const targetUnitId = normalizeExecutionUnitId(unitId);
-    const photoUrlValue = req.body?.photoUrl ?? req.query?.photoUrl;
-    const photoTypeValue = req.body?.photoType ?? req.query?.photoType;
-    const photoUrl = typeof photoUrlValue === 'string' ? photoUrlValue : null;
-    const photoType = typeof photoTypeValue === 'string' ? photoTypeValue : null;
+    const encodedPhotoUrl = req.params.photoUrl;
+    const photoType = parsePhotoType(req.query?.type);
+    const photoUrl = typeof encodedPhotoUrl === 'string' ? decodeURIComponent(encodedPhotoUrl) : null;
 
     if (!photoUrl) {
       return res.fail('photoUrl is required', 400);
     }
 
-    if (photoType !== 'unitPhotos' && photoType !== 'prepPhotos') {
-      return res.fail('photoType must be either "unitPhotos" or "prepPhotos"', 400);
+    if (!photoType) {
+      return res.fail('Query param "type" must be "unit" or "prep"', 400);
     }
 
     const workOrder = await WorkOrderModel.findOne({ _id: workOrderId, projectId });
@@ -155,26 +135,10 @@ export async function deleteExecutionUnitPhoto(req: Request, res: Response, next
       return res.fail('Delovni nalog ni najden.', 404);
     }
 
-    const allExecutionUnitIds = collectExecutionUnitIds(workOrder);
-    console.log(
-      '[execution-unit-photos] delete lookup',
-      JSON.stringify({
-        projectId,
-        workOrderId,
-        requestedUnitId: targetUnitId,
-        knownUnitIds: allExecutionUnitIds,
-      })
-    );
-
-    const matchingEntry = workOrder.items
-      .flatMap((item) => item.executionSpec?.executionUnits ?? [])
-      .map((unit) => ({ unit, unitId: readExecutionUnitId(unit) }))
-      .find(({ unitId }) => unitId === targetUnitId);
-
-    if (!matchingEntry?.unit) {
+    const unit = findExecutionUnit(workOrder, targetUnitId);
+    if (!unit) {
       return res.fail('Execution unit not found', 404);
     }
-    const unit = matchingEntry.unit;
     let photoRemoved = false;
     let updatedPhotos: string[] = [];
 
@@ -201,7 +165,7 @@ export async function deleteExecutionUnitPhoto(req: Request, res: Response, next
       message: 'Photo deleted successfully',
       unitId,
       photoUrl,
-      photoType,
+      photoType: req.query?.type ?? 'unit',
       photos: updatedPhotos,
     });
   } catch (err) {
