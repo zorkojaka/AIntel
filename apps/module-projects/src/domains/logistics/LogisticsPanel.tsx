@@ -367,6 +367,19 @@ export function LogisticsPanel({
         : filteredMaterialOrders[0] ?? null,
     [filteredMaterialOrders, selectedWorkOrder],
   );
+  const activePrepPhotoUrls = useMemo(() => {
+    if (!activeUnitPhotoCapture) return [];
+    const items =
+      Array.isArray(workOrderForm.items) && workOrderForm.items.length > 0
+        ? workOrderForm.items
+        : selectedWorkOrder?.items ?? [];
+    const item = items.find((candidate) => candidate.id === activeUnitPhotoCapture.itemId);
+    if (!item) return [];
+    const unit = (ensureExecutionSpec(item.executionSpec).executionUnits ?? []).find(
+      (candidate) => candidate.id === activeUnitPhotoCapture.unitId,
+    );
+    return unit?.prepPhotos ?? [];
+  }, [activeUnitPhotoCapture, selectedWorkOrder?.items, workOrderForm.items]);
   const companyPickupAddress = useMemo(() => formatCompanyAddress(settings), [settings]);
   const sitePickupAddress = useMemo(() => formatClientAddress(client ?? null), [client]);
   const materialOrdersForSelectedWorkOrder = useMemo(() => {
@@ -2649,41 +2662,35 @@ export function LogisticsPanel({
           </DialogHeader>
           {activeUnitPhotoCapture ? (
             <PhotoCapture
-              entityType="execution-unit-prep"
-              entityId={activeUnitPhotoCapture.unitId}
-              onPhotosChange={async (photos) => {
-                console.log("Photos uploaded for unit:", activeUnitPhotoCapture.unitId, photos);
-                
-                // Save each photo URL to the execution unit
-                for (const photo of photos) {
-                  try {
-                    const response = await fetch(
-                      `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.workOrderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos`,
-                      {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          ...buildTenantHeaders(),
+              title="Fotografije priprave"
+              uploadUrl="/api/files/upload"
+              saveUrl={`/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.workOrderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos?type=prep`}
+              deleteUrl={(photoUrl) =>
+                `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.workOrderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos/${encodeURIComponent(photoUrl)}?type=prep`
+              }
+              existingPhotos={activePrepPhotoUrls}
+              onPhotosChange={(photos) => {
+                setWorkOrderForm((prev) => {
+                  if (!Array.isArray(prev.items)) return prev;
+                  return {
+                    ...prev,
+                    items: prev.items.map((item) => {
+                      if (item.id !== activeUnitPhotoCapture.itemId) return item;
+                      const spec = ensureExecutionSpec(item.executionSpec);
+                      return {
+                        ...item,
+                        executionSpec: {
+                          ...spec,
+                          executionUnits: (spec.executionUnits ?? []).map((unit) =>
+                            unit.id === activeUnitPhotoCapture.unitId
+                              ? { ...unit, prepPhotos: photos }
+                              : unit,
+                          ),
                         },
-                        body: JSON.stringify({
-                          photoUrl: photo.fileUrl,
-                          photoType: 'prepPhotos',
-                        }),
-                      }
-                    );
-                    
-                    if (!response.ok) {
-                      throw new Error('Failed to save photo');
-                    }
-                  } catch (error) {
-                    console.error('Error saving photo:', error);
-                    toast.error('Napaka pri shranjevanju fotografije');
-                    return;
-                  }
-                }
-                
-                toast.success(`${photos.length} fotografij shranjenih.`);
-                await refreshAfterMutation(fetchSnapshot);
+                      };
+                    }),
+                  };
+                });
               }}
               maxPhotos={10}
             />
@@ -2693,4 +2700,3 @@ export function LogisticsPanel({
     </div>
   );
 }
-

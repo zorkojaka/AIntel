@@ -79,7 +79,7 @@ router.put('/:projectId/work-orders/:workOrderId', requireWorkOrderWrite, logist
 router.post('/:projectId/work-orders/:workOrderId/start-correction', requireWorkOrderWrite, logisticsController.startWorkOrderConfirmationCorrection);
 router.post('/:projectId/material-orders/:materialOrderId/advance', requirePreparationAccess, logisticsController.advanceMaterialOrderStep);
 router.post('/:projectId/work-orders/:workOrderId/execution-units/:unitId/photos', requireWorkOrderWrite, saveExecutionUnitPhoto);
-router.delete('/:projectId/work-orders/:workOrderId/execution-units/:unitId/photos', requireWorkOrderWrite, deleteExecutionUnitPhoto);
+router.delete('/:projectId/work-orders/:workOrderId/execution-units/:unitId/photos/:photoUrl', requireWorkOrderWrite, deleteExecutionUnitPhoto);
 router.get('/:projectId/work-orders/:workOrderId/pdf', logisticsController.exportWorkOrderPdf);
 router.get('/:projectId/material-orders/:materialOrderId/pdf', logisticsController.exportMaterialOrderPdf);
 router.get('/:projectId/invoices', invoiceController.listInvoices);
