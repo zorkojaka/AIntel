@@ -8,7 +8,7 @@ import { Checkbox } from "../../components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Camera, ChevronDown, ChevronRight, Download, Loader2, Pencil, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { PhotoCapture, type UploadedPhoto } from "@aintel/ui";
+import { PhotoCapture } from "@aintel/ui";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import type {
   MaterialOrder,
@@ -67,10 +67,6 @@ type NewExtraItemsState = Record<string, Record<string, boolean>>;
 
 function hasSavedExecutionUnitId(unitId: string) {
   return !unitId.startsWith("draft-");
-}
-
-function isPhotoArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
 function normalizeExecutionMode(value: WorkOrderExecutionSpec["mode"] | undefined) {
@@ -883,14 +879,31 @@ export function ExecutionPanel({
     [getDraftValues, workOrders],
   );
 
+  const hasExistingExecutionUnit = useCallback(
+    (target: ActiveUnitPhotoCapture) => {
+      if (!target) return false;
+      const order = workOrders.find((candidate) => candidate._id === target.orderId);
+      if (!order) return false;
+      const item = getDraftValues(order).items.find((candidate) => candidate.id === target.itemId);
+      if (!item) return false;
+      return (ensureExecutionSpec(item.executionSpec).executionUnits ?? []).some(
+        (candidate) => candidate.id === target.unitId,
+      );
+    },
+    [getDraftValues, workOrders],
+  );
+
   const activeExecutionUnitPhotoUrls = useMemo(
     () => getExecutionUnitPhotoUrls(activeUnitPhotoCapture),
     [activeUnitPhotoCapture, getExecutionUnitPhotoUrls],
   );
 
   const canOpenActiveUnitPhotoCapture = useMemo(
-    () => (activeUnitPhotoCapture ? hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId) : false),
-    [activeUnitPhotoCapture],
+    () =>
+      activeUnitPhotoCapture
+        ? hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId) && hasExistingExecutionUnit(activeUnitPhotoCapture)
+        : false,
+    [activeUnitPhotoCapture, hasExistingExecutionUnit],
   );
 
   const syncExecutionUnitPhotos = useCallback(
@@ -2003,31 +2016,17 @@ export function ExecutionPanel({
                                             >
                                               <Pencil className="h-4 w-4" />
                                             </Button>
-                                            {hasSavedExecutionUnitId(item.id) ? (
-                                              <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 text-muted-foreground"
-                                                onClick={() => openUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: item.id })}
-                                                aria-label="Dodaj fotografijo"
-                                                title="Dodaj fotografijo"
-                                              >
-                                                <Camera className="h-4 w-4" />
-                                              </Button>
-                                            ) : (
-                                              <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 text-muted-foreground"
-                                                disabled
-                                                aria-label="Shranite enoto za dodajanje fotografij"
-                                                title="Shranite enoto za dodajanje fotografij"
-                                              >
-                                                <Camera className="h-4 w-4" />
-                                              </Button>
-                                            )}
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-8 w-8 text-muted-foreground"
+                                              disabled
+                                              aria-label="Fotografije so na voljo le za izvedbene enote"
+                                              title="Fotografije so na voljo le za izvedbene enote"
+                                            >
+                                              <Camera className="h-4 w-4" />
+                                            </Button>
                                           </div>
                                         ) : null}
                                       </td>
@@ -2203,31 +2202,17 @@ export function ExecutionPanel({
                                       >
                                         <Pencil className="h-4 w-4" />
                                       </Button>
-                                      {hasSavedExecutionUnitId(item.id) ? (
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-muted-foreground"
-                                          onClick={() => openUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: item.id })}
-                                          aria-label="Dodaj fotografijo"
-                                          title="Dodaj fotografijo"
-                                        >
-                                          <Camera className="h-4 w-4" />
-                                        </Button>
-                                      ) : (
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-muted-foreground"
-                                          disabled
-                                          aria-label="Shranite enoto za dodajanje fotografij"
-                                          title="Shranite enoto za dodajanje fotografij"
-                                        >
-                                          <Camera className="h-4 w-4" />
-                                        </Button>
-                                      )}
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-muted-foreground"
+                                        disabled
+                                        aria-label="Fotografije so na voljo le za izvedbene enote"
+                                        title="Fotografije so na voljo le za izvedbene enote"
+                                      >
+                                        <Camera className="h-4 w-4" />
+                                      </Button>
                                       <Button
                                         type="button"
                                         variant="ghost"
@@ -2641,82 +2626,21 @@ export function ExecutionPanel({
           </DialogDescription>
           {activeUnitPhotoCapture && canOpenActiveUnitPhotoCapture ? (
             <PhotoCapture
-              entityType="execution-unit"
-              entityId={activeUnitPhotoCapture.unitId}
-              existingPhotoUrls={activeExecutionUnitPhotoUrls}
-              onPhotoUploaded={async (photo: UploadedPhoto) => {
-                try {
-                  if (!hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId)) {
-                    throw new Error("Execution unit must be saved before uploading photos");
-                  }
-                  const response = await fetch(
-                    `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos`,
-                    {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                        ...buildTenantHeaders(),
-                      },
-                      body: JSON.stringify({
-                        photoUrl: photo.fileUrl,
-                        photoType: "unitPhotos",
-                      }),
-                    },
-                  );
-                  const payload = await response.json();
-                  if (!payload.success) {
-                    throw new Error(payload.error ?? "Failed to save photo");
-                  }
-                  syncExecutionUnitPhotos(
-                    activeUnitPhotoCapture.orderId,
-                    activeUnitPhotoCapture.itemId,
-                    activeUnitPhotoCapture.unitId,
-                    "unitPhotos",
-                    () => (isPhotoArray(payload.data?.photos) ? payload.data.photos : [photo.fileUrl]),
-                  );
-                  toast.success("Fotografija shranjena.");
-                } catch (error) {
-                  console.error("Error saving photo:", error);
-                  toast.error("Napaka pri shranjevanju fotografije");
-                  throw error;
-                }
-              }}
-              onDeletePhoto={async (photo: UploadedPhoto) => {
-                try {
-                  if (!hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId)) {
-                    throw new Error("Execution unit must be saved before deleting photos");
-                  }
-                  const response = await fetch(
-                    `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos`,
-                    {
-                      method: "DELETE",
-                      headers: {
-                        "Content-Type": "application/json",
-                        ...buildTenantHeaders(),
-                      },
-                      body: JSON.stringify({
-                        photoUrl: photo.fileUrl,
-                        photoType: "unitPhotos",
-                      }),
-                    },
-                  );
-                  const payload = await response.json();
-                  if (!payload.success) {
-                    throw new Error(payload.error ?? "Failed to delete photo");
-                  }
-                  syncExecutionUnitPhotos(
-                    activeUnitPhotoCapture.orderId,
-                    activeUnitPhotoCapture.itemId,
-                    activeUnitPhotoCapture.unitId,
-                    "unitPhotos",
-                    () => (isPhotoArray(payload.data?.photos) ? payload.data.photos : []),
-                  );
-                  toast.success("Fotografija izbrisana.");
-                } catch (error) {
-                  console.error("Error deleting photo:", error);
-                  toast.error("Napaka pri brisanju fotografije");
-                  throw error;
-                }
+              title="Fotografije enote"
+              uploadUrl="/api/files/upload"
+              saveUrl={`/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos?type=unit`}
+              deleteUrl={(photoUrl) =>
+                `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos/${encodeURIComponent(photoUrl)}?type=unit`
+              }
+              existingPhotos={activeExecutionUnitPhotoUrls}
+              onPhotosChange={(photos) => {
+                syncExecutionUnitPhotos(
+                  activeUnitPhotoCapture.orderId,
+                  activeUnitPhotoCapture.itemId,
+                  activeUnitPhotoCapture.unitId,
+                  "unitPhotos",
+                  () => photos,
+                );
               }}
               maxPhotos={10}
             />
@@ -2730,4 +2654,3 @@ export function ExecutionPanel({
     </div>
   );
 }
-

@@ -2,21 +2,18 @@ import React, { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'r
 import { Camera, Image as ImageIcon, X } from 'lucide-react';
 
 export interface PhotoCaptureProps {
-  entityType: string;
-  entityId: string;
-  onPhotosChange?: (photos: UploadedPhoto[]) => void;
-  onPhotoUploaded?: (photo: UploadedPhoto) => void | Promise<void>;
-  onDeletePhoto?: (photo: UploadedPhoto) => void | Promise<void>;
-  existingPhotoUrls?: string[];
+  uploadUrl: string;
+  saveUrl?: string;
+  deleteUrl: (photoUrl: string) => string;
+  existingPhotos?: string[];
+  onPhotosChange?: (photos: string[]) => void;
+  title?: string;
   maxPhotos?: number;
 }
 
-export interface UploadedPhoto {
+interface UploadedPhoto {
   fileUrl: string;
   filename: string;
-  originalName: string;
-  size: number;
-  mimeType: string;
 }
 
 interface PhotoPreview {
@@ -40,21 +37,11 @@ function getFilenameFromUrl(fileUrl: string): string {
   }
 }
 
-function getMimeTypeFromFilename(filename: string): string {
-  const extension = filename.split('.').pop()?.toLowerCase();
-  if (extension === 'png') return 'image/png';
-  if (extension === 'webp') return 'image/webp';
-  return 'image/jpeg';
-}
-
 function buildUploadedPhotoFromUrl(fileUrl: string): UploadedPhoto {
   const filename = getFilenameFromUrl(fileUrl);
   return {
     fileUrl,
     filename,
-    originalName: filename,
-    size: 0,
-    mimeType: getMimeTypeFromFilename(filename),
   };
 }
 
@@ -75,8 +62,8 @@ function getUploadedPhotos(previews: PhotoPreview[]): UploadedPhoto[] {
     .filter((photo): photo is UploadedPhoto => photo !== undefined);
 }
 
-function mergePhotos(existingPhotoUrls: string[], currentPhotos: PhotoPreview[]): PhotoPreview[] {
-  const existingPreviews = existingPhotoUrls.map(buildExistingPhotoPreview);
+function mergePhotos(existingPhotos: string[], currentPhotos: PhotoPreview[]): PhotoPreview[] {
+  const existingPreviews = existingPhotos.map(buildExistingPhotoPreview);
   const localPhotos = currentPhotos.filter((photo) => !photo.isExisting);
   const merged = [...existingPreviews, ...localPhotos];
   const seenUrls = new Set<string>();
@@ -91,27 +78,27 @@ function mergePhotos(existingPhotoUrls: string[], currentPhotos: PhotoPreview[])
 }
 
 export function PhotoCapture({
-  entityType,
-  entityId,
+  uploadUrl,
+  saveUrl,
+  deleteUrl,
+  existingPhotos = [],
   onPhotosChange,
-  onPhotoUploaded,
-  onDeletePhoto,
-  existingPhotoUrls = [],
+  title = 'Fotografije',
   maxPhotos = 10,
 }: PhotoCaptureProps) {
   const MAX_IMAGE_DIMENSION = 1920;
   const JPEG_QUALITY = 0.8;
-  const [photos, setPhotos] = useState<PhotoPreview[]>(() => existingPhotoUrls.map(buildExistingPhotoPreview));
+  const [photos, setPhotos] = useState<PhotoPreview[]>(() => existingPhotos.map(buildExistingPhotoPreview));
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
-  const photosRef = useRef<PhotoPreview[]>(existingPhotoUrls.map(buildExistingPhotoPreview));
+  const photosRef = useRef<PhotoPreview[]>(existingPhotos.map(buildExistingPhotoPreview));
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const nextPhotos = mergePhotos(existingPhotoUrls, photosRef.current);
+    const nextPhotos = mergePhotos(existingPhotos, photosRef.current);
     photosRef.current = nextPhotos;
     setPhotos(nextPhotos);
-  }, [existingPhotoUrls]);
+  }, [existingPhotos]);
 
   useEffect(() => {
     photosRef.current = photos;
@@ -123,7 +110,7 @@ export function PhotoCapture({
   );
 
   const notifyPhotosChange = (nextPhotos: PhotoPreview[]) => {
-    onPhotosChange?.(getUploadedPhotos(nextPhotos));
+    onPhotosChange?.(getUploadedPhotos(nextPhotos).map((photo) => photo.fileUrl));
   };
 
   const compressImage = (file: File): Promise<File> =>
@@ -179,10 +166,8 @@ export function PhotoCapture({
       const compressedFile = await compressImage(file);
       const formData = new FormData();
       formData.append('file', compressedFile);
-      formData.append('entityType', entityType);
-      formData.append('entityId', entityId);
 
-      const response = await fetch('/api/files/upload', {
+      const response = await fetch(uploadUrl, {
         method: 'POST',
         body: formData,
       });
@@ -192,7 +177,24 @@ export function PhotoCapture({
         throw new Error(result.error || 'Upload failed');
       }
 
-      const uploadedPhoto: UploadedPhoto = result.data;
+      const uploadedPhoto = result.data as UploadedPhoto;
+
+      if (saveUrl) {
+        const saveResponse = await fetch(saveUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            photoUrl: uploadedPhoto.fileUrl,
+          }),
+        });
+        const savePayload = await saveResponse.json();
+        if (!savePayload.success) {
+          throw new Error(savePayload.error || 'Photo save failed');
+        }
+      }
+
       const nextPhotos = photosRef.current.map((photo) =>
         photo.id === photoId
           ? {
@@ -209,9 +211,7 @@ export function PhotoCapture({
 
       notifyPhotosChange(nextPhotos);
 
-      await onPhotoUploaded?.(uploadedPhoto);
-
-      const mergedPhotos = mergePhotos(existingPhotoUrls, photosRef.current);
+      const mergedPhotos = mergePhotos(existingPhotos, photosRef.current);
       if (mergedPhotos !== photosRef.current) {
         photosRef.current = mergedPhotos;
         setPhotos(mergedPhotos);
@@ -280,17 +280,10 @@ export function PhotoCapture({
     if (!photo?.uploaded) return;
 
     try {
-      if (onDeletePhoto) {
-        await onDeletePhoto(photo.uploaded);
-      } else {
-        const response = await fetch(
-          `/api/files/${photo.uploaded.filename}?entityType=${entityType}&entityId=${entityId}`,
-          { method: 'DELETE' },
-        );
-        const result = await response.json();
-        if (!result.success) {
-          throw new Error(result.error || 'Delete failed');
-        }
+      const response = await fetch(deleteUrl(photo.uploaded.fileUrl), { method: 'DELETE' });
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Delete failed');
       }
     } catch (error) {
       console.error('Delete error:', error);
@@ -314,7 +307,8 @@ export function PhotoCapture({
   return (
     <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto">
       <div className="space-y-1">
-        <p className="text-sm font-medium">{uploadedCount} shranjenih slik</p>
+        <p className="text-sm font-medium">{title}</p>
+        <p className="text-sm font-medium">{uploadedCount} shranjenih fotografij</p>
         <p className="text-xs text-muted-foreground">Dodaj fotografije ali odpri obstoječe v povečanem prikazu.</p>
       </div>
 
@@ -339,7 +333,7 @@ export function PhotoCapture({
                 }}
                 disabled={photo.uploading}
               >
-                <img src={photo.dataUrl} alt="Fotografija enote" className="h-full w-full object-cover" />
+                <img src={photo.dataUrl} alt="Fotografija" className="h-full w-full object-cover" />
               </button>
 
               {photo.uploading ? (
