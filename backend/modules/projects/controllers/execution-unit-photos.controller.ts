@@ -2,17 +2,30 @@ import { Request, Response, NextFunction } from 'express';
 import { WorkOrderModel } from '../schemas/work-order';
 import { deleteFile } from '../../../utils/fileUpload';
 
+type ExecutionUnitRecord = {
+  id?: unknown;
+  get?: (path: string) => unknown;
+  unitPhotos?: string[];
+  prepPhotos?: string[];
+};
+
 function normalizeExecutionUnitId(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function readExecutionUnitId(unit: unknown): unknown {
+function asExecutionUnitRecord(unit: unknown): ExecutionUnitRecord | null {
   if (!unit || typeof unit !== 'object') {
+    return null;
+  }
+  return unit as ExecutionUnitRecord;
+}
+
+function readExecutionUnitId(unit: ExecutionUnitRecord | null): unknown {
+  if (!unit) {
     return '';
   }
 
-  const candidate = unit as { id?: unknown; get?: (path: string) => unknown };
-  return candidate.id ?? candidate.get?.('id') ?? '';
+  return unit.id ?? unit.get?.('id') ?? '';
 }
 
 function parsePhotoType(rawType: unknown): 'unitPhotos' | 'prepPhotos' | null {
@@ -25,11 +38,12 @@ function findExecutionUnit(workOrder: { items: Array<{ executionSpec?: { executi
   console.log('Looking for unitId:', targetUnitId);
   for (const item of workOrder.items) {
     const units = item.executionSpec?.executionUnits ?? [];
-    for (const unit of units) {
+    for (const rawUnit of units) {
+      const unit = asExecutionUnitRecord(rawUnit);
       const storedId = readExecutionUnitId(unit);
       console.log('Found unit id:', storedId, typeof storedId);
       const match = String(storedId) === String(targetUnitId);
-      if (match) {
+      if (match && unit) {
         return unit;
       }
     }
