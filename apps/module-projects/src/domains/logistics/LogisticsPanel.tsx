@@ -232,6 +232,10 @@ function ensureExecutionSpec(spec: WorkOrderExecutionSpec | null | undefined): W
   };
 }
 
+function hasSavedExecutionUnitId(unitId: string | number | null | undefined) {
+  return Boolean(unitId && !unitId.toString().startsWith("draft-"));
+}
+
 function getExecutionModeLabel(mode: WorkOrderExecutionSpec["mode"] | undefined) {
   if (mode === "per_unit") return "Po enotah";
   if (mode === "measured") return "Merjeno";
@@ -380,6 +384,10 @@ export function LogisticsPanel({
     );
     return unit?.prepPhotos ?? [];
   }, [activeUnitPhotoCapture, selectedWorkOrder?.items, workOrderForm.items]);
+  const activeUnitPhotoCaptureIsSaved = useMemo(
+    () => hasSavedExecutionUnitId(activeUnitPhotoCapture?.unitId),
+    [activeUnitPhotoCapture],
+  );
   const companyPickupAddress = useMemo(() => formatCompanyAddress(settings), [settings]);
   const sitePickupAddress = useMemo(() => formatClientAddress(client ?? null), [client]);
   const materialOrdersForSelectedWorkOrder = useMemo(() => {
@@ -2210,14 +2218,26 @@ export function LogisticsPanel({
                                     }
                                     placeholder="Opomba"
                                   />
-                                  <Button 
-                                    type="button" 
-                                    variant="outline" 
-                                    size="sm"
-                                    onClick={() => setActiveUnitPhotoCapture({ workOrderId: sourceWorkOrder._id, itemId: item.id, unitId: unit.id })}
-                                  >
-                                    Fotografija
-                                  </Button>
+                                  {hasSavedExecutionUnitId(unit.id) ? (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() =>
+                                        setActiveUnitPhotoCapture({
+                                          workOrderId: sourceWorkOrder._id,
+                                          itemId: item.id,
+                                          unitId: unit.id,
+                                        })
+                                      }
+                                    >
+                                      Fotografija
+                                    </Button>
+                                  ) : (
+                                    <Button type="button" variant="outline" size="sm" disabled className="text-xs">
+                                      Najprej shranite enoto
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
                             ))}
@@ -2660,7 +2680,7 @@ export function LogisticsPanel({
           <DialogHeader>
             <DialogTitle>Fotografije enote</DialogTitle>
           </DialogHeader>
-          {activeUnitPhotoCapture ? (
+          {activeUnitPhotoCapture && activeUnitPhotoCaptureIsSaved ? (
             <PhotoCapture
               title="Fotografije priprave"
               uploadUrl="/api/files/upload"
@@ -2694,6 +2714,10 @@ export function LogisticsPanel({
               }}
               maxPhotos={10}
             />
+          ) : activeUnitPhotoCapture ? (
+            <div className="rounded-md border border-dashed border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+              Najprej shranite enoto
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>
