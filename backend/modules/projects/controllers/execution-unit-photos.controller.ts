@@ -2,26 +2,30 @@ import { Request, Response, NextFunction } from 'express';
 import { WorkOrderModel } from '../schemas/work-order';
 import { deleteFile } from '../../../utils/fileUpload';
 
+type ExecutionUnitRecord = {
+  id?: unknown;
+  get?: (path: string) => unknown;
+  unitPhotos?: string[];
+  prepPhotos?: string[];
+};
+
 function normalizeExecutionUnitId(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function readExecutionUnitId(unit: unknown): string {
+function asExecutionUnitRecord(unit: unknown): ExecutionUnitRecord | null {
   if (!unit || typeof unit !== 'object') {
+    return null;
+  }
+  return unit as ExecutionUnitRecord;
+}
+
+function readExecutionUnitId(unit: ExecutionUnitRecord | null): unknown {
+  if (!unit) {
     return '';
   }
 
-  const candidate = unit as { id?: unknown; get?: (path: string) => unknown };
-  const directId = normalizeExecutionUnitId(candidate.id);
-  if (directId) {
-    return directId;
-  }
-
-  if (typeof candidate.get === 'function') {
-    return normalizeExecutionUnitId(candidate.get('id'));
-  }
-
-  return '';
+  return unit.id ?? unit.get?.('id') ?? '';
 }
 
 function parsePhotoType(rawType: unknown): 'unitPhotos' | 'prepPhotos' | null {
@@ -31,12 +35,15 @@ function parsePhotoType(rawType: unknown): 'unitPhotos' | 'prepPhotos' | null {
 }
 
 function findExecutionUnit(workOrder: { items: Array<{ executionSpec?: { executionUnits?: unknown[] } }> }, targetUnitId: string) {
+  console.log('Looking for unitId:', targetUnitId);
   for (const item of workOrder.items) {
     const units = item.executionSpec?.executionUnits ?? [];
-    for (const unit of units) {
-      const unitId = readExecutionUnitId(unit);
-      console.log('[execution-unit-photos] compare', JSON.stringify({ requestedUnitId: targetUnitId, candidateUnitId: unitId }));
-      if (unitId === targetUnitId) {
+    for (const rawUnit of units) {
+      const unit = asExecutionUnitRecord(rawUnit);
+      const storedId = readExecutionUnitId(unit);
+      console.log('Found unit id:', storedId, typeof storedId);
+      const match = String(storedId) === String(targetUnitId);
+      if (match && unit) {
         return unit;
       }
     }
@@ -64,6 +71,7 @@ export async function saveExecutionUnitPhoto(req: Request, res: Response, next: 
     }
 
     const workOrder = await WorkOrderModel.findOne({ _id: workOrderId, projectId });
+    console.log('WorkOrder found:', !!workOrder, 'items count:', workOrder?.items?.length);
     if (!workOrder) {
       return res.fail('Delovni nalog ni najden.', 404);
     }
@@ -131,6 +139,7 @@ export async function deleteExecutionUnitPhoto(req: Request, res: Response, next
     }
 
     const workOrder = await WorkOrderModel.findOne({ _id: workOrderId, projectId });
+    console.log('WorkOrder found:', !!workOrder, 'items count:', workOrder?.items?.length);
     if (!workOrder) {
       return res.fail('Delovni nalog ni najden.', 404);
     }
