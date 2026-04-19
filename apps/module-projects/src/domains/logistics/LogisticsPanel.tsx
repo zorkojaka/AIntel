@@ -236,6 +236,11 @@ function hasSavedExecutionUnitId(unitId: string | number | null | undefined) {
   return Boolean(unitId && !unitId.toString().startsWith("draft-"));
 }
 
+function findExecutionUnitByPosition(order: LogisticsWorkOrder, itemId: string, unitIndex: number) {
+  const item = order.items.find((candidate) => candidate.id === itemId);
+  return ensureExecutionSpec(item?.executionSpec).executionUnits?.[unitIndex] ?? null;
+}
+
 function getExecutionModeLabel(mode: WorkOrderExecutionSpec["mode"] | undefined) {
   if (mode === "per_unit") return "Po enotah";
   if (mode === "measured") return "Merjeno";
@@ -321,7 +326,9 @@ export function LogisticsPanel({
     workOrderId: string;
     itemId: string;
     unitId: string;
+    unitIndex: number;
   } | null>(null);
+  const [savingPrepPhotoUnitKey, setSavingPrepPhotoUnitKey] = useState<string | null>(null);
 
   const hasConfirmed = useMemo(() => !!snapshot?.confirmedOfferVersionId, [snapshot]);
   const confirmedOffers = useMemo(
@@ -1068,12 +1075,44 @@ export function LogisticsPanel({
       }
       await refreshAfterMutation(fetchSnapshot);
       toast.success("Delovni nalog posodobljen.");
-      return true;
+      return mergedWorkOrder;
     } catch (error) {
       toast.error("Delovnega naloga ni mogoce shraniti.");
       return false;
     } finally {
       setSavingWorkOrder(false);
+    }
+  };
+
+  const openPrepPhotoCapture = async (payload: {
+    workOrderId: string;
+    itemId: string;
+    unitId: string;
+    unitIndex: number;
+  }) => {
+    if (hasSavedExecutionUnitId(payload.unitId)) {
+      setActiveUnitPhotoCapture(payload);
+      return;
+    }
+
+    const unitKey = `${payload.workOrderId}:${payload.itemId}:${payload.unitIndex}`;
+    setSavingPrepPhotoUnitKey(unitKey);
+    try {
+      const savedWorkOrder = await handleSaveWorkOrder();
+      if (!savedWorkOrder) return;
+
+      const savedUnit = findExecutionUnitByPosition(savedWorkOrder, payload.itemId, payload.unitIndex);
+      if (!hasSavedExecutionUnitId(savedUnit?.id)) {
+        toast.error("Enote po shranjevanju ni mogoče najti.");
+        return;
+      }
+
+      setActiveUnitPhotoCapture({
+        ...payload,
+        unitId: savedUnit.id,
+      });
+    } finally {
+      setSavingPrepPhotoUnitKey((current) => (current === unitKey ? null : current));
     }
   };
 
@@ -2218,26 +2257,24 @@ export function LogisticsPanel({
                                     }
                                     placeholder="Opomba"
                                   />
-                                  {hasSavedExecutionUnitId(unit.id) ? (
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() =>
-                                        setActiveUnitPhotoCapture({
-                                          workOrderId: sourceWorkOrder._id,
-                                          itemId: item.id,
-                                          unitId: unit.id,
-                                        })
-                                      }
-                                    >
-                                      Fotografija
-                                    </Button>
-                                  ) : (
-                                    <Button type="button" variant="outline" size="sm" disabled className="text-xs">
-                                      Najprej shranite enoto
-                                    </Button>
-                                  )}
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={savingPrepPhotoUnitKey === `${sourceWorkOrder._id}:${item.id}:${index}`}
+                                    onClick={() =>
+                                      void openPrepPhotoCapture({
+                                        workOrderId: sourceWorkOrder._id,
+                                        itemId: item.id,
+                                        unitId: unit.id,
+                                        unitIndex: index,
+                                      })
+                                    }
+                                  >
+                                    {savingPrepPhotoUnitKey === `${sourceWorkOrder._id}:${item.id}:${index}`
+                                      ? "Shranjujem..."
+                                      : "Fotografija"}
+                                  </Button>
                                 </div>
                               </div>
                             ))}

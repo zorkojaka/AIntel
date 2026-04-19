@@ -62,11 +62,17 @@ type ActiveUnitPhotoCapture = {
   orderId: string;
   itemId: string;
   unitId: string;
+  unitIndex: number;
 } | null;
 type NewExtraItemsState = Record<string, Record<string, boolean>>;
 
 function hasSavedExecutionUnitId(unitId: string | number | null | undefined) {
   return Boolean(unitId && !unitId.toString().startsWith("draft-"));
+}
+
+function findExecutionUnitByPosition(order: WorkOrder, itemId: string, unitIndex: number) {
+  const item = order.items.find((candidate) => candidate.id === itemId);
+  return ensureExecutionSpec(item?.executionSpec).executionUnits?.[unitIndex] ?? null;
 }
 
 function normalizeExecutionMode(value: WorkOrderExecutionSpec["mode"] | undefined) {
@@ -364,6 +370,7 @@ export function ExecutionPanel({
   const [editingUnitNotes, setEditingUnitNotes] = useState<Record<string, boolean>>({});
   const [activeUnitNoteEditor, setActiveUnitNoteEditor] = useState<ActiveUnitNoteEditor>(null);
   const [activeUnitPhotoCapture, setActiveUnitPhotoCapture] = useState<ActiveUnitPhotoCapture>(null);
+  const [savingPhotoUnitKey, setSavingPhotoUnitKey] = useState<string | null>(null);
   const [newExtraItems, setNewExtraItems] = useState<NewExtraItemsState>({});
 
   const workOrders = useMemo(() => rawWorkOrders, [rawWorkOrders]);
@@ -747,7 +754,7 @@ export function ExecutionPanel({
             return next;
           });
         }, 2000);
-        return true;
+        return updated;
       } catch (error) {
         console.error(error);
         setSavingStates((prev) => ({ ...prev, [orderId]: "error" }));
@@ -936,11 +943,33 @@ export function ExecutionPanel({
   );
 
   const openUnitPhotoCapture = useCallback(
-    (payload: NonNullable<ActiveUnitPhotoCapture>) => {
-      if (!hasSavedExecutionUnitId(payload.unitId)) return;
-      setActiveUnitPhotoCapture(payload);
+    async (payload: NonNullable<ActiveUnitPhotoCapture>) => {
+      if (hasSavedExecutionUnitId(payload.unitId)) {
+        setActiveUnitPhotoCapture(payload);
+        return;
+      }
+
+      const unitKey = `${payload.orderId}:${payload.itemId}:${payload.unitIndex}`;
+      setSavingPhotoUnitKey(unitKey);
+      try {
+        const savedOrder = await saveWorkOrder(payload.orderId);
+        if (!savedOrder) return;
+
+        const savedUnit = findExecutionUnitByPosition(savedOrder, payload.itemId, payload.unitIndex);
+        if (!hasSavedExecutionUnitId(savedUnit?.id)) {
+          toast.error("Enote po shranjevanju ni mogoče najti.");
+          return;
+        }
+
+        setActiveUnitPhotoCapture({
+          ...payload,
+          unitId: savedUnit.id,
+        });
+      } finally {
+        setSavingPhotoUnitKey((current) => (current === unitKey ? null : current));
+      }
     },
-    [],
+    [saveWorkOrder],
   );
 
   const handleDeleteManualItem = (order: WorkOrder, item: WorkOrderItemDraft) => {
@@ -1102,7 +1131,7 @@ export function ExecutionPanel({
 
     for (const orderId of dirtyWorkOrderIds) {
       const saved = await saveWorkOrder(orderId, undefined, { skipRefresh: true });
-      hasSavedChanges = hasSavedChanges || saved;
+      hasSavedChanges = hasSavedChanges || Boolean(saved);
       hasFailure = hasFailure || !saved;
     }
 
@@ -1183,6 +1212,8 @@ export function ExecutionPanel({
       <div className={cn("space-y-1.5", options?.compact ? "pt-1" : "pt-2")}>
         {units.map((unit, index) => {
           const unitKey = `${item.id}:${unit.id}`;
+          const photoUnitKey = `${order._id}:${item.id}:${index}`;
+          const isSavingPhotoUnit = savingPhotoUnitKey === photoUnitKey;
           const isEditingNote = !!editingUnitNotes[unitKey];
           const noteText = unit.instructions?.trim() || "";
           return (
@@ -1247,31 +1278,25 @@ export function ExecutionPanel({
                   <Pencil className="h-4 w-4" />
                 </Button>
                 <div className="relative">
-                  {hasSavedExecutionUnitId(unit.id) ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground"
-                      onClick={() => openUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: unit.id })}
-                      aria-label="Dodaj fotografijo"
-                      title="Dodaj fotografijo"
-                    >
-                      <Camera className="h-4 w-4" />
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground"
-                      disabled
-                      aria-label="Shranite enoto za dodajanje fotografij"
-                      title="Shranite enoto za dodajanje fotografij"
-                    >
-                      <Camera className="h-4 w-4" />
-                    </Button>
-                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size={isSavingPhotoUnit ? "sm" : "icon"}
+                    className={cn("h-8 text-muted-foreground", isSavingPhotoUnit ? "px-2 text-xs" : "w-8")}
+                    disabled={isLocked || isSavingPhotoUnit}
+                    onClick={() =>
+                      void openUnitPhotoCapture({
+                        orderId: order._id,
+                        itemId: item.id,
+                        unitId: unit.id,
+                        unitIndex: index,
+                      })
+                    }
+                    aria-label={hasSavedExecutionUnitId(unit.id) ? "Dodaj fotografijo" : "Shrani in dodaj fotografijo"}
+                    title={hasSavedExecutionUnitId(unit.id) ? "Dodaj fotografijo" : "Shrani in dodaj fotografijo"}
+                  >
+                    {isSavingPhotoUnit ? "Shranjujem..." : <Camera className="h-4 w-4" />}
+                  </Button>
                   {(unit.unitPhotos?.length ?? 0) > 0 && (
                     <Badge className="absolute -right-1 -top-1 h-4 min-w-4 px-1 text-[10px]" variant="secondary">
                       {unit.unitPhotos?.length}
