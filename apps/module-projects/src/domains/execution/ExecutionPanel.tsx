@@ -65,8 +65,8 @@ type ActiveUnitPhotoCapture = {
 } | null;
 type NewExtraItemsState = Record<string, Record<string, boolean>>;
 
-function hasSavedExecutionUnitId(unitId: string) {
-  return !unitId.startsWith("draft-");
+function hasSavedExecutionUnitId(unitId: string | number | null | undefined) {
+  return Boolean(unitId && !unitId.toString().startsWith("draft-"));
 }
 
 function normalizeExecutionMode(value: WorkOrderExecutionSpec["mode"] | undefined) {
@@ -879,31 +879,14 @@ export function ExecutionPanel({
     [getDraftValues, workOrders],
   );
 
-  const hasExistingExecutionUnit = useCallback(
-    (target: ActiveUnitPhotoCapture) => {
-      if (!target) return false;
-      const order = workOrders.find((candidate) => candidate._id === target.orderId);
-      if (!order) return false;
-      const item = getDraftValues(order).items.find((candidate) => candidate.id === target.itemId);
-      if (!item) return false;
-      return (ensureExecutionSpec(item.executionSpec).executionUnits ?? []).some(
-        (candidate) => candidate.id === target.unitId,
-      );
-    },
-    [getDraftValues, workOrders],
-  );
-
   const activeExecutionUnitPhotoUrls = useMemo(
     () => getExecutionUnitPhotoUrls(activeUnitPhotoCapture),
     [activeUnitPhotoCapture, getExecutionUnitPhotoUrls],
   );
 
-  const canOpenActiveUnitPhotoCapture = useMemo(
-    () =>
-      activeUnitPhotoCapture
-        ? hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId) && hasExistingExecutionUnit(activeUnitPhotoCapture)
-        : false,
-    [activeUnitPhotoCapture, hasExistingExecutionUnit],
+  const activePhotoCaptureIsSaved = useMemo(
+    () => hasSavedExecutionUnitId(activeUnitPhotoCapture?.unitId),
+    [activeUnitPhotoCapture],
   );
 
   const syncExecutionUnitPhotos = useCallback(
@@ -2624,7 +2607,7 @@ export function ExecutionPanel({
           <DialogDescription className="sr-only">
             Upravljanje fotografij izvedbene enote
           </DialogDescription>
-          {activeUnitPhotoCapture && canOpenActiveUnitPhotoCapture ? (
+          {activeUnitPhotoCapture && activePhotoCaptureIsSaved ? (
             <PhotoCapture
               title="Fotografije enote"
               uploadUrl="/api/files/upload"
