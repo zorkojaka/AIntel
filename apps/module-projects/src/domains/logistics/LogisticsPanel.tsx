@@ -969,7 +969,9 @@ export function LogisticsPanel({
         : Array.isArray(workOrderForm.items)
           ? workOrderForm.items
           : undefined;
-      const response = await fetch(`/api/projects/${projectId}/work-orders/${selectedWorkOrder._id}`, {
+      const saveEndpoint = `/api/projects/${projectId}/work-orders/${selectedWorkOrder._id}`;
+      console.log("Saving WorkOrder endpoint:", saveEndpoint);
+      const response = await fetch(saveEndpoint, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1113,6 +1115,14 @@ export function LogisticsPanel({
     try {
       const savedWorkOrder = await handleSaveWorkOrder();
       if (!savedWorkOrder) return;
+
+      console.log("Save response:", JSON.stringify(savedWorkOrder, null, 2));
+      console.log("Looking for item:", payload.itemId, payload.itemName);
+      console.log("Unit index:", payload.unitIndex);
+      savedWorkOrder.items?.forEach((item, index) => {
+        console.log("Item", index, ":", item.id, item.name);
+        console.log("ExecutionUnits:", ensureExecutionSpec(item.executionSpec).executionUnits?.map((unit) => unit.id));
+      });
 
       const savedUnit = findExecutionUnitByPosition(savedWorkOrder, payload, payload.unitIndex);
       if (!hasSavedExecutionUnitId(savedUnit?.id)) {
