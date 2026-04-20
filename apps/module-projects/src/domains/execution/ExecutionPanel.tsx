@@ -61,6 +61,8 @@ type ActiveUnitNoteEditor = {
 type ActiveUnitPhotoCapture = {
   orderId: string;
   itemId: string;
+  itemProductId?: string | null;
+  itemName?: string | null;
   unitId: string;
   unitIndex: number;
 } | null;
@@ -70,8 +72,17 @@ function hasSavedExecutionUnitId(unitId: string | number | null | undefined) {
   return Boolean(unitId && !unitId.toString().startsWith("draft-"));
 }
 
-function findExecutionUnitByPosition(order: WorkOrder, itemId: string, unitIndex: number) {
-  const item = order.items.find((candidate) => candidate.id === itemId);
+function findExecutionUnitByPosition(
+  order: WorkOrder,
+  itemIdentity: { itemId: string; itemProductId?: string | null; itemName?: string | null },
+  unitIndex: number,
+) {
+  const originalName = itemIdentity.itemName?.trim();
+  const item = order.items.find((candidate) => {
+    if (candidate.id === itemIdentity.itemId) return true;
+    if (itemIdentity.itemProductId && candidate.productId === itemIdentity.itemProductId) return true;
+    return Boolean(originalName && candidate.name?.trim() === originalName);
+  });
   return ensureExecutionSpec(item?.executionSpec).executionUnits?.[unitIndex] ?? null;
 }
 
@@ -955,9 +966,10 @@ export function ExecutionPanel({
         const savedOrder = await saveWorkOrder(payload.orderId);
         if (!savedOrder) return;
 
-        const savedUnit = findExecutionUnitByPosition(savedOrder, payload.itemId, payload.unitIndex);
+        const savedUnit = findExecutionUnitByPosition(savedOrder, payload, payload.unitIndex);
         if (!hasSavedExecutionUnitId(savedUnit?.id)) {
-          toast.error("Enote po shranjevanju ni mogoče najti.");
+          console.log("Saved WorkOrder after photo auto-save:", savedOrder);
+          toast.error("Enote po shranjevanju ni mogoče najti. Poskusite ponovno odpreti fotografije.");
           return;
         }
 
@@ -1288,6 +1300,8 @@ export function ExecutionPanel({
                       void openUnitPhotoCapture({
                         orderId: order._id,
                         itemId: item.id,
+                        itemProductId: item.productId ?? null,
+                        itemName: item.name,
                         unitId: unit.id,
                         unitIndex: index,
                       })

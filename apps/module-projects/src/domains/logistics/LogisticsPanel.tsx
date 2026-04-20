@@ -236,8 +236,17 @@ function hasSavedExecutionUnitId(unitId: string | number | null | undefined) {
   return Boolean(unitId && !unitId.toString().startsWith("draft-"));
 }
 
-function findExecutionUnitByPosition(order: LogisticsWorkOrder, itemId: string, unitIndex: number) {
-  const item = order.items.find((candidate) => candidate.id === itemId);
+function findExecutionUnitByPosition(
+  order: LogisticsWorkOrder,
+  itemIdentity: { itemId: string; itemProductId?: string | null; itemName?: string | null },
+  unitIndex: number,
+) {
+  const originalName = itemIdentity.itemName?.trim();
+  const item = order.items.find((candidate) => {
+    if (candidate.id === itemIdentity.itemId) return true;
+    if (itemIdentity.itemProductId && candidate.productId === itemIdentity.itemProductId) return true;
+    return Boolean(originalName && candidate.name?.trim() === originalName);
+  });
   return ensureExecutionSpec(item?.executionSpec).executionUnits?.[unitIndex] ?? null;
 }
 
@@ -325,6 +334,8 @@ export function LogisticsPanel({
   const [activeUnitPhotoCapture, setActiveUnitPhotoCapture] = useState<{
     workOrderId: string;
     itemId: string;
+    itemProductId?: string | null;
+    itemName?: string | null;
     unitId: string;
     unitIndex: number;
   } | null>(null);
@@ -1087,6 +1098,8 @@ export function LogisticsPanel({
   const openPrepPhotoCapture = async (payload: {
     workOrderId: string;
     itemId: string;
+    itemProductId?: string | null;
+    itemName?: string | null;
     unitId: string;
     unitIndex: number;
   }) => {
@@ -1101,9 +1114,10 @@ export function LogisticsPanel({
       const savedWorkOrder = await handleSaveWorkOrder();
       if (!savedWorkOrder) return;
 
-      const savedUnit = findExecutionUnitByPosition(savedWorkOrder, payload.itemId, payload.unitIndex);
+      const savedUnit = findExecutionUnitByPosition(savedWorkOrder, payload, payload.unitIndex);
       if (!hasSavedExecutionUnitId(savedUnit?.id)) {
-        toast.error("Enote po shranjevanju ni mogoče najti.");
+        console.log("Saved WorkOrder after prep photo auto-save:", savedWorkOrder);
+        toast.error("Enote po shranjevanju ni mogoče najti. Poskusite ponovno odpreti fotografije.");
         return;
       }
 
@@ -2266,6 +2280,8 @@ export function LogisticsPanel({
                                       void openPrepPhotoCapture({
                                         workOrderId: sourceWorkOrder._id,
                                         itemId: item.id,
+                                        itemProductId: item.productId ?? null,
+                                        itemName: item.name,
                                         unitId: unit.id,
                                         unitIndex: index,
                                       })
