@@ -9,4 +9,4 @@ export { FileUpload } from './components/FileUpload/FileUpload';
 export { CategoryMultiSelect } from './components/CategoryMultiSelect/CategoryMultiSelect';
 export { TableRowActions } from './components/TableRowActions/TableRowActions';
 export { PhotoCapture } from './components/PhotoCapture/PhotoCapture';
-export type { PhotoCaptureProps } from './components/PhotoCapture/PhotoCapture';
+export type { ExistingPhoto, PhotoCaptureProps, PhotoSaveResponseData } from './components/PhotoCapture/PhotoCapture';

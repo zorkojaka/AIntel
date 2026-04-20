@@ -100,6 +100,16 @@ export interface WorkLogEntry {
   hours: number;
 }
 
+export interface WorkOrderPhoto {
+  _id: string;
+  id?: string;
+  url: string;
+  type: "unit" | "prep";
+  itemIndex: number;
+  unitIndex: number;
+  uploadedAt: string;
+}
+
 export interface WorkOrderConfirmationVersionSummary {
   id: string;
   versionNumber: number;
@@ -138,6 +148,7 @@ export interface WorkOrder {
   reopened?: boolean;
   executionNote?: string | null;
   workLogs?: WorkLogEntry[];
+  photos?: WorkOrderPhoto[];
   confirmationState?: WorkOrderConfirmationState;
   confirmationActiveVersionId?: string | null;
   activeConfirmationVersion?: WorkOrderConfirmationVersionSummary | null;

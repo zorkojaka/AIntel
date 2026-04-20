@@ -8,7 +8,7 @@ import { Checkbox } from "../../components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Camera, ChevronDown, ChevronRight, Download, Loader2, Pencil, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { PhotoCapture } from "@aintel/ui";
+import { PhotoCapture, type ExistingPhoto, type PhotoSaveResponseData } from "@aintel/ui";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import type {
   MaterialOrder,
@@ -16,6 +16,7 @@ import type {
   WorkOrderExecutionSpec,
   WorkOrderExecutionUnit,
   WorkOrderItem,
+  WorkOrderPhoto,
   WorkOrderStatus,
 } from "@aintel/shared/types/logistics";
 import { cn } from "../../components/ui/utils";
@@ -60,30 +61,22 @@ type ActiveUnitNoteEditor = {
 
 type ActiveUnitPhotoCapture = {
   orderId: string;
-  itemId: string;
-  itemProductId?: string | null;
-  itemName?: string | null;
-  unitId: string;
+  itemIndex: number;
   unitIndex: number;
 } | null;
 type NewExtraItemsState = Record<string, Record<string, boolean>>;
 
-function hasSavedExecutionUnitId(unitId: string | number | null | undefined) {
-  return Boolean(unitId && !unitId.toString().startsWith("draft-"));
-}
-
-function findExecutionUnitByPosition(
-  order: WorkOrder,
-  itemIdentity: { itemId: string; itemProductId?: string | null; itemName?: string | null },
-  unitIndex: number,
-) {
-  const originalName = itemIdentity.itemName?.trim();
-  const item = order.items.find((candidate) => {
-    if (candidate.id === itemIdentity.itemId) return true;
-    if (itemIdentity.itemProductId && candidate.productId === itemIdentity.itemProductId) return true;
-    return Boolean(originalName && candidate.name?.trim() === originalName);
-  });
-  return ensureExecutionSpec(item?.executionSpec).executionUnits?.[unitIndex] ?? null;
+function normalizeWorkOrderPhotos(photos: ExistingPhoto[] | undefined): WorkOrderPhoto[] | undefined {
+  if (!photos) return undefined;
+  return photos.map((photo) => ({
+    _id: photo._id ?? photo.id ?? "",
+    id: photo.id ?? photo._id,
+    url: photo.url,
+    type: photo.type === "prep" ? "prep" : "unit",
+    itemIndex: typeof photo.itemIndex === "number" ? photo.itemIndex : 0,
+    unitIndex: typeof photo.unitIndex === "number" ? photo.unitIndex : 0,
+    uploadedAt: typeof photo.uploadedAt === "string" ? photo.uploadedAt : new Date().toISOString(),
+  }));
 }
 
 function normalizeExecutionMode(value: WorkOrderExecutionSpec["mode"] | undefined) {
@@ -381,10 +374,20 @@ export function ExecutionPanel({
   const [editingUnitNotes, setEditingUnitNotes] = useState<Record<string, boolean>>({});
   const [activeUnitNoteEditor, setActiveUnitNoteEditor] = useState<ActiveUnitNoteEditor>(null);
   const [activeUnitPhotoCapture, setActiveUnitPhotoCapture] = useState<ActiveUnitPhotoCapture>(null);
-  const [savingPhotoUnitKey, setSavingPhotoUnitKey] = useState<string | null>(null);
+  const [workOrderPhotosByOrderId, setWorkOrderPhotosByOrderId] = useState<Record<string, WorkOrderPhoto[]>>({});
   const [newExtraItems, setNewExtraItems] = useState<NewExtraItemsState>({});
 
   const workOrders = useMemo(() => rawWorkOrders, [rawWorkOrders]);
+
+  useEffect(() => {
+    setWorkOrderPhotosByOrderId((prev) => {
+      const next = { ...prev };
+      for (const order of workOrders) {
+        next[order._id] = order.photos ?? [];
+      }
+      return next;
+    });
+  }, [workOrders]);
 
   useEffect(() => {
     let alive = true;
@@ -765,7 +768,7 @@ export function ExecutionPanel({
             return next;
           });
         }, 2000);
-        return updated;
+        return true;
       } catch (error) {
         console.error(error);
         setSavingStates((prev) => ({ ...prev, [orderId]: "error" }));
@@ -882,106 +885,47 @@ export function ExecutionPanel({
     });
   };
 
-  const getExecutionUnitPhotoUrls = useCallback(
+  const getWorkOrderPhotoRecords = useCallback(
     (target: ActiveUnitPhotoCapture) => {
-      if (!target) return [];
+      if (!target) return [] as WorkOrderPhoto[];
       const order = workOrders.find((candidate) => candidate._id === target.orderId);
-      if (!order) return [];
-      const item = getDraftValues(order).items.find((candidate) => candidate.id === target.itemId);
-      if (!item) return [];
-      const executionUnit = ensureExecutionSpec(item.executionSpec).executionUnits?.find(
-        (candidate) => candidate.id === target.unitId,
+      const photos = workOrderPhotosByOrderId[target.orderId] ?? order?.photos ?? [];
+      return photos.filter(
+        (photo) =>
+          photo.type === "unit" &&
+          photo.itemIndex === target.itemIndex &&
+          photo.unitIndex === target.unitIndex,
       );
-      return executionUnit?.unitPhotos ?? [];
     },
-    [getDraftValues, workOrders],
+    [workOrderPhotosByOrderId, workOrders],
   );
 
-  const activeExecutionUnitPhotoUrls = useMemo(
-    () => getExecutionUnitPhotoUrls(activeUnitPhotoCapture),
-    [activeUnitPhotoCapture, getExecutionUnitPhotoUrls],
+  const activeExecutionUnitPhotos = useMemo(
+    () =>
+      getWorkOrderPhotoRecords(activeUnitPhotoCapture).map((photo): ExistingPhoto => ({
+        id: photo.id ?? photo._id,
+        url: photo.url,
+      })),
+    [activeUnitPhotoCapture, getWorkOrderPhotoRecords],
   );
 
-  const activePhotoCaptureIsSaved = useMemo(
-    () => hasSavedExecutionUnitId(activeUnitPhotoCapture?.unitId),
-    [activeUnitPhotoCapture],
-  );
-
-  const syncExecutionUnitPhotos = useCallback(
-    (
-      orderId: string,
-      itemId: string,
-      unitId: string,
-      photoType: "unitPhotos" | "prepPhotos",
-      updater: (photos: string[]) => string[],
-    ) => {
-      setPendingWorkOrders((prev) => {
-        const order = workOrders.find((candidate) => candidate._id === orderId);
-        if (!order) return prev;
-
-        const currentDraft = prev[orderId] ?? getInitialDraftValues(order);
-        const nextItems = currentDraft.items.map((item: WorkOrderItemDraft) => {
-          if (item.id !== itemId) return item;
-
-          const executionSpec = ensureExecutionSpec(item.executionSpec);
-          const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => {
-            if (unit.id !== unitId) return unit;
-            return {
-              ...unit,
-              [photoType]: updater(Array.isArray(unit[photoType]) ? unit[photoType] : []),
-            };
-          });
-
-          return {
-            ...item,
-            executionSpec: {
-              ...executionSpec,
-              executionUnits: nextUnits,
-            },
-          };
-        });
-
-        return {
-          ...prev,
-          [orderId]: {
-            ...currentDraft,
-            items: nextItems,
-          },
-        };
-      });
+  const syncWorkOrderPhotos = useCallback(
+    (orderId: string, data: PhotoSaveResponseData) => {
+      const photos = normalizeWorkOrderPhotos(data.photos);
+      if (!photos) return;
+      setWorkOrderPhotosByOrderId((prev) => ({
+        ...prev,
+        [orderId]: photos,
+      }));
     },
-    [workOrders],
+    [],
   );
 
   const openUnitPhotoCapture = useCallback(
-    async (payload: NonNullable<ActiveUnitPhotoCapture>) => {
-      if (hasSavedExecutionUnitId(payload.unitId)) {
-        setActiveUnitPhotoCapture(payload);
-        return;
-      }
-
-      const unitKey = `${payload.orderId}:${payload.itemId}:${payload.unitIndex}`;
-      setSavingPhotoUnitKey(unitKey);
-      try {
-        const savedOrder = await saveWorkOrder(payload.orderId);
-        if (!savedOrder) return;
-
-        const savedUnit = findExecutionUnitByPosition(savedOrder, payload, payload.unitIndex);
-        if (!hasSavedExecutionUnitId(savedUnit?.id)) {
-          console.log("Saved WorkOrder after photo auto-save:", savedOrder);
-          toast.error("Enote po shranjevanju ni mogoče najti. Poskusite ponovno odpreti fotografije.");
-          return;
-        }
-
-        setActiveUnitPhotoCapture({
-          ...payload,
-          unitId: savedUnit.id,
-        });
-      } finally {
-        setSavingPhotoUnitKey((current) => (current === unitKey ? null : current));
-      }
+    (payload: NonNullable<ActiveUnitPhotoCapture>) => {
+      setActiveUnitPhotoCapture(payload);
     },
-    [saveWorkOrder],
+    [],
   );
 
   const handleDeleteManualItem = (order: WorkOrder, item: WorkOrderItemDraft) => {
@@ -1217,6 +1161,8 @@ export function ExecutionPanel({
     const unitLabel = spec.trackingUnitLabel?.trim() || "Enota";
     const units = spec.executionUnits ?? [];
     const isLocked = !!options?.disabled;
+    const draftItems = getDraftValues(order).items;
+    const itemIndex = Math.max(0, draftItems.findIndex((candidate) => candidate.id === item.id));
 
     if (units.length === 0) return null;
 
@@ -1224,8 +1170,7 @@ export function ExecutionPanel({
       <div className={cn("space-y-1.5", options?.compact ? "pt-1" : "pt-2")}>
         {units.map((unit, index) => {
           const unitKey = `${item.id}:${unit.id}`;
-          const photoUnitKey = `${order._id}:${item.id}:${index}`;
-          const isSavingPhotoUnit = savingPhotoUnitKey === photoUnitKey;
+          const photoCount = getWorkOrderPhotoRecords({ orderId: order._id, itemIndex, unitIndex: index }).length;
           const isEditingNote = !!editingUnitNotes[unitKey];
           const noteText = unit.instructions?.trim() || "";
           return (
@@ -1293,27 +1238,24 @@ export function ExecutionPanel({
                   <Button
                     type="button"
                     variant="ghost"
-                    size={isSavingPhotoUnit ? "sm" : "icon"}
-                    className={cn("h-8 text-muted-foreground", isSavingPhotoUnit ? "px-2 text-xs" : "w-8")}
-                    disabled={isLocked || isSavingPhotoUnit}
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground"
+                    disabled={isLocked}
                     onClick={() =>
                       void openUnitPhotoCapture({
                         orderId: order._id,
-                        itemId: item.id,
-                        itemProductId: item.productId ?? null,
-                        itemName: item.name,
-                        unitId: unit.id,
+                        itemIndex,
                         unitIndex: index,
                       })
                     }
-                    aria-label={hasSavedExecutionUnitId(unit.id) ? "Dodaj fotografijo" : "Shrani in dodaj fotografijo"}
-                    title={hasSavedExecutionUnitId(unit.id) ? "Dodaj fotografijo" : "Shrani in dodaj fotografijo"}
+                    aria-label="Dodaj fotografijo"
+                    title="Dodaj fotografijo"
                   >
-                    {isSavingPhotoUnit ? "Shranjujem..." : <Camera className="h-4 w-4" />}
+                    <Camera className="h-4 w-4" />
                   </Button>
-                  {(unit.unitPhotos?.length ?? 0) > 0 && (
+                  {photoCount > 0 && (
                     <Badge className="absolute -right-1 -top-1 h-4 min-w-4 px-1 text-[10px]" variant="secondary">
-                      {unit.unitPhotos?.length}
+                      {photoCount}
                     </Badge>
                   )}
                 </div>
@@ -2646,30 +2588,25 @@ export function ExecutionPanel({
           <DialogDescription className="sr-only">
             Upravljanje fotografij izvedbene enote
           </DialogDescription>
-          {activeUnitPhotoCapture && activePhotoCaptureIsSaved ? (
+          {activeUnitPhotoCapture ? (
             <PhotoCapture
               title="Fotografije enote"
               uploadUrl="/api/files/upload"
-              saveUrl={`/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos?type=unit`}
-              deleteUrl={(photoUrl) =>
-                `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos/${encodeURIComponent(photoUrl)}?type=unit`
+              saveUrl={`/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/photos`}
+              savePayload={(photo) => ({
+                url: photo.fileUrl,
+                type: "unit",
+                itemIndex: activeUnitPhotoCapture.itemIndex,
+                unitIndex: activeUnitPhotoCapture.unitIndex,
+              })}
+              deleteUrl={(_photoUrl, photoId) =>
+                `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/photos/${photoId ?? ""}`
               }
-              existingPhotos={activeExecutionUnitPhotoUrls}
-              onPhotosChange={(photos) => {
-                syncExecutionUnitPhotos(
-                  activeUnitPhotoCapture.orderId,
-                  activeUnitPhotoCapture.itemId,
-                  activeUnitPhotoCapture.unitId,
-                  "unitPhotos",
-                  () => photos,
-                );
-              }}
+              existingPhotos={activeExecutionUnitPhotos}
+              onSaveResponse={(data) => syncWorkOrderPhotos(activeUnitPhotoCapture.orderId, data)}
+              onDeleteResponse={(data) => syncWorkOrderPhotos(activeUnitPhotoCapture.orderId, data)}
               maxPhotos={10}
             />
-          ) : activeUnitPhotoCapture ? (
-            <div className="rounded-md border border-border/60 bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
-              Shranite enoto za dodajanje fotografij.
-            </div>
           ) : null}
         </DialogContent>
       </Dialog>

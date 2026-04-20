@@ -1,4 +1,4 @@
-import { Schema, model, type Document } from 'mongoose';
+import { Schema, Types, model, type Document } from 'mongoose';
 
 interface WorkOrderItem {
   id: string;
@@ -37,6 +37,15 @@ interface WorkOrderItem {
 export interface WorkLogEntry {
   employeeId: string;
   hours: number;
+}
+
+export interface WorkOrderPhoto {
+  _id?: Types.ObjectId;
+  url: string;
+  type: 'unit' | 'prep';
+  itemIndex: number;
+  unitIndex: number;
+  uploadedAt: Date;
 }
 
 export type WorkOrderConfirmationState = 'unsigned' | 'signed_active' | 'resign_required';
@@ -99,6 +108,7 @@ export interface WorkOrderDocument extends Document {
   reopened?: boolean;
   executionNote?: string | null;
   workLogs: WorkLogEntry[];
+  photos: WorkOrderPhoto[];
   confirmationState?: WorkOrderConfirmationState;
   confirmationActiveVersionId?: string | null;
   confirmationVersions?: WorkOrderConfirmationVersion[];
@@ -165,6 +175,17 @@ const workLogSchema = new Schema<WorkLogEntry>(
     hours: { type: Number, required: true, default: 0 },
   },
   { _id: false }
+);
+
+const workOrderPhotoSchema = new Schema<WorkOrderPhoto>(
+  {
+    url: { type: String, required: true },
+    type: { type: String, enum: ['unit', 'prep'], required: true },
+    itemIndex: { type: Number, required: true, min: 0 },
+    unitIndex: { type: Number, required: true, min: 0 },
+    uploadedAt: { type: Date, default: Date.now },
+  },
+  { _id: true }
 );
 
 const workOrderConfirmationVersionSchema = new Schema<WorkOrderConfirmationVersion>(
@@ -234,6 +255,7 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
     reopened: { type: Boolean, default: false },
     executionNote: { type: String, default: null },
     workLogs: { type: [workLogSchema], default: [] },
+    photos: { type: [workOrderPhotoSchema], default: [] },
     confirmationState: {
       type: String,
       enum: ['unsigned', 'signed_active', 'resign_required'],

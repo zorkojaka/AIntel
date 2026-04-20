@@ -8,6 +8,7 @@ import type {
   ProjectLogisticsSnapshot,
   WorkOrderExecutionSpec,
   WorkOrderExecutionUnit,
+  WorkOrderPhoto,
   WorkOrder as LogisticsWorkOrder,
   WorkOrderStatus,
 } from "@aintel/shared/types/logistics";
@@ -29,7 +30,7 @@ import { downloadPdf } from "../../api";
 import { AlertTriangle, Check, ChevronDown, ChevronRight, Download, Loader2, Trash2, X } from "lucide-react";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
-import { PhotoCapture } from "@aintel/ui";
+import { PhotoCapture, type ExistingPhoto, type PhotoSaveResponseData } from "@aintel/ui";
 
 interface LogisticsPanelProps {
   projectId: string;
@@ -232,22 +233,17 @@ function ensureExecutionSpec(spec: WorkOrderExecutionSpec | null | undefined): W
   };
 }
 
-function hasSavedExecutionUnitId(unitId: string | number | null | undefined) {
-  return Boolean(unitId && !unitId.toString().startsWith("draft-"));
-}
-
-function findExecutionUnitByPosition(
-  order: LogisticsWorkOrder,
-  itemIdentity: { itemId: string; itemProductId?: string | null; itemName?: string | null },
-  unitIndex: number,
-) {
-  const originalName = itemIdentity.itemName?.trim();
-  const item = order.items.find((candidate) => {
-    if (candidate.id === itemIdentity.itemId) return true;
-    if (itemIdentity.itemProductId && candidate.productId === itemIdentity.itemProductId) return true;
-    return Boolean(originalName && candidate.name?.trim() === originalName);
-  });
-  return ensureExecutionSpec(item?.executionSpec).executionUnits?.[unitIndex] ?? null;
+function normalizeWorkOrderPhotos(photos: ExistingPhoto[] | undefined): WorkOrderPhoto[] | undefined {
+  if (!photos) return undefined;
+  return photos.map((photo) => ({
+    _id: photo._id ?? photo.id ?? "",
+    id: photo.id ?? photo._id,
+    url: photo.url,
+    type: photo.type === "prep" ? "prep" : "unit",
+    itemIndex: typeof photo.itemIndex === "number" ? photo.itemIndex : 0,
+    unitIndex: typeof photo.unitIndex === "number" ? photo.unitIndex : 0,
+    uploadedAt: typeof photo.uploadedAt === "string" ? photo.uploadedAt : new Date().toISOString(),
+  }));
 }
 
 function getExecutionModeLabel(mode: WorkOrderExecutionSpec["mode"] | undefined) {
@@ -333,13 +329,9 @@ export function LogisticsPanel({
   const [expandedExecutionItems, setExpandedExecutionItems] = useState<Record<string, boolean>>({});
   const [activeUnitPhotoCapture, setActiveUnitPhotoCapture] = useState<{
     workOrderId: string;
-    itemId: string;
-    itemProductId?: string | null;
-    itemName?: string | null;
-    unitId: string;
+    itemIndex: number;
     unitIndex: number;
   } | null>(null);
-  const [savingPrepPhotoUnitKey, setSavingPrepPhotoUnitKey] = useState<string | null>(null);
 
   const hasConfirmed = useMemo(() => !!snapshot?.confirmedOfferVersionId, [snapshot]);
   const confirmedOffers = useMemo(
@@ -389,22 +381,33 @@ export function LogisticsPanel({
         : filteredMaterialOrders[0] ?? null,
     [filteredMaterialOrders, selectedWorkOrder],
   );
-  const activePrepPhotoUrls = useMemo(() => {
+  const activePrepPhotos = useMemo(() => {
     if (!activeUnitPhotoCapture) return [];
-    const items =
-      Array.isArray(workOrderForm.items) && workOrderForm.items.length > 0
-        ? workOrderForm.items
-        : selectedWorkOrder?.items ?? [];
-    const item = items.find((candidate) => candidate.id === activeUnitPhotoCapture.itemId);
-    if (!item) return [];
-    const unit = (ensureExecutionSpec(item.executionSpec).executionUnits ?? []).find(
-      (candidate) => candidate.id === activeUnitPhotoCapture.unitId,
-    );
-    return unit?.prepPhotos ?? [];
-  }, [activeUnitPhotoCapture, selectedWorkOrder?.items, workOrderForm.items]);
-  const activeUnitPhotoCaptureIsSaved = useMemo(
-    () => hasSavedExecutionUnitId(activeUnitPhotoCapture?.unitId),
-    [activeUnitPhotoCapture],
+    const photos = workOrderForm._id === activeUnitPhotoCapture.workOrderId
+      ? workOrderForm.photos ?? selectedWorkOrder?.photos ?? []
+      : selectedWorkOrder?.photos ?? [];
+    return photos
+      .filter(
+        (photo) =>
+          photo.type === "prep" &&
+          photo.itemIndex === activeUnitPhotoCapture.itemIndex &&
+          photo.unitIndex === activeUnitPhotoCapture.unitIndex,
+      )
+      .map((photo): ExistingPhoto => ({
+        id: photo.id ?? photo._id,
+        url: photo.url,
+      }));
+  }, [activeUnitPhotoCapture, selectedWorkOrder?.photos, workOrderForm._id, workOrderForm.photos]);
+  const syncWorkOrderPhotos = useCallback(
+    (workOrderId: string, data: PhotoSaveResponseData) => {
+      const photos = normalizeWorkOrderPhotos(data.photos);
+      if (!photos) return;
+      setWorkOrderForm((prev) => (prev._id === workOrderId ? { ...prev, photos } : prev));
+      if (onWorkOrderUpdated && selectedWorkOrder?._id === workOrderId) {
+        onWorkOrderUpdated({ ...selectedWorkOrder, photos });
+      }
+    },
+    [onWorkOrderUpdated, selectedWorkOrder],
   );
   const companyPickupAddress = useMemo(() => formatCompanyAddress(settings), [settings]);
   const sitePickupAddress = useMemo(() => formatClientAddress(client ?? null), [client]);
@@ -969,9 +972,7 @@ export function LogisticsPanel({
         : Array.isArray(workOrderForm.items)
           ? workOrderForm.items
           : undefined;
-      const saveEndpoint = `/api/projects/${projectId}/work-orders/${selectedWorkOrder._id}`;
-      console.log("Saving WorkOrder endpoint:", saveEndpoint);
-      const response = await fetch(saveEndpoint, {
+      const response = await fetch(`/api/projects/${projectId}/work-orders/${selectedWorkOrder._id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1088,7 +1089,7 @@ export function LogisticsPanel({
       }
       await refreshAfterMutation(fetchSnapshot);
       toast.success("Delovni nalog posodobljen.");
-      return mergedWorkOrder;
+      return true;
     } catch (error) {
       toast.error("Delovnega naloga ni mogoce shraniti.");
       return false;
@@ -1097,47 +1098,12 @@ export function LogisticsPanel({
     }
   };
 
-  const openPrepPhotoCapture = async (payload: {
+  const openPrepPhotoCapture = (payload: {
     workOrderId: string;
-    itemId: string;
-    itemProductId?: string | null;
-    itemName?: string | null;
-    unitId: string;
+    itemIndex: number;
     unitIndex: number;
   }) => {
-    if (hasSavedExecutionUnitId(payload.unitId)) {
-      setActiveUnitPhotoCapture(payload);
-      return;
-    }
-
-    const unitKey = `${payload.workOrderId}:${payload.itemId}:${payload.unitIndex}`;
-    setSavingPrepPhotoUnitKey(unitKey);
-    try {
-      const savedWorkOrder = await handleSaveWorkOrder();
-      if (!savedWorkOrder) return;
-
-      console.log("Save response:", JSON.stringify(savedWorkOrder, null, 2));
-      console.log("Looking for item:", payload.itemId, payload.itemName);
-      console.log("Unit index:", payload.unitIndex);
-      savedWorkOrder.items?.forEach((item, index) => {
-        console.log("Item", index, ":", item.id, item.name);
-        console.log("ExecutionUnits:", ensureExecutionSpec(item.executionSpec).executionUnits?.map((unit) => unit.id));
-      });
-
-      const savedUnit = findExecutionUnitByPosition(savedWorkOrder, payload, payload.unitIndex);
-      if (!hasSavedExecutionUnitId(savedUnit?.id)) {
-        console.log("Saved WorkOrder after prep photo auto-save:", savedWorkOrder);
-        toast.error("Enote po shranjevanju ni mogoče najti. Poskusite ponovno odpreti fotografije.");
-        return;
-      }
-
-      setActiveUnitPhotoCapture({
-        ...payload,
-        unitId: savedUnit.id,
-      });
-    } finally {
-      setSavingPrepPhotoUnitKey((current) => (current === unitKey ? null : current));
-    }
+    setActiveUnitPhotoCapture(payload);
   };
 
   const effectiveMaterialStatus: MaterialStatus | null =
@@ -2217,6 +2183,7 @@ export function LogisticsPanel({
           ) : (
             <div className="space-y-3">
               {prioritizedItems.map((item) => {
+                const itemIndex = Math.max(0, sourceItems.findIndex((candidate) => candidate.id === item.id));
                 const isServiceRow = isServiceWorkOrderItem(item);
                 const isProductCandidate = isProductWorkOrderItem(item);
                 const canDefineLocations = canRenderLocationDefinition(item);
@@ -2285,21 +2252,15 @@ export function LogisticsPanel({
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    disabled={savingPrepPhotoUnitKey === `${sourceWorkOrder._id}:${item.id}:${index}`}
                                     onClick={() =>
                                       void openPrepPhotoCapture({
                                         workOrderId: sourceWorkOrder._id,
-                                        itemId: item.id,
-                                        itemProductId: item.productId ?? null,
-                                        itemName: item.name,
-                                        unitId: unit.id,
+                                        itemIndex,
                                         unitIndex: index,
                                       })
                                     }
                                   >
-                                    {savingPrepPhotoUnitKey === `${sourceWorkOrder._id}:${item.id}:${index}`
-                                      ? "Shranjujem..."
-                                      : "Fotografija"}
+                                    Fotografija
                                   </Button>
                                 </div>
                               </div>
@@ -2743,44 +2704,25 @@ export function LogisticsPanel({
           <DialogHeader>
             <DialogTitle>Fotografije enote</DialogTitle>
           </DialogHeader>
-          {activeUnitPhotoCapture && activeUnitPhotoCaptureIsSaved ? (
+          {activeUnitPhotoCapture ? (
             <PhotoCapture
               title="Fotografije priprave"
               uploadUrl="/api/files/upload"
-              saveUrl={`/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.workOrderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos?type=prep`}
-              deleteUrl={(photoUrl) =>
-                `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.workOrderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos/${encodeURIComponent(photoUrl)}?type=prep`
+              saveUrl={`/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.workOrderId}/photos`}
+              savePayload={(photo) => ({
+                url: photo.fileUrl,
+                type: "prep",
+                itemIndex: activeUnitPhotoCapture.itemIndex,
+                unitIndex: activeUnitPhotoCapture.unitIndex,
+              })}
+              deleteUrl={(_photoUrl, photoId) =>
+                `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.workOrderId}/photos/${photoId ?? ""}`
               }
-              existingPhotos={activePrepPhotoUrls}
-              onPhotosChange={(photos) => {
-                setWorkOrderForm((prev) => {
-                  if (!Array.isArray(prev.items)) return prev;
-                  return {
-                    ...prev,
-                    items: prev.items.map((item) => {
-                      if (item.id !== activeUnitPhotoCapture.itemId) return item;
-                      const spec = ensureExecutionSpec(item.executionSpec);
-                      return {
-                        ...item,
-                        executionSpec: {
-                          ...spec,
-                          executionUnits: (spec.executionUnits ?? []).map((unit) =>
-                            unit.id === activeUnitPhotoCapture.unitId
-                              ? { ...unit, prepPhotos: photos }
-                              : unit,
-                          ),
-                        },
-                      };
-                    }),
-                  };
-                });
-              }}
+              existingPhotos={activePrepPhotos}
+              onSaveResponse={(data) => syncWorkOrderPhotos(activeUnitPhotoCapture.workOrderId, data)}
+              onDeleteResponse={(data) => syncWorkOrderPhotos(activeUnitPhotoCapture.workOrderId, data)}
               maxPhotos={10}
             />
-          ) : activeUnitPhotoCapture ? (
-            <div className="rounded-md border border-dashed border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
-              Najprej shranite enoto
-            </div>
           ) : null}
         </DialogContent>
       </Dialog>

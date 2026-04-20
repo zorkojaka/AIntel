@@ -652,6 +652,15 @@ function serializeWorkOrder(order: any): WorkOrder | null {
         : order.executionNote === null
           ? null
           : undefined,
+    photos: (order.photos ?? []).map((photo: any) => ({
+      _id: photo._id ? String(photo._id) : '',
+      id: photo._id ? String(photo._id) : '',
+      url: typeof photo.url === 'string' ? photo.url : '',
+      type: photo.type === 'prep' ? 'prep' : 'unit',
+      itemIndex: typeof photo.itemIndex === 'number' ? photo.itemIndex : 0,
+      unitIndex: typeof photo.unitIndex === 'number' ? photo.unitIndex : 0,
+      uploadedAt: photo.uploadedAt ? new Date(photo.uploadedAt).toISOString() : '',
+    })),
     cancelledAt: order.cancelledAt ? new Date(order.cancelledAt).toISOString() : null,
     reopened: !!order.reopened,
     workLogs: (order.workLogs ?? []).map((log: any) => ({

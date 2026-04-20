@@ -4,16 +4,38 @@ import { Camera, Image as ImageIcon, X } from 'lucide-react';
 export interface PhotoCaptureProps {
   uploadUrl: string;
   saveUrl?: string;
-  deleteUrl: (photoUrl: string) => string;
-  existingPhotos?: string[];
+  deleteUrl: (photoUrl: string, photoId?: string) => string;
+  existingPhotos?: Array<ExistingPhoto | string>;
+  savePayload?: (photo: UploadedPhoto) => Record<string, unknown>;
+  onSaveResponse?: (data: PhotoSaveResponseData) => void;
+  onDeleteResponse?: (data: PhotoSaveResponseData) => void;
   onPhotosChange?: (photos: string[]) => void;
   title?: string;
   maxPhotos?: number;
 }
 
+export interface ExistingPhoto {
+  id?: string;
+  _id?: string;
+  url: string;
+  type?: 'unit' | 'prep';
+  itemIndex?: number;
+  unitIndex?: number;
+  uploadedAt?: string;
+}
+
 interface UploadedPhoto {
   fileUrl: string;
   filename: string;
+  photoId?: string;
+}
+
+export interface PhotoSaveResponseData {
+  photo?: ExistingPhoto;
+  photos?: ExistingPhoto[];
+  id?: string;
+  _id?: string;
+  url?: string;
 }
 
 interface PhotoPreview {
@@ -45,13 +67,25 @@ function buildUploadedPhotoFromUrl(fileUrl: string): UploadedPhoto {
   };
 }
 
-function buildExistingPhotoPreview(fileUrl: string): PhotoPreview {
+function normalizeExistingPhoto(photo: ExistingPhoto | string): ExistingPhoto {
+  return typeof photo === 'string' ? { url: photo } : photo;
+}
+
+function getExistingPhotoId(photo: ExistingPhoto): string | undefined {
+  return photo.id ?? photo._id;
+}
+
+function buildExistingPhotoPreview(existingPhoto: ExistingPhoto | string): PhotoPreview {
+  const photo = normalizeExistingPhoto(existingPhoto);
   return {
-    id: `existing-${fileUrl}`,
-    dataUrl: fileUrl,
+    id: `existing-${getExistingPhotoId(photo) ?? photo.url}`,
+    dataUrl: photo.url,
     uploading: false,
     progress: 100,
-    uploaded: buildUploadedPhotoFromUrl(fileUrl),
+    uploaded: {
+      ...buildUploadedPhotoFromUrl(photo.url),
+      photoId: getExistingPhotoId(photo),
+    },
     isExisting: true,
   };
 }
@@ -62,7 +96,7 @@ function getUploadedPhotos(previews: PhotoPreview[]): UploadedPhoto[] {
     .filter((photo): photo is UploadedPhoto => photo !== undefined);
 }
 
-function mergePhotos(existingPhotos: string[], currentPhotos: PhotoPreview[]): PhotoPreview[] {
+function mergePhotos(existingPhotos: Array<ExistingPhoto | string>, currentPhotos: PhotoPreview[]): PhotoPreview[] {
   const existingPreviews = existingPhotos.map(buildExistingPhotoPreview);
   const localPhotos = currentPhotos.filter((photo) => !photo.isExisting);
   const merged = [...existingPreviews, ...localPhotos];
@@ -82,6 +116,9 @@ export function PhotoCapture({
   saveUrl,
   deleteUrl,
   existingPhotos = [],
+  savePayload,
+  onSaveResponse,
+  onDeleteResponse,
   onPhotosChange,
   title = 'Fotografije',
   maxPhotos = 10,
@@ -185,14 +222,21 @@ export function PhotoCapture({
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
+          body: JSON.stringify(savePayload?.(uploadedPhoto) ?? {
             photoUrl: uploadedPhoto.fileUrl,
           }),
         });
-        const savePayload = await saveResponse.json();
-        if (!savePayload.success) {
-          throw new Error(savePayload.error || 'Photo save failed');
+        const saveResult = await saveResponse.json();
+        if (!saveResult.success) {
+          throw new Error(saveResult.error || 'Photo save failed');
         }
+        const data = saveResult.data as PhotoSaveResponseData | undefined;
+        onSaveResponse?.(data ?? {});
+        const savedPhoto = data?.photo;
+        if (savedPhoto?.url) {
+          uploadedPhoto.fileUrl = savedPhoto.url;
+        }
+        uploadedPhoto.photoId = getExistingPhotoId(savedPhoto ?? {}) ?? data?.id ?? data?._id;
       }
 
       const nextPhotos = photosRef.current.map((photo) =>
@@ -280,11 +324,12 @@ export function PhotoCapture({
     if (!photo?.uploaded) return;
 
     try {
-      const response = await fetch(deleteUrl(photo.uploaded.fileUrl), { method: 'DELETE' });
+      const response = await fetch(deleteUrl(photo.uploaded.fileUrl, photo.uploaded.photoId), { method: 'DELETE' });
       const result = await response.json();
       if (!result.success) {
         throw new Error(result.error || 'Delete failed');
       }
+      onDeleteResponse?.((result.data as PhotoSaveResponseData | undefined) ?? {});
     } catch (error) {
       console.error('Delete error:', error);
       alert('Brisanje fotografije ni uspelo.');
