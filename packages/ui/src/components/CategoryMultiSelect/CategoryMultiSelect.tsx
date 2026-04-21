@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Category } from '../../../../shared/types/category';
+import type { Category } from '@aintel/shared/types/category';
 
 type CategoryMultiSelectProps = {
   categories: Category[];

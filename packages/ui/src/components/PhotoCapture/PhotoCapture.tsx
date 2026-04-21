@@ -46,6 +46,7 @@ interface PhotoPreview {
   uploaded?: UploadedPhoto;
   error?: string;
   isExisting?: boolean;
+  imageError?: boolean;
 }
 
 function getFilenameFromUrl(fileUrl: string): string {
@@ -75,19 +76,29 @@ function getExistingPhotoId(photo: ExistingPhoto): string | undefined {
   return photo.id ?? photo._id;
 }
 
-function buildExistingPhotoPreview(existingPhoto: ExistingPhoto | string): PhotoPreview {
+function buildExistingPhotoPreview(existingPhoto: ExistingPhoto | string): PhotoPreview | null {
   const photo = normalizeExistingPhoto(existingPhoto);
+  if (typeof photo.url !== 'string' || photo.url.trim().length === 0) {
+    return null;
+  }
+  const url = photo.url.trim();
   return {
-    id: `existing-${getExistingPhotoId(photo) ?? photo.url}`,
-    dataUrl: photo.url,
+    id: `existing-${getExistingPhotoId(photo) ?? url}`,
+    dataUrl: url,
     uploading: false,
     progress: 100,
     uploaded: {
-      ...buildUploadedPhotoFromUrl(photo.url),
+      ...buildUploadedPhotoFromUrl(url),
       photoId: getExistingPhotoId(photo),
     },
     isExisting: true,
   };
+}
+
+function buildExistingPhotoPreviews(existingPhotos: Array<ExistingPhoto | string>): PhotoPreview[] {
+  return existingPhotos
+    .map(buildExistingPhotoPreview)
+    .filter((photo): photo is PhotoPreview => photo !== null);
 }
 
 function getUploadedPhotos(previews: PhotoPreview[]): UploadedPhoto[] {
@@ -97,7 +108,7 @@ function getUploadedPhotos(previews: PhotoPreview[]): UploadedPhoto[] {
 }
 
 function mergePhotos(existingPhotos: Array<ExistingPhoto | string>, currentPhotos: PhotoPreview[]): PhotoPreview[] {
-  const existingPreviews = existingPhotos.map(buildExistingPhotoPreview);
+  const existingPreviews = buildExistingPhotoPreviews(existingPhotos);
   const localPhotos = currentPhotos.filter((photo) => !photo.isExisting);
   const merged = [...existingPreviews, ...localPhotos];
   const seenUrls = new Set<string>();
@@ -125,9 +136,9 @@ export function PhotoCapture({
 }: PhotoCaptureProps) {
   const MAX_IMAGE_DIMENSION = 1920;
   const JPEG_QUALITY = 0.8;
-  const [photos, setPhotos] = useState<PhotoPreview[]>(() => existingPhotos.map(buildExistingPhotoPreview));
+  const [photos, setPhotos] = useState<PhotoPreview[]>(() => buildExistingPhotoPreviews(existingPhotos));
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
-  const photosRef = useRef<PhotoPreview[]>(existingPhotos.map(buildExistingPhotoPreview));
+  const photosRef = useRef<PhotoPreview[]>(buildExistingPhotoPreviews(existingPhotos));
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
@@ -148,6 +159,19 @@ export function PhotoCapture({
 
   const notifyPhotosChange = (nextPhotos: PhotoPreview[]) => {
     onPhotosChange?.(getUploadedPhotos(nextPhotos).map((photo) => photo.fileUrl));
+  };
+
+  const markImageAsBroken = (photoId: string) => {
+    const nextPhotos = photosRef.current.map((photo) =>
+      photo.id === photoId
+        ? {
+            ...photo,
+            imageError: true,
+          }
+        : photo,
+    );
+    photosRef.current = nextPhotos;
+    setPhotos(nextPhotos);
   };
 
   const compressImage = (file: File): Promise<File> =>
@@ -236,7 +260,7 @@ export function PhotoCapture({
         if (savedPhoto?.url) {
           uploadedPhoto.fileUrl = savedPhoto.url;
         }
-        uploadedPhoto.photoId = getExistingPhotoId(savedPhoto ?? {}) ?? data?.id ?? data?._id;
+        uploadedPhoto.photoId = savedPhoto ? getExistingPhotoId(savedPhoto) : data?.id ?? data?._id;
       }
 
       const nextPhotos = photosRef.current.map((photo) =>
@@ -347,14 +371,13 @@ export function PhotoCapture({
 
   const buttonClassName =
     'inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50';
-  const isAtLimit = photos.length >= maxPhotos;
 
   return (
     <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto">
       <div className="space-y-1">
         <p className="text-sm font-medium">{title}</p>
         <p className="text-sm font-medium">{uploadedCount} shranjenih fotografij</p>
-        <p className="text-xs text-muted-foreground">Dodaj fotografije ali odpri obstoječe v povečanem prikazu.</p>
+        <p className="text-xs text-muted-foreground">Dodaj fotografije ali odpri obstojece v povecanem prikazu.</p>
       </div>
 
       {photos.length === 0 ? (
@@ -372,13 +395,24 @@ export function PhotoCapture({
                 type="button"
                 className="h-full w-full"
                 onClick={() => {
-                  if (!photo.uploading && !photo.error) {
+                  if (!photo.uploading && !photo.error && !photo.imageError) {
                     setPreviewPhotoUrl(photo.dataUrl);
                   }
                 }}
-                disabled={photo.uploading}
+                disabled={photo.uploading || photo.imageError}
               >
-                <img src={photo.dataUrl} alt="Fotografija" className="h-full w-full object-cover" />
+                {photo.imageError ? (
+                  <div className="flex h-full w-full items-center justify-center bg-muted px-2 text-center text-xs font-medium text-muted-foreground">
+                    Slike ni mogoce prikazati
+                  </div>
+                ) : (
+                  <img
+                    src={photo.dataUrl}
+                    alt="Fotografija"
+                    className="h-full w-full object-cover"
+                    onError={() => markImageAsBroken(photo.id)}
+                  />
+                )}
               </button>
 
               {photo.uploading ? (
@@ -408,13 +442,12 @@ export function PhotoCapture({
         </div>
       )}
 
-      <div className="mt-auto border-t pt-4">
+      <div className="sticky bottom-0 mt-auto border-t bg-background pt-4">
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
             className={buttonClassName}
             onClick={() => cameraInputRef.current?.click()}
-            disabled={isAtLimit}
           >
             <Camera className="h-4 w-4" />
             Kamera
@@ -423,7 +456,6 @@ export function PhotoCapture({
             type="button"
             className={buttonClassName}
             onClick={() => galleryInputRef.current?.click()}
-            disabled={isAtLimit}
           >
             <ImageIcon className="h-4 w-4" />
             Galerija
@@ -464,7 +496,7 @@ export function PhotoCapture({
           </button>
           <img
             src={previewPhotoUrl}
-            alt="Povečan predogled fotografije"
+            alt="Povecan predogled fotografije"
             className="max-h-full max-w-full rounded-lg object-contain"
             onClick={(event) => event.stopPropagation()}
           />

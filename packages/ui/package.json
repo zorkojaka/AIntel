@@ -9,6 +9,7 @@
     "src"
   ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json --noEmit",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
     "storybook": "echo \"configure Storybook later\""
