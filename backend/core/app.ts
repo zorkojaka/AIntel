@@ -1,6 +1,7 @@
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import express from 'express';
+import { UPLOAD_BASE_DIR } from '../utils/fileUpload';
 import routes from '../routes';
 import authRoutes from '../modules/auth/routes/auth.routes';
 import { requireAuth } from '../middlewares/auth';
@@ -17,6 +18,7 @@ export function createApp() {
   app.use(cookieParser());
   app.use(responseHelpers);
   app.use(normalizePayload);
+  app.use('/uploads', express.static(UPLOAD_BASE_DIR));
 
   app.get('/health', (_req, res) => {
     res.success({ connected: isMongoConnected() });

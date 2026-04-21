@@ -2,7 +2,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 
-const UPLOAD_BASE_DIR = '/var/www/aintel/uploads';
+export const UPLOAD_BASE_DIR = process.env.UPLOAD_BASE_DIR ?? '/var/www/aintel/uploads';
 
 // Allowed image MIME types
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
