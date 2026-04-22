@@ -1,6 +1,8 @@
+import { useEffect, useMemo, useState } from "react";
 import type { Employee } from "@aintel/shared/types/employee";
 import type { MaterialOrder, MaterialPickupMethod, MaterialStep } from "@aintel/shared/types/logistics";
-import { Download, Loader2 } from "lucide-react";
+import { Camera, Download, Loader2 } from "lucide-react";
+import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -28,6 +30,7 @@ type InstallerAvailabilityEntry = {
 
 interface MaterialOrderCardProps {
   materialOrder: MaterialOrder | null;
+  projectId: string;
   mode?: "preparation" | "execution";
   technicianNote?: string;
   executionDate: string | null;
@@ -48,7 +51,6 @@ interface MaterialOrderCardProps {
   onLogisticsOwnerChange: (employeeId: string | null) => void;
   onTechnicianNoteChange?: (value: string) => void;
   onPickupNoteChange: (value: string) => void;
-  onDeliveryNotePhotosChange: (photos: string[]) => void;
   onAddExtraMaterial: (draft: ExtraMaterialDraft) => void;
   onConfirmPickup: () => void;
   onAdvanceStep?: (step: MaterialStep) => void;
@@ -167,8 +169,53 @@ function getStepForFlags(nextOrdered: boolean, nextReady: boolean): MaterialStep
   return "Za naročiti";
 }
 
+function DeliveryNotePhotoButton({
+  projectId,
+  materialOrderId,
+}: {
+  projectId: string;
+  materialOrderId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const context = useMemo<PhotoContext>(
+    () => ({ projectId, phase: "delivery", itemId: materialOrderId }),
+    [materialOrderId, projectId],
+  );
+  const { count, refresh } = usePhotoCount(context);
+
+  useEffect(() => {
+    if (refreshKey > 0) refresh();
+  }, [refresh, refreshKey]);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      setRefreshKey((current) => current + 1);
+    }
+  };
+
+  return (
+    <>
+      <Button type="button" size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => setOpen(true)}>
+        <Camera className="h-4 w-4" />
+        <span>Fotografija{count > 0 ? ` (${count})` : ""}</span>
+      </Button>
+      <PhotoManager
+        open={open}
+        onOpenChange={handleOpenChange}
+        context={context}
+        title="Fotografije prevzema"
+        canDelete={true}
+        onPhotoCountChange={() => setRefreshKey((current) => current + 1)}
+      />
+    </>
+  );
+}
+
 export function MaterialOrderCard({
   materialOrder,
+  projectId,
   mode = "preparation",
   technicianNote,
   executionDate,
@@ -428,6 +475,7 @@ export function MaterialOrderCard({
           <h3 className="text-base font-semibold">Material</h3>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Badge className={isExecutionMode ? pickupStatus.className : overallStatus.className}>{isExecutionMode ? pickupStatus.label : overallStatus.label}</Badge>
+            <DeliveryNotePhotoButton projectId={projectId} materialOrderId={materialOrder._id} />
             {isExecutionMode ? (
               <Button
                 type="button"
