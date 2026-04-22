@@ -31,7 +31,8 @@
     "nodemailer": "^6.10.0",
     "pdfkit": "^0.15.0",
     "playwright": "^1.57.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
