@@ -10,3 +10,6 @@ export { CategoryMultiSelect } from './components/CategoryMultiSelect/CategoryMu
 export { TableRowActions } from './components/TableRowActions/TableRowActions';
 export { PhotoCapture } from './components/PhotoCapture/PhotoCapture';
 export type { PhotoCaptureProps } from './components/PhotoCapture/PhotoCapture';
+export { PhotoManager } from './components/PhotoManager/PhotoManager';
+export type { PhotoContext, PhotoManagerProps } from './components/PhotoManager/PhotoManager';
+export { usePhotoCount } from './components/PhotoManager/usePhotoCount';

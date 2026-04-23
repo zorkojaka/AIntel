@@ -9,14 +9,16 @@
     "src"
   ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
     "storybook": "echo \"configure Storybook later\""
   },
   "dependencies": {
     "@aintel/theme": "*",
-    "react": "^18.3.0",
-    "lucide-react": "^0.468.0"
+    "@radix-ui/react-dialog": "^1.1.15",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.0"
   },
   "devDependencies": {
     "@storybook/react": "^7.0.0",
