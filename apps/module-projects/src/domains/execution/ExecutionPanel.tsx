@@ -8,7 +8,7 @@ import { Checkbox } from "../../components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Camera, ChevronDown, ChevronRight, Download, Loader2, Pencil, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { PhotoCapture } from "@aintel/ui";
+import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import type {
   MaterialOrder,
@@ -58,11 +58,6 @@ type ActiveUnitNoteEditor = {
   value: string;
 } | null;
 
-type ActiveUnitPhotoCapture = {
-  orderId: string;
-  itemId: string;
-  unitId: string;
-} | null;
 type NewExtraItemsState = Record<string, Record<string, boolean>>;
 
 function hasSavedExecutionUnitId(unitId: string) {
@@ -123,6 +118,53 @@ function hasExecutionContent(spec: WorkOrderExecutionSpec) {
 function hasInlineExecutionUnits(item: WorkOrderItemDraft) {
   if (item.isService) return false;
   return (ensureExecutionSpec(item.executionSpec).executionUnits?.length ?? 0) > 0;
+}
+
+function getWorkOrderItemPhotoId(item: WorkOrderItemDraft) {
+  const candidate = item as WorkOrderItemDraft & { _id?: string };
+  return candidate._id || candidate.id;
+}
+
+function ExecutionUnitPhotoButton({
+  projectId,
+  itemId,
+  unitIndex,
+  disabled,
+  refreshKey,
+  onOpen,
+}: {
+  projectId: string;
+  itemId: string;
+  unitIndex: number;
+  disabled?: boolean;
+  refreshKey: number;
+  onOpen: (context: PhotoContext) => void;
+}) {
+  const context = useMemo<PhotoContext>(
+    () => ({ projectId, phase: "execution", itemId, unitIndex }),
+    [itemId, projectId, unitIndex],
+  );
+  const { count, refresh } = usePhotoCount(context);
+
+  useEffect(() => {
+    if (refreshKey > 0) refresh();
+  }, [refresh, refreshKey]);
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="h-8 gap-1.5 px-2 text-xs"
+      disabled={disabled}
+      onClick={() => onOpen(context)}
+      aria-label="Dodaj fotografijo"
+      title={disabled ? "Shranite enoto za dodajanje fotografij" : "Dodaj fotografijo"}
+    >
+      <Camera className="h-4 w-4" />
+      <span>Fotografija{count > 0 ? ` (${count})` : ""}</span>
+    </Button>
+  );
 }
 
 function syncItemCompletionFromUnits(item: WorkOrderItemDraft, units: WorkOrderExecutionUnit[]): WorkOrderItemDraft {
@@ -363,7 +405,9 @@ export function ExecutionPanel({
   const [expandedExecutionItems, setExpandedExecutionItems] = useState<Record<string, boolean>>({});
   const [editingUnitNotes, setEditingUnitNotes] = useState<Record<string, boolean>>({});
   const [activeUnitNoteEditor, setActiveUnitNoteEditor] = useState<ActiveUnitNoteEditor>(null);
-  const [activeUnitPhotoCapture, setActiveUnitPhotoCapture] = useState<ActiveUnitPhotoCapture>(null);
+  const [photoModalOpen, setPhotoModalOpen] = useState(false);
+  const [photoContext, setPhotoContext] = useState<PhotoContext | null>(null);
+  const [photoCountRefreshKey, setPhotoCountRefreshKey] = useState(0);
   const [newExtraItems, setNewExtraItems] = useState<NewExtraItemsState>({});
 
   const workOrders = useMemo(() => rawWorkOrders, [rawWorkOrders]);
@@ -864,100 +908,21 @@ export function ExecutionPanel({
     });
   };
 
-  const getExecutionUnitPhotoUrls = useCallback(
-    (target: ActiveUnitPhotoCapture) => {
-      if (!target) return [];
-      const order = workOrders.find((candidate) => candidate._id === target.orderId);
-      if (!order) return [];
-      const item = getDraftValues(order).items.find((candidate) => candidate.id === target.itemId);
-      if (!item) return [];
-      const executionUnit = ensureExecutionSpec(item.executionSpec).executionUnits?.find(
-        (candidate) => candidate.id === target.unitId,
-      );
-      return executionUnit?.unitPhotos ?? [];
+  const openPhotoManager = useCallback((context: PhotoContext) => {
+    setPhotoContext(context);
+    setPhotoModalOpen(true);
+  }, []);
+
+  const handlePhotoModalOpenChange = useCallback(
+    (open: boolean) => {
+      setPhotoModalOpen(open);
+      if (!open) {
+        setPhotoContext(null);
+        setPhotoCountRefreshKey((current) => current + 1);
+        void refreshAfterMutation();
+      }
     },
-    [getDraftValues, workOrders],
-  );
-
-  const hasExistingExecutionUnit = useCallback(
-    (target: ActiveUnitPhotoCapture) => {
-      if (!target) return false;
-      const order = workOrders.find((candidate) => candidate._id === target.orderId);
-      if (!order) return false;
-      const item = getDraftValues(order).items.find((candidate) => candidate.id === target.itemId);
-      if (!item) return false;
-      return (ensureExecutionSpec(item.executionSpec).executionUnits ?? []).some(
-        (candidate) => candidate.id === target.unitId,
-      );
-    },
-    [getDraftValues, workOrders],
-  );
-
-  const activeExecutionUnitPhotoUrls = useMemo(
-    () => getExecutionUnitPhotoUrls(activeUnitPhotoCapture),
-    [activeUnitPhotoCapture, getExecutionUnitPhotoUrls],
-  );
-
-  const canOpenActiveUnitPhotoCapture = useMemo(
-    () =>
-      activeUnitPhotoCapture
-        ? hasSavedExecutionUnitId(activeUnitPhotoCapture.unitId) && hasExistingExecutionUnit(activeUnitPhotoCapture)
-        : false,
-    [activeUnitPhotoCapture, hasExistingExecutionUnit],
-  );
-
-  const syncExecutionUnitPhotos = useCallback(
-    (
-      orderId: string,
-      itemId: string,
-      unitId: string,
-      photoType: "unitPhotos" | "prepPhotos",
-      updater: (photos: string[]) => string[],
-    ) => {
-      setPendingWorkOrders((prev) => {
-        const order = workOrders.find((candidate) => candidate._id === orderId);
-        if (!order) return prev;
-
-        const currentDraft = prev[orderId] ?? getInitialDraftValues(order);
-        const nextItems = currentDraft.items.map((item: WorkOrderItemDraft) => {
-          if (item.id !== itemId) return item;
-
-          const executionSpec = ensureExecutionSpec(item.executionSpec);
-          const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => {
-            if (unit.id !== unitId) return unit;
-            return {
-              ...unit,
-              [photoType]: updater(Array.isArray(unit[photoType]) ? unit[photoType] : []),
-            };
-          });
-
-          return {
-            ...item,
-            executionSpec: {
-              ...executionSpec,
-              executionUnits: nextUnits,
-            },
-          };
-        });
-
-        return {
-          ...prev,
-          [orderId]: {
-            ...currentDraft,
-            items: nextItems,
-          },
-        };
-      });
-    },
-    [workOrders],
-  );
-
-  const openUnitPhotoCapture = useCallback(
-    (payload: NonNullable<ActiveUnitPhotoCapture>) => {
-      if (!hasSavedExecutionUnitId(payload.unitId)) return;
-      setActiveUnitPhotoCapture(payload);
-    },
-    [],
+    [refreshAfterMutation],
   );
 
   const handleDeleteManualItem = (order: WorkOrder, item: WorkOrderItemDraft) => {
@@ -1263,38 +1228,14 @@ export function ExecutionPanel({
                 >
                   <Pencil className="h-4 w-4" />
                 </Button>
-                <div className="relative">
-                  {hasSavedExecutionUnitId(unit.id) ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground"
-                      onClick={() => openUnitPhotoCapture({ orderId: order._id, itemId: item.id, unitId: unit.id })}
-                      aria-label="Dodaj fotografijo"
-                      title="Dodaj fotografijo"
-                    >
-                      <Camera className="h-4 w-4" />
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground"
-                      disabled
-                      aria-label="Shranite enoto za dodajanje fotografij"
-                      title="Shranite enoto za dodajanje fotografij"
-                    >
-                      <Camera className="h-4 w-4" />
-                    </Button>
-                  )}
-                  {(unit.unitPhotos?.length ?? 0) > 0 && (
-                    <Badge className="absolute -right-1 -top-1 h-4 min-w-4 px-1 text-[10px]" variant="secondary">
-                      {unit.unitPhotos?.length}
-                    </Badge>
-                  )}
-                </div>
+                <ExecutionUnitPhotoButton
+                  projectId={projectId}
+                  itemId={getWorkOrderItemPhotoId(item)}
+                  unitIndex={index}
+                  disabled={isLocked || !hasSavedExecutionUnitId(unit.id)}
+                  refreshKey={photoCountRefreshKey}
+                  onOpen={openPhotoManager}
+                />
               </div>
               <div className="flex items-center justify-center">
                 <Checkbox
@@ -1706,6 +1647,7 @@ export function ExecutionPanel({
                         <MaterialOrderCard
                           mode="execution"
                           materialOrder={materialDraft ?? materialOrder}
+                          projectId={projectId}
                           technicianNote={order.notes ?? ""}
                           executionDate={order.scheduledAt ?? null}
                           executionDateConfirmedAt={order.scheduledConfirmedAt ?? null}
@@ -1724,7 +1666,6 @@ export function ExecutionPanel({
                           onPickupLocationChange={(value) => updateMaterialDraft(materialOrder, { pickupLocation: value })}
                           onLogisticsOwnerChange={(employeeId) => updateMaterialDraft(materialOrder, { logisticsOwnerId: employeeId })}
                           onPickupNoteChange={() => {}}
-                          onDeliveryNotePhotosChange={() => {}}
                           onAddExtraMaterial={() => {}}
                           onConfirmPickup={() => {
                             void confirmPickup(order, materialDraft ?? materialOrder);
@@ -2611,46 +2552,16 @@ export function ExecutionPanel({
         }}
       />
 
-      <Dialog open={Boolean(activeUnitPhotoCapture)} onOpenChange={(open) => {
-        if (!open) {
-          setActiveUnitPhotoCapture(null);
-          void refreshAfterMutation();
-        }
-      }}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Fotografije enote</DialogTitle>
-          </DialogHeader>
-          <DialogDescription className="sr-only">
-            Upravljanje fotografij izvedbene enote
-          </DialogDescription>
-          {activeUnitPhotoCapture && canOpenActiveUnitPhotoCapture ? (
-            <PhotoCapture
-              title="Fotografije enote"
-              uploadUrl="/api/files/upload"
-              saveUrl={`/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos?type=unit`}
-              deleteUrl={(photoUrl) =>
-                `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.orderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos/${encodeURIComponent(photoUrl)}?type=unit`
-              }
-              existingPhotos={activeExecutionUnitPhotoUrls}
-              onPhotosChange={(photos) => {
-                syncExecutionUnitPhotos(
-                  activeUnitPhotoCapture.orderId,
-                  activeUnitPhotoCapture.itemId,
-                  activeUnitPhotoCapture.unitId,
-                  "unitPhotos",
-                  () => photos,
-                );
-              }}
-              maxPhotos={10}
-            />
-          ) : activeUnitPhotoCapture ? (
-            <div className="rounded-md border border-border/60 bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
-              Shranite enoto za dodajanje fotografij.
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      {photoContext ? (
+        <PhotoManager
+          open={photoModalOpen}
+          onOpenChange={handlePhotoModalOpenChange}
+          context={photoContext}
+          title="Fotografije izvedbe"
+          canDelete={true}
+          onPhotoCountChange={() => setPhotoCountRefreshKey((current) => current + 1)}
+        />
+      ) : null}
     </div>
   );
 }

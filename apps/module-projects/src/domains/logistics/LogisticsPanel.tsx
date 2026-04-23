@@ -20,16 +20,15 @@ import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { MaterialOrderCard } from "./MaterialOrderCard";
 import { normalizeMaterialStatusLabel } from "./materialStatus";
 import { useConfirmOffer } from "../core/useConfirmOffer";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
-import { AlertTriangle, Check, ChevronDown, ChevronRight, Download, Loader2, Trash2, X } from "lucide-react";
+import { AlertTriangle, Camera, Check, ChevronDown, ChevronRight, Download, Loader2, Trash2, X } from "lucide-react";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
-import { PhotoCapture } from "@aintel/ui";
+import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
 
 interface LogisticsPanelProps {
   projectId: string;
@@ -74,6 +73,42 @@ const STATUS_LABELS: Record<string, string> = {
   CANCELLED: "Preklicano",
   REJECTED: "Zavrnjeno",
 };
+
+function getWorkOrderItemPhotoId(item: LogisticsWorkOrder["items"][number]) {
+  const candidate = item as LogisticsWorkOrder["items"][number] & { _id?: string };
+  return candidate._id || candidate.id;
+}
+
+function PreparationUnitPhotoButton({
+  projectId,
+  itemId,
+  unitIndex,
+  refreshKey,
+  onOpen,
+}: {
+  projectId: string;
+  itemId: string;
+  unitIndex: number;
+  refreshKey: number;
+  onOpen: (context: PhotoContext) => void;
+}) {
+  const context = useMemo<PhotoContext>(
+    () => ({ projectId, phase: "preparation", itemId, unitIndex }),
+    [itemId, projectId, unitIndex],
+  );
+  const { count, refresh } = usePhotoCount(context);
+
+  useEffect(() => {
+    if (refreshKey > 0) refresh();
+  }, [refresh, refreshKey]);
+
+  return (
+    <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => onOpen(context)}>
+      <Camera className="h-4 w-4" />
+      <span>Fotografija{count > 0 ? ` (${count})` : ""}</span>
+    </Button>
+  );
+}
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("sl-SI", { style: "currency", currency: "EUR" }).format(value);
@@ -313,11 +348,9 @@ export function LogisticsPanel({
   const [workOrderDownloading, setWorkOrderDownloading] = useState<"WORK_ORDER" | "WORK_ORDER_CONFIRMATION" | null>(null);
   const [pendingMaterialOrderIds, setPendingMaterialOrderIds] = useState<Record<string, boolean>>({});
   const [expandedExecutionItems, setExpandedExecutionItems] = useState<Record<string, boolean>>({});
-  const [activeUnitPhotoCapture, setActiveUnitPhotoCapture] = useState<{
-    workOrderId: string;
-    itemId: string;
-    unitId: string;
-  } | null>(null);
+  const [photoModalOpen, setPhotoModalOpen] = useState(false);
+  const [photoContext, setPhotoContext] = useState<PhotoContext | null>(null);
+  const [photoCountRefreshKey, setPhotoCountRefreshKey] = useState(0);
 
   const hasConfirmed = useMemo(() => !!snapshot?.confirmedOfferVersionId, [snapshot]);
   const confirmedOffers = useMemo(
@@ -367,19 +400,6 @@ export function LogisticsPanel({
         : filteredMaterialOrders[0] ?? null,
     [filteredMaterialOrders, selectedWorkOrder],
   );
-  const activePrepPhotoUrls = useMemo(() => {
-    if (!activeUnitPhotoCapture) return [];
-    const items =
-      Array.isArray(workOrderForm.items) && workOrderForm.items.length > 0
-        ? workOrderForm.items
-        : selectedWorkOrder?.items ?? [];
-    const item = items.find((candidate) => candidate.id === activeUnitPhotoCapture.itemId);
-    if (!item) return [];
-    const unit = (ensureExecutionSpec(item.executionSpec).executionUnits ?? []).find(
-      (candidate) => candidate.id === activeUnitPhotoCapture.unitId,
-    );
-    return unit?.prepPhotos ?? [];
-  }, [activeUnitPhotoCapture, selectedWorkOrder?.items, workOrderForm.items]);
   const companyPickupAddress = useMemo(() => formatCompanyAddress(settings), [settings]);
   const sitePickupAddress = useMemo(() => formatClientAddress(client ?? null), [client]);
   const materialOrdersForSelectedWorkOrder = useMemo(() => {
@@ -608,6 +628,20 @@ export function LogisticsPanel({
   }, [client, selectedWorkOrder?.customerAddress, locationTouched, workOrderForm.location]);
 
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
+  const openPhotoManager = useCallback((context: PhotoContext) => {
+    setPhotoContext(context);
+    setPhotoModalOpen(true);
+  }, []);
+  const handlePhotoModalOpenChange = useCallback(
+    (open: boolean) => {
+      setPhotoModalOpen(open);
+      if (!open) {
+        setPhotoContext(null);
+        setPhotoCountRefreshKey((current) => current + 1);
+      }
+    },
+    [],
+  );
   const { confirmOffer, confirmingId } = useConfirmOffer({
     projectId,
     onConfirmed: fetchSnapshot,
@@ -968,11 +1002,6 @@ export function LogisticsPanel({
           pickupLocation: materialOverrides?.pickupLocation ?? currentMaterial?.pickupLocation ?? undefined,
           logisticsOwnerId: materialOverrides?.logisticsOwnerId ?? currentMaterial?.logisticsOwnerId ?? undefined,
           pickupNote: materialOverrides?.pickupNote ?? currentMaterial?.pickupNote ?? undefined,
-          deliveryNotePhotos: Array.isArray(materialOverrides?.deliveryNotePhotos)
-            ? materialOverrides?.deliveryNotePhotos
-            : Array.isArray(currentMaterial?.deliveryNotePhotos)
-              ? currentMaterial?.deliveryNotePhotos
-              : undefined,
           pickupConfirmedAt:
             materialOverrides && Object.prototype.hasOwnProperty.call(materialOverrides, "pickupConfirmedAt")
               ? materialOverrides.pickupConfirmedAt
@@ -2210,14 +2239,13 @@ export function LogisticsPanel({
                                     }
                                     placeholder="Opomba"
                                   />
-                                  <Button 
-                                    type="button" 
-                                    variant="outline" 
-                                    size="sm"
-                                    onClick={() => setActiveUnitPhotoCapture({ workOrderId: sourceWorkOrder._id, itemId: item.id, unitId: unit.id })}
-                                  >
-                                    Fotografija
-                                  </Button>
+                                  <PreparationUnitPhotoButton
+                                    projectId={projectId}
+                                    itemId={getWorkOrderItemPhotoId(item)}
+                                    unitIndex={index}
+                                    refreshKey={photoCountRefreshKey}
+                                    onOpen={openPhotoManager}
+                                  />
                                 </div>
                               </div>
                             ))}
@@ -2430,6 +2458,7 @@ export function LogisticsPanel({
                 <MaterialOrderCard
                   key={order._id}
                   materialOrder={order}
+                  projectId={projectId}
                   technicianNote={workOrderForm.notes ?? ""}
                   executionDate={typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : selectedWorkOrder?.scheduledAt ?? null}
                   executionDateConfirmedAt={
@@ -2464,7 +2493,6 @@ export function LogisticsPanel({
                   onLogisticsOwnerChange={(employeeId) => updateMaterialOrderForm(order._id, { logisticsOwnerId: employeeId })}
                   onTechnicianNoteChange={(value) => handleWorkOrderChange("notes", value)}
                   onPickupNoteChange={(value) => updateMaterialOrderForm(order._id, { pickupNote: value })}
-                  onDeliveryNotePhotosChange={(photos) => updateMaterialOrderForm(order._id, { deliveryNotePhotos: photos })}
                   onAddExtraMaterial={(draft) => addExtraMaterialItem(order._id, draft)}
                   onConfirmPickup={() => {
                     void handleConfirmPickup(order._id);
@@ -2547,6 +2575,7 @@ export function LogisticsPanel({
             <MaterialOrderCard
               key={order._id}
               materialOrder={order}
+              projectId={projectId}
               technicianNote={workOrderForm.notes ?? ""}
               executionDate={typeof workOrderForm.scheduledAt === "string" ? workOrderForm.scheduledAt : selectedWorkOrder?.scheduledAt ?? null}
               executionDateConfirmedAt={
@@ -2581,7 +2610,6 @@ export function LogisticsPanel({
               onLogisticsOwnerChange={(employeeId) => updateMaterialOrderForm(order._id, { logisticsOwnerId: employeeId })}
               onTechnicianNoteChange={(value) => handleWorkOrderChange("notes", value)}
               onPickupNoteChange={(value) => updateMaterialOrderForm(order._id, { pickupNote: value })}
-              onDeliveryNotePhotosChange={(photos) => updateMaterialOrderForm(order._id, { deliveryNotePhotos: photos })}
               onAddExtraMaterial={(draft) => addExtraMaterialItem(order._id, draft)}
               onConfirmPickup={() => {
                 void handleConfirmPickup(order._id);
@@ -2651,52 +2679,16 @@ export function LogisticsPanel({
       </Card>
       {renderExecutionDefinition(selectedWorkOrder)}
 
-      <Dialog open={Boolean(activeUnitPhotoCapture)} onOpenChange={(open) => {
-        if (!open) {
-          setActiveUnitPhotoCapture(null);
-        }
-      }}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Fotografije enote</DialogTitle>
-          </DialogHeader>
-          {activeUnitPhotoCapture ? (
-            <PhotoCapture
-              title="Fotografije priprave"
-              uploadUrl="/api/files/upload"
-              saveUrl={`/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.workOrderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos?type=prep`}
-              deleteUrl={(photoUrl) =>
-                `/api/projects/${projectId}/work-orders/${activeUnitPhotoCapture.workOrderId}/execution-units/${activeUnitPhotoCapture.unitId}/photos/${encodeURIComponent(photoUrl)}?type=prep`
-              }
-              existingPhotos={activePrepPhotoUrls}
-              onPhotosChange={(photos) => {
-                setWorkOrderForm((prev) => {
-                  if (!Array.isArray(prev.items)) return prev;
-                  return {
-                    ...prev,
-                    items: prev.items.map((item) => {
-                      if (item.id !== activeUnitPhotoCapture.itemId) return item;
-                      const spec = ensureExecutionSpec(item.executionSpec);
-                      return {
-                        ...item,
-                        executionSpec: {
-                          ...spec,
-                          executionUnits: (spec.executionUnits ?? []).map((unit) =>
-                            unit.id === activeUnitPhotoCapture.unitId
-                              ? { ...unit, prepPhotos: photos }
-                              : unit,
-                          ),
-                        },
-                      };
-                    }),
-                  };
-                });
-              }}
-              maxPhotos={10}
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      {photoContext ? (
+        <PhotoManager
+          open={photoModalOpen}
+          onOpenChange={handlePhotoModalOpenChange}
+          context={photoContext}
+          title="Fotografije priprave"
+          canDelete={true}
+          onPhotoCountChange={() => setPhotoCountRefreshKey((current) => current + 1)}
+        />
+      ) : null}
     </div>
   );
 }
