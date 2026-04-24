@@ -129,6 +129,7 @@ function ExecutionUnitPhotoButton({
   size = "sm",
   className,
   iconOnly = false,
+  countOnly = false,
 }: {
   projectId: string;
   itemId: string;
@@ -139,6 +140,7 @@ function ExecutionUnitPhotoButton({
   size?: "sm" | "icon";
   className?: string;
   iconOnly?: boolean;
+  countOnly?: boolean;
 }) {
   const context = useMemo<PhotoContext>(
     () => ({ projectId, phase: "execution", itemId, unitIndex }),
@@ -155,13 +157,16 @@ function ExecutionUnitPhotoButton({
       type="button"
       variant={variant}
       size={size}
-      className={cn(iconOnly ? "h-8 w-8 text-muted-foreground" : "h-8 gap-1.5 px-2 text-xs", className)}
+      className={cn(
+        iconOnly ? "h-8 w-8 text-muted-foreground" : "h-8 gap-1.5 px-2 text-xs",
+        className,
+      )}
       onClick={() => onOpen(context)}
       aria-label="Dodaj fotografijo"
       title="Dodaj fotografijo"
     >
       <Camera className="h-4 w-4" />
-      {iconOnly ? null : <span>Fotografija{count > 0 ? ` (${count})` : ""}</span>}
+      {iconOnly ? null : <span>{countOnly ? (count > 0 ? `(${count})` : "") : `Fotografija${count > 0 ? ` (${count})` : ""}`}</span>}
     </Button>
   );
 }
@@ -1966,9 +1971,9 @@ export function ExecutionPanel({
                                               refreshKey={photoCountRefreshKey}
                                               onOpen={openPhotoManager}
                                               variant="ghost"
-                                              size="icon"
+                                              size="sm"
                                               className="text-muted-foreground"
-                                              iconOnly
+                                              countOnly
                                             />
                                           </div>
                                         ) : null}
@@ -2152,9 +2157,9 @@ export function ExecutionPanel({
                                         refreshKey={photoCountRefreshKey}
                                         onOpen={openPhotoManager}
                                         variant="ghost"
-                                        size="icon"
+                                        size="sm"
                                         className="text-muted-foreground"
-                                        iconOnly
+                                        countOnly
                                       />
                                       <Button
                                         type="button"
