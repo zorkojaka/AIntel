@@ -16,11 +16,11 @@ interface WorkOrderItem {
   itemNote?: string | null;
   isCompleted?: boolean;
   casovnaNorma?: number;
-  executionSpec?: {
-    mode?: 'simple' | 'per_unit' | 'measured';
-    locationSummary?: string | null;
-    instructions?: string | null;
-    trackingUnitLabel?: string | null;
+    executionSpec?: {
+      mode?: 'simple' | 'per_unit' | 'measured';
+      locationSummary?: string | null;
+      instructions?: string | null;
+      trackingUnitLabel?: string | null;
     executionUnits?: Array<{
       id: string;
       label: string;
@@ -28,8 +28,6 @@ interface WorkOrderItem {
       instructions?: string | null;
       isCompleted: boolean;
       note?: string | null;
-      unitPhotos?: string[];
-      prepPhotos?: string[];
     }>;
   } | null;
 }
@@ -142,8 +140,6 @@ const workOrderItemSchema = new Schema<WorkOrderItem>(
                   instructions: { type: String, default: null },
                   isCompleted: { type: Boolean, default: false },
                   note: { type: String, default: null },
-                  unitPhotos: { type: [String], default: [] },
-                  prepPhotos: { type: [String], default: [] },
                 },
                 { _id: false }
               ),

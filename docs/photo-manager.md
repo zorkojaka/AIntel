@@ -8,7 +8,7 @@ It talks only to the new backend API:
 - `GET /api/photos`
 - `DELETE /api/photos/:photoId`
 
-It does not use the legacy `PhotoCapture` component or `/api/files/*` endpoints.
+It does not use legacy photo upload components or `/api/files/*` endpoints.
 
 ## Imports
 

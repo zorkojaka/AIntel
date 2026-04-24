@@ -49,7 +49,6 @@ export interface MaterialOrder {
   pickupLocation?: string | null;
   logisticsOwnerId?: string | null;
   pickupNote?: string | null;
-  deliveryNotePhotos?: string[];
   pickupConfirmedAt?: string | null;
   pickupConfirmedBy?: string | null;
   cancelledAt?: string | null;
@@ -70,8 +69,6 @@ export interface WorkOrderExecutionUnit {
   instructions?: string;
   isCompleted: boolean;
   note?: string;
-  unitPhotos?: string[];
-  prepPhotos?: string[];
 }
 
 export interface WorkOrderExecutionSpec {

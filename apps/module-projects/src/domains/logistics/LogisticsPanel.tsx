@@ -251,8 +251,6 @@ function sanitizeExecutionUnits(units: WorkOrderExecutionSpec["executionUnits"] 
         instructions: unit.instructions ?? "",
         isCompleted: !!unit.isCompleted,
         note: unit.note ?? "",
-        unitPhotos: Array.isArray(unit.unitPhotos) ? unit.unitPhotos : [],
-        prepPhotos: Array.isArray(unit.prepPhotos) ? unit.prepPhotos : [],
       }))
     : [];
 }
