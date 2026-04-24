@@ -925,6 +925,10 @@ export function ExecutionPanel({
     [refreshAfterMutation],
   );
 
+  const handlePhotoCountChange = useCallback(() => {
+    setPhotoCountRefreshKey((current) => current + 1);
+  }, []);
+
   const handleDeleteManualItem = (order: WorkOrder, item: WorkOrderItemDraft) => {
     if (getOrderConfirmationState(order) === "signed_active") {
       return;
@@ -2559,7 +2563,7 @@ export function ExecutionPanel({
           context={photoContext}
           title="Fotografije izvedbe"
           canDelete={true}
-          onPhotoCountChange={() => setPhotoCountRefreshKey((current) => current + 1)}
+          onPhotoCountChange={handlePhotoCountChange}
         />
       ) : null}
     </div>

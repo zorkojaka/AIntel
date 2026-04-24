@@ -642,6 +642,11 @@ export function LogisticsPanel({
     },
     [],
   );
+
+  const handlePhotoCountChange = useCallback(() => {
+    setPhotoCountRefreshKey((current) => current + 1);
+  }, []);
+
   const { confirmOffer, confirmingId } = useConfirmOffer({
     projectId,
     onConfirmed: fetchSnapshot,
@@ -2686,7 +2691,7 @@ export function LogisticsPanel({
           context={photoContext}
           title="Fotografije priprave"
           canDelete={true}
-          onPhotoCountChange={() => setPhotoCountRefreshKey((current) => current + 1)}
+          onPhotoCountChange={handlePhotoCountChange}
         />
       ) : null}
     </div>

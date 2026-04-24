@@ -26,6 +26,7 @@ export function createApp() {
     res.success({ connected: isMongoConnected() });
   });
 
+  app.use('/uploads', express.static('/var/www/aintel/uploads'));
   app.use('/api/auth', authRoutes);
   app.use('/api', requireAuth, routes);
   app.use(errorHandler);
