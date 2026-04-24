@@ -123,16 +123,22 @@ function ExecutionUnitPhotoButton({
   projectId,
   itemId,
   unitIndex,
-  disabled,
   refreshKey,
   onOpen,
+  variant = "outline",
+  size = "sm",
+  className,
+  iconOnly = false,
 }: {
   projectId: string;
   itemId: string;
-  unitIndex: number;
-  disabled?: boolean;
+  unitIndex?: number;
   refreshKey: number;
   onOpen: (context: PhotoContext) => void;
+  variant?: "outline" | "ghost";
+  size?: "sm" | "icon";
+  className?: string;
+  iconOnly?: boolean;
 }) {
   const context = useMemo<PhotoContext>(
     () => ({ projectId, phase: "execution", itemId, unitIndex }),
@@ -147,16 +153,15 @@ function ExecutionUnitPhotoButton({
   return (
     <Button
       type="button"
-      variant="outline"
-      size="sm"
-      className="h-8 gap-1.5 px-2 text-xs"
-      disabled={disabled}
+      variant={variant}
+      size={size}
+      className={cn(iconOnly ? "h-8 w-8 text-muted-foreground" : "h-8 gap-1.5 px-2 text-xs", className)}
       onClick={() => onOpen(context)}
       aria-label="Dodaj fotografijo"
-      title={disabled ? "Shranite enoto za dodajanje fotografij" : "Dodaj fotografijo"}
+      title="Dodaj fotografijo"
     >
       <Camera className="h-4 w-4" />
-      <span>Fotografija{count > 0 ? ` (${count})` : ""}</span>
+      {iconOnly ? null : <span>Fotografija{count > 0 ? ` (${count})` : ""}</span>}
     </Button>
   );
 }
@@ -1230,7 +1235,6 @@ export function ExecutionPanel({
                   projectId={projectId}
                   itemId={getWorkOrderItemPhotoId(item)}
                   unitIndex={index}
-                  disabled={isLocked}
                   refreshKey={photoCountRefreshKey}
                   onOpen={openPhotoManager}
                 />
@@ -1955,17 +1959,16 @@ export function ExecutionPanel({
                                             >
                                               <Pencil className="h-4 w-4" />
                                             </Button>
-                                            <Button
-                                              type="button"
+                                            <ExecutionUnitPhotoButton
+                                              projectId={projectId}
+                                              itemId={getWorkOrderItemPhotoId(item)}
+                                              refreshKey={photoCountRefreshKey}
+                                              onOpen={openPhotoManager}
                                               variant="ghost"
                                               size="icon"
-                                              className="h-8 w-8 text-muted-foreground"
-                                              disabled
-                                              aria-label="Fotografije so na voljo le za izvedbene enote"
-                                              title="Fotografije so na voljo le za izvedbene enote"
-                                            >
-                                              <Camera className="h-4 w-4" />
-                                            </Button>
+                                              className="text-muted-foreground"
+                                              iconOnly
+                                            />
                                           </div>
                                         ) : null}
                                       </td>
@@ -2141,17 +2144,16 @@ export function ExecutionPanel({
                                       >
                                         <Pencil className="h-4 w-4" />
                                       </Button>
-                                      <Button
-                                        type="button"
+                                      <ExecutionUnitPhotoButton
+                                        projectId={projectId}
+                                        itemId={getWorkOrderItemPhotoId(item)}
+                                        refreshKey={photoCountRefreshKey}
+                                        onOpen={openPhotoManager}
                                         variant="ghost"
                                         size="icon"
-                                        className="h-8 w-8 text-muted-foreground"
-                                        disabled
-                                        aria-label="Fotografije so na voljo le za izvedbene enote"
-                                        title="Fotografije so na voljo le za izvedbene enote"
-                                      >
-                                        <Camera className="h-4 w-4" />
-                                      </Button>
+                                        className="text-muted-foreground"
+                                        iconOnly
+                                      />
                                       <Button
                                         type="button"
                                         variant="ghost"
