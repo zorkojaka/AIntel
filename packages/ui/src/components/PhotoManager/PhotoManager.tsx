@@ -341,9 +341,10 @@ export function PhotoManager({
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60" />
         <Dialog.Content
           aria-describedby="photo-manager-description"
-          className="fixed left-1/2 top-1/2 z-50 flex max-h-[88vh] w-[calc(100vw-1.5rem)] max-w-3xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
+          className="fixed left-1/2 top-1/2 z-50 flex w-[calc(100vw-1rem)] max-w-[500px] max-h-[90vh] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border bg-background shadow-lg md:w-[calc(100vw-2rem)] md:max-h-[80vh]"
         >
-          <div className="flex items-start justify-between gap-4 border-b px-4 py-4">
+          <div className="shrink-0 border-b bg-background px-4 py-4">
+            <div className="flex items-start justify-between gap-4">
             <div className="space-y-1">
               <Dialog.Title className="text-lg font-semibold">{title}</Dialog.Title>
               <Dialog.Description id="photo-manager-description" className="text-sm text-muted-foreground">
@@ -353,9 +354,10 @@ export function PhotoManager({
             <Dialog.Close className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground" aria-label="Zapri fotografije">
               <X className="h-5 w-5" />
             </Dialog.Close>
+            </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
             {loading ? (
               <div className="flex min-h-56 items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -404,7 +406,7 @@ export function PhotoManager({
             )}
           </div>
 
-          <div className="sticky bottom-0 border-t bg-background px-4 py-4">
+          <div className="sticky bottom-0 z-10 shrink-0 border-t bg-background px-4 py-4">
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
