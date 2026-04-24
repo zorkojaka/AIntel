@@ -27,8 +27,11 @@ export function usePhotoCount(context: PhotoContext): {
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [refreshIndex, setRefreshIndex] = useState(0);
-  const contextKey = useMemo(() => JSON.stringify(context), [context]);
-  const queryString = useMemo(() => buildPhotoQuery(context), [contextKey]);
+  const { projectId, phase, itemId, unitIndex, tag } = context;
+  const queryString = useMemo(
+    () => buildPhotoQuery({ projectId, phase, itemId, unitIndex, tag }),
+    [itemId, phase, projectId, tag, unitIndex],
+  );
 
   const refresh = useCallback(() => {
     setRefreshIndex((current) => current + 1);

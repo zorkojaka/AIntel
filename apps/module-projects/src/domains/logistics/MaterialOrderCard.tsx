@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Employee } from "@aintel/shared/types/employee";
 import type { MaterialOrder, MaterialPickupMethod, MaterialStep } from "@aintel/shared/types/logistics";
 import { Camera, Download, Loader2 } from "lucide-react";
@@ -188,12 +188,16 @@ function DeliveryNotePhotoButton({
     if (refreshKey > 0) refresh();
   }, [refresh, refreshKey]);
 
-  const handleOpenChange = (nextOpen: boolean) => {
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
     setOpen(nextOpen);
     if (!nextOpen) {
       setRefreshKey((current) => current + 1);
     }
-  };
+  }, []);
+
+  const handlePhotoCountChange = useCallback(() => {
+    setRefreshKey((current) => current + 1);
+  }, []);
 
   return (
     <>
@@ -207,7 +211,7 @@ function DeliveryNotePhotoButton({
         context={context}
         title="Fotografije prevzema"
         canDelete={true}
-        onPhotoCountChange={() => setRefreshKey((current) => current + 1)}
+        onPhotoCountChange={handlePhotoCountChange}
       />
     </>
   );

@@ -20,6 +20,10 @@ export default defineConfig({
         target: devApiProxyTarget,
         changeOrigin: true,
       },
+      '/uploads': {
+        target: devApiProxyTarget,
+        changeOrigin: true,
+      },
     },
   },
 });

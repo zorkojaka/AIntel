@@ -85,6 +85,10 @@ function getPhotoId(photo: ManagedPhoto) {
   return photo.id || photo._id;
 }
 
+function getPhotoImageSrc(photo: ManagedPhoto, variant: 'thumbnail' | 'full' = 'thumbnail') {
+  return variant === 'thumbnail' ? photo.thumbnailUrl || photo.url : photo.url || photo.thumbnailUrl || '';
+}
+
 function isHeic(file: File) {
   const mime = file.type.toLowerCase();
   const name = file.name.toLowerCase();
@@ -120,8 +124,13 @@ export function PhotoManager({
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const photosRef = useRef<ManagedPhoto[]>([]);
-  const contextKey = useMemo(() => JSON.stringify(context), [context]);
-  const queryString = useMemo(() => buildPhotoQuery(context), [contextKey]);
+  const onPhotoCountChangeRef = useRef(onPhotoCountChange);
+  const lastNotifiedCountRef = useRef<number | null>(null);
+  const { projectId, phase, itemId, unitIndex, tag } = context;
+  const queryString = useMemo(
+    () => buildPhotoQuery({ projectId, phase, itemId, unitIndex, tag }),
+    [itemId, phase, projectId, tag, unitIndex],
+  );
 
   const photos = useMemo(() => tiles.filter((tile): tile is Extract<PhotoTile, { kind: 'photo' }> => tile.kind === 'photo').map((tile) => tile.photo), [tiles]);
 
@@ -129,17 +138,21 @@ export function PhotoManager({
     photosRef.current = photos;
   }, [photos]);
 
+  useEffect(() => {
+    onPhotoCountChangeRef.current = onPhotoCountChange;
+  }, [onPhotoCountChange]);
+
   const showToast = useCallback((message: string) => {
     setToastMessage(message);
     window.setTimeout(() => setToastMessage((current) => (current === message ? null : current)), 3200);
   }, []);
 
-  const notifyCount = useCallback(
-    (nextPhotos: ManagedPhoto[]) => {
-      onPhotoCountChange?.(nextPhotos.length);
-    },
-    [onPhotoCountChange],
-  );
+  const notifyCount = useCallback((nextPhotos: ManagedPhoto[]) => {
+    const nextCount = nextPhotos.length;
+    if (lastNotifiedCountRef.current === nextCount) return;
+    lastNotifiedCountRef.current = nextCount;
+    onPhotoCountChangeRef.current?.(nextCount);
+  }, []);
 
   const fetchPhotos = useCallback(
     async (signal?: AbortSignal) => {
@@ -172,7 +185,7 @@ export function PhotoManager({
     const controller = new AbortController();
     void fetchPhotos(controller.signal);
     return () => controller.abort();
-  }, [open, contextKey, fetchPhotos]);
+  }, [fetchPhotos, itemId, open, phase, projectId, tag, unitIndex]);
 
   useEffect(() => {
     if (previewIndex !== null && previewIndex >= photos.length) {
@@ -275,7 +288,6 @@ export function PhotoManager({
     const selectedFiles = Array.from(event.target.files ?? []);
     event.target.value = '';
     await Promise.all(selectedFiles.map((file) => uploadFile(file)));
-    notifyCount(photosRef.current);
   };
 
   const deletePhoto = async (photo: ManagedPhoto) => {
@@ -365,7 +377,7 @@ export function PhotoManager({
                   tile.kind === 'photo' ? (
                     <div key={getPhotoId(tile.photo)} className="group relative aspect-square overflow-hidden rounded-md border bg-muted/20">
                       <button type="button" className="h-full w-full" onClick={() => openPreview(tile.photo)} aria-label="Odpri fotografijo">
-                        <img src={tile.photo.thumbnailUrl || tile.photo.url} alt={tile.photo.originalName || 'Fotografija'} className="h-full w-full object-cover" />
+                        <img src={getPhotoImageSrc(tile.photo)} alt={tile.photo.originalName || 'Fotografija'} className="h-full w-full object-cover" />
                       </button>
                       {canDelete ? (
                         <button
@@ -440,7 +452,7 @@ export function PhotoManager({
             </>
           ) : null}
           <figure className="flex max-h-full max-w-full flex-col items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
-            <img src={previewPhoto.url} alt={previewPhoto.originalName || 'Fotografija'} className="max-h-[80vh] max-w-full rounded-md object-contain" />
+            <img src={getPhotoImageSrc(previewPhoto, 'full')} alt={previewPhoto.originalName || 'Fotografija'} className="max-h-[80vh] max-w-full rounded-md object-contain" />
             <figcaption className="rounded-md bg-black/60 px-3 py-2 text-center text-sm text-white">
               <span>Naložil: {previewPhoto.uploadedBy || 'neznano'}</span>
               <span className="mx-2">-</span>
