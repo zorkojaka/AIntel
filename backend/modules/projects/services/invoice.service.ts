@@ -19,6 +19,7 @@ interface InvoiceItem {
   unit: string;
   quantity: number;
   unitPrice: number;
+  discountPercent: number;
   vatPercent: number;
   totalWithoutVat: number;
   totalWithVat: number;
@@ -31,6 +32,7 @@ interface InvoiceItemPayload {
   unit: string;
   quantity: number;
   unitPrice: number;
+  discountPercent?: number;
   vatPercent: number;
   type: InvoiceItemType;
 }
@@ -48,6 +50,9 @@ interface InvoiceVersion {
   status: InvoiceStatus;
   createdAt: string;
   issuedAt: string | null;
+  discountPercent: number;
+  useGlobalDiscount: boolean;
+  usePerItemDiscount: boolean;
   items: InvoiceItem[];
   summary: InvoiceSummary;
 }
@@ -119,6 +124,7 @@ async function buildConfirmedOfferIndex(project: ProjectDocument) {
   const offerId = (project.confirmedOfferVersionId ?? '').trim();
   if (!offerId) {
     return {
+      offer: null,
       itemsById: new Map<string, OfferLineItem>(),
       itemsByProductId: new Map<string, OfferLineItem>(),
     };
@@ -126,6 +132,7 @@ async function buildConfirmedOfferIndex(project: ProjectDocument) {
   const offer = await OfferVersionModel.findOne({ _id: offerId, projectId }).lean();
   if (!offer) {
     return {
+      offer: null,
       itemsById: new Map<string, OfferLineItem>(),
       itemsByProductId: new Map<string, OfferLineItem>(),
     };
@@ -140,10 +147,15 @@ async function buildConfirmedOfferIndex(project: ProjectDocument) {
       itemsByProductId.set(item.productId, item);
     }
   }
-  return { itemsById, itemsByProductId };
+  return { offer, itemsById, itemsByProductId };
 }
 
-async function aggregateClosingItems(project: ProjectDocument): Promise<InvoiceItemPayload[]> {
+async function aggregateClosingItems(project: ProjectDocument): Promise<{
+  items: InvoiceItemPayload[];
+  discountPercent: number;
+  useGlobalDiscount: boolean;
+  usePerItemDiscount: boolean;
+}> {
   const projectId = project.id;
   const workOrders = await WorkOrderModel.find({ projectId }).lean();
   const offerIndex = await buildConfirmedOfferIndex(project);
@@ -210,16 +222,23 @@ async function aggregateClosingItems(project: ProjectDocument): Promise<InvoiceI
     const unitPrice = matchedOfferItem ? toNumber(matchedOfferItem.unitPrice, 0) : 0;
     const vatPercent = matchedOfferItem ? toNumber(matchedOfferItem.vatRate, 22) : 22;
     invoiceItems.push({
+      id: entry.offerItemId ?? entry.productId ?? `${entry.name}:${entry.unit}:${type}`,
       name: entry.name || 'Neimenovana postavka',
       unit: entry.unit || '',
       quantity: entry.executed,
       unitPrice,
+      discountPercent: matchedOfferItem ? toNumber(matchedOfferItem.discountPercent, 0) : 0,
       vatPercent,
       type,
     });
   });
 
-  return invoiceItems;
+  return {
+    items: invoiceItems,
+    discountPercent: toNumber(offerIndex.offer?.globalDiscountPercent ?? offerIndex.offer?.discountPercent, 0),
+    useGlobalDiscount: Boolean(offerIndex.offer?.useGlobalDiscount ?? false),
+    usePerItemDiscount: Boolean(offerIndex.offer?.usePerItemDiscount ?? false),
+  };
 }
 
 function ensureInvoiceVersion(project: ProjectDocument, versionId: string): InvoiceVersion {
@@ -247,14 +266,21 @@ export async function createInvoiceFromClosing(projectId: string): Promise<Invoi
   if (existingDraft) {
     return buildInvoiceResponse(project, { activeVersionId: existingDraft._id, updatedVersionId: existingDraft._id });
   }
-  const sourceItems = await aggregateClosingItems(project);
-  const { items, summary } = recalculateItems(sourceItems);
+  const source = await aggregateClosingItems(project);
+  const { items, summary } = recalculateItems(source.items, {
+    discountPercent: source.discountPercent,
+    useGlobalDiscount: source.useGlobalDiscount,
+    usePerItemDiscount: source.usePerItemDiscount,
+  });
   const version: InvoiceVersion = {
     _id: new Types.ObjectId().toString(),
     versionNumber: resolveNextVersionNumber(project),
     status: 'draft',
     createdAt: new Date().toISOString(),
     issuedAt: null,
+    discountPercent: source.discountPercent,
+    useGlobalDiscount: source.useGlobalDiscount,
+    usePerItemDiscount: source.usePerItemDiscount,
     items,
     summary,
   };
@@ -271,7 +297,20 @@ export async function updateInvoiceVersion(projectId: string, versionId: string,
     throw new Error('Izdane verzije ni mogoče urejati.');
   }
   const inputItems = Array.isArray(payload?.items) ? payload.items : [];
-  const { items, summary } = recalculateItems(inputItems);
+  const existingItemsById = new Map((version.items ?? []).map((item) => [item.id, item]));
+  const mergedInputItems = inputItems.map((item) => {
+    const existing = item.id ? existingItemsById.get(item.id) : undefined;
+    return {
+      ...item,
+      discountPercent:
+        item.discountPercent !== undefined ? item.discountPercent : existing?.discountPercent ?? 0,
+    };
+  });
+  const { items, summary } = recalculateItems(mergedInputItems, {
+    discountPercent: toNumber(version.discountPercent, 0),
+    useGlobalDiscount: Boolean(version.useGlobalDiscount),
+    usePerItemDiscount: Boolean(version.usePerItemDiscount),
+  });
   version.items = items;
   version.summary = summary;
   markInvoiceVersionsModified(project);
@@ -393,6 +432,9 @@ export async function cloneInvoiceVersion(projectId: string, versionId: string):
     status: 'draft',
     createdAt: new Date().toISOString(),
     issuedAt: null,
+    discountPercent: version.discountPercent ?? 0,
+    useGlobalDiscount: version.useGlobalDiscount ?? false,
+    usePerItemDiscount: version.usePerItemDiscount ?? false,
     items: clonedItems,
     summary: { ...version.summary },
   };
@@ -401,14 +443,26 @@ export async function cloneInvoiceVersion(projectId: string, versionId: string):
   await project.save();
   return buildInvoiceResponse(project, { activeVersionId: clone._id, updatedVersionId: clone._id });
 }
-function recalculateItems(items: InvoiceItemPayload[]) {
-  const updatedItems: InvoiceItem[] = items.map((item) => {
+interface RecalculateOptions {
+  discountPercent?: number;
+  useGlobalDiscount?: boolean;
+  usePerItemDiscount?: boolean;
+}
+
+function recalculateItems(items: InvoiceItemPayload[], options: RecalculateOptions = {}) {
+  const globalDiscountPercent = options.useGlobalDiscount
+    ? Math.min(100, Math.max(0, toNumber(options.discountPercent, 0)))
+    : 0;
+
+  const preparedItems = items.map((item) => {
     const quantity = toNumber(item.quantity, 0);
     const unitPrice = toNumber(item.unitPrice, 0);
     const vatPercent = toNumber(item.vatPercent, 0);
-    const totalWithoutVat = round(quantity * unitPrice);
-    const vatAmount = round(totalWithoutVat * (vatPercent / 100));
-    const totalWithVat = round(totalWithoutVat + vatAmount);
+    const discountPercent = options.usePerItemDiscount
+      ? Math.min(100, Math.max(0, toNumber(item.discountPercent, 0)))
+      : 0;
+    const baseWithoutVat = round(quantity * unitPrice);
+    const lineAfterPerItemDiscount = round(baseWithoutVat * (1 - discountPercent / 100));
 
     return {
       id: item.id ?? new Types.ObjectId().toString(),
@@ -416,14 +470,58 @@ function recalculateItems(items: InvoiceItemPayload[]) {
       unit: sanitizeText(item.unit, ''),
       quantity,
       unitPrice,
+      discountPercent,
       vatPercent,
-      totalWithoutVat,
-      totalWithVat,
-      type: item.type === 'Dodatno' || item.type === 'Manj' ? item.type : 'Osnovno',
+      type: (item.type === 'Dodatno' || item.type === 'Manj' ? item.type : 'Osnovno') as InvoiceItemType,
+      baseWithoutVat,
+      lineAfterPerItemDiscount,
     };
   });
 
-  const baseWithoutVat = round(updatedItems.reduce((sum, current) => sum + current.totalWithoutVat, 0));
+  const baseWithoutVat = round(preparedItems.reduce((sum, current) => sum + current.baseWithoutVat, 0));
+  const perItemDiscountedBase = round(
+    preparedItems.reduce((sum, current) => sum + current.lineAfterPerItemDiscount, 0),
+  );
+  const globalDiscountAmount = round(perItemDiscountedBase * (globalDiscountPercent / 100));
+  const globalDiscountCandidates = preparedItems.filter((item) => item.lineAfterPerItemDiscount > 0);
+  let allocatedGlobalDiscount = 0;
+
+  const updatedItems: InvoiceItem[] = preparedItems.map((item) => {
+    let itemGlobalDiscount = 0;
+    const isLastCandidate =
+      globalDiscountCandidates.length > 0 &&
+      item.id === globalDiscountCandidates[globalDiscountCandidates.length - 1].id;
+
+    if (globalDiscountPercent > 0 && item.lineAfterPerItemDiscount > 0) {
+      if (isLastCandidate) {
+        itemGlobalDiscount = round(globalDiscountAmount - allocatedGlobalDiscount);
+      } else if (perItemDiscountedBase > 0) {
+        itemGlobalDiscount = round(
+          globalDiscountAmount * (item.lineAfterPerItemDiscount / perItemDiscountedBase),
+        );
+        allocatedGlobalDiscount = round(allocatedGlobalDiscount + itemGlobalDiscount);
+      }
+    }
+
+    const totalWithoutVat = round(Math.max(0, item.lineAfterPerItemDiscount - itemGlobalDiscount));
+    const vatAmount = round(totalWithoutVat * (item.vatPercent / 100));
+    const totalWithVat = round(totalWithoutVat + vatAmount);
+
+    return {
+      id: item.id,
+      name: item.name,
+      unit: item.unit,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      discountPercent: item.discountPercent,
+      vatPercent: item.vatPercent,
+      totalWithoutVat,
+      totalWithVat,
+      type: item.type as InvoiceItemType,
+    };
+  });
+
+  const discountedBase = round(updatedItems.reduce((sum, current) => sum + current.totalWithoutVat, 0));
   const vatAmount = round(
     updatedItems.reduce((sum, current) => sum + (current.totalWithVat - current.totalWithoutVat), 0),
   );
@@ -433,7 +531,7 @@ function recalculateItems(items: InvoiceItemPayload[]) {
     items: updatedItems,
     summary: {
       baseWithoutVat,
-      discountedBase: baseWithoutVat,
+      discountedBase,
       vatAmount,
       totalWithVat,
     },
@@ -487,7 +585,7 @@ function recordFinanceEntryForInvoice(project: ProjectDocument, version: Invoice
     vatAmount: 0,
     totalWithVat: 0,
   };
-  const netAmount = summary.baseWithoutVat ?? summary.discountedBase ?? 0;
+  const netAmount = summary.discountedBase ?? summary.baseWithoutVat ?? 0;
   const entry: FinanceEntry = {
     id: nextFinanceId(),
     id_projekta: project.id,
