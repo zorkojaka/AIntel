@@ -341,7 +341,13 @@ export function PhotoManager({
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60" />
         <Dialog.Content
           aria-describedby="photo-manager-description"
-          className="fixed left-1/2 top-1/2 z-50 flex w-[calc(100vw-1rem)] max-w-[500px] max-h-[90vh] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border bg-background shadow-lg md:w-[calc(100vw-2rem)] md:max-h-[80vh]"
+          className="fixed left-1/2 top-1/2 z-50 flex w-[min(500px,90vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border bg-background shadow-lg max-h-[90vh] md:max-h-[80vh]"
+          style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+          }}
         >
           <div className="shrink-0 border-b bg-background px-4 py-4">
             <div className="flex items-start justify-between gap-4">
