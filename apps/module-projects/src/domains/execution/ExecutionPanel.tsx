@@ -60,10 +60,6 @@ type ActiveUnitNoteEditor = {
 
 type NewExtraItemsState = Record<string, Record<string, boolean>>;
 
-function hasSavedExecutionUnitId(unitId: string) {
-  return !unitId.startsWith("draft-");
-}
-
 function normalizeExecutionMode(value: WorkOrderExecutionSpec["mode"] | undefined) {
   return value === "per_unit" || value === "measured" ? value : "simple";
 }
@@ -1234,7 +1230,7 @@ export function ExecutionPanel({
                   projectId={projectId}
                   itemId={getWorkOrderItemPhotoId(item)}
                   unitIndex={index}
-                  disabled={isLocked || !hasSavedExecutionUnitId(unit.id)}
+                  disabled={isLocked}
                   refreshKey={photoCountRefreshKey}
                   onOpen={openPhotoManager}
                 />
