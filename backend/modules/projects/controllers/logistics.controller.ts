@@ -118,7 +118,6 @@ function hasPreparationPayload(payload: Record<string, unknown>) {
     'pickupLocation' in payload ||
     'logisticsOwnerId' in payload ||
     'pickupNote' in payload ||
-    'deliveryNotePhotos' in payload ||
     'pickupConfirmedAt' in payload ||
     'materialItems' in payload ||
     payload.status === 'issued'
@@ -222,12 +221,6 @@ function sanitizeExecutionSpec(input: any) {
                 : null,
           isCompleted: !!unit?.isCompleted,
           note: typeof unit?.note === 'string' ? unit.note : unit?.note === null ? null : null,
-          unitPhotos: Array.isArray(unit?.unitPhotos)
-            ? unit.unitPhotos.filter((photo: unknown): photo is string => typeof photo === 'string')
-            : [],
-          prepPhotos: Array.isArray(unit?.prepPhotos)
-            ? unit.prepPhotos.filter((photo: unknown): photo is string => typeof photo === 'string')
-            : [],
         }))
       : [],
   };
@@ -488,9 +481,6 @@ function serializeMaterialOrder(order: any): MaterialOrder | null {
     pickupLocation: typeof order.pickupLocation === 'string' ? order.pickupLocation : null,
     logisticsOwnerId: order.logisticsOwnerId ? String(order.logisticsOwnerId) : null,
     pickupNote: typeof order.pickupNote === 'string' ? order.pickupNote : null,
-    deliveryNotePhotos: Array.isArray(order.deliveryNotePhotos)
-      ? order.deliveryNotePhotos.filter((entry: unknown) => typeof entry === 'string')
-      : [],
     pickupConfirmedAt: order.pickupConfirmedAt ? new Date(order.pickupConfirmedAt).toISOString() : null,
     pickupConfirmedBy: typeof order.pickupConfirmedBy === 'string' ? order.pickupConfirmedBy : null,
     cancelledAt: order.cancelledAt ? new Date(order.cancelledAt).toISOString() : null,
@@ -709,12 +699,6 @@ function sanitizeIncomingExecutionSpec(input: any) {
                   : null,
             isCompleted: !!unit?.isCompleted,
             note: typeof unit?.note === 'string' ? unit.note : unit?.note === null ? null : null,
-            unitPhotos: Array.isArray(unit?.unitPhotos)
-              ? unit.unitPhotos.filter((photo: unknown): photo is string => typeof photo === 'string')
-              : [],
-            prepPhotos: Array.isArray(unit?.prepPhotos)
-              ? unit.prepPhotos.filter((photo: unknown): photo is string => typeof photo === 'string')
-              : [],
           };
         })
         .filter((unit): unit is NonNullable<typeof unit> => unit !== null)
@@ -1335,11 +1319,6 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     if ('pickupNote' in payload) {
       materialUpdates.pickupNote = typeof payload.pickupNote === 'string' ? payload.pickupNote : null;
     }
-    if ('deliveryNotePhotos' in payload) {
-      materialUpdates.deliveryNotePhotos = Array.isArray(payload.deliveryNotePhotos)
-        ? payload.deliveryNotePhotos.filter((entry: unknown) => typeof entry === 'string')
-        : [];
-    }
     if ('logisticsOwnerId' in payload) {
       const nextOwner = typeof payload.logisticsOwnerId === 'string' ? payload.logisticsOwnerId.trim() : '';
       if (!nextOwner) {
@@ -1697,7 +1676,6 @@ export async function advanceMaterialOrderStep(req: Request, res: Response, next
         pickupLocation: materialOrder.pickupLocation ?? null,
         logisticsOwnerId: materialOrder.logisticsOwnerId ?? null,
         pickupNote: materialOrder.pickupNote ?? null,
-        deliveryNotePhotos: materialOrder.deliveryNotePhotos ?? [],
         pickupConfirmedAt: materialOrder.pickupConfirmedAt ?? null,
         pickupConfirmedBy: materialOrder.pickupConfirmedBy ?? null,
         reopened: false,

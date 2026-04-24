@@ -24,7 +24,6 @@ interface MaterialOrderDocument extends Document {
   pickupLocation?: string | null;
   logisticsOwnerId?: Types.ObjectId | null;
   pickupNote?: string | null;
-  deliveryNotePhotos?: string[];
   pickupConfirmedAt?: Date | null;
   pickupConfirmedBy?: string | null;
   status: "draft" | "ordered" | "received" | "cancelled";
@@ -71,7 +70,6 @@ const materialOrderSchema = new Schema<MaterialOrderDocument>(
     pickupLocation: { type: String, default: null },
     logisticsOwnerId: { type: Schema.Types.ObjectId, ref: "Employee", default: null },
     pickupNote: { type: String, default: null },
-    deliveryNotePhotos: { type: [String], default: [] },
     pickupConfirmedAt: { type: Date, default: null },
     pickupConfirmedBy: { type: String, default: null },
     status: { type: String, enum: ["draft", "ordered", "received", "cancelled"], default: "draft" },
