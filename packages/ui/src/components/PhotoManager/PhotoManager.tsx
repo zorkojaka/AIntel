@@ -338,15 +338,18 @@ export function PhotoManager({
   return (
     <Dialog.Root open={open} onOpenChange={handleDialogOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50" />
         <Dialog.Content
           aria-describedby="photo-manager-description"
-          className="fixed left-1/2 top-1/2 z-50 flex w-[min(500px,90vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border bg-background shadow-lg max-h-[90vh] md:max-h-[80vh]"
+          className="flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
           style={{
             position: 'fixed',
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
+            width: 'min(500px, 90vw)',
+            maxHeight: '80vh',
+            zIndex: 50,
           }}
         >
           <div className="shrink-0 border-b bg-background px-4 py-4">
