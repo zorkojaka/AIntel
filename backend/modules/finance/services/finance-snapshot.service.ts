@@ -135,6 +135,21 @@ export async function createFinanceSnapshot(params: {
   actorUserId?: string | null;
 }) {
   const { project, invoiceVersion, correctedFromInvoiceVersionId } = params;
+  console.log('[Snapshot] Raw invoice version:', JSON.stringify(invoiceVersion, null, 2));
+  console.log(
+    '[Snapshot] Invoice items:',
+    JSON.stringify(
+      (invoiceVersion.items ?? []).map((item) => ({
+        name: item.name,
+        productId: item.productId,
+        isService: (item as InvoiceItemInput & { isService?: unknown }).isService,
+        quantity: item.quantity,
+      })),
+      null,
+      2
+    )
+  );
+
   const offer = project.confirmedOfferVersionId
     ? await OfferVersionModel.findOne({ _id: project.confirmedOfferVersionId, projectId: project.id }).lean()
     : null;
@@ -168,6 +183,18 @@ export async function createFinanceSnapshot(params: {
     productIds.length ? ProductModel.find({ _id: { $in: productIds } }).lean() : Promise.resolve([]),
     WorkOrderModel.find({ projectId: project.id }).lean(),
   ]);
+  workOrders.forEach((workOrder) => {
+    console.log(
+      '[Snapshot] Work order items:',
+      JSON.stringify(
+        workOrder?.items?.map((item) => ({
+          name: item.name,
+          isService: item.isService,
+          executionUnits: item.executionSpec?.executionUnits,
+        }))
+      )
+    );
+  });
 
   const productById = new Map<string, (typeof products)[number]>();
   products.forEach((product) => {
@@ -218,6 +245,7 @@ export async function createFinanceSnapshot(params: {
     if (rateByEmployeeProduct.has(key)) {
       return rateByEmployeeProduct.get(key) ?? null;
     }
+    console.log('[Snapshot] Looking up rate for employee:', employeeId, 'service:', serviceProductId);
     const rate = isObjectId(employeeId) && isObjectId(serviceProductId)
       ? await EmployeeServiceRateModel.findOne({
         employeeId,
@@ -225,6 +253,15 @@ export async function createFinanceSnapshot(params: {
         isActive: true,
       }).lean()
       : null;
+    console.log(
+      '[Snapshot] Found rate:',
+      rate
+        ? {
+            defaultPercent: rate.defaultPercent,
+            overridePrice: rate.overridePrice,
+          }
+        : 'NOT FOUND'
+    );
     const normalizedRate = rate
       ? {
           defaultPercent: toNumber(rate.defaultPercent, 0),
@@ -236,7 +273,18 @@ export async function createFinanceSnapshot(params: {
   };
 
   const snapshotItems = (invoiceVersion.items ?? []).map((item, index) => {
+    console.log('[Snapshot] Looking up product:', item.productId);
     const product = resolveProductForItem(item, index);
+    console.log(
+      '[Snapshot] Found product:',
+      product
+        ? {
+            name: (product as typeof product & { name?: unknown; ime?: unknown }).name ?? product.ime,
+            purchasePriceWithoutVat: product.purchasePriceWithoutVat,
+            nabavnaCena: product.nabavnaCena,
+          }
+        : 'NOT FOUND'
+    );
     const productId = product ? String(product._id) : resolvedProductIds[index];
     const quantity = toNumber(item.quantity, 0);
     const unitPriceSale = toNumber(item.unitPrice, 0);
@@ -282,6 +330,18 @@ export async function createFinanceSnapshot(params: {
 
     for (const workOrderItem of workOrderItems) {
       const executionUnits = workOrderItem.executionSpec?.executionUnits ?? [];
+      console.log(
+        '[Snapshot] Service item execution units:',
+        JSON.stringify(
+          executionUnits.map((unit) => ({
+            id: unit.id,
+            completedBy: (unit as ExecutionUnitWithEmployee).completedBy,
+            completedByEmployeeId: (unit as ExecutionUnitWithEmployee).completedByEmployeeId,
+            markedDoneBy: (unit as ExecutionUnitWithEmployee).markedDoneBy,
+            doneBy: (unit as ExecutionUnitWithEmployee).doneBy,
+          }))
+        )
+      );
       for (const unit of executionUnits as ExecutionUnitWithEmployee[]) {
         if (!unit.isCompleted) {
           continue;
