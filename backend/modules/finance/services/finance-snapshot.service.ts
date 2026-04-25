@@ -219,7 +219,7 @@ export async function createFinanceSnapshot(params: {
   });
 
   const resolvedProductIds = (invoiceVersion.items ?? []).map((item) => {
-    console.log('[Snapshot] Full invoice item:', JSON.stringify(item, null, 2));
+    console.log('[Snapshot] FULL invoice item:', JSON.stringify(item, null, 2));
     const explicitProductId = getInvoiceItemProductReference(item);
     if (explicitProductId) return explicitProductId;
 
@@ -251,7 +251,7 @@ export async function createFinanceSnapshot(params: {
       )
     );
     (workOrder?.items ?? []).forEach((item) => {
-      console.log('[Snapshot] Full WO item:', JSON.stringify(item, null, 2));
+      console.log('[Snapshot] FULL WO item:', JSON.stringify(item, null, 2));
     });
   });
 
