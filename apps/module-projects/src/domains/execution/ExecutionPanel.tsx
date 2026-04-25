@@ -125,7 +125,6 @@ function ExecutionUnitPhotoButton({
   unitIndex,
   refreshKey,
   onOpen,
-  variant = "ghost",
   className,
 }: {
   projectId: string;
@@ -133,7 +132,6 @@ function ExecutionUnitPhotoButton({
   unitIndex?: number;
   refreshKey: number;
   onOpen: (context: PhotoContext) => void;
-  variant?: "outline" | "ghost";
   className?: string;
 }) {
   const context = useMemo<PhotoContext>(
@@ -147,20 +145,24 @@ function ExecutionUnitPhotoButton({
   }, [refresh, refreshKey]);
 
   return (
-    <div className="relative inline-block">
-      <Button
+    <div className="relative inline-flex items-center">
+      <button
         type="button"
-        variant={variant}
-        size="icon"
-        className={cn("h-8 w-8 text-muted-foreground", className)}
+        className={cn("p-1 text-muted-foreground transition-opacity hover:opacity-70", className)}
         onClick={() => onOpen(context)}
         aria-label={count > 0 ? `Dodaj fotografijo (${count})` : "Dodaj fotografijo"}
         title="Dodaj fotografijo"
       >
         <Camera className="h-4 w-4" />
-      </Button>
+      </button>
       {count > 0 ? (
-        <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-bold text-white">
+        <span
+          className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 bg-white px-1 text-[10px] font-semibold"
+          style={{
+            borderColor: "var(--color-primary, #185FA5)",
+            color: "var(--color-primary, #185FA5)",
+          }}
+        >
           {count}
         </span>
       ) : null}
@@ -1239,7 +1241,6 @@ export function ExecutionPanel({
                   unitIndex={index}
                   refreshKey={photoCountRefreshKey}
                   onOpen={openPhotoManager}
-                  variant="outline"
                 />
               </div>
               <div className="flex items-center justify-center">
@@ -1968,7 +1969,6 @@ export function ExecutionPanel({
                                               unitIndex={0}
                                               refreshKey={photoCountRefreshKey}
                                               onOpen={openPhotoManager}
-                                              variant="ghost"
                                             />
                                           </div>
                                         ) : null}
@@ -2151,7 +2151,6 @@ export function ExecutionPanel({
                                         unitIndex={0}
                                         refreshKey={photoCountRefreshKey}
                                         onOpen={openPhotoManager}
-                                        variant="ghost"
                                       />
                                       <Button
                                         type="button"
