@@ -16,6 +16,16 @@ type ClientPayload = {
   postalCity?: string;
 };
 
+function parseBooleanFlag(value?: string | string[]) {
+  if (Array.isArray(value)) {
+    return value.some((item) => ['1', 'true', 'yes'].includes(String(item).toLowerCase()));
+  }
+  if (value === undefined) {
+    return false;
+  }
+  return ['1', 'true', 'yes'].includes(String(value).toLowerCase());
+}
+
 function formatClient(client: CrmClient) {
   const requiresVat = client.type === 'company';
   const isComplete =
@@ -36,6 +46,7 @@ function formatClient(client: CrmClient) {
     contactPerson: client.contact_person,
     tags: client.tags ?? [],
     notes: client.notes,
+    isActive: client.isActive !== false,
     createdAt: client.createdAt,
     isComplete
   };
@@ -81,6 +92,7 @@ async function rejectDuplicate(name: string, vatNumber?: string, excludeId?: str
   const query = {
     name,
     vat_number: vatNumber,
+    isActive: { $ne: false },
     ...(excludeId ? { _id: { $ne: excludeId } } : {})
   };
   const existing = await CrmClientModel.findOne(query);
@@ -89,9 +101,11 @@ async function rejectDuplicate(name: string, vatNumber?: string, excludeId?: str
   }
 }
 
-export async function getClients(_req: Request, res: Response) {
+export async function getClients(req: Request, res: Response) {
   try {
-    const clients = await CrmClientModel.find().sort({ createdAt: -1 });
+    const includeInactive = parseBooleanFlag(req.query.includeInactive as string | string[] | undefined);
+    const filter = includeInactive ? {} : { isActive: { $ne: false } };
+    const clients = await CrmClientModel.find(filter).sort({ createdAt: -1 });
     res.success(clients.map(formatClient));
   } catch (error) {
     res.fail('Ne morem pridobiti strank');
@@ -141,7 +155,8 @@ export async function createClient(req: Request, res: Response) {
       phone: payload.phone?.trim(),
       contact_person: payload.contactPerson?.trim(),
       tags: normalizeTags(payload.tags),
-      notes: payload.notes?.trim()
+      notes: payload.notes?.trim(),
+      isActive: true
     });
 
     res.success(formatClient(client), 201);
@@ -208,11 +223,15 @@ export async function updateClient(req: Request, res: Response) {
 
 export async function deleteClient(req: Request, res: Response) {
   try {
-    const deleted = await CrmClientModel.findByIdAndDelete(req.params.id);
-    if (!deleted) {
+    const updated = await CrmClientModel.findByIdAndUpdate(
+      req.params.id,
+      { isActive: false },
+      { new: true }
+    );
+    if (!updated) {
       return res.fail('Stranka ni najdena', 404);
     }
-    res.success({ deletedId: deleted._id });
+    res.success({ deletedId: updated._id, isActive: updated.isActive });
   } catch (error) {
     res.fail('Ne morem izbrisati stranke');
   }

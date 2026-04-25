@@ -1,11 +1,12 @@
 import React from 'react';
-import { Pencil } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@aintel/ui';
 import { Client } from '../types/client';
 
 interface ClientsCardsMobileProps {
   clients: Client[];
   onEdit: (client: Client) => void;
+  onDelete: (client: Client) => void;
 }
 
 function buildAddress(client: Client) {
@@ -16,7 +17,7 @@ function buildAddress(client: Client) {
   return [street, locality].filter(Boolean).join(', ');
 }
 
-export function ClientsCardsMobile({ clients, onEdit }: ClientsCardsMobileProps) {
+export function ClientsCardsMobile({ clients, onEdit, onDelete }: ClientsCardsMobileProps) {
   return (
     <div className="crm-clients-mobile">
       {clients.map((client) => {
@@ -52,6 +53,19 @@ export function ClientsCardsMobile({ clients, onEdit }: ClientsCardsMobileProps)
               >
                 <Pencil size={14} />
                 Uredi
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="crm-client-card__action"
+                onClick={(event: React.MouseEvent) => {
+                  event.stopPropagation();
+                  onDelete(client);
+                }}
+              >
+                <Trash2 size={14} />
+                Izbrisi
               </Button>
             </div>
 

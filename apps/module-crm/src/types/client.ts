@@ -12,6 +12,7 @@ export interface Client {
   tags: string[];
   notes?: string;
   createdAt: string;
+  isActive: boolean;
   isComplete: boolean;
   street?: string;
   postalCode?: string;
