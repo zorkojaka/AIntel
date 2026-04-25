@@ -1,6 +1,7 @@
 import { FilterQuery } from 'mongoose';
 import { ProductModel } from '../../cenik/product.model';
 import { WorkOrderModel, type WorkOrderDocument } from '../../projects/schemas/work-order';
+import { OfferVersionModel } from '../../projects/schemas/offer-version';
 import { EmployeeServiceRateModel } from '../../employee-profiles/schemas/employee-service-rate';
 import { FinanceSnapshotModel, type FinanceSnapshotDocument } from '../schemas/finance-snapshot';
 
@@ -8,6 +9,7 @@ type InvoiceItemType = 'Osnovno' | 'Dodatno' | 'Manj';
 
 interface InvoiceItemInput {
   id?: string;
+  productId?: string | null;
   name: string;
   unit: string;
   quantity: number;
@@ -51,6 +53,24 @@ function normalizeDate(date: string | null | undefined) {
   return Number.isNaN(parsed.valueOf()) ? new Date() : parsed;
 }
 
+function normalizeText(value: unknown) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function normalizeId(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function isObjectId(value: string | null) {
+  return Boolean(value && /^[a-f\d]{24}$/i.test(value));
+}
+
+function getPurchasePrice(product: { purchasePriceWithoutVat?: number; nabavnaCena?: number } | null | undefined) {
+  return toNumber(product?.purchasePriceWithoutVat ?? product?.nabavnaCena ?? 0, 0);
+}
+
 function resolveAssignedEmployeeIds(workOrders: Array<Pick<WorkOrderDocument, 'assignedEmployeeIds'>>) {
   const ids = new Set<string>();
   workOrders.forEach((order) => {
@@ -82,12 +102,33 @@ export async function createFinanceSnapshot(params: {
   actorUserId?: string | null;
 }) {
   const { project, invoiceVersion, correctedFromInvoiceVersionId } = params;
-  const productIds = Array.from(
-    new Set(
-      (invoiceVersion.items ?? [])
-        .map((item) => item.id?.trim())
-        .filter((id): id is string => Boolean(id))
-    )
+  const offer = project.confirmedOfferVersionId
+    ? await OfferVersionModel.findOne({ _id: project.confirmedOfferVersionId, projectId: project.id }).lean()
+    : null;
+
+  const offerProductIdByItemId = new Map<string, string>();
+  (offer?.items ?? []).forEach((item) => {
+    const itemId = normalizeId(item.id);
+    const productId = normalizeId(item.productId);
+    if (itemId && productId) {
+      offerProductIdByItemId.set(itemId, productId);
+    }
+  });
+
+  const resolvedProductIds = (invoiceVersion.items ?? []).map((item) => {
+    const explicitProductId = normalizeId(item.productId);
+    if (explicitProductId) return explicitProductId;
+
+    const itemId = normalizeId(item.id);
+    const offerProductId = itemId ? offerProductIdByItemId.get(itemId) : null;
+    if (offerProductId) return offerProductId;
+
+    return isObjectId(itemId) ? itemId : null;
+  });
+
+  const productIds = Array.from(new Set(resolvedProductIds.filter((id): id is string => Boolean(id) && isObjectId(id))));
+  const itemNames = Array.from(
+    new Set((invoiceVersion.items ?? []).map((item) => item.name?.trim()).filter((name): name is string => Boolean(name)))
   );
 
   const [products, workOrders] = await Promise.all([
@@ -100,17 +141,52 @@ export async function createFinanceSnapshot(params: {
     productById.set(String(product._id), product);
   });
 
+  const missingProductNames = itemNames.filter((name) => {
+    const normalizedName = normalizeText(name);
+    return (invoiceVersion.items ?? []).some((item, index) => {
+      if (normalizeText(item.name) !== normalizedName) return false;
+      const productId = resolvedProductIds[index];
+      return !productId || !productById.has(productId);
+    });
+  });
+
+  const productsByName = missingProductNames.length
+    ? await ProductModel.find({ ime: { $in: missingProductNames } }).lean()
+    : [];
+
+  const productByName = new Map<string, (typeof productsByName)[number]>();
+  productsByName.forEach((product) => {
+    const key = normalizeText(product.ime);
+    if (key && !productByName.has(key)) {
+      productByName.set(key, product);
+    }
+  });
+
+  const resolveProductForItem = (item: InvoiceItemInput, index: number) => {
+    const productId = resolvedProductIds[index];
+    if (productId && productById.has(productId)) {
+      return productById.get(productId) ?? null;
+    }
+    return productByName.get(normalizeText(item.name)) ?? null;
+  };
+
+  const resolveProductIdForItem = (item: InvoiceItemInput, index: number) => {
+    const product = resolveProductForItem(item, index);
+    return product ? String(product._id) : resolvedProductIds[index];
+  };
+
   const assignedEmployeeIds = resolveAssignedEmployeeIds(workOrders as Array<Pick<WorkOrderDocument, 'assignedEmployeeIds'>>);
   const executedQtyByProduct = resolveExecutedQuantitiesByProduct(workOrders as Array<Pick<WorkOrderDocument, 'items'>>);
 
   const serviceProductIds = Array.from(
     new Set(
       (invoiceVersion.items ?? [])
-        .filter((item) => {
-          const product = item.id ? productById.get(String(item.id)) : null;
+        .filter((item, index) => {
+          const product = resolveProductForItem(item, index);
           return Boolean(product?.isService);
         })
-        .map((item) => String(item.id))
+        .map((item, index) => resolveProductIdForItem(item, index))
+        .filter((id): id is string => Boolean(id))
     )
   );
 
@@ -134,20 +210,25 @@ export async function createFinanceSnapshot(params: {
   const employeeEarningsMap = new Map<string, number>();
   assignedEmployeeIds.forEach((id) => employeeEarningsMap.set(id, 0));
 
-  const snapshotItems = (invoiceVersion.items ?? []).map((item) => {
-    const product = item.id ? productById.get(String(item.id)) : null;
+  const snapshotItems = (invoiceVersion.items ?? []).map((item, index) => {
+    const product = resolveProductForItem(item, index);
+    const productId = product ? String(product._id) : resolvedProductIds[index];
     const quantity = toNumber(item.quantity, 0);
     const unitPriceSale = toNumber(item.unitPrice, 0);
-    const unitPricePurchase = toNumber(product?.purchasePriceWithoutVat ?? 0, 0);
+    const unitPricePurchase = getPurchasePrice(product);
     const totalSale = toNumber(item.totalWithoutVat, round(quantity * unitPriceSale));
     const totalPurchase = round(quantity * unitPricePurchase);
     const margin = round(totalSale - totalPurchase);
     const isService = Boolean(product?.isService);
 
-    if (isService && item.id) {
-      const executedQty = executedQtyByProduct.get(String(item.id)) ?? quantity;
+    if (!product) {
+      console.warn('Purchase price not found for:', item.name);
+    }
+
+    if (isService && productId) {
+      const executedQty = executedQtyByProduct.get(productId) ?? quantity;
       assignedEmployeeIds.forEach((employeeId) => {
-        const rate = rateByEmployeeProduct.get(`${employeeId}:${String(item.id)}`);
+        const rate = rateByEmployeeProduct.get(`${employeeId}:${productId}`);
         if (!rate) return;
         const perUnit = rate.overridePrice ?? round(unitPriceSale * (rate.defaultPercent / 100));
         const earning = round(perUnit * executedQty);
@@ -156,7 +237,7 @@ export async function createFinanceSnapshot(params: {
     }
 
     return {
-      productId: item.id ? String(item.id) : null,
+      productId: productId ?? null,
       name: item.name,
       unit: item.unit,
       quantity,
