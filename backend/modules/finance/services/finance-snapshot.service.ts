@@ -34,7 +34,13 @@ interface InvoiceVersionInput {
 
 interface ProjectInput {
   id: string;
-  customer?: { name?: string; taxId?: string; address?: string };
+  customer?: {
+    name?: string;
+    taxId?: string;
+    davkaStevilka?: string;
+    vatNumber?: string;
+    address?: string;
+  };
   confirmedOfferVersionId?: string | null;
   salesUserId?: string | null;
 }
@@ -61,6 +67,10 @@ function normalizeId(value: unknown) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function optionalString(value: unknown) {
+  return typeof value === 'string' ? value : '';
 }
 
 function isObjectId(value: string | null) {
@@ -394,9 +404,9 @@ export async function createFinanceSnapshot(params: {
     invoiceNumber: `${project.id}-${invoiceVersion.versionNumber}`,
     issuedAt: normalizeDate(invoiceVersion.issuedAt),
     customer: {
-      name: project.customer?.name ?? '',
-      taxId: project.customer?.taxId ?? '',
-      address: project.customer?.address ?? '',
+      name: optionalString(project.customer?.name),
+      taxId: optionalString(project.customer?.taxId ?? project.customer?.davkaStevilka ?? project.customer?.vatNumber),
+      address: optionalString(project.customer?.address),
     },
     items: snapshotItems,
     summary: {
