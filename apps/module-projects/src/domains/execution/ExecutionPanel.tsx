@@ -125,11 +125,8 @@ function ExecutionUnitPhotoButton({
   unitIndex,
   refreshKey,
   onOpen,
-  variant = "outline",
-  size = "sm",
+  variant = "ghost",
   className,
-  iconOnly = false,
-  countOnly = false,
 }: {
   projectId: string;
   itemId: string;
@@ -137,10 +134,7 @@ function ExecutionUnitPhotoButton({
   refreshKey: number;
   onOpen: (context: PhotoContext) => void;
   variant?: "outline" | "ghost";
-  size?: "sm" | "icon";
   className?: string;
-  iconOnly?: boolean;
-  countOnly?: boolean;
 }) {
   const context = useMemo<PhotoContext>(
     () => ({ projectId, phase: "execution", itemId, unitIndex }),
@@ -153,21 +147,24 @@ function ExecutionUnitPhotoButton({
   }, [refresh, refreshKey]);
 
   return (
-    <Button
-      type="button"
-      variant={variant}
-      size={size}
-      className={cn(
-        iconOnly ? "h-8 w-8 text-muted-foreground" : "h-8 gap-1.5 px-2 text-xs",
-        className,
-      )}
-      onClick={() => onOpen(context)}
-      aria-label="Dodaj fotografijo"
-      title="Dodaj fotografijo"
-    >
-      <Camera className="h-4 w-4" />
-      {iconOnly ? null : <span>{countOnly ? (count > 0 ? `(${count})` : "") : `Fotografija${count > 0 ? ` (${count})` : ""}`}</span>}
-    </Button>
+    <div className="relative inline-block">
+      <Button
+        type="button"
+        variant={variant}
+        size="icon"
+        className={cn("h-8 w-8 text-muted-foreground", className)}
+        onClick={() => onOpen(context)}
+        aria-label={count > 0 ? `Dodaj fotografijo (${count})` : "Dodaj fotografijo"}
+        title="Dodaj fotografijo"
+      >
+        <Camera className="h-4 w-4" />
+      </Button>
+      {count > 0 ? (
+        <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-bold text-white">
+          {count}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -1242,6 +1239,7 @@ export function ExecutionPanel({
                   unitIndex={index}
                   refreshKey={photoCountRefreshKey}
                   onOpen={openPhotoManager}
+                  variant="outline"
                 />
               </div>
               <div className="flex items-center justify-center">
@@ -1971,9 +1969,6 @@ export function ExecutionPanel({
                                               refreshKey={photoCountRefreshKey}
                                               onOpen={openPhotoManager}
                                               variant="ghost"
-                                              size="sm"
-                                              className="text-muted-foreground"
-                                              countOnly
                                             />
                                           </div>
                                         ) : null}
@@ -2157,9 +2152,6 @@ export function ExecutionPanel({
                                         refreshKey={photoCountRefreshKey}
                                         onOpen={openPhotoManager}
                                         variant="ghost"
-                                        size="sm"
-                                        className="text-muted-foreground"
-                                        countOnly
                                       />
                                       <Button
                                         type="button"
