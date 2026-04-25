@@ -48,6 +48,12 @@ function asNullableString(value: unknown) {
   return null;
 }
 
+function asNullableDate(value: unknown) {
+  if (!value) return null;
+  const parsed = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(parsed.valueOf()) ? null : parsed;
+}
+
 function mapExecutionSpec(input: any) {
   if (!input || typeof input !== 'object') {
     return null;
@@ -89,6 +95,7 @@ function mapExecutionSpec(input: any) {
                 : null,
           isCompleted: !!unit?.isCompleted,
           completedBy: asNullableString(unit?.completedBy),
+          completedAt: asNullableDate(unit?.completedAt),
           completedByEmployeeId: asNullableString(unit?.completedByEmployeeId),
           executedBy: asNullableString(unit?.executedBy),
           executedByEmployeeId: asNullableString(unit?.executedByEmployeeId),
