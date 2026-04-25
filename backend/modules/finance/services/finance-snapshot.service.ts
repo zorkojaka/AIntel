@@ -83,16 +83,49 @@ function resolveAssignedEmployeeIds(workOrders: Array<Pick<WorkOrderDocument, 'a
   return Array.from(ids);
 }
 
-function resolveExecutedQuantitiesByProduct(workOrders: Array<Pick<WorkOrderDocument, 'items'>>) {
-  const quantities = new Map<string, number>();
-  workOrders.forEach((order) => {
-    (order.items ?? []).forEach((item) => {
-      if (!item.productId) return;
-      const key = String(item.productId);
-      quantities.set(key, (quantities.get(key) ?? 0) + toNumber(item.executedQuantity, 0));
-    });
-  });
-  return quantities;
+type ExecutionUnitWithEmployee = {
+  isCompleted?: boolean;
+  completedBy?: unknown;
+  completedByEmployeeId?: unknown;
+  executedBy?: unknown;
+  executedByEmployeeId?: unknown;
+  markedDoneBy?: unknown;
+  markedDoneByEmployeeId?: unknown;
+  doneBy?: unknown;
+  doneByEmployeeId?: unknown;
+};
+
+type RateValue = { defaultPercent: number; overridePrice: number | null };
+
+function normalizeEmployeeId(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (value && typeof value === 'object') {
+    const objectValue = value as { _id?: unknown; id?: unknown };
+    return normalizeEmployeeId(objectValue._id ?? objectValue.id);
+  }
+  return null;
+}
+
+function getExecutionUnitCompletedBy(unit: ExecutionUnitWithEmployee): string | null {
+  return (
+    normalizeEmployeeId(unit.completedBy) ??
+    normalizeEmployeeId(unit.completedByEmployeeId) ??
+    normalizeEmployeeId(unit.executedBy) ??
+    normalizeEmployeeId(unit.executedByEmployeeId) ??
+    normalizeEmployeeId(unit.markedDoneBy) ??
+    normalizeEmployeeId(unit.markedDoneByEmployeeId) ??
+    normalizeEmployeeId(unit.doneBy) ??
+    normalizeEmployeeId(unit.doneByEmployeeId)
+  );
+}
+
+function getServiceWorkOrderItemsForProduct(workOrders: Array<Pick<WorkOrderDocument, 'items'>>, productId: string) {
+  return workOrders.flatMap((order) =>
+    (order.items ?? []).filter((item) => item.isService === true && item.productId && String(item.productId) === productId)
+  );
 }
 
 export async function createFinanceSnapshot(params: {
@@ -176,39 +209,31 @@ export async function createFinanceSnapshot(params: {
   };
 
   const assignedEmployeeIds = resolveAssignedEmployeeIds(workOrders as Array<Pick<WorkOrderDocument, 'assignedEmployeeIds'>>);
-  const executedQtyByProduct = resolveExecutedQuantitiesByProduct(workOrders as Array<Pick<WorkOrderDocument, 'items'>>);
-
-  const serviceProductIds = Array.from(
-    new Set(
-      (invoiceVersion.items ?? [])
-        .filter((item, index) => {
-          const product = resolveProductForItem(item, index);
-          return Boolean(product?.isService);
-        })
-        .map((item, index) => resolveProductIdForItem(item, index))
-        .filter((id): id is string => Boolean(id))
-    )
-  );
-
-  const serviceRates = assignedEmployeeIds.length && serviceProductIds.length
-    ? await EmployeeServiceRateModel.find({
-      employeeId: { $in: assignedEmployeeIds },
-      serviceProductId: { $in: serviceProductIds },
-      isActive: true,
-    }).lean()
-    : [];
-
-  const rateByEmployeeProduct = new Map<string, { defaultPercent: number; overridePrice: number | null }>();
-  serviceRates.forEach((rate) => {
-    const key = `${String(rate.employeeId)}:${String(rate.serviceProductId)}`;
-    rateByEmployeeProduct.set(key, {
-      defaultPercent: toNumber(rate.defaultPercent, 0),
-      overridePrice: rate.overridePrice === null || rate.overridePrice === undefined ? null : toNumber(rate.overridePrice, 0),
-    });
-  });
 
   const employeeEarningsMap = new Map<string, number>();
-  assignedEmployeeIds.forEach((id) => employeeEarningsMap.set(id, 0));
+  const rateByEmployeeProduct = new Map<string, RateValue | null>();
+
+  const getRateForEmployeeProduct = async (employeeId: string, serviceProductId: string) => {
+    const key = `${employeeId}:${serviceProductId}`;
+    if (rateByEmployeeProduct.has(key)) {
+      return rateByEmployeeProduct.get(key) ?? null;
+    }
+    const rate = isObjectId(employeeId) && isObjectId(serviceProductId)
+      ? await EmployeeServiceRateModel.findOne({
+        employeeId,
+        serviceProductId,
+        isActive: true,
+      }).lean()
+      : null;
+    const normalizedRate = rate
+      ? {
+          defaultPercent: toNumber(rate.defaultPercent, 0),
+          overridePrice: rate.overridePrice === null || rate.overridePrice === undefined ? null : toNumber(rate.overridePrice, 0),
+        }
+      : null;
+    rateByEmployeeProduct.set(key, normalizedRate);
+    return normalizedRate;
+  };
 
   const snapshotItems = (invoiceVersion.items ?? []).map((item, index) => {
     const product = resolveProductForItem(item, index);
@@ -219,21 +244,13 @@ export async function createFinanceSnapshot(params: {
     const totalSale = toNumber(item.totalWithoutVat, round(quantity * unitPriceSale));
     const totalPurchase = round(quantity * unitPricePurchase);
     const margin = round(totalSale - totalPurchase);
-    const isService = Boolean(product?.isService);
+    const hasServiceWorkOrderItem = productId
+      ? getServiceWorkOrderItemsForProduct(workOrders as Array<Pick<WorkOrderDocument, 'items'>>, productId).length > 0
+      : false;
+    const isService = Boolean(product?.isService || hasServiceWorkOrderItem);
 
     if (!product) {
       console.warn('Purchase price not found for:', item.name);
-    }
-
-    if (isService && productId) {
-      const executedQty = executedQtyByProduct.get(productId) ?? quantity;
-      assignedEmployeeIds.forEach((employeeId) => {
-        const rate = rateByEmployeeProduct.get(`${employeeId}:${productId}`);
-        if (!rate) return;
-        const perUnit = rate.overridePrice ?? round(unitPriceSale * (rate.defaultPercent / 100));
-        const earning = round(perUnit * executedQty);
-        employeeEarningsMap.set(employeeId, round((employeeEarningsMap.get(employeeId) ?? 0) + earning));
-      });
     }
 
     return {
@@ -252,6 +269,45 @@ export async function createFinanceSnapshot(params: {
       type: item.type,
     };
   });
+
+  for (const snapshotItem of snapshotItems) {
+    if (!snapshotItem.isService || !snapshotItem.productId) {
+      continue;
+    }
+
+    const workOrderItems = getServiceWorkOrderItemsForProduct(
+      workOrders as Array<Pick<WorkOrderDocument, 'items'>>,
+      snapshotItem.productId
+    );
+
+    for (const workOrderItem of workOrderItems) {
+      const executionUnits = workOrderItem.executionSpec?.executionUnits ?? [];
+      for (const unit of executionUnits as ExecutionUnitWithEmployee[]) {
+        if (!unit.isCompleted) {
+          continue;
+        }
+
+        const completedByEmployeeId = getExecutionUnitCompletedBy(unit);
+        if (!completedByEmployeeId) {
+          continue;
+        }
+
+        const rate = await getRateForEmployeeProduct(completedByEmployeeId, snapshotItem.productId);
+        if (!rate) {
+          console.warn(
+            `Employee service rate not found for employee ${completedByEmployeeId} and service ${snapshotItem.productId}`
+          );
+          employeeEarningsMap.set(completedByEmployeeId, employeeEarningsMap.get(completedByEmployeeId) ?? 0);
+          continue;
+        }
+
+        const earnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
+        employeeEarningsMap.set(completedByEmployeeId, round((employeeEarningsMap.get(completedByEmployeeId) ?? 0) + earnings));
+      }
+    }
+  }
+
+  const employeeEarningIds = Array.from(new Set([...assignedEmployeeIds, ...employeeEarningsMap.keys()]));
 
   const totalSaleWithoutVat = round(snapshotItems.reduce((sum, item) => sum + item.totalSale, 0));
   const totalPurchase = round(snapshotItems.reduce((sum, item) => sum + item.totalPurchase, 0));
@@ -291,7 +347,7 @@ export async function createFinanceSnapshot(params: {
       totalSaleWithVat,
     },
     assignedEmployeeIds,
-    employeeEarnings: assignedEmployeeIds.map((employeeId) => ({
+    employeeEarnings: employeeEarningIds.map((employeeId) => ({
       employeeId,
       earnings: round(employeeEarningsMap.get(employeeId) ?? 0),
       isPaid: false,

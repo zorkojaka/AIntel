@@ -27,6 +27,14 @@ interface WorkOrderItem {
       location?: string | null;
       instructions?: string | null;
       isCompleted: boolean;
+      completedBy?: string | null;
+      completedByEmployeeId?: string | null;
+      executedBy?: string | null;
+      executedByEmployeeId?: string | null;
+      markedDoneBy?: string | null;
+      markedDoneByEmployeeId?: string | null;
+      doneBy?: string | null;
+      doneByEmployeeId?: string | null;
       note?: string | null;
     }>;
   } | null;
@@ -139,6 +147,14 @@ const workOrderItemSchema = new Schema<WorkOrderItem>(
                   location: { type: String, default: null },
                   instructions: { type: String, default: null },
                   isCompleted: { type: Boolean, default: false },
+                  completedBy: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
+                  completedByEmployeeId: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
+                  executedBy: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
+                  executedByEmployeeId: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
+                  markedDoneBy: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
+                  markedDoneByEmployeeId: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
+                  doneBy: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
+                  doneByEmployeeId: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
                   note: { type: String, default: null },
                 },
                 { _id: false }

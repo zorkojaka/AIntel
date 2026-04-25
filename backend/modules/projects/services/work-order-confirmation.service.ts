@@ -36,6 +36,18 @@ function asString(value: unknown) {
   return typeof value === 'string' ? value : value == null ? '' : String(value);
 }
 
+function asNullableString(value: unknown) {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (value && typeof value === 'object') {
+    const objectValue = value as { _id?: unknown; id?: unknown };
+    return asNullableString(objectValue._id ?? objectValue.id);
+  }
+  return null;
+}
+
 function mapExecutionSpec(input: any) {
   if (!input || typeof input !== 'object') {
     return null;
@@ -76,6 +88,14 @@ function mapExecutionSpec(input: any) {
                 ? null
                 : null,
           isCompleted: !!unit?.isCompleted,
+          completedBy: asNullableString(unit?.completedBy),
+          completedByEmployeeId: asNullableString(unit?.completedByEmployeeId),
+          executedBy: asNullableString(unit?.executedBy),
+          executedByEmployeeId: asNullableString(unit?.executedByEmployeeId),
+          markedDoneBy: asNullableString(unit?.markedDoneBy),
+          markedDoneByEmployeeId: asNullableString(unit?.markedDoneByEmployeeId),
+          doneBy: asNullableString(unit?.doneBy),
+          doneByEmployeeId: asNullableString(unit?.doneByEmployeeId),
           note: typeof unit?.note === 'string' ? unit.note : unit?.note === null ? null : null,
         }))
       : [],

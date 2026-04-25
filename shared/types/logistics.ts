@@ -68,6 +68,14 @@ export interface WorkOrderExecutionUnit {
   location?: string;
   instructions?: string;
   isCompleted: boolean;
+  completedBy?: string | null;
+  completedByEmployeeId?: string | null;
+  executedBy?: string | null;
+  executedByEmployeeId?: string | null;
+  markedDoneBy?: string | null;
+  markedDoneByEmployeeId?: string | null;
+  doneBy?: string | null;
+  doneByEmployeeId?: string | null;
   note?: string;
 }
 
