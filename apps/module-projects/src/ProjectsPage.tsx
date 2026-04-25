@@ -401,17 +401,19 @@ export function ProjectsPage() {
     requirements,
     categories,
     clientId,
+    client: providedClient,
   }: {
     title: string;
     requirements: string;
     categories: string[];
     clientId: string;
+    client?: Client;
   }) => {
     if (!clientId) {
       toast.error("Izberi stranko.");
       return;
     }
-    const client = crmClients.find((c) => c.id === clientId);
+    const client = crmClients.find((c) => c.id === clientId) ?? providedClient ?? null;
     if (!client) {
       toast.error("Izbrana stranka ne obstaja.");
       return;
@@ -501,11 +503,13 @@ export function ProjectsPage() {
       requirements,
       categories,
       clientId,
+      client,
     }: {
       title: string;
       requirements: string;
       categories: string[];
       clientId?: string | null;
+      client?: Client;
     }
   ) => {
     if (!projectFormInitial) {
@@ -514,7 +518,7 @@ export function ProjectsPage() {
     }
 
     const selectedClient =
-      clientId != null ? crmClients.find((client) => client.id === clientId) : null;
+      clientId != null ? crmClients.find((entry) => entry.id === clientId) ?? client ?? null : null;
     if (clientId && !selectedClient) {
       toast.error("Izbrana stranka ne obstaja.");
       return;

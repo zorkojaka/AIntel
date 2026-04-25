@@ -40,10 +40,11 @@ interface NewProjectDialogProps {
     requirements: string;
     categories: string[];
     clientId: string;
+    client?: Client;
   }) => Promise<void>;
   onUpdateProject: (
     projectId: string,
-    payload: { title: string; requirements: string; categories: string[]; clientId?: string | null }
+    payload: { title: string; requirements: string; categories: string[]; clientId?: string | null; client?: Client }
   ) => Promise<void>;
   categories: Category[];
   selectedCategorySlugs: string[];
@@ -154,6 +155,7 @@ export function NewProjectDialog({
   const [search, setSearch] = useState("");
   const [newCustomer, setNewCustomer] = useState<NewCustomerFormState>(emptyCustomerForm);
   const [customerError, setCustomerError] = useState<string | null>(null);
+  const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
@@ -161,6 +163,7 @@ export function NewProjectDialog({
     setRequirements(defaultRequirements);
     setSearch("");
     setCustomerError(null);
+    setIsSavingCustomer(false);
     if (initialProject) {
       setNewCustomer({
         name: initialProject.customerDetail?.name ?? "",
@@ -221,28 +224,55 @@ export function NewProjectDialog({
     return null;
   };
 
-  const ensureClientId = async () => {
-    if (selectedClientId) {
-      return selectedClientId;
-    }
-
+  const saveNewCustomer = async () => {
     const validationError = validateNewCustomer();
     if (validationError) {
       setCustomerError(validationError);
       return null;
     }
 
-    const createdClient = await onCreateClient(normalizeCustomerForm(newCustomer));
-    onSelectClient(createdClient.id);
-    return createdClient.id;
+    try {
+      setIsSavingCustomer(true);
+      const createdClient = await onCreateClient(normalizeCustomerForm(newCustomer));
+      onSelectClient(createdClient.id);
+      setCustomerError(null);
+      return createdClient;
+    } catch (error) {
+      if (error instanceof Error) {
+        setCustomerError(error.message);
+      } else {
+        setCustomerError("Shranjevanje stranke ni uspelo.");
+      }
+      return null;
+    } finally {
+      setIsSavingCustomer(false);
+    }
+  };
+
+  const ensureClientSelection = async () => {
+    if (selectedClientId) {
+      return {
+        clientId: selectedClientId,
+        client: selectedClient ?? undefined,
+      };
+    }
+
+    const createdClient = await saveNewCustomer();
+    if (!createdClient) {
+      return null;
+    }
+    return {
+      clientId: createdClient.id,
+      client: createdClient,
+    };
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
     try {
-      const clientId = await ensureClientId();
-      if (!clientId) {
+      const clientSelection = await ensureClientSelection();
+      if (!clientSelection) {
         return;
       }
 
@@ -250,7 +280,8 @@ export function NewProjectDialog({
         title: generatedTitle,
         requirements: requirements.trim(),
         categories: selectedCategorySlugs,
-        clientId,
+        clientId: clientSelection.clientId,
+        client: clientSelection.client,
       };
 
       if (isEditing && initialProject) {
@@ -269,7 +300,7 @@ export function NewProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-hidden p-0 sm:max-w-4xl" hideCloseButton>
+      <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden p-0 sm:max-w-4xl" hideCloseButton>
         <form ref={formRef} onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <DialogHeader className="flex shrink-0 flex-row items-center justify-between border-b px-6 py-4">
             <div className="flex flex-col gap-1">
@@ -298,7 +329,7 @@ export function NewProjectDialog({
             </div>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-6">
             <div className="space-y-6">
           <div className="grid gap-4">
             <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -392,7 +423,7 @@ export function NewProjectDialog({
                 <Input
                   value={newCustomer.street}
                   onChange={(event) => updateNewCustomer("street", event.target.value)}
-                  placeholder="npr. Rjava cesta 26a"
+                  placeholder="npr. Ulica 123"
                 />
               </label>
               <label className="space-y-2 text-sm font-medium text-foreground">
@@ -451,6 +482,19 @@ export function NewProjectDialog({
                   Uporabljena bo obstoječa stranka: <strong>{selectedClient.name}</strong>
                 </div>
               ) : null}
+              <div className="md:col-span-2 flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isSavingCustomer || isSubmitting}
+                  onClick={async () => {
+                    await saveNewCustomer();
+                  }}
+                >
+                  {isSavingCustomer ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Shrani stranko
+                </Button>
+              </div>
             </div>
 
             <div className="mt-5 space-y-3">
@@ -515,7 +559,10 @@ export function NewProjectDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Prekliči
             </Button>
-            <Button type="submit" disabled={isSubmitting || (!selectedClientId && !newCustomer.name.trim())}>
+            <Button
+              type="submit"
+              disabled={isSubmitting || isSavingCustomer || (!selectedClientId && !newCustomer.name.trim())}
+            >
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {submitText}
             </Button>
