@@ -48,6 +48,7 @@ interface ClientFormProps {
   client?: Client;
   onClose: () => void;
   onSubmit: (payload: ClientFormPayload) => Promise<void>;
+  onDelete?: (client: Client) => void;
   onSuccess?: () => void;
 }
 
@@ -65,7 +66,7 @@ const initialState = {
   notes: "",
 };
 
-export function ClientForm({ open, client, mode = "create", onClose, onSubmit, onSuccess }: ClientFormProps) {
+export function ClientForm({ open, client, mode = "create", onClose, onSubmit, onDelete, onSuccess }: ClientFormProps) {
   const [formValues, setFormValues] = useState(initialState);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState("");
@@ -255,6 +256,16 @@ export function ClientForm({ open, client, mode = "create", onClose, onSubmit, o
             </div>
             {submissionError && <p className="client-modal__error">{submissionError}</p>}
             <div className="client-modal__footer">
+              {mode === "edit" && client && onDelete ? (
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="client-modal__delete"
+                  onClick={() => onDelete(client)}
+                >
+                  Izbriši stranko
+                </Button>
+              ) : null}
               <DialogPrimitive.Close asChild>
                 <Button variant="ghost" type="button">
                   Prekliči
