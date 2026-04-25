@@ -73,22 +73,38 @@ export interface DocumentPreviewContext {
 
 const baseStyles = `
   * { box-sizing: border-box; }
-  html, body { font-family: 'Inter', system-ui, -apple-system, sans-serif; color: #111827; background: #fff; margin: 0; padding: 0; }
-  @page { margin: 24px; background: #fff; }
-  .page { width: 794px; min-height: 1122px; margin: 0 auto; background: #fff; padding: 48px; display:flex; flex-direction:column; }
+  html, body { font-family: 'Inter', system-ui, -apple-system, sans-serif; color: #111827; background: #fff; margin: 0; padding: 0; font-size: 12px; line-height: 1.35; orphans: 3; widows: 3; }
+  @page { size: A4; margin: 14mm; background: #fff; }
+  .page { width: 100%; min-height: calc(297mm - 28mm); margin: 0 auto; background: #fff; padding: 0; display:flex; flex-direction:column; }
   h1, h2, h3, h4 { margin: 0; }
+  p { margin: 0 0 4px; }
   .muted { color: #6b7280; }
   table { width: 100%; border-collapse: collapse; page-break-inside:auto; }
   thead { display: table-header-group; }
-  tfoot { display: table-footer-group; }
+  tfoot { display: table-footer-group; break-inside: avoid; page-break-inside: avoid; }
   tr { break-inside: avoid; page-break-inside: avoid; }
-  th, td { padding: 8px 10px; text-align: left; border: 1px solid #e5e7eb; font-size: 13px; }
+  th, td { padding: 6px 8px; text-align: left; border: 1px solid #e5e7eb; font-size: 12px; line-height: 1.3; }
   th { background: #f3f4f6; font-weight: 600; }
+  footer,
+  .document-ending,
+  .document-totals,
+  .totals,
+  .notes,
+  .summary,
+  .signatures,
+  .signature,
+  .offer-comment,
+  .offer-notes,
+  .offer-bottom,
+  .offer-footer {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
   .totals { width: 320px; margin-left: auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
   .totals-row { display: flex; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid #e5e7eb; }
   .totals-row:last-child { border-bottom: none; background: #f9fafb; font-weight: 700; }
-  .notes { margin-top: 16px; padding: 12px; background: #f9fafb; border: 1px dashed #e5e7eb; border-radius: 10px; }
-  .signatures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
+  .notes { margin-top: 12px; padding: 10px; background: #f9fafb; border: 1px dashed #e5e7eb; border-radius: 10px; }
+  .signatures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
   .signature { padding: 12px; border: 1px dashed #cbd5e1; border-radius: 10px; text-align: center; }
   .signature-image-wrap { height: 56px; margin-top: 10px; display:flex; align-items:center; justify-content:center; }
   .signature-image { max-width: 100%; max-height: 56px; object-fit: contain; }
@@ -97,32 +113,33 @@ const baseStyles = `
   .tasks { margin-top: 12px; }
   .task { padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
   .badge { display: inline-flex; padding: 4px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca; font-size: 12px; }
-  .offer-preview { display:flex; flex-direction:column; gap:24px; flex:1; min-height:100%; }
-  .offer-header { display:flex; justify-content:space-between; align-items:flex-start; gap:32px; break-inside:avoid; padding:12px 0 20px; }
-  .offer-logo { width:180px; height:80px; display:flex; align-items:center; justify-content:flex-start; overflow:hidden; border:none; background:none; padding:12px 0; }
+  .offer-preview { display:flex; flex-direction:column; gap:16px; flex:1; min-height:100%; }
+  .offer-header { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; break-inside:avoid; page-break-inside:avoid; padding:4px 0 12px; }
+  .offer-logo { width:170px; height:68px; display:flex; align-items:center; justify-content:flex-start; overflow:hidden; border:none; background:none; padding:6px 0; }
   .offer-logo img { max-width:100%; max-height:100%; object-fit:contain; }
-  .offer-company { text-align:right; font-size:13px; color:#475569; line-height:1.35; }
+  .offer-company { text-align:right; font-size:12px; color:#475569; line-height:1.3; }
   .offer-company p { margin:2px 0; }
-  .offer-company-name { font-size:22px; font-weight:600; margin-bottom:4px; }
-  .offer-meta-grid { display:grid; gap:24px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); break-inside:avoid; }
-  .offer-card { border:1px solid #e2e8f0; border-radius:14px; padding:16px; background:#fff; break-inside:avoid; }
-  .offer-card h4 { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:#475569; margin-bottom:8px; }
-  .offer-card p { margin:4px 0; font-size:13px; }
-  .offer-content { display:flex; flex-direction:column; flex:1; min-height:100%; padding-bottom:32px; }
-  .offer-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:12px; break-inside:auto; }
-  .offer-table th { background:#f1f5f9; text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:0.05em; color:#475569; }
-  .offer-table th, .offer-table td { border:1px solid #e2e8f0; padding:10px 12px; }
+  .offer-company-name { font-size:20px; font-weight:600; margin-bottom:3px; }
+  .offer-meta-grid { display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); break-inside:avoid; page-break-inside:avoid; }
+  .offer-card { border:1px solid #e2e8f0; border-radius:10px; padding:11px 12px; background:#fff; break-inside:avoid; page-break-inside:avoid; }
+  .offer-card h4 { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:#475569; margin-bottom:5px; }
+  .offer-card p { margin:2px 0; font-size:12px; }
+  .offer-content { display:flex; flex-direction:column; flex:1; min-height:100%; }
+  .offer-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; break-inside:auto; }
+  .offer-table th { background:#f1f5f9; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:#475569; }
+  .offer-table th, .offer-table td { border:1px solid #e2e8f0; padding:6px 8px; }
   .offer-table td { color:#0f172a; }
-  .offer-project-title { margin-top:28px; }
-  .offer-comment { margin-top:16px; border-radius:12px; border:1px solid rgba(148,163,184,0.5); padding:14px 18px; background:#f8fafc; break-inside:avoid; }
-  .offer-comment h4 { font-size:14px; font-weight:600; margin-bottom:6px; color:#0f172a; }
+  .offer-project-title { margin-top:16px; }
+  .offer-comment { margin-top:10px; border-radius:10px; border:1px solid rgba(148,163,184,0.5); padding:10px 12px; background:#f8fafc; break-inside:avoid; page-break-inside:avoid; }
+  .offer-comment h4 { font-size:13px; font-weight:600; margin-bottom:4px; color:#0f172a; }
   .offer-comment p { margin:0; color:#475569; }
-  .offer-notes { margin-top:16px; break-inside:avoid; }
-  .offer-notes ul { margin:8px 0 0; padding-left:20px; }
-  .offer-notes li { font-size:12px; color:#475569; margin-bottom:4px; }
-  .offer-bottom { margin-top:auto; display:flex; flex-direction:column; gap:20px; }
-  .offer-footer { border-top:1px solid #e2e8f0; margin-top:0; padding-top:16px; display:flex; flex-direction:column; gap:4px; break-inside:avoid; }
-  .offer-contact-line { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; font-size:12px; color:#475569; }
+  .offer-notes { margin-top:10px; break-inside:avoid; page-break-inside:avoid; }
+  .offer-notes ul { margin:5px 0 0; padding-left:18px; }
+  .offer-notes li { font-size:11px; color:#475569; margin-bottom:2px; }
+  .offer-closing { margin-top:10px; break-inside:avoid; page-break-inside:avoid; }
+  .offer-bottom { margin-top:10px; display:flex; flex-direction:column; gap:8px; break-inside:avoid; page-break-inside:avoid; }
+  .offer-footer { border-top:1px solid #e2e8f0; margin-top:0; padding-top:8px; display:flex; flex-direction:column; gap:3px; break-inside:avoid; page-break-inside:avoid; }
+  .offer-contact-line { display:flex; flex-wrap:wrap; justify-content:center; gap:4px; font-size:11px; color:#475569; }
   .offer-dot { color:#cbd5e1; margin:0 4px; }
 `;
 
@@ -185,7 +202,7 @@ export function buildFooterHtml(company: PdfCompanySettings) {
     .filter(Boolean)
     .map((part) => `<span style="margin-right:10px;">${part}</span>`)
     .join('');
-  return `<footer style="margin-top:20px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:12px;" class="muted">${parts}</footer>`;
+  return `<footer style="margin-top:14px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:11px;" class="muted document-ending">${parts}</footer>`;
 }
 
 export function buildNotesBlockHtml(notes?: string[]) {
@@ -320,7 +337,7 @@ function buildStandardDocument(context: DocumentPreviewContext, options: Documen
     ...(options.metaExtras ?? []),
   ].join('');
 
-  const tableFooter = options.tableFooterRows ? `<tfoot>${options.tableFooterRows}</tfoot>` : '';
+  const tableFooter = options.tableFooterRows ? `<tfoot class="document-totals">${options.tableFooterRows}</tfoot>` : '';
   const commentBlock = options.commentBlock ?? '';
   const notesBlock = options.notesBlock ?? '';
   const extraSections = options.extraSections ?? '';
@@ -356,14 +373,16 @@ function buildStandardDocument(context: DocumentPreviewContext, options: Documen
           ${tableFooter}
         </table>
 
-        ${commentBlock}
-        ${notesBlock}
-        ${extraSections}
+        <div class="offer-closing document-ending">
+          ${commentBlock}
+          ${notesBlock}
+          ${extraSections}
 
-        <div class="offer-bottom">
-          <div class="offer-footer">
-            ${contactLine}
-            ${financeLine}
+          <div class="offer-bottom">
+            <div class="offer-footer">
+              ${contactLine}
+              ${financeLine}
+            </div>
           </div>
         </div>
       </div>
@@ -771,23 +790,23 @@ export function renderProductDescriptionsHtml(
   }
 ) {
   const extraStyles = `
-    @page { size: A4; margin: 22mm 18mm; }
+    @page { size: A4; margin: 16mm 14mm; }
     body { font-family: Arial, sans-serif; color: #111; }
-    .descriptions-header { margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid #dbe2ea; }
-    .descriptions-header h1 { margin: 0 0 6px 0; font-size: 22px; }
-    .descriptions-header p { margin: 0; color: #475569; font-size: 12px; white-space: pre-wrap; }
-    .product { margin: 0 0 18px 0; break-inside: avoid; page-break-inside: avoid; }
-    .title { margin: 0 0 10px 0; font-size: 18px; font-weight: 700; }
-    .row { display: flex; gap: 14px; align-items: flex-start; flex-direction: row-reverse; }
+    .descriptions-header { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #dbe2ea; break-inside: avoid; page-break-inside: avoid; }
+    .descriptions-header h1 { margin: 0 0 4px 0; font-size: 20px; }
+    .descriptions-header p { margin: 0; color: #475569; font-size: 11px; white-space: pre-wrap; }
+    .product { margin: 0 0 12px 0; break-inside: avoid; page-break-inside: avoid; }
+    .title { margin: 0 0 7px 0; font-size: 16px; font-weight: 700; }
+    .row { display: flex; gap: 12px; align-items: flex-start; flex-direction: row-reverse; }
     .col.image { flex: 0 0 38%; }
     .col.desc { flex: 1 1 62%; }
-    .col.image img { width: 100%; max-height: 210px; object-fit: contain; display: block; }
-    .col.desc { white-space: pre-wrap; line-height: 1.35; font-size: 11px; }
+    .col.image img { width: 100%; max-height: 190px; object-fit: contain; display: block; }
+    .col.desc { white-space: pre-wrap; line-height: 1.3; font-size: 10.5px; }
     .product.noImage .row { display: block; }
-    .product.noImage .col.desc { font-size: 11px; }
+    .product.noImage .col.desc { font-size: 10.5px; }
     .product.noDesc .row { display: block; }
     .product.noDesc .col.image { width: 45%; }
-    .descriptions-footer { margin-top: 20px; padding-top: 12px; border-top: 1px solid #dbe2ea; color: #475569; font-size: 12px; white-space: pre-wrap; }
+    .descriptions-footer { margin-top: 12px; padding-top: 8px; border-top: 1px solid #dbe2ea; color: #475569; font-size: 11px; white-space: pre-wrap; break-inside: avoid; page-break-inside: avoid; }
   `;
 
   const headerHtml = options?.headerText?.trim() || options?.projectTitle?.trim() || options?.companyName?.trim()
