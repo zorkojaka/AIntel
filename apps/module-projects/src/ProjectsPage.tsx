@@ -43,6 +43,37 @@ function toSummary(project: ProjectDetails): ProjectSummary {
   };
 }
 
+function getNextProjectCode(projects: ProjectSummary[]) {
+  const maxProjectNumber = projects.reduce((max, project) => {
+    if (typeof project.projectNumber === "number" && Number.isFinite(project.projectNumber)) {
+      return Math.max(max, project.projectNumber);
+    }
+    const match = project.id?.match(/^PRJ-(\d+)$/);
+    if (!match) return max;
+    return Math.max(max, Number(match[1]));
+  }, 0);
+
+  return `PRJ-${String(maxProjectNumber + 1).padStart(3, "0")}`;
+}
+
+function buildProjectTitle(projectCode: string, categoryNames: string[], customerName: string) {
+  const cleanCode = projectCode.trim() || "PRJ-...";
+  const topCategories = categoryNames.map((name) => name?.trim()).filter(Boolean).slice(0, 3) as string[];
+  const categoriesLabel = topCategories.join(", ");
+  const cleanCustomer = customerName.trim();
+
+  if (!categoriesLabel && !cleanCustomer) {
+    return cleanCode;
+  }
+  if (!categoriesLabel) {
+    return `${cleanCode}: ${cleanCustomer}`.trim();
+  }
+  if (!cleanCustomer) {
+    return `${cleanCode}: ${categoriesLabel}`.trim();
+  }
+  return `${cleanCode}: ${categoriesLabel} - ${cleanCustomer}`.trim();
+}
+
 export function ProjectsPage() {
   const { settings: globalSettings } = useSettingsData({ applyTheme: false });
   const [viewerRoles, setViewerRoles] = useState<string[]>([]);
@@ -69,7 +100,6 @@ export function ProjectsPage() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [newProjectCategorySlugs, setNewProjectCategorySlugs] = useState<string[]>([]);
   const [newProjectDefaults, setNewProjectDefaults] = useState({
-    title: "Nov projekt",
     requirements: "Dodajte opis projekta",
   });
   const [clientPortalContainer, setClientPortalContainer] = useState<HTMLElement | null>(null);
@@ -305,7 +335,6 @@ export function ProjectsPage() {
   const openNewProjectDialog = () => {
     setProjectFormInitial(null);
     setNewProjectDefaults({
-      title: `Nov projekt ${projects.length + 1}`,
       requirements: "Dodajte opis projekta",
     });
     setSelectedClientId(null);
@@ -330,7 +359,6 @@ export function ProjectsPage() {
       const mapped = mapProject(result.data);
       setProjectFormInitial(mapped);
       setNewProjectDefaults({
-        title: mapped.title,
         requirements: mapped.requirementsText ?? "",
       });
       setNewProjectCategorySlugs(mapped.categories ?? []);
@@ -372,16 +400,18 @@ export function ProjectsPage() {
     title,
     requirements,
     categories,
+    clientId,
   }: {
     title: string;
     requirements: string;
     categories: string[];
+    clientId: string;
   }) => {
-    if (!selectedClientId) {
+    if (!clientId) {
       toast.error("Izberi stranko.");
       return;
     }
-    const client = crmClients.find((c) => c.id === selectedClientId);
+    const client = crmClients.find((c) => c.id === clientId);
     if (!client) {
       toast.error("Izbrana stranka ne obstaja.");
       return;
@@ -415,7 +445,37 @@ export function ProjectsPage() {
         return;
       }
 
-      const mapped = mapProject(result.data);
+      let mapped = mapProject(result.data);
+      const finalCategoryNames = categories
+        .map((slug) => categoryLookup.get(slug) ?? slug)
+        .filter(Boolean);
+      const finalTitle = buildProjectTitle(mapped.id, finalCategoryNames, client.name);
+
+      if (mapped.title !== finalTitle) {
+        const updateResponse = await fetch(`${API_PREFIX}/${mapped.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: finalTitle,
+            requirements,
+            categories,
+            customer: {
+              name: client.name,
+              taxId: client.vatNumber,
+              address: client.address,
+              paymentTerms: globalSettings.defaultPaymentTerms || "30 dni",
+            },
+            items: mapped.items,
+            templates: mapped.templates,
+            status: mapped.status,
+          }),
+        });
+        const updateResult = await updateResponse.json();
+        if (updateResult.success) {
+          mapped = mapProject(updateResult.data);
+        }
+      }
+
       setProjects((prev) => [toSummary(mapped), ...prev]);
       setProjectDetails(mapped);
       setTemplates(mapped.templates);
@@ -440,10 +500,12 @@ export function ProjectsPage() {
       title,
       requirements,
       categories,
+      clientId,
     }: {
       title: string;
       requirements: string;
       categories: string[];
+      clientId?: string | null;
     }
   ) => {
     if (!projectFormInitial) {
@@ -452,8 +514,8 @@ export function ProjectsPage() {
     }
 
     const selectedClient =
-      selectedClientId != null ? crmClients.find((client) => client.id === selectedClientId) : null;
-    if (selectedClientId && !selectedClient) {
+      clientId != null ? crmClients.find((client) => client.id === clientId) : null;
+    if (clientId && !selectedClient) {
       toast.error("Izbrana stranka ne obstaja.");
       return;
     }
@@ -538,6 +600,7 @@ export function ProjectsPage() {
         ? `Stranka ${createdClient.name} je bila dodana.`
         : "Stranka je bila dodana."
     );
+    return createdClient;
   };
 
   const handleProjectUpdate = useCallback(
@@ -565,6 +628,7 @@ export function ProjectsPage() {
     categories.forEach((category) => map.set(category.slug, category.name));
     return map;
   }, [categories]);
+  const suggestedProjectCode = useMemo(() => getNextProjectCode(projects), [projects]);
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
@@ -719,14 +783,14 @@ export function ProjectsPage() {
             setProjectFormInitial(null);
           }
         }}
-        defaultTitle={newProjectDefaults.title}
         defaultRequirements={newProjectDefaults.requirements}
+        suggestedProjectCode={suggestedProjectCode}
         clients={crmClients}
         selectedClientId={selectedClientId}
         onSelectClient={setSelectedClientId}
         isLoadingClients={clientsLoading}
         isSubmitting={isCreatingProject}
-        onAddClient={handleAddClient}
+        onCreateClient={handleClientSubmit}
         onReloadClients={fetchCrmClients}
         onCreateProject={handleCreateProject}
         onUpdateProject={handleUpdateProject}
@@ -741,7 +805,9 @@ export function ProjectsPage() {
           <ClientForm
             open={isClientModalOpen}
             onClose={() => setClientModalOpen(false)}
-            onSubmit={handleClientSubmit}
+            onSubmit={async (payload) => {
+              await handleClientSubmit(payload);
+            }}
             onSuccess={() => setClientModalOpen(false)}
           />,
           clientPortalContainer,
