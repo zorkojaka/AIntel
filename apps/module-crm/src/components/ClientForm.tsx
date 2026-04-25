@@ -5,36 +5,6 @@ import { Button, Input, Textarea } from "@aintel/ui";
 import { z } from "zod";
 import { Client, ClientFormPayload, ClientType } from "../types/client";
 
-const POSTAL_CODE_LOOKUP: Record<string, string> = {
-  "1000": "Ljubljana",
-  "1129": "Ljubljana-Zalog",
-  "2000": "Maribor",
-  "3000": "Celje",
-  "4000": "Kranj",
-  "5000": "Nova Gorica",
-  "6000": "Koper",
-  "8000": "Novo mesto",
-  "9200": "Lendava",
-  "8210": "Slovenj Gradec",
-  "8270": "Krško",
-  "3270": "Laško",
-  "1234": "SomeTown",
-  "2230": "Škofja Loka",
-};
-
-const CITY_TO_CODE = Object.entries(POSTAL_CODE_LOOKUP).reduce<Record<string, string>>(
-  (acc, [code, city]) => {
-    acc[city.toLowerCase()] = code;
-    return acc;
-  },
-  {},
-);
-
-const postalOptions = Object.entries(POSTAL_CODE_LOOKUP).map(([code, city]) => ({
-  code,
-  label: `${code} ${city}`,
-}));
-
 const clientFormSchema = z
   .object({
     name: z.string().min(1, "Naziv stranke je obvezen"),
@@ -100,26 +70,6 @@ export function ClientForm({ open, client, mode = "create", onClose, onSubmit, o
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState("");
 
-  const handlePostalCodeChange = (value: string) => {
-    const code = value.trim();
-    const city = POSTAL_CODE_LOOKUP[code];
-    setFormValues((prev) => ({
-      ...prev,
-      postalCode: code,
-      postalCity: city ?? prev.postalCity,
-    }));
-  };
-
-  const handlePostalCityChange = (value: string) => {
-    const trimmed = value.trim();
-    const code = CITY_TO_CODE[trimmed.toLowerCase()];
-    setFormValues((prev) => ({
-      ...prev,
-      postalCity: trimmed,
-      postalCode: code ?? prev.postalCode,
-    }));
-  };
-
   useEffect(() => {
     if (!open) {
       setFormValues(initialState);
@@ -164,7 +114,7 @@ export function ClientForm({ open, client, mode = "create", onClose, onSubmit, o
       type: formValues.type,
       vatNumber: formValues.vatNumber.trim() || undefined,
       street: cleanValue(formValues.street),
-      postalCode: cleanValue(formValues.postalCode),
+      postalCode: undefined,
       postalCity: cleanValue(formValues.postalCity),
       email: cleanValue(formValues.email),
       phone: cleanValue(formValues.phone),
@@ -182,9 +132,7 @@ export function ClientForm({ open, client, mode = "create", onClose, onSubmit, o
             .filter(Boolean)
         : [];
 
-      const streetLine = parsed.street;
-      const postalLine = parsed.postalCode ? `${parsed.postalCode} ${parsed.postalCity ?? ""}`.trim() : parsed.postalCity;
-      const addressLine = [streetLine, postalLine].filter(Boolean).join(", ") || undefined;
+      const addressLine = [parsed.street, parsed.postalCity].filter(Boolean).join(", ") || undefined;
 
       const payload: ClientFormPayload = {
         name: parsed.name,
@@ -192,7 +140,7 @@ export function ClientForm({ open, client, mode = "create", onClose, onSubmit, o
         vatNumber: parsed.type === "company" && parsed.vatNumber ? parsed.vatNumber.toUpperCase() : undefined,
         address: addressLine,
         street: parsed.street,
-        postalCode: parsed.postalCode,
+        postalCode: undefined,
         postalCity: parsed.postalCity,
         email: parsed.email,
         phone: parsed.phone,
@@ -276,22 +224,9 @@ export function ClientForm({ open, client, mode = "create", onClose, onSubmit, o
               )}
               <Input label="Ulica" value={formValues.street} onChange={(event) => handleInput("street", event.target.value)} />
               <Input
-                label="Poštna številka"
-                list="postal-codes"
-                value={formValues.postalCode}
-                onChange={(event) => handlePostalCodeChange(event.target.value)}
-              />
-              <datalist id="postal-codes">
-                {postalOptions.map((option) => (
-                  <option key={option.code} value={option.code}>
-                    {option.label}
-                  </option>
-                ))}
-              </datalist>
-              <Input
-                label="Pošta"
+                label="Mesto"
                 value={formValues.postalCity}
-                onChange={(event) => handlePostalCityChange(event.target.value)}
+                onChange={(event) => handleInput("postalCity", event.target.value)}
               />
               <Input
                 label="E-pošta"

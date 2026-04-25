@@ -61,11 +61,10 @@ type ProjectCrmClient = {
 function formatClientAddress(client?: ProjectCrmClient | null) {
   if (!client) return "";
   const street = client.street?.trim();
-  const postalParts = [client.postalCode, client.postalCity].map((part) => part?.trim()).filter(Boolean);
-  const postal = postalParts.join(" ").trim();
-  if (street && postal) return `${street}, ${postal}`;
+  const city = client.postalCity?.trim();
+  if (street && city) return `${street}, ${city}`;
   if (street) return street;
-  if (postal) return postal;
+  if (city) return city;
   return client.address?.trim() ?? "";
 }
 

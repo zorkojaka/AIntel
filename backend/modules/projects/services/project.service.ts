@@ -69,15 +69,15 @@ export function formatClientAddress(client?: ProjectClientDto | null, fallback?:
     return fallback?.trim() ?? '';
   }
   const street = normalize(client.street);
-  const postal = [normalize(client.postalCode), normalize(client.postalCity)].filter(Boolean).join(' ').trim();
-  if (street && postal) {
-    return `${street}, ${postal}`;
+  const city = normalize(client.postalCity);
+  if (street && city) {
+    return `${street}, ${city}`;
   }
   if (street) {
     return street;
   }
-  if (postal) {
-    return postal;
+  if (city) {
+    return city;
   }
   return normalize(client.address) ?? fallback?.trim() ?? '';
 }
