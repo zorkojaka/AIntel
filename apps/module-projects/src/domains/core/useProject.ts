@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ProjectDetails } from "../../types";
+import { ProjectClient, ProjectDetails } from "../../types";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 
 export type UseProjectResult = {
@@ -48,7 +48,7 @@ export function mapProject(data: any): ProjectDetails {
         ? data.requirements
         : "";
   const customerBase = data.customer ?? { name: data.customer ?? "" };
-  const client = data.client ?? null;
+  const client: ProjectClient | null = data.client ?? null;
   const mergedCustomerDetail = {
     ...customerBase,
     id: customerBase?.id ?? client?.id,
@@ -83,6 +83,7 @@ export function mapProject(data: any): ProjectDetails {
     categories: Array.isArray(data.categories) ? data.categories : [],
     requirementsTemplateVariantSlug: data.requirementsTemplateVariantSlug,
     logistics: (data.logistics as ProjectLogistics | null) ?? null,
+    client,
   };
 }
 

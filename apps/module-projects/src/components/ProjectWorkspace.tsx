@@ -9,7 +9,7 @@ import type { WorkOrder as LogisticsWorkOrder } from "@aintel/shared/types/logis
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import { renderTemplate, openPreview, downloadHTML } from "../domains/offers/TemplateRenderer";
 import { toast } from "sonner";
-import { ProjectDetails, ProjectOffer, ProjectOfferItem, Template } from "../types";
+import { ProjectClient, ProjectDetails, ProjectOffer, ProjectOfferItem, Template } from "../types";
 import { fetchRequirementVariants } from "../api";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
 import { LogisticsPanel } from "../domains/logistics/LogisticsPanel";
@@ -48,24 +48,14 @@ const serializeRequirements = (list: RequirementRow[] | null | undefined) => JSO
 const areRequirementListsEqual = (a?: RequirementRow[], b?: RequirementRow[]) =>
   serializeRequirements(a) === serializeRequirements(b);
 
-type ProjectCrmClient = {
-  name?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  street?: string | null;
-  postalCode?: string | null;
-  postalCity?: string | null;
-  address?: string | null;
-};
-
-function formatClientAddress(client?: ProjectCrmClient | null) {
+function formatClientAddress(client?: ProjectClient | null) {
   if (!client) return "";
-  const street = client.street?.trim();
-  const city = client.postalCity?.trim();
-  if (street && city) return `${street}, ${city}`;
-  if (street) return street;
+  const address = (client.street ?? client.address)?.trim();
+  const city = (client.city ?? client.mesto ?? client.postalCity)?.trim();
+  if (address && city) return `${address}, ${city}`;
+  if (address) return address;
   if (city) return city;
-  return client.address?.trim() ?? "";
+  return "";
 }
 
 function formatProjectDisplayId(project?: Pick<ProjectDetails, "projectNumber" | "code" | "id"> | null) {
@@ -279,11 +269,11 @@ export function ProjectWorkspace({
 
   const basePath = project ? `/api/projects/${project.id}` : "";
   const isExecutionPhase = status === "ordered" || status === "in-progress" || status === "completed";
-  const inlineClient = project ? ((project as ProjectDetails & { client?: ProjectCrmClient }).client ?? null) : null;
-  const [remoteClient, setRemoteClient] = useState<ProjectCrmClient | null>(null);
+  const inlineClient = project?.client ?? null;
+  const [remoteClient, setRemoteClient] = useState<ProjectClient | null>(null);
   const crmClient = inlineClient ?? remoteClient;
-  const displayedClient: ProjectCrmClient = crmClient ?? project?.customerDetail ?? {};
-  const infoCardAddress = formatClientAddress(displayedClient) || project?.customerDetail.address || "";
+  const displayedClient: ProjectClient = crmClient ?? project?.customerDetail ?? {};
+  const infoCardAddress = formatClientAddress(displayedClient);
   const infoCardEmail = crmClient?.email ?? project?.customerDetail.email ?? "";
   const infoCardPhone = crmClient?.phone ?? project?.customerDetail.phone ?? "";
   const refreshAfterMutation = useProjectMutationRefresh(project?.id ?? projectId);
