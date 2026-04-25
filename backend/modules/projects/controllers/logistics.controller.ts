@@ -220,10 +220,30 @@ function sanitizeExecutionSpec(input: any) {
                 ? null
                 : null,
           isCompleted: !!unit?.isCompleted,
+          completedBy: normalizeExecutionUnitEmployeeId(unit?.completedBy),
+          completedByEmployeeId: normalizeExecutionUnitEmployeeId(unit?.completedByEmployeeId),
+          executedBy: normalizeExecutionUnitEmployeeId(unit?.executedBy),
+          executedByEmployeeId: normalizeExecutionUnitEmployeeId(unit?.executedByEmployeeId),
+          markedDoneBy: normalizeExecutionUnitEmployeeId(unit?.markedDoneBy),
+          markedDoneByEmployeeId: normalizeExecutionUnitEmployeeId(unit?.markedDoneByEmployeeId),
+          doneBy: normalizeExecutionUnitEmployeeId(unit?.doneBy),
+          doneByEmployeeId: normalizeExecutionUnitEmployeeId(unit?.doneByEmployeeId),
           note: typeof unit?.note === 'string' ? unit.note : unit?.note === null ? null : null,
         }))
       : [],
   };
+}
+
+function normalizeExecutionUnitEmployeeId(value: unknown) {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (value && typeof value === 'object') {
+    const objectValue = value as { _id?: unknown; id?: unknown };
+    return normalizeExecutionUnitEmployeeId(objectValue._id ?? objectValue.id);
+  }
+  return null;
 }
 
 function buildDefaultExecutionSpec(product: any) {
@@ -698,6 +718,14 @@ function sanitizeIncomingExecutionSpec(input: any) {
                   ? null
                   : null,
             isCompleted: !!unit?.isCompleted,
+            completedBy: normalizeExecutionUnitEmployeeId(unit?.completedBy),
+            completedByEmployeeId: normalizeExecutionUnitEmployeeId(unit?.completedByEmployeeId),
+            executedBy: normalizeExecutionUnitEmployeeId(unit?.executedBy),
+            executedByEmployeeId: normalizeExecutionUnitEmployeeId(unit?.executedByEmployeeId),
+            markedDoneBy: normalizeExecutionUnitEmployeeId(unit?.markedDoneBy),
+            markedDoneByEmployeeId: normalizeExecutionUnitEmployeeId(unit?.markedDoneByEmployeeId),
+            doneBy: normalizeExecutionUnitEmployeeId(unit?.doneBy),
+            doneByEmployeeId: normalizeExecutionUnitEmployeeId(unit?.doneByEmployeeId),
             note: typeof unit?.note === 'string' ? unit.note : unit?.note === null ? null : null,
           };
         })

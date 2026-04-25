@@ -89,6 +89,14 @@ function sanitizeExecutionUnits(units: WorkOrderExecutionSpec["executionUnits"] 
         location: unit.location ?? "",
         instructions: unit.instructions ?? "",
         isCompleted: !!unit.isCompleted,
+        completedBy: unit.completedBy ?? null,
+        completedByEmployeeId: unit.completedByEmployeeId ?? null,
+        executedBy: unit.executedBy ?? null,
+        executedByEmployeeId: unit.executedByEmployeeId ?? null,
+        markedDoneBy: unit.markedDoneBy ?? null,
+        markedDoneByEmployeeId: unit.markedDoneByEmployeeId ?? null,
+        doneBy: unit.doneBy ?? null,
+        doneByEmployeeId: unit.doneByEmployeeId ?? null,
         note: unit.note ?? "",
       }))
     : [];
