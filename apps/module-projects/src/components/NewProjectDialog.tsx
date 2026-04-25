@@ -269,9 +269,9 @@ export function NewProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl" hideCloseButton>
-        <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
-          <DialogHeader className="flex flex-row items-center justify-between">
+      <DialogContent className="max-h-[90vh] overflow-hidden p-0 sm:max-w-4xl" hideCloseButton>
+        <form ref={formRef} onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <DialogHeader className="flex shrink-0 flex-row items-center justify-between border-b px-6 py-4">
             <div className="flex flex-col gap-1">
               <DialogTitle>{isEditing ? "Uredi projekt" : "Nov projekt"}</DialogTitle>
               <DialogDescription>
@@ -298,6 +298,8 @@ export function NewProjectDialog({
             </div>
           </DialogHeader>
 
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+            <div className="space-y-6">
           <div className="grid gap-4">
             <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4">
               <label className="text-sm font-medium text-foreground" htmlFor="project-title-preview">
@@ -506,8 +508,10 @@ export function NewProjectDialog({
               </div>
             </div>
           </div>
+            </div>
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t px-6 py-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Prekliči
             </Button>
