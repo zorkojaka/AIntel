@@ -29,10 +29,10 @@ export const CRMPage: React.FC = () => {
       if (Array.isArray(payload.data)) {
         setClients(payload.data);
       } else {
-        setClientsError('Neveljaven odgovor strežnika.');
+        setClientsError('Neveljaven odgovor streznika.');
       }
-    } catch (error) {
-      setClientsError('Ne morem naložiti strank.');
+    } catch {
+      setClientsError('Ne morem naloziti strank.');
     } finally {
       setClientsLoading(false);
     }
@@ -69,11 +69,11 @@ export const CRMPage: React.FC = () => {
     const response = await fetch(url, {
       method: isEdit ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
     const result = await response.json();
     if (!result.success) {
-      throw new Error(result.error ?? 'Prišlo je do napake.');
+      throw new Error(result.error ?? 'Prislo je do napake.');
     }
   };
 
@@ -86,35 +86,30 @@ export const CRMPage: React.FC = () => {
             {client.name}
             {!client.isComplete && <span className="crm-name-alert">!</span>}
           </span>
-        )
+        ),
       },
       {
         header: 'Tip',
-        accessor: (client: Client) => (client.type === 'company' ? 'Podjetje' : 'Fizična oseba')
+        accessor: (client: Client) => (client.type === 'company' ? 'Podjetje' : 'Fizicna oseba'),
       },
-      { header: 'VAT', accessor: (client: Client) => client.vatNumber ?? '—' },
+      { header: 'VAT', accessor: (client: Client) => client.vatNumber ?? '-' },
       {
         header: 'Ulica',
-        accessor: (client: Client) => client.street ?? client.address ?? '—'
+        accessor: (client: Client) => client.street ?? client.address ?? '-',
       },
       {
-        header: 'Pošta',
-        accessor: (client: Client) => {
-          if (client.postalCode) {
-            return `${client.postalCode} ${client.postalCity ?? ''}`.trim();
-          }
-          return client.postalCity ?? '—';
-        }
+        header: 'Mesto',
+        accessor: (client: Client) => client.postalCity ?? '-',
       },
-      { header: 'Telefon', accessor: (client: Client) => client.phone ?? '—' },
-      { header: 'E-pošta', accessor: (client: Client) => client.email ?? '—' },
-      { header: 'Oznake', accessor: (client: Client) => client.tags.join(', ') || '—' },
+      { header: 'Telefon', accessor: (client: Client) => client.phone ?? '-' },
+      { header: 'E-posta', accessor: (client: Client) => client.email ?? '-' },
+      { header: 'Oznake', accessor: (client: Client) => client.tags.join(', ') || '-' },
       {
         header: 'Datum vnosa',
-        accessor: (client: Client) => new Date(client.createdAt).toLocaleDateString('sl-SI')
-      }
+        accessor: (client: Client) => new Date(client.createdAt).toLocaleDateString('sl-SI'),
+      },
     ],
-    []
+    [],
   );
 
   const visibleClients = useMemo(() => {
@@ -126,15 +121,14 @@ export const CRMPage: React.FC = () => {
 
     return base.filter((client) => {
       const tagMatch = client.tags.some((tag) => tag.toLowerCase().includes(term));
-      const postalMatch =
-        client.postalCode?.includes(term) || client.postalCity?.toLowerCase().includes(term);
+      const cityMatch = client.postalCity?.toLowerCase().includes(term);
       const addressMatch = client.address?.toLowerCase().includes(term) || client.street?.toLowerCase().includes(term);
       return (
         client.name.toLowerCase().includes(term) ||
         client.vatNumber?.toLowerCase().includes(term) ||
         client.phone?.toLowerCase().includes(term) ||
         client.email?.toLowerCase().includes(term) ||
-        postalMatch ||
+        cityMatch ||
         addressMatch ||
         tagMatch
       );
@@ -142,9 +136,7 @@ export const CRMPage: React.FC = () => {
   }, [clients, searchTerm, showIncompleteOnly]);
 
   const clientRowProps = (client: Client) => ({
-    className: `crm-clients__row${
-      selectedClient?.id === client.id ? ' crm-clients__row--selected' : ''
-    }`,
+    className: `crm-clients__row${selectedClient?.id === client.id ? ' crm-clients__row--selected' : ''}`,
     tabIndex: 0,
     role: 'button',
     onClick: () => handleEditClient(client),
@@ -153,62 +145,69 @@ export const CRMPage: React.FC = () => {
         event.preventDefault();
         handleEditClient(client);
       }
-    }
+    },
   });
 
   return (
-      <section className="crm-page">
-        <header className="crm-header crm-header--with-action">
-          <h1>STRANKE</h1>
-          <Button className="crm-header__button" onClick={handleOpenClientModal}>
-            Dodaj stranko
-          </Button>
-        </header>
-        <div className="crm-clients crm-clients--full">
-          <div className="crm-clients__header">
+    <section className="crm-page">
+      <header className="crm-header crm-header--with-action">
+        <h1>STRANKE</h1>
+        <Button className="crm-header__button" onClick={handleOpenClientModal}>
+          Dodaj stranko
+        </Button>
+      </header>
+      <div className="crm-clients crm-clients--full">
+        <div className="crm-clients__header">
+          <input
+            className="crm-search"
+            placeholder="Isci"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+          />
+          <label className="crm-filter">
             <input
-              className="crm-search"
-              placeholder="Išči"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
+              type="checkbox"
+              checked={showIncompleteOnly}
+              onChange={(event) => setShowIncompleteOnly(event.target.checked)}
             />
-            <label className="crm-filter">
-              <input
-                type="checkbox"
-                checked={showIncompleteOnly}
-                onChange={(event) => setShowIncompleteOnly(event.target.checked)}
-              />
-              Pokaži samo nepopolne stranke
-            </label>
-            {clientsLoading && <span className="crm-clients__hint">Nalagam stranke …</span>}
-          </div>
-          {clientsError && <p className="crm-clients__error">{clientsError}</p>}
-          {visibleClients.length > 0 ? (
-            <>
-              <ClientsTableDesktop clients={visibleClients} columns={clientColumns} rowProps={clientRowProps} />
-              <ClientsCardsMobile clients={visibleClients} onEdit={handleEditClient} />
-            </>
-          ) : (
-            <p className="crm-clients__empty">
-              {clientsLoading
-                ? 'Izdelujem seznam ...'
-                : searchTerm
-                  ? 'Ni strank, ki ustrezajo iskanju.'
-                  : 'Še ni shranjenih strank. Dodaj novo stranko.'}
-            </p>
-          )}
+            <span>Prikazi samo nepopolne</span>
+          </label>
         </div>
-        <ClientForm
-          open={isClientModalOpen}
-          mode={clientModalMode}
-          client={selectedClient ?? undefined}
-          onClose={closeClientModal}
-          onSubmit={handleClientSave}
-          onSuccess={() => {
-            closeClientModal();
-            fetchClients();
-          }}
-        />
-      </section>
+
+        {clientsError ? <div className="crm-clients__error">{clientsError}</div> : null}
+
+        <div className="crm-clients__desktop">
+          <ClientsTableDesktop
+            clients={visibleClients}
+            columns={clientColumns}
+            rowProps={clientRowProps}
+            loading={clientsLoading}
+            emptyMessage={
+              clientsLoading
+                ? 'Nalagam stranke...'
+                : visibleClients.length === 0
+                  ? 'Ni strank za prikaz.'
+                  : ''
+            }
+          />
+        </div>
+
+        <div className="crm-clients__mobile">
+          <ClientsCardsMobile clients={visibleClients} onEdit={handleEditClient} />
+        </div>
+      </div>
+
+      <ClientForm
+        open={isClientModalOpen}
+        mode={clientModalMode}
+        client={selectedClient ?? undefined}
+        onClose={closeClientModal}
+        onSubmit={handleClientSave}
+        onSuccess={async () => {
+          closeClientModal();
+          await fetchClients();
+        }}
+      />
+    </section>
   );
 };

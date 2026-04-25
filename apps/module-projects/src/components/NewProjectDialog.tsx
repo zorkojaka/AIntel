@@ -65,34 +65,12 @@ const emptyCustomerForm = (): NewCustomerFormState => ({
   notes: "",
 });
 
-function parseCityDisplay(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return { postalCode: undefined, postalCity: undefined };
-  }
-
-  const match = trimmed.match(/^(\d{4})\s+(.+)$/);
-  if (match) {
-    return {
-      postalCode: match[1],
-      postalCity: match[2].trim() || undefined,
-    };
-  }
-
-  if (/^\d{4}$/.test(trimmed)) {
-    return { postalCode: trimmed, postalCity: undefined };
-  }
-
-  return { postalCode: undefined, postalCity: trimmed };
-}
-
 function buildCustomerAddress(street: string, cityDisplay: string) {
   const parts = [street.trim(), cityDisplay.trim()].filter(Boolean);
   return parts.length ? parts.join(", ") : undefined;
 }
 
 function normalizeCustomerForm(form: NewCustomerFormState): ClientFormPayload {
-  const { postalCode, postalCity } = parseCityDisplay(form.cityDisplay);
   const tags = form.tags
     .split(",")
     .map((tag) => tag.trim())
@@ -102,8 +80,8 @@ function normalizeCustomerForm(form: NewCustomerFormState): ClientFormPayload {
     name: form.name.trim(),
     type: form.isCompany ? "company" : "individual",
     street: form.street.trim() || undefined,
-    postalCode,
-    postalCity,
+    postalCode: undefined,
+    postalCity: form.cityDisplay.trim() || undefined,
     address: buildCustomerAddress(form.street, form.cityDisplay),
     email: form.email.trim() || undefined,
     phone: form.phone.trim() || undefined,

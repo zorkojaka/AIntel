@@ -19,7 +19,7 @@ type ClientPayload = {
 function formatClient(client: CrmClient) {
   const requiresVat = client.type === 'company';
   const isComplete =
-    Boolean(client.name && client.street && client.postalCode && client.postalCity && client.email && client.phone) &&
+    Boolean(client.name && client.street && client.postalCity && client.email && client.phone) &&
     (!requiresVat || Boolean(client.vat_number));
 
   return {
@@ -123,9 +123,9 @@ export async function createClient(req: Request, res: Response) {
     await rejectDuplicate(name, vatNumber);
 
     const street = payload.street?.trim();
-    const postalCode = payload.postalCode?.trim();
+    const postalCode = payload.postalCode?.trim() || undefined;
     const postalCity = payload.postalCity?.trim();
-    const addressLine = [street, postalCode ? `${postalCode} ${postalCity ?? ''}`.trim() : '']
+    const addressLine = [street, postalCity]
       .filter(Boolean)
       .join(', ');
 
@@ -167,9 +167,9 @@ export async function updateClient(req: Request, res: Response) {
     await rejectDuplicate(name, vatNumber, req.params.id);
 
     const street = payload.street?.trim();
-    const postalCode = payload.postalCode?.trim();
+    const postalCode = payload.postalCode?.trim() || undefined;
     const postalCity = payload.postalCity?.trim();
-    const addressLine = [street, postalCode ? `${postalCode} ${postalCity ?? ''}`.trim() : '']
+    const addressLine = [street, postalCity]
       .filter(Boolean)
       .join(', ');
 
