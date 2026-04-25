@@ -251,6 +251,7 @@ function sanitizeExecutionUnits(units: WorkOrderExecutionSpec["executionUnits"] 
         instructions: unit.instructions ?? "",
         isCompleted: !!unit.isCompleted,
         completedBy: unit.completedBy ?? null,
+        completedAt: unit.completedAt ?? null,
         completedByEmployeeId: unit.completedByEmployeeId ?? null,
         executedBy: unit.executedBy ?? null,
         executedByEmployeeId: unit.executedByEmployeeId ?? null,

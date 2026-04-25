@@ -69,6 +69,7 @@ export interface WorkOrderExecutionUnit {
   instructions?: string;
   isCompleted: boolean;
   completedBy?: string | null;
+  completedAt?: string | null;
   completedByEmployeeId?: string | null;
   executedBy?: string | null;
   executedByEmployeeId?: string | null;
