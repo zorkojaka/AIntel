@@ -10,6 +10,9 @@ type InvoiceItemType = 'Osnovno' | 'Dodatno' | 'Manj';
 interface InvoiceItemInput {
   id?: string;
   productId?: string | null;
+  product?: string | { _id?: unknown; id?: unknown } | null;
+  cenikItemId?: string | null;
+  itemId?: string | null;
   name: string;
   unit: string;
   quantity: number;
@@ -67,6 +70,17 @@ function normalizeId(value: unknown) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeRefId(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return normalizeId(value);
+  }
+  if (value && typeof value === 'object') {
+    const ref = value as { _id?: unknown; id?: unknown };
+    return normalizeRefId(ref._id ?? ref.id);
+  }
+  return null;
 }
 
 function optionalString(value: unknown) {
@@ -132,9 +146,36 @@ function getExecutionUnitCompletedBy(unit: ExecutionUnitWithEmployee): string | 
   );
 }
 
+function getInvoiceItemProductReference(item: InvoiceItemInput) {
+  return (
+    normalizeRefId(item.productId) ??
+    normalizeRefId(item.product) ??
+    normalizeRefId(item.cenikItemId) ??
+    normalizeRefId(item.itemId)
+  );
+}
+
 function getServiceWorkOrderItemsForProduct(workOrders: Array<Pick<WorkOrderDocument, 'items'>>, productId: string) {
   return workOrders.flatMap((order) =>
     (order.items ?? []).filter((item) => item.isService === true && item.productId && String(item.productId) === productId)
+  );
+}
+
+function getMatchingServiceWorkOrderItems(
+  workOrders: Array<Pick<WorkOrderDocument, 'items'>>,
+  invoiceItem: InvoiceItemInput,
+  productId: string | null
+) {
+  const invoiceItemId = normalizeRefId(invoiceItem.id);
+  const invoiceName = normalizeText(invoiceItem.name);
+  return workOrders.flatMap((order) =>
+    (order.items ?? []).filter((item) => {
+      if (item.isService !== true) return false;
+      if (productId && item.productId && String(item.productId) === productId) return true;
+      if (invoiceItemId && item.offerItemId && String(item.offerItemId) === invoiceItemId) return true;
+      if (invoiceItemId && item.id && String(item.id) === invoiceItemId) return true;
+      return Boolean(invoiceName && normalizeText(item.name) === invoiceName);
+    })
   );
 }
 
@@ -152,6 +193,10 @@ export async function createFinanceSnapshot(params: {
       (invoiceVersion.items ?? []).map((item) => ({
         name: item.name,
         productId: item.productId,
+        product: item.product,
+        cenikItemId: item.cenikItemId,
+        itemId: item.itemId,
+        id: item.id,
         isService: (item as InvoiceItemInput & { isService?: unknown }).isService,
         quantity: item.quantity,
       })),
@@ -174,10 +219,11 @@ export async function createFinanceSnapshot(params: {
   });
 
   const resolvedProductIds = (invoiceVersion.items ?? []).map((item) => {
-    const explicitProductId = normalizeId(item.productId);
+    console.log('[Snapshot] Full invoice item:', JSON.stringify(item, null, 2));
+    const explicitProductId = getInvoiceItemProductReference(item);
     if (explicitProductId) return explicitProductId;
 
-    const itemId = normalizeId(item.id);
+    const itemId = normalizeRefId(item.id);
     const offerProductId = itemId ? offerProductIdByItemId.get(itemId) : null;
     if (offerProductId) return offerProductId;
 
@@ -204,6 +250,9 @@ export async function createFinanceSnapshot(params: {
         }))
       )
     );
+    (workOrder?.items ?? []).forEach((item) => {
+      console.log('[Snapshot] Full WO item:', JSON.stringify(item, null, 2));
+    });
   });
 
   const productById = new Map<string, (typeof products)[number]>();
@@ -283,7 +332,16 @@ export async function createFinanceSnapshot(params: {
   };
 
   const snapshotItems = (invoiceVersion.items ?? []).map((item, index) => {
+    const resolvedProductId = resolvedProductIds[index];
     console.log('[Snapshot] Looking up product:', item.productId);
+    console.log('[Snapshot] Resolved product reference:', {
+      directProductId: item.productId,
+      product: item.product,
+      cenikItemId: item.cenikItemId,
+      itemId: item.itemId,
+      invoiceItemId: item.id,
+      resolvedProductId,
+    });
     const product = resolveProductForItem(item, index);
     console.log(
       '[Snapshot] Found product:',
@@ -295,7 +353,7 @@ export async function createFinanceSnapshot(params: {
           }
         : 'NOT FOUND'
     );
-    const productId = product ? String(product._id) : resolvedProductIds[index];
+    const productId = product ? String(product._id) : resolvedProductId;
     const quantity = toNumber(item.quantity, 0);
     const unitPriceSale = toNumber(item.unitPrice, 0);
     const unitPricePurchase = getPurchasePrice(product);
@@ -303,7 +361,7 @@ export async function createFinanceSnapshot(params: {
     const totalPurchase = round(quantity * unitPricePurchase);
     const margin = round(totalSale - totalPurchase);
     const hasServiceWorkOrderItem = productId
-      ? getServiceWorkOrderItemsForProduct(workOrders as Array<Pick<WorkOrderDocument, 'items'>>, productId).length > 0
+      ? getMatchingServiceWorkOrderItems(workOrders as Array<Pick<WorkOrderDocument, 'items'>>, item, productId).length > 0
       : false;
     const isService = Boolean(product?.isService || hasServiceWorkOrderItem);
 
@@ -333,10 +391,25 @@ export async function createFinanceSnapshot(params: {
       continue;
     }
 
-    const workOrderItems = getServiceWorkOrderItemsForProduct(
-      workOrders as Array<Pick<WorkOrderDocument, 'items'>>,
-      snapshotItem.productId
-    );
+    const invoiceItem = (invoiceVersion.items ?? []).find((item) => item.name === snapshotItem.name) ?? null;
+    workOrders.forEach((workOrder) => {
+      console.log(
+        '[Snapshot] Matching invoice item:',
+        snapshotItem.name,
+        'to WO items:',
+        (workOrder.items ?? []).map((item) => item.name)
+      );
+    });
+    const workOrderItems = invoiceItem
+      ? getMatchingServiceWorkOrderItems(
+          workOrders as Array<Pick<WorkOrderDocument, 'items'>>,
+          invoiceItem,
+          snapshotItem.productId
+        )
+      : getServiceWorkOrderItemsForProduct(
+          workOrders as Array<Pick<WorkOrderDocument, 'items'>>,
+          snapshotItem.productId
+        );
 
     for (const workOrderItem of workOrderItems) {
       const executionUnits = workOrderItem.executionSpec?.executionUnits ?? [];
