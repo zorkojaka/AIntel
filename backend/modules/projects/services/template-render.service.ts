@@ -178,7 +178,7 @@ export function buildInvoiceTemplateTokens(project: ProjectDocument, invoice: In
     ...base,
     offerVersion: invoice.invoiceNumber ?? `${project.id}-${invoice.versionNumber}`,
     offerDate: formatDate(invoice.issuedAt ?? invoice.createdAt),
-    totalNet: formatCurrency(invoice.summary?.baseWithoutVat ?? 0),
+    totalNet: formatCurrency(invoice.summary?.discountedBase ?? invoice.summary?.baseWithoutVat ?? 0),
     totalVat: formatCurrency(invoice.summary?.vatAmount ?? 0),
     totalGross: formatCurrency(invoice.summary?.totalWithVat ?? 0),
     paymentTerms: base.paymentTerms,
@@ -217,6 +217,7 @@ export type InvoiceVersionForTemplate = {
   }[];
   summary: {
     baseWithoutVat: number;
+    discountedBase?: number;
     vatAmount: number;
     totalWithVat: number;
   };
