@@ -41,6 +41,19 @@ export interface ProjectCustomer {
   phone?: string;
 }
 
+export interface ProjectClient {
+  id?: string | null;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  street?: string | null;
+  postalCode?: string | null;
+  postalCity?: string | null;
+  address?: string | null;
+  city?: string | null;
+  mesto?: string | null;
+}
+
 export interface ProjectSummary {
   id: string;
   _id?: string;
@@ -104,6 +117,7 @@ export type RequirementRow = ProjectRequirement;
 
 export interface ProjectDetails extends ProjectSummary {
   customerDetail: ProjectCustomer;
+  client?: ProjectClient | null;
   requirements?: ProjectRequirement[];
   requirementsText?: string;
   requirementsTemplateVariantSlug?: string;
