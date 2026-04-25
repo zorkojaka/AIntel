@@ -22,7 +22,7 @@ import type { ProjectDetails } from "../types";
 import type { User } from "@aintel/shared/types/user";
 import type { Employee } from "@aintel/shared/types/employee";
 
-import { ArrowDown, ArrowLeft, Check, ChevronsUpDown, Loader2, Pencil, Trash, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, Check, ChevronsUpDown, Download, Loader2, Pencil, Trash, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
@@ -226,6 +226,7 @@ export function OffersTab({
 
   const [saving, setSaving] = useState(false);
   const [downloadingMode, setDownloadingMode] = useState<"offer" | "both" | "descriptions" | null>(null);
+  const [previewingMode, setPreviewingMode] = useState<"offer" | "descriptions" | null>(null);
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
   const [sending, setSending] = useState(false);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
@@ -257,7 +258,7 @@ export function OffersTab({
   const [templateDeleteTarget, setTemplateDeleteTarget] = useState<OfferTemplateSummary | null>(null);
   const [templateDeleting, setTemplateDeleting] = useState(false);
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState(EMPTY_OFFER_SNAPSHOT);
-  const isDownloading = downloadingMode !== null;
+  const isPdfBusy = downloadingMode !== null || previewingMode !== null;
   const lineItemsRef = useRef<HTMLDivElement | null>(null);
   const commentTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [visibleMobileBlankItemId, setVisibleMobileBlankItemId] = useState<string | null>(null);
@@ -1711,6 +1712,97 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     }
   };
 
+  const openPreviewWindow = () => {
+    const previewWindow = window.open("about:blank", "_blank");
+    if (!previewWindow) {
+      toast.error("Predogleda ni bilo mogoče odpreti.");
+    }
+    return previewWindow;
+  };
+
+  const loadPdfPreview = async (previewWindow: Window, url: string) => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error("PDF predogled ni na voljo.");
+      }
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+      previewWindow.location.href = objectUrl;
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 60000);
+    } catch (error) {
+      previewWindow.close();
+      console.error(error);
+      toast.error("PDF predogleda ni bilo mogoče odpreti.");
+    }
+  };
+
+  const handlePreviewOfferPdf = async () => {
+    const previewWindow = openPreviewWindow();
+    if (!previewWindow) return;
+    setPreviewingMode("offer");
+    try {
+      const saved = await ensureSavedOffer();
+      if (!saved?._id) {
+        previewWindow.close();
+        return;
+      }
+      await loadPdfPreview(previewWindow, `/api/projects/${projectId}/offers/${saved._id}/pdf?mode=offer`);
+    } finally {
+      setPreviewingMode(null);
+    }
+  };
+
+  const handlePreviewDescriptionsPdf = async () => {
+    const previewWindow = openPreviewWindow();
+    if (!previewWindow) return;
+    setPreviewingMode("descriptions");
+    try {
+      const saved = await ensureSavedOffer();
+      if (!saved?._id) {
+        previewWindow.close();
+        return;
+      }
+      await loadPdfPreview(previewWindow, `/api/projects/${projectId}/offers/${saved._id}/pdf?variant=descriptions`);
+    } finally {
+      setPreviewingMode(null);
+    }
+  };
+
+  const renderPdfActionGroup = (
+    previewLabel: string,
+    downloadLabel: string,
+    onPreview: () => void,
+    onDownload: () => void,
+    previewing: boolean,
+    downloading: boolean,
+  ) => (
+    <div className="inline-flex h-8 items-center rounded-md border border-border/70 bg-background">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-8 rounded-none border-r border-border/70 px-3"
+        onClick={onPreview}
+        disabled={isPdfBusy}
+      >
+        {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+        {previewLabel}
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-8 rounded-none px-3"
+        onClick={onDownload}
+        disabled={isPdfBusy}
+      >
+        {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+        {downloadLabel}
+      </Button>
+    </div>
+  );
+
 
   const handleSend = async () => {
     setSending(true);
@@ -2736,22 +2828,30 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           <Button variant="outline" onClick={openImportModal}>
             Uvozi ponudbo
           </Button>
-          <Button
-            variant="outline"
-            onClick={handleExportDescriptionsPdf}
-            disabled={isDownloading}
-          >
-            {downloadingMode === "descriptions" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Prenesi opise
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => handleExportPdf("offer")}
-            disabled={isDownloading}
-          >
-            {downloadingMode === "offer" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Prenesi ponudbo
-          </Button>
+          {renderPdfActionGroup(
+            "Poglej opise",
+            "",
+            () => {
+              void handlePreviewDescriptionsPdf();
+            },
+            () => {
+              void handleExportDescriptionsPdf();
+            },
+            previewingMode === "descriptions",
+            downloadingMode === "descriptions",
+          )}
+          {renderPdfActionGroup(
+            "Poglej ponudbo",
+           "" ,
+            () => {
+              void handlePreviewOfferPdf();
+            },
+            () => {
+              void handleExportPdf("offer");
+            },
+            previewingMode === "offer",
+            downloadingMode === "offer",
+          )}
           <Button
             variant="outline"
             onClick={handleOpenSendDialog}

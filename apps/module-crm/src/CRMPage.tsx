@@ -245,6 +245,7 @@ export const CRMPage: React.FC = () => {
         client={selectedClient ?? undefined}
         onClose={closeClientModal}
         onSubmit={handleClientSave}
+        onDelete={handleDeleteClient}
         onSuccess={async () => {
           closeClientModal();
           await fetchClients();
