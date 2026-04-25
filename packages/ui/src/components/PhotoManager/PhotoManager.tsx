@@ -17,6 +17,7 @@ export interface PhotoManagerProps {
   onOpenChange: (open: boolean) => void;
   context: PhotoContext;
   title?: string;
+  description?: string;
   canDelete?: boolean;
   onPhotoCountChange?: (count: number) => void;
 }
@@ -108,11 +109,56 @@ function formatPhotoDate(value: string) {
   }).format(date);
 }
 
+function PhotoTileImage({ photo }: { photo: ManagedPhoto }) {
+  const [imgError, setImgError] = useState(false);
+  const src = imgError ? undefined : getPhotoImageSrc(photo);
+
+  if (!src || imgError) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-muted/40">
+        <Camera className="h-8 w-8 text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={photo.originalName || 'Fotografija'}
+      className="h-full w-full object-cover"
+      onError={() => setImgError(true)}
+    />
+  );
+}
+
+function PhotoPreviewImage({ photo }: { photo: ManagedPhoto }) {
+  const [imgError, setImgError] = useState(false);
+  const src = imgError ? undefined : getPhotoImageSrc(photo, 'full');
+
+  if (!src || imgError) {
+    return (
+      <div className="flex h-[50vh] w-[min(80vw,720px)] items-center justify-center rounded-md bg-black/40">
+        <Camera className="h-12 w-12 text-white/70" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={photo.originalName || 'Fotografija'}
+      className="max-h-[80vh] max-w-full rounded-md object-contain"
+      onError={() => setImgError(true)}
+    />
+  );
+}
+
 export function PhotoManager({
   open,
   onOpenChange,
   context,
   title = 'Fotografije',
+  description,
   canDelete = true,
   onPhotoCountChange,
 }: PhotoManagerProps) {
@@ -338,24 +384,24 @@ export function PhotoManager({
   return (
     <Dialog.Root open={open} onOpenChange={handleDialogOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50" />
         <Dialog.Content
-          aria-describedby="photo-manager-description"
-          className="fixed left-1/2 top-1/2 z-50 flex w-[min(500px,90vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border bg-background shadow-lg max-h-[90vh] md:max-h-[80vh]"
+          className="flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
           style={{
             position: 'fixed',
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
+            width: 'min(500px, 90vw)',
+            maxHeight: '80vh',
+            zIndex: 50,
           }}
         >
           <div className="shrink-0 border-b bg-background px-4 py-4">
             <div className="flex items-start justify-between gap-4">
             <div className="space-y-1">
               <Dialog.Title className="text-lg font-semibold">{title}</Dialog.Title>
-              <Dialog.Description id="photo-manager-description" className="text-sm text-muted-foreground">
-                Upravljanje fotografij za izbran kontekst.
-              </Dialog.Description>
+              {description ? <Dialog.Description className="text-sm text-muted-foreground">{description}</Dialog.Description> : null}
             </div>
             <Dialog.Close className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground" aria-label="Zapri fotografije">
               <X className="h-5 w-5" />
@@ -385,7 +431,7 @@ export function PhotoManager({
                   tile.kind === 'photo' ? (
                     <div key={getPhotoId(tile.photo)} className="group relative aspect-square overflow-hidden rounded-md border bg-muted/20">
                       <button type="button" className="h-full w-full" onClick={() => openPreview(tile.photo)} aria-label="Odpri fotografijo">
-                        <img src={getPhotoImageSrc(tile.photo)} alt={tile.photo.originalName || 'Fotografija'} className="h-full w-full object-cover" />
+                        <PhotoTileImage photo={tile.photo} />
                       </button>
                       {canDelete ? (
                         <button
@@ -460,7 +506,7 @@ export function PhotoManager({
             </>
           ) : null}
           <figure className="flex max-h-full max-w-full flex-col items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
-            <img src={getPhotoImageSrc(previewPhoto, 'full')} alt={previewPhoto.originalName || 'Fotografija'} className="max-h-[80vh] max-w-full rounded-md object-contain" />
+            <PhotoPreviewImage photo={previewPhoto} />
             <figcaption className="rounded-md bg-black/60 px-3 py-2 text-center text-sm text-white">
               <span>Naložil: {previewPhoto.uploadedBy || 'neznano'}</span>
               <span className="mx-2">-</span>
