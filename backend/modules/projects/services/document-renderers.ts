@@ -21,6 +21,7 @@ export interface PreviewItem {
 export interface PreviewTotals {
   subtotal?: number;
   discount?: number;
+  subtotalAfterDiscount?: number;
   vat?: number;
   total?: number;
   dueDays?: number;
@@ -410,6 +411,7 @@ export function renderOfferPdf(context: DocumentPreviewContext) {
   const totalRows = [
     { label: 'Skupaj brez DDV', value: totals.subtotal ?? 0 },
     { label: 'Popust', value: totals.discount ?? 0 },
+    { label: 'Cena s popustom brez DDV', value: totals.subtotalAfterDiscount ?? totals.subtotal ?? 0 },
     { label: 'DDV', value: totals.vat ?? 0 },
     { label: 'Skupaj z DDV', value: totals.total ?? totals.subtotal ?? 0 },
   ]

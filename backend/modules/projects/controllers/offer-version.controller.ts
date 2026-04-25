@@ -13,6 +13,7 @@ import { renderProductDescriptionsHtml, type ProductDescriptionEntry } from '../
 import { generateOfferDocumentPdf } from '../services/offer-pdf-preview.service';
 import { generateOfferDocumentNumber, type DocumentNumberingKind } from '../services/document-numbering.service';
 import { generateOfferDescriptionsPdf } from '../services/offer-description-pdf.service';
+import { calculateOfferTotals } from '../services/offer-totals.service';
 import { resolveActorId } from '../../../utils/tenant';
 
 function clampNumber(value: unknown, fallback = 0, min = 0) {
@@ -105,60 +106,6 @@ function sanitizeLineItem(raw: unknown): LineItemParseResult {
     totalVat,
     totalGross,
     }
-  };
-}
-
-function calculateOfferTotals(offer: {
-  items: OfferLineItem[];
-  usePerItemDiscount: boolean;
-  useGlobalDiscount: boolean;
-  globalDiscountPercent: number;
-  vatMode: number;
-}) {
-  const { items, usePerItemDiscount, useGlobalDiscount, globalDiscountPercent, vatMode } = offer;
-
-  const baseWithoutVat = items.reduce((sum, item) => sum + (item.unitPrice || 0) * (item.quantity || 0), 0);
-
-  const perItemDiscountAmount = usePerItemDiscount
-    ? items.reduce((sum, item) => {
-        const pct = clampNumber(item.discountPercent, 0, 0);
-        const lineNet = (item.unitPrice || 0) * (item.quantity || 0);
-        return sum + (lineNet * pct) / 100;
-      }, 0)
-    : 0;
-
-  const baseAfterPerItem = baseWithoutVat - perItemDiscountAmount;
-
-  const normalizedGlobalPct = useGlobalDiscount ? Math.min(100, Math.max(0, Number(globalDiscountPercent) || 0)) : 0;
-  const globalDiscountAmount = normalizedGlobalPct > 0 ? (baseAfterPerItem * normalizedGlobalPct) / 100 : 0;
-
-  const baseAfterDiscount = baseAfterPerItem - globalDiscountAmount;
-
-  const vatMultiplier = vatMode === 22 ? 0.22 : vatMode === 9.5 ? 0.095 : 0;
-  const vatAmount = baseAfterDiscount * vatMultiplier;
-
-  const totalNetAfterDiscount = baseAfterDiscount;
-  const totalGrossAfterDiscount = totalNetAfterDiscount + vatAmount;
-
-  const round2 = (value: number) => Number(value.toFixed(2));
-
-  return {
-    baseWithoutVat: round2(baseWithoutVat),
-    perItemDiscountAmount: round2(perItemDiscountAmount),
-    globalDiscountAmount: round2(globalDiscountAmount),
-    baseAfterDiscount: round2(baseAfterDiscount),
-    vatAmount: round2(vatAmount),
-    totalNet: round2(baseAfterDiscount),
-    totalVat22: vatMode === 22 ? round2(vatAmount) : 0,
-    totalVat95: vatMode === 9.5 ? round2(vatAmount) : 0,
-    totalVat: round2(vatAmount),
-    totalGross: round2(totalGrossAfterDiscount),
-    discountPercent: normalizedGlobalPct,
-    discountAmount: round2(perItemDiscountAmount + globalDiscountAmount),
-    totalNetAfterDiscount: round2(totalNetAfterDiscount),
-    totalGrossAfterDiscount: round2(totalGrossAfterDiscount),
-    totalWithVat: round2(totalGrossAfterDiscount),
-    vatMode,
   };
 }
 

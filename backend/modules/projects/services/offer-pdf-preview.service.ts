@@ -15,6 +15,7 @@ import {
 } from './document-numbering.service';
 import { renderDocumentHtml, type DocumentPreviewContext } from './document-renderers';
 import { renderHtmlToPdf } from './html-pdf.service';
+import { calculateOfferLineNetAmount } from './offer-totals.service';
 
 interface PreviewProjectInfo {
   id: string;
@@ -168,6 +169,38 @@ const DEMO_ITEMS: OfferLineItem[] = [
   },
 ];
 
+function firstNumber(...values: Array<number | null | undefined>) {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return 0;
+}
+
+function firstPositiveNumber(...values: Array<number | null | undefined>) {
+  const positive = values.find((value) => typeof value === 'number' && Number.isFinite(value) && value > 0);
+  return positive ?? firstNumber(...values);
+}
+
+function buildOfferPdfTotals(offer: OfferVersion) {
+  const subtotalAfterDiscount = firstPositiveNumber(offer.baseAfterDiscount, offer.totalNetAfterDiscount, offer.totalNet);
+  const combinedDiscount = firstNumber(offer.perItemDiscountAmount) + firstNumber(offer.globalDiscountAmount);
+  const storedDiscount = firstNumber(offer.discountAmount);
+  const derivedDiscount = Math.max(0, firstPositiveNumber(offer.baseWithoutVat, offer.totalNet) - subtotalAfterDiscount);
+  const discount = Math.max(0, combinedDiscount > 0 ? combinedDiscount : storedDiscount > 0 ? storedDiscount : derivedDiscount);
+  const storedSubtotal = firstNumber(offer.baseWithoutVat);
+  const subtotal = storedSubtotal > 0 ? storedSubtotal : subtotalAfterDiscount + discount;
+
+  return {
+    subtotal,
+    discount,
+    subtotalAfterDiscount,
+    vat: firstPositiveNumber(offer.vatAmount, offer.totalVat),
+    total: firstPositiveNumber(offer.totalWithVat, offer.totalGrossAfterDiscount, offer.totalGross),
+  };
+}
+
 function buildDemoOffer(): OfferVersion {
   const totalNet = DEMO_ITEMS.reduce((sum, item) => sum + item.totalNet, 0);
   const totalVat = DEMO_ITEMS.reduce((sum, item) => sum + item.totalVat, 0);
@@ -314,7 +347,7 @@ export async function buildOfferPdfPreviewPayload(
     quantity: item.quantity,
     unit: item.unit,
     unitPrice: item.unitPrice,
-    total: item.totalGross ?? item.totalNet ?? item.totalVat ?? 0,
+    total: calculateOfferLineNetAmount(item, !!offerWithTexts.usePerItemDiscount),
     vatPercent: item.vatRate ?? 22,
   }));
 
@@ -322,6 +355,8 @@ export async function buildOfferPdfPreviewPayload(
     paymentTerms: overrides?.paymentTerms ?? offerWithTexts.paymentTerms,
     disclaimer: overrides?.disclaimer ?? null,
   });
+
+  const totals = buildOfferPdfTotals(offerWithTexts);
 
   const context: DocumentPreviewContext = {
     docType,
@@ -336,10 +371,7 @@ export async function buildOfferPdfPreviewPayload(
     paymentTerms: offerWithTexts.paymentTerms ?? documentSettings.defaultTexts.paymentTerms ?? null,
     items,
     totals: {
-      subtotal: offerWithTexts.totalNet ?? 0,
-      vat: offerWithTexts.totalVat ?? 0,
-      total: offerWithTexts.totalGross ?? 0,
-      discount: offerWithTexts.discountAmount ?? 0,
+      ...totals,
       dueDays: docType === 'INVOICE' ? 15 : undefined,
     },
     notes,
