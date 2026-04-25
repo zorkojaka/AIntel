@@ -92,9 +92,9 @@ const FinanceSnapshotSchema = new Schema<FinanceSnapshotDocument>(
     invoiceNumber: { type: String, required: true, trim: true },
     issuedAt: { type: Date, required: true, index: true },
     customer: {
-      name: { type: String, required: true, default: '' },
-      taxId: { type: String, required: true, default: '' },
-      address: { type: String, required: true, default: '' },
+      name: { type: String, default: '' },
+      taxId: { type: String, default: '' },
+      address: { type: String, default: '' },
     },
     items: { type: [FinanceSnapshotItemSchema], default: [] },
     summary: {
