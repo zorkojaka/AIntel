@@ -15,6 +15,7 @@ export interface CrmClient extends Document {
   postalCity?: string;
   tags: string[];
   notes?: string;
+  isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
   isComplete?: boolean;
@@ -33,7 +34,8 @@ const CrmClientSchema = new Schema<CrmClient>(
     phone: { type: String },
     contact_person: { type: String },
     tags: { type: [String], default: [] },
-    notes: { type: String }
+    notes: { type: String },
+    isActive: { type: Boolean, default: true, index: true }
   },
   { timestamps: true }
 );

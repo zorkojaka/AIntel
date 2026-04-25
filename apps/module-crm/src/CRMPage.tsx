@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button } from '@aintel/ui';
+import { Button, TableRowActions } from '@aintel/ui';
 import { ClientForm } from './components/ClientForm';
 import { ClientsCardsMobile } from './components/ClientsCardsMobile';
 import { ClientsTableDesktop } from './components/ClientsTableDesktop';
@@ -77,6 +77,31 @@ export const CRMPage: React.FC = () => {
     }
   };
 
+  const softDeleteClient = useCallback(async (client: Client) => {
+    setClientsError('');
+    try {
+      const response = await fetch(`/api/crm/clients/${client.id}`, { method: 'DELETE' });
+      const result = await response.json();
+      if (!result.success) {
+        setClientsError(result.error ?? 'Stranke ni bilo mogoče odstraniti.');
+        return;
+      }
+      setClients((current) => current.filter((entry) => entry.id !== client.id));
+      if (selectedClient?.id === client.id) {
+        closeClientModal();
+      }
+    } catch {
+      setClientsError('Stranke ni bilo mogoče odstraniti.');
+    }
+  }, [selectedClient]);
+
+  const handleDeleteClient = useCallback((client: Client) => {
+    const confirmed = globalThis.confirm('Stranka bo odstranjena iz seznama, projekti ostanejo.');
+    if (confirmed) {
+      void softDeleteClient(client);
+    }
+  }, [softDeleteClient]);
+
   const clientColumns = useMemo(
     () => [
       {
@@ -108,12 +133,29 @@ export const CRMPage: React.FC = () => {
         header: 'Datum vnosa',
         accessor: (client: Client) => new Date(client.createdAt).toLocaleDateString('sl-SI'),
       },
+      {
+        header: '',
+        accessor: (client: Client) => (
+          <div
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <TableRowActions
+              onEdit={() => handleEditClient(client)}
+              onDelete={() => softDeleteClient(client)}
+              deleteConfirmTitle="Izbriši stranko"
+              deleteConfirmMessage="Stranka bo odstranjena iz seznama, projekti ostanejo."
+            />
+          </div>
+        ),
+      },
     ],
-    [],
+    [softDeleteClient],
   );
 
   const visibleClients = useMemo(() => {
-    const base = showIncompleteOnly ? clients.filter((client) => !client.isComplete) : clients;
+    const activeClients = clients.filter((client) => client.isActive !== false);
+    const base = showIncompleteOnly ? activeClients.filter((client) => !client.isComplete) : activeClients;
     const term = searchTerm.trim().toLowerCase();
     if (!term) {
       return base;
@@ -193,7 +235,7 @@ export const CRMPage: React.FC = () => {
         </div>
 
         <div className="crm-clients__mobile">
-          <ClientsCardsMobile clients={visibleClients} onEdit={handleEditClient} />
+          <ClientsCardsMobile clients={visibleClients} onEdit={handleEditClient} onDelete={handleDeleteClient} />
         </div>
       </div>
 
