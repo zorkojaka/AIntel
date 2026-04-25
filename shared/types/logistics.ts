@@ -96,6 +96,8 @@ export interface WorkOrderItem extends LogisticsMaterialItem {
   isExtra: boolean;
   itemNote?: string | null;
   isCompleted?: boolean;
+  completedBy?: string | null;
+  completedAt?: string | null;
   casovnaNorma?: number;
   executionSpec?: WorkOrderExecutionSpec | null;
 }

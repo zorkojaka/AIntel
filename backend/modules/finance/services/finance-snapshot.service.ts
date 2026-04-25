@@ -119,6 +119,19 @@ type ExecutionUnitWithEmployee = {
   doneByEmployeeId?: unknown;
 };
 
+type ServiceWorkOrderItemWithCompletion = {
+  isCompleted?: boolean;
+  completedBy?: unknown;
+  completedByEmployeeId?: unknown;
+  executedBy?: unknown;
+  executedByEmployeeId?: unknown;
+  markedDoneBy?: unknown;
+  markedDoneByEmployeeId?: unknown;
+  doneBy?: unknown;
+  doneByEmployeeId?: unknown;
+  executedQuantity?: unknown;
+};
+
 type RateValue = { defaultPercent: number; overridePrice: number | null };
 
 function normalizeEmployeeId(value: unknown): string | null {
@@ -143,6 +156,19 @@ function getExecutionUnitCompletedBy(unit: ExecutionUnitWithEmployee): string | 
     normalizeEmployeeId(unit.markedDoneByEmployeeId) ??
     normalizeEmployeeId(unit.doneBy) ??
     normalizeEmployeeId(unit.doneByEmployeeId)
+  );
+}
+
+function getWorkOrderItemCompletedBy(item: ServiceWorkOrderItemWithCompletion): string | null {
+  return (
+    normalizeEmployeeId(item.completedBy) ??
+    normalizeEmployeeId(item.completedByEmployeeId) ??
+    normalizeEmployeeId(item.executedBy) ??
+    normalizeEmployeeId(item.executedByEmployeeId) ??
+    normalizeEmployeeId(item.markedDoneBy) ??
+    normalizeEmployeeId(item.markedDoneByEmployeeId) ??
+    normalizeEmployeeId(item.doneBy) ??
+    normalizeEmployeeId(item.doneByEmployeeId)
   );
 }
 
@@ -425,6 +451,33 @@ export async function createFinanceSnapshot(params: {
           }))
         )
       );
+      if (executionUnits.length === 0) {
+        const completedByEmployeeId = getWorkOrderItemCompletedBy(workOrderItem as ServiceWorkOrderItemWithCompletion);
+        console.log('[Snapshot] Service item completed by:', {
+          name: workOrderItem.name,
+          isCompleted: workOrderItem.isCompleted,
+          completedByEmployeeId,
+          executedQuantity: workOrderItem.executedQuantity,
+        });
+        if (!workOrderItem.isCompleted || !completedByEmployeeId) {
+          continue;
+        }
+
+        const rate = await getRateForEmployeeProduct(completedByEmployeeId, snapshotItem.productId);
+        if (!rate) {
+          console.warn(
+            `Employee service rate not found for employee ${completedByEmployeeId} and service ${snapshotItem.productId}`
+          );
+          employeeEarningsMap.set(completedByEmployeeId, employeeEarningsMap.get(completedByEmployeeId) ?? 0);
+          continue;
+        }
+
+        const executedQuantity = Math.max(1, toNumber(workOrderItem.executedQuantity, snapshotItem.quantity));
+        const perUnitEarnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
+        const earnings = round(perUnitEarnings * executedQuantity);
+        employeeEarningsMap.set(completedByEmployeeId, round((employeeEarningsMap.get(completedByEmployeeId) ?? 0) + earnings));
+        continue;
+      }
       for (const unit of executionUnits as ExecutionUnitWithEmployee[]) {
         if (!unit.isCompleted) {
           continue;

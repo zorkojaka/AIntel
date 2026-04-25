@@ -246,6 +246,21 @@ function normalizeExecutionUnitEmployeeId(value: unknown) {
   return null;
 }
 
+function normalizeCompletedAt(value: unknown) {
+  if (!value) return null;
+  const parsed = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(parsed.valueOf()) ? null : parsed;
+}
+
+function resolveActorEmployeeId(req: Request) {
+  return (
+    normalizeExecutionUnitEmployeeId((req as any)?.context?.actorEmployeeId) ??
+    normalizeExecutionUnitEmployeeId((req as any)?.authEmployee?._id) ??
+    normalizeExecutionUnitEmployeeId((req as any)?.authUser?.employeeId) ??
+    normalizeExecutionUnitEmployeeId((req as any)?.user?.employeeId)
+  );
+}
+
 function buildDefaultExecutionSpec(product: any) {
   const mode =
     product?.defaultExecutionMode === 'simple' ||
@@ -627,6 +642,8 @@ function serializeWorkOrder(order: any): WorkOrder | null {
                 ? null
                 : undefined,
           isCompleted: !!item.isCompleted,
+          completedBy: normalizeExecutionUnitEmployeeId(item.completedBy),
+          completedAt: item.completedAt ? new Date(item.completedAt).toISOString() : null,
           casovnaNorma:
             typeof item.casovnaNorma === 'number' && Number.isFinite(item.casovnaNorma)
               ? item.casovnaNorma
@@ -1081,7 +1098,6 @@ export async function getInstallerAvailability(req: Request, res: Response, next
     if (!tenantId) {
       return res.fail('TenantId ni podan.', 400);
     }
-
     const { employeeId } = req.params;
     const excludeWorkOrderId = typeof req.query.excludeWorkOrderId === 'string' ? req.query.excludeWorkOrderId : '';
     const resolvedEmployee = await resolveEmployeeIdForTenant(tenantId, employeeId);
@@ -1144,6 +1160,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     if (!tenantId) {
       return res.fail('TenantId ni podan.', 400);
     }
+    const actorEmployeeId = resolveActorEmployeeId(req);
 
     const payload = req.body ?? {};
     ensureConfirmationVersionHistory(existing);
@@ -1251,7 +1268,21 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
               target.isExtra = incoming.isExtra;
             }
             if (typeof incoming.isCompleted === 'boolean') {
+              const wasCompleted = !!target.isCompleted;
               target.isCompleted = incoming.isCompleted;
+              if (incoming.isCompleted) {
+                target.completedBy =
+                  wasCompleted
+                    ? normalizeExecutionUnitEmployeeId(target.completedBy) ?? normalizeExecutionUnitEmployeeId(incoming.completedBy) ?? actorEmployeeId
+                    : actorEmployeeId ?? normalizeExecutionUnitEmployeeId(incoming.completedBy) ?? normalizeExecutionUnitEmployeeId(target.completedBy);
+                target.completedAt =
+                  (wasCompleted ? normalizeCompletedAt(target.completedAt) : null) ??
+                  normalizeCompletedAt(incoming.completedAt) ??
+                  new Date();
+              } else {
+                target.completedBy = null;
+                target.completedAt = null;
+              }
             }
             if (typeof incoming.casovnaNorma === 'number' && Number.isFinite(incoming.casovnaNorma)) {
               target.casovnaNorma = incoming.casovnaNorma;
@@ -1289,6 +1320,14 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           isExtra: incoming.isExtra !== undefined ? !!incoming.isExtra : true,
           itemNote: typeof incoming.itemNote === 'string' ? incoming.itemNote : null,
           isCompleted: typeof incoming.isCompleted === 'boolean' ? incoming.isCompleted : false,
+          completedBy:
+            incoming.isCompleted === true
+              ? actorEmployeeId ?? normalizeExecutionUnitEmployeeId(incoming.completedBy)
+              : null,
+          completedAt:
+            incoming.isCompleted === true
+              ? normalizeCompletedAt(incoming.completedAt) ?? new Date()
+              : null,
           casovnaNorma:
             typeof incoming.casovnaNorma === 'number' && Number.isFinite(incoming.casovnaNorma)
               ? incoming.casovnaNorma

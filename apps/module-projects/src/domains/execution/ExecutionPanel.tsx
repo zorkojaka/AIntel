@@ -550,6 +550,7 @@ export function ExecutionPanel({
   const [correctionOrderId, setCorrectionOrderId] = useState<string | null>(null);
   const [startingCorrectionId, setStartingCorrectionId] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [currentEmployeeId, setCurrentEmployeeId] = useState<string | null>(null);
   const [customerRemarkDraft, setCustomerRemarkDraft] = useState("");
   const [expandedExecutionItems, setExpandedExecutionItems] = useState<Record<string, boolean>>({});
   const [editingUnitNotes, setEditingUnitNotes] = useState<Record<string, boolean>>({});
@@ -575,6 +576,25 @@ export function ExecutionPanel({
       }
     };
     fetchEmployees();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const fetchMe = async () => {
+      try {
+        const response = await fetch("/api/auth/me", { credentials: "include" });
+        const payload = await response.json();
+        if (!alive) return;
+        setCurrentEmployeeId(typeof payload?.data?.employee?.id === "string" ? payload.data.employee.id : null);
+      } catch {
+        if (!alive) return;
+        setCurrentEmployeeId(null);
+      }
+    };
+    fetchMe();
     return () => {
       alive = false;
     };
@@ -867,6 +887,8 @@ export function ExecutionPanel({
       isExtra: !!item.isExtra,
       itemNote: item.itemNote && item.itemNote.length > 0 ? item.itemNote : null,
       isCompleted: !!item.isCompleted,
+      completedBy: item.completedBy ?? null,
+      completedAt: item.completedAt ?? null,
       executionSpec: ensureExecutionSpec(item.executionSpec),
     }));
 
@@ -2037,6 +2059,8 @@ export function ExecutionPanel({
                                   }
                                   const updates: Partial<WorkOrder["items"][number]> = {
                                     isCompleted: checked,
+                                    completedBy: checked ? currentEmployeeId : null,
+                                    completedAt: checked ? new Date().toISOString() : null,
                                     executedQuantity: checked
                                       ? executedValue > 0
                                         ? executedValue
@@ -2228,6 +2252,8 @@ export function ExecutionPanel({
                               }
                               const updates: Partial<WorkOrder["items"][number]> = {
                                 isCompleted: checked,
+                                completedBy: checked ? currentEmployeeId : null,
+                                completedAt: checked ? new Date().toISOString() : null,
                                 executedQuantity: checked
                                   ? (typeof item.executedQuantity === "number" && item.executedQuantity > 0
                                       ? item.executedQuantity
