@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
@@ -1953,7 +1953,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 variant="ghost"
                 className="size-9 shrink-0"
                 disabled={!selectedTemplateId}
-                onClick={openRenameTemplateDialog}
+                onClick={() => openRenameTemplateDialog()}
                 aria-label="Preimenuj template"
               >
                 <Pencil className="h-4 w-4" />
@@ -2572,7 +2572,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 </div>
                 <Checkbox
                   checked={templateApplyGlobalDiscount}
-                  onCheckedChange={(checked) => setTemplateApplyGlobalDiscount(Boolean(checked))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                    setTemplateApplyGlobalDiscount(event.target.checked)
+                  }
                 />
               </div>
               {templateApplyGlobalDiscount && (
@@ -2600,7 +2602,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 </div>
                 <Checkbox
                   checked={templateApplyPerItemDiscount}
-                  onCheckedChange={(checked) => setTemplateApplyPerItemDiscount(Boolean(checked))}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                    setTemplateApplyPerItemDiscount(event.target.checked)
+                  }
                 />
               </div>
             </div>
