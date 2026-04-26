@@ -77,8 +77,19 @@ function normalizeRefId(value: unknown): string | null {
     return normalizeId(value);
   }
   if (value && typeof value === 'object') {
+    if (typeof (value as { toHexString?: unknown }).toHexString === 'function') {
+      return (value as { toHexString: () => string }).toHexString();
+    }
     const ref = value as { _id?: unknown; id?: unknown };
-    return normalizeRefId(ref._id ?? ref.id);
+    const nestedValue = ref._id ?? ref.id;
+    if (nestedValue && nestedValue !== value) {
+      return normalizeRefId(nestedValue);
+    }
+    if (typeof (value as { toString?: unknown }).toString === 'function') {
+      const stringValue = String(value);
+      return stringValue && stringValue !== '[object Object]' ? stringValue : null;
+    }
+    return null;
   }
   return null;
 }
@@ -140,8 +151,19 @@ function normalizeEmployeeId(value: unknown): string | null {
     return trimmed.length > 0 ? trimmed : null;
   }
   if (value && typeof value === 'object') {
+    if (typeof (value as { toHexString?: unknown }).toHexString === 'function') {
+      return (value as { toHexString: () => string }).toHexString();
+    }
     const objectValue = value as { _id?: unknown; id?: unknown };
-    return normalizeEmployeeId(objectValue._id ?? objectValue.id);
+    const nestedValue = objectValue._id ?? objectValue.id;
+    if (nestedValue && nestedValue !== value) {
+      return normalizeEmployeeId(nestedValue);
+    }
+    if (typeof (value as { toString?: unknown }).toString === 'function') {
+      const stringValue = String(value);
+      return stringValue && stringValue !== '[object Object]' ? stringValue : null;
+    }
+    return null;
   }
   return null;
 }

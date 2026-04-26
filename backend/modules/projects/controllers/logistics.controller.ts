@@ -240,8 +240,19 @@ function normalizeExecutionUnitEmployeeId(value: unknown) {
     return trimmed.length > 0 ? trimmed : null;
   }
   if (value && typeof value === 'object') {
+    if (typeof (value as { toHexString?: unknown }).toHexString === 'function') {
+      return (value as { toHexString: () => string }).toHexString();
+    }
     const objectValue = value as { _id?: unknown; id?: unknown };
-    return normalizeExecutionUnitEmployeeId(objectValue._id ?? objectValue.id);
+    const nestedValue = objectValue._id ?? objectValue.id;
+    if (nestedValue && nestedValue !== value) {
+      return normalizeExecutionUnitEmployeeId(nestedValue);
+    }
+    if (typeof (value as { toString?: unknown }).toString === 'function') {
+      const stringValue = String(value);
+      return stringValue && stringValue !== '[object Object]' ? stringValue : null;
+    }
+    return null;
   }
   return null;
 }
