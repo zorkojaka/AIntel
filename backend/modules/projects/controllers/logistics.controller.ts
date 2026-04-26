@@ -241,13 +241,31 @@ function normalizeExecutionUnitEmployeeId(value: unknown) {
     return trimmed.length > 0 ? trimmed : null;
   }
   if (value && typeof value === 'object') {
+    if (typeof (value as { toHexString?: unknown }).toHexString === 'function') {
+      return (value as { toHexString: () => string }).toHexString();
+    }
     const objectValue = value as { _id?: unknown; id?: unknown };
-    return normalizeExecutionUnitEmployeeId(objectValue._id ?? objectValue.id);
+    const nestedValue = objectValue._id ?? objectValue.id;
+    if (nestedValue && nestedValue !== value) {
+      return normalizeExecutionUnitEmployeeId(nestedValue);
+    }
+    if (typeof (value as { toString?: unknown }).toString === 'function') {
+      const stringValue = String(value);
+      return stringValue && stringValue !== '[object Object]' ? stringValue : null;
+    }
+    return null;
   }
   return null;
 }
 
-function normalizeExecutionUnitCompletedAt(value: unknown) {
+function normalizeExecutionUnitCompletedAt(value: unknown): string | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string' && value.trim()) return value;
+  return null;
+}
+
+function normalizeCompletedAt(value: unknown) {
   if (!value) return null;
   const parsed = value instanceof Date ? value : new Date(String(value));
   return Number.isNaN(parsed.valueOf()) ? null : parsed;
@@ -643,6 +661,8 @@ function serializeWorkOrder(order: any): WorkOrder | null {
                 ? null
                 : undefined,
           isCompleted: !!item.isCompleted,
+          completedBy: normalizeExecutionUnitEmployeeId(item.completedBy),
+          completedAt: item.completedAt ? new Date(item.completedAt).toISOString() : null,
           casovnaNorma:
             typeof item.casovnaNorma === 'number' && Number.isFinite(item.casovnaNorma)
               ? item.casovnaNorma
@@ -1118,7 +1138,6 @@ export async function getInstallerAvailability(req: Request, res: Response, next
     if (!tenantId) {
       return res.fail('TenantId ni podan.', 400);
     }
-
     const { employeeId } = req.params;
     const excludeWorkOrderId = typeof req.query.excludeWorkOrderId === 'string' ? req.query.excludeWorkOrderId : '';
     const resolvedEmployee = await resolveEmployeeIdForTenant(tenantId, employeeId);
@@ -1289,7 +1308,21 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
               target.isExtra = incoming.isExtra;
             }
             if (typeof incoming.isCompleted === 'boolean') {
+              const wasCompleted = !!target.isCompleted;
               target.isCompleted = incoming.isCompleted;
+              if (incoming.isCompleted) {
+                target.completedBy =
+                  wasCompleted
+                    ? normalizeExecutionUnitEmployeeId(target.completedBy) ?? normalizeExecutionUnitEmployeeId(incoming.completedBy) ?? actorEmployeeId
+                    : actorEmployeeId ?? normalizeExecutionUnitEmployeeId(incoming.completedBy) ?? normalizeExecutionUnitEmployeeId(target.completedBy);
+                target.completedAt =
+                  (wasCompleted ? normalizeCompletedAt(target.completedAt) : null) ??
+                  normalizeCompletedAt(incoming.completedAt) ??
+                  new Date();
+              } else {
+                target.completedBy = null;
+                target.completedAt = null;
+              }
             }
             if (typeof incoming.casovnaNorma === 'number' && Number.isFinite(incoming.casovnaNorma)) {
               target.casovnaNorma = incoming.casovnaNorma;
@@ -1327,6 +1360,14 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           isExtra: incoming.isExtra !== undefined ? !!incoming.isExtra : true,
           itemNote: typeof incoming.itemNote === 'string' ? incoming.itemNote : null,
           isCompleted: typeof incoming.isCompleted === 'boolean' ? incoming.isCompleted : false,
+          completedBy:
+            incoming.isCompleted === true
+              ? actorEmployeeId ?? normalizeExecutionUnitEmployeeId(incoming.completedBy)
+              : null,
+          completedAt:
+            incoming.isCompleted === true
+              ? normalizeCompletedAt(incoming.completedAt) ?? new Date()
+              : null,
           casovnaNorma:
             typeof incoming.casovnaNorma === 'number' && Number.isFinite(incoming.casovnaNorma)
               ? incoming.casovnaNorma

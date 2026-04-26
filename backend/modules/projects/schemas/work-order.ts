@@ -15,6 +15,8 @@ interface WorkOrderItem {
   isExtra: boolean;
   itemNote?: string | null;
   isCompleted?: boolean;
+  completedBy?: string | null;
+  completedAt?: Date | null;
   casovnaNorma?: number;
     executionSpec?: {
       mode?: 'simple' | 'per_unit' | 'measured';
@@ -127,6 +129,8 @@ const workOrderItemSchema = new Schema<WorkOrderItem>(
     isExtra: { type: Boolean, required: true, default: false },
     itemNote: { type: String, default: null },
     isCompleted: { type: Boolean, default: false },
+    completedBy: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
+    completedAt: { type: Date, default: null },
     casovnaNorma: { type: Number, default: 0 },
     executionSpec: {
       type: new Schema(
