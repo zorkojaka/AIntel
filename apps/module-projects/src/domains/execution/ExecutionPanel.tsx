@@ -125,6 +125,10 @@ function getPerUnitSummary(spec: WorkOrderExecutionSpec) {
   return `Enote: ${completedUnits}/${totalUnits}`;
 }
 
+function getUnitCompletedBy(unit: WorkOrderExecutionUnit) {
+  return unit.completedBy ?? unit.completedByEmployeeId ?? unit.executedBy ?? unit.executedByEmployeeId ?? unit.markedDoneBy ?? unit.doneBy ?? null;
+}
+
 function hasExecutionContent(spec: WorkOrderExecutionSpec) {
   return Boolean(
     spec.locationSummary?.trim() ||
@@ -621,12 +625,31 @@ export function ExecutionPanel({
   const employeeNameById = useMemo(() => {
     const map = new Map<string, string>();
     employees.forEach((employee) => {
-      if (employee.active) {
-        map.set(employee.id, employee.name);
-      }
+      map.set(employee.id, employee.name);
     });
     return map;
   }, [employees]);
+
+  const renderCompletedByMeta = (completedBy: string | null | undefined, completedAt?: string | null) => {
+    if (!completedBy) return null;
+    const employeeName = employeeNameById.get(completedBy) ?? (completedBy === currentEmployeeId ? "jaz" : completedBy);
+    const completedAtLabel = completedAt ? formatExecutionDateTime(completedAt) : null;
+    return (
+      <div className="text-xs font-medium text-emerald-700">
+        Opravljeno: {employeeName}{completedAtLabel ? ` · ${completedAtLabel}` : ""}
+      </div>
+    );
+  };
+
+  const renderItemCompletedByMeta = (item: WorkOrderItemDraft) => {
+    if (!item.isCompleted) return null;
+    return renderCompletedByMeta(item.completedBy, item.completedAt);
+  };
+
+  const renderUnitCompletedByMeta = (unit: WorkOrderExecutionUnit) => {
+    if (!unit.isCompleted) return null;
+    return renderCompletedByMeta(getUnitCompletedBy(unit));
+  };
 
   const getInitialDraftValues = (order: WorkOrder) => ({
     status: order.status,
@@ -1382,6 +1405,7 @@ export function ExecutionPanel({
                     {noteText && <span className="text-xs text-muted-foreground">{noteText}</span>}
                   </div>
                 )}
+                {renderUnitCompletedByMeta(unit)}
                 <PreparationPhotoThumbnails
                   projectId={projectId}
                   itemId={getWorkOrderItemPhotoId(item)}
@@ -1425,6 +1449,8 @@ export function ExecutionPanel({
                   onChange={(event: ChangeEvent<HTMLInputElement>) =>
                     updateExecutionUnit(order, item.id, unit.id, {
                       isCompleted: event.target.checked,
+                      completedBy: event.target.checked ? currentEmployeeId : null,
+                      completedByEmployeeId: event.target.checked ? currentEmployeeId : null,
                     })
                   }
                 />
@@ -1505,6 +1531,7 @@ export function ExecutionPanel({
                           Opomba: {unit.instructions?.trim() || unit.note?.trim()}
                         </div>
                       ) : null}
+                      {renderUnitCompletedByMeta(unit)}
                       <PreparationPhotoThumbnails
                         projectId={projectId}
                         itemId={getWorkOrderItemPhotoId(item)}
@@ -1521,6 +1548,8 @@ export function ExecutionPanel({
                         onChange={(event: ChangeEvent<HTMLInputElement>) =>
                           updateExecutionUnit(order, item.id, unit.id, {
                             isCompleted: event.target.checked,
+                            completedBy: event.target.checked ? currentEmployeeId : null,
+                            completedByEmployeeId: event.target.checked ? currentEmployeeId : null,
                           })
                         }
                       />
@@ -2080,6 +2109,7 @@ export function ExecutionPanel({
                                         ) : (
                                           <div className="space-y-1">
                                             <p className="font-medium">{item.name || "-"}</p>
+                                            {renderItemCompletedByMeta(item)}
                                             <div className="flex flex-wrap items-center gap-2">
                                               <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
                                               {renderItemStatusBadge(item)}
@@ -2273,7 +2303,10 @@ export function ExecutionPanel({
                                       <div>{renderItemStatusBadge(item)}</div>
                                     </div>
                                   ) : (
-                                    <p className="text-sm font-medium">{item.name}</p>
+                                    <div className="space-y-1">
+                                      <p className="text-sm font-medium">{item.name}</p>
+                                      {renderItemCompletedByMeta(item)}
+                                    </div>
                                   )}
                                   {!isNewExtraItem ? (
                                     <div className="flex flex-wrap items-center gap-2">
