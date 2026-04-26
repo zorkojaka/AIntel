@@ -439,6 +439,7 @@ export async function createFinanceSnapshot(params: {
       continue;
     }
 
+    let serviceLaborPurchaseTotal = 0;
     const invoiceItem = (invoiceVersion.items ?? []).find((item) => item.name === snapshotItem.name) ?? null;
     workOrders.forEach((workOrder) => {
       console.log(
@@ -497,6 +498,7 @@ export async function createFinanceSnapshot(params: {
         const executedQuantity = Math.max(1, toNumber(workOrderItem.executedQuantity, snapshotItem.quantity));
         const perUnitEarnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
         const earnings = round(perUnitEarnings * executedQuantity);
+        serviceLaborPurchaseTotal = round(serviceLaborPurchaseTotal + earnings);
         employeeEarningsMap.set(completedByEmployeeId, round((employeeEarningsMap.get(completedByEmployeeId) ?? 0) + earnings));
         continue;
       }
@@ -520,9 +522,14 @@ export async function createFinanceSnapshot(params: {
         }
 
         const earnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
+        serviceLaborPurchaseTotal = round(serviceLaborPurchaseTotal + earnings);
         employeeEarningsMap.set(completedByEmployeeId, round((employeeEarningsMap.get(completedByEmployeeId) ?? 0) + earnings));
       }
     }
+
+    snapshotItem.totalPurchase = round(serviceLaborPurchaseTotal);
+    snapshotItem.unitPricePurchase = snapshotItem.quantity > 0 ? round(serviceLaborPurchaseTotal / snapshotItem.quantity) : round(serviceLaborPurchaseTotal);
+    snapshotItem.margin = round(snapshotItem.totalSale - snapshotItem.totalPurchase);
   }
 
   const employeeEarningIds = Array.from(new Set([...assignedEmployeeIds, ...employeeEarningsMap.keys()]));
