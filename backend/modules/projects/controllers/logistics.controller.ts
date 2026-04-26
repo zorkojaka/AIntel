@@ -221,6 +221,7 @@ function sanitizeExecutionSpec(input: any) {
                 : null,
           isCompleted: !!unit?.isCompleted,
           completedBy: normalizeExecutionUnitEmployeeId(unit?.completedBy),
+          completedAt: normalizeExecutionUnitCompletedAt(unit?.completedAt),
           completedByEmployeeId: normalizeExecutionUnitEmployeeId(unit?.completedByEmployeeId),
           executedBy: normalizeExecutionUnitEmployeeId(unit?.executedBy),
           executedByEmployeeId: normalizeExecutionUnitEmployeeId(unit?.executedByEmployeeId),
@@ -723,20 +724,40 @@ function serializeWorkOrder(order: any): WorkOrder | null {
   };
 }
 
-function sanitizeIncomingExecutionSpec(input: any) {
+function sanitizeIncomingExecutionSpec(input: any, existingSpec?: any, actorEmployeeId?: string | null) {
   if (!input || typeof input !== 'object') {
     return null;
+  }
+  const existingUnitsById = new Map<string, any>();
+  if (Array.isArray(existingSpec?.executionUnits)) {
+    existingSpec.executionUnits.forEach((unit: any) => {
+      if (typeof unit?.id === 'string') {
+        existingUnitsById.set(unit.id, unit);
+      }
+    });
   }
   const executionUnits = Array.isArray(input.executionUnits)
     ? input.executionUnits
         .map((unit: any) => {
           const label = typeof unit?.label === 'string' ? unit.label.trim() : '';
           if (!label) return null;
+          const unitId =
+            typeof unit?.id === 'string' && unit.id.trim().length > 0
+              ? unit.id.trim()
+              : new Types.ObjectId().toString();
+          const existingUnit = existingUnitsById.get(unitId);
+          const isCompleted = !!unit?.isCompleted;
+          const wasCompleted = !!existingUnit?.isCompleted;
+          const incomingCompletedBy = normalizeExecutionUnitEmployeeId(unit?.completedBy);
+          const existingCompletedBy =
+            normalizeExecutionUnitEmployeeId(existingUnit?.completedBy) ??
+            normalizeExecutionUnitEmployeeId(existingUnit?.completedByEmployeeId);
+          const completedBy = isCompleted ? (wasCompleted ? existingCompletedBy : actorEmployeeId) ?? incomingCompletedBy ?? existingCompletedBy : null;
+          const incomingCompletedAt = normalizeExecutionUnitCompletedAt(unit?.completedAt);
+          const existingCompletedAt = normalizeExecutionUnitCompletedAt(existingUnit?.completedAt);
+          const completedAt = isCompleted ? (wasCompleted ? existingCompletedAt : null) ?? incomingCompletedAt ?? new Date() : null;
           return {
-            id:
-              typeof unit?.id === 'string' && unit.id.trim().length > 0
-                ? unit.id.trim()
-                : new Types.ObjectId().toString(),
+            id: unitId,
             label,
             location: typeof unit?.location === 'string' ? unit.location : unit?.location === null ? null : null,
             instructions:
@@ -745,9 +766,10 @@ function sanitizeIncomingExecutionSpec(input: any) {
                 : unit?.instructions === null
                   ? null
                   : null,
-            isCompleted: !!unit?.isCompleted,
-            completedBy: normalizeExecutionUnitEmployeeId(unit?.completedBy),
-            completedByEmployeeId: normalizeExecutionUnitEmployeeId(unit?.completedByEmployeeId),
+            isCompleted,
+            completedBy,
+            completedAt,
+            completedByEmployeeId: completedBy ?? normalizeExecutionUnitEmployeeId(unit?.completedByEmployeeId),
             executedBy: normalizeExecutionUnitEmployeeId(unit?.executedBy),
             executedByEmployeeId: normalizeExecutionUnitEmployeeId(unit?.executedByEmployeeId),
             markedDoneBy: normalizeExecutionUnitEmployeeId(unit?.markedDoneBy),
@@ -1302,7 +1324,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
               target.offerItemId = incoming.offerItemId ?? null;
             }
             if ('executionSpec' in incoming) {
-              target.executionSpec = sanitizeIncomingExecutionSpec(incoming.executionSpec);
+              target.executionSpec = sanitizeIncomingExecutionSpec(incoming.executionSpec, target.executionSpec, actorEmployeeId);
             }
             return;
           }
@@ -1343,7 +1365,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
             typeof incoming.casovnaNorma === 'number' && Number.isFinite(incoming.casovnaNorma)
               ? incoming.casovnaNorma
               : 0,
-          executionSpec: sanitizeIncomingExecutionSpec(incoming.executionSpec),
+          executionSpec: sanitizeIncomingExecutionSpec(incoming.executionSpec, null, actorEmployeeId),
         });
       });
 

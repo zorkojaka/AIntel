@@ -30,6 +30,7 @@ interface WorkOrderItem {
       instructions?: string | null;
       isCompleted: boolean;
       completedBy?: string | null;
+      completedAt?: Date | null;
       completedByEmployeeId?: string | null;
       executedBy?: string | null;
       executedByEmployeeId?: string | null;
@@ -152,6 +153,7 @@ const workOrderItemSchema = new Schema<WorkOrderItem>(
                   instructions: { type: String, default: null },
                   isCompleted: { type: Boolean, default: false },
                   completedBy: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
+                  completedAt: { type: Date, default: null },
                   completedByEmployeeId: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
                   executedBy: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
                   executedByEmployeeId: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },

@@ -90,6 +90,7 @@ function sanitizeExecutionUnits(units: WorkOrderExecutionSpec["executionUnits"] 
         instructions: unit.instructions ?? "",
         isCompleted: !!unit.isCompleted,
         completedBy: unit.completedBy ?? null,
+        completedAt: unit.completedAt ?? null,
         completedByEmployeeId: unit.completedByEmployeeId ?? null,
         executedBy: unit.executedBy ?? null,
         executedByEmployeeId: unit.executedByEmployeeId ?? null,
@@ -123,6 +124,13 @@ function getPerUnitSummary(spec: WorkOrderExecutionSpec) {
   const completedUnits = (spec.executionUnits ?? []).filter((unit) => unit.isCompleted).length;
   if (totalUnits === 0) return "Enote: 0";
   return `Enote: ${completedUnits}/${totalUnits}`;
+}
+
+function formatCompletedAt(value: string | null | undefined) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.valueOf())) return null;
+  return `${parsed.getDate()}.${parsed.getMonth() + 1}.${parsed.getFullYear()}`;
 }
 
 function getUnitCompletedBy(unit: WorkOrderExecutionUnit) {
@@ -593,6 +601,8 @@ export function ExecutionPanel({
         const payload = await response.json();
         if (!alive) return;
         setCurrentEmployeeId(typeof payload?.data?.employee?.id === "string" ? payload.data.employee.id : null);
+        const employeeId = typeof payload?.data?.employee?.id === "string" ? payload.data.employee.id : null;
+        setCurrentEmployeeId(employeeId);
       } catch {
         if (!alive) return;
         setCurrentEmployeeId(null);
@@ -806,6 +816,25 @@ export function ExecutionPanel({
     });
     updateDraft(order, { items: nextItems });
     setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
+  };
+
+  const buildCompletionChanges = (checked: boolean): Partial<WorkOrderExecutionUnit> => ({
+    isCompleted: checked,
+    completedBy: checked ? currentEmployeeId : null,
+    completedByEmployeeId: checked ? currentEmployeeId : null,
+    completedAt: checked ? new Date().toISOString() : null,
+  });
+
+  const renderUnitCompletionMeta = (unit: WorkOrderExecutionUnit) => {
+    if (!unit.isCompleted) return null;
+    const employeeId = getUnitCompletedBy(unit);
+    const employeeName = employeeId ? employeeNameById.get(employeeId) ?? employeeId : null;
+    const completedAt = formatCompletedAt(unit.completedAt);
+    return (
+      <span className="text-xs text-muted-foreground">
+        Opravljeno{employeeName ? `: ${employeeName}` : ""}{completedAt ? ` · ${completedAt}` : ""}
+      </span>
+    );
   };
 
   const addExecutionUnit = (order: WorkOrder, itemId: string) => {
@@ -1403,6 +1432,7 @@ export function ExecutionPanel({
                     {unit.location?.trim() && <span className="text-muted-foreground">·</span>}
                     {unit.location?.trim() && <span className="font-medium">{unit.location}</span>}
                     {noteText && <span className="text-xs text-muted-foreground">{noteText}</span>}
+                    {renderUnitCompletionMeta(unit)}
                   </div>
                 )}
                 {renderUnitCompletedByMeta(unit)}
@@ -1531,7 +1561,7 @@ export function ExecutionPanel({
                           Opomba: {unit.instructions?.trim() || unit.note?.trim()}
                         </div>
                       ) : null}
-                      {renderUnitCompletedByMeta(unit)}
+                      {renderUnitCompletionMeta(unit)}
                       <PreparationPhotoThumbnails
                         projectId={projectId}
                         itemId={getWorkOrderItemPhotoId(item)}
@@ -2076,7 +2106,7 @@ export function ExecutionPanel({
                                   if (hasVisibleInlineUnits) {
                                     const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => ({
                                       ...unit,
-                                      isCompleted: checked,
+                                      ...buildCompletionChanges(checked),
                                     }));
                                     const syncedItem = syncItemCompletionFromUnits(item, nextUnits);
                                     applyItemChange(order, item.id, {
@@ -2270,7 +2300,7 @@ export function ExecutionPanel({
                               if (hasVisibleInlineUnits) {
                                 const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => ({
                                   ...unit,
-                                  isCompleted: checked,
+                                  ...buildCompletionChanges(checked),
                                 }));
                                 const syncedItem = syncItemCompletionFromUnits(item, nextUnits);
                                 applyItemChange(order, item.id, {
