@@ -258,6 +258,13 @@ function normalizeExecutionUnitEmployeeId(value: unknown) {
   return null;
 }
 
+function normalizeExecutionUnitCompletedAt(value: unknown): string | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string' && value.trim()) return value;
+  return null;
+}
+
 function normalizeCompletedAt(value: unknown) {
   if (!value) return null;
   const parsed = value instanceof Date ? value : new Date(String(value));
