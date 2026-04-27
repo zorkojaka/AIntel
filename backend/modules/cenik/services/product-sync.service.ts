@@ -27,12 +27,15 @@ type NormalizedProduct = {
   naslovDobavitelja?: string;
   casovnaNorma?: string;
   isService: boolean;
+  defaultExecutionMode?: 'simple' | 'per_unit' | 'measured';
+  defaultInstructionsTemplate?: string;
   rowIndex: number;
   rowId: string;
   rowFingerprint: string;
   normalizedName: string;
   strictBusinessKey: string;
   weakNameKey: string;
+  providedFields?: string[];
 };
 
 type ExistingProduct = {
@@ -55,6 +58,8 @@ type ExistingProduct = {
   naslovDobavitelja?: string;
   casovnaNorma?: string;
   isService?: boolean;
+  defaultExecutionMode?: 'simple' | 'per_unit' | 'measured';
+  defaultInstructionsTemplate?: string;
   isActive?: boolean;
   mergedIntoProductId?: mongoose.Types.ObjectId;
   status?: string;
@@ -288,8 +293,19 @@ function assertNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function normalizeExecutionMode(value: unknown) {
+  if (value === 'simple' || value === 'per_unit' || value === 'measured') {
+    return value;
+  }
+  return undefined;
+}
+
 function buildExternalKey(source: string, externalId: string) {
   return `${source}:${externalId}`;
+}
+
+function hasProvidedField(product: NormalizedProduct, field: string) {
+  return !product.providedFields || product.providedFields.includes(field);
 }
 
 function removeUndefined<T extends Record<string, unknown>>(value: T) {
@@ -387,6 +403,10 @@ function validateAndNormalizeRow(
     };
   }
 
+  const sourceForRow = normalizeText(product.externalSource) || source;
+  const providedFields = Array.isArray(product.__providedFields)
+    ? product.__providedFields.filter((field): field is string => typeof field === 'string' && field.trim() !== '')
+    : undefined;
   const imeRaw = normalizeText(product.ime);
   const dobaviteljRaw = normalizeText(product.dobavitelj) || defaults.dobavitelj;
   const proizvajalecRaw = normalizeText(product.proizvajalec) || undefined;
@@ -407,10 +427,10 @@ function validateAndNormalizeRow(
     errors.push({ index, rowId, field: 'externalId', reason: 'must be a non-empty string' });
   }
 
-  const computedExternalKey = externalIdRaw ? buildExternalKey(source, externalIdRaw) : '';
+  const computedExternalKey = externalIdRaw ? buildExternalKey(sourceForRow, externalIdRaw) : '';
 
-  if (typeof product.externalSource === 'string' && product.externalSource.trim() !== source) {
-    errors.push({ index, rowId, field: 'externalSource', reason: `must be "${source}"` });
+  if (typeof product.externalSource === 'string' && !sourceForRow) {
+    errors.push({ index, rowId, field: 'externalSource', reason: 'must be a non-empty string' });
   }
 
   if (typeof product.externalKey === 'string' && product.externalKey.trim().length > 0) {
@@ -435,36 +455,42 @@ function validateAndNormalizeRow(
   }
 
   const ime = imeRaw;
-  if (!ime) {
+  if ((!providedFields || providedFields.includes('ime')) && !ime) {
     errors.push({ index, rowId, field: 'ime', reason: 'must be a non-empty string' });
   }
 
   const prodajnaCena = product.prodajnaCena;
-  if (!assertNumber(prodajnaCena) || (prodajnaCena as number) <= 0) {
+  if (
+    (!providedFields || providedFields.includes('prodajnaCena')) &&
+    (!assertNumber(prodajnaCena) || (prodajnaCena as number) <= 0)
+  ) {
     errors.push({ index, rowId, field: 'prodajnaCena', reason: 'must be a number > 0' });
   }
 
   const nabavnaCena = product.nabavnaCena;
-  if (!assertNumber(nabavnaCena) || (nabavnaCena as number) < 0) {
+  if (
+    (!providedFields || providedFields.includes('nabavnaCena')) &&
+    (!assertNumber(nabavnaCena) || (nabavnaCena as number) < 0)
+  ) {
     errors.push({ index, rowId, field: 'nabavnaCena', reason: 'must be a number >= 0' });
   }
 
   const dobavitelj = dobaviteljRaw;
-  if (!dobavitelj) {
+  if ((!providedFields || providedFields.includes('dobavitelj')) && !dobavitelj) {
     errors.push({ index, rowId, field: 'dobavitelj', reason: 'must be a non-empty string' });
   }
 
   const naslovDobavitelja = normalizeText(product.naslovDobavitelja) || defaults.naslovDobavitelja;
-  if (!naslovDobavitelja) {
+  if ((!providedFields || providedFields.includes('naslovDobavitelja')) && !naslovDobavitelja) {
     errors.push({ index, rowId, field: 'naslovDobavitelja', reason: 'must be a non-empty string' });
   }
 
-  if (!assertBoolean(product.isService)) {
+  if ((!providedFields || providedFields.includes('isService')) && !assertBoolean(product.isService)) {
     errors.push({ index, rowId, field: 'isService', reason: 'must be a boolean' });
   }
 
   const categorySlugs = normalizeCategorySlugs(product.categorySlugs);
-  if (categorySlugs.length === 0) {
+  if ((!providedFields || providedFields.includes('categorySlugs')) && categorySlugs.length === 0) {
     errors.push({ index, rowId, field: 'categorySlugs', reason: 'must be a non-empty array' });
   }
 
@@ -473,8 +499,8 @@ function validateAndNormalizeRow(
   }
 
   const normalized: NormalizedProduct = {
-    source,
-    externalSource: source,
+    source: sourceForRow,
+    externalSource: sourceForRow,
     externalId: externalIdRaw,
     externalKey: computedExternalKey,
     ime,
@@ -483,8 +509,8 @@ function validateAndNormalizeRow(
     purchasePriceWithoutVat: assertNumber(product.purchasePriceWithoutVat)
       ? (product.purchasePriceWithoutVat as number)
       : undefined,
-    nabavnaCena: nabavnaCena as number,
-    prodajnaCena: prodajnaCena as number,
+    nabavnaCena: assertNumber(nabavnaCena) ? (nabavnaCena as number) : 0,
+    prodajnaCena: assertNumber(prodajnaCena) ? (prodajnaCena as number) : 0,
     kratekOpis: normalizeText(product.kratekOpis) || undefined,
     dolgOpis: normalizeText(product.dolgOpis) || undefined,
     povezavaDoSlike: normalizeUrl(product.povezavaDoSlike) || undefined,
@@ -494,6 +520,8 @@ function validateAndNormalizeRow(
     naslovDobavitelja,
     casovnaNorma: normalizeText(product.casovnaNorma) || undefined,
     isService: product.isService as boolean,
+    defaultExecutionMode: normalizeExecutionMode(product.defaultExecutionMode),
+    defaultInstructionsTemplate: normalizeText(product.defaultInstructionsTemplate) || undefined,
     rowIndex: index,
     rowId,
     rowFingerprint: buildRowFingerprint({
@@ -501,8 +529,8 @@ function validateAndNormalizeRow(
       externalId: externalIdRaw,
       ime,
       categorySlugs,
-      nabavnaCena: nabavnaCena as number,
-      prodajnaCena: prodajnaCena as number,
+      nabavnaCena: assertNumber(nabavnaCena) ? (nabavnaCena as number) : 0,
+      prodajnaCena: assertNumber(prodajnaCena) ? (prodajnaCena as number) : 0,
       proizvajalec: proizvajalecRaw,
       dobavitelj,
       isService: product.isService as boolean,
@@ -515,6 +543,7 @@ function validateAndNormalizeRow(
       isService: product.isService as boolean,
     }),
     weakNameKey: buildWeakNameKey({ ime }),
+    providedFields,
   };
 
   return { normalized, errors };
@@ -534,25 +563,31 @@ function toPlanRowBase(product: NormalizedProduct): PlanRowBase {
 
 function mapSetFields(product: NormalizedProduct) {
   return removeUndefined({
-    externalSource: product.externalSource,
-    externalId: product.externalId,
-    externalKey: product.externalKey,
-    ime: product.ime,
-    kategorija: product.kategorija,
-    categorySlugs: product.categorySlugs,
-    purchasePriceWithoutVat: product.purchasePriceWithoutVat ?? product.nabavnaCena,
-    nabavnaCena: product.nabavnaCena,
-    prodajnaCena: product.prodajnaCena,
-    kratekOpis: product.kratekOpis,
-    dolgOpis: product.dolgOpis,
-    povezavaDoSlike: product.povezavaDoSlike,
-    povezavaDoProdukta: product.povezavaDoProdukta,
-    proizvajalec: product.proizvajalec,
-    dobavitelj: product.dobavitelj,
-    naslovDobavitelja: product.naslovDobavitelja,
-    casovnaNorma: product.casovnaNorma,
-    isService: product.isService,
-    isActive: true,
+    externalSource: hasProvidedField(product, 'externalSource') ? product.externalSource : undefined,
+    externalId: hasProvidedField(product, 'externalId') ? product.externalId : undefined,
+    externalKey: hasProvidedField(product, 'externalKey') ? product.externalKey : undefined,
+    ime: hasProvidedField(product, 'ime') ? product.ime : undefined,
+    kategorija: hasProvidedField(product, 'kategorija') ? product.kategorija : undefined,
+    categorySlugs: hasProvidedField(product, 'categorySlugs') ? product.categorySlugs : undefined,
+    purchasePriceWithoutVat: hasProvidedField(product, 'purchasePriceWithoutVat')
+      ? product.purchasePriceWithoutVat ?? product.nabavnaCena
+      : undefined,
+    nabavnaCena: hasProvidedField(product, 'nabavnaCena') ? product.nabavnaCena : undefined,
+    prodajnaCena: hasProvidedField(product, 'prodajnaCena') ? product.prodajnaCena : undefined,
+    kratekOpis: hasProvidedField(product, 'kratekOpis') ? product.kratekOpis : undefined,
+    dolgOpis: hasProvidedField(product, 'dolgOpis') ? product.dolgOpis : undefined,
+    povezavaDoSlike: hasProvidedField(product, 'povezavaDoSlike') ? product.povezavaDoSlike : undefined,
+    povezavaDoProdukta: hasProvidedField(product, 'povezavaDoProdukta') ? product.povezavaDoProdukta : undefined,
+    proizvajalec: hasProvidedField(product, 'proizvajalec') ? product.proizvajalec : undefined,
+    dobavitelj: hasProvidedField(product, 'dobavitelj') ? product.dobavitelj : undefined,
+    naslovDobavitelja: hasProvidedField(product, 'naslovDobavitelja') ? product.naslovDobavitelja : undefined,
+    casovnaNorma: hasProvidedField(product, 'casovnaNorma') ? product.casovnaNorma : undefined,
+    isService: hasProvidedField(product, 'isService') ? product.isService : undefined,
+    defaultExecutionMode: hasProvidedField(product, 'defaultExecutionMode') ? product.defaultExecutionMode : undefined,
+    defaultInstructionsTemplate: hasProvidedField(product, 'defaultInstructionsTemplate')
+      ? product.defaultInstructionsTemplate
+      : undefined,
+    isActive: product.providedFields ? undefined : true,
   });
 }
 
@@ -575,27 +610,29 @@ function sameNumber(a: unknown, b: unknown) {
 function getChangedFields(product: NormalizedProduct, existing: ExistingProduct) {
   const changedFields: string[] = [];
 
-  if (!sameString(existing.externalSource, product.externalSource)) changedFields.push('externalSource');
-  if (!sameString(existing.externalId, product.externalId)) changedFields.push('externalId');
-  if (!sameString(existing.externalKey, product.externalKey)) changedFields.push('externalKey');
-  if (!sameString(existing.ime, product.ime)) changedFields.push('ime');
-  if (!sameString(existing.kategorija, product.kategorija)) changedFields.push('kategorija');
-  if (!sameStringArray(existing.categorySlugs, product.categorySlugs)) changedFields.push('categorySlugs');
-  if (!sameNumber(existing.purchasePriceWithoutVat, product.purchasePriceWithoutVat ?? product.nabavnaCena)) {
+  if (hasProvidedField(product, 'externalSource') && !sameString(existing.externalSource, product.externalSource)) changedFields.push('externalSource');
+  if (hasProvidedField(product, 'externalId') && !sameString(existing.externalId, product.externalId)) changedFields.push('externalId');
+  if (hasProvidedField(product, 'externalKey') && !sameString(existing.externalKey, product.externalKey)) changedFields.push('externalKey');
+  if (hasProvidedField(product, 'ime') && !sameString(existing.ime, product.ime)) changedFields.push('ime');
+  if (hasProvidedField(product, 'kategorija') && !sameString(existing.kategorija, product.kategorija)) changedFields.push('kategorija');
+  if (hasProvidedField(product, 'categorySlugs') && !sameStringArray(existing.categorySlugs, product.categorySlugs)) changedFields.push('categorySlugs');
+  if (hasProvidedField(product, 'purchasePriceWithoutVat') && !sameNumber(existing.purchasePriceWithoutVat, product.purchasePriceWithoutVat ?? product.nabavnaCena)) {
     changedFields.push('purchasePriceWithoutVat');
   }
-  if (!sameNumber(existing.nabavnaCena, product.nabavnaCena)) changedFields.push('nabavnaCena');
-  if (!sameNumber(existing.prodajnaCena, product.prodajnaCena)) changedFields.push('prodajnaCena');
-  if (!sameString(existing.kratekOpis, product.kratekOpis)) changedFields.push('kratekOpis');
-  if (!sameString(existing.dolgOpis, product.dolgOpis)) changedFields.push('dolgOpis');
-  if (!sameString(existing.povezavaDoSlike, product.povezavaDoSlike)) changedFields.push('povezavaDoSlike');
-  if (!sameString(existing.povezavaDoProdukta, product.povezavaDoProdukta)) changedFields.push('povezavaDoProdukta');
-  if (!sameString(existing.proizvajalec, product.proizvajalec)) changedFields.push('proizvajalec');
-  if (!sameString(existing.dobavitelj, product.dobavitelj)) changedFields.push('dobavitelj');
-  if (!sameString(existing.naslovDobavitelja, product.naslovDobavitelja)) changedFields.push('naslovDobavitelja');
-  if (!sameString(existing.casovnaNorma, product.casovnaNorma)) changedFields.push('casovnaNorma');
-  if (Boolean(existing.isService) !== product.isService) changedFields.push('isService');
-  if (existing.isActive !== true) changedFields.push('isActive');
+  if (hasProvidedField(product, 'nabavnaCena') && !sameNumber(existing.nabavnaCena, product.nabavnaCena)) changedFields.push('nabavnaCena');
+  if (hasProvidedField(product, 'prodajnaCena') && !sameNumber(existing.prodajnaCena, product.prodajnaCena)) changedFields.push('prodajnaCena');
+  if (hasProvidedField(product, 'kratekOpis') && !sameString(existing.kratekOpis, product.kratekOpis)) changedFields.push('kratekOpis');
+  if (hasProvidedField(product, 'dolgOpis') && !sameString(existing.dolgOpis, product.dolgOpis)) changedFields.push('dolgOpis');
+  if (hasProvidedField(product, 'povezavaDoSlike') && !sameString(existing.povezavaDoSlike, product.povezavaDoSlike)) changedFields.push('povezavaDoSlike');
+  if (hasProvidedField(product, 'povezavaDoProdukta') && !sameString(existing.povezavaDoProdukta, product.povezavaDoProdukta)) changedFields.push('povezavaDoProdukta');
+  if (hasProvidedField(product, 'proizvajalec') && !sameString(existing.proizvajalec, product.proizvajalec)) changedFields.push('proizvajalec');
+  if (hasProvidedField(product, 'dobavitelj') && !sameString(existing.dobavitelj, product.dobavitelj)) changedFields.push('dobavitelj');
+  if (hasProvidedField(product, 'naslovDobavitelja') && !sameString(existing.naslovDobavitelja, product.naslovDobavitelja)) changedFields.push('naslovDobavitelja');
+  if (hasProvidedField(product, 'casovnaNorma') && !sameString(existing.casovnaNorma, product.casovnaNorma)) changedFields.push('casovnaNorma');
+  if (hasProvidedField(product, 'isService') && Boolean(existing.isService) !== product.isService) changedFields.push('isService');
+  if (hasProvidedField(product, 'defaultExecutionMode') && !sameString(existing.defaultExecutionMode, product.defaultExecutionMode)) changedFields.push('defaultExecutionMode');
+  if (hasProvidedField(product, 'defaultInstructionsTemplate') && !sameString(existing.defaultInstructionsTemplate, product.defaultInstructionsTemplate)) changedFields.push('defaultInstructionsTemplate');
+  if (!product.providedFields && existing.isActive !== true) changedFields.push('isActive');
 
   return changedFields;
 }
@@ -617,9 +654,40 @@ function summarizePlan(plan: Omit<ImportPlan, 'summary'>): ImportPlanSummary {
   };
 }
 
+function getMissingCreateFields(row: NormalizedProduct): ValidationError[] {
+  if (!row.providedFields) return [];
+  const requiredFields = [
+    'ime',
+    'categorySlugs',
+    'nabavnaCena',
+    'prodajnaCena',
+    'dobavitelj',
+    'naslovDobavitelja',
+    'isService',
+  ];
+  return requiredFields
+    .filter((field) => !row.providedFields?.includes(field))
+    .map((field) => ({
+      index: row.rowIndex,
+      rowId: row.rowId,
+      field,
+      reason: 'is required when creating a new product',
+    }));
+}
+
+function buildInvalidCreateRow(row: NormalizedProduct): ImportInvalidRow | null {
+  const errors = getMissingCreateFields(row);
+  if (errors.length === 0) return null;
+  return {
+    ...toPlanRowBase(row),
+    action: 'invalid',
+    errors,
+  };
+}
+
 async function loadExistingProducts() {
   const fields =
-    '_id externalSource externalId externalKey ime kategorija categorySlugs purchasePriceWithoutVat nabavnaCena prodajnaCena kratekOpis dolgOpis povezavaDoSlike povezavaDoProdukta proizvajalec dobavitelj naslovDobavitelja casovnaNorma isService isActive mergedIntoProductId status';
+    '_id externalSource externalId externalKey ime kategorija categorySlugs purchasePriceWithoutVat nabavnaCena prodajnaCena kratekOpis dolgOpis povezavaDoSlike povezavaDoProdukta proizvajalec dobavitelj naslovDobavitelja casovnaNorma isService defaultExecutionMode defaultInstructionsTemplate isActive mergedIntoProductId status';
 
   return (await ProductModel.find().select(fields).lean()) as ExistingProduct[];
 }
@@ -1186,7 +1254,12 @@ async function analyzeProducts(source: string, items: unknown[]): Promise<{ plan
     if (resolutionMatchesRow(storedResolution, row)) {
       const resolved = resolveRowWithStoredDecision(row, storedResolution, existingProducts);
       if (resolved.action === 'create') {
-        toCreate.push(resolved);
+        const invalidCreate = buildInvalidCreateRow(row);
+        if (invalidCreate) {
+          invalidRows.push(invalidCreate);
+        } else {
+          toCreate.push(resolved);
+        }
       } else if (resolved.action === 'update') {
         toUpdate.push(resolved);
       } else if (resolved.action === 'skip') {
@@ -1205,6 +1278,12 @@ async function analyzeProducts(source: string, items: unknown[]): Promise<{ plan
     const weakNameMatches = row.weakNameKey ? indexes.byWeakName.get(row.weakNameKey) ?? [] : [];
     if (weakNameMatches.length > 0 || (row.weakNameKey && (inputWeakNameCounts.get(row.weakNameKey) ?? 0) > 1)) {
       conflicts.push(buildConflictRow(row, 'possible name-only match; manual review required', weakNameMatches));
+      continue;
+    }
+
+    const invalidCreate = buildInvalidCreateRow(row);
+    if (invalidCreate) {
+      invalidRows.push(invalidCreate);
       continue;
     }
 

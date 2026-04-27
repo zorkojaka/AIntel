@@ -10,5 +10,9 @@ export const IMPORT_DEFAULTS = {
   dodatki: {
     dobavitelj: 'Inteligent d.o.o.',
     naslovDobavitelja: 'Agrokombinatska cesta 12, 1000 Ljubljana'
+  },
+  excel: {
+    dobavitelj: 'Inteligent d.o.o.',
+    naslovDobavitelja: 'Agrokombinatska cesta 12, 1000 Ljubljana'
   }
 } as const;
