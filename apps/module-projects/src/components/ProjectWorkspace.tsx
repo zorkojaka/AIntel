@@ -152,6 +152,7 @@ export function ProjectWorkspace({
   const offerSaveHandlerRef = useRef<(() => Promise<boolean>) | null>(null);
   const logisticsSaveHandlerRef = useRef<(() => Promise<boolean>) | null>(null);
   const executionSaveHandlerRef = useRef<(() => Promise<boolean>) | null>(null);
+  const activeOfferFetchAttemptedRef = useRef<string | null>(null);
   const invoiceSectionRef = useRef<HTMLDivElement | null>(null);
   const timelineSteps = useProjectTimeline(project);
   const allTabsConfig: { value: WorkspaceTabValue; label: string }[] = [
@@ -347,6 +348,8 @@ export function ProjectWorkspace({
   }, [handleBackWithGuard, project, status]);
 
   const fetchActiveOffer = useCallback(async () => {
+    if (!basePath) return;
+    activeOfferFetchAttemptedRef.current = basePath;
     setIsOfferLoading(true);
     try {
       const response = await fetch(`${basePath}/offer`);
@@ -364,6 +367,10 @@ export function ProjectWorkspace({
       setIsOfferLoading(false);
     }
   }, [basePath]);
+
+  useEffect(() => {
+    activeOfferFetchAttemptedRef.current = null;
+  }, [projectId]);
 
   const persistOfferItems = useCallback(
     async (itemsToSave: ProjectOfferItem[]) => {
@@ -456,10 +463,11 @@ export function ProjectWorkspace({
 
   useEffect(() => {
     if (!basePath) return;
-    if (activeTab === "offers" && !activeOffer && !isOfferLoading) {
+    const hasAttemptedActiveOfferFetch = activeOfferFetchAttemptedRef.current === basePath;
+    if (activeTab === "offers" && !activeOffer && !isOfferLoading && !hasAttemptedActiveOfferFetch) {
       fetchActiveOffer();
     }
-  }, [activeTab, activeOffer, fetchActiveOffer, isOfferLoading]);
+  }, [activeTab, activeOffer, basePath, fetchActiveOffer, isOfferLoading]);
 
   const applyProjectUpdate = (updated: ProjectDetails | null) => {
     if (!updated) return;
