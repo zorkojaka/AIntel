@@ -2421,7 +2421,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
 
                 <TableCell className="text-right align-middle">
                   <span className="block text-right tabular-nums">
-                    {Number(item.vatRate || 0)}
+                    {vatMode}
                   </span>
                 </TableCell>
 
