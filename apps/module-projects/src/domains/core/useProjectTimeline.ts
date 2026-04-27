@@ -34,6 +34,15 @@ export interface ExecutionSummary {
 }
 
 const STATUS_DONE_VALUES = new Set(["issued", "izdano", "accepted", "completed", "zakljucen"]);
+const INVOICE_DONE_VALUES = new Set(["issued", "izdano"]);
+const INVOICE_READY_VALUES = new Set([
+  "ready",
+  "prepared",
+  "pripravljeno",
+  "ready-to-issue",
+  "ready_to_issue",
+  "pripravljeno za izdajo",
+]);
 
 type MaterialTimelineStatus = "TO_ORDER" | "ORDERED" | "PREPARED" | "PICKED_UP" | "RECEIVED";
 
@@ -106,6 +115,10 @@ function normalizeStatus(value?: string | null) {
   return (value ?? "").toString().trim().toLowerCase();
 }
 
+function normalizeLooseStatus(value?: string | null) {
+  return stripDiacritics(normalizeStatus(value));
+}
+
 function collectOffers(project?: ProjectDetails | null) {
   const explicit = Array.isArray((project as any)?.offerVersions) ? (project as any).offerVersions : [];
   const legacy = Array.isArray(project?.offers) ? project.offers : [];
@@ -139,6 +152,20 @@ function collectInvoiceVersions(project?: ProjectDetails | null) {
 
 function resolveClosingSummary(project?: ProjectDetails | null) {
   return (project as any)?.closingSummary ?? (project?.logistics as any)?.closingSummary ?? null;
+}
+
+function collectClosingStatusCandidates(closingSummary: any, invoiceVersions: any[]) {
+  const candidates = invoiceVersions.map((invoice) => invoice?.status);
+  if (closingSummary) {
+    candidates.push(
+      closingSummary.status,
+      closingSummary.invoiceStatus,
+      closingSummary.phase,
+      closingSummary.invoice?.status,
+      closingSummary.activeInvoice?.status,
+    );
+  }
+  return candidates.map((status) => normalizeLooseStatus(status)).filter(Boolean);
 }
 
 function getWorkOrderIdentifier(order: WorkOrder, fallbackIndex: number) {
@@ -338,9 +365,15 @@ function buildInvoiceStep(
   basePath: string,
   closingSummary: any,
   invoiceVersions: any[],
-  executionComplete: boolean,
+  projectStatus?: string | null,
 ) {
-  const issuedInvoice = invoiceVersions.some((invoice) => STATUS_DONE_VALUES.has(normalizeStatus(invoice.status)));
+  const invoiceStatusCandidates = collectClosingStatusCandidates(closingSummary, invoiceVersions);
+  const normalizedProjectStatus = normalizeLooseStatus(projectStatus);
+  const issuedInvoice =
+    invoiceStatusCandidates.some((status) => INVOICE_DONE_VALUES.has(status)) ||
+    normalizedProjectStatus === "invoiced" ||
+    normalizedProjectStatus === "zaracunano";
+  const invoiceReady = invoiceStatusCandidates.some((status) => INVOICE_READY_VALUES.has(status));
   let invoiceStatus: StepStatus = "pending";
   let invoiceMeta: string | undefined;
 
@@ -349,9 +382,9 @@ function buildInvoiceStep(
   if (issuedInvoice) {
     invoiceStatus = "done";
     invoiceMeta = "Račun izdan";
-  } else if (executionComplete) {
+  } else if (invoiceReady) {
     invoiceStatus = "inProgress";
-    invoiceMeta = invoiceDraftExists ? "Osnutek" : "Pripravljeno za izdajo";
+    invoiceMeta = "Pripravljeno za izdajo";
   } else {
     invoiceStatus = "pending";
     invoiceMeta = invoiceDraftExists ? "Osnutek" : undefined;
@@ -421,9 +454,13 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
 
   return useMemo(() => {
     const basePath = project?.id ? `/projects/${project.id}` : "#";
-    const forceCompleted = project?.status === "completed";
+    const normalizedProjectStatus = normalizeLooseStatus(project?.status);
+    const forceCompleted =
+      normalizedProjectStatus === "completed" ||
+      normalizedProjectStatus === "invoiced" ||
+      normalizedProjectStatus === "zaracunano";
 
-  const offersSource = USE_REMOTE_OFFERS ? remoteOffers ?? collectOffers(project) : collectOffers(project);
+    const offersSource = USE_REMOTE_OFFERS ? remoteOffers ?? collectOffers(project) : collectOffers(project);
     const requirementsInfo = buildRequirementsStep(project, basePath);
     const offersInfo = buildOffersStep(project, basePath, offersSource, requirementsInfo.requirementsDone);
     const workOrders = collectWorkOrders(project);
@@ -433,7 +470,12 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const issuedWorkOrders = workOrders.filter((order) => isWorkOrderIssuedLike(order.status));
     const logisticsInfo = buildLogisticsStep(basePath, materialOrders, workOrders, issuedWorkOrders);
     const executionInfo = buildExecutionStep(basePath, issuedWorkOrders);
-    const invoiceInfo = buildInvoiceStep(basePath, closingSummary, invoiceVersions, executionInfo.executionComplete);
+    const invoiceInfo = buildInvoiceStep(
+      basePath,
+      closingSummary,
+      invoiceVersions,
+      project?.status,
+    );
 
     if (forceCompleted) {
       requirementsInfo.step.status = "done";
