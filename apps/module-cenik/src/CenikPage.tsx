@@ -1,6 +1,6 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, DataTable, Input, CategoryMultiSelect, TableRowActions } from '@aintel/ui';
-import { Pencil, Save, Trash2, X } from 'lucide-react';
+import { FileDown, FileUp, Pencil, Save, Trash2, X } from 'lucide-react';
 import { clearMobileTopbar, setMobileTopbar } from '@aintel/shared/utils/mobileTopbar';
 import type { ProductServiceLink, ProductServiceLinkQuantityMode } from '@aintel/shared/types/product-service-link';
 import FilterBar from './components/FilterBar';
@@ -44,7 +44,7 @@ type ApiEnvelope<T> = {
   error: string | null;
 };
 
-type ImportSource = 'aa_api' | 'services_sheet' | 'dodatki';
+type ImportSource = 'aa_api' | 'services_sheet' | 'dodatki' | 'excel';
 
 type ImportPlanSummary = {
   totalSourceRows: number;
@@ -471,10 +471,12 @@ export const CenikPage: React.FC = () => {
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [importSource, setImportSource] = useState<ImportSource>('aa_api');
   const [importLoading, setImportLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [resolvingConflictKey, setResolvingConflictKey] = useState<string | null>(null);
   const [bulkAdditionsText, setBulkAdditionsText] = useState('');
+  const [excelImportFile, setExcelImportFile] = useState<File | null>(null);
   const [importRuns, setImportRuns] = useState<ImportRun[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
   const [runsError, setRunsError] = useState<string | null>(null);
@@ -958,6 +960,7 @@ export const CenikPage: React.FC = () => {
     setImportError(null);
     setResolvingConflictKey(null);
     setBulkAdditionsText('');
+    setExcelImportFile(null);
     setSelectedRun(null);
     setAuditResult(null);
     setAuditError(null);
@@ -1048,6 +1051,14 @@ export const CenikPage: React.FC = () => {
     setImportResult(null);
     setImportError(null);
     try {
+      if (importSource === 'excel') {
+        if (!excelImportFile) {
+          setImportError('Za uvoz iz Excela najprej izberi .xlsx datoteko.');
+          return;
+        }
+        await runExcelImport('analyze', excelImportFile);
+        return;
+      }
       const items = importSource === 'dodatki' ? parseBulkAdditionInput(bulkAdditionsText) : undefined;
       if (importSource === 'dodatki' && (!items || items.length === 0)) {
         setImportError('Za Dodatke prilepi vrstice ali nalozi CSV/TSV datoteko.');
@@ -1072,9 +1083,9 @@ export const CenikPage: React.FC = () => {
   };
 
   const loadReviewConflicts = async (source: ImportSource) => {
-    if (source === 'dodatki') {
+    if (source === 'dodatki' || source === 'excel') {
       setReviewConflictResult(null);
-      setReviewConflictError('Konflikti za Dodatke niso na voljo brez konkretnega lokalnega vnosa.');
+      setReviewConflictError('Konflikti za lokalne uvoze niso na voljo brez konkretnega lokalnega vnosa.');
       return;
     }
 
@@ -1124,18 +1135,26 @@ export const CenikPage: React.FC = () => {
       });
       await parseEnvelope(response);
 
-      const analyzeResponse = await fetch('/api/admin/import/products/from-git', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source, mode: 'analyze' })
-      });
-      const data = await parseEnvelope<ImportResult>(analyzeResponse);
-      setImportResult(data);
-      if (data.run) {
-        setSelectedRun(data.run);
+      if (source === 'excel') {
+        if (!excelImportFile) {
+          setImportError('Za ponovni pregled Excel konflikta manjka izbrana datoteka.');
+          return;
+        }
+        await runExcelImport('analyze', excelImportFile);
+      } else {
+        const analyzeResponse = await fetch('/api/admin/import/products/from-git', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source, mode: 'analyze' })
+        });
+        const data = await parseEnvelope<ImportResult>(analyzeResponse);
+        setImportResult(data);
+        if (data.run) {
+          setSelectedRun(data.run);
+        }
+        await loadImportRuns();
       }
-      await loadImportRuns();
-      if (source !== 'dodatki') {
+      if (source !== 'dodatki' && source !== 'excel') {
         await loadReviewConflicts(source);
       }
     } catch (error) {
@@ -1149,6 +1168,14 @@ export const CenikPage: React.FC = () => {
     setImportLoading(true);
     setImportError(null);
     try {
+      if (importSource === 'excel') {
+        if (!excelImportFile) {
+          setImportError('Za uvoz iz Excela najprej izberi .xlsx datoteko.');
+          return;
+        }
+        await runExcelImport('apply', excelImportFile);
+        return;
+      }
       const items = importSource === 'dodatki' ? parseBulkAdditionInput(bulkAdditionsText) : undefined;
       if (importSource === 'dodatki' && (!items || items.length === 0)) {
         setImportError('Za Dodatke prilepi vrstice ali nalozi CSV/TSV datoteko.');
@@ -1170,6 +1197,51 @@ export const CenikPage: React.FC = () => {
       setImportError('Potrditev uvoza ni uspela. Poskusi znova.');
     } finally {
       setImportLoading(false);
+    }
+  };
+
+  const runExcelImport = async (mode: 'analyze' | 'apply', file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`/api/admin/cenik/import-excel/${mode}`, {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await parseEnvelope<ImportResult>(response);
+    setImportResult(data);
+    if (data.run) {
+      setSelectedRun(data.run);
+    }
+    if (mode === 'apply') {
+      await loadProducts();
+    }
+    await loadImportRuns();
+  };
+
+  const exportCenikExcel = async () => {
+    setExportLoading(true);
+    setImportError(null);
+    try {
+      const response = await fetch('/api/admin/cenik/export-excel');
+      if (!response.ok) {
+        throw new Error('Izvoz ni uspel.');
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') ?? '';
+      const match = disposition.match(/filename="?([^"]+)"?/i);
+      const fileName = match?.[1] ?? 'cenik.xlsx';
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      setImportError('Izvoz cenika v Excel ni uspel. Poskusi znova.');
+    } finally {
+      setExportLoading(false);
     }
   };
 
@@ -1264,6 +1336,22 @@ export const CenikPage: React.FC = () => {
     setBulkAdditionsText(text);
     setImportResult(null);
     setImportError(null);
+  };
+
+  const handleExcelImportFile = async (file: File | null) => {
+    setExcelImportFile(file);
+    setImportResult(null);
+    setImportError(null);
+    if (!file) return;
+    setImportSource('excel');
+    setImportLoading(true);
+    try {
+      await runExcelImport('analyze', file);
+    } catch (error) {
+      setImportError('Analiza Excel uvoza ni uspela. Preveri datoteko in poskusi znova.');
+    } finally {
+      setImportLoading(false);
+    }
   };
 
   const canApplyImport =
@@ -2173,7 +2261,56 @@ export const CenikPage: React.FC = () => {
                   <div className="text-sm font-semibold">Dodatki</div>
                   <div className="text-xs text-muted-foreground">Lokalni CSV ali prilepljene dodatne vrstice</div>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImportSource('excel');
+                    setImportResult(null);
+                    setImportError(null);
+                    setResolvingConflictKey(null);
+                  }}
+                  className={`rounded-lg border px-4 py-3 text-left transition ${
+                    importSource === 'excel'
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border/70 text-foreground hover:border-primary'
+                  }`}
+                >
+                  <div className="text-sm font-semibold">Excel</div>
+                  <div className="text-xs text-muted-foreground">Izvoz trenutnega cenika ali uvoz urejene .xlsx datoteke</div>
+                </button>
               </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-3 rounded-lg border border-border/60 bg-muted/20 p-4">
+              <Button
+                variant="outline"
+                type="button"
+                onClick={exportCenikExcel}
+                disabled={exportLoading || importLoading}
+              >
+                <FileDown className="mr-2 h-4 w-4" />
+                {exportLoading ? 'Izvazam ...' : 'Izvozi cenik v Excel'}
+              </Button>
+              <label className="inline-flex cursor-pointer items-center rounded-md border border-border/70 bg-background px-4 py-2 text-sm font-medium text-foreground transition hover:border-primary">
+                <FileUp className="mr-2 h-4 w-4" />
+                Uvozi cenik iz Excela
+                <input
+                  type="file"
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    void handleExcelImportFile(file);
+                    event.currentTarget.value = '';
+                  }}
+                  disabled={importLoading}
+                />
+              </label>
+              {excelImportFile && (
+                <span className="inline-flex items-center text-xs text-muted-foreground">
+                  {excelImportFile.name}
+                </span>
+              )}
             </div>
 
             {importSource === 'dodatki' && (
@@ -2290,6 +2427,15 @@ export const CenikPage: React.FC = () => {
                           </div>
                         ))}
                       </div>
+                    )}
+
+                    {(importResult?.conflicts.length ?? 0) > 0 && importSource === 'excel' && (
+                      <ImportConflictReview
+                        source="excel"
+                        conflicts={importResult?.conflicts ?? []}
+                        resolvingKey={resolvingConflictKey}
+                        onResolve={resolveImportConflict}
+                      />
                     )}
 
                     {importPreviewRows.invalidRows.length > 0 && (

@@ -39,11 +39,11 @@ type ImportConflictRow = {
 type ResolveAction = 'link_existing' | 'create_new' | 'skip';
 
 type ImportConflictReviewProps = {
-  source: 'aa_api' | 'services_sheet';
+  source: 'aa_api' | 'services_sheet' | 'dodatki' | 'excel';
   conflicts: ImportConflictRow[];
   resolvingKey: string | null;
   onResolve: (input: {
-    source: 'aa_api' | 'services_sheet';
+    source: 'aa_api' | 'services_sheet' | 'dodatki' | 'excel';
     conflict: ImportConflictRow;
     action: ResolveAction;
     targetProductId?: string;

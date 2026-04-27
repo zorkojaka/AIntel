@@ -14,6 +14,7 @@ const SOURCE_PATHS: Record<string, string | null> = {
   aa_api: 'backend/data/cenik/aa_api_produkti.json',
   services_sheet: 'backend/data/cenik/custom_storitve.json',
   dodatki: null,
+  excel: null,
 };
 
 const importLocks = new Set<string>();
