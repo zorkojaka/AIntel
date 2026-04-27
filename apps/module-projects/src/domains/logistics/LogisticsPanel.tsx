@@ -1134,7 +1134,7 @@ export function LogisticsPanel({
   const currentIssueMaterialOrder = materialOrderForm ?? selectedMaterialOrder ?? null;
   const currentIssueMaterialItems = (currentIssueMaterialOrder?.items ?? []).filter((item) => !item.isExtra);
   const isMaterialReadyForIssue =
-    currentIssueMaterialItems.length > 0 &&
+    currentIssueMaterialItems.length === 0 ||
     currentIssueMaterialItems.every((item) => {
       const plannedQty = typeof item.quantity === "number" && Number.isFinite(item.quantity) ? Math.max(0, item.quantity) : 0;
       const orderedQty = typeof item.orderedQty === "number" && Number.isFinite(item.orderedQty) ? Math.max(0, item.orderedQty) : 0;
