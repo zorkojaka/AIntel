@@ -5,6 +5,8 @@ import { clearMobileTopbar, setMobileTopbar } from '@aintel/shared/utils/mobileT
 import type { ProductServiceLink, ProductServiceLinkQuantityMode } from '@aintel/shared/types/product-service-link';
 import FilterBar from './components/FilterBar';
 import { ImportConflictReview } from './components/ImportConflictReview';
+import { SortableHeader } from './components/SortableHeader';
+import { useSortedData } from './hooks/useSortedData';
 
 type Product = {
   _id?: string;
@@ -637,6 +639,22 @@ export const CenikPage: React.FC = () => {
       return matchesView && matchesCategory && matchesSearch;
     });
   }, [catalogView, cenikQuickFilter, products, filters]);
+  const { sorted: sortedProducts, sort, handleSort } = useSortedData(filteredProducts);
+  const isServiceTable = catalogView === 'storitve' || (catalogView === 'cenik' && cenikQuickFilter === 'services');
+  const sortColumns = isServiceTable
+    ? [
+        { label: 'Naziv', column: 'ime' },
+        { label: 'Kategorija', column: 'categorySlugs' },
+        { label: 'Cena', column: 'prodajnaCena' },
+        { label: 'Čas', column: 'casovnaNorma' }
+      ]
+    : [
+        { label: 'Naziv', column: 'ime' },
+        { label: 'Kategorija', column: 'categorySlugs' },
+        { label: 'Cena', column: 'prodajnaCena' },
+        { label: 'Dobavitelj', column: 'dobavitelj' },
+        { label: 'Proizvajalec', column: 'proizvajalec' }
+      ];
 
   const legacyViewMeta = useMemo(() => {
     if (catalogView === 'produkti') {
@@ -1452,18 +1470,69 @@ export const CenikPage: React.FC = () => {
             <div className="hidden md:block overflow-x-auto">
               <DataTable
                 columns={[
-                  { header: 'Ime', accessor: 'ime' },
                   {
-                    header: 'Kategorije',
+                    header: (
+                      <SortableHeader label="Naziv" column="ime" currentSort={sort} onSort={handleSort} />
+                    ),
+                    accessor: 'ime'
+                  },
+                  {
+                    header: (
+                      <SortableHeader
+                        label="Kategorija"
+                        column="categorySlugs"
+                        currentSort={sort}
+                        onSort={handleSort}
+                      />
+                    ),
                     accessor: (row: Product) => (
                       <CategoryChipRow slugs={row.categorySlugs ?? []} lookup={categoryLookup} />
                     )
                   },
                   {
-                    header: 'Prodajna cena',
+                    header: (
+                      <SortableHeader label="Cena" column="prodajnaCena" currentSort={sort} onSort={handleSort} />
+                    ),
                     accessor: (row: Product) => formatCurrency(row.prodajnaCena)
                   },
-                  { header: 'Proizvajalec', accessor: 'proizvajalec' },
+                  ...(isServiceTable
+                    ? [
+                        {
+                          header: (
+                            <SortableHeader
+                              label="Čas"
+                              column="casovnaNorma"
+                              currentSort={sort}
+                              onSort={handleSort}
+                            />
+                          ),
+                          accessor: (row: Product) => row.casovnaNorma || '-'
+                        }
+                      ]
+                    : [
+                        {
+                          header: (
+                            <SortableHeader
+                              label="Dobavitelj"
+                              column="dobavitelj"
+                              currentSort={sort}
+                              onSort={handleSort}
+                            />
+                          ),
+                          accessor: (row: Product) => row.dobavitelj || '-'
+                        },
+                        {
+                          header: (
+                            <SortableHeader
+                              label="Proizvajalec"
+                              column="proizvajalec"
+                              currentSort={sort}
+                              onSort={handleSort}
+                            />
+                          ),
+                          accessor: (row: Product) => row.proizvajalec || '-'
+                        }
+                      ]),
                   { header: 'Opis', accessor: 'kratekOpis' },
                   {
                     header: 'Akcije',
@@ -1479,11 +1548,31 @@ export const CenikPage: React.FC = () => {
                     )
                   }
                 ]}
-                data={filteredProducts}
+                data={sortedProducts}
               />
             </div>
+            <div className="flex gap-2 overflow-x-auto md:hidden">
+              {sortColumns.map((column) => {
+                const isActive = sort.column === column.column;
+                const arrow = isActive ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : '';
+
+                return (
+                  <button
+                    key={column.column}
+                    type="button"
+                    className={`shrink-0 rounded-lg border border-border/70 bg-card px-3 py-2 text-xs font-semibold text-foreground ${
+                      isActive ? 'border-primary text-primary' : ''
+                    }`}
+                    onClick={() => handleSort(column.column)}
+                  >
+                    {column.label}
+                    {arrow}
+                  </button>
+                );
+              })}
+            </div>
             <div className="grid gap-3 md:hidden">
-              {filteredProducts.map((product) => (
+              {sortedProducts.map((product) => (
                 <article
                   key={product._id ?? `${product.ime}-${product.proizvajalec}`}
                   className="rounded-xl border border-border bg-card p-3 shadow-sm"

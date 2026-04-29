@@ -2,7 +2,7 @@ import React from 'react';
 import './DataTable.css';
 
 export interface Column<T> {
-  header: string;
+  header: React.ReactNode;
   accessor: keyof T | ((row: T) => React.ReactNode);
 }
 
@@ -22,9 +22,13 @@ export function DataTable<T extends Record<string, unknown>>({
       <table className="aintel-data-table">
         <thead>
           <tr>
-            {columns.map((column) => (
-              <th key={column.header}>{column.header}</th>
-            ))}
+            {columns.map((column, columnIndex) =>
+              React.isValidElement(column.header) && column.header.type === 'th' ? (
+                React.cloneElement(column.header, { key: columnIndex })
+              ) : (
+                <th key={columnIndex}>{column.header}</th>
+              )
+            )}
           </tr>
         </thead>
         <tbody>
@@ -32,8 +36,8 @@ export function DataTable<T extends Record<string, unknown>>({
             const props = rowProps ? rowProps(row, rowIndex) : undefined;
             return (
               <tr key={rowIndex} {...props}>
-                {columns.map((column) => (
-                  <td key={`${rowIndex}-${String(column.header)}`}>
+                {columns.map((column, columnIndex) => (
+                  <td key={`${rowIndex}-${columnIndex}`}>
                     {typeof column.accessor === 'function'
                       ? column.accessor(row)
                       : (row[column.accessor] as React.ReactNode)}
