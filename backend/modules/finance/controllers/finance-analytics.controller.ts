@@ -4,6 +4,8 @@ import {
   getEmployeesSummary,
   getMonthlySummary,
   getPipelineSummary,
+  getProductBundles,
+  getProductCooccurrence,
   getProductFrequency,
 } from '../services/finance-analytics.service';
 import { getProjectSnapshot, listFinanceSnapshots } from '../services/finance-snapshot.service';
@@ -79,4 +81,19 @@ export async function snapshotByProject(req: Request, res: Response) {
     return res.fail('Finance snapshot ni najden.', 404);
   }
   return res.success(snapshot);
+}
+
+
+export async function productCooccurrence(req: Request, res: Response) {
+  const rawYear = parseNumber(req.query.year as string, NaN);
+  const year = Number.isFinite(rawYear) ? rawYear : null;
+  const data = await getProductCooccurrence(year);
+  return res.success(data);
+}
+
+export async function productBundles(req: Request, res: Response) {
+  const rawYear = parseNumber(req.query.year as string, NaN);
+  const year = Number.isFinite(rawYear) ? rawYear : null;
+  const data = await getProductBundles(year);
+  return res.success(data);
 }

@@ -3,6 +3,10 @@ import { OfferVersionModel } from '../../projects/schemas/offer-version';
 import { EmployeeModel } from '../../employees/schemas/employee';
 
 type DateRange = { from?: Date; to?: Date };
+type YearFilter = number | null;
+
+const analyticsCache = new Map<string, { expiresAt: number; value: unknown }>();
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 function toNumber(value: unknown, fallback = 0) {
   const parsed = Number(value);
@@ -14,6 +18,72 @@ function normalizeRange(range: DateRange) {
   if (range.from) issuedAt.$gte = range.from;
   if (range.to) issuedAt.$lte = range.to;
   return Object.keys(issuedAt).length ? issuedAt : null;
+}
+
+function getYearMatch(year: YearFilter) {
+  if (!year) return {};
+  const from = new Date(Date.UTC(year, 0, 1));
+  const to = new Date(Date.UTC(year + 1, 0, 1));
+  return { issuedAt: { $gte: from, $lt: to } };
+}
+
+async function withCache<T>(key: string, producer: () => Promise<T>): Promise<T> {
+  const cached = analyticsCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value as T;
+  const value = await producer();
+  analyticsCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, value });
+  return value;
+}
+
+export async function getProductCooccurrence(year: YearFilter) {
+  return withCache(`cooccurrence:${year ?? 'all'}`, async () => {
+    const snapshots = await FinanceSnapshotModel.find({ superseded: { $ne: true }, ...getYearMatch(year) }).lean();
+    const pairMap = new Map<string, { productA: { id: string; name: string }; productB: { id: string; name: string }; count: number; totalRevenue: number }>();
+    snapshots.forEach((snapshot) => {
+      const products = new Map<string, { id: string; name: string; revenue: number }>();
+      (snapshot.items ?? []).forEach((item) => {
+        if (!item.productId) return;
+        const id = String(item.productId);
+        const current = products.get(id) ?? { id, name: item.name, revenue: 0 };
+        current.revenue += toNumber(item.totalSale, 0);
+        products.set(id, current);
+      });
+      const list = Array.from(products.values()).sort((a, b) => a.id.localeCompare(b.id));
+      for (let i = 0; i < list.length; i += 1) for (let j = i + 1; j < list.length; j += 1) {
+        const a = list[i]; const b = list[j];
+        const key = `${a.id}::${b.id}`;
+        const row = pairMap.get(key) ?? { productA: { id: a.id, name: a.name }, productB: { id: b.id, name: b.name }, count: 0, totalRevenue: 0 };
+        row.count += 1;
+        row.totalRevenue += a.revenue + b.revenue;
+        pairMap.set(key, row);
+      }
+    });
+    return Array.from(pairMap.values()).sort((a, b) => b.count - a.count).slice(0, 20);
+  });
+}
+
+export async function getProductBundles(year: YearFilter) {
+  return withCache(`bundles:${year ?? 'all'}`, async () => {
+    const pairs = await getProductCooccurrence(year);
+    const bundleMap = new Map<string, { product: { id: string; name: string }; companions: Array<{ id: string; name: string; count: number; share: number }> }>();
+    const totalByProduct = new Map<string, number>();
+    pairs.forEach((pair) => {
+      totalByProduct.set(pair.productA.id, (totalByProduct.get(pair.productA.id) ?? 0) + pair.count);
+      totalByProduct.set(pair.productB.id, (totalByProduct.get(pair.productB.id) ?? 0) + pair.count);
+    });
+    pairs.forEach((pair) => {
+      const rows: Array<[typeof pair.productA, typeof pair.productB]> = [[pair.productA, pair.productB], [pair.productB, pair.productA]];
+      rows.forEach(([product, companion]) => {
+        const current = bundleMap.get(product.id) ?? { product, companions: [] };
+        const total = totalByProduct.get(product.id) ?? 1;
+        current.companions.push({ id: companion.id, name: companion.name, count: pair.count, share: (pair.count / total) * 100 });
+        bundleMap.set(product.id, current);
+      });
+    });
+    return Array.from(bundleMap.values())
+      .map((row) => ({ ...row, companions: row.companions.sort((a, b) => b.count - a.count).slice(0, 3) }))
+      .slice(0, 20);
+  });
 }
 
 export async function getMonthlySummary(year: number) {
