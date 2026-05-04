@@ -148,25 +148,28 @@ function formatMonthLabel(month: number) {
   return new Date(Date.UTC(new Date().getFullYear(), month - 1, 1)).toLocaleString('sl-SI', { month: 'long' });
 }
 
-interface ErrorBoundaryProps {
-  children: React.ReactNode;
-}
+class FinanceErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
 
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: Error | null;
-}
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
 
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { hasError: false, error: null };
-
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { hasError: true, error };
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[FinancePage] Crashed:', error);
+    console.error('[FinancePage] Component stack:', info.componentStack);
   }
 
   render() {
-    if (this.state.hasError) {
-      return <div className="p-4 text-red-600">Napaka: {this.state.error?.message ?? 'Neznana napaka'}</div>;
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 20, fontFamily: 'monospace', background: '#fee', border: '2px solid red' }}>
+          <h2 style={{ color: 'red' }}>Finance page crashed</h2>
+          <h3>Error: {this.state.error.message}</h3>
+          <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>{this.state.error.stack}</pre>
+          <button onClick={() => this.setState({ error: null })}>Try again</button>
+        </div>
+      );
     }
 
     return this.props.children;
@@ -621,9 +624,7 @@ export const FinancePage: React.FC = () => {
         </>
       )}
 
-      {tab === 'podjetje' && !isExecutionOnly && (
-        <ErrorBoundary>
-          {(() => {
+      {tab === 'podjetje' && !isExecutionOnly && (() => {
         const statusMap = new Map((pipeline?.statuses ?? []).map((s) => [s.status, s]));
         const draftCount = (statusMap.get('draft')?.count ?? 0) + (statusMap.get('new')?.count ?? 0);
         const sentCount = (statusMap.get('offer_sent')?.count ?? 0) + (statusMap.get('offered')?.count ?? 0);
@@ -655,9 +656,16 @@ export const FinancePage: React.FC = () => {
           <article className="finance-panel"><h2>Pogosto kupljeni skupaj</h2><div className="flex gap-2 mb-3"><button className={`finance-btn ${coView==='pairs' ? 'is-active' : ''}`} onClick={()=>setCoView('pairs')}>Pari produktov</button><button className={`finance-btn ${coView==='bundles' ? 'is-active' : ''}`} onClick={()=>setCoView('bundles')}>Bundli (3+)</button></div>{coView==='pairs' ? (pairRows?.length ? <div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Produkt A</th><th>Produkt B</th><th>Skupaj prodano</th><th>Skupna vrednost</th></tr></thead><tbody>{pairRows?.map((r)=> <tr key={`${r?.productA?.id ?? 'a'}-${r?.productB?.id ?? 'b'}`}><td>{r?.productA?.name ?? '-'}</td><td>{r?.productB?.name ?? '-'}</td><td>{r?.count ?? 0}×</td><td>{currency.format(r?.totalRevenue ?? 0)}</td></tr>) ?? []}</tbody></table></div> : <div className="finance-state">Ni parov produktov.</div>) : (bundleRows?.length ? <div className="space-y-3">{bundleRows?.map((row)=><div key={row?.product?.id ?? row?.product?.name ?? 'bundle'}><p>Ko nekdo kupi <strong>{row?.product?.name ?? '-'}</strong>, pogosto kupi tudi:</p><ul>{row?.companions?.map((c)=><li key={`${row?.product?.id ?? 'x'}-${c?.id ?? 'y'}`}>- {c?.name ?? '-'} ({c?.count ?? 0}× / {(c?.share ?? 0).toFixed(0)}%)</li>) ?? []}</ul></div>) ?? []}</div> : <div className="finance-state">Ni bundle podatkov.</div>)}</article>
           <article className="finance-panel"><h2>Izdane ponudbe</h2><div className="pipeline-sub">Skupna vrednost: <strong>{currency.format(offersValue)}</strong> · % sprejetih: <strong>{offerRows.length>0?((acceptedOffers/offerRows.length)*100).toFixed(2):'0.00'}%</strong></div><div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Projekt</th><th>Stranka</th><th>Vrednost</th><th>Status</th><th>Datum</th></tr></thead><tbody>{offerRows.map((r)=><tr key={`offer-${r.id}`}><td>{r.title}</td><td>{r.customer?.name ?? '-'}</td><td>{currency.format(Number(r.quotedTotalWithVat ?? r.offerAmount ?? 0))}</td><td>{['confirmed','accepted'].includes(String(r.status))?'sprejeto':String(r.status)==='rejected'?'zavrnjeno':'čakanje'}</td><td>{new Date(r.updatedAt ?? r.createdAt ?? '').toLocaleDateString('sl-SI')}</td></tr>)}</tbody></table></div></article>
         </section>);
-          })()}
-        </ErrorBoundary>
-      )}
+      })()}
     </div>
   );
 };
+
+
+const FinancePageWithBoundary: React.FC = () => (
+  <FinanceErrorBoundary>
+    <FinancePage />
+  </FinanceErrorBoundary>
+);
+
+export default FinancePageWithBoundary;
