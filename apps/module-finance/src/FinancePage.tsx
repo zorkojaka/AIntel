@@ -129,7 +129,9 @@ async function fetchApi<T>(url: string): Promise<T> {
 }
 
 function toIsoDay(value: string) {
-  return new Date(value).toISOString().slice(0, 10);
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return '';
+  return date.toISOString().slice(0, 10);
 }
 
 function statusLabel(isPaid: boolean) {
@@ -144,6 +146,31 @@ function marginClass(marginPercent: number) {
 
 function formatMonthLabel(month: number) {
   return new Date(Date.UTC(new Date().getFullYear(), month - 1, 1)).toLocaleString('sl-SI', { month: 'long' });
+}
+
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <div className="p-4 text-red-600">Napaka: {this.state.error?.message ?? 'Neznana napaka'}</div>;
+    }
+
+    return this.props.children;
+  }
 }
 
 export const FinancePage: React.FC = () => {
@@ -594,7 +621,9 @@ export const FinancePage: React.FC = () => {
         </>
       )}
 
-      {tab === 'podjetje' && !isExecutionOnly && (() => {
+      {tab === 'podjetje' && !isExecutionOnly && (
+        <ErrorBoundary>
+          {(() => {
         const statusMap = new Map((pipeline?.statuses ?? []).map((s) => [s.status, s]));
         const draftCount = (statusMap.get('draft')?.count ?? 0) + (statusMap.get('new')?.count ?? 0);
         const sentCount = (statusMap.get('offer_sent')?.count ?? 0) + (statusMap.get('offered')?.count ?? 0);
@@ -605,12 +634,12 @@ export const FinancePage: React.FC = () => {
         const revenueSum = yearSnapshots.reduce((a,b)=>a+b.summary.totalSaleWithoutVat,0);
         const marginSum = yearSnapshots.reduce((a,b)=>a+b.summary.totalMargin,0);
         const invoiceCount = yearSnapshots.length;
-        const projectRows = [...projects].filter((p)=>{const d=new Date(p.updatedAt ?? p.createdAt ?? '').getFullYear(); return d===selectedYear;}).sort((a,b)=>new Date(b.updatedAt ?? b.createdAt ?? '').valueOf()-new Date(a.updatedAt ?? a.createdAt ?? '').valueOf());
+        const projectRows = [...(projects ?? [])].filter((p)=>{const d=new Date(p?.updatedAt ?? p?.createdAt ?? '').getFullYear(); return d===selectedYear;}).sort((a,b)=>new Date(b?.updatedAt ?? b?.createdAt ?? '').valueOf()-new Date(a?.updatedAt ?? a?.createdAt ?? '').valueOf());
         const offerRows = projectRows.filter((p)=>sentCount>=0 && ['offer_sent','offered','confirmed','accepted','rejected'].includes(String(p.status ?? '')));
         const offersValue = offerRows.reduce((a,b)=>a+Number(b.quotedTotalWithVat ?? b.offerAmount ?? 0),0);
         const acceptedOffers = offerRows.filter((p)=>['confirmed','accepted'].includes(String(p.status ?? ''))).length;
-        const productRows = [...products].sort((a,b)=>b.totalRevenue-a.totalRevenue).slice(0,10);
-        const monthlyChart = monthly.map((m)=>({ ...m, marginPct: m.totalSaleWithoutVat>0 ? (m.totalMargin/m.totalSaleWithoutVat)*100 : 0, name: formatMonthLabel(m.month)}));
+        const productRows = [...(products ?? [])].sort((a,b)=>(b?.totalRevenue ?? 0)-(a?.totalRevenue ?? 0)).slice(0,10);
+        const monthlyChart = (monthly ?? []).map((m)=>({ ...m, marginPct: (m?.totalSaleWithoutVat ?? 0)>0 ? ((m?.totalMargin ?? 0)/(m?.totalSaleWithoutVat ?? 0))*100 : 0, name: formatMonthLabel(m?.month ?? 1)}));
         return (<section className="space-y-4">
           <div className="flex items-center justify-between"><h2 className="text-xl font-semibold">Pregled podjetja</h2><select className="border rounded px-3 py-2" value={selectedYear} onChange={(e)=>setSelectedYear(Number(e.target.value))}>{[2024,2025,2026].map(y=><option key={y} value={y}>{y}</option>)}</select></div>
           <section className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -620,13 +649,15 @@ export const FinancePage: React.FC = () => {
             <article className="finance-card"><span>Število izdanih računov</span><strong>{invoiceCount}</strong></article>
           </section>
           <article className="finance-panel"><h2>Mesečni prihodki</h2>{monthlyChart.length===0?<div className="finance-state">Ni podatkov za izbrano leto.</div>:<div className="h-72"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={monthlyChart}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis yAxisId="left"/><YAxis yAxisId="right" orientation="right"/><Tooltip/><Bar yAxisId="left" dataKey="totalSaleWithoutVat" name="Prodajna cena" fill="#2563eb"/><Bar yAxisId="left" dataKey="totalPurchase" name="Nabavna cena" fill="#f97316"/><Line yAxisId="right" type="monotone" dataKey="marginPct" name="Marža %" stroke="#16a34a"/></ComposedChart></ResponsiveContainer></div>}</article>
-          <article className="finance-panel"><h2>Top 10 produktov</h2><div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Naziv</th><th>Količina</th><th>Prihodek</th><th>Marža</th></tr></thead><tbody>{productRows.map((p)=><tr key={`${p.productId ?? 'x'}-${p.name}`}><td>{p.name}</td><td>{p.totalQuantity}</td><td>{currency.format(p.totalRevenue)}</td><td>{currency.format(p.totalMargin)}</td></tr>)}</tbody></table></div></article>
+          <article className="finance-panel"><h2>Top 10 produktov</h2>{productRows?.length ? <div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Naziv</th><th>Količina</th><th>Prihodek</th><th>Marža</th></tr></thead><tbody>{productRows?.map((p)=><tr key={`${p?.productId ?? 'x'}-${p?.name ?? 'izdelek'}`}><td>{p?.name ?? '-'}</td><td>{p?.totalQuantity ?? 0}</td><td>{currency.format(p?.totalRevenue ?? 0)}</td><td>{currency.format(p?.totalMargin ?? 0)}</td></tr>) ?? []}</tbody></table></div> : <div className="finance-state">Ni produktnih podatkov.</div>}</article>
           <article className="finance-panel"><h2>Pipeline funnel</h2><div className="pipeline-cards"><div className="pipeline-card"><span>Osnutki</span><strong>{draftCount}</strong></div><div className="pipeline-card"><span>Poslane ponudbe</span><strong>{sentCount}</strong></div><div className="pipeline-card"><span>Sprejeto</span><strong>{confirmedCount}</strong></div><div className="pipeline-card"><span>Zavrnjeno</span><strong>{rejectedCount}</strong></div></div><div className="pipeline-highlight">Win rate: {winRate.toFixed(2)}%</div></article>
-          <article className="finance-panel"><h2>Pregled projektov</h2><div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Projekt</th><th>Stranka</th><th>Status</th><th>Vrednost ponudbe</th><th>Datum</th></tr></thead><tbody>{projectRows.map((r)=><tr key={r.id} className="is-clickable" onClick={()=>window.location.href=`/projects/${r.id}`}><td>{r.title}</td><td>{r.customer?.name ?? '-'}</td><td>{r.status ?? '-'}</td><td>{currency.format(Number(r.quotedTotalWithVat ?? r.offerAmount ?? 0))}</td><td>{new Date(r.updatedAt ?? r.createdAt ?? '').toLocaleDateString('sl-SI')}</td></tr>)}</tbody></table></div></article>
-          <article className="finance-panel"><h2>Pogosto kupljeni skupaj</h2><div className="flex gap-2 mb-3"><button className={`finance-btn ${coView==='pairs' ? 'is-active' : ''}`} onClick={()=>setCoView('pairs')}>Pari produktov</button><button className={`finance-btn ${coView==='bundles' ? 'is-active' : ''}`} onClick={()=>setCoView('bundles')}>Bundli (3+)</button></div>{coView==='pairs' ? <div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Produkt A</th><th>Produkt B</th><th>Skupaj prodano</th><th>Skupna vrednost</th></tr></thead><tbody>{pairRows.map((r)=> <tr key={`${r.productA.id}-${r.productB.id}`}><td>{r.productA.name}</td><td>{r.productB.name}</td><td>{r.count}×</td><td>{currency.format(r.totalRevenue)}</td></tr>)}</tbody></table></div> : <div className="space-y-3">{bundleRows.map((row)=><div key={row.product.id}><p>Ko nekdo kupi <strong>{row.product.name}</strong>, pogosto kupi tudi:</p><ul>{row.companions.map((c)=><li key={`${row.product.id}-${c.id}`}>- {c.name} ({c.count}× / {c.share.toFixed(0)}%)</li>)}</ul></div>)}</div>}</article>
+          <article className="finance-panel"><h2>Pregled projektov</h2>{projectRows?.length ? <div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Projekt</th><th>Stranka</th><th>Status</th><th>Vrednost ponudbe</th><th>Datum</th></tr></thead><tbody>{projectRows?.map((r)=><tr key={r?.id ?? `${r?.title ?? 'projekt'}-${r?.updatedAt ?? ''}`} className="is-clickable" onClick={()=> r?.id && (window.location.href=`/projects/${r.id}`)}><td>{r?.title ?? '-'}</td><td>{r?.customer?.name ?? '-'}</td><td>{r?.status ?? '-'}</td><td>{currency.format(Number(r?.quotedTotalWithVat ?? r?.offerAmount ?? 0))}</td><td>{new Date(r?.updatedAt ?? r?.createdAt ?? '').toLocaleDateString('sl-SI')}</td></tr>) ?? []}</tbody></table></div> : <div className="finance-state">Ni projektov za izbrano leto.</div>}</article>
+          <article className="finance-panel"><h2>Pogosto kupljeni skupaj</h2><div className="flex gap-2 mb-3"><button className={`finance-btn ${coView==='pairs' ? 'is-active' : ''}`} onClick={()=>setCoView('pairs')}>Pari produktov</button><button className={`finance-btn ${coView==='bundles' ? 'is-active' : ''}`} onClick={()=>setCoView('bundles')}>Bundli (3+)</button></div>{coView==='pairs' ? (pairRows?.length ? <div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Produkt A</th><th>Produkt B</th><th>Skupaj prodano</th><th>Skupna vrednost</th></tr></thead><tbody>{pairRows?.map((r)=> <tr key={`${r?.productA?.id ?? 'a'}-${r?.productB?.id ?? 'b'}`}><td>{r?.productA?.name ?? '-'}</td><td>{r?.productB?.name ?? '-'}</td><td>{r?.count ?? 0}×</td><td>{currency.format(r?.totalRevenue ?? 0)}</td></tr>) ?? []}</tbody></table></div> : <div className="finance-state">Ni parov produktov.</div>) : (bundleRows?.length ? <div className="space-y-3">{bundleRows?.map((row)=><div key={row?.product?.id ?? row?.product?.name ?? 'bundle'}><p>Ko nekdo kupi <strong>{row?.product?.name ?? '-'}</strong>, pogosto kupi tudi:</p><ul>{row?.companions?.map((c)=><li key={`${row?.product?.id ?? 'x'}-${c?.id ?? 'y'}`}>- {c?.name ?? '-'} ({c?.count ?? 0}× / {(c?.share ?? 0).toFixed(0)}%)</li>) ?? []}</ul></div>) ?? []}</div> : <div className="finance-state">Ni bundle podatkov.</div>)}</article>
           <article className="finance-panel"><h2>Izdane ponudbe</h2><div className="pipeline-sub">Skupna vrednost: <strong>{currency.format(offersValue)}</strong> · % sprejetih: <strong>{offerRows.length>0?((acceptedOffers/offerRows.length)*100).toFixed(2):'0.00'}%</strong></div><div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Projekt</th><th>Stranka</th><th>Vrednost</th><th>Status</th><th>Datum</th></tr></thead><tbody>{offerRows.map((r)=><tr key={`offer-${r.id}`}><td>{r.title}</td><td>{r.customer?.name ?? '-'}</td><td>{currency.format(Number(r.quotedTotalWithVat ?? r.offerAmount ?? 0))}</td><td>{['confirmed','accepted'].includes(String(r.status))?'sprejeto':String(r.status)==='rejected'?'zavrnjeno':'čakanje'}</td><td>{new Date(r.updatedAt ?? r.createdAt ?? '').toLocaleDateString('sl-SI')}</td></tr>)}</tbody></table></div></article>
         </section>);
-      })()}
+          })()}
+        </ErrorBoundary>
+      )}
     </div>
   );
 };
