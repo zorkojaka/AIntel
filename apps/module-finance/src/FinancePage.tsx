@@ -627,7 +627,6 @@ export const FinancePage: React.FC = () => {
           <article className="finance-panel"><h2>Izdane ponudbe</h2><div className="pipeline-sub">Skupna vrednost: <strong>{currency.format(offersValue)}</strong> · % sprejetih: <strong>{offerRows.length>0?((acceptedOffers/offerRows.length)*100).toFixed(2):'0.00'}%</strong></div><div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Projekt</th><th>Stranka</th><th>Vrednost</th><th>Status</th><th>Datum</th></tr></thead><tbody>{offerRows.map((r)=><tr key={`offer-${r.id}`}><td>{r.title}</td><td>{r.customer?.name ?? '-'}</td><td>{currency.format(Number(r.quotedTotalWithVat ?? r.offerAmount ?? 0))}</td><td>{['confirmed','accepted'].includes(String(r.status))?'sprejeto':String(r.status)==='rejected'?'zavrnjeno':'čakanje'}</td><td>{new Date(r.updatedAt ?? r.createdAt ?? '').toLocaleDateString('sl-SI')}</td></tr>)}</tbody></table></div></article>
         </section>);
       })()}
-      )}
     </div>
   );
 };
