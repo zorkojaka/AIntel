@@ -29,6 +29,7 @@ function buildRange(req: Request) {
 export async function monthlySummary(req: Request, res: Response) {
   const year = parseNumber(req.query.year as string, new Date().getFullYear());
   const data = await getMonthlySummary(year);
+  console.log('[finance][monthly-summary]', { year, count: data.length, sample: data[0] });
   return res.success(data);
 }
 
@@ -39,7 +40,9 @@ export async function employeesSummary(req: Request, res: Response) {
 
 export async function productFrequency(req: Request, res: Response) {
   const limit = Math.max(1, parseNumber(req.query.limit as string, 20));
-  const data = await getProductFrequency(buildRange(req), limit);
+  const range = buildRange(req);
+  const data = await getProductFrequency(range, limit);
+  console.log('[finance][product-frequency]', { limit, range, count: data.length, sample: data[0] });
   return res.success(data);
 }
 
@@ -52,6 +55,7 @@ export async function basketAnalysis(req: Request, res: Response) {
 
 export async function pipelineSummary(_req: Request, res: Response) {
   const data = await getPipelineSummary();
+  console.log('[finance][pipeline]', { statuses: data.statuses });
   return res.success(data);
 }
 
