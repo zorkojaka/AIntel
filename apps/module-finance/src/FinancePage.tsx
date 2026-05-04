@@ -109,15 +109,6 @@ interface ExecutionProjectEarningRow {
   isPaid: boolean;
 }
 
-interface ExecutionProjectEarningRow {
-  snapshotId: string;
-  projectId: string;
-  issuedAt: string;
-  servicesDone: string;
-  earnedAmount: number;
-  isPaid: boolean;
-}
-
 const currency = new Intl.NumberFormat('sl-SI', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 });
 
 async function fetchApi<T>(url: string): Promise<T> {
