@@ -11,6 +11,8 @@ import {
   employeesSummary,
   monthlySummary,
   pipelineSummary,
+  productBundles,
+  productCooccurrence,
   productFrequency,
   snapshotByProject,
   snapshotsList,
@@ -31,5 +33,7 @@ router.get('/product-frequency', productFrequency);
 router.get('/basket-analysis', basketAnalysis);
 router.get('/employees-summary', employeesSummary);
 router.get('/pipeline', pipelineSummary);
+router.get('/analytics/product-cooccurrence', productCooccurrence);
+router.get('/analytics/product-bundles', productBundles);
 
 export default router;
