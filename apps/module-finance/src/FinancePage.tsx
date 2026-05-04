@@ -663,9 +663,27 @@ export const FinancePage: React.FC = () => {
 
 
 const FinancePageWithBoundary: React.FC = () => (
-  <FinanceErrorBoundary>
-    <FinancePage />
-  </FinanceErrorBoundary>
+  <div>
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        background: 'lime',
+        color: 'black',
+        padding: '10px',
+        zIndex: 99999,
+        fontWeight: 'bold',
+        fontSize: '16px',
+      }}
+    >
+      ✓ FINANCE BUILD: {new Date().toISOString()} - error boundary v2
+    </div>
+    <FinanceErrorBoundary>
+      <FinancePage />
+    </FinanceErrorBoundary>
+  </div>
 );
 
 export default FinancePageWithBoundary;
