@@ -131,16 +131,17 @@ async function buildPermissionUser(req: Request, photo: PhotoDocument): Promise<
 }
 
 function serializePhoto(photo: PhotoDocument | any) {
+  const photoId = asString(photo._id);
   return {
-    _id: asString(photo._id),
-    id: asString(photo._id),
+    _id: photoId,
+    id: photoId,
     projectId: asString(photo.projectId),
     phase: photo.phase,
     itemId: typeof photo.itemId === 'string' ? photo.itemId : undefined,
     unitIndex: typeof photo.unitIndex === 'number' ? photo.unitIndex : undefined,
     tag: typeof photo.tag === 'string' ? photo.tag : undefined,
-    url: photo.url,
-    thumbnailUrl: photo.thumbnailUrl,
+    url: `/api/photos/${photoId}/file`,
+    thumbnailUrl: photo.thumbnailUrl ? `/api/photos/${photoId}/file?variant=thumbnail` : undefined,
     originalName: photo.originalName,
     filename: photo.filename,
     size: photo.size,
@@ -167,6 +168,16 @@ async function removeFileIfExists(filePath: string | undefined) {
 function absolutePathFromUploadUrl(url: string | undefined) {
   if (!url || !url.startsWith('/uploads/')) return undefined;
   return path.join(UPLOAD_BASE_DIR, url.replace(/^\/uploads\//, ''));
+}
+
+async function canAccessPhoto(req: Request, photo: PhotoDocument) {
+  const project = await ProjectModel.findById(photo.projectId).lean();
+  return project ? canAccessProject(req, project) : false;
+}
+
+function isPathInside(parent: string, child: string) {
+  const relative = path.relative(parent, child);
+  return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
 router.post('/', upload.single('file'), async (req: Request, res: Response, next: NextFunction) => {
@@ -291,6 +302,39 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const photos = await PhotoModel.find(filter).sort({ uploadedAt: -1 }).lean();
     return res.success({ photos: photos.map(serializePhoto) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/:photoId/file', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.photoId)) {
+      return res.fail('Neveljaven ID fotografije.', 400);
+    }
+
+    const photo = await PhotoModel.findById(req.params.photoId);
+    if (!photo || photo.deletedAt) {
+      return res.fail('Fotografija ni najdena.', 404);
+    }
+    if (!(await canAccessPhoto(req, photo))) {
+      return res.fail('Ni dostopa do fotografije.', 403);
+    }
+
+    const variant = req.query.variant === 'thumbnail' ? 'thumbnail' : 'full';
+    const uploadUrl = variant === 'thumbnail' ? photo.thumbnailUrl : photo.url;
+    const filePath = absolutePathFromUploadUrl(uploadUrl);
+    if (!filePath || !isPathInside(UPLOAD_BASE_DIR, filePath)) {
+      return res.fail('Neveljavna pot fotografije.', 400);
+    }
+
+    const fileStat = await fs.stat(filePath).catch(() => null);
+    if (!fileStat?.isFile()) {
+      return res.fail('Datoteka fotografije ni najdena.', 404);
+    }
+
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return res.sendFile(filePath);
   } catch (error) {
     next(error);
   }
