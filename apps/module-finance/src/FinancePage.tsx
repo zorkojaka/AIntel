@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, ComposedChart } from 'recharts';
+import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import './FinancePage.css';
 
 type Role = 'ADMIN' | 'FINANCE' | 'EXECUTION' | 'SALES' | 'ORGANIZER';
@@ -148,34 +148,6 @@ function formatMonthLabel(month: number) {
   return new Date(Date.UTC(new Date().getFullYear(), month - 1, 1)).toLocaleString('sl-SI', { month: 'long' });
 }
 
-class FinanceErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
-  state = { error: null as Error | null };
-
-  static getDerivedStateFromError(error: Error) {
-    return { error };
-  }
-
-  componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('[FinancePage] Crashed:', error);
-    console.error('[FinancePage] Component stack:', info.componentStack);
-  }
-
-  render() {
-    if (this.state.error) {
-      return (
-        <div style={{ padding: 20, fontFamily: 'monospace', background: '#fee', border: '2px solid red' }}>
-          <h2 style={{ color: 'red' }}>Finance page crashed</h2>
-          <h3>Error: {this.state.error.message}</h3>
-          <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>{this.state.error.stack}</pre>
-          <button onClick={() => this.setState({ error: null })}>Try again</button>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
-
 export const FinancePage: React.FC = () => {
   const [tab, setTab] = useState<TabKey>('projekti');
   const [loading, setLoading] = useState(true);
@@ -204,6 +176,12 @@ export const FinancePage: React.FC = () => {
   const [expandedProjectRows, setExpandedProjectRows] = useState<Record<string, boolean>>({});
   const [expandedEmployeeRows, setExpandedEmployeeRows] = useState<Record<string, boolean>>({});
   const [paidByEmployee, setPaidByEmployee] = useState<Record<string, boolean>>({});
+
+  const isExecutionOnly = useMemo(() => {
+    const roleSet = new Set(roles);
+    return roleSet.has('EXECUTION') && !roleSet.has('ADMIN') && !roleSet.has('FINANCE');
+  }, [roles]);
+  const isAdminOrFinance = useMemo(() => roles.includes('ADMIN') || roles.includes('FINANCE'), [roles]);
 
   useEffect(() => {
     let cancelled = false;
@@ -260,20 +238,33 @@ export const FinancePage: React.FC = () => {
 
   useEffect(() => {
     if (!isAdminOrFinance) return;
+    let cancelled = false;
+
     Promise.all([
       fetchApi<MonthlySummary[]>(`/api/finance/monthly-summary?year=${selectedYear}`),
       fetchApi<ProductFrequency[]>(`/api/finance/product-frequency?limit=10&dateFrom=${selectedYear}-01-01&dateTo=${selectedYear}-12-31`),
       fetchApi<ProjectListItem[]>(`/api/projects?year=${selectedYear}`),
       fetchApi<ProductCooccurrenceRow[]>(`/api/finance/analytics/product-cooccurrence?year=${selectedYear}`),
       fetchApi<ProductBundleRow[]>(`/api/finance/analytics/product-bundles?year=${selectedYear}`),
-    ]).then(([m,p,pr,co,b])=>{ setMonthly(m); setProducts(p); setProjects(pr ?? []); setPairRows(co ?? []); setBundleRows(b ?? []); });
-  }, [selectedYear, isAdminOrFinance]);
+    ])
+      .then(([monthlyData, productData, projectData, cooccurrenceData, bundleData]) => {
+        if (cancelled) return;
+        setMonthly(monthlyData);
+        setProducts(productData);
+        setProjects(projectData ?? []);
+        setPairRows(cooccurrenceData ?? []);
+        setBundleRows(bundleData ?? []);
+      })
+      .catch((loadError) => {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : 'Napaka pri nalaganju podatkov.');
+        }
+      });
 
-  const isExecutionOnly = useMemo(() => {
-    const roleSet = new Set(roles);
-    return roleSet.has('EXECUTION') && !roleSet.has('ADMIN') && !roleSet.has('FINANCE');
-  }, [roles]);
-  const isAdminOrFinance = useMemo(() => roles.includes('ADMIN') || roles.includes('FINANCE'), [roles]);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedYear, isAdminOrFinance]);
 
   const filteredSnapshots = useMemo(() => {
     const term = projectSearch.trim().toLowerCase();
@@ -662,28 +653,4 @@ export const FinancePage: React.FC = () => {
 };
 
 
-const FinancePageWithBoundary: React.FC = () => (
-  <div>
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        background: 'lime',
-        color: 'black',
-        padding: '10px',
-        zIndex: 99999,
-        fontWeight: 'bold',
-        fontSize: '16px',
-      }}
-    >
-      ✓ FINANCE BUILD: {new Date().toISOString()} - error boundary v2
-    </div>
-    <FinanceErrorBoundary>
-      <FinancePage />
-    </FinanceErrorBoundary>
-  </div>
-);
-
-export default FinancePageWithBoundary;
+export default FinancePage;
