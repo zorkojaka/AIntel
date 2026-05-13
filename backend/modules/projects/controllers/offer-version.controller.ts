@@ -66,7 +66,7 @@ function parseQuantity(rawValue: unknown): { value?: number; error?: string } {
     return { value: 1 };
   }
   const parsed = Number(rawValue);
-  if (!Number.isFinite(parsed) || parsed < 1) {
+  if (!Number.isFinite(parsed) || parsed < 0) {
     return { error: 'quantity' };
   }
   return { value: parsed };
