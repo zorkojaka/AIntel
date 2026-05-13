@@ -71,6 +71,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
   const totals = {
     subtotal: summary.baseWithoutVat ?? 0,
     discount: discountValue,
+    subtotalAfterDiscount: summary.discountedBase ?? summary.baseWithoutVat ?? 0,
     vat: summary.vatAmount ?? 0,
     total: summary.totalWithVat ?? 0,
     dueDays,

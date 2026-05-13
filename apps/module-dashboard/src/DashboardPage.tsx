@@ -1,8 +1,10 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { Button, Card } from '@aintel/ui';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useDashboardLayout } from './hooks/useDashboardLayout';
 import { useInstallerDashboardData } from './hooks/useInstallerDashboardData';
 import { ALL_WIDGETS, getWidgetById } from './widgets/registry';
+import type { DashboardWidgetId } from './types';
 
 const DEFAULT_AUTH = {
   userId: null as string | null,
@@ -14,7 +16,7 @@ export function DashboardPage() {
   const [isEditing, setIsEditing] = useState(false);
   const { data, isLoading, error } = useInstallerDashboardData();
   const { visibleWidgets, toggleWidget, reorderWidget } = useDashboardLayout(auth.userId, 'installer');
-  const [draggingWidgetId, setDraggingWidgetId] = useState<string | null>(null);
+  const [draggingWidgetId, setDraggingWidgetId] = useState<DashboardWidgetId | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -52,27 +54,48 @@ export function DashboardPage() {
     () => ALL_WIDGETS.filter((widget) => !widget.roles || widget.roles.includes('installer')),
     [],
   );
+  const selectedWidgets = useMemo(
+    () =>
+      visibleWidgets
+        .map((widgetId) => availableWidgets.find((widget) => widget.id === widgetId) ?? null)
+        .filter((widget): widget is (typeof availableWidgets)[number] => Boolean(widget)),
+    [availableWidgets, visibleWidgets],
+  );
+  const unselectedWidgets = useMemo(
+    () => availableWidgets.filter((widget) => !visibleWidgets.includes(widget.id)),
+    [availableWidgets, visibleWidgets],
+  );
 
-  const handleDragStart = (widgetId: string, isSelected: boolean) => {
-    if (!isSelected) {
-      return;
-    }
+  const handleDragStart = (widgetId: DashboardWidgetId) => {
     setDraggingWidgetId(widgetId);
   };
 
-  const handleDragOver = (event: React.DragEvent<HTMLLabelElement>, widgetId: string, isSelected: boolean) => {
-    if (!isSelected || draggingWidgetId === widgetId) {
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>, widgetId: DashboardWidgetId) => {
+    if (draggingWidgetId === widgetId) {
       return;
     }
     event.preventDefault();
   };
 
-  const handleDrop = (widgetId: string, isSelected: boolean) => {
-    if (!isSelected || !draggingWidgetId || draggingWidgetId === widgetId) {
+  const handleDrop = (widgetId: DashboardWidgetId) => {
+    if (!draggingWidgetId || draggingWidgetId === widgetId) {
       return;
     }
     reorderWidget(draggingWidgetId, widgetId);
     setDraggingWidgetId(null);
+  };
+
+  const moveSelectedWidget = (widgetId: DashboardWidgetId, direction: -1 | 1) => {
+    const currentIndex = visibleWidgets.indexOf(widgetId);
+    const targetId = visibleWidgets[currentIndex + direction];
+    if (!targetId) {
+      return;
+    }
+    if (direction < 0) {
+      reorderWidget(widgetId, targetId);
+      return;
+    }
+    reorderWidget(targetId, widgetId);
   };
 
   return (
@@ -89,28 +112,74 @@ export function DashboardPage() {
       {isEditing ? (
         <div className="dashboard-editor">
           <p>Izberi pripomočke za prikaz:</p>
-          <div className="dashboard-editor__list">
-            {availableWidgets.map((widget) => {
-              const isSelected = visibleWidgets.includes(widget.id);
-              return (
-                <label
-                  key={widget.id}
-                  className="dashboard-editor__item"
-                  draggable={isSelected}
-                  onDragStart={() => handleDragStart(widget.id, isSelected)}
-                  onDragOver={(event) => handleDragOver(event, widget.id, isSelected)}
-                  onDrop={() => handleDrop(widget.id, isSelected)}
-                  onDragEnd={() => setDraggingWidgetId(null)}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => toggleWidget(widget.id)}
-                  />
-                  <span>{widget.title}</span>
-                </label>
-              );
-            })}
+          <div className="dashboard-editor__section">
+            <div className="dashboard-editor__section-header">
+              <span>Neizbrani pripomočki</span>
+            </div>
+            <div className="dashboard-editor__available-list">
+              {unselectedWidgets.length > 0 ? (
+                unselectedWidgets.map((widget) => (
+                  <label key={widget.id} className="dashboard-editor__item dashboard-editor__item--available">
+                    <input type="checkbox" checked={false} onChange={() => toggleWidget(widget.id)} />
+                    <span>{widget.title}</span>
+                  </label>
+                ))
+              ) : (
+                <span className="dashboard-editor__empty">Vsi pripomočki so izbrani.</span>
+              )}
+            </div>
+          </div>
+
+          <div className="dashboard-editor__section">
+            <div className="dashboard-editor__section-header">
+              <span>Izbrani pripomočki</span>
+              <span className="dashboard-editor__hint">Povleci vrstico ali uporabi puščice za vrstni red prikaza.</span>
+            </div>
+            <div className="dashboard-editor__selected-list">
+              {selectedWidgets.length > 0 ? (
+                selectedWidgets.map((widget, index) => (
+                  <div
+                    key={widget.id}
+                    className={[
+                      'dashboard-editor__selected-item',
+                      draggingWidgetId === widget.id ? 'dashboard-editor__selected-item--dragging' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    draggable
+                    onDragStart={() => handleDragStart(widget.id)}
+                    onDragOver={(event) => handleDragOver(event, widget.id)}
+                    onDrop={() => handleDrop(widget.id)}
+                    onDragEnd={() => setDraggingWidgetId(null)}
+                  >
+                    <label className="dashboard-editor__item dashboard-editor__item--selected">
+                      <input type="checkbox" checked onChange={() => toggleWidget(widget.id)} />
+                      <span>{widget.title}</span>
+                    </label>
+                    <div className="dashboard-editor__order-actions" aria-label={`Vrstni red za ${widget.title}`}>
+                      <button
+                        type="button"
+                        onClick={() => moveSelectedWidget(widget.id, -1)}
+                        disabled={index === 0}
+                        aria-label={`Premakni ${widget.title} gor`}
+                      >
+                        <ArrowUp aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveSelectedWidget(widget.id, 1)}
+                        disabled={index === selectedWidgets.length - 1}
+                        aria-label={`Premakni ${widget.title} dol`}
+                      >
+                        <ArrowDown aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <span className="dashboard-editor__empty">Ni izbranih pripomočkov.</span>
+              )}
+            </div>
           </div>
         </div>
       ) : null}

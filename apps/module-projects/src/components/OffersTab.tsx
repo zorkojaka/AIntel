@@ -554,7 +554,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
 
 
   const recalcItem = (item: OfferLineItemForm): OfferLineItemForm => {
-    const quantity = clampMin(item.quantity, 1, 1);
+    const quantity = clampMin(item.quantity, 1, 0);
     const unitPrice = clampPositive(item.unitPrice, 0);
     const vatRate = clampPositive(item.vatRate, 0);
 
@@ -2372,6 +2372,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                     className="text-right h-9"
                     type="number"
                     inputMode="decimal"
+                    min={0}
                     value={item.quantity}
                     onChange={(event) =>
                       updateItem(item.id, {

@@ -187,6 +187,14 @@ function resolveMaterialPreviewStep(value?: string | null) {
   return "Za naročiti";
 }
 
+function isMaterialPreviewItemReady(item: MaterialOrder["items"][number]) {
+  const plannedQty = typeof item.quantity === "number" && Number.isFinite(item.quantity) ? Math.max(0, item.quantity) : 0;
+  if (plannedQty <= 0) return true;
+  const orderedQty = typeof item.orderedQty === "number" && Number.isFinite(item.orderedQty) ? Math.max(0, item.orderedQty) : 0;
+  const step = resolveMaterialPreviewStep(item.materialStep);
+  return orderedQty >= plannedQty && (step === "Za prevzem" || step === "Prevzeto" || step === "Pripravljeno");
+}
+
 function groupMaterialPreviewBySupplier(items: MaterialOrder["items"]) {
   const groups = new Map<
     string,
@@ -211,11 +219,10 @@ function groupMaterialPreviewBySupplier(items: MaterialOrder["items"]) {
     existing.itemCount += 1;
     const plannedQty = typeof item.quantity === "number" && Number.isFinite(item.quantity) ? Math.max(0, item.quantity) : 0;
     const orderedQty = typeof item.orderedQty === "number" && Number.isFinite(item.orderedQty) ? Math.max(0, item.orderedQty) : 0;
-    const orderedStatus = orderedQty <= 0 ? "NE" : orderedQty < plannedQty ? "DELNO" : "DA";
+    const orderedStatus = plannedQty <= 0 ? "DA" : orderedQty <= 0 ? "NE" : orderedQty < plannedQty ? "DELNO" : "DA";
     const isFullyOrdered = orderedStatus === "DA";
     if (isFullyOrdered) existing.orderedCount += 1;
-    const step = resolveMaterialPreviewStep(item.materialStep);
-    if (isFullyOrdered && (step === "Za prevzem" || step === "Prevzeto" || step === "Pripravljeno")) {
+    if (isMaterialPreviewItemReady(item)) {
       existing.readyCount += 1;
     }
     groups.set(supplierLabel, existing);
@@ -1134,13 +1141,7 @@ export function LogisticsPanel({
   const currentIssueMaterialOrder = materialOrderForm ?? selectedMaterialOrder ?? null;
   const currentIssueMaterialItems = (currentIssueMaterialOrder?.items ?? []).filter((item) => !item.isExtra);
   const isMaterialReadyForIssue =
-    currentIssueMaterialItems.length > 0 &&
-    currentIssueMaterialItems.every((item) => {
-      const plannedQty = typeof item.quantity === "number" && Number.isFinite(item.quantity) ? Math.max(0, item.quantity) : 0;
-      const orderedQty = typeof item.orderedQty === "number" && Number.isFinite(item.orderedQty) ? Math.max(0, item.orderedQty) : 0;
-      const step = resolveMaterialPreviewStep(item.materialStep);
-      return orderedQty > 0 && orderedQty >= plannedQty && (step === "Za prevzem" || step === "Prevzeto" || step === "Pripravljeno");
-    });
+    currentIssueMaterialItems.length === 0 || currentIssueMaterialItems.every((item) => isMaterialPreviewItemReady(item));
 
   const canIssueOrder = Boolean(resolvedSchedule && hasAssignedTeam && isTermConfirmed);
   const canIssueWorkOrder = canIssueOrder && isMaterialReadyForIssue;
@@ -2006,7 +2007,10 @@ export function LogisticsPanel({
         : "Ni določen";
 
     const renderReadinessBadge = (readyCount: number, totalCount: number) => {
-      if (totalCount === 0 || readyCount === 0) {
+      if (totalCount === 0) {
+        return <Badge className="border-green-500/30 bg-green-500/10 text-green-700">Pripravljeno za prevzem</Badge>;
+      }
+      if (readyCount === 0) {
         return <Badge variant="outline">Ni pripravljeno</Badge>;
       }
       if (readyCount >= totalCount) {
@@ -2053,7 +2057,7 @@ export function LogisticsPanel({
             </CardHeader>
             <CardContent className="flex h-full flex-col gap-3">
               {supplierGroups.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Predogled naloga za prevzem bo na voljo po pripravi materiala.</p>
+                <p className="text-sm text-muted-foreground">Ni materiala za prevzem.</p>
               ) : (
                 supplierGroups.map((group) => (
                   <div key={group.supplierLabel} className="rounded-none bg-card px-3 py-3">
@@ -2299,7 +2303,10 @@ export function LogisticsPanel({
     const supplierGroups = groupMaterialPreviewBySupplier(previewMaterialItems);
 
     const renderReadinessBadge = (readyCount: number, totalCount: number) => {
-      if (totalCount === 0 || readyCount === 0) {
+      if (totalCount === 0) {
+        return <Badge className="border-green-500/30 bg-green-500/10 text-green-700">Pripravljeno za prevzem</Badge>;
+      }
+      if (readyCount === 0) {
         return <Badge variant="outline">Ni pripravljeno</Badge>;
       }
       if (readyCount >= totalCount) {
@@ -2344,7 +2351,7 @@ export function LogisticsPanel({
         </CardHeader>
         <CardContent className="flex h-full flex-col gap-3">
           {supplierGroups.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Predogled naloga za prevzem bo na voljo po pripravi materiala.</p>
+            <p className="text-sm text-muted-foreground">Ni materiala za prevzem.</p>
           ) : (
             supplierGroups.map((group) => (
               <div key={group.supplierLabel} className="rounded-none bg-card px-3 py-3">

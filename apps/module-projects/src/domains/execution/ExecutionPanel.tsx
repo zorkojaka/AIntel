@@ -40,6 +40,7 @@ interface ExecutionPanelProps {
   onWorkOrderUpdated?: (workOrder: WorkOrder) => void;
   onWorkOrderDraftChange?: (workOrder: WorkOrder) => void;
   onRegisterSaveHandler?: (handler: (() => Promise<boolean>) | null) => void;
+  collapsibleMaterialOrders?: boolean;
 }
 
 type WorkOrderDraft = {
@@ -546,6 +547,7 @@ export function ExecutionPanel({
   onWorkOrderUpdated,
   onWorkOrderDraftChange,
   onRegisterSaveHandler,
+  collapsibleMaterialOrders = false,
 }: ExecutionPanelProps) {
   const rawWorkOrders = logistics?.workOrders ?? [];
   const materialOrders = logistics?.materialOrders ?? [];
@@ -1892,6 +1894,7 @@ export function ExecutionPanel({
                         <MaterialOrderCard
                           mode="execution"
                           materialOrder={materialDraft ?? materialOrder}
+                          collapsible={collapsibleMaterialOrders}
                           projectId={projectId}
                           technicianNote={order.notes ?? ""}
                           executionDate={order.scheduledAt ?? null}

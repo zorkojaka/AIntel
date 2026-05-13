@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Employee } from "@aintel/shared/types/employee";
 import type { MaterialOrder, MaterialPickupMethod, MaterialStep } from "@aintel/shared/types/logistics";
-import { Camera, Download, Loader2 } from "lucide-react";
+import { Camera, ChevronDown, ChevronRight, Download, Loader2 } from "lucide-react";
 import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -68,6 +68,8 @@ interface MaterialOrderCardProps {
   hasPendingMaterialChanges: boolean;
   canDownloadPdf: boolean;
   downloadingPdf: "PURCHASE_ORDER" | "DELIVERY_NOTE" | null;
+  collapsible?: boolean;
+  defaultCollapsed?: boolean;
 }
 
 type SupplierGroup = {
@@ -137,6 +139,7 @@ function resolvePlanQty(item: MaterialLine) {
 function resolveOrderedStatus(item: MaterialLine) {
   const orderedQty = resolveOrderedQty(item);
   const planQty = resolvePlanQty(item);
+  if (planQty <= 0) return "DA" as const;
   if (orderedQty <= 0) return "NE" as const;
   if (orderedQty < planQty) return "DELNO" as const;
   return "DA" as const;
@@ -158,7 +161,8 @@ function formatDateTime(value: string | null | undefined) {
 }
 
 function getOverallStatus(readyCount: number, totalCount: number) {
-  if (totalCount === 0 || readyCount === 0) return { label: "Ni pripravljeno", className: "border-orange-400/50 bg-orange-500/10 text-orange-700" };
+  if (totalCount === 0) return { label: "Pripravljeno za prevzem", className: "border-green-500/30 bg-green-500/10 text-green-700" };
+  if (readyCount === 0) return { label: "Ni pripravljeno", className: "border-orange-400/50 bg-orange-500/10 text-orange-700" };
   if (readyCount >= totalCount) return { label: "Pripravljeno za prevzem", className: "border-green-500/30 bg-green-500/10 text-green-700" };
   return { label: "Delno pripravljeno", className: "border-orange-400/50 bg-orange-500/10 text-orange-700" };
 }
@@ -252,7 +256,11 @@ export function MaterialOrderCard({
   onDownloadPurchaseOrder,
   canDownloadPdf,
   downloadingPdf,
+  collapsible = false,
+  defaultCollapsed = false,
 }: MaterialOrderCardProps) {
+  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+
   if (!materialOrder) {
     return <p className="text-sm text-muted-foreground">Naročilo za material bo ustvarjeno ob potrditvi ponudbe.</p>;
   }
@@ -269,22 +277,24 @@ export function MaterialOrderCard({
   const plannedLines = (materialOrder.items ?? []).filter((item) => !item.isExtra);
   const groupedBySupplier = groupMaterialLines(plannedLines);
   const orderedCount = plannedLines.filter((item) => resolveOrderedStatus(item) === "DA").length;
-  const readyCount = plannedLines.filter((item) => resolveOrderedStatus(item) === "DA" && isReadyForPickup(resolveMaterialStep(item.materialStep))).length;
-  const pickedUpCount = plannedLines.filter((item) => resolveOrderedQty(item) > 0 && resolveDeliveredQty(item) >= resolveOrderedQty(item)).length;
+  const readyCount = plannedLines.filter((item) => resolvePlanQty(item) <= 0 || (resolveOrderedStatus(item) === "DA" && isReadyForPickup(resolveMaterialStep(item.materialStep)))).length;
+  const pickedUpCount = plannedLines.filter((item) => resolvePlanQty(item) <= 0 || (resolveOrderedQty(item) > 0 && resolveDeliveredQty(item) >= resolveOrderedQty(item))).length;
   const totalCount = plannedLines.length;
   const overallStatus = getOverallStatus(readyCount, totalCount);
   const pickupStatus =
-    totalCount === 0 || pickedUpCount === 0
+    totalCount === 0
+      ? { label: "Vse prevzeto", className: "border-green-500/30 bg-green-500/10 text-green-700" }
+      : pickedUpCount === 0
       ? { label: "Ni prevzeto", className: "border-orange-400/50 bg-orange-500/10 text-orange-700" }
       : pickedUpCount >= orderedCount
         ? { label: "Vse prevzeto", className: "border-green-500/30 bg-green-500/10 text-green-700" }
         : { label: "Delno prevzeto", className: "border-orange-400/50 bg-orange-500/10 text-orange-700" };
   const materialCardClass =
     isExecutionMode
-      ? orderedCount > 0 && pickedUpCount >= orderedCount
+      ? totalCount === 0 || (orderedCount > 0 && pickedUpCount >= orderedCount)
         ? "border-green-500/40 shadow-[0_0_0_1px_rgba(34,197,94,0.12)]"
         : "border-orange-400/50 shadow-[0_0_0_1px_rgba(251,146,60,0.14)]"
-      : totalCount > 0 && orderedCount >= totalCount && readyCount >= totalCount
+      : totalCount === 0 || (orderedCount >= totalCount && readyCount >= totalCount)
         ? "border-green-500/40 shadow-[0_0_0_1px_rgba(34,197,94,0.12)]"
         : "border-orange-400/50 shadow-[0_0_0_1px_rgba(251,146,60,0.14)]";
   const hasExecutionDate = Boolean(executionDate);
@@ -311,10 +321,9 @@ export function MaterialOrderCard({
     ? employeeNameById.get(materialOrder.logisticsOwnerId) ?? "Ni določeno"
     : "Ni določeno";
   const selectedPickupLocation = materialOrder.pickupLocation?.trim() || "Ni določeno";
-  const allPlannedItemsOrdered = totalCount > 0 && plannedLines.every((item) => resolveOrderedStatus(item) === "DA");
+  const allPlannedItemsOrdered = plannedLines.every((item) => resolveOrderedStatus(item) === "DA");
   const allPlannedItemsReady =
-    totalCount > 0 &&
-    plannedLines.every((item) => resolveOrderedStatus(item) === "DA" && isReadyForPickup(resolveMaterialStep(item.materialStep)));
+    plannedLines.every((item) => resolvePlanQty(item) <= 0 || (resolveOrderedStatus(item) === "DA" && isReadyForPickup(resolveMaterialStep(item.materialStep))));
 
   const updateMaterialStep = (itemId: string, nextOrderedStatus: "DA" | "NE", nextReady: boolean) => {
     const nextItems = (materialOrder.items ?? []).map((item) => {
@@ -374,6 +383,7 @@ export function MaterialOrderCard({
     });
     onMaterialItemsChange(nextItems);
   };
+  const materialTitle = isExecutionMode ? "Nalog za prevzem" : "Material";
 
   return (
     <div className="space-y-4">
@@ -476,7 +486,19 @@ export function MaterialOrderCard({
 
       <div className={`rounded-none border bg-card p-4 shadow-sm ${materialCardClass}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <h3 className="text-base font-semibold">Material</h3>
+          {collapsible ? (
+            <button
+              type="button"
+              className="inline-flex min-h-8 items-center gap-2 text-left text-base font-semibold"
+              onClick={() => setIsCollapsed((current) => !current)}
+              aria-expanded={!isCollapsed}
+            >
+              {isCollapsed ? <ChevronRight className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
+              <span>{materialTitle}</span>
+            </button>
+          ) : (
+            <h3 className="text-base font-semibold">{materialTitle}</h3>
+          )}
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Badge className={isExecutionMode ? pickupStatus.className : overallStatus.className}>{isExecutionMode ? pickupStatus.label : overallStatus.label}</Badge>
             <DeliveryNotePhotoButton projectId={projectId} materialOrderId={materialOrder._id} />
@@ -494,6 +516,8 @@ export function MaterialOrderCard({
             ) : null}
           </div>
         </div>
+        {!isCollapsed ? (
+          <>
         <div className="mt-4 space-y-4">
           {groupedBySupplier.map((group) => (
             <section key={group.supplierKey} className="rounded-none border border-border/70 bg-card">
@@ -698,6 +722,8 @@ export function MaterialOrderCard({
             ) : null}
           </div>
         </div>
+          </>
+        ) : null}
       </div>
     </div>
   );

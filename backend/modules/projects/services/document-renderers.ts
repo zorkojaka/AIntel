@@ -13,6 +13,7 @@ export interface PreviewItem {
   plannedQuantity?: number | null;
   unit?: string;
   unitPrice?: number;
+  discountPercent?: number;
   total?: number;
   vatPercent?: number;
   statusLabel?: string | null;
@@ -63,6 +64,7 @@ export interface DocumentPreviewContext {
   totals?: PreviewTotals;
   notes?: string[];
   comment?: string | null;
+  usePerItemDiscount?: boolean;
   referenceNumber?: string | null;
   tasks?: PreviewTask[];
   paymentInfo?: PaymentInfoContext | null;
@@ -393,31 +395,41 @@ function buildStandardDocument(context: DocumentPreviewContext, options: Documen
 }
 
 export function renderOfferPdf(context: DocumentPreviewContext) {
+  const showPerItemDiscount =
+    !!context.usePerItemDiscount && (context.items ?? []).some((item) => (item.discountPercent ?? 0) > 0);
+
   const rows = (context.items ?? []).map((item) => {
     const unitPrice = item.unitPrice ?? 0;
     const total = item.total ?? unitPrice * item.quantity;
+    const discountPercent = item.discountPercent ?? 0;
     return `<tr>
       <td>${item.name}</td>
       <td style="text-align:right;">${item.quantity}</td>
       <td style="text-align:right;">${formatCurrency(unitPrice)}</td>
+      ${showPerItemDiscount ? `<td style="text-align:right;">${discountPercent > 0 ? `${discountPercent}%` : '&mdash;'}</td>` : ''}
       <td style="text-align:right;">${formatCurrency(total)}</td>
     </tr>`;
   });
   const itemsRows = rows.length
     ? rows.join('')
-    : `<tr><td colspan="4" style="text-align:center; color:#94a3b8;">Ni postavk za prikaz.</td></tr>`;
+    : `<tr><td colspan="${showPerItemDiscount ? 5 : 4}" style="text-align:center; color:#94a3b8;">Ni postavk za prikaz.</td></tr>`;
 
   const totals = context.totals ?? {};
+  const discount = totals.discount ?? 0;
   const totalRows = [
     { label: 'Skupaj brez DDV', value: totals.subtotal ?? 0 },
-    { label: 'Popust', value: totals.discount ?? 0 },
-    { label: 'Cena s popustom brez DDV', value: totals.subtotalAfterDiscount ?? totals.subtotal ?? 0 },
+    ...(discount > 0
+      ? [
+          { label: 'Popust', value: discount },
+          { label: 'Cena s popustom brez DDV', value: totals.subtotalAfterDiscount ?? totals.subtotal ?? 0 },
+        ]
+      : []),
     { label: 'DDV', value: totals.vat ?? 0 },
     { label: 'Skupaj z DDV', value: totals.total ?? totals.subtotal ?? 0 },
   ]
     .map(
       (row) => `<tr>
-        <td colspan="3" style="text-align:right; font-weight:600;">${row.label}</td>
+        <td colspan="${showPerItemDiscount ? 4 : 3}" style="text-align:right; font-weight:600;">${row.label}</td>
         <td style="text-align:right; font-weight:600;">${formatCurrency(row.value)}</td>
       </tr>`,
     )
@@ -449,6 +461,7 @@ export function renderOfferPdf(context: DocumentPreviewContext) {
         <th>Postavka</th>
         <th style="text-align:right;">Količina</th>
         <th style="text-align:right;">Cena</th>
+        ${showPerItemDiscount ? '<th style="text-align:right;">Popust %</th>' : ''}
         <th style="text-align:right;">Znesek</th>
       </tr>`,
     tableBodyRows: itemsRows,
@@ -476,9 +489,15 @@ export function renderInvoicePdf(context: DocumentPreviewContext) {
     : `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">Ni postavk za prikaz.</td></tr>`;
 
   const totals = context.totals ?? {};
+  const discount = totals.discount ?? 0;
   const totalRows = [
-    { label: 'Osnova brez DDV', value: totals.subtotal ?? 0 },
-    ...(totals.discount && totals.discount > 0 ? [{ label: 'Popust', value: totals.discount }] : []),
+    { label: 'Skupaj brez DDV', value: totals.subtotal ?? 0 },
+    ...(discount > 0
+      ? [
+          { label: 'Popust', value: discount },
+          { label: 'Cena s popustom brez DDV', value: totals.subtotalAfterDiscount ?? totals.subtotal ?? 0 },
+        ]
+      : []),
     { label: 'DDV', value: totals.vat ?? 0 },
     { label: 'Skupaj z DDV', value: totals.total ?? totals.subtotal ?? 0 },
   ]
