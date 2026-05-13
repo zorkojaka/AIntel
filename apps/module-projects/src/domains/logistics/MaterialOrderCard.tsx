@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Employee } from "@aintel/shared/types/employee";
 import type { MaterialOrder, MaterialPickupMethod, MaterialStep } from "@aintel/shared/types/logistics";
-import { Camera, Download, Loader2 } from "lucide-react";
+import { Camera, ChevronDown, ChevronRight, Download, Loader2 } from "lucide-react";
 import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -68,6 +68,8 @@ interface MaterialOrderCardProps {
   hasPendingMaterialChanges: boolean;
   canDownloadPdf: boolean;
   downloadingPdf: "PURCHASE_ORDER" | "DELIVERY_NOTE" | null;
+  collapsible?: boolean;
+  defaultCollapsed?: boolean;
 }
 
 type SupplierGroup = {
@@ -254,7 +256,11 @@ export function MaterialOrderCard({
   onDownloadPurchaseOrder,
   canDownloadPdf,
   downloadingPdf,
+  collapsible = false,
+  defaultCollapsed = false,
 }: MaterialOrderCardProps) {
+  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+
   if (!materialOrder) {
     return <p className="text-sm text-muted-foreground">Naročilo za material bo ustvarjeno ob potrditvi ponudbe.</p>;
   }
@@ -377,6 +383,7 @@ export function MaterialOrderCard({
     });
     onMaterialItemsChange(nextItems);
   };
+  const materialTitle = isExecutionMode ? "Nalog za prevzem" : "Material";
 
   return (
     <div className="space-y-4">
@@ -479,7 +486,19 @@ export function MaterialOrderCard({
 
       <div className={`rounded-none border bg-card p-4 shadow-sm ${materialCardClass}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <h3 className="text-base font-semibold">Material</h3>
+          {collapsible ? (
+            <button
+              type="button"
+              className="inline-flex min-h-8 items-center gap-2 text-left text-base font-semibold"
+              onClick={() => setIsCollapsed((current) => !current)}
+              aria-expanded={!isCollapsed}
+            >
+              {isCollapsed ? <ChevronRight className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
+              <span>{materialTitle}</span>
+            </button>
+          ) : (
+            <h3 className="text-base font-semibold">{materialTitle}</h3>
+          )}
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Badge className={isExecutionMode ? pickupStatus.className : overallStatus.className}>{isExecutionMode ? pickupStatus.label : overallStatus.label}</Badge>
             <DeliveryNotePhotoButton projectId={projectId} materialOrderId={materialOrder._id} />
@@ -497,6 +516,8 @@ export function MaterialOrderCard({
             ) : null}
           </div>
         </div>
+        {!isCollapsed ? (
+          <>
         <div className="mt-4 space-y-4">
           {groupedBySupplier.map((group) => (
             <section key={group.supplierKey} className="rounded-none border border-border/70 bg-card">
@@ -701,6 +722,8 @@ export function MaterialOrderCard({
             ) : null}
           </div>
         </div>
+          </>
+        ) : null}
       </div>
     </div>
   );

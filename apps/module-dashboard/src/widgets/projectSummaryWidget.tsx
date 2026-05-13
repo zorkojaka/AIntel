@@ -5,6 +5,7 @@ import { useProject } from '../../../module-projects/src/domains/core/useProject
 import { useProjectTimeline, type TimelineStep } from '../../../module-projects/src/domains/core/useProjectTimeline';
  
 import { LogisticsPanel } from '../../../module-projects/src/domains/logistics/LogisticsPanel';
+import { ExecutionPanel } from '../../../module-projects/src/domains/execution/ExecutionPanel';
 
 const STORAGE_PREFIX = 'dashboard:projectWidget:selectedProject:';
 
@@ -162,7 +163,7 @@ function ProjectSummaryBody({
   ...props
 }: ProjectSummaryBodyProps) {
   const effectiveProjectId = selectedProjectId ?? options[0].id;
-  const { project, loading } = useProject(effectiveProjectId, null);
+  const { project, loading, refresh } = useProject(effectiveProjectId, null);
   const timelineSteps = useProjectTimeline(project);
   const currentPhase = useMemo(() => getCurrentPhase(timelineSteps), [timelineSteps]);
 
@@ -196,7 +197,7 @@ function ProjectSummaryBody({
       currentPhase.key === 'logistics'
         ? 'dashboard-logistics-material'
         : currentPhase.key === 'execution'
-          ? 'dashboard-logistics-workorder'
+          ? 'dashboard-execution-panel'
           : null;
     if (!targetId || typeof document === 'undefined') {
       return;
@@ -205,6 +206,29 @@ function ProjectSummaryBody({
     if (target) {
       target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
+  };
+
+  const handleSaveSignature = async (
+    signature: string,
+    signerName: string,
+    workOrderId?: string,
+    customerRemark?: string,
+  ) => {
+    const response = await fetch(`/api/projects/${effectiveProjectId}/signature`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        signerName,
+        signature,
+        workOrderId: workOrderId ?? null,
+        customerRemark: customerRemark ?? null,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error('Podpisa ni bilo mogoče shraniti.');
+    }
+    await refresh();
   };
 
   return (
@@ -283,13 +307,15 @@ function ProjectSummaryBody({
             <LogisticsPanel projectId={effectiveProjectId} client={project?.customerDetail ?? null} mode="embedded" section="material" />
           ) : null}
           {currentPhase.key === 'execution' ? (
-            <LogisticsPanel
-              projectId={effectiveProjectId}
-              client={project?.customerDetail ?? null}
-              mode="embedded"
-              section="workorder"
-              workOrderMode="execute"
-            />
+            <div id="dashboard-execution-panel">
+              <ExecutionPanel
+                projectId={effectiveProjectId}
+                projectDisplayId={projectCode}
+                logistics={project?.logistics ?? null}
+                onSaveSignature={handleSaveSignature}
+                collapsibleMaterialOrders
+              />
+            </div>
           ) : null}
         </div>
       )}
