@@ -347,6 +347,7 @@ export async function buildOfferPdfPreviewPayload(
     quantity: item.quantity,
     unit: item.unit,
     unitPrice: item.unitPrice,
+    discountPercent: item.discountPercent ?? 0,
     total: calculateOfferLineNetAmount(item, !!offerWithTexts.usePerItemDiscount),
     vatPercent: item.vatRate ?? 22,
   }));
@@ -376,6 +377,7 @@ export async function buildOfferPdfPreviewPayload(
     },
     notes,
     comment: docType === 'OFFER' ? offerWithTexts.comment ?? null : null,
+    usePerItemDiscount: !!offerWithTexts.usePerItemDiscount,
     referenceNumber: docType === 'CREDIT_NOTE' ? generatedNumber.replace('DOBROPIS', 'RACUN') : null,
     tasks: docType === 'WORK_ORDER' || docType === 'WORK_ORDER_CONFIRMATION'
       ? items.map((item) => ({ label: item.name, status: docType === 'WORK_ORDER' ? 'in-progress' : 'done' }))
