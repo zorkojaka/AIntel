@@ -137,6 +137,7 @@ function resolvePlanQty(item: MaterialLine) {
 function resolveOrderedStatus(item: MaterialLine) {
   const orderedQty = resolveOrderedQty(item);
   const planQty = resolvePlanQty(item);
+  if (planQty <= 0) return "DA" as const;
   if (orderedQty <= 0) return "NE" as const;
   if (orderedQty < planQty) return "DELNO" as const;
   return "DA" as const;
@@ -158,7 +159,8 @@ function formatDateTime(value: string | null | undefined) {
 }
 
 function getOverallStatus(readyCount: number, totalCount: number) {
-  if (totalCount === 0 || readyCount === 0) return { label: "Ni pripravljeno", className: "border-orange-400/50 bg-orange-500/10 text-orange-700" };
+  if (totalCount === 0) return { label: "Pripravljeno za prevzem", className: "border-green-500/30 bg-green-500/10 text-green-700" };
+  if (readyCount === 0) return { label: "Ni pripravljeno", className: "border-orange-400/50 bg-orange-500/10 text-orange-700" };
   if (readyCount >= totalCount) return { label: "Pripravljeno za prevzem", className: "border-green-500/30 bg-green-500/10 text-green-700" };
   return { label: "Delno pripravljeno", className: "border-orange-400/50 bg-orange-500/10 text-orange-700" };
 }
@@ -269,22 +271,24 @@ export function MaterialOrderCard({
   const plannedLines = (materialOrder.items ?? []).filter((item) => !item.isExtra);
   const groupedBySupplier = groupMaterialLines(plannedLines);
   const orderedCount = plannedLines.filter((item) => resolveOrderedStatus(item) === "DA").length;
-  const readyCount = plannedLines.filter((item) => resolveOrderedStatus(item) === "DA" && isReadyForPickup(resolveMaterialStep(item.materialStep))).length;
-  const pickedUpCount = plannedLines.filter((item) => resolveOrderedQty(item) > 0 && resolveDeliveredQty(item) >= resolveOrderedQty(item)).length;
+  const readyCount = plannedLines.filter((item) => resolvePlanQty(item) <= 0 || (resolveOrderedStatus(item) === "DA" && isReadyForPickup(resolveMaterialStep(item.materialStep)))).length;
+  const pickedUpCount = plannedLines.filter((item) => resolvePlanQty(item) <= 0 || (resolveOrderedQty(item) > 0 && resolveDeliveredQty(item) >= resolveOrderedQty(item))).length;
   const totalCount = plannedLines.length;
   const overallStatus = getOverallStatus(readyCount, totalCount);
   const pickupStatus =
-    totalCount === 0 || pickedUpCount === 0
+    totalCount === 0
+      ? { label: "Vse prevzeto", className: "border-green-500/30 bg-green-500/10 text-green-700" }
+      : pickedUpCount === 0
       ? { label: "Ni prevzeto", className: "border-orange-400/50 bg-orange-500/10 text-orange-700" }
       : pickedUpCount >= orderedCount
         ? { label: "Vse prevzeto", className: "border-green-500/30 bg-green-500/10 text-green-700" }
         : { label: "Delno prevzeto", className: "border-orange-400/50 bg-orange-500/10 text-orange-700" };
   const materialCardClass =
     isExecutionMode
-      ? orderedCount > 0 && pickedUpCount >= orderedCount
+      ? totalCount === 0 || (orderedCount > 0 && pickedUpCount >= orderedCount)
         ? "border-green-500/40 shadow-[0_0_0_1px_rgba(34,197,94,0.12)]"
         : "border-orange-400/50 shadow-[0_0_0_1px_rgba(251,146,60,0.14)]"
-      : totalCount > 0 && orderedCount >= totalCount && readyCount >= totalCount
+      : totalCount === 0 || (orderedCount >= totalCount && readyCount >= totalCount)
         ? "border-green-500/40 shadow-[0_0_0_1px_rgba(34,197,94,0.12)]"
         : "border-orange-400/50 shadow-[0_0_0_1px_rgba(251,146,60,0.14)]";
   const hasExecutionDate = Boolean(executionDate);
@@ -311,10 +315,9 @@ export function MaterialOrderCard({
     ? employeeNameById.get(materialOrder.logisticsOwnerId) ?? "Ni določeno"
     : "Ni določeno";
   const selectedPickupLocation = materialOrder.pickupLocation?.trim() || "Ni določeno";
-  const allPlannedItemsOrdered = totalCount > 0 && plannedLines.every((item) => resolveOrderedStatus(item) === "DA");
+  const allPlannedItemsOrdered = plannedLines.every((item) => resolveOrderedStatus(item) === "DA");
   const allPlannedItemsReady =
-    totalCount > 0 &&
-    plannedLines.every((item) => resolveOrderedStatus(item) === "DA" && isReadyForPickup(resolveMaterialStep(item.materialStep)));
+    plannedLines.every((item) => resolvePlanQty(item) <= 0 || (resolveOrderedStatus(item) === "DA" && isReadyForPickup(resolveMaterialStep(item.materialStep))));
 
   const updateMaterialStep = (itemId: string, nextOrderedStatus: "DA" | "NE", nextReady: boolean) => {
     const nextItems = (materialOrder.items ?? []).map((item) => {
