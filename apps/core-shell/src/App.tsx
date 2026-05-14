@@ -6,6 +6,7 @@ import { CenikPage } from '@aintel/module-cenik';
 import { SettingsPage, fetchSettings } from '@aintel/module-settings';
 import { FinancePage } from '@aintel/module-finance';
 import { EmployeesPage } from '@aintel/module-employees';
+import { ProfilPage } from '@aintel/module-profil';
 import { DashboardPage } from '@aintel/module-dashboard';
 import { manifest as crmManifest } from '@aintel/module-crm';
 import { manifest as projectsManifest } from '@aintel/module-projects';
@@ -13,6 +14,7 @@ import { manifest as cenikManifest } from '@aintel/module-cenik';
 import { manifest as financeManifest } from '@aintel/module-finance';
 import { manifest as settingsManifest } from '@aintel/module-settings';
 import { manifest as employeesManifest } from '@aintel/module-employees';
+import { manifest as profilManifest } from '@aintel/module-profil';
 import { manifest as dashboardManifest } from '@aintel/module-dashboard';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { LoginPage } from './auth/LoginPage';
@@ -26,6 +28,7 @@ const modules = [
   cenikManifest,
   financeManifest,
   employeesManifest,
+  profilManifest,
   settingsManifest,
 ];
 
@@ -49,6 +52,7 @@ const moduleComponents: Record<ModuleId, React.ReactNode> = {
   cenik: <CenikPage />,
   finance: <FinancePage />,
   employees: <EmployeesPage />,
+  profil: <ProfilPage />,
 };
 
 const moduleRoleMap: Partial<Record<ModuleId, string[]>> = {
