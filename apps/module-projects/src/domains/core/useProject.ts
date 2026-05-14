@@ -70,6 +70,7 @@ export function mapProject(data: any): ProjectDetails {
     createdAt: data.createdAt,
     salesUserId: data.salesUserId ?? null,
     assignedEmployeeIds: Array.isArray(data.assignedEmployeeIds) ? data.assignedEmployeeIds : [],
+    phaseSignals: data.phaseSignals,
     customerDetail: mergedCustomerDetail,
     requirements: requirementsArray,
     requirementsText,
@@ -83,6 +84,7 @@ export function mapProject(data: any): ProjectDetails {
     categories: Array.isArray(data.categories) ? data.categories : [],
     requirementsTemplateVariantSlug: data.requirementsTemplateVariantSlug,
     logistics: (data.logistics as ProjectLogistics | null) ?? null,
+    invoiceVersions: Array.isArray(data.invoiceVersions) ? data.invoiceVersions : [],
     client,
   };
 }

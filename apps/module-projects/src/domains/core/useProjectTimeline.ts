@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ProjectDetails } from "../../types";
 import type { MaterialOrder, WorkOrder, WorkOrderStatus } from "@aintel/shared/types/logistics";
 import type { OfferVersionSummary } from "@aintel/shared/types/offers";
+import { deriveProjectPhase } from "@aintel/shared/utils/deriveProjectPhase";
 
 export type StepStatus = "done" | "inProgress" | "pending";
 
@@ -454,11 +455,8 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
 
   return useMemo(() => {
     const basePath = project?.id ? `/projects/${project.id}` : "#";
-    const normalizedProjectStatus = normalizeLooseStatus(project?.status);
-    const forceCompleted =
-      normalizedProjectStatus === "completed" ||
-      normalizedProjectStatus === "invoiced" ||
-      normalizedProjectStatus === "zaracunano";
+    const derivedPhase = deriveProjectPhase(project);
+    const forceCompleted = derivedPhase === "racun";
 
     const offersSource = USE_REMOTE_OFFERS ? remoteOffers ?? collectOffers(project) : collectOffers(project);
     const requirementsInfo = buildRequirementsStep(project, basePath);

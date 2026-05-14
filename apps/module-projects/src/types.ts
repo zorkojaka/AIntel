@@ -72,6 +72,14 @@ export interface ProjectSummary {
   requirementsTemplateVariantSlug?: string;
   salesUserId?: string | null;
   assignedEmployeeIds?: string[];
+  phaseSignals?: {
+    hasOffers?: boolean;
+    hasConfirmedOffer?: boolean;
+    hasWorkOrder?: boolean;
+    allExecutionUnitsCompleted?: boolean;
+    hasSignedDelivery?: boolean;
+    hasIssuedInvoice?: boolean;
+  };
 }
 
 export interface PurchaseOrder {
@@ -128,6 +136,7 @@ export interface ProjectDetails extends ProjectSummary {
   timelineEvents: TimelineEvent[];
   templates: Template[];
   logistics?: ProjectLogistics | null;
+  invoiceVersions?: any[];
 }
 
 export interface OfferCandidate {
