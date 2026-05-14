@@ -14,6 +14,7 @@ import { Category, ProjectDetails, ProjectSummary, Template, ProjectStatus } fro
 import { NewProjectDialog } from "./components/NewProjectDialog";
 import { mapProject } from "./domains/core/useProject";
 import { canAccessPreparation } from "@aintel/shared/utils/preparationAccess";
+import { getProjectPhase } from "./components/projectPhases";
 
 const API_PREFIX = "/api/projects";
 const VIEW_STORAGE_KEY = "projects:view-mode";
@@ -40,6 +41,7 @@ function toSummary(project: ProjectDetails): ProjectSummary {
     createdAt: project.createdAt,
     categories: project.categories ?? [],
     requirementsTemplateVariantSlug: project.requirementsTemplateVariantSlug,
+    phaseSignals: project.phaseSignals,
   };
 }
 
@@ -643,8 +645,7 @@ export function ProjectsPage() {
         project.customer.toLowerCase().includes(normalizedQuery);
       const matchesPhase =
         phaseFilter === "all" ||
-        project.status === phaseFilter ||
-        (phaseFilter === "completed" && project.status === "invoiced");
+        getProjectPhase(project) === phaseFilter;
       const matchesCategory =
         categoryFilter === "all" || project.categories.some((categorySlug) => categorySlug === categoryFilter);
       return matchesSearch && matchesPhase && matchesCategory;

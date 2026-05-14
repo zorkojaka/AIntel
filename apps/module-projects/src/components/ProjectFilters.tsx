@@ -39,12 +39,12 @@ export function ProjectFilters({
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Vse faze</SelectItem>
-          <SelectItem value="draft">Zahteve</SelectItem>
-          <SelectItem value="offered">Ponudbe</SelectItem>
-          <SelectItem value="ordered">Priprava</SelectItem>
-          <SelectItem value="in-progress">Izvedba</SelectItem>
-          <SelectItem value="completed">Račun</SelectItem>
-          <SelectItem value="invoiced">Račun (zaračunano)</SelectItem>
+          <SelectItem value="zahteve">Zahteve</SelectItem>
+          <SelectItem value="ponudbe">Ponudbe</SelectItem>
+          <SelectItem value="priprava">Priprava</SelectItem>
+          <SelectItem value="izvedba">Izvedba</SelectItem>
+          <SelectItem value="predaja">Predaja</SelectItem>
+          <SelectItem value="racun">Račun</SelectItem>
         </SelectContent>
       </Select>
       <Select value={categoryFilter} onValueChange={onCategoryFilterChange}>
