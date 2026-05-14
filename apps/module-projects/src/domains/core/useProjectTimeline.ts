@@ -456,7 +456,6 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const basePath = project?.id ? `/projects/${project.id}` : "#";
     const normalizedProjectStatus = normalizeLooseStatus(project?.status);
     const forceCompleted =
-      normalizedProjectStatus === "completed" ||
       normalizedProjectStatus === "invoiced" ||
       normalizedProjectStatus === "zaracunano";
 

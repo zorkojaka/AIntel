@@ -269,6 +269,61 @@ async function validateUsersAndEmployees(tenantId: string, salesUserId?: string 
   return null;
 }
 
+function normalizePhaseStatus(value: unknown) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function workOrderHasExecutableItems(order: any) {
+  return Array.isArray(order?.items) && order.items.length > 0;
+}
+
+function getExecutionUnitStates(order: any) {
+  const units: boolean[] = [];
+  const items = Array.isArray(order?.items) ? order.items : [];
+  items.forEach((item: any) => {
+    const executionUnits = Array.isArray(item?.executionSpec?.executionUnits)
+      ? item.executionSpec.executionUnits
+      : [];
+    if (executionUnits.length > 0) {
+      executionUnits.forEach((unit: any) => units.push(unit?.isCompleted === true));
+      return;
+    }
+    units.push(item?.isCompleted === true);
+  });
+  return units;
+}
+
+function buildPhaseSignals(project: any, workOrders: any[]) {
+  const invoiceVersions = Array.isArray(project?.invoiceVersions) ? project.invoiceVersions : [];
+  const offers = Array.isArray(project?.offers) ? project.offers : [];
+  const unitStates = workOrders.flatMap(getExecutionUnitStates);
+  const hasWorkOrder = workOrders.some(workOrderHasExecutableItems);
+  const hasIssuedInvoice =
+    normalizePhaseStatus(project?.status) === 'invoiced' ||
+    invoiceVersions.some((invoice: any) => normalizePhaseStatus(invoice?.status) === 'issued');
+  const hasSignedDelivery = workOrders.some((order: any) => {
+    if (normalizePhaseStatus(order?.confirmationState) === 'signed_active') return true;
+    if (order?.customerSignedAt) return true;
+    const versions = Array.isArray(order?.confirmationVersions) ? order.confirmationVersions : [];
+    return versions.some((version: any) => normalizePhaseStatus(version?.state) === 'active' && version?.signedAt);
+  });
+  const hasConfirmedOffer =
+    Boolean(project?.confirmedOfferVersionId) ||
+    offers.some((offer: any) => {
+      const status = normalizePhaseStatus(offer?.status);
+      return status === 'accepted' || status === 'confirmed';
+    });
+
+  return {
+    hasOffers: offers.length > 0 || hasConfirmedOffer || ['offered', 'ordered', 'in-progress', 'completed', 'invoiced'].includes(normalizePhaseStatus(project?.status)),
+    hasConfirmedOffer,
+    hasWorkOrder,
+    allExecutionUnitsCompleted: unitStates.length > 0 && unitStates.every(Boolean),
+    hasSignedDelivery,
+    hasIssuedInvoice,
+  };
+}
+
 export async function listProjects(_req: Request, res: Response) {
   const req = _req as Request;
   let query: any = {};
@@ -308,6 +363,21 @@ export async function listProjects(_req: Request, res: Response) {
     ]),
   );
 
+  const projectIds = all.map((project: any) => project.id).filter(Boolean);
+  const workOrders =
+    projectIds.length > 0
+      ? await WorkOrderModel.find({ projectId: { $in: projectIds } })
+          .select('projectId status items confirmationState customerSignedAt confirmationVersions')
+          .lean()
+      : [];
+  const workOrdersByProject = new Map<string, any[]>();
+  workOrders.forEach((order: any) => {
+    const projectId = String(order.projectId);
+    const list = workOrdersByProject.get(projectId) ?? [];
+    list.push(order);
+    workOrdersByProject.set(projectId, list);
+  });
+
   const summaries = all.map((project: any) => {
     const summary = summarizeProject(project);
     const projectQuoted = Number(project?.quotedTotalWithVat ?? 0);
@@ -322,6 +392,7 @@ export async function listProjects(_req: Request, res: Response) {
       ...summary,
       offerAmount: resolvedQuotedTotalWithVat,
       quotedTotalWithVat: resolvedQuotedTotalWithVat,
+      phaseSignals: buildPhaseSignals(project, workOrdersByProject.get(project.id) ?? []),
     };
   });
 

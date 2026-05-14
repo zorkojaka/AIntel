@@ -1,6 +1,6 @@
 import { ProjectStatus, ProjectSummary } from "../types";
 
-export type ProjectPhase = "zahteve" | "ponudbe" | "priprava" | "izvedba" | "racun";
+export type ProjectPhase = "zahteve" | "ponudbe" | "priprava" | "izvedba" | "predaja" | "racun";
 
 export type PhaseDefinition = {
   id: ProjectPhase;
@@ -14,6 +14,7 @@ export const phaseDefinitions: PhaseDefinition[] = [
   { id: "ponudbe", label: "Ponudbe", color: "#185FA5", statuses: ["offered"] },
   { id: "priprava", label: "Priprava", color: "#BA7517", statuses: ["ordered"] },
   { id: "izvedba", label: "Izvedba", color: "#534AB7", statuses: ["in-progress"] },
+  { id: "predaja", label: "Predaja", color: "#0F766E", statuses: ["completed"] },
   { id: "racun", label: "Račun", color: "#085041", statuses: ["completed", "invoiced"] },
 ];
 
@@ -22,12 +23,23 @@ const statusToPhase: Record<ProjectStatus, ProjectPhase> = {
   offered: "ponudbe",
   ordered: "priprava",
   "in-progress": "izvedba",
-  completed: "racun",
+  completed: "predaja",
   invoiced: "racun",
 };
 
+export function deriveProjectPhase(project: ProjectSummary): ProjectPhase {
+  const signals = project.phaseSignals;
+
+  if (signals?.hasIssuedInvoice || project.status === "invoiced") return "racun";
+  if (signals?.hasSignedDelivery || signals?.allExecutionUnitsCompleted) return "predaja";
+  if (signals?.hasWorkOrder) return "izvedba";
+  if (signals?.hasConfirmedOffer || project.status === "ordered" || project.status === "in-progress") return "priprava";
+  if (signals?.hasOffers || project.status === "offered") return "ponudbe";
+  return statusToPhase[project.status] ?? "zahteve";
+}
+
 export function getProjectPhase(project: ProjectSummary): ProjectPhase {
-  return statusToPhase[project.status];
+  return deriveProjectPhase(project);
 }
 
 export function getStatusForPhase(phase: ProjectPhase): ProjectStatus {
@@ -46,14 +58,21 @@ export function getPhaseProgress(project: ProjectSummary, phase: ProjectPhase): 
     return 25;
   }
   if (phase === "priprava") {
-    if (project.status === "ordered") return 66;
-    if (project.status === "in-progress" || project.status === "completed" || project.status === "invoiced") return 100;
+    const derivedPhase = deriveProjectPhase(project);
+    if (derivedPhase === "priprava") return 66;
+    if (["izvedba", "predaja", "racun"].includes(derivedPhase)) return 100;
     return 33;
   }
   if (phase === "izvedba") {
-    if (project.status === "in-progress") return 70;
-    if (project.status === "completed" || project.status === "invoiced") return 100;
+    const derivedPhase = deriveProjectPhase(project);
+    if (derivedPhase === "izvedba") return 70;
+    if (derivedPhase === "predaja" || derivedPhase === "racun") return 100;
     return 10;
+  }
+  if (phase === "predaja") {
+    const derivedPhase = deriveProjectPhase(project);
+    if (derivedPhase === "racun") return 100;
+    return 85;
   }
   return project.status === "invoiced" ? 100 : 85;
 }
