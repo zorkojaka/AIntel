@@ -81,6 +81,7 @@ function AppContent() {
   const initialModule = useMemo(() => getModuleIdFromPath(window.location.pathname), []);
   const [activeModule, setActiveModule] = useState<ModuleId>(initialModule);
   const [routeKey, setRouteKey] = useState(() => `${window.location.pathname}${window.location.search}`);
+  const [moduleNavigationVersion, setModuleNavigationVersion] = useState(0);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -154,6 +155,7 @@ function AppContent() {
     if (navPath) {
       window.history.pushState({ moduleId }, '', navPath);
       window.dispatchEvent(new PopStateEvent('popstate', { state: { moduleId } }));
+      setModuleNavigationVersion((version) => version + 1);
       window.scrollTo({ top: 0, behavior: 'auto' });
     }
   };
@@ -189,7 +191,7 @@ function AppContent() {
     >
       {hasModuleAccess
         ? React.cloneElement(moduleComponents[activeModule] as React.ReactElement, {
-            key: `${activeModule}:${routeKey}`,
+            key: `${activeModule}:${routeKey}:${moduleNavigationVersion}`,
           })
         : <div>Ni dostopa.</div>}
     </CoreLayout>
