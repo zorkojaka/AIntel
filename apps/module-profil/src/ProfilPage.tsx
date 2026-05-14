@@ -315,20 +315,18 @@ export function ProfilPage() {
 
       {activeTab === 'cene' ? (
         <section className="profil-panel">
-          <div className="profil-info">Tukaj vidiš svoje cene za vsako storitev.</div>
           {rates.length === 0 ? (
             <EmptyState>Tvoje cene storitev še niso nastavljene. Kontaktiraj admina.</EmptyState>
           ) : (
             <div className="profil-table-wrap">
               <table className="profil-table">
                 <thead>
-                  <tr><th>Storitev</th><th>Cena storitve</th><th>Tvoja cena</th></tr>
+                  <tr><th>Storitev</th><th>Tvoja cena</th></tr>
                 </thead>
                 <tbody>
                   {rates.map((rate) => (
                     <tr key={rate.serviceProductId}>
                       <td>{rate.serviceName}</td>
-                      <td>{currency.format(rate.servicePrice)}</td>
                       <td>{currency.format(rate.employeeEarnsAmount)}</td>
                     </tr>
                   ))}
