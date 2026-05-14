@@ -327,15 +327,32 @@ export async function getMyServiceRates(context: ProfileContext) {
   }).lean();
 
   const productIds = rates.map((rate) => rate.serviceProductId).filter(Boolean);
-  const products = await ProductModel.find({ _id: { $in: productIds } }).select('ime').lean();
-  const productMap = new Map(products.map((product) => [String(product._id), product.ime]));
+  const products = await ProductModel.find({ _id: { $in: productIds } }).select('ime prodajnaCena').lean();
+  const productMap = new Map<string, { name: string; price: number }>(
+    products.map((product) => [
+      String(product._id),
+      {
+        name: product.ime,
+        price: normalizeMoney(product.prodajnaCena),
+      },
+    ]),
+  );
 
   return rates
-    .map((rate) => ({
-      serviceProductId: String(rate.serviceProductId),
-      serviceName: productMap.get(String(rate.serviceProductId)) ?? 'Storitev',
-      defaultPercent: rate.defaultPercent,
-      overridePrice: rate.overridePrice ?? null,
-    }))
+    .map((rate) => {
+      const product = productMap.get(String(rate.serviceProductId));
+      const servicePrice = product?.price ?? 0;
+      const overridePrice = normalizeMoney(rate.overridePrice);
+      const employeeEarnsAmount = overridePrice > 0
+        ? overridePrice
+        : normalizeMoney((normalizeMoney(rate.defaultPercent) / 100) * servicePrice);
+
+      return {
+        serviceProductId: String(rate.serviceProductId),
+        serviceName: product?.name ?? 'Storitev',
+        servicePrice,
+        employeeEarnsAmount,
+      };
+    })
     .sort((a, b) => a.serviceName.localeCompare(b.serviceName, 'sl'));
 }

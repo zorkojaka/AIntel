@@ -47,8 +47,8 @@ export interface EarningsResponse {
 export interface ServiceRate {
   serviceProductId: string;
   serviceName: string;
-  defaultPercent: number;
-  overridePrice: number | null;
+  servicePrice: number;
+  employeeEarnsAmount: number;
 }
 
 async function request<T>(url: string): Promise<T> {
