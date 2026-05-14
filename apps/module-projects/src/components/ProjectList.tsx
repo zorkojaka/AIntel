@@ -1,5 +1,5 @@
 import { CalendarDays, Pencil, Trash2 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { TableRowActions } from "@aintel/ui";
 import { Badge } from "./ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
@@ -34,6 +34,18 @@ const statusLabels: Record<ProjectStatus, string> = {
   invoiced: "Zaračunano",
 };
 
+const statusSortOrder: Record<ProjectStatus, number> = {
+  draft: 0,
+  offered: 1,
+  ordered: 2,
+  "in-progress": 3,
+  completed: 4,
+  invoiced: 5,
+};
+
+type SortColumn = "projekt" | "stranka" | "status" | "ponudba" | "racuni" | "datum";
+type SortDir = "asc" | "desc";
+
 const numberFormatter = new Intl.NumberFormat("sl-SI", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -50,6 +62,15 @@ function formatDate(value: string) {
   return parsed.toLocaleDateString("sl-SI");
 }
 
+function compareText(a?: string, b?: string) {
+  return (a ?? "").localeCompare(b ?? "", "sl", { sensitivity: "base" });
+}
+
+function getDateValue(value: string) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+}
+
 export function ProjectList({
   projects,
   onSelectProject,
@@ -60,6 +81,9 @@ export function ProjectList({
   hideFilters = false,
   filteredProjects: externalFilteredProjects,
 }: ProjectListProps) {
+  const [sortColumn, setSortColumn] = useState<SortColumn>("datum");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
   const categoryLookup = useMemo(() => {
     const map = new Map<string, string>();
     categories.forEach((category) => map.set(category.slug, category.name));
@@ -67,6 +91,58 @@ export function ProjectList({
   }, [categories]);
 
   const filteredProjects = externalFilteredProjects ?? projects;
+  const sortedProjects = useMemo(() => {
+    return [...filteredProjects].sort((a, b) => {
+      let cmp = 0;
+      switch (sortColumn) {
+        case "projekt":
+          cmp = compareText(a.title, b.title);
+          break;
+        case "stranka":
+          cmp = compareText(a.customer, b.customer);
+          break;
+        case "status":
+          cmp = (statusSortOrder[a.status] ?? 0) - (statusSortOrder[b.status] ?? 0);
+          break;
+        case "ponudba":
+          cmp = (a.quotedTotalWithVat ?? 0) - (b.quotedTotalWithVat ?? 0);
+          break;
+        case "racuni":
+          cmp = (a.invoiceAmount ?? 0) - (b.invoiceAmount ?? 0);
+          break;
+        case "datum":
+          cmp = getDateValue(a.createdAt) - getDateValue(b.createdAt);
+          break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [filteredProjects, sortColumn, sortDir]);
+
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      setSortDir((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortColumn(column);
+    setSortDir(column === "datum" ? "desc" : "asc");
+  };
+
+  const renderSortableHeader = (column: SortColumn, label: string, className = "") => (
+    <TableHead className={className}>
+      <button
+        type="button"
+        className={`inline-flex items-center gap-1 select-none font-semibold uppercase tracking-wide text-muted-foreground transition hover:text-foreground ${
+          className.includes("text-right") ? "w-full justify-end" : ""
+        }`}
+        onClick={() => handleSort(column)}
+        aria-label={`Razvrsti po stolpcu ${label}`}
+        aria-sort={sortColumn === column ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+      >
+        <span>{label}</span>
+        <span className="inline-block w-3 text-xs">{sortColumn === column ? (sortDir === "asc" ? "\u2191" : "\u2193") : ""}</span>
+      </button>
+    </TableHead>
+  );
 
   if (filteredProjects.length === 0) {
     return (
@@ -85,17 +161,17 @@ export function ProjectList({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Projekt</TableHead>
-              <TableHead>Stranka</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Ponudba</TableHead>
-              <TableHead className="text-right">Računi</TableHead>
-              <TableHead>Datum</TableHead>
+              {renderSortableHeader("projekt", "Projekt")}
+              {renderSortableHeader("stranka", "Stranka")}
+              {renderSortableHeader("status", "Status")}
+              {renderSortableHeader("ponudba", "Ponudba", "text-right")}
+              {renderSortableHeader("racuni", "Računi", "text-right")}
+              {renderSortableHeader("datum", "Datum")}
               {!readOnly ? <TableHead className="text-right">Akcije</TableHead> : null}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredProjects.map((project, index) => (
+            {sortedProjects.map((project, index) => (
               <TableRow
                 key={project._id ?? project.id ?? `${project.title}-${index}`}
                 className="cursor-pointer"
@@ -143,7 +219,7 @@ export function ProjectList({
       </div>
 
       <div className="grid gap-3 md:hidden">
-        {filteredProjects.map((project, index) => (
+        {sortedProjects.map((project, index) => (
           <article
             key={project._id ?? project.id ?? `${project.title}-${index}`}
             className="rounded-xl border border-border bg-card p-3 shadow-sm"
