@@ -84,7 +84,7 @@ const baseStyles = `
   .muted { color: #6b7280; }
   table { width: 100%; border-collapse: collapse; page-break-inside:auto; }
   thead { display: table-header-group; }
-  tfoot { display: table-footer-group; break-inside: avoid; page-break-inside: avoid; }
+  tfoot { break-inside: avoid; page-break-inside: avoid; }
   tr { break-inside: avoid; page-break-inside: avoid; }
   th, td { padding: 6px 8px; text-align: left; border: 1px solid #e5e7eb; font-size: 12px; line-height: 1.3; }
   th { background: #f3f4f6; font-weight: 600; }
@@ -129,6 +129,7 @@ const baseStyles = `
   .offer-card p { margin:2px 0; font-size:12px; }
   .offer-content { display:flex; flex-direction:column; flex:1; min-height:100%; }
   .offer-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; break-inside:auto; }
+  .offer-table.document-summary { break-inside:avoid; page-break-inside:avoid; margin-top:8px; }
   .offer-table th { background:#f1f5f9; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:#475569; }
   .offer-table th, .offer-table td { border:1px solid #e2e8f0; padding:6px 8px; }
   .offer-table td { color:#0f172a; }
@@ -340,7 +341,9 @@ function buildStandardDocument(context: DocumentPreviewContext, options: Documen
     ...(options.metaExtras ?? []),
   ].join('');
 
-  const tableFooter = options.tableFooterRows ? `<tfoot class="document-totals">${options.tableFooterRows}</tfoot>` : '';
+  const tableFooter = options.tableFooterRows
+    ? `<table class="offer-table document-summary document-totals"><tbody>${options.tableFooterRows}</tbody></table>`
+    : '';
   const commentBlock = options.commentBlock ?? '';
   const notesBlock = options.notesBlock ?? '';
   const extraSections = options.extraSections ?? '';
@@ -373,8 +376,9 @@ function buildStandardDocument(context: DocumentPreviewContext, options: Documen
         <table class="offer-table">
           <thead>${options.tableHeadRows}</thead>
           <tbody>${options.tableBodyRows}</tbody>
-          ${tableFooter}
         </table>
+
+        ${tableFooter}
 
         <div class="offer-closing document-ending">
           ${commentBlock}
