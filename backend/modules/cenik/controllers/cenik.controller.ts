@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { ProductDocument, ProductModel } from '../product.model';
 import type { PriceListSearchItem } from '../../../../shared/types/price-list';
 import { precheckProductCandidate } from '../services/product-sync.service';
+import { buildCategoryPriorityMap, resolvePriorityFromMap } from '../services/category-settings.service';
 
 type ProductPayload = Pick<
   ProductDocument,
@@ -299,8 +300,10 @@ export async function searchPriceListItems(req: Request, res: Response) {
         isService: 1,
         externalKey: 1,
         externalId: 1,
+        aaData: 1,
       })
       .lean();
+    const categoryPriorityByPath = await buildCategoryPriorityMap();
 
     const matches = products
       .map((product) => {
@@ -366,6 +369,7 @@ export async function searchPriceListItems(req: Request, res: Response) {
 
         const result: PriceListSearchItem & {
           _rank: number;
+          _priorityRank: number;
           _sortName: string;
           _sortCodeOrSlug: string;
         } = {
@@ -380,22 +384,24 @@ export async function searchPriceListItems(req: Request, res: Response) {
           unitPrice: Number(product.prodajnaCena ?? 0),
           vatRate: 22,
           _rank: rank,
+          _priorityRank: resolvePriorityRank(resolvePriorityFromMap(categoryPriorityByPath, (product as any).aaData?.category)),
           _sortName: sortName,
           _sortCodeOrSlug: sortCodeOrSlug,
         };
 
         return result;
       })
-      .filter((item): item is PriceListSearchItem & { _rank: number; _sortName: string; _sortCodeOrSlug: string } =>
+      .filter((item): item is PriceListSearchItem & { _rank: number; _priorityRank: number; _sortName: string; _sortCodeOrSlug: string } =>
         Boolean(item),
       )
       .sort((a, b) => {
         if (a._rank !== b._rank) return a._rank - b._rank;
+        if (a._priorityRank !== b._priorityRank) return a._priorityRank - b._priorityRank;
         const nameCmp = a._sortName.localeCompare(b._sortName);
         if (nameCmp !== 0) return nameCmp;
         return a._sortCodeOrSlug.localeCompare(b._sortCodeOrSlug);
       })
-      .map(({ _rank, _sortName, _sortCodeOrSlug, ...item }) => item);
+      .map(({ _rank, _priorityRank, _sortName, _sortCodeOrSlug, ...item }) => item);
 
     res.success(matches);
   } catch (_error) {
@@ -423,4 +429,8 @@ function resolveUnitFromName(name: string) {
   const slashParts = withoutCurrency.split('/').map((part) => part.trim()).filter(Boolean);
   const candidate = (slashParts[slashParts.length - 1] ?? withoutCurrency).toLowerCase();
   return candidate || 'kos';
+}
+
+function resolvePriorityRank(priority: 1 | 2 | 3 | null) {
+  return priority ?? 4;
 }

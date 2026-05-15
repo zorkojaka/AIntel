@@ -5,6 +5,7 @@ import { clearMobileTopbar, setMobileTopbar } from '@aintel/shared/utils/mobileT
 import type { ProductServiceLink, ProductServiceLinkQuantityMode } from '@aintel/shared/types/product-service-link';
 import FilterBar from './components/FilterBar';
 import { ImportConflictReview } from './components/ImportConflictReview';
+import { CategorySettingsPanel } from './components/CategorySettingsPanel';
 
 type Product = {
   _id?: string;
@@ -190,7 +191,7 @@ type DuplicateCandidateGroup = {
   products: DuplicateCandidateProduct[];
 };
 
-type CatalogView = 'cenik' | 'produkti' | 'storitve';
+type CatalogView = 'cenik' | 'produkti' | 'storitve' | 'category-settings';
 type CenikQuickFilter = 'all' | 'products' | 'services';
 
 type AuditReport = {
@@ -553,7 +554,13 @@ export const CenikPage: React.FC = () => {
 
   useEffect(() => {
     const workspaceTitle =
-      catalogView === 'produkti' ? 'Urejanje produktov' : catalogView === 'storitve' ? 'Urejanje storitev' : 'Cenik';
+      catalogView === 'produkti'
+        ? 'Urejanje produktov'
+        : catalogView === 'storitve'
+          ? 'Urejanje storitev'
+          : catalogView === 'category-settings'
+            ? 'Nastavitve kategorij'
+            : 'Cenik';
     if (isMobileEditOpen) {
       setMobileTopbar({
         title: workspaceTitle,
@@ -651,6 +658,12 @@ export const CenikPage: React.FC = () => {
         listTitle: 'Seznam storitev',
       };
     }
+    if (catalogView === 'category-settings') {
+      return {
+        description: 'Onboarding nastavitve za izbiro AA kategorij in prioritet uvoza.',
+        listTitle: 'Nastavitve kategorij',
+      };
+    }
     return {
       description: 'Osnovni pregled celotnega cenika z vsemi produkti in storitvami.',
       listTitle: 'Seznam postavk cenika',
@@ -674,6 +687,15 @@ export const CenikPage: React.FC = () => {
         listTitle: 'Seznam storitev za urejanje',
         addLabel: '+ Dodaj storitev',
         emptyLabel: 'Ni najdenih storitev.',
+      };
+    }
+    if (catalogView === 'category-settings') {
+      return {
+        title: 'Nastavitve kategorij',
+        description: 'Izberi AA kategorije, ki se uvažajo v cenik, in določi prioritete za prihodnji sync.',
+        listTitle: 'Drevo AA kategorij',
+        addLabel: '+ Dodaj postavko',
+        emptyLabel: 'Ni nastavitev kategorij.',
       };
     }
     return {
@@ -1395,7 +1417,8 @@ export const CenikPage: React.FC = () => {
             {([
               { id: 'cenik', label: 'Cenik' },
               { id: 'produkti', label: 'Urejanje produktov' },
-              { id: 'storitve', label: 'Urejanje storitev' }
+              { id: 'storitve', label: 'Urejanje storitev' },
+              { id: 'category-settings', label: 'Nastavitve kategorij' }
             ] as Array<{ id: CatalogView; label: string }>).map((view) => (
               <Button
                 key={view.id}
@@ -1415,6 +1438,10 @@ export const CenikPage: React.FC = () => {
       </Card>
 
 
+      {catalogView === 'category-settings' ? (
+        <CategorySettingsPanel />
+      ) : (
+        <>
       <Card title={catalogView === 'cenik' ? 'Iskanje in filtriranje cenika' : `Orodja za ${viewMeta.title.toLowerCase()}`} className="cenik-card">
         <div className="space-y-4">
           {catalogView === 'cenik' ? (
@@ -1548,6 +1575,8 @@ export const CenikPage: React.FC = () => {
           </div>
         )}
       </Card>
+        </>
+      )}
 
       {isModalOpen && editingProduct && (
         <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 px-3 pb-3 pt-16 md:items-center md:px-4 md:py-6">

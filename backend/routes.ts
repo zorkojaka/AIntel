@@ -2,6 +2,7 @@ import { Router } from 'express';
 import dashboardRoutes from './modules/dashboard/routes';
 import crmRoutes from './modules/crm/routes';
 import cenikRoutes from './modules/cenik/routes/cenik.routes';
+import categorySettingsRoutes from './modules/cenik/routes/category-settings.routes';
 import priceListRoutes from './modules/cenik/routes/price-list.routes';
 import settingsRoutes from './modules/settings/routes/settings.routes';
 import financeRoutes from './modules/finance/routes';
@@ -20,12 +21,13 @@ import communicationProjectRoutes from './modules/communication/routes/project.r
 import filesRoutes from './modules/files/routes';
 import photosRoutes from './modules/photos/routes';
 import { requireRoles } from './middlewares/auth';
-import { ROLE_ADMIN, ROLE_FINANCE, ROLE_SALES } from './utils/roles';
+import { ROLE_ADMIN, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from './utils/roles';
 
 const router = Router();
 
 router.use('/dashboard', dashboardRoutes);
 router.use('/crm', crmRoutes);
+router.use('/cenik/category-settings', requireRoles([ROLE_ADMIN, ROLE_ORGANIZER]), categorySettingsRoutes);
 router.use('/cenik', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), cenikRoutes);
 router.use('/price-list', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), priceListRoutes);
 router.use('/settings', settingsRoutes);

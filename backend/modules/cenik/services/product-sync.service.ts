@@ -5,6 +5,10 @@ import {
   ProductImportConflictResolutionModel,
 } from '../import-conflict-resolution.model';
 import { ProductModel } from '../product.model';
+import {
+  filterAAImportItemsByCategorySettings,
+  refreshCategoryStatsFromDatabase,
+} from './category-settings.service';
 import { IMPORT_DEFAULTS } from '../sync/importDefaults';
 
 type NormalizedProduct = {
@@ -240,6 +244,13 @@ type ImportLockCollection = {
 type ImportDefaults = {
   dobavitelj: string;
   naslovDobavitelja: string;
+};
+
+type ImportItemsPreparation = {
+  items: unknown[];
+  filteringEnabled: boolean;
+  totalBeforeFilter: number;
+  totalAfterFilter: number;
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -1349,6 +1360,28 @@ async function analyzeProducts(source: string, items: unknown[]): Promise<{ plan
   return { plan, normalizedRows };
 }
 
+async function prepareImportItems(source: string, items: unknown[]): Promise<ImportItemsPreparation> {
+  if (source !== 'aa_api') {
+    return {
+      items,
+      filteringEnabled: false,
+      totalBeforeFilter: items.length,
+      totalAfterFilter: items.length,
+    };
+  }
+
+  const filtered = await filterAAImportItemsByCategorySettings(
+    items as Array<{ aaData?: { category?: string } }>,
+  );
+
+  return {
+    items: filtered.items,
+    filteringEnabled: filtered.filteringEnabled,
+    totalBeforeFilter: filtered.totalBeforeFilter,
+    totalAfterFilter: filtered.totalAfterFilter,
+  };
+}
+
 async function acquireLock(source: string) {
   const collection = mongoose.connection.collection('import_locks') as unknown as ImportLockCollection;
   const lockId = `product-import:${source}`;
@@ -1382,7 +1415,8 @@ export async function analyzeProductImportFromItems({
   source: string;
   items: unknown[];
 }): Promise<ImportPlan> {
-  const { plan } = await analyzeProducts(source, items);
+  const prepared = await prepareImportItems(source, items);
+  const { plan } = await analyzeProducts(source, prepared.items);
   return plan;
 }
 
@@ -1505,7 +1539,8 @@ export async function applyProductImportFromItems({
   }
 
   try {
-    const { plan, normalizedRows } = await analyzeProducts(source, items);
+    const prepared = await prepareImportItems(source, items);
+    const { plan, normalizedRows } = await analyzeProducts(source, prepared.items);
     const rowMap = new Map(normalizedRows.map((row) => [row.externalKey, row]));
 
     let createdCount = 0;
@@ -1539,6 +1574,10 @@ export async function applyProductImportFromItems({
       excludedConflictCount: plan.conflicts.length,
       excludedInvalidCount: plan.invalidRows.length,
     };
+
+    if (source === 'aa_api' && prepared.filteringEnabled) {
+      await refreshCategoryStatsFromDatabase();
+    }
 
     return {
       ...plan,
