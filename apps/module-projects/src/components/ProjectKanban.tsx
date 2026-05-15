@@ -8,6 +8,7 @@ interface ProjectKanbanProps {
   categoryLookup: Map<string, string>;
   onSelectProject: (projectId: string) => void;
   onProjectDrop: (projectId: string, nextStatus: ProjectSummary["status"]) => Promise<void>;
+  hideFinancials?: boolean;
 }
 
 const currencyFormatter = new Intl.NumberFormat("sl-SI", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -24,7 +25,7 @@ function formatAmount(value: number) {
   return `${currencyFormatter.format(value)} EUR`;
 }
 
-export function ProjectKanban({ projects, categoryLookup, onSelectProject, onProjectDrop }: ProjectKanbanProps) {
+export function ProjectKanban({ projects, categoryLookup, onSelectProject, onProjectDrop, hideFinancials = false }: ProjectKanbanProps) {
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [dragOverPhase, setDragOverPhase] = useState<ProjectPhase | null>(null);
 
@@ -38,6 +39,13 @@ export function ProjectKanban({ projects, categoryLookup, onSelectProject, onPro
   }, [projects]);
 
   const summary = useMemo(() => {
+    if (hideFinancials) {
+      return {
+        total: projects.length,
+        inProgress: 0,
+        invoiced: 0,
+      };
+    }
     const inProgressPhases: ProjectPhase[] = ["zahteve", "ponudbe", "priprava", "izvedba"];
     const inProgress = projects
       .filter((project) => inProgressPhases.includes(getProjectPhase(project)))
@@ -51,11 +59,11 @@ export function ProjectKanban({ projects, categoryLookup, onSelectProject, onPro
       inProgress,
       invoiced,
     };
-  }, [projects]);
+  }, [hideFinancials, projects]);
 
   return (
     <div className="space-y-3">
-      <div className="kb-summary">
+      <div className={`kb-summary${hideFinancials ? " kb-summary--no-financials" : ""}`}>
         <span className="kb-pill">Skupaj: {summary.total} projektov</span>
         <span className="kb-pill">V teku: {currencyFormatter.format(summary.inProgress)} €</span>
         <span className="kb-pill">Zaračunano: {currencyFormatter.format(summary.invoiced)} €</span>
@@ -90,7 +98,7 @@ export function ProjectKanban({ projects, categoryLookup, onSelectProject, onPro
                   return (
                     <article
                       key={project.id}
-                      className="kb-card"
+                      className={`kb-card${hideFinancials ? " kb-card--no-financials" : ""}`}
                       draggable={true}
                       onDragStart={() => setDraggedProjectId(project.id)}
                       onDragEnd={() => {
@@ -115,7 +123,7 @@ export function ProjectKanban({ projects, categoryLookup, onSelectProject, onPro
                           );
                         })}
                       </div>
-                      <div className="mt-2 flex items-center justify-between text-xs">
+                      <div className="kb-card-financial mt-2 flex items-center justify-between text-xs">
                         <span className="text-muted-foreground">Ponudba</span>
                         <span>{formatAmount(project.offerAmount)}</span>
                       </div>

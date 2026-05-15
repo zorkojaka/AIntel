@@ -75,6 +75,28 @@ async function responseProject(project: Project | ProjectDocument) {
   return serializeProjectDetails(project);
 }
 
+function redactFinancialProjectDetails<T extends Record<string, any>>(details: T): T {
+  return {
+    ...details,
+    offerAmount: 0,
+    quotedTotal: 0,
+    quotedVat: 0,
+    quotedTotalWithVat: 0,
+    invoiceAmount: 0,
+    offers: [],
+    purchaseOrders: [],
+    items: Array.isArray(details.items)
+      ? details.items.map((item: any) => ({
+          ...item,
+          price: 0,
+          discount: 0,
+          vatRate: 0,
+          total: 0,
+        }))
+      : details.items,
+  };
+}
+
 const allowedRequirementFieldTypes: RequirementFieldType[] = ['number', 'text', 'select', 'boolean'];
 
 function sanitizeRequirementFormula(input: any): RequirementFormulaConfig | null {
@@ -318,7 +340,8 @@ function buildProjectPhaseSignals(project: any, workOrders: any[]) {
 export async function listProjects(_req: Request, res: Response) {
   const req = _req as Request;
   let query: any = {};
-  if (isExecutionOnlyViewer(req)) {
+  const hideFinancials = isExecutionOnlyViewer(req);
+  if (hideFinancials) {
     const actorEmployeeId = getActorEmployeeId(req);
     if (!actorEmployeeId) {
       return res.success([]);
@@ -381,8 +404,11 @@ export async function listProjects(_req: Request, res: Response) {
 
     return {
       ...summary,
-      offerAmount: resolvedQuotedTotalWithVat,
-      quotedTotalWithVat: resolvedQuotedTotalWithVat,
+      offerAmount: hideFinancials ? 0 : resolvedQuotedTotalWithVat,
+      quotedTotal: hideFinancials ? 0 : summary.quotedTotal,
+      quotedVat: hideFinancials ? 0 : summary.quotedVat,
+      quotedTotalWithVat: hideFinancials ? 0 : resolvedQuotedTotalWithVat,
+      invoiceAmount: hideFinancials ? 0 : summary.invoiceAmount,
       phaseSignals: buildProjectPhaseSignals(project, workOrdersByProject.get(project.id) ?? []),
     };
   });
@@ -442,7 +468,8 @@ export async function getProject(req: Request, res: Response) {
     }
   }
 
-  return res.success(await responseProject(project));
+  const details = await responseProject(project);
+  return res.success(isExecutionOnlyViewer(req) ? redactFinancialProjectDetails(details as any) : details);
 }
 
 export async function getOfferCandidates(req: Request, res: Response) {
@@ -1017,6 +1044,16 @@ export async function saveSignature(req: Request, res: Response) {
   }
   if (!signature) {
     return res.fail('Manjka podpis stranke.', 400);
+  }
+  if (isExecutionOnlyViewer(req)) {
+    const actorEmployeeId = getActorEmployeeId(req);
+    if (!actorEmployeeId || !workOrderId) {
+      return res.fail('Ni dostopa do podpisa izvedbe.', 403);
+    }
+    const assignedProjectIds = await getExecutionAssignedProjectIds(actorEmployeeId);
+    if (!assignedProjectIds.includes(project.id)) {
+      return res.fail('Ni dostopa do podpisa izvedbe.', 403);
+    }
   }
 
   let workOrder = null;

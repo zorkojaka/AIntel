@@ -114,9 +114,9 @@ export function ProjectsPage() {
     return isExecution && !hasPrivileged;
   }, [viewerRoles]);
   const canAccessPreparationPhase = useMemo(() => canAccessPreparation(viewerRoles), [viewerRoles]);
-  const allowedWorkspaceTabs = useMemo<WorkspaceTabValue[] | undefined>(() => {
+  const allowedWorkspaceTabs = useMemo<WorkspaceTab[] | undefined>(() => {
     if (isExecutionOnlyViewer) {
-      return ["items", "execution"];
+      return ["execution"];
     }
     if (!canAccessPreparationPhase) {
       return ["items", "offers", "execution", "closing"];
@@ -749,6 +749,7 @@ export function ProjectsPage() {
                 onEditProject={handleEditProject}
                 onDeleteProject={handleDeleteProject}
                 readOnly={isExecutionOnlyViewer}
+                hideFinancials={isExecutionOnlyViewer}
               />
             ) : (
               <ProjectKanban
@@ -756,6 +757,7 @@ export function ProjectsPage() {
                 categoryLookup={categoryLookup}
                 onSelectProject={handleSelectProject}
                 onProjectDrop={handleProjectDrop}
+                hideFinancials={isExecutionOnlyViewer}
               />
             )}
           </div>

@@ -966,7 +966,7 @@ export function ExecutionPanel({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             workOrderId: orderId,
-            status: overrides?.status ?? draft.status ?? order.status,
+            status: overrides?.status ?? (draft.status === "issued" ? "in-progress" : draft.status ?? order.status),
             executionNote: draft.executionNote?.trim() ? draft.executionNote : null,
             items: buildItemPayload(draft.items ?? []),
           }),
@@ -1207,9 +1207,6 @@ export function ExecutionPanel({
             workOrderId: order._id,
             materialOrderId: draftMaterial._id,
             materialStatus: draftMaterial.materialStatus,
-            pickupMethod: draftMaterial.pickupMethod ?? null,
-            pickupLocation: draftMaterial.pickupLocation ?? null,
-            logisticsOwnerId: draftMaterial.logisticsOwnerId ?? null,
             pickupConfirmedAt: draftMaterial.pickupConfirmedAt ?? null,
             materialItems: draftMaterial.items ?? [],
           }),

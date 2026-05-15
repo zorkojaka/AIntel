@@ -340,6 +340,10 @@
   gap: 8px;
 }
 
+.kb-summary--no-financials .kb-pill:nth-child(n + 2) {
+  display: none;
+}
+
 .kb-pill {
   font-size: 0.8rem;
   border: 1px solid var(--app-border);
@@ -347,6 +351,10 @@
   border-radius: 999px;
   padding: 0.3rem 0.65rem;
   color: var(--app-muted);
+}
+
+.kb-card--no-financials .kb-card-financial {
+  display: none;
 }
 
 .projects-workspace-shell .sticky.top-0.z-20 {

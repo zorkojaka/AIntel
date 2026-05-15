@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 
-import { getMyEarnings, getMyProjects, getMyServiceRates, getProfileOverview } from '../services/profile.service';
+import { getMyEarnings, getMyProjectEarnings, getMyProjects, getMyServiceRates, getProfileOverview } from '../services/profile.service';
 
 function getProfileContext(req: Request) {
   const context = (req as any).context ?? {};
@@ -30,6 +30,10 @@ export async function myProjects(req: Request, res: Response) {
 
 export async function myEarnings(req: Request, res: Response) {
   return res.success(await getMyEarnings(getProfileContext(req), normalizeYear(req.query.year)));
+}
+
+export async function myProjectEarnings(req: Request, res: Response) {
+  return res.success(await getMyProjectEarnings(getProfileContext(req)));
 }
 
 export async function myServiceRates(req: Request, res: Response) {

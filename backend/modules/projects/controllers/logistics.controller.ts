@@ -13,6 +13,7 @@ import { WorkOrderModel } from '../schemas/work-order';
 import { ProductModel } from '../../cenik/product.model';
 import { resolveActorId, resolveTenantId } from '../../../utils/tenant';
 import { EmployeeModel } from '../../employees/schemas/employee';
+import { ROLE_EXECUTION } from '../../../utils/roles';
 import type { OfferLineItem } from '../../../../shared/types/offers';
 import { formatClientAddress, resolveProjectClient, serializeProjectDetails } from '../services/project.service';
 import {
@@ -122,6 +123,41 @@ function hasPreparationPayload(payload: Record<string, unknown>) {
     'materialItems' in payload ||
     payload.status === 'issued'
   );
+}
+
+function isExecutionRoleWithoutPreparationAccess(roles: string[]) {
+  return roles.includes(ROLE_EXECUTION) && !canEditPreparation(roles);
+}
+
+function hasPreparationOnlyWorkOrderPayload(payload: Record<string, unknown>) {
+  return (
+    'scheduledAt' in payload ||
+    'scheduledConfirmedAt' in payload ||
+    'scheduleConfirmedAt' in payload ||
+    'assignedEmployeeIds' in payload ||
+    'mainInstallerId' in payload ||
+    'location' in payload ||
+    'notes' in payload ||
+    payload.status === 'issued'
+  );
+}
+
+function hasPreparationOnlyMaterialPayload(payload: Record<string, unknown>) {
+  return (
+    'materialAssignedEmployeeIds' in payload ||
+    'pickupMethod' in payload ||
+    'pickupLocation' in payload ||
+    'logisticsOwnerId' in payload ||
+    'pickupNote' in payload
+  );
+}
+
+function isExecutionMaterialStatus(value: unknown) {
+  return value === 'Prevzeto' || value === 'Dostavljeno' || value === 'Zmontirano';
+}
+
+function isExecutionMaterialStep(value: unknown) {
+  return value === 'Za prevzem' || value === 'Prevzeto';
 }
 
 function resolveMaterialStep(value: unknown): MaterialStep {
@@ -1203,6 +1239,24 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     const actorEmployeeId = resolveActorEmployeeId(req);
 
     const payload = req.body ?? {};
+    const contextRoles = getContextRoles(req);
+    const isExecutionOnlyMutation = isExecutionRoleWithoutPreparationAccess(contextRoles);
+    if (isExecutionOnlyMutation) {
+      if (!actorEmployeeId) {
+        return res.fail('Uporabnik ni povezan z monterjem.', 403);
+      }
+      const assignedMaterialOrderId = typeof payload.materialOrderId === 'string' ? payload.materialOrderId : null;
+      const [projectAssigned, workOrderAssigned, materialOrderAssigned] = await Promise.all([
+        ProjectModel.exists({ id: projectId, assignedEmployeeIds: actorEmployeeId }),
+        WorkOrderModel.exists({ _id: workOrderId, projectId, assignedEmployeeIds: actorEmployeeId }),
+        assignedMaterialOrderId
+          ? MaterialOrderModel.exists({ _id: assignedMaterialOrderId, projectId, assignedEmployeeIds: actorEmployeeId })
+          : Promise.resolve(null),
+      ]);
+      if (!projectAssigned && !workOrderAssigned && !materialOrderAssigned) {
+        return res.fail('Ni dostopa do faze Izvedba za ta delovni nalog.', 403);
+      }
+    }
     ensureConfirmationVersionHistory(existing);
     const confirmationLocked = isConfirmationLocked(existing);
     const lockedConfirmationFields = ['status', 'executionNote', 'items'] as const;
@@ -1211,7 +1265,19 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     if (hasLockedConfirmationMutation) {
       return res.fail('Potrdilo delovnega naloga je že podpisano. Potrjenih izvedbenih vrednosti ni več mogoče spreminjati.', 409);
     }
-    if (hasPreparationPayload(payload) && !canEditPreparation(getContextRoles(req))) {
+    if (
+      isExecutionOnlyMutation &&
+      'status' in payload &&
+      payload.status !== 'in-progress' &&
+      payload.status !== 'confirmed' &&
+      payload.status !== 'completed'
+    ) {
+      return res.fail('Ni dostopa do spremembe statusa izven faze Izvedba.', 403);
+    }
+    if (isExecutionOnlyMutation && (hasPreparationOnlyWorkOrderPayload(payload) || hasPreparationOnlyMaterialPayload(payload))) {
+      return res.fail('Ni dostopa do urejanja priprave. Monter lahko v fazi Izvedba shrani izvedbo in prevzem materiala.', 403);
+    }
+    if (hasPreparationPayload(payload) && !canEditPreparation(contextRoles) && !isExecutionOnlyMutation) {
       return res.fail('Ni dostopa do faze Priprava.', 403);
     }
     const resolveAssignedEmployeeIds = async (value: unknown) => {
@@ -1290,21 +1356,21 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         if (targetId) {
           const target = nextItems.find((item) => String(item.id) === targetId);
           if (target) {
-            if (typeof incoming.name === 'string') target.name = incoming.name;
-            if (typeof incoming.unit === 'string') target.unit = incoming.unit;
-            if (typeof incoming.isService === 'boolean') target.isService = incoming.isService;
-            if (typeof incoming.note === 'string' || incoming.note === null) target.note = incoming.note ?? '';
+            if (!isExecutionOnlyMutation && typeof incoming.name === 'string') target.name = incoming.name;
+            if (!isExecutionOnlyMutation && typeof incoming.unit === 'string') target.unit = incoming.unit;
+            if (!isExecutionOnlyMutation && typeof incoming.isService === 'boolean') target.isService = incoming.isService;
+            if (!isExecutionOnlyMutation && (typeof incoming.note === 'string' || incoming.note === null)) target.note = incoming.note ?? '';
             if (typeof incoming.itemNote === 'string' || incoming.itemNote === null) {
               target.itemNote = incoming.itemNote ?? null;
             }
-            if (typeof incoming.plannedQuantity === 'number') {
+            if (!isExecutionOnlyMutation && typeof incoming.plannedQuantity === 'number') {
               target.plannedQuantity = incoming.plannedQuantity;
               target.quantity = incoming.plannedQuantity;
             }
             if (typeof incoming.executedQuantity === 'number') {
               target.executedQuantity = incoming.executedQuantity;
             }
-            if (typeof incoming.isExtra === 'boolean') {
+            if (!isExecutionOnlyMutation && typeof incoming.isExtra === 'boolean') {
               target.isExtra = incoming.isExtra;
             }
             if (typeof incoming.isCompleted === 'boolean') {
@@ -1324,10 +1390,10 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
                 target.completedAt = null;
               }
             }
-            if (typeof incoming.casovnaNorma === 'number' && Number.isFinite(incoming.casovnaNorma)) {
+            if (!isExecutionOnlyMutation && typeof incoming.casovnaNorma === 'number' && Number.isFinite(incoming.casovnaNorma)) {
               target.casovnaNorma = incoming.casovnaNorma;
             }
-            if (typeof incoming.offerItemId === 'string' || incoming.offerItemId === null) {
+            if (!isExecutionOnlyMutation && (typeof incoming.offerItemId === 'string' || incoming.offerItemId === null)) {
               target.offerItemId = incoming.offerItemId ?? null;
             }
             if ('executionSpec' in incoming) {
@@ -1339,6 +1405,9 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         const planned = typeof incoming.plannedQuantity === 'number' ? incoming.plannedQuantity : 0;
         const executed = typeof incoming.executedQuantity === 'number' ? incoming.executedQuantity : planned;
         const offered = typeof incoming.offeredQuantity === 'number' ? incoming.offeredQuantity : 0;
+        if (isExecutionOnlyMutation && incoming.isExtra === false) {
+          return;
+        }
         const newItemId =
           typeof incoming.id === 'string'
             ? incoming.id
@@ -1404,7 +1473,11 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
   const materialOrderId = typeof payload.materialOrderId === 'string' ? payload.materialOrderId : null;
   if (materialOrderId) {
     const materialUpdates: Record<string, unknown> = {};
-    if (typeof payload.materialStatus === 'string' && MATERIAL_STATUS_VALUES.includes(payload.materialStatus)) {
+    if (
+      typeof payload.materialStatus === 'string' &&
+      MATERIAL_STATUS_VALUES.includes(payload.materialStatus) &&
+      (!isExecutionOnlyMutation || isExecutionMaterialStatus(payload.materialStatus))
+    ) {
       materialUpdates.materialStatus = payload.materialStatus;
     }
     if ('materialAssignedEmployeeIds' in payload) {
@@ -1485,37 +1558,37 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         if (targetId) {
           const target = nextItems.find((item) => String(item.id) === targetId);
           if (target) {
-            if (typeof incoming.name === 'string' && target.name !== incoming.name) {
+            if (!isExecutionOnlyMutation && typeof incoming.name === 'string' && target.name !== incoming.name) {
               target.name = incoming.name;
               hasItemMutations = true;
             }
-            if (typeof incoming.unit === 'string' && target.unit !== incoming.unit) {
+            if (!isExecutionOnlyMutation && typeof incoming.unit === 'string' && target.unit !== incoming.unit) {
               target.unit = incoming.unit;
               hasItemMutations = true;
             }
-            if (typeof incoming.note === 'string' || incoming.note === null) {
+            if (!isExecutionOnlyMutation && (typeof incoming.note === 'string' || incoming.note === null)) {
               const nextNote = incoming.note ?? '';
               if (target.note !== nextNote) {
                 target.note = nextNote;
                 hasItemMutations = true;
               }
             }
-            if (typeof incoming.productId === 'string' || incoming.productId === null) {
+            if (!isExecutionOnlyMutation && (typeof incoming.productId === 'string' || incoming.productId === null)) {
               const nextProductId = incoming.productId ?? null;
               if (target.productId !== nextProductId) {
                 target.productId = nextProductId;
                 hasItemMutations = true;
               }
             }
-            if (typeof incoming.quantity === 'number' && Number.isFinite(incoming.quantity) && target.quantity !== incoming.quantity) {
+            if (!isExecutionOnlyMutation && typeof incoming.quantity === 'number' && Number.isFinite(incoming.quantity) && target.quantity !== incoming.quantity) {
               target.quantity = incoming.quantity;
               hasItemMutations = true;
             }
-            if (typeof incoming.isOrdered === 'boolean' && target.isOrdered !== incoming.isOrdered) {
+            if (!isExecutionOnlyMutation && typeof incoming.isOrdered === 'boolean' && target.isOrdered !== incoming.isOrdered) {
               target.isOrdered = incoming.isOrdered;
               hasItemMutations = true;
             }
-            if (typeof incoming.orderedQty === 'number' && Number.isFinite(incoming.orderedQty)) {
+            if (!isExecutionOnlyMutation && typeof incoming.orderedQty === 'number' && Number.isFinite(incoming.orderedQty)) {
               const nextOrderedQty = Math.max(0, incoming.orderedQty);
               if (target.orderedQty !== nextOrderedQty) {
                 target.orderedQty = nextOrderedQty;
@@ -1530,24 +1603,31 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
                 changes.push({ itemId: String(targetId), before, after });
               }
             }
-            if (typeof incoming.materialStep === 'string' && target.materialStep !== incoming.materialStep) {
+            if (
+              typeof incoming.materialStep === 'string' &&
+              (!isExecutionOnlyMutation || isExecutionMaterialStep(incoming.materialStep)) &&
+              target.materialStep !== incoming.materialStep
+            ) {
               target.materialStep = incoming.materialStep;
               hasItemMutations = true;
             }
-            if (typeof incoming.dobavitelj === 'string' && target.dobavitelj !== incoming.dobavitelj) {
+            if (!isExecutionOnlyMutation && typeof incoming.dobavitelj === 'string' && target.dobavitelj !== incoming.dobavitelj) {
               target.dobavitelj = incoming.dobavitelj;
               hasItemMutations = true;
             }
-            if (typeof incoming.naslovDobavitelja === 'string' && target.naslovDobavitelja !== incoming.naslovDobavitelja) {
+            if (!isExecutionOnlyMutation && typeof incoming.naslovDobavitelja === 'string' && target.naslovDobavitelja !== incoming.naslovDobavitelja) {
               target.naslovDobavitelja = incoming.naslovDobavitelja;
               hasItemMutations = true;
             }
-            if (typeof incoming.isExtra === 'boolean' && target.isExtra !== incoming.isExtra) {
+            if (!isExecutionOnlyMutation && typeof incoming.isExtra === 'boolean' && target.isExtra !== incoming.isExtra) {
               target.isExtra = incoming.isExtra;
               hasItemMutations = true;
             }
             return;
           }
+        }
+        if (isExecutionOnlyMutation) {
+          return;
         }
 
         const deliveredQty = typeof incoming.deliveredQty === 'number' && Number.isFinite(incoming.deliveredQty)

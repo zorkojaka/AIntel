@@ -13,6 +13,7 @@ interface ProjectListProps {
   onDeleteProject: (project: ProjectSummary) => void;
   readOnly?: boolean;
   hideFilters?: boolean;
+  hideFinancials?: boolean;
   filteredProjects?: ProjectSummary[];
 }
 
@@ -79,6 +80,7 @@ export function ProjectList({
   onDeleteProject,
   readOnly = false,
   hideFilters = false,
+  hideFinancials = false,
   filteredProjects: externalFilteredProjects,
 }: ProjectListProps) {
   const [sortColumn, setSortColumn] = useState<SortColumn>("datum");
@@ -105,10 +107,10 @@ export function ProjectList({
           cmp = (statusSortOrder[a.status] ?? 0) - (statusSortOrder[b.status] ?? 0);
           break;
         case "ponudba":
-          cmp = (a.quotedTotalWithVat ?? 0) - (b.quotedTotalWithVat ?? 0);
+          cmp = hideFinancials ? 0 : (a.quotedTotalWithVat ?? 0) - (b.quotedTotalWithVat ?? 0);
           break;
         case "racuni":
-          cmp = (a.invoiceAmount ?? 0) - (b.invoiceAmount ?? 0);
+          cmp = hideFinancials ? 0 : (a.invoiceAmount ?? 0) - (b.invoiceAmount ?? 0);
           break;
         case "datum":
           cmp = getDateValue(a.createdAt) - getDateValue(b.createdAt);
@@ -116,7 +118,7 @@ export function ProjectList({
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [filteredProjects, sortColumn, sortDir]);
+  }, [filteredProjects, hideFinancials, sortColumn, sortDir]);
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
@@ -128,7 +130,7 @@ export function ProjectList({
   };
 
   const renderSortableHeader = (column: SortColumn, label: string, className = "") => (
-    <TableHead className={className}>
+    hideFinancials && (column === "ponudba" || column === "racuni") ? null : <TableHead className={className}>
       <button
         type="button"
         className={`inline-flex items-center gap-1 select-none font-semibold uppercase tracking-wide text-muted-foreground transition hover:text-foreground ${
@@ -164,7 +166,7 @@ export function ProjectList({
               {renderSortableHeader("projekt", "Projekt")}
               {renderSortableHeader("stranka", "Stranka")}
               {renderSortableHeader("status", "Status")}
-              {renderSortableHeader("ponudba", "Ponudba", "text-right")}
+              {!hideFinancials ? renderSortableHeader("ponudba", "Ponudba", "text-right") : null}
               {renderSortableHeader("racuni", "Računi", "text-right")}
               {renderSortableHeader("datum", "Datum")}
               {!readOnly ? <TableHead className="text-right">Akcije</TableHead> : null}
@@ -199,8 +201,8 @@ export function ProjectList({
                 <TableCell>
                   <Badge className={statusColors[project.status]}>{statusLabels[project.status]}</Badge>
                 </TableCell>
-                <TableCell className="text-right">{formatAmount(project.quotedTotalWithVat)}</TableCell>
-                <TableCell className="text-right">{formatAmount(project.invoiceAmount)}</TableCell>
+                {!hideFinancials ? <TableCell className="text-right">{formatAmount(project.quotedTotalWithVat)}</TableCell> : null}
+                {!hideFinancials ? <TableCell className="text-right">{formatAmount(project.invoiceAmount)}</TableCell> : null}
                 <TableCell>{formatDate(project.createdAt)}</TableCell>
                 {!readOnly ? (
                   <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
@@ -269,7 +271,7 @@ export function ProjectList({
               })}
             </div>
 
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+            {!hideFinancials ? <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-lg bg-muted px-3 py-2">
                 <div className="text-muted-foreground">Ponudba</div>
                 <div className="font-semibold text-foreground">{formatAmount(project.quotedTotalWithVat)}</div>
@@ -278,7 +280,7 @@ export function ProjectList({
                 <div className="text-muted-foreground">Računi</div>
                 <div className="font-semibold text-foreground">{formatAmount(project.invoiceAmount)}</div>
               </div>
-            </div>
+            </div> : null}
 
             <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
               <div className="flex items-center gap-1.5">

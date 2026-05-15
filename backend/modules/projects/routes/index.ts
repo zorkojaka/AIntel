@@ -86,6 +86,6 @@ router.post('/:projectId/invoices/:versionId/issue', requireProjectWrite, invoic
 router.post('/:projectId/invoices/:versionId/clone-for-edit', requireProjectWrite, invoiceController.cloneInvoiceForEdit);
 router.get('/:projectId/invoices/:versionId/pdf', invoiceController.exportInvoicePdf);
 router.post('/:id/deliveries/:deliveryId/receive', requireProjectWrite, receiveDelivery);
-router.post('/:id/signature', requireProjectWrite, saveSignature);
+router.post('/:id/signature', requireWorkOrderWrite, saveSignature);
 
 export default router;

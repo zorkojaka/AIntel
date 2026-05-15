@@ -44,6 +44,25 @@ export interface EarningsResponse {
   table: Array<{ month: string; projectCount: number; earnings: number; isPaid: boolean }>;
 }
 
+export interface ProjectEarningItem {
+  name: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  total: number;
+}
+
+export interface ProjectEarning {
+  id: string;
+  title: string;
+  completedAt: string;
+  customer: string;
+  totalEarnings: number;
+  isPaid: boolean;
+  paymentStatus: 'paid' | 'pending';
+  items: ProjectEarningItem[];
+}
+
 export interface ServiceRate {
   serviceProductId: string;
   serviceName: string;
@@ -76,6 +95,10 @@ export function fetchMyProjects(filter: 'all' | 'upcoming' | 'completed') {
 
 export function fetchMyEarnings(year: number) {
   return request<EarningsResponse>(`/api/profile/my-earnings?year=${year}`);
+}
+
+export function fetchMyProjectEarnings() {
+  return request<ProjectEarning[]>('/api/profile/my-project-earnings');
 }
 
 export function fetchMyServiceRates() {
