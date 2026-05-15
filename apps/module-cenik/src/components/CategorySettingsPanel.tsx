@@ -583,25 +583,8 @@ export function CategorySettingsPanel() {
                     </>
                   ) : (
                     subs.map((sub) => {
-                      const isSubExpanded = expanded.has(sub.path);
-                    return (
-                      <div key={sub.path}>
-                        <div className="grid grid-cols-[auto_auto_1fr_auto] items-center gap-2 px-4 py-2 pl-9 md:grid-cols-[auto_auto_1fr_150px_120px]">
-                          <button
-                            type="button"
-                            className="inline-flex h-7 w-7 items-center justify-center rounded border border-border/60 disabled:opacity-30"
-                            disabled={thirdChildren.length === 0}
-                            onClick={() =>
-                              setExpanded((prev) => {
-                                const next = new Set(prev);
-                                next.has(sub.path) ? next.delete(sub.path) : next.add(sub.path);
-                                return next;
-                              })
-                            }
-                            aria-label={isSubExpanded ? 'Skrči' : 'Razširi'}
-                          >
-                            {thirdChildren.length === 0 ? null : isSubExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </button>
+                      return (
+                        <div key={sub.path} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 px-4 py-2 pl-12 md:grid-cols-[auto_1fr_150px_120px]">
                           <input
                             type="checkbox"
                             checked={sub.isActive}
@@ -611,11 +594,6 @@ export function CategorySettingsPanel() {
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="truncate text-sm text-foreground">{sub.subLevel}</span>
-                              {thirdChildren.length > 0 && (
-                                <span className="rounded-full border border-border/60 bg-background px-2 py-0.5 text-[11px] text-muted-foreground">
-                                  {thirdChildren.length} segmentov
-                                </span>
-                              )}
                               {!sub.isActive && sub.productCountInApi > 0 && (
                                 <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
                                   Nova
@@ -645,51 +623,7 @@ export function CategorySettingsPanel() {
                             className="hidden rounded border border-border bg-background px-2 py-1 text-sm md:block"
                           />
                         </div>
-                        {isSubExpanded && thirdChildren.length > 0 && (
-                          <div className="divide-y divide-border/40 bg-background/70">
-                            {thirdChildren.map((third) => (
-                              <div key={third.path} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 px-4 py-2 pl-20 md:grid-cols-[auto_1fr_150px_120px]">
-                                <input
-                                  type="checkbox"
-                                  checked={third.isActive}
-                                  onChange={(event) => setThirdActive(third, event.target.checked)}
-                                  className="h-4 w-4"
-                                />
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="truncate text-sm text-foreground">{third.thirdLevel}</span>
-                                    <span className="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                                      {third.segmentType === 'system_line' ? 'sistem' : 'proizvajalec'}
-                                    </span>
-                                  </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    {third.productCountInApi} v API | {third.productCountActive} aktivnih v bazi
-                                  </div>
-                                </div>
-                                <select
-                                  value={priorityValue(third.priority)}
-                                  onChange={(event) => updateSetting(third.path, { priority: parsePriority(event.target.value) })}
-                                  disabled={!third.isActive}
-                                  className="rounded border border-border bg-background px-2 py-1 text-sm disabled:opacity-50"
-                                >
-                                  <option value="">{formatPriority(null, sub.priority ?? top.priority)}</option>
-                                  <option value="1">Prioriteta 1</option>
-                                  <option value="2">Prioriteta 2</option>
-                                  <option value="3">Prioriteta 3</option>
-                                </select>
-                                <input
-                                  type="text"
-                                  value={third.notes}
-                                  onChange={(event) => updateSetting(third.path, { notes: event.target.value })}
-                                  placeholder="Opomba"
-                                  className="hidden rounded border border-border bg-background px-2 py-1 text-sm md:block"
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
+                      );
                     })
                   )}
                 </div>
