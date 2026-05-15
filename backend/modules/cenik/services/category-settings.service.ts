@@ -117,6 +117,7 @@ function normalizeBrand(rawBrand: unknown) {
   if (comparable === 'dvc') return 'DVC';
   if (comparable.includes('ajax')) return 'Ajax';
   if (comparable.includes('reo')) return 'Reolink';
+  if (comparable === 'inout') return 'INOut';
   if (comparable.includes('western') || comparable === 'wd') return 'Western Digital';
   return value;
 }
@@ -130,6 +131,7 @@ function inferVideoBrand(product: AAProductLike) {
   if (/\b(ds-|hikvision|hiwatch)\b/.test(name)) return 'Hikvision';
   if (/\bdvc\b|\bdc[anptkv]-|\bddn-|\bdon-|\bdosn-|\bdab-|\bdac-|\bdan-/.test(name)) return 'DVC';
   if (/\breo\b|reolink/.test(name)) return 'Reolink';
+  if (/\binout\b/.test(name)) return 'INOut';
   if (/\bwd\b|western/.test(name)) return 'Western Digital';
   return '';
 }
@@ -152,7 +154,7 @@ export function deriveAAThirdLevelCategory(product: AAProductLike): CategoryPart
   let thirdLevel = '';
   let segmentType: CategorySettingsSegmentType = null;
 
-  if (base.topLevel === 'Videonadzorni sistemi') {
+  if (base.topLevel === 'Videonadzorni sistemi' || base.topLevel === 'Domofoni in video domofoni') {
     thirdLevel = inferVideoBrand(product);
     segmentType = 'brand';
   } else if (base.topLevel === 'Protivlomni sistemi') {
