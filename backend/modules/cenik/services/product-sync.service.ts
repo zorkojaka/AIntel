@@ -29,6 +29,8 @@ type NormalizedProduct = {
   isService: boolean;
   defaultExecutionMode?: 'simple' | 'per_unit' | 'measured';
   defaultInstructionsTemplate?: string;
+  aaData?: Record<string, unknown>;
+  classification?: Record<string, unknown>;
   rowIndex: number;
   rowId: string;
   rowFingerprint: string;
@@ -60,6 +62,8 @@ type ExistingProduct = {
   isService?: boolean;
   defaultExecutionMode?: 'simple' | 'per_unit' | 'measured';
   defaultInstructionsTemplate?: string;
+  aaData?: Record<string, unknown>;
+  classification?: Record<string, unknown>;
   isActive?: boolean;
   mergedIntoProductId?: mongoose.Types.ObjectId;
   status?: string;
@@ -300,6 +304,11 @@ function normalizeExecutionMode(value: unknown) {
   return undefined;
 }
 
+function normalizeStructuredObject(value: unknown) {
+  if (!isPlainObject(value)) return undefined;
+  return value;
+}
+
 function buildExternalKey(source: string, externalId: string) {
   return `${source}:${externalId}`;
 }
@@ -522,6 +531,8 @@ function validateAndNormalizeRow(
     isService: product.isService as boolean,
     defaultExecutionMode: normalizeExecutionMode(product.defaultExecutionMode),
     defaultInstructionsTemplate: normalizeText(product.defaultInstructionsTemplate) || undefined,
+    aaData: normalizeStructuredObject(product.aaData),
+    classification: normalizeStructuredObject(product.classification),
     rowIndex: index,
     rowId,
     rowFingerprint: buildRowFingerprint({
@@ -587,6 +598,8 @@ function mapSetFields(product: NormalizedProduct) {
     defaultInstructionsTemplate: hasProvidedField(product, 'defaultInstructionsTemplate')
       ? product.defaultInstructionsTemplate
       : undefined,
+    aaData: hasProvidedField(product, 'aaData') ? product.aaData : undefined,
+    classification: hasProvidedField(product, 'classification') ? product.classification : undefined,
     isActive: product.providedFields ? undefined : true,
   });
 }
@@ -605,6 +618,29 @@ function sameNumber(a: unknown, b: unknown) {
   const left = normalizeOptionalNumber(a);
   const right = normalizeOptionalNumber(b);
   return left === right;
+}
+
+function normalizeForCompare(value: unknown, omitKeys: string[] = []): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeForCompare(item, omitKeys));
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (isPlainObject(value)) {
+    return Object.keys(value)
+      .filter((key) => !omitKeys.includes(key) && value[key] !== undefined)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = normalizeForCompare(value[key], omitKeys);
+        return acc;
+      }, {});
+  }
+  return value;
+}
+
+function sameStructuredObject(a: unknown, b: unknown, omitKeys: string[] = []) {
+  return JSON.stringify(normalizeForCompare(a, omitKeys)) === JSON.stringify(normalizeForCompare(b, omitKeys));
 }
 
 function getChangedFields(product: NormalizedProduct, existing: ExistingProduct) {
@@ -632,6 +668,8 @@ function getChangedFields(product: NormalizedProduct, existing: ExistingProduct)
   if (hasProvidedField(product, 'isService') && Boolean(existing.isService) !== product.isService) changedFields.push('isService');
   if (hasProvidedField(product, 'defaultExecutionMode') && !sameString(existing.defaultExecutionMode, product.defaultExecutionMode)) changedFields.push('defaultExecutionMode');
   if (hasProvidedField(product, 'defaultInstructionsTemplate') && !sameString(existing.defaultInstructionsTemplate, product.defaultInstructionsTemplate)) changedFields.push('defaultInstructionsTemplate');
+  if (hasProvidedField(product, 'aaData') && !sameStructuredObject(existing.aaData, product.aaData, ['lastSyncedAt'])) changedFields.push('aaData');
+  if (hasProvidedField(product, 'classification') && !sameStructuredObject(existing.classification, product.classification)) changedFields.push('classification');
   if (!product.providedFields && existing.isActive !== true) changedFields.push('isActive');
 
   return changedFields;
@@ -687,7 +725,7 @@ function buildInvalidCreateRow(row: NormalizedProduct): ImportInvalidRow | null 
 
 async function loadExistingProducts() {
   const fields =
-    '_id externalSource externalId externalKey ime kategorija categorySlugs purchasePriceWithoutVat nabavnaCena prodajnaCena kratekOpis dolgOpis povezavaDoSlike povezavaDoProdukta proizvajalec dobavitelj naslovDobavitelja casovnaNorma isService defaultExecutionMode defaultInstructionsTemplate isActive mergedIntoProductId status';
+    '_id externalSource externalId externalKey ime kategorija categorySlugs purchasePriceWithoutVat nabavnaCena prodajnaCena kratekOpis dolgOpis povezavaDoSlike povezavaDoProdukta proizvajalec dobavitelj naslovDobavitelja casovnaNorma isService defaultExecutionMode defaultInstructionsTemplate aaData classification isActive mergedIntoProductId status';
 
   return (await ProductModel.find().select(fields).lean()) as ExistingProduct[];
 }

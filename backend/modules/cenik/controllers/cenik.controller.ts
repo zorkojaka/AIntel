@@ -29,6 +29,8 @@ type ProductResponse = ProductPayload & {
   externalId?: string;
   externalKey?: string;
   isActive?: boolean;
+  aaData?: ProductDocument['aaData'];
+  classification?: ProductDocument['classification'];
   status?: string;
   mergedIntoProductId?: string;
   createdAt: Date;
@@ -136,6 +138,8 @@ function sanitizeProduct(product: ProductDocument): ProductResponse {
     defaultExecutionMode: product.defaultExecutionMode,
     defaultInstructionsTemplate: product.defaultInstructionsTemplate ?? '',
     isActive: product.isActive !== false,
+    aaData: product.aaData,
+    classification: product.classification,
     status: product.status ?? (product.isActive === false ? 'merged' : 'active'),
     mergedIntoProductId: product.mergedIntoProductId ? String(product.mergedIntoProductId) : '',
     createdAt: product.createdAt,

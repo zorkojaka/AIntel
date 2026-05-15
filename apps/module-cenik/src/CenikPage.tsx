@@ -1076,7 +1076,7 @@ export const CenikPage: React.FC = () => {
       }
       await loadImportRuns();
     } catch (error) {
-      setImportError('Analiza uvoza ni uspela. Poskusi znova.');
+      setImportError(error instanceof Error ? error.message : 'Analiza uvoza ni uspela. Poskusi znova.');
     } finally {
       setImportLoading(false);
     }
@@ -1194,7 +1194,7 @@ export const CenikPage: React.FC = () => {
       await loadProducts();
       await loadImportRuns();
     } catch (error) {
-      setImportError('Potrditev uvoza ni uspela. Poskusi znova.');
+      setImportError(error instanceof Error ? error.message : 'Potrditev uvoza ni uspela. Poskusi znova.');
     } finally {
       setImportLoading(false);
     }
