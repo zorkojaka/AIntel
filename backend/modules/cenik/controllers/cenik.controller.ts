@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { ProductDocument, ProductModel } from '../product.model';
 import type { PriceListSearchItem } from '../../../../shared/types/price-list';
 import { precheckProductCandidate } from '../services/product-sync.service';
-import { buildCategoryPriorityMap, resolvePriorityFromMap } from '../services/category-settings.service';
+import { buildCategoryPriorityMap, resolvePriorityFromProductMap } from '../services/category-settings.service';
 
 type ProductPayload = Pick<
   ProductDocument,
@@ -384,7 +384,7 @@ export async function searchPriceListItems(req: Request, res: Response) {
           unitPrice: Number(product.prodajnaCena ?? 0),
           vatRate: 22,
           _rank: rank,
-          _priorityRank: resolvePriorityRank(resolvePriorityFromMap(categoryPriorityByPath, (product as any).aaData?.category)),
+          _priorityRank: resolvePriorityRank(resolvePriorityFromProductMap(categoryPriorityByPath, product as any)),
           _sortName: sortName,
           _sortCodeOrSlug: sortCodeOrSlug,
         };

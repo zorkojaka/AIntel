@@ -41,6 +41,8 @@ type SegmentGroup = {
   productCountInApi: number;
   productCountActive: number;
   activeChildren: number;
+  priority: CategoryPriority;
+  hasMixedPriority: boolean;
 };
 
 const recommendedVideoSubCategories = new Set([
@@ -156,6 +158,8 @@ export function CategorySettingsPanel() {
             productCountInApi: setting.productCountInApi,
             productCountActive: setting.productCountActive,
             activeChildren: setting.isActive ? 1 : 0,
+            priority: setting.priority,
+            hasMixedPriority: false,
           });
           segmentsByTop.set(setting.topLevel, segments);
         }
@@ -167,9 +171,12 @@ export function CategorySettingsPanel() {
       children.sort((a, b) => b.productCountInApi - a.productCountInApi || a.path.localeCompare(b.path, 'sl')),
     );
     segmentsByTop.forEach((segments) => {
-      segments.forEach((segment) =>
-        segment.children.sort((a, b) => b.productCountInApi - a.productCountInApi || a.subLevel?.localeCompare(b.subLevel ?? '', 'sl') || 0),
-      );
+      segments.forEach((segment) => {
+        segment.children.sort((a, b) => b.productCountInApi - a.productCountInApi || a.subLevel?.localeCompare(b.subLevel ?? '', 'sl') || 0);
+        const priorities = new Set(segment.children.map((child) => child.priority ?? null));
+        segment.hasMixedPriority = priorities.size > 1;
+        segment.priority = segment.hasMixedPriority ? null : segment.children[0]?.priority ?? null;
+      });
       segments.sort((a, b) => b.productCountInApi - a.productCountInApi || a.name.localeCompare(b.name, 'sl'));
     });
     return { top, subsByTop, thirdBySub, segmentsByTop };
@@ -265,6 +272,17 @@ export function CategorySettingsPanel() {
     );
   }
 
+  function setSegmentPriority(segment: SegmentGroup, priority: CategoryPriority) {
+    setSettings((prev) =>
+      prev.map((setting) => {
+        if (setting.level === 3 && setting.topLevel === segment.topLevel && setting.thirdLevel === segment.name) {
+          return { ...setting, priority, isDirty: true };
+        }
+        return setting;
+      }),
+    );
+  }
+
   function applyRecommendedDefaults() {
     const confirmed = window.confirm('Naložim priporočene nastavitve za videonadzor, alarm, domofon in mrežno opremo?');
     if (!confirmed) return;
@@ -276,31 +294,39 @@ export function CategorySettingsPanel() {
 
         if (setting.path === 'Videonadzorni sistemi') {
           isActive = true;
-          priority = 1;
+          priority = null;
         } else if (
           recommendedVideoSubCategories.has(setting.path) ||
           (setting.level === 3 && recommendedVideoSubCategories.has(`${setting.topLevel}:${setting.subLevel}`))
         ) {
           isActive = true;
+          priority = setting.level === 3 ? 1 : null;
         } else if (setting.path === 'Protivlomni sistemi') {
           isActive = true;
-          priority = 1;
+          priority = null;
         } else if (
           setting.topLevel === 'Protivlomni sistemi' &&
           setting.level !== 1 &&
           !excludedAlarmSubCategories.has(`${setting.topLevel}:${setting.subLevel}`)
         ) {
           isActive = true;
+          priority = setting.level === 3 ? 1 : null;
         } else if (setting.path === 'Domofoni in video domofoni') {
           isActive = true;
-          priority = 2;
+          priority = null;
         } else if (setting.topLevel === 'Domofoni in video domofoni' && setting.level === 2) {
           isActive = true;
+        } else if (setting.topLevel === 'Domofoni in video domofoni' && setting.level === 3) {
+          isActive = true;
+          priority = 2;
         } else if (setting.path === 'Mrežna oprema') {
           isActive = true;
-          priority = 3;
+          priority = null;
         } else if (setting.path === 'Mrežna oprema:Pribor') {
           isActive = true;
+        } else if (setting.topLevel === 'Mrežna oprema' && setting.level === 3) {
+          isActive = true;
+          priority = 3;
         }
 
         if (setting.isActive === isActive && setting.priority === priority) {
@@ -448,17 +474,7 @@ export function CategorySettingsPanel() {
                     {top.productCountInApi} v API | {top.productCountActive} aktivnih v bazi
                   </div>
                 </div>
-                <select
-                  value={priorityValue(top.priority)}
-                  onChange={(event) => updateSetting(top.path, { priority: parsePriority(event.target.value) })}
-                  disabled={!top.isActive}
-                  className="hidden rounded border border-border bg-background px-2 py-1 text-sm disabled:opacity-50 md:block"
-                >
-                  <option value="">Brez</option>
-                  <option value="1">Prioriteta 1</option>
-                  <option value="2">Prioriteta 2</option>
-                  <option value="3">Prioriteta 3</option>
-                </select>
+                <span className="hidden text-xs text-muted-foreground md:block">Prioriteta na brandu</span>
                 <span className="hidden text-right text-xs text-muted-foreground md:block">
                   {segments.length > 0 ? `${segments.length} segmentov` : `${subs.length} sub`}
                 </span>
@@ -508,9 +524,17 @@ export function CategorySettingsPanel() {
                                   {segment.productCountInApi} v API | {segment.productCountActive} aktivnih v bazi
                                 </div>
                               </div>
-                              <span className="hidden text-xs text-muted-foreground md:block">
-                                {segment.activeChildren}/{segment.children.length} aktivnih
-                              </span>
+                              <select
+                                value={segment.hasMixedPriority ? '' : priorityValue(segment.priority)}
+                                onChange={(event) => setSegmentPriority(segment, parsePriority(event.target.value))}
+                                disabled={!isSegmentActive}
+                                className="rounded border border-border bg-background px-2 py-1 text-sm disabled:opacity-50"
+                              >
+                                <option value="">{segment.hasMixedPriority ? 'Mešano' : 'Brez'}</option>
+                                <option value="1">Prioriteta 1</option>
+                                <option value="2">Prioriteta 2</option>
+                                <option value="3">Prioriteta 3</option>
+                              </select>
                             </div>
                             {isSegmentExpanded && (
                               <div className="divide-y divide-border/40 bg-background/70">
@@ -528,17 +552,9 @@ export function CategorySettingsPanel() {
                                         {third.productCountInApi} v API | {third.productCountActive} aktivnih v bazi
                                       </div>
                                     </div>
-                                    <select
-                                      value={priorityValue(third.priority)}
-                                      onChange={(event) => updateSetting(third.path, { priority: parsePriority(event.target.value) })}
-                                      disabled={!third.isActive}
-                                      className="rounded border border-border bg-background px-2 py-1 text-sm disabled:opacity-50"
-                                    >
-                                      <option value="">{formatPriority(null, top.priority)}</option>
-                                      <option value="1">Prioriteta 1</option>
-                                      <option value="2">Prioriteta 2</option>
-                                      <option value="3">Prioriteta 3</option>
-                                    </select>
+                                    <span className="hidden text-xs text-muted-foreground md:block">
+                                      {third.priority ? `Prioriteta ${third.priority}` : 'Brez prioritete'}
+                                    </span>
                                     <input
                                       type="text"
                                       value={third.notes}

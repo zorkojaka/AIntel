@@ -122,7 +122,7 @@ function normalizeBrand(rawBrand: unknown) {
   return value;
 }
 
-function inferVideoBrand(product: AAProductLike) {
+function inferAAProductBrand(product: AAProductLike) {
   const manufacturer = normalizeBrand(product.proizvajalec || getAttribute(product, 'Manufacturer'));
   if (manufacturer) return manufacturer;
 
@@ -133,7 +133,7 @@ function inferVideoBrand(product: AAProductLike) {
   if (/\breo\b|reolink/.test(name)) return 'Reolink';
   if (/\binout\b/.test(name)) return 'INOut';
   if (/\bwd\b|western/.test(name)) return 'Western Digital';
-  return '';
+  return '(unknown)';
 }
 
 function inferAlarmSystemLine(product: AAProductLike) {
@@ -154,11 +154,16 @@ export function deriveAAThirdLevelCategory(product: AAProductLike): CategoryPart
   let thirdLevel = '';
   let segmentType: CategorySettingsSegmentType = null;
 
-  if (base.topLevel === 'Videonadzorni sistemi' || base.topLevel === 'Domofoni in video domofoni') {
-    thirdLevel = inferVideoBrand(product);
-    segmentType = 'brand';
-  } else if (base.topLevel === 'Protivlomni sistemi') {
+  if (base.topLevel === 'Protivlomni sistemi') {
     thirdLevel = inferAlarmSystemLine(product);
+    segmentType = 'system_line';
+  } else {
+    thirdLevel = inferAAProductBrand(product);
+    segmentType = 'brand';
+  }
+
+  if (!thirdLevel) {
+    thirdLevel = inferAAProductBrand(product);
     segmentType = 'system_line';
   }
 
@@ -562,4 +567,14 @@ export function resolvePriorityFromMap(priorityByPath: Map<string, CategorySetti
   const parts = splitAACategory(category);
   if (!parts) return null;
   return priorityByPath.get(parts.path) ?? priorityByPath.get(parts.topLevel) ?? null;
+}
+
+export function resolvePriorityFromProductMap(priorityByPath: Map<string, CategorySettingsPriority>, product: AAProductLike) {
+  const third = deriveAAThirdLevelCategory(product);
+  if (third) {
+    const thirdPriority = priorityByPath.get(third.path);
+    if (thirdPriority) return thirdPriority;
+  }
+
+  return resolvePriorityFromMap(priorityByPath, getProductCategory(product));
 }
