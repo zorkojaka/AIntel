@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '@aintel/ui';
-import { ChevronDown, ChevronRight, RefreshCw, Save, UploadCloud } from 'lucide-react';
+import { ChevronDown, ChevronRight, Save, UploadCloud } from 'lucide-react';
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -66,6 +66,14 @@ const excludedAlarmSubCategories = new Set([
   'Protivlomni sistemi:Centri za sprejem podatkov in programska oprema',
 ]);
 
+const syncSteps = [
+  'Prenašam iz AA API...',
+  'Primerjam z bazo...',
+  'Klasificiram izdelke...',
+  'Posodabljam cenik...',
+  'Končano ✓',
+];
+
 async function parseEnvelope<T>(response: Response) {
   const payload: ApiEnvelope<T> = await response.json();
   if (!response.ok || !payload.success) {
@@ -94,9 +102,10 @@ export function CategorySettingsPanel() {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [message, setMessage] = useState<{ variant: 'success' | 'error'; text: string } | null>(null);
+  const [syncStepIndex, setSyncStepIndex] = useState(0);
+  const [syncProgress, setSyncProgress] = useState(0);
+  const [message, setMessage] = useState<{ variant: 'success' | 'warning' | 'error'; text: string } | null>(null);
 
   const loadSettings = async () => {
     setLoading(true);
@@ -367,36 +376,48 @@ export function CategorySettingsPanel() {
     }
   }
 
-  async function refreshStats() {
-    setRefreshing(true);
-    try {
-      const response = await fetch('/api/cenik/category-settings/refresh-stats', { method: 'POST' });
-      const data = await parseEnvelope<CategorySetting[]>(response);
-      setSettings(data.map((setting) => ({ ...setting, isDirty: false })));
-      setMessage({ variant: 'success', text: 'Statistike kategorij so osvežene.' });
-    } catch (error) {
-      setMessage({ variant: 'error', text: error instanceof Error ? error.message : 'Osveževanje statistik ni uspelo.' });
-    } finally {
-      setRefreshing(false);
-    }
+  async function refreshStatsAfterSync() {
+    const response = await fetch('/api/cenik/category-settings/refresh-stats', { method: 'POST' });
+    const data = await parseEnvelope<CategorySetting[]>(response);
+    setSettings(data.map((setting) => ({ ...setting, isDirty: false })));
   }
 
   async function syncAA() {
-    const confirmed = window.confirm('Zaženem AA sync z aktivnimi kategorijami?');
-    if (!confirmed) return;
+    if (dirtyCount > 0) {
+      setMessage({ variant: 'warning', text: 'Najprej shrani spremembe nastavitev kategorij, nato zaženi sinhronizacijo iz AA.' });
+      return;
+    }
+
     setSyncing(true);
+    setSyncStepIndex(0);
+    setSyncProgress(8);
+    setMessage(null);
+    let progressTimer: number | undefined;
+
     try {
+      progressTimer = window.setInterval(() => {
+        setSyncProgress((current) => Math.min(current + 7, 88));
+        setSyncStepIndex((current) => Math.min(current + 1, syncSteps.length - 2));
+      }, 1200);
+
       const response = await fetch('/api/admin/import/products/from-git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source: 'aa_api', mode: 'apply' }),
       });
       await parseEnvelope<unknown>(response);
-      setMessage({ variant: 'success', text: 'AA sync je zaključen.' });
-      await refreshStats();
+      setSyncStepIndex(3);
+      setSyncProgress(94);
+      await refreshStatsAfterSync();
+      setSyncStepIndex(4);
+      setSyncProgress(100);
+      setMessage({ variant: 'success', text: 'AA sync je zaključen. Statistike so osvežene.' });
     } catch (error) {
       setMessage({ variant: 'error', text: error instanceof Error ? error.message : 'AA sync ni uspel.' });
     } finally {
+      if (progressTimer !== undefined) {
+        window.clearInterval(progressTimer);
+      }
       setSyncing(false);
     }
   }
@@ -415,16 +436,18 @@ export function CategorySettingsPanel() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" onClick={applyRecommendedDefaults} disabled={saving}>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={applyRecommendedDefaults}
+            disabled={saving || syncing}
+            className="border border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100"
+          >
             Naloži priporočene
           </Button>
-          <Button type="button" variant="outline" onClick={syncAA} disabled={syncing || saving}>
+          <Button type="button" onClick={syncAA} disabled={syncing || saving}>
             <UploadCloud className="mr-2 h-4 w-4" />
             {syncing ? 'Sinhroniziram ...' : 'Sinhroniziraj iz AA'}
-          </Button>
-          <Button type="button" variant="outline" onClick={refreshStats} disabled={refreshing || saving}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            {refreshing ? 'Osvežujem ...' : 'Posodobi statistike'}
           </Button>
           <Button type="button" onClick={saveChanges} disabled={saving || dirtyCount === 0}>
             <Save className="mr-2 h-4 w-4" />
@@ -433,8 +456,31 @@ export function CategorySettingsPanel() {
         </div>
       </div>
 
+      {syncing && (
+        <div className="rounded-lg border border-border/60 bg-card p-4">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="font-medium text-foreground">{syncSteps[syncStepIndex]}</span>
+            <span className="text-muted-foreground">{syncProgress}%</span>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-500"
+              style={{ width: `${syncProgress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {message && (
-        <div className={`rounded-md border px-4 py-2 text-sm ${message.variant === 'success' ? 'border-success text-success' : 'border-destructive text-destructive'}`}>
+        <div
+          className={`rounded-md border px-4 py-2 text-sm ${
+            message.variant === 'success'
+              ? 'border-success text-success'
+              : message.variant === 'warning'
+                ? 'border-amber-300 bg-amber-50 text-amber-800'
+                : 'border-destructive text-destructive'
+          }`}
+        >
           {message.text}
         </div>
       )}
