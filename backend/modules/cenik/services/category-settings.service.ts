@@ -1,11 +1,30 @@
-import { CategorySettingsModel, type CategorySettingsPriority } from '../category-settings.model';
+import {
+  CategorySettingsModel,
+  type CategorySettingsPriority,
+  type CategorySettingsSegmentType,
+} from '../category-settings.model';
 import { ProductModel } from '../product.model';
 
 type CategoryParts = {
   path: string;
   topLevel: string;
   subLevel: string | null;
-  level: 1 | 2;
+  thirdLevel?: string | null;
+  segmentType?: CategorySettingsSegmentType;
+  level: 1 | 2 | 3;
+};
+
+type AAProductLike = {
+  name?: string;
+  ime?: string;
+  category?: string;
+  proizvajalec?: string;
+  attributes?: Array<{ attribute?: string; term?: string }>;
+  aaData?: {
+    category?: string;
+    productCode?: string;
+    attributes?: Array<{ attribute?: string; term?: string }>;
+  };
 };
 
 type CategoryUpdate = {
@@ -19,6 +38,13 @@ const SOURCE = 'aa_api' as const;
 
 function normalizeText(value: unknown) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+}
+
+function normalizeComparable(value: unknown) {
+  return normalizeText(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
 }
 
 export function splitAACategory(category: unknown): CategoryParts | null {
@@ -45,7 +71,21 @@ function topCategory(parts: CategoryParts): CategoryParts {
     path: parts.topLevel,
     topLevel: parts.topLevel,
     subLevel: null,
+    thirdLevel: null,
+    segmentType: null,
     level: 1,
+  };
+}
+
+function subCategory(parts: CategoryParts): CategoryParts | null {
+  if (!parts.subLevel) return null;
+  return {
+    path: `${parts.topLevel}:${parts.subLevel}`,
+    topLevel: parts.topLevel,
+    subLevel: parts.subLevel,
+    thirdLevel: null,
+    segmentType: null,
+    level: 2,
   };
 }
 
@@ -53,29 +93,122 @@ function increment(map: Map<string, number>, key: string) {
   map.set(key, (map.get(key) ?? 0) + 1);
 }
 
-function uniqueCategoryPartsFromCategories(categories: unknown[]) {
+function getProductCategory(product: AAProductLike) {
+  return product.aaData?.category ?? product.category ?? '';
+}
+
+function getProductName(product: AAProductLike) {
+  return product.name ?? product.ime ?? product.aaData?.productCode ?? '';
+}
+
+function getAttribute(product: AAProductLike, attributeName: string) {
+  const attributes = product.attributes ?? product.aaData?.attributes ?? [];
+  const normalizedName = normalizeComparable(attributeName);
+  return (
+    attributes.find((attribute) => normalizeComparable(attribute.attribute) === normalizedName)?.term ?? ''
+  );
+}
+
+function normalizeBrand(rawBrand: unknown) {
+  const value = normalizeText(rawBrand);
+  const comparable = normalizeComparable(value);
+  if (!comparable) return '';
+  if (comparable.includes('hik')) return 'Hikvision';
+  if (comparable === 'dvc') return 'DVC';
+  if (comparable.includes('ajax')) return 'Ajax';
+  if (comparable.includes('reo')) return 'Reolink';
+  if (comparable.includes('western') || comparable === 'wd') return 'Western Digital';
+  return value;
+}
+
+function inferVideoBrand(product: AAProductLike) {
+  const manufacturer = normalizeBrand(product.proizvajalec || getAttribute(product, 'Manufacturer'));
+  if (manufacturer) return manufacturer;
+
+  const name = normalizeComparable(getProductName(product));
+  if (/\bajax\b/.test(name)) return 'Ajax';
+  if (/\b(ds-|hikvision|hiwatch)\b/.test(name)) return 'Hikvision';
+  if (/\bdvc\b|\bdc[anptkv]-|\bddn-|\bdon-|\bdosn-|\bdab-|\bdac-|\bdan-/.test(name)) return 'DVC';
+  if (/\breo\b|reolink/.test(name)) return 'Reolink';
+  if (/\bwd\b|western/.test(name)) return 'Western Digital';
+  return '';
+}
+
+function inferAlarmSystemLine(product: AAProductLike) {
+  const name = normalizeComparable(getProductName(product));
+  if (/\bfibra\b/.test(name)) return 'Ajax Fibra';
+  if (/\bajax\b/.test(name)) return 'Ajax wireless / other';
+  if (/\bpar\b|paradox/.test(name)) return 'Paradox';
+  if (/\bdsc\b/.test(name)) return 'DSC';
+  if (/\binim\b|\bi-?smart/.test(name)) return 'Inim';
+  if (/\boptex\b/.test(name)) return 'OPTEX';
+  return normalizeBrand(product.proizvajalec || getAttribute(product, 'Manufacturer'));
+}
+
+export function deriveAAThirdLevelCategory(product: AAProductLike): CategoryParts | null {
+  const base = splitAACategory(getProductCategory(product));
+  if (!base?.subLevel) return null;
+
+  let thirdLevel = '';
+  let segmentType: CategorySettingsSegmentType = null;
+
+  if (base.topLevel === 'Videonadzorni sistemi') {
+    thirdLevel = inferVideoBrand(product);
+    segmentType = 'brand';
+  } else if (base.topLevel === 'Protivlomni sistemi') {
+    thirdLevel = inferAlarmSystemLine(product);
+    segmentType = 'system_line';
+  }
+
+  if (!thirdLevel) return null;
+
+  return {
+    path: `${base.path}:${thirdLevel}`,
+    topLevel: base.topLevel,
+    subLevel: base.subLevel,
+    thirdLevel,
+    segmentType,
+    level: 3,
+  };
+}
+
+function uniqueCategoryPartsFromProducts(products: AAProductLike[]) {
   const byPath = new Map<string, CategoryParts>();
 
-  for (const category of categories) {
-    const parts = splitAACategory(category);
+  for (const product of products) {
+    const parts = splitAACategory(getProductCategory(product));
     if (!parts) continue;
     const top = topCategory(parts);
     byPath.set(top.path, top);
-    byPath.set(parts.path, parts);
+    const sub = subCategory(parts);
+    if (sub) byPath.set(sub.path, sub);
+    const third = deriveAAThirdLevelCategory(product);
+    if (third) byPath.set(third.path, third);
   }
 
   return Array.from(byPath.values());
 }
 
+function uniqueCategoryPartsFromCategories(categories: unknown[]) {
+  return uniqueCategoryPartsFromProducts(categories.map((category) => ({ category: normalizeText(category) })));
+}
+
 async function upsertMissingCategories(categories: CategoryParts[]) {
   const now = new Date();
+  const existingSettings = (await CategorySettingsModel.find({ source: SOURCE })
+    .select({ path: 1, isActive: 1 })
+    .lean()) as Array<{ path: string; isActive: boolean }>;
+  const activeByPath = new Map(existingSettings.map((setting) => [setting.path, setting.isActive]));
+
   await Promise.all(
-    categories.map((category) =>
-      CategorySettingsModel.updateOne(
+    categories.map((category) => {
+      const parentPath = category.level === 3 ? `${category.topLevel}:${category.subLevel}` : category.topLevel;
+      const defaultActive = category.level === 3 ? Boolean(activeByPath.get(parentPath)) : false;
+      return CategorySettingsModel.updateOne(
         { path: category.path },
         {
           $setOnInsert: {
-            isActive: false,
+            isActive: defaultActive,
             priority: null,
             productCountActive: 0,
             notes: '',
@@ -84,13 +217,15 @@ async function upsertMissingCategories(categories: CategoryParts[]) {
           $set: {
             topLevel: category.topLevel,
             subLevel: category.subLevel,
+            thirdLevel: category.thirdLevel ?? null,
+            segmentType: category.segmentType ?? null,
             level: category.level,
             source: SOURCE,
           },
         },
         { upsert: true },
-      ),
-    ),
+      );
+    }),
   );
 }
 
@@ -102,15 +237,31 @@ export async function initializeCategorySettingsFromCategories(categories: unkno
   return listCategorySettings();
 }
 
+export async function initializeCategorySettingsFromProducts(products: AAProductLike[]) {
+  const uniqueCategories = uniqueCategoryPartsFromProducts(products);
+  const apiCounts = countApiProducts(products);
+  await upsertMissingCategories(uniqueCategories);
+  await updateProductCountInApi(apiCounts);
+  return listCategorySettings();
+}
+
 function countApiProductsByCategory(categories: unknown[]) {
+  return countApiProducts(categories.map((category) => ({ category: normalizeText(category) })));
+}
+
+function countApiProducts(products: AAProductLike[]) {
   const counts = new Map<string, number>();
 
-  for (const category of categories) {
-    const parts = splitAACategory(category);
+  for (const product of products) {
+    const parts = splitAACategory(getProductCategory(product));
     if (!parts) continue;
     increment(counts, parts.topLevel);
     if (parts.subLevel) {
       increment(counts, parts.path);
+    }
+    const third = deriveAAThirdLevelCategory(product);
+    if (third) {
+      increment(counts, third.path);
     }
   }
 
@@ -156,21 +307,37 @@ export async function refreshCategoryStatsFromApiCategories(categories: unknown[
   return { initialized: true, settings: await listCategorySettings() };
 }
 
+export async function refreshCategoryStatsFromApiProducts(products: AAProductLike[]) {
+  const settingsCount = await CategorySettingsModel.countDocuments({ source: SOURCE });
+  if (settingsCount === 0) {
+    return { initialized: false, settings: [] };
+  }
+
+  await upsertMissingCategories(uniqueCategoryPartsFromProducts(products));
+  await updateProductCountInApi(countApiProducts(products));
+  return { initialized: true, settings: await listCategorySettings() };
+}
+
 export async function refreshCategoryStatsFromDatabase() {
   const products = await ProductModel.find({
     externalSource: SOURCE,
     isActive: { $ne: false },
   })
-    .select({ 'aaData.category': 1 })
+    .select({ ime: 1, proizvajalec: 1, 'aaData.category': 1, 'aaData.productCode': 1, 'aaData.attributes': 1 })
     .lean();
 
   const counts = new Map<string, number>();
   for (const product of products) {
-    const parts = splitAACategory((product as any)?.aaData?.category);
+    const productLike = product as AAProductLike;
+    const parts = splitAACategory(productLike.aaData?.category);
     if (!parts) continue;
     increment(counts, parts.topLevel);
     if (parts.subLevel) {
       increment(counts, parts.path);
+    }
+    const third = deriveAAThirdLevelCategory(productLike);
+    if (third) {
+      increment(counts, third.path);
     }
   }
 
@@ -211,7 +378,9 @@ function buildUpdatePayload(update: CategoryUpdate) {
 }
 
 export async function listCategorySettings() {
-  return CategorySettingsModel.find({ source: SOURCE }).sort({ level: 1, topLevel: 1, subLevel: 1 }).lean();
+  return CategorySettingsModel.find({ source: SOURCE })
+    .sort({ level: 1, topLevel: 1, subLevel: 1, thirdLevel: 1 })
+    .lean();
 }
 
 export async function updateCategorySettingById(id: string, input: Omit<CategoryUpdate, 'path'>) {
@@ -235,12 +404,24 @@ export async function updateCategorySettingById(id: string, input: Omit<Category
     await current.save();
   }
 
-  if (current.level === 2 && current.isActive) {
+  if ((current.level === 2 || current.level === 3) && current.isActive) {
     await CategorySettingsModel.updateOne({ path: current.topLevel }, { $set: { isActive: true } });
+  }
+  if (current.level === 3 && current.isActive) {
+    await CategorySettingsModel.updateOne(
+      { topLevel: current.topLevel, subLevel: current.subLevel, level: 2 },
+      { $set: { isActive: true } },
+    );
   }
 
   if (current.level === 1 && input.isActive === false) {
-    await CategorySettingsModel.updateMany({ topLevel: current.topLevel, level: 2 }, { $set: { isActive: false } });
+    await CategorySettingsModel.updateMany({ topLevel: current.topLevel, level: { $in: [2, 3] } }, { $set: { isActive: false } });
+  }
+  if (current.level === 2 && input.isActive === false) {
+    await CategorySettingsModel.updateMany(
+      { topLevel: current.topLevel, subLevel: current.subLevel, level: 3 },
+      { $set: { isActive: false } },
+    );
   }
 
   return CategorySettingsModel.findById(id).lean();
@@ -269,25 +450,57 @@ export async function bulkUpdateCategorySettings(updates: CategoryUpdate[]) {
     await CategorySettingsModel.updateOne({ path, source: SOURCE }, { $set: update });
   }
 
-  const activeSubCategories = await CategorySettingsModel.find({ source: SOURCE, level: 2, isActive: true })
+  const inactiveTopCategories = await CategorySettingsModel.find({ source: SOURCE, level: 1, isActive: false })
     .select({ topLevel: 1 })
     .lean();
-  const topLevelsToActivate = Array.from(new Set(activeSubCategories.map((category) => category.topLevel)));
+  const inactiveTopLevels = inactiveTopCategories.map((category) => category.topLevel);
+  if (inactiveTopLevels.length > 0) {
+    await CategorySettingsModel.updateMany(
+      { source: SOURCE, topLevel: { $in: inactiveTopLevels }, level: { $in: [2, 3] } },
+      { $set: { isActive: false } },
+    );
+  }
+
+  const inactiveSubCategories = await CategorySettingsModel.find({ source: SOURCE, level: 2, isActive: false })
+    .select({ topLevel: 1, subLevel: 1 })
+    .lean();
+  await Promise.all(
+    inactiveSubCategories.map((category) =>
+      CategorySettingsModel.updateMany(
+        { source: SOURCE, topLevel: category.topLevel, subLevel: category.subLevel, level: 3 },
+        { $set: { isActive: false } },
+      ),
+    ),
+  );
+
+  const activeChildren = await CategorySettingsModel.find({ source: SOURCE, level: { $in: [2, 3] }, isActive: true })
+    .select({ topLevel: 1, subLevel: 1, level: 1 })
+    .lean();
+  const topLevelsToActivate = Array.from(new Set(activeChildren.map((category) => category.topLevel)));
   if (topLevelsToActivate.length > 0) {
     await CategorySettingsModel.updateMany({ source: SOURCE, path: { $in: topLevelsToActivate } }, { $set: { isActive: true } });
+  }
+  const subPathsToActivate = Array.from(
+    new Set(
+      activeChildren
+        .filter((category) => category.level === 3 && category.subLevel)
+        .map((category) => `${category.topLevel}:${category.subLevel}`),
+    ),
+  );
+  if (subPathsToActivate.length > 0) {
+    await CategorySettingsModel.updateMany({ source: SOURCE, path: { $in: subPathsToActivate } }, { $set: { isActive: true } });
   }
 
   return listCategorySettings();
 }
 
-export async function filterAAImportItemsByCategorySettings<T extends { aaData?: { category?: string } }>(items: T[]) {
+export async function filterAAImportItemsByCategorySettings<T extends AAProductLike>(items: T[]) {
   const settingsCount = await CategorySettingsModel.countDocuments({ source: SOURCE });
   if (settingsCount === 0) {
     return { items, filteringEnabled: false, totalBeforeFilter: items.length, totalAfterFilter: items.length };
   }
 
-  const categories = items.map((item) => item.aaData?.category ?? '');
-  await refreshCategoryStatsFromApiCategories(categories);
+  await refreshCategoryStatsFromApiProducts(items);
 
   const settings = (await CategorySettingsModel.find({ source: SOURCE }).lean()) as Array<{
     path: string;
@@ -296,8 +509,16 @@ export async function filterAAImportItemsByCategorySettings<T extends { aaData?:
   const settingsByPath = new Map(settings.map((setting) => [setting.path, setting]));
 
   const filtered = items.filter((item) => {
-    const parts = splitAACategory(item.aaData?.category);
+    const parts = splitAACategory(getProductCategory(item));
     if (!parts) return false;
+
+    const third = deriveAAThirdLevelCategory(item);
+    if (third) {
+      const exactThird = settingsByPath.get(third.path);
+      if (exactThird) {
+        return exactThird.isActive;
+      }
+    }
 
     const exact = settingsByPath.get(parts.path);
     if (parts.level === 2 && exact) {

@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 import { connectToMongo } from '../db/mongo';
 import { loadEnvironment } from '../loadEnv';
-import { initializeCategorySettingsFromCategories } from '../modules/cenik/services/category-settings.service';
+import { initializeCategorySettingsFromProducts } from '../modules/cenik/services/category-settings.service';
 import { fetchAAProducts } from '../modules/cenik/sync/aaApiClient';
 
 async function main() {
@@ -10,7 +10,7 @@ async function main() {
   await connectToMongo();
 
   const products = await fetchAAProducts();
-  const settings = await initializeCategorySettingsFromCategories(products.map((product) => product.category ?? ''));
+  const settings = await initializeCategorySettingsFromProducts(products);
 
   console.log(`Initialized category_settings from AA API.`);
   console.log(`AA products scanned: ${products.length}`);
