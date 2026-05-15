@@ -4,6 +4,8 @@ import https from 'https';
 import { Request, Response } from 'express';
 
 import { ProductImportRunModel } from '../../cenik/import-run.model';
+import { fetchAAProducts } from '../../cenik/sync/aaApiClient';
+import { mapAAProductsToImportItems } from '../../cenik/sync/aaProductMapper';
 import {
   analyzeProductImportFromItems,
   applyProductImportFromItems,
@@ -57,6 +59,13 @@ function fetchText(url: string): Promise<string> {
 }
 
 async function fetchSnapshot(source: string) {
+  if (source === 'aa_api') {
+    const products = await fetchAAProducts();
+    const items = mapAAProductsToImportItems(products);
+    const sourceFingerprint = crypto.createHash('sha1').update(JSON.stringify(products)).digest('hex');
+    return { items, sourceFingerprint };
+  }
+
   const path = SOURCE_PATHS[source];
   if (path === undefined) {
     throw new Error(`Unsupported source "${source}".`);
@@ -263,7 +272,7 @@ export async function importProductsFromGit(req: Request, res: Response) {
       errorSummary: error instanceof Error ? error.message : 'Import failed.',
       warnings: ['Import failed before completion.'],
     }).catch(() => undefined);
-    return res.fail('Uvoz ni uspel.', 500);
+    return res.fail(error instanceof Error ? error.message : 'Uvoz ni uspel.', 500);
   } finally {
     importLocks.delete(lockKey);
   }

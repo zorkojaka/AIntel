@@ -5,6 +5,11 @@ import {
   ProductImportConflictResolutionModel,
 } from '../import-conflict-resolution.model';
 import { ProductModel } from '../product.model';
+import {
+  filterAAImportItemsByCategorySettings,
+  refreshCategoryStatsFromDatabase,
+  syncAAProductActiveStateWithCategorySettings,
+} from './category-settings.service';
 import { IMPORT_DEFAULTS } from '../sync/importDefaults';
 
 type NormalizedProduct = {
@@ -29,6 +34,8 @@ type NormalizedProduct = {
   isService: boolean;
   defaultExecutionMode?: 'simple' | 'per_unit' | 'measured';
   defaultInstructionsTemplate?: string;
+  aaData?: Record<string, unknown>;
+  classification?: Record<string, unknown>;
   rowIndex: number;
   rowId: string;
   rowFingerprint: string;
@@ -60,6 +67,8 @@ type ExistingProduct = {
   isService?: boolean;
   defaultExecutionMode?: 'simple' | 'per_unit' | 'measured';
   defaultInstructionsTemplate?: string;
+  aaData?: Record<string, unknown>;
+  classification?: Record<string, unknown>;
   isActive?: boolean;
   mergedIntoProductId?: mongoose.Types.ObjectId;
   status?: string;
@@ -238,6 +247,13 @@ type ImportDefaults = {
   naslovDobavitelja: string;
 };
 
+type ImportItemsPreparation = {
+  items: unknown[];
+  filteringEnabled: boolean;
+  totalBeforeFilter: number;
+  totalAfterFilter: number;
+};
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -298,6 +314,11 @@ function normalizeExecutionMode(value: unknown) {
     return value;
   }
   return undefined;
+}
+
+function normalizeStructuredObject(value: unknown) {
+  if (!isPlainObject(value)) return undefined;
+  return value;
 }
 
 function buildExternalKey(source: string, externalId: string) {
@@ -522,6 +543,8 @@ function validateAndNormalizeRow(
     isService: product.isService as boolean,
     defaultExecutionMode: normalizeExecutionMode(product.defaultExecutionMode),
     defaultInstructionsTemplate: normalizeText(product.defaultInstructionsTemplate) || undefined,
+    aaData: normalizeStructuredObject(product.aaData),
+    classification: normalizeStructuredObject(product.classification),
     rowIndex: index,
     rowId,
     rowFingerprint: buildRowFingerprint({
@@ -587,6 +610,8 @@ function mapSetFields(product: NormalizedProduct) {
     defaultInstructionsTemplate: hasProvidedField(product, 'defaultInstructionsTemplate')
       ? product.defaultInstructionsTemplate
       : undefined,
+    aaData: hasProvidedField(product, 'aaData') ? product.aaData : undefined,
+    classification: hasProvidedField(product, 'classification') ? product.classification : undefined,
     isActive: product.providedFields ? undefined : true,
   });
 }
@@ -605,6 +630,29 @@ function sameNumber(a: unknown, b: unknown) {
   const left = normalizeOptionalNumber(a);
   const right = normalizeOptionalNumber(b);
   return left === right;
+}
+
+function normalizeForCompare(value: unknown, omitKeys: string[] = []): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeForCompare(item, omitKeys));
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (isPlainObject(value)) {
+    return Object.keys(value)
+      .filter((key) => !omitKeys.includes(key) && value[key] !== undefined)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = normalizeForCompare(value[key], omitKeys);
+        return acc;
+      }, {});
+  }
+  return value;
+}
+
+function sameStructuredObject(a: unknown, b: unknown, omitKeys: string[] = []) {
+  return JSON.stringify(normalizeForCompare(a, omitKeys)) === JSON.stringify(normalizeForCompare(b, omitKeys));
 }
 
 function getChangedFields(product: NormalizedProduct, existing: ExistingProduct) {
@@ -632,6 +680,8 @@ function getChangedFields(product: NormalizedProduct, existing: ExistingProduct)
   if (hasProvidedField(product, 'isService') && Boolean(existing.isService) !== product.isService) changedFields.push('isService');
   if (hasProvidedField(product, 'defaultExecutionMode') && !sameString(existing.defaultExecutionMode, product.defaultExecutionMode)) changedFields.push('defaultExecutionMode');
   if (hasProvidedField(product, 'defaultInstructionsTemplate') && !sameString(existing.defaultInstructionsTemplate, product.defaultInstructionsTemplate)) changedFields.push('defaultInstructionsTemplate');
+  if (hasProvidedField(product, 'aaData') && !sameStructuredObject(existing.aaData, product.aaData, ['lastSyncedAt'])) changedFields.push('aaData');
+  if (hasProvidedField(product, 'classification') && !sameStructuredObject(existing.classification, product.classification)) changedFields.push('classification');
   if (!product.providedFields && existing.isActive !== true) changedFields.push('isActive');
 
   return changedFields;
@@ -687,7 +737,7 @@ function buildInvalidCreateRow(row: NormalizedProduct): ImportInvalidRow | null 
 
 async function loadExistingProducts() {
   const fields =
-    '_id externalSource externalId externalKey ime kategorija categorySlugs purchasePriceWithoutVat nabavnaCena prodajnaCena kratekOpis dolgOpis povezavaDoSlike povezavaDoProdukta proizvajalec dobavitelj naslovDobavitelja casovnaNorma isService defaultExecutionMode defaultInstructionsTemplate isActive mergedIntoProductId status';
+    '_id externalSource externalId externalKey ime kategorija categorySlugs purchasePriceWithoutVat nabavnaCena prodajnaCena kratekOpis dolgOpis povezavaDoSlike povezavaDoProdukta proizvajalec dobavitelj naslovDobavitelja casovnaNorma isService defaultExecutionMode defaultInstructionsTemplate aaData classification isActive mergedIntoProductId status';
 
   return (await ProductModel.find().select(fields).lean()) as ExistingProduct[];
 }
@@ -1311,6 +1361,28 @@ async function analyzeProducts(source: string, items: unknown[]): Promise<{ plan
   return { plan, normalizedRows };
 }
 
+async function prepareImportItems(source: string, items: unknown[]): Promise<ImportItemsPreparation> {
+  if (source !== 'aa_api') {
+    return {
+      items,
+      filteringEnabled: false,
+      totalBeforeFilter: items.length,
+      totalAfterFilter: items.length,
+    };
+  }
+
+  const filtered = await filterAAImportItemsByCategorySettings(
+    items as Array<{ aaData?: { category?: string } }>,
+  );
+
+  return {
+    items: filtered.items,
+    filteringEnabled: filtered.filteringEnabled,
+    totalBeforeFilter: filtered.totalBeforeFilter,
+    totalAfterFilter: filtered.totalAfterFilter,
+  };
+}
+
 async function acquireLock(source: string) {
   const collection = mongoose.connection.collection('import_locks') as unknown as ImportLockCollection;
   const lockId = `product-import:${source}`;
@@ -1344,7 +1416,8 @@ export async function analyzeProductImportFromItems({
   source: string;
   items: unknown[];
 }): Promise<ImportPlan> {
-  const { plan } = await analyzeProducts(source, items);
+  const prepared = await prepareImportItems(source, items);
+  const { plan } = await analyzeProducts(source, prepared.items);
   return plan;
 }
 
@@ -1467,7 +1540,8 @@ export async function applyProductImportFromItems({
   }
 
   try {
-    const { plan, normalizedRows } = await analyzeProducts(source, items);
+    const prepared = await prepareImportItems(source, items);
+    const { plan, normalizedRows } = await analyzeProducts(source, prepared.items);
     const rowMap = new Map(normalizedRows.map((row) => [row.externalKey, row]));
 
     let createdCount = 0;
@@ -1501,6 +1575,11 @@ export async function applyProductImportFromItems({
       excludedConflictCount: plan.conflicts.length,
       excludedInvalidCount: plan.invalidRows.length,
     };
+
+    if (source === 'aa_api' && prepared.filteringEnabled) {
+      await syncAAProductActiveStateWithCategorySettings();
+      await refreshCategoryStatsFromDatabase();
+    }
 
     return {
       ...plan,
