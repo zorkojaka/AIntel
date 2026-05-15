@@ -32,6 +32,17 @@ type DraftCategorySetting = CategorySetting & {
   isDirty?: boolean;
 };
 
+type SegmentGroup = {
+  key: string;
+  topLevel: string;
+  name: string;
+  segmentType: 'brand' | 'system_line' | null;
+  children: DraftCategorySetting[];
+  productCountInApi: number;
+  productCountActive: number;
+  activeChildren: number;
+};
+
 const recommendedVideoSubCategories = new Set([
   'Videonadzorni sistemi:Kamere',
   'Videonadzorni sistemi:Snemalniki',
@@ -111,6 +122,7 @@ export function CategorySettingsPanel() {
       .sort((a, b) => b.productCountInApi - a.productCountInApi || a.path.localeCompare(b.path, 'sl'));
     const subsByTop = new Map<string, DraftCategorySetting[]>();
     const thirdBySub = new Map<string, DraftCategorySetting[]>();
+    const segmentsByTop = new Map<string, SegmentGroup[]>();
     settings
       .filter((setting) => setting.level === 2)
       .forEach((setting) => {
@@ -125,6 +137,28 @@ export function CategorySettingsPanel() {
         const current = thirdBySub.get(subPath) ?? [];
         current.push(setting);
         thirdBySub.set(subPath, current);
+
+        const segmentKey = `${setting.topLevel}:${setting.thirdLevel}`;
+        const segments = segmentsByTop.get(setting.topLevel) ?? [];
+        const existing = segments.find((segment) => segment.key === segmentKey);
+        if (existing) {
+          existing.children.push(setting);
+          existing.productCountInApi += setting.productCountInApi;
+          existing.productCountActive += setting.productCountActive;
+          existing.activeChildren += setting.isActive ? 1 : 0;
+        } else {
+          segments.push({
+            key: segmentKey,
+            topLevel: setting.topLevel,
+            name: setting.thirdLevel ?? '',
+            segmentType: setting.segmentType ?? null,
+            children: [setting],
+            productCountInApi: setting.productCountInApi,
+            productCountActive: setting.productCountActive,
+            activeChildren: setting.isActive ? 1 : 0,
+          });
+          segmentsByTop.set(setting.topLevel, segments);
+        }
       });
     subsByTop.forEach((subs) =>
       subs.sort((a, b) => b.productCountInApi - a.productCountInApi || a.path.localeCompare(b.path, 'sl')),
@@ -132,7 +166,13 @@ export function CategorySettingsPanel() {
     thirdBySub.forEach((children) =>
       children.sort((a, b) => b.productCountInApi - a.productCountInApi || a.path.localeCompare(b.path, 'sl')),
     );
-    return { top, subsByTop, thirdBySub };
+    segmentsByTop.forEach((segments) => {
+      segments.forEach((segment) =>
+        segment.children.sort((a, b) => b.productCountInApi - a.productCountInApi || a.subLevel?.localeCompare(b.subLevel ?? '', 'sl') || 0),
+      );
+      segments.sort((a, b) => b.productCountInApi - a.productCountInApi || a.name.localeCompare(b.name, 'sl'));
+    });
+    return { top, subsByTop, thirdBySub, segmentsByTop };
   }, [settings]);
 
   const dirtyCount = settings.filter((setting) => setting.isDirty).length;
@@ -200,6 +240,24 @@ export function CategorySettingsPanel() {
           return { ...setting, isActive: true, isDirty: true };
         }
         if (isActive && setting.path === `${third.topLevel}:${third.subLevel}`) {
+          return { ...setting, isActive: true, isDirty: true };
+        }
+        return setting;
+      }),
+    );
+  }
+
+  function setSegmentActive(segment: SegmentGroup, isActive: boolean) {
+    const affectedSubLevels = new Set(segment.children.map((child) => child.subLevel).filter(Boolean));
+    setSettings((prev) =>
+      prev.map((setting) => {
+        if (setting.level === 3 && setting.topLevel === segment.topLevel && setting.thirdLevel === segment.name) {
+          return { ...setting, isActive, isDirty: true };
+        }
+        if (isActive && setting.path === segment.topLevel) {
+          return { ...setting, isActive: true, isDirty: true };
+        }
+        if (isActive && setting.level === 2 && setting.topLevel === segment.topLevel && affectedSubLevels.has(setting.subLevel)) {
           return { ...setting, isActive: true, isDirty: true };
         }
         return setting;
@@ -358,6 +416,8 @@ export function CategorySettingsPanel() {
       <div className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {grouped.top.map((top) => {
           const subs = grouped.subsByTop.get(top.path) ?? [];
+          const segments = grouped.segmentsByTop.get(top.path) ?? [];
+          const unsegmentedSubs = subs.filter((sub) => (grouped.thirdBySub.get(sub.path) ?? []).length === 0);
           const isExpanded = expanded.has(top.path);
           return (
             <div key={top.path} className="border-b border-border/60 last:border-b-0">
@@ -399,14 +459,131 @@ export function CategorySettingsPanel() {
                   <option value="2">Prioriteta 2</option>
                   <option value="3">Prioriteta 3</option>
                 </select>
-                <span className="hidden text-right text-xs text-muted-foreground md:block">{subs.length} sub</span>
+                <span className="hidden text-right text-xs text-muted-foreground md:block">
+                  {segments.length > 0 ? `${segments.length} segmentov` : `${subs.length} sub`}
+                </span>
               </div>
 
               {isExpanded && (
                 <div className="divide-y divide-border/50 bg-muted/20">
-                  {subs.map((sub) => {
-                    const thirdChildren = grouped.thirdBySub.get(sub.path) ?? [];
-                    const isSubExpanded = expanded.has(sub.path);
+                  {segments.length > 0 ? (
+                    <>
+                      {segments.map((segment) => {
+                        const isSegmentExpanded = expanded.has(segment.key);
+                        const isSegmentActive = segment.children.length > 0 && segment.activeChildren === segment.children.length;
+                        return (
+                          <div key={segment.key}>
+                            <div className="grid grid-cols-[auto_auto_1fr_auto] items-center gap-2 px-4 py-2 pl-9 md:grid-cols-[auto_auto_1fr_150px_120px]">
+                              <button
+                                type="button"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded border border-border/60"
+                                onClick={() =>
+                                  setExpanded((prev) => {
+                                    const next = new Set(prev);
+                                    next.has(segment.key) ? next.delete(segment.key) : next.add(segment.key);
+                                    return next;
+                                  })
+                                }
+                                aria-label={isSegmentExpanded ? 'Skrči' : 'Razširi'}
+                              >
+                                {isSegmentExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                              </button>
+                              <input
+                                type="checkbox"
+                                checked={isSegmentActive}
+                                onChange={(event) => setSegmentActive(segment, event.target.checked)}
+                                className="h-4 w-4"
+                              />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="truncate text-sm font-medium text-foreground">{segment.name}</span>
+                                  <span className="rounded-full border border-border/60 bg-background px-2 py-0.5 text-[11px] text-muted-foreground">
+                                    {segment.segmentType === 'system_line' ? 'sistem' : 'proizvajalec'}
+                                  </span>
+                                  <span className="rounded-full border border-border/60 bg-background px-2 py-0.5 text-[11px] text-muted-foreground">
+                                    {segment.children.length} uporabnosti
+                                  </span>
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {segment.productCountInApi} v API | {segment.productCountActive} aktivnih v bazi
+                                </div>
+                              </div>
+                              <span className="hidden text-xs text-muted-foreground md:block">
+                                {segment.activeChildren}/{segment.children.length} aktivnih
+                              </span>
+                            </div>
+                            {isSegmentExpanded && (
+                              <div className="divide-y divide-border/40 bg-background/70">
+                                {segment.children.map((third) => (
+                                  <div key={third.path} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 px-4 py-2 pl-20 md:grid-cols-[auto_1fr_150px_120px]">
+                                    <input
+                                      type="checkbox"
+                                      checked={third.isActive}
+                                      onChange={(event) => setThirdActive(third, event.target.checked)}
+                                      className="h-4 w-4"
+                                    />
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm text-foreground">{third.subLevel}</div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {third.productCountInApi} v API | {third.productCountActive} aktivnih v bazi
+                                      </div>
+                                    </div>
+                                    <select
+                                      value={priorityValue(third.priority)}
+                                      onChange={(event) => updateSetting(third.path, { priority: parsePriority(event.target.value) })}
+                                      disabled={!third.isActive}
+                                      className="rounded border border-border bg-background px-2 py-1 text-sm disabled:opacity-50"
+                                    >
+                                      <option value="">{formatPriority(null, top.priority)}</option>
+                                      <option value="1">Prioriteta 1</option>
+                                      <option value="2">Prioriteta 2</option>
+                                      <option value="3">Prioriteta 3</option>
+                                    </select>
+                                    <input
+                                      type="text"
+                                      value={third.notes}
+                                      onChange={(event) => updateSetting(third.path, { notes: event.target.value })}
+                                      placeholder="Opomba"
+                                      className="hidden rounded border border-border bg-background px-2 py-1 text-sm md:block"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {unsegmentedSubs.map((sub) => (
+                        <div key={sub.path} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 px-4 py-2 pl-20 md:grid-cols-[auto_1fr_150px_120px]">
+                          <input
+                            type="checkbox"
+                            checked={sub.isActive}
+                            onChange={(event) => setSubActive(sub, event.target.checked)}
+                            className="h-4 w-4"
+                          />
+                          <div className="min-w-0">
+                            <div className="truncate text-sm text-foreground">{sub.subLevel}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {sub.productCountInApi} v API | {sub.productCountActive} aktivnih v bazi
+                            </div>
+                          </div>
+                          <select
+                            value={priorityValue(sub.priority)}
+                            onChange={(event) => updateSetting(sub.path, { priority: parsePriority(event.target.value) })}
+                            disabled={!sub.isActive}
+                            className="rounded border border-border bg-background px-2 py-1 text-sm disabled:opacity-50"
+                          >
+                            <option value="">{formatPriority(null, top.priority)}</option>
+                            <option value="1">Prioriteta 1</option>
+                            <option value="2">Prioriteta 2</option>
+                            <option value="3">Prioriteta 3</option>
+                          </select>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    subs.map((sub) => {
+                      const isSubExpanded = expanded.has(sub.path);
                     return (
                       <div key={sub.path}>
                         <div className="grid grid-cols-[auto_auto_1fr_auto] items-center gap-2 px-4 py-2 pl-9 md:grid-cols-[auto_auto_1fr_150px_120px]">
@@ -513,7 +690,8 @@ export function CategorySettingsPanel() {
                         )}
                       </div>
                     );
-                  })}
+                    })
+                  )}
                 </div>
               )}
             </div>
