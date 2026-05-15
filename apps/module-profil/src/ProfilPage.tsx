@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import {
   fetchMyEarnings,
+  fetchMyProjectEarnings,
   fetchMyProjects,
   fetchMyServiceRates,
   fetchProfileOverview,
   type EarningsResponse,
+  type ProjectEarning,
   type ProfileOverview,
   type ProfileProject,
   type ServiceRate,
@@ -71,6 +73,8 @@ export function ProfilPage() {
   const [overview, setOverview] = useState<ProfileOverview | null>(null);
   const [projects, setProjects] = useState<ProfileProject[]>([]);
   const [earnings, setEarnings] = useState<EarningsResponse | null>(null);
+  const [projectEarnings, setProjectEarnings] = useState<ProjectEarning[]>([]);
+  const [expandedProjectEarningId, setExpandedProjectEarningId] = useState<string | null>(null);
   const [rates, setRates] = useState<ServiceRate[]>([]);
   const [loading, setLoading] = useState(true);
   const [projectsLoading, setProjectsLoading] = useState(false);
@@ -84,13 +88,15 @@ export function ProfilPage() {
       fetchProfileOverview(),
       fetchMyProjects(projectFilter),
       fetchMyEarnings(year),
+      fetchMyProjectEarnings(),
       fetchMyServiceRates(),
     ])
-      .then(([overviewData, projectData, earningsData, ratesData]) => {
+      .then(([overviewData, projectData, earningsData, projectEarningsData, ratesData]) => {
         if (cancelled) return;
         setOverview(overviewData);
         setProjects(projectData);
         setEarnings(earningsData);
+        setProjectEarnings(projectEarningsData);
         setRates(ratesData);
       })
       .catch((loadError) => {
@@ -305,6 +311,85 @@ export function ProfilPage() {
                         <td><StatusBadge paid={row.isPaid} /></td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+          <section className="profil-panel">
+            <h2>Zaključeni projekti</h2>
+            {projectEarnings.length === 0 ? <EmptyState>Ni zaključenih projektov.</EmptyState> : (
+              <div className="profil-table-wrap">
+                <table className="profil-table profil-project-earnings-table">
+                  <thead>
+                    <tr>
+                      <th>Datum zaključka</th>
+                      <th>Projekt</th>
+                      <th>Stranka</th>
+                      <th>Skupaj</th>
+                      <th>Status plačila</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {projectEarnings.map((project) => {
+                      const expanded = expandedProjectEarningId === project.id;
+                      return (
+                        <React.Fragment key={project.id}>
+                          <tr
+                            className="is-clickable"
+                            onClick={() => setExpandedProjectEarningId(expanded ? null : project.id)}
+                            aria-expanded={expanded}
+                          >
+                            <td>{formatDate(project.completedAt)}</td>
+                            <td>
+                              <span className="profil-project-title">
+                                {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                <span>{project.id} / {project.title}</span>
+                              </span>
+                            </td>
+                            <td>{project.customer}</td>
+                            <td>{currency.format(project.totalEarnings)}</td>
+                            <td><StatusBadge paid={project.isPaid} /></td>
+                          </tr>
+                          {expanded ? (
+                            <tr className="profil-project-details-row">
+                              <td colSpan={5}>
+                                {project.items.length === 0 ? (
+                                  <div className="profil-project-details-empty">Podrobnosti postavk niso na voljo.</div>
+                                ) : (
+                                  <table className="profil-inner-table">
+                                    <thead>
+                                      <tr>
+                                        <th>Postavka</th>
+                                        <th>Količina</th>
+                                        <th>Cena monterja na enoto</th>
+                                        <th>Skupaj po postavki</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {project.items.map((item, index) => (
+                                        <tr key={`${project.id}-${item.name}-${item.unitPrice}-${index}`}>
+                                          <td>{item.name}</td>
+                                          <td>{item.quantity} {item.unit}</td>
+                                          <td>{currency.format(item.unitPrice)}</td>
+                                          <td>{currency.format(item.total)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                    <tfoot>
+                                      <tr>
+                                        <td colSpan={3}>Skupaj za projekt</td>
+                                        <td>{currency.format(project.totalEarnings)}</td>
+                                      </tr>
+                                    </tfoot>
+                                  </table>
+                                )}
+                              </td>
+                            </tr>
+                          ) : null}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

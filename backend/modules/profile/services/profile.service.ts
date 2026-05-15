@@ -49,8 +49,140 @@ function normalizeMoney(value: unknown) {
   return Number.isFinite(numberValue) ? Math.round(numberValue * 100) / 100 : 0;
 }
 
+function normalizeQuantity(value: unknown, fallback = 1) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : fallback;
+}
+
 function getEmployeeEarning(snapshot: any, employeeId: string) {
   return (snapshot.employeeEarnings ?? []).find((earning: any) => String(earning.employeeId) === employeeId) ?? null;
+}
+
+function normalizeEmployeeId(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (value && typeof value === 'object') {
+    if (typeof (value as { toHexString?: unknown }).toHexString === 'function') {
+      return (value as { toHexString: () => string }).toHexString();
+    }
+    const objectValue = value as { _id?: unknown; id?: unknown };
+    const nestedValue = objectValue._id ?? objectValue.id;
+    if (nestedValue && nestedValue !== value) {
+      return normalizeEmployeeId(nestedValue);
+    }
+    if (typeof (value as { toString?: unknown }).toString === 'function') {
+      const stringValue = String(value);
+      return stringValue && stringValue !== '[object Object]' ? stringValue : null;
+    }
+  }
+  return null;
+}
+
+function getCompletedBy(item: any): string | null {
+  return (
+    normalizeEmployeeId(item?.completedBy) ??
+    normalizeEmployeeId(item?.completedByEmployeeId) ??
+    normalizeEmployeeId(item?.executedBy) ??
+    normalizeEmployeeId(item?.executedByEmployeeId) ??
+    normalizeEmployeeId(item?.markedDoneBy) ??
+    normalizeEmployeeId(item?.markedDoneByEmployeeId) ??
+    normalizeEmployeeId(item?.doneBy) ??
+    normalizeEmployeeId(item?.doneByEmployeeId)
+  );
+}
+
+function getCompletedDateCandidates(workOrders: any[], employeeId: string) {
+  const dates: Date[] = [];
+  workOrders.forEach((workOrder) => {
+    if (workOrder.customerSignedAt) dates.push(new Date(workOrder.customerSignedAt));
+    (workOrder.items ?? []).forEach((item: any) => {
+      if (String(getCompletedBy(item)) === employeeId && item.completedAt) {
+        dates.push(new Date(item.completedAt));
+      }
+      (item.executionSpec?.executionUnits ?? []).forEach((unit: any) => {
+        if (String(getCompletedBy(unit)) === employeeId && unit.completedAt) {
+          dates.push(new Date(unit.completedAt));
+        }
+      });
+    });
+  });
+  return dates.filter((date) => !Number.isNaN(date.valueOf()));
+}
+
+function getProjectCompletionDate(project: any, workOrders: any[], snapshot: any, employeeId: string) {
+  const completedDates = getCompletedDateCandidates(workOrders, employeeId).sort((a, b) => b.valueOf() - a.valueOf());
+  if (completedDates[0]) return completedDates[0];
+  if (snapshot?.issuedAt) return new Date(snapshot.issuedAt);
+  return getProjectDate(project, workOrders, snapshot);
+}
+
+function getMatchingServiceItemsForSnapshotItem(workOrders: any[], snapshotItem: any) {
+  const productId = snapshotItem.productId ? String(snapshotItem.productId) : null;
+  const name = typeof snapshotItem.name === 'string' ? snapshotItem.name.trim().toLowerCase() : '';
+  return workOrders.flatMap((workOrder) =>
+    (workOrder.items ?? []).filter((item: any) => {
+      if (item.isService !== true) return false;
+      if (productId && item.productId && String(item.productId) === productId) return true;
+      return Boolean(name && typeof item.name === 'string' && item.name.trim().toLowerCase() === name);
+    }),
+  );
+}
+
+async function getEmployeeServiceUnitPrice(employeeId: string, serviceProductId: string, snapshotUnitPriceSale: number) {
+  const employeeObjectId = toObjectId(employeeId);
+  const productObjectId = toObjectId(serviceProductId);
+  if (!employeeObjectId || !productObjectId) return 0;
+
+  const rate = await EmployeeServiceRateModel.findOne({
+    employeeId: employeeObjectId,
+    serviceProductId: productObjectId,
+    isActive: true,
+  }).lean();
+  if (!rate) return 0;
+
+  const overridePrice = rate.overridePrice === null || rate.overridePrice === undefined ? null : normalizeMoney(rate.overridePrice);
+  return overridePrice ?? normalizeMoney(snapshotUnitPriceSale * (normalizeMoney(rate.defaultPercent) / 100));
+}
+
+async function buildEmployeeEarningItems(employeeId: string, snapshot: any, workOrders: any[]) {
+  const items: Array<{ name: string; quantity: number; unit: string; unitPrice: number; total: number }> = [];
+
+  for (const snapshotItem of snapshot.items ?? []) {
+    if (!snapshotItem.isService || !snapshotItem.productId) continue;
+
+    const unitPrice = await getEmployeeServiceUnitPrice(employeeId, String(snapshotItem.productId), normalizeMoney(snapshotItem.unitPriceSale));
+    if (unitPrice <= 0) continue;
+
+    let quantity = 0;
+    const workOrderItems = getMatchingServiceItemsForSnapshotItem(workOrders, snapshotItem);
+    workOrderItems.forEach((workOrderItem: any) => {
+      const executionUnits = workOrderItem.executionSpec?.executionUnits ?? [];
+      if (executionUnits.length === 0) {
+        if (!workOrderItem.isCompleted || String(getCompletedBy(workOrderItem)) !== employeeId) return;
+        quantity += normalizeQuantity(workOrderItem.executedQuantity, normalizeQuantity(snapshotItem.quantity, 1));
+        return;
+      }
+      executionUnits.forEach((unit: any) => {
+        if (unit.isCompleted && String(getCompletedBy(unit)) === employeeId) {
+          quantity += 1;
+        }
+      });
+    });
+
+    if (quantity > 0) {
+      items.push({
+        name: snapshotItem.name,
+        quantity,
+        unit: snapshotItem.unit,
+        unitPrice,
+        total: normalizeMoney(unitPrice * quantity),
+      });
+    }
+  }
+
+  return items;
 }
 
 function getProjectDate(project: any, workOrders: any[], snapshot: any = null) {
@@ -314,6 +446,58 @@ export async function getMyEarnings(context: ProfileContext, year: number) {
         isPaid: row.pending <= 0,
       })),
   };
+}
+
+export async function getMyProjectEarnings(context: ProfileContext) {
+  if (!context.employeeId) return [];
+
+  const snapshots = await listUserSnapshots(context.employeeId);
+  const snapshotByProject = new Map<string, any>();
+  snapshots.forEach((snapshot) => {
+    const earning = getEmployeeEarning(snapshot, context.employeeId!);
+    if (!earning || normalizeMoney(earning.earnings) <= 0) return;
+    const projectId = String(snapshot.projectId);
+    if (!snapshotByProject.has(projectId)) {
+      snapshotByProject.set(projectId, snapshot);
+    }
+  });
+
+  const projectIds = Array.from(snapshotByProject.keys());
+  if (!projectIds.length) return [];
+
+  const [projects, workOrders] = await Promise.all([
+    ProjectModel.find({ id: { $in: projectIds }, status: { $in: ['completed', 'invoiced'] } }).lean(),
+    WorkOrderModel.find({ projectId: { $in: projectIds } }).lean(),
+  ]);
+
+  const workOrdersByProject = new Map<string, any[]>();
+  workOrders.forEach((workOrder) => {
+    const projectWorkOrders = workOrdersByProject.get(String(workOrder.projectId)) ?? [];
+    projectWorkOrders.push(workOrder);
+    workOrdersByProject.set(String(workOrder.projectId), projectWorkOrders);
+  });
+
+  const rows = await Promise.all(projects.map(async (project) => {
+    const snapshot = snapshotByProject.get(project.id);
+    const earning = snapshot ? getEmployeeEarning(snapshot, context.employeeId!) : null;
+    if (!snapshot || !earning || normalizeMoney(earning.earnings) <= 0) return null;
+
+    const projectWorkOrders = workOrdersByProject.get(project.id) ?? [];
+    return {
+      id: project.id,
+      title: project.title,
+      completedAt: getProjectCompletionDate(project, projectWorkOrders, snapshot, context.employeeId!).toISOString(),
+      customer: project.customer?.name ?? snapshot.customer?.name ?? '-',
+      totalEarnings: normalizeMoney(earning.earnings),
+      isPaid: Boolean(earning.isPaid),
+      paymentStatus: earning.isPaid ? 'paid' : 'pending',
+      items: await buildEmployeeEarningItems(context.employeeId!, snapshot, projectWorkOrders),
+    };
+  }));
+
+  return rows
+    .filter((row): row is NonNullable<typeof row> => row !== null)
+    .sort((a, b) => new Date(b.completedAt).valueOf() - new Date(a.completedAt).valueOf());
 }
 
 export async function getMyServiceRates(context: ProfileContext) {

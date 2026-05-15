@@ -220,6 +220,60 @@
   background: #f8fafc;
 }
 
+.profil-project-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.profil-project-title svg {
+  flex: 0 0 auto;
+  color: #64748b;
+}
+
+.profil-project-details-row td {
+  background: #f8fafc;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.profil-inner-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 0.8125rem;
+  overflow: hidden;
+}
+
+.profil-inner-table th,
+.profil-inner-table td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.625rem 0.75rem;
+  text-align: left;
+}
+
+.profil-inner-table th {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.profil-inner-table tfoot td {
+  border-bottom: 0;
+  font-weight: 700;
+}
+
+.profil-project-details-empty {
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #64748b;
+  padding: 0.875rem;
+}
+
 .profil-chip-row {
   display: flex;
   flex-wrap: wrap;
@@ -310,6 +364,11 @@
 
   .profil-table {
     min-width: 680px;
+  }
+
+  .profil-project-earnings-table,
+  .profil-inner-table {
+    min-width: 760px;
   }
 
   .profil-chart {
