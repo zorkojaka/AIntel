@@ -384,6 +384,30 @@ function buildUpdatePayload(update: CategoryUpdate) {
   return $set;
 }
 
+function isProductAllowedBySettings(
+  product: AAProductLike,
+  settingsByPath: Map<string, { isActive: boolean }>,
+) {
+  const parts = splitAACategory(getProductCategory(product));
+  if (!parts) return false;
+
+  const third = deriveAAThirdLevelCategory(product);
+  if (third) {
+    const exactThird = settingsByPath.get(third.path);
+    if (exactThird) {
+      return exactThird.isActive;
+    }
+  }
+
+  const exact = settingsByPath.get(parts.path);
+  if (parts.level === 2 && exact) {
+    return exact.isActive;
+  }
+
+  const top = settingsByPath.get(parts.topLevel);
+  return Boolean(top?.isActive);
+}
+
 export async function listCategorySettings() {
   return CategorySettingsModel.find({ source: SOURCE })
     .sort({ level: 1, topLevel: 1, subLevel: 1, thirdLevel: 1 })
@@ -498,7 +522,52 @@ export async function bulkUpdateCategorySettings(updates: CategoryUpdate[]) {
     await CategorySettingsModel.updateMany({ source: SOURCE, path: { $in: subPathsToActivate } }, { $set: { isActive: true } });
   }
 
+  await syncAAProductActiveStateWithCategorySettings();
+
   return listCategorySettings();
+}
+
+export async function syncAAProductActiveStateWithCategorySettings() {
+  const settings = (await CategorySettingsModel.find({ source: SOURCE }).lean()) as Array<{
+    path: string;
+    isActive: boolean;
+  }>;
+  if (settings.length === 0) {
+    return { matched: 0, activated: 0, deactivated: 0 };
+  }
+
+  const settingsByPath = new Map(settings.map((setting) => [setting.path, setting]));
+  const products = await ProductModel.find({ externalSource: SOURCE })
+    .select({ _id: 1, ime: 1, proizvajalec: 1, isActive: 1, 'aaData.category': 1, 'aaData.productCode': 1, 'aaData.attributes': 1 })
+    .lean();
+
+  const idsToActivate: unknown[] = [];
+  const idsToDeactivate: unknown[] = [];
+
+  for (const product of products) {
+    const productLike = product as AAProductLike & { _id: unknown; isActive?: boolean };
+    const shouldBeActive = isProductAllowedBySettings(productLike, settingsByPath);
+    if (shouldBeActive && productLike.isActive === false) {
+      idsToActivate.push(productLike._id);
+    } else if (!shouldBeActive && productLike.isActive !== false) {
+      idsToDeactivate.push(productLike._id);
+    }
+  }
+
+  if (idsToActivate.length > 0) {
+    await ProductModel.updateMany({ _id: { $in: idsToActivate } }, { $set: { isActive: true } });
+  }
+  if (idsToDeactivate.length > 0) {
+    await ProductModel.updateMany({ _id: { $in: idsToDeactivate } }, { $set: { isActive: false } });
+  }
+
+  await refreshCategoryStatsFromDatabase();
+
+  return {
+    matched: products.length,
+    activated: idsToActivate.length,
+    deactivated: idsToDeactivate.length,
+  };
 }
 
 export async function filterAAImportItemsByCategorySettings<T extends AAProductLike>(items: T[]) {
@@ -515,26 +584,7 @@ export async function filterAAImportItemsByCategorySettings<T extends AAProductL
   }>;
   const settingsByPath = new Map(settings.map((setting) => [setting.path, setting]));
 
-  const filtered = items.filter((item) => {
-    const parts = splitAACategory(getProductCategory(item));
-    if (!parts) return false;
-
-    const third = deriveAAThirdLevelCategory(item);
-    if (third) {
-      const exactThird = settingsByPath.get(third.path);
-      if (exactThird) {
-        return exactThird.isActive;
-      }
-    }
-
-    const exact = settingsByPath.get(parts.path);
-    if (parts.level === 2 && exact) {
-      return exact.isActive;
-    }
-
-    const top = settingsByPath.get(parts.topLevel);
-    return Boolean(top?.isActive);
-  });
+  const filtered = items.filter((item) => isProductAllowedBySettings(item, settingsByPath));
 
   return {
     items: filtered,

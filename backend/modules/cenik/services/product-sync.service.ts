@@ -8,6 +8,7 @@ import { ProductModel } from '../product.model';
 import {
   filterAAImportItemsByCategorySettings,
   refreshCategoryStatsFromDatabase,
+  syncAAProductActiveStateWithCategorySettings,
 } from './category-settings.service';
 import { IMPORT_DEFAULTS } from '../sync/importDefaults';
 
@@ -1576,6 +1577,7 @@ export async function applyProductImportFromItems({
     };
 
     if (source === 'aa_api' && prepared.filteringEnabled) {
+      await syncAAProductActiveStateWithCategorySettings();
       await refreshCategoryStatsFromDatabase();
     }
 
