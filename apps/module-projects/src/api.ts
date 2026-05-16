@@ -105,7 +105,7 @@ export async function fetchPredlogDisk(input: {
 }
 
 export async function nadaljujZahtevaNaPonudbo(id: string): Promise<any> {
-  const response = await fetch(`/api/zahteve/${id}/nadaljuj-na-ponudbo`, {
+  const response = await fetch(`/api/zahteve/${id}/nadaljuj`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   });

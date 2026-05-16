@@ -1179,15 +1179,16 @@
 
 .zahteva-add-column button,
 .zahteva-assignment-button {
-  display: inline-flex;
-  width: 2.25rem;
-  height: 2.25rem;
+  display: inline-grid;
+  width: 4.7rem;
+  min-height: 3.9rem;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--app-border);
   border-radius: 8px;
   background: #fff;
   font-weight: 900;
+  padding: 0.25rem;
 }
 
 .zahteva-add-column button {
@@ -1196,9 +1197,44 @@
 }
 
 .zahteva-assignment-button.is-selected {
-  border-color: var(--app-brand);
-  background: var(--app-brand);
+  border-color: var(--variant-color, var(--app-brand));
+  background: color-mix(in srgb, var(--variant-color, var(--app-brand)) 86%, #ffffff 14%);
   color: #fff;
+}
+
+.zahteva-assignment-info {
+  display: grid;
+  gap: 0.16rem;
+  justify-items: center;
+  min-width: 0;
+}
+
+.zahteva-assignment-images {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 0.18rem;
+  align-items: center;
+}
+
+.zahteva-assignment-images img,
+.zahteva-assignment-images .zahteva-image-empty {
+  width: 28px;
+  height: 22px;
+  object-fit: contain;
+  border: 1px solid color-mix(in srgb, #ffffff 70%, var(--variant-color, var(--app-brand)) 30%);
+  border-radius: 5px;
+  background: #fff;
+}
+
+.zahteva-assignment-info small {
+  max-width: 4.1rem;
+  overflow: hidden;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 900;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .zahteva-dialog {
@@ -1376,6 +1412,15 @@
 .zahteva-track-card b {
   align-self: end;
   font-size: 0.82rem;
+}
+
+.zahteva-disk-days {
+  display: block;
+  border-top: 1px solid var(--app-border);
+  color: var(--app-foreground);
+  font-size: 0.72rem;
+  font-weight: 900;
+  padding-top: 0.4rem;
 }
 
 .zahteva-none-card {

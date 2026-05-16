@@ -63,6 +63,12 @@ export function formatPrice(value: number | undefined) {
   return `${Number(value ?? 0).toLocaleString("sl-SI", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 }
 
+export function variantColor(id: string) {
+  const colors = ["#7c3aed", "#059669", "#d97706", "#2563eb", "#db2777", "#0f766e", "#9333ea", "#dc2626"];
+  const index = Math.max(0, LETTERS.indexOf(id.charAt(0).toUpperCase()));
+  return colors[index % colors.length];
+}
+
 export function systemTotal(videonadzor: Videonadzor, productById: Map<string, CenikProduct>) {
   const asortimaTotal = videonadzor.asortima.reduce((sum, variant) => {
     const qty = assignmentCount(videonadzor, variant.id);

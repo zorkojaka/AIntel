@@ -63,7 +63,13 @@ function detectProductType(product: AAProductRaw): Classification['productType']
 
   if (category.includes('kamere') || category.includes('camera')) return 'kamera';
   if (category.includes('snemalnik') || category.includes('recorder') || /^(drn|dvr|nvr)-/i.test(product.name)) return 'snemalnik';
-  if (category.includes('switch') || (name.includes('poe') && name.includes('switch'))) return 'switch';
+  if (
+    category.includes('switch') ||
+    category.includes('stikala') ||
+    category.includes('stikalo') ||
+    /\bDS-3E01\d{2}[A-Z]*P/i.test(product.name) ||
+    (text.includes('poe') && /\b(stikalo|stikala|switch)\b/i.test(text))
+  ) return 'switch';
   if (category.includes('disk') || category.includes('hdd') || /\d+\s*tb/i.test(text)) return 'disk';
   if (category.includes('nosilec') || category.includes('mount') || /\b(DAJ|DAM|DBR|DAP)-\d+\b/i.test(product.name)) return 'nosilec';
   if (category.includes('kabel') || category.includes('cable')) return 'kabel';
@@ -169,9 +175,38 @@ function parseNvrHddSlots(product: AAProductRaw): number | undefined {
 }
 
 function parsePoePorts(product: AAProductRaw): number | undefined {
-  const attr = getAttribute(product.attributes, 'PoE ports') ?? getAttribute(product.attributes, 'PoE Out port') ?? getAttribute(product.attributes, 'PoE switch');
-  const match = (attr ?? product.description).match(/(\d+)\s*(?:x\s*)?PoE\b/i);
-  return match ? Number.parseInt(match[1], 10) : undefined;
+  const attributeKeys = [
+    'PoE ports',
+    'PoE Out port',
+    'PoE switch',
+    'Number of PoE ports',
+    'Connectivity',
+    'Interface',
+  ];
+  const attributeText = attributeKeys
+    .map((key) => getAttribute(product.attributes, key))
+    .filter((value): value is string => Boolean(value))
+    .join(' ');
+  const text = `${attributeText} ${product.description} ${product.name}`;
+  const outMatch = text.match(/(\d+)\s*(?:x|×)\s*(?:10\/100M?\s*)?(?:Mbps\s*)?(?:RJ45\s*)?(?:Hi-)?PoE\s*OUT\b/i);
+  if (outMatch) return Number.parseInt(outMatch[1], 10);
+  const patterns = [
+    /(\d+)\s*(?:x|×)\s*(?:10\/100M?\s*)?(?:Mbps\s*)?(?:RJ45\s*)?(?:Hi-)?PoE\b/i,
+    /(\d+)\s*(?:-| )?portn[io]\s*\(?PoE\)?/i,
+    /(\d+)\s*(?:PoE\s*)?port(?:s|ov|i)?/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return Number.parseInt(match[1], 10);
+  }
+
+  const code = product.name.match(/\bDS-3E01(\d{2})[A-Z]*P/i)?.[1];
+  if (code) {
+    const totalPorts = Number.parseInt(code, 10);
+    if (Number.isFinite(totalPorts) && totalPorts > 1) return totalPorts - 1;
+  }
+
+  return undefined;
 }
 
 function parseSwitchSpeed(product: AAProductRaw): Classification['switchSpeed'] {

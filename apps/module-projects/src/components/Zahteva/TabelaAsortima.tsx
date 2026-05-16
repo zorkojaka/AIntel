@@ -1,7 +1,8 @@
 import { Plus } from "lucide-react";
+import type { CSSProperties } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
 import type { AsortimaVariant, Lokacija, Videonadzor } from "./utils";
-import { assignmentCount, productLabel } from "./utils";
+import { assignmentCount, productLabel, variantColor } from "./utils";
 
 type TabelaAsortimaProps = {
   videonadzor: Videonadzor;
@@ -48,6 +49,7 @@ export function TabelaAsortima({
               key={lokacija.id}
               lokacija={lokacija}
               variants={videonadzor.asortima}
+              productById={productById}
               onAssign={onAssign}
               onRename={onRenameLokacija}
             />
@@ -80,7 +82,7 @@ function VariantHeader({
     <th>
       <button type="button" className="zahteva-variant-head" onClick={onRemove} title="Odstrani varianto">
         {getProductImageUrl(camera) ? <img src={getProductImageUrl(camera)} alt="" /> : <span className="zahteva-image-empty" />}
-        <span className="zahteva-variant-letter">{variant.id}</span>
+        <span className="zahteva-variant-letter" style={{ background: variantColor(variant.id) }}>{variant.id}</span>
         <small>{productLabel(camera)}</small>
         <b>×{count}</b>
       </button>
@@ -88,14 +90,22 @@ function VariantHeader({
   );
 }
 
+function cameraInfo(camera?: CenikProduct | null) {
+  const mp = camera?.classification?.maxResolutionMP ? `${camera.classification.maxResolutionMP}MP` : "";
+  const housing = camera?.classification?.cameraHousing ?? "";
+  return [mp, housing].filter(Boolean).join(" ") || "Kamera";
+}
+
 function LokacijaRow({
   lokacija,
   variants,
+  productById,
   onAssign,
   onRename,
 }: {
   lokacija: Lokacija;
   variants: AsortimaVariant[];
+  productById: Map<string, CenikProduct>;
   onAssign: (lokacijaId: string, variantId: string) => void;
   onRename: (lokacijaId: string, ime: string) => void;
 }) {
@@ -107,15 +117,26 @@ function LokacijaRow({
       </td>
       {variants.map((variant) => {
         const checked = lokacija.asortimaIdAssigned === variant.id;
+        const camera = productById.get(variant.kameraProductId);
+        const bracket = variant.nosilecProductId ? productById.get(variant.nosilecProductId) : null;
         return (
           <td key={variant.id}>
             <button
               type="button"
               className={`zahteva-assignment-button ${checked ? "is-selected" : ""}`}
+              style={checked ? { "--variant-color": variantColor(variant.id) } as CSSProperties : undefined}
               onClick={() => onAssign(lokacija.id, variant.id)}
               aria-label={`Dodeli varianto ${variant.id}`}
             >
-              {checked ? "✓" : ""}
+              {checked ? (
+                <span className="zahteva-assignment-info">
+                  <span className="zahteva-assignment-images">
+                    {getProductImageUrl(camera) ? <img src={getProductImageUrl(camera)} alt="" /> : <span className="zahteva-image-empty" />}
+                    {bracket && getProductImageUrl(bracket) ? <img src={getProductImageUrl(bracket)} alt="" /> : null}
+                  </span>
+                  <small>{cameraInfo(camera)}</small>
+                </span>
+              ) : null}
             </button>
           </td>
         );

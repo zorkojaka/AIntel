@@ -23,22 +23,30 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
     () =>
       Array.from(productById.values())
         .filter((product) => product.classification?.productType === "switch")
-        .filter((product) => (product.classification?.poePortCount ?? 0) >= Math.max(1, recommendedPorts))
-        .sort((a, b) => (a.classification?.poePortCount ?? 0) - (b.classification?.poePortCount ?? 0) || a.prodajnaCena - b.prodajnaCena)
-        .slice(0, 6),
+        .filter((product) => (product.classification?.poePortCount ?? 0) > 0)
+        .sort((a, b) => {
+          const aPorts = a.classification?.poePortCount ?? 0;
+          const bPorts = b.classification?.poePortCount ?? 0;
+          const aEnough = aPorts >= recommendedPorts;
+          const bEnough = bPorts >= recommendedPorts;
+          return Number(bEnough) - Number(aEnough) || aPorts - bPorts || a.prodajnaCena - b.prodajnaCena;
+        })
+        .slice(0, 8),
     [productById, recommendedPorts],
   );
 
   useEffect(() => {
-    const signature = `${neededPorts}|${alternatives[0]?._id ?? ""}`;
+    if (cameras.length === 0) return;
+    const recommended = alternatives.find((product) => (product.classification?.poePortCount ?? 0) >= recommendedPorts) ?? alternatives[0];
+    const signature = `${neededPorts}|${recommended?._id ?? ""}`;
     if (autoAppliedRef.current === signature) return;
     autoAppliedRef.current = signature;
     if (neededPorts <= 0 && videonadzor.poeSwitch.productId) {
       onChange({ ...videonadzor, poeSwitch: { productId: null } });
-    } else if (neededPorts > 0 && !videonadzor.poeSwitch.productId && alternatives[0]) {
-      onChange({ ...videonadzor, poeSwitch: { productId: alternatives[0]._id } });
+    } else if (neededPorts > 0 && !videonadzor.poeSwitch.productId && recommended) {
+      onChange({ ...videonadzor, poeSwitch: { productId: recommended._id } });
     }
-  }, [alternatives, neededPorts, onChange, videonadzor]);
+  }, [alternatives, cameras.length, neededPorts, onChange, recommendedPorts, videonadzor]);
 
   return (
     <section className="zahteva-subsection">
@@ -61,7 +69,9 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
           <button
             key={product._id}
             type="button"
-            className={`zahteva-track-card ${videonadzor.poeSwitch.productId === product._id ? "is-active" : ""}`}
+            className={`zahteva-track-card ${videonadzor.poeSwitch.productId === product._id ? "is-active" : ""} ${
+              (product.classification?.poePortCount ?? 0) >= recommendedPorts && recommendedPorts > 0 ? "is-recommended" : ""
+            }`}
             onClick={() => onChange({ ...videonadzor, poeSwitch: { productId: product._id } })}
           >
             {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}

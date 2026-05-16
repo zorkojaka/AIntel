@@ -10,6 +10,11 @@ type Props = {
   onChange: (next: Videonadzor) => void;
 };
 
+function recordingDaysForDisk(capacityTB: number | undefined, totalMbps: number, cameraCount: number) {
+  if (!capacityTB || !totalMbps || cameraCount <= 0) return null;
+  return Math.max(1, Math.round((capacityTB * 1024) / (totalMbps * 0.4395 * 24)));
+}
+
 export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
   const cameras = useMemo(() => assignedCameraProducts(videonadzor, productById), [productById, videonadzor]);
   const cameraIds = useMemo(() => cameras.map((camera) => camera._id), [cameras]);
@@ -99,19 +104,23 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
         <span>{storage.requiredTB} TB, predlog {storage.recommendedDiskTB} TB</span>
       </div>
       <div className="zahteva-product-track">
-        {alternatives.map((product, index) => (
-          <button
-            key={product._id}
-            type="button"
-            className={`zahteva-track-card ${videonadzor.disk.productId === product._id ? "is-active" : ""} ${index === 0 ? "is-recommended" : ""}`}
-            onClick={() => onChange({ ...videonadzor, disk: { ...videonadzor.disk, productId: product._id } })}
-          >
-            {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
-            <strong>{product.ime}</strong>
-            <small>{product.classification?.diskCapacityTB ?? "-"} TB</small>
-            <b>{formatPrice(product.prodajnaCena)}</b>
-          </button>
-        ))}
+        {alternatives.map((product, index) => {
+          const days = recordingDaysForDisk(product.classification?.diskCapacityTB, storage.totalMbps, cameras.length);
+          return (
+            <button
+              key={product._id}
+              type="button"
+              className={`zahteva-track-card ${videonadzor.disk.productId === product._id ? "is-active" : ""} ${index === 0 ? "is-recommended" : ""}`}
+              onClick={() => onChange({ ...videonadzor, disk: { ...videonadzor.disk, productId: product._id } })}
+            >
+              {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
+              <strong>{product.ime}</strong>
+              <small>{product.classification?.diskCapacityTB ?? "-"} TB</small>
+              <b>{formatPrice(product.prodajnaCena)}</b>
+              {days ? <span className="zahteva-disk-days">{days} dni za {cameras.length} kam</span> : null}
+            </button>
+          );
+        })}
       </div>
     </section>
   );

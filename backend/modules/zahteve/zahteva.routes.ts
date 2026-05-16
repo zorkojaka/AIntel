@@ -24,6 +24,7 @@ router.get('/predlogi/nosilci', getPredlogNosilci);
 router.post('/', requireRequestWrite, createZahteva);
 router.get('/:id', getZahteva);
 router.put('/:id', requireRequestWrite, updateZahteva);
+router.post('/:id/nadaljuj', requireRequestWrite, nadaljujZahtevaNaPonudbo);
 router.post('/:id/nadaljuj-na-ponudbo', requireRequestWrite, nadaljujZahtevaNaPonudbo);
 router.delete('/:id', requireRequestWrite, deleteZahteva);
 
