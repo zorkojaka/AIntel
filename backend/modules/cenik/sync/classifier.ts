@@ -168,9 +168,14 @@ function parseNvrHasPoE(product: AAProductRaw) {
 }
 
 function parseNvrHddSlots(product: AAProductRaw): number | undefined {
-  const hdd = getAttribute(product.attributes, 'HDD');
-  if (!hdd) return 1;
-  const match = hdd.match(/(\d+)\s*[xXx]\s*SATA/i);
+  const text = [
+    getAttribute(product.attributes, 'HDD'),
+    getAttribute(product.attributes, 'SATA'),
+    getAttribute(product.attributes, 'Hard disk'),
+    getAttribute(product.attributes, 'Storage'),
+    product.description,
+  ].filter(Boolean).join(' ');
+  const match = text.match(/(\d+)\s*(?:x|×)\s*SATA/i) ?? text.match(/(\d+)\s*(?:HDD|disk)\s*(?:bay|slot|rež|lez)/i);
   return match ? Number.parseInt(match[1], 10) : 1;
 }
 

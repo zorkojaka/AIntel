@@ -170,15 +170,30 @@ export interface Zahteva {
         id: string;
         ime: string;
         asortimaIdAssigned?: string | null;
+        slike?: Array<{
+          filename: string;
+          url: string;
+          uploadedAt?: string | null;
+        }>;
       }>;
       snemalnik: {
         productId?: string | null;
       };
       poeSwitch: {
         productId?: string | null;
+        kolicina?: number;
+        items?: Array<{
+          productId: string;
+          kolicina: number;
+        }>;
       };
       disk: {
         productId?: string | null;
+        kolicina?: number;
+        items?: Array<{
+          productId: string;
+          kolicina: number;
+        }>;
         dniSnemanja: number;
         motionRecord: boolean;
       };

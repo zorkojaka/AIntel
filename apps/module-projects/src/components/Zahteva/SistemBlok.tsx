@@ -13,13 +13,15 @@ import type { ZahtevaSistem } from "./utils";
 import { formatPrice, nextVariantId, syncLokacije, systemTotal } from "./utils";
 
 type SistemBlokProps = {
+  projectId: string;
+  zahtevaId: string;
   sistem: ZahtevaSistem;
   productById: Map<string, CenikProduct>;
   onChange: (next: ZahtevaSistem) => void;
   onRemove: () => void;
 };
 
-export function SistemBlok({ sistem, productById, onChange, onRemove }: SistemBlokProps) {
+export function SistemBlok({ projectId, zahtevaId, sistem, productById, onChange, onRemove }: SistemBlokProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const videonadzor = sistem.videonadzor;
   if (sistem.tip !== "videonadzor" || !videonadzor) return null;
@@ -85,6 +87,9 @@ export function SistemBlok({ sistem, productById, onChange, onRemove }: SistemBl
       </header>
 
       <TabelaAsortima
+        projectId={projectId}
+        zahtevaId={zahtevaId}
+        sistemId={sistem.id}
         videonadzor={videonadzor}
         productById={productById}
         onAssign={assign}

@@ -47,6 +47,9 @@ export function ZahtevaView({ project, onProjectRequestChanged, onNavigateOffer 
     return <Card className="p-4 text-sm text-muted-foreground">Nalaganje zahteve...</Card>;
   }
 
+  const resolvedProjectId = project.id || (project as any)._id || zahteva.projectId;
+  const resolvedZahtevaId = zahteva._id || (zahteva as any).id;
+
   return (
     <div className="zahteva-page">
       <div className="zahteva-page-header">
@@ -63,6 +66,8 @@ export function ZahtevaView({ project, onProjectRequestChanged, onNavigateOffer 
         {zahteva.sistemi.map((sistem) => (
           <SistemBlok
             key={sistem.id}
+            projectId={resolvedProjectId}
+            zahtevaId={resolvedZahtevaId}
             sistem={sistem}
             productById={productById}
             onChange={(next) => {

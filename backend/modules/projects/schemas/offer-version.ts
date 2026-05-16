@@ -21,6 +21,19 @@ const OfferLineItemSchema = new Schema<OfferLineItemDocument>(
     casovnaNorma: { type: Number, default: 0 },
     dobavitelj: { type: String, trim: true, default: '' },
     naslovDobavitelja: { type: String, trim: true, default: '' },
+    requirementsLocationUnits: {
+      type: [
+        new Schema(
+          {
+            locationId: { type: String, required: true },
+            locationName: { type: String, required: true },
+            sourcePhotoItemId: { type: String, required: true },
+          },
+          { _id: false }
+        ),
+      ],
+      default: undefined,
+    },
   } as Record<keyof OfferLineItem, any>,
   { _id: false }
 );

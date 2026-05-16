@@ -39,7 +39,16 @@ function vatRate(product: any) {
   return 22;
 }
 
-function lineFromProduct(product: any, quantity: number, tip: 'material' | 'storitev'): OfferLineItem {
+function buildZahtevaLocationPhotoItemId(zahtevaId: string, sistemId: string, lokacijaId: string) {
+  return `zahteva-location:${zahtevaId}:${sistemId}:${lokacijaId}`;
+}
+
+function lineFromProduct(
+  product: any,
+  quantity: number,
+  tip: 'material' | 'storitev',
+  extra?: Partial<OfferLineItem>
+): OfferLineItem {
   const unitPrice = Number(product?.prodajnaCena ?? 0);
   const qty = Math.max(0, Number(quantity) || 0);
   const vat = vatRate(product);
@@ -60,6 +69,7 @@ function lineFromProduct(product: any, quantity: number, tip: 'material' | 'stor
     casovnaNorma: Number(product?.casovnaNorma) || 0,
     dobavitelj: product?.dobavitelj ?? '',
     naslovDobavitelja: product?.naslovDobavitelja ?? '',
+    ...extra,
   };
 }
 
@@ -146,10 +156,10 @@ export function createDefaultVideonadzorSystem() {
     steviloLokacij: 1,
     videonadzor: {
       asortima: [],
-      lokacije: [{ id: 'loc-1', ime: 'Lokacija 1', asortimaIdAssigned: null }],
+      lokacije: [{ id: 'loc-1', ime: 'Lokacija 1', asortimaIdAssigned: null, slike: [] }],
       snemalnik: { productId: null },
-      poeSwitch: { productId: null },
-      disk: { productId: null, dniSnemanja: 30, motionRecord: false },
+      poeSwitch: { productId: null, kolicina: 0, items: [] },
+      disk: { productId: null, kolicina: 0, items: [], dniSnemanja: 30, motionRecord: false },
       dodatnaOprema: [],
       montaza: { vkljuceno: false, napeljava: false, metrov: 0, zascitniMaterial: null },
     },
@@ -254,33 +264,54 @@ async function findManualProduct(pattern: RegExp) {
 }
 
 function addProductRequest(
-  requests: Array<{ productId: string; kolicina: number; tip: 'material' | 'storitev' }>,
+  requests: Array<{ productId: string; kolicina: number; tip: 'material' | 'storitev'; extra?: Partial<OfferLineItem> }>,
   productId: unknown,
   kolicina: number,
-  tip: 'material' | 'storitev'
+  tip: 'material' | 'storitev',
+  extra?: Partial<OfferLineItem>
 ) {
   if (!productId || !isObjectId(String(productId))) return;
   const qty = Number(kolicina) || 0;
   if (qty <= 0) return;
-  requests.push({ productId: String(productId), kolicina: qty, tip });
+  requests.push({ productId: String(productId), kolicina: qty, tip, extra });
+}
+
+function selectedEquipmentItems(input?: { productId?: unknown; kolicina?: number; items?: Array<{ productId?: unknown; kolicina?: number }> }) {
+  const items = (input?.items ?? [])
+    .map((item) => ({ productId: item.productId, kolicina: Math.max(0, Number(item.kolicina) || 0) }))
+    .filter((item) => item.productId && item.kolicina > 0);
+  if (items.length > 0) return items;
+  const qty = Math.max(0, Number(input?.kolicina ?? (input?.productId ? 1 : 0)) || 0);
+  return input?.productId && qty > 0 ? [{ productId: input.productId, kolicina: qty }] : [];
 }
 
 async function buildOfferItems(zahteva: ZahtevaDocument) {
-  const productRequests: Array<{ productId: string; kolicina: number; tip: 'material' | 'storitev' }> = [];
+  const productRequests: Array<{ productId: string; kolicina: number; tip: 'material' | 'storitev'; extra?: Partial<OfferLineItem> }> = [];
 
   for (const sistem of zahteva.sistemi ?? []) {
     if (sistem.tip !== 'videonadzor' || !sistem.videonadzor) continue;
     const videonadzor = sistem.videonadzor;
 
     for (const variant of videonadzor.asortima ?? []) {
-      const kolicina = (videonadzor.lokacije ?? []).filter((lokacija) => lokacija.asortimaIdAssigned === variant.id).length;
-      addProductRequest(productRequests, variant.kameraProductId, kolicina, 'material');
+      const variantLokacije = (videonadzor.lokacije ?? []).filter((lokacija) => lokacija.asortimaIdAssigned === variant.id);
+      const kolicina = variantLokacije.length;
+      addProductRequest(productRequests, variant.kameraProductId, kolicina, 'material', {
+        requirementsLocationUnits: variantLokacije.map((lokacija) => ({
+          locationId: lokacija.id,
+          locationName: normalizeText(lokacija.ime, lokacija.id) || lokacija.id,
+          sourcePhotoItemId: buildZahtevaLocationPhotoItemId(String(zahteva._id), sistem.id, lokacija.id),
+        })),
+      });
       addProductRequest(productRequests, variant.nosilecProductId, kolicina, 'material');
     }
 
     addProductRequest(productRequests, videonadzor.snemalnik?.productId, 1, 'material');
-    addProductRequest(productRequests, videonadzor.poeSwitch?.productId, 1, 'material');
-    addProductRequest(productRequests, videonadzor.disk?.productId, 1, 'material');
+    for (const item of selectedEquipmentItems(videonadzor.poeSwitch)) {
+      addProductRequest(productRequests, item.productId, item.kolicina, 'material');
+    }
+    for (const item of selectedEquipmentItems(videonadzor.disk)) {
+      addProductRequest(productRequests, item.productId, item.kolicina, 'material');
+    }
 
     for (const dod of videonadzor.dodatnaOprema ?? []) {
       addProductRequest(productRequests, dod.productId, dod.kolicina, 'material');
@@ -328,7 +359,7 @@ async function buildOfferItems(zahteva: ZahtevaDocument) {
   return productRequests
     .map((entry) => {
       const product = productMap.get(entry.productId);
-      return product ? lineFromProduct(product, entry.kolicina, entry.tip) : null;
+      return product ? lineFromProduct(product, entry.kolicina, entry.tip, entry.extra) : null;
     })
     .filter((item): item is OfferLineItem => Boolean(item));
 }

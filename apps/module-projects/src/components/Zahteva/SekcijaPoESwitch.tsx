@@ -1,14 +1,19 @@
 import { Network } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
 import type { Videonadzor } from "./utils";
-import { assignedCameraProducts, formatPrice, standardPorts } from "./utils";
+import { assignedCameraProducts, formatPrice, normalizedSelectedItems, standardPorts } from "./utils";
 
 type Props = {
   videonadzor: Videonadzor;
   productById: Map<string, CenikProduct>;
   onChange: (next: Videonadzor) => void;
 };
+
+function syncPrimary<T extends { productId: string; kolicina: number }>(items: T[]) {
+  const first = items.find((item) => item.kolicina > 0);
+  return { productId: first?.productId ?? null, kolicina: first?.kolicina ?? 0, items };
+}
 
 export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) {
   const cameras = useMemo(() => assignedCameraProducts(videonadzor, productById), [productById, videonadzor]);
@@ -17,36 +22,30 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
   const nvrPoePorts = selectedNvr?.classification?.nvrHasPoE ? selectedNvr.classification.nvrChannels ?? 0 : 0;
   const neededPorts = allPoE ? Math.max(0, cameras.length - nvrPoePorts) : 0;
   const recommendedPorts = standardPorts(neededPorts);
-  const autoAppliedRef = useRef("");
+  const selectedItems = normalizedSelectedItems(videonadzor.poeSwitch);
+  const selectedPorts = selectedItems.reduce((sum, item) => sum + (productById.get(item.productId)?.classification?.poePortCount ?? 0) * item.kolicina, 0);
 
   const alternatives = useMemo(
     () =>
       Array.from(productById.values())
         .filter((product) => product.classification?.productType === "switch")
         .filter((product) => (product.classification?.poePortCount ?? 0) > 0)
-        .sort((a, b) => {
-          const aPorts = a.classification?.poePortCount ?? 0;
-          const bPorts = b.classification?.poePortCount ?? 0;
-          const aEnough = aPorts >= recommendedPorts;
-          const bEnough = bPorts >= recommendedPorts;
-          return Number(bEnough) - Number(aEnough) || aPorts - bPorts || a.prodajnaCena - b.prodajnaCena;
-        })
-        .slice(0, 8),
-    [productById, recommendedPorts],
+        .sort((a, b) => (a.classification?.poePortCount ?? 0) - (b.classification?.poePortCount ?? 0) || a.prodajnaCena - b.prodajnaCena),
+    [productById],
   );
 
-  useEffect(() => {
-    if (cameras.length === 0) return;
-    const recommended = alternatives.find((product) => (product.classification?.poePortCount ?? 0) >= recommendedPorts) ?? alternatives[0];
-    const signature = `${neededPorts}|${recommended?._id ?? ""}`;
-    if (autoAppliedRef.current === signature) return;
-    autoAppliedRef.current = signature;
-    if (neededPorts <= 0 && videonadzor.poeSwitch.productId) {
-      onChange({ ...videonadzor, poeSwitch: { productId: null } });
-    } else if (neededPorts > 0 && !videonadzor.poeSwitch.productId && recommended) {
-      onChange({ ...videonadzor, poeSwitch: { productId: recommended._id } });
-    }
-  }, [alternatives, cameras.length, neededPorts, onChange, recommendedPorts, videonadzor]);
+  const recommendedId = alternatives.find((product) => (product.classification?.poePortCount ?? 0) >= recommendedPorts)?._id ?? alternatives[0]?._id;
+
+  const setQuantity = (productId: string, quantity: number) => {
+    const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
+    const byId = new Map(selectedItems.map((item) => [item.productId, item.kolicina]));
+    if (nextQuantity > 0) byId.set(productId, nextQuantity);
+    else byId.delete(productId);
+    const items = Array.from(byId.entries()).map(([id, kolicina]) => ({ productId: id, kolicina }));
+    onChange({ ...videonadzor, poeSwitch: syncPrimary(items) });
+  };
+
+  const clearSwitches = () => onChange({ ...videonadzor, poeSwitch: { productId: null, kolicina: 0, items: [] } });
 
   return (
     <section className="zahteva-subsection">
@@ -55,31 +54,33 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
         <h4>PoE switch</h4>
         <small>snemalnik ima {nvrPoePorts} PoE</small>
       </div>
+      <div className={`zahteva-capacity-note ${selectedPorts >= neededPorts ? "is-ok" : "is-warning"}`}>
+        Potrebnih {neededPorts} PoE portov • izbrano {selectedPorts} portov {selectedPorts >= neededPorts ? "✓" : "⚠"}
+      </div>
       <div className="zahteva-product-track">
-        <button
-          type="button"
-          className={`zahteva-track-card zahteva-none-card ${!videonadzor.poeSwitch.productId ? "is-active is-recommended" : ""}`}
-          onClick={() => onChange({ ...videonadzor, poeSwitch: { productId: null } })}
-        >
+        <button type="button" className={`zahteva-track-card zahteva-none-card ${selectedItems.length === 0 ? "is-active" : ""}`} onClick={clearSwitches}>
           <strong>Brez switcha</strong>
-          <small>{neededPorts <= 0 ? "priporočen" : "ročno izbrano"}</small>
+          <small>{neededPorts <= 0 ? "priporočeno" : "ni dovolj portov"}</small>
           <b>0,00 €</b>
         </button>
-        {alternatives.map((product) => (
-          <button
-            key={product._id}
-            type="button"
-            className={`zahteva-track-card ${videonadzor.poeSwitch.productId === product._id ? "is-active" : ""} ${
-              (product.classification?.poePortCount ?? 0) >= recommendedPorts && recommendedPorts > 0 ? "is-recommended" : ""
-            }`}
-            onClick={() => onChange({ ...videonadzor, poeSwitch: { productId: product._id } })}
-          >
-            {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
-            <strong>{product.ime}</strong>
-            <small>{product.classification?.poePortCount ?? "-"} PoE portov</small>
-            <b>{formatPrice(product.prodajnaCena)}</b>
-          </button>
-        ))}
+        {alternatives.map((product) => {
+          const quantity = selectedItems.find((item) => item.productId === product._id)?.kolicina ?? 0;
+          return (
+            <div key={product._id} className={`zahteva-track-card ${quantity > 0 ? "is-active" : ""} ${product._id === recommendedId ? "is-recommended" : ""}`}>
+              <button type="button" className="zahteva-track-main" onClick={() => setQuantity(product._id, quantity > 0 ? quantity : 1)}>
+                {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
+                <strong>{product.ime}</strong>
+                <small>{product.classification?.poePortCount ?? "-"} PoE portov</small>
+                <b>{formatPrice(product.prodajnaCena)}</b>
+              </button>
+              <div className="zahteva-qty-control">
+                <button type="button" onClick={() => setQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>−</button>
+                <span>{quantity}</span>
+                <button type="button" onClick={() => setQuantity(product._id, quantity + 1)} aria-label={`Povečaj ${product.ime}`}>+</button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </section>
   );

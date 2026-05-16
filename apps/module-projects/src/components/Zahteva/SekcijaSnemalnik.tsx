@@ -20,6 +20,11 @@ function dominantBrand(products: CenikProduct[]) {
   return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
 }
 
+function hddLabel(slots?: number) {
+  const count = Math.max(1, Number(slots) || 1);
+  return `${count} ${count === 1 ? "disk" : count === 2 ? "diska" : "diski"}`;
+}
+
 export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) {
   const cameraProducts = useMemo(() => assignedCameraProducts(videonadzor, productById), [productById, videonadzor]);
   const cameraCount = Math.max(cameraProducts.length, videonadzor.lokacije.length);
@@ -67,7 +72,10 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
           >
             {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
             <strong>{product.ime}</strong>
-            <small>{product.classification?.nvrChannels ?? "-"} kanalov{product.classification?.nvrHasPoE ? " • PoE" : ""}</small>
+            <small className="zahteva-nvr-spec">
+              {product.classification?.nvrChannels ?? "-"} kanalov
+              {product.classification?.nvrHasPoE ? " • PoE" : ""} • {hddLabel(product.classification?.nvrHddSlots)}
+            </small>
             <b>{formatPrice(product.prodajnaCena)}</b>
           </button>
         ))}

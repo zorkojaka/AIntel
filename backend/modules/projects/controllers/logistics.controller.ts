@@ -1,3 +1,5 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { NextFunction, Request, Response } from 'express';
 import mongoose, { Types } from 'mongoose';
 import type {
@@ -11,6 +13,7 @@ import { ProjectModel, addTimeline } from '../schemas/project';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
 import { ProductModel } from '../../cenik/product.model';
+import { PhotoModel } from '../../photos/schemas/photo';
 import { resolveActorId, resolveTenantId } from '../../../utils/tenant';
 import { EmployeeModel } from '../../employees/schemas/employee';
 import { ROLE_EXECUTION } from '../../../utils/roles';
@@ -334,6 +337,28 @@ function buildDefaultExecutionSpec(product: any) {
   };
 }
 
+function buildRequirementsExecutionSpec(item: OfferLineItem, fallbackProduct: any) {
+  const locationUnits = Array.isArray(item.requirementsLocationUnits) ? item.requirementsLocationUnits : [];
+  if (locationUnits.length === 0) {
+    return buildDefaultExecutionSpec(fallbackProduct);
+  }
+
+  return {
+    mode: 'per_unit' as const,
+    locationSummary: locationUnits.map((unit) => unit.locationName).filter(Boolean).join(', '),
+    instructions: typeof fallbackProduct?.defaultInstructionsTemplate === 'string' ? fallbackProduct.defaultInstructionsTemplate : '',
+    trackingUnitLabel: 'Kamera',
+    executionUnits: locationUnits.map((unit, index) => ({
+      id: unit.locationId || `loc-${index + 1}`,
+      label: `Kamera ${index + 1}`,
+      location: unit.locationName || `Lokacija ${index + 1}`,
+      instructions: '',
+      isCompleted: false,
+      note: null,
+    })),
+  };
+}
+
 function mergeExecutionSpec(existing: any, fallbackProduct: any) {
   const normalizedExisting = sanitizeExecutionSpec(existing);
   if (normalizedExisting) {
@@ -422,9 +447,105 @@ function mapOfferItemsToWorkOrderItems(
       casovnaNorma: typeof (item as any).casovnaNorma === 'number' && Number.isFinite((item as any).casovnaNorma)
         ? (item as any).casovnaNorma
         : 0,
-      executionSpec: buildDefaultExecutionSpec(productDefaults),
+      executionSpec: buildRequirementsExecutionSpec(item, productDefaults),
     };
   });
+}
+
+const PHOTO_UPLOAD_BASE_DIR = '/var/www/aintel/uploads';
+
+function absolutePhotoPath(uploadUrl?: string | null) {
+  if (!uploadUrl || !uploadUrl.startsWith('/uploads/')) return null;
+  return path.join(PHOTO_UPLOAD_BASE_DIR, uploadUrl.replace(/^\/uploads\//, ''));
+}
+
+async function copyRequirementLocationPhotosToPreparation(params: {
+  projectObjectId: string;
+  offerItems: OfferLineItem[];
+  workOrderItems: any[];
+}) {
+  const { projectObjectId, offerItems, workOrderItems } = params;
+  const destinationDir = path.join(PHOTO_UPLOAD_BASE_DIR, 'projects', projectObjectId, 'preparation');
+  await fs.mkdir(destinationDir, { recursive: true });
+
+  const workItemByOfferItemId = new Map<string, any>();
+  for (const item of workOrderItems ?? []) {
+    const id = String(item?.offerItemId ?? item?.id ?? '');
+    if (id) workItemByOfferItemId.set(id, item);
+  }
+
+  for (const offerItem of offerItems ?? []) {
+    const units = Array.isArray(offerItem.requirementsLocationUnits) ? offerItem.requirementsLocationUnits : [];
+    if (units.length === 0) continue;
+
+    const targetItem = workItemByOfferItemId.get(String(offerItem.id));
+    const targetItemId = String(targetItem?._id ?? targetItem?.id ?? offerItem.id ?? '');
+    if (!targetItemId) continue;
+
+    for (const [unitIndex, unit] of units.entries()) {
+      if (!unit.sourcePhotoItemId) continue;
+
+      const sourcePhotos = await PhotoModel.find({
+        projectId: new Types.ObjectId(projectObjectId),
+        phase: 'requirements',
+        itemId: unit.sourcePhotoItemId,
+        deletedAt: { $exists: false },
+      }).lean();
+
+      for (const photo of sourcePhotos) {
+        const sourceTag = `from-requirements:${String(photo._id)}`;
+        const exists = await PhotoModel.exists({
+          projectId: new Types.ObjectId(projectObjectId),
+          phase: 'preparation',
+          itemId: targetItemId,
+          unitIndex,
+          tag: sourceTag,
+        });
+        if (exists) continue;
+
+        const sourceMainPath = absolutePhotoPath(photo.url);
+        const sourceThumbnailPath = absolutePhotoPath(photo.thumbnailUrl);
+        if (!sourceMainPath) continue;
+
+        const filename = `${Date.now()}-${String(photo._id)}-${path.basename(photo.filename || photo.url)}`;
+        const thumbnailFilename = photo.thumbnailUrl
+          ? `${Date.now()}-${String(photo._id)}-thumb-${path.basename(photo.thumbnailUrl)}`
+          : null;
+        const targetMainPath = path.join(destinationDir, filename);
+        const targetThumbnailPath = thumbnailFilename ? path.join(destinationDir, thumbnailFilename) : null;
+
+        try {
+          await fs.copyFile(sourceMainPath, targetMainPath);
+          if (sourceThumbnailPath && targetThumbnailPath) {
+            await fs.copyFile(sourceThumbnailPath, targetThumbnailPath);
+          }
+        } catch (error) {
+          console.warn('[photos] Failed to inherit requirement photo', error);
+          await fs.unlink(targetMainPath).catch(() => undefined);
+          if (targetThumbnailPath) await fs.unlink(targetThumbnailPath).catch(() => undefined);
+          continue;
+        }
+
+        await PhotoModel.create({
+          projectId: new Types.ObjectId(projectObjectId),
+          phase: 'preparation',
+          itemId: targetItemId,
+          unitIndex,
+          tag: sourceTag,
+          url: `/uploads/projects/${projectObjectId}/preparation/${filename}`,
+          thumbnailUrl: thumbnailFilename ? `/uploads/projects/${projectObjectId}/preparation/${thumbnailFilename}` : undefined,
+          originalName: photo.originalName,
+          filename,
+          size: photo.size,
+          mimeType: photo.mimeType,
+          width: photo.width,
+          height: photo.height,
+          uploadedBy: photo.uploadedBy,
+          uploadedAt: photo.uploadedAt ?? new Date(),
+        });
+      }
+    }
+  }
 }
 
 async function ensureWorkOrderForOffer(params: {
@@ -1020,6 +1141,12 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       customerPhone,
       customerAddress,
       productDefaultsById,
+    });
+
+    await copyRequirementLocationPhotosToPreparation({
+      projectObjectId: String(project._id),
+      offerItems,
+      workOrderItems: (workOrder as any).items ?? [],
     });
 
     await ensureMaterialOrderForOffer({

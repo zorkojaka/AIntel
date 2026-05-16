@@ -1092,6 +1092,12 @@
   text-align: center;
 }
 
+.zahteva-asortima-table th.zahteva-photo-column,
+.zahteva-asortima-table td.zahteva-photo-column {
+  min-width: 64px;
+  width: 64px;
+}
+
 .zahteva-asortima-table tr.is-warning td:first-child,
 .zahteva-empty-row td {
   background: #fff8db;
@@ -1124,11 +1130,28 @@
   position: relative;
   display: grid;
   justify-items: center;
-  gap: 0.2rem;
+  gap: 0.16rem;
   width: 100%;
   border: 0;
   background: transparent;
   padding: 0;
+}
+
+.zahteva-product-pair-images {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.zahteva-product-pair-images img,
+.zahteva-product-pair-images .zahteva-image-empty {
+  width: 32px;
+  height: 28px;
+  object-fit: contain;
+  border: 1px solid var(--app-border);
+  border-radius: 7px;
+  background: #fff;
 }
 
 .zahteva-variant-head img,
@@ -1153,16 +1176,13 @@
 }
 
 .zahteva-variant-letter {
-  position: absolute;
-  top: -0.25rem;
-  right: 0.2rem;
   display: inline-flex;
   width: 1.2rem;
   height: 1.2rem;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: var(--app-brand);
+  background: #878787;
   color: #fff;
   font-size: 0.72rem;
   font-weight: 900;
@@ -1196,10 +1216,38 @@
   color: var(--app-brand);
 }
 
+.zahteva-location-photo-button {
+  position: relative;
+  display: inline-flex;
+  min-width: 2.75rem;
+  height: 2.35rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--app-muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  transition: border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.zahteva-location-photo-button:hover,
+.zahteva-location-photo-button.has-photos {
+  border-color: var(--app-brand);
+  color: var(--app-brand);
+}
+
+.zahteva-location-photo-button.has-photos {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--app-brand) 45%, transparent);
+}
+
 .zahteva-assignment-button.is-selected {
-  border-color: var(--variant-color, var(--app-brand));
-  background: color-mix(in srgb, var(--variant-color, var(--app-brand)) 86%, #ffffff 14%);
-  color: #fff;
+  border-color: #378add;
+  background: #fff;
+  box-shadow: 0 0 0 1px #378add;
+  color: var(--app-foreground);
 }
 
 .zahteva-assignment-info {
@@ -1209,32 +1257,20 @@
   min-width: 0;
 }
 
-.zahteva-assignment-images {
-  display: inline-grid;
-  grid-auto-flow: column;
-  gap: 0.18rem;
-  align-items: center;
-}
-
-.zahteva-assignment-images img,
-.zahteva-assignment-images .zahteva-image-empty {
-  width: 28px;
-  height: 22px;
-  object-fit: contain;
-  border: 1px solid color-mix(in srgb, #ffffff 70%, var(--variant-color, var(--app-brand)) 30%);
-  border-radius: 5px;
-  background: #fff;
-}
-
 .zahteva-assignment-info small {
   max-width: 4.1rem;
   overflow: hidden;
-  color: #fff;
+  color: var(--app-foreground);
   font-size: 0.62rem;
   font-weight: 900;
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.zahteva-assignment-info small + small {
+  color: var(--app-muted);
+  font-weight: 800;
 }
 
 .zahteva-dialog {
@@ -1365,6 +1401,16 @@
   scroll-snap-align: start;
 }
 
+.zahteva-track-main {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+}
+
 .zahteva-track-card.is-active {
   border-color: var(--app-brand);
   box-shadow: 0 0 0 1px var(--app-brand);
@@ -1409,6 +1455,10 @@
   font-size: 0.72rem;
 }
 
+.zahteva-track-card .zahteva-nvr-spec {
+  white-space: normal;
+}
+
 .zahteva-track-card b {
   align-self: end;
   font-size: 0.82rem;
@@ -1428,11 +1478,95 @@
   background: var(--app-surface-soft);
 }
 
+.zahteva-capacity-note {
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface-soft);
+  color: var(--app-muted);
+  font-size: 0.8rem;
+  font-weight: 850;
+  padding: 0.45rem 0.6rem;
+}
+
+.zahteva-capacity-note.is-ok {
+  color: #047857;
+}
+
+.zahteva-capacity-note.is-warning {
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+.zahteva-qty-control {
+  display: grid;
+  grid-template-columns: 1.75rem 1fr 1.75rem;
+  gap: 0.25rem;
+  align-items: center;
+  margin-top: 0.15rem;
+}
+
+.zahteva-qty-control button {
+  display: inline-flex;
+  height: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--app-border);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--app-brand);
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.zahteva-qty-control span {
+  display: inline-flex;
+  height: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--app-border);
+  border-radius: 7px;
+  background: var(--app-surface-soft);
+  font-size: 0.82rem;
+  font-weight: 950;
+}
+
 .zahteva-disk-controls {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) auto;
   gap: 0.5rem;
   align-items: center;
+}
+
+.zahteva-recording-row {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr) auto auto;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.zahteva-recording-row > span,
+.zahteva-recording-row strong {
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.zahteva-recording-row input[type="range"] {
+  width: 100%;
+}
+
+.zahteva-recording-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.zahteva-storage-note {
+  color: var(--app-muted);
+  font-size: 0.8rem;
+  font-weight: 850;
 }
 
 .zahteva-disk-controls input[type="range"] {

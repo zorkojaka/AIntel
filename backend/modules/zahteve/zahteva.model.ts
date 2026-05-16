@@ -20,15 +20,30 @@ export interface ZahtevaDocument extends Document {
         id: string;
         ime: string;
         asortimaIdAssigned?: string | null;
+        slike?: Array<{
+          filename: string;
+          url: string;
+          uploadedAt?: Date | null;
+        }>;
       }>;
       snemalnik: {
         productId?: Types.ObjectId | null;
       };
       poeSwitch: {
         productId?: Types.ObjectId | null;
+        kolicina?: number;
+        items?: Array<{
+          productId: Types.ObjectId;
+          kolicina: number;
+        }>;
       };
       disk: {
         productId?: Types.ObjectId | null;
+        kolicina?: number;
+        items?: Array<{
+          productId: Types.ObjectId;
+          kolicina: number;
+        }>;
         dniSnemanja: number;
         motionRecord: boolean;
       };
@@ -77,6 +92,19 @@ const VideonadzorSchema = new Schema(
             id: { type: String, required: true, trim: true },
             ime: { type: String, trim: true, default: '' },
             asortimaIdAssigned: { type: String, default: null },
+            slike: {
+              type: [
+                new Schema(
+                  {
+                    filename: { type: String, required: true },
+                    url: { type: String, required: true },
+                    uploadedAt: { type: Date, default: null },
+                  },
+                  { _id: false }
+                ),
+              ],
+              default: [],
+            },
           },
           { _id: false }
         ),
@@ -88,9 +116,35 @@ const VideonadzorSchema = new Schema(
     },
     poeSwitch: {
       productId: { type: ObjectId, ref: 'Product', default: null },
+      kolicina: { type: Number, min: 0, default: 0 },
+      items: {
+        type: [
+          new Schema(
+            {
+              productId: { type: ObjectId, ref: 'Product', required: true },
+              kolicina: { type: Number, required: true, min: 1, default: 1 },
+            },
+            { _id: false }
+          ),
+        ],
+        default: [],
+      },
     },
     disk: {
       productId: { type: ObjectId, ref: 'Product', default: null },
+      kolicina: { type: Number, min: 0, default: 0 },
+      items: {
+        type: [
+          new Schema(
+            {
+              productId: { type: ObjectId, ref: 'Product', required: true },
+              kolicina: { type: Number, required: true, min: 1, default: 1 },
+            },
+            { _id: false }
+          ),
+        ],
+        default: [],
+      },
       dniSnemanja: { type: Number, default: 30, min: 7, max: 90 },
       motionRecord: { type: Boolean, default: false },
     },

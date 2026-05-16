@@ -16,6 +16,7 @@ import { canDeletePhoto, type PhotoPermissionUser } from './services/permissions
 
 const router = Router();
 const UPLOAD_BASE_DIR = '/var/www/aintel/uploads';
+const RESOLVED_UPLOAD_BASE_DIR = path.resolve(UPLOAD_BASE_DIR);
 const TEMP_UPLOAD_DIR = path.join(os.tmpdir(), 'aintel-photo-uploads');
 const MAX_UPLOAD_SIZE = 30 * 1024 * 1024;
 const PRIVILEGED_PROJECT_ROLES = [ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_ORGANIZER];
@@ -167,7 +168,7 @@ async function removeFileIfExists(filePath: string | undefined) {
 
 function absolutePathFromUploadUrl(url: string | undefined) {
   if (!url || !url.startsWith('/uploads/')) return undefined;
-  return path.join(UPLOAD_BASE_DIR, url.replace(/^\/uploads\//, ''));
+  return path.resolve(RESOLVED_UPLOAD_BASE_DIR, url.replace(/^\/uploads\//, ''));
 }
 
 async function canAccessPhoto(req: Request, photo: PhotoDocument) {
@@ -176,7 +177,7 @@ async function canAccessPhoto(req: Request, photo: PhotoDocument) {
 }
 
 function isPathInside(parent: string, child: string) {
-  const relative = path.relative(parent, child);
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
   return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
@@ -324,7 +325,7 @@ router.get('/:photoId/file', async (req: Request, res: Response, next: NextFunct
     const variant = req.query.variant === 'thumbnail' ? 'thumbnail' : 'full';
     const uploadUrl = variant === 'thumbnail' ? photo.thumbnailUrl : photo.url;
     const filePath = absolutePathFromUploadUrl(uploadUrl);
-    if (!filePath || !isPathInside(UPLOAD_BASE_DIR, filePath)) {
+    if (!filePath || !isPathInside(RESOLVED_UPLOAD_BASE_DIR, filePath)) {
       return res.fail('Neveljavna pot fotografije.', 400);
     }
 

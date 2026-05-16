@@ -26,10 +26,10 @@ export function createVideonadzorSystem(id: string): ZahtevaSistem {
     steviloLokacij: 1,
     videonadzor: {
       asortima: [],
-      lokacije: [{ id: "loc-1", ime: "Lokacija 1", asortimaIdAssigned: null }],
+      lokacije: [{ id: "loc-1", ime: "Lokacija 1", asortimaIdAssigned: null, slike: [] }],
       snemalnik: { productId: null },
-      poeSwitch: { productId: null },
-      disk: { productId: null, dniSnemanja: 30, motionRecord: false },
+      poeSwitch: { productId: null, kolicina: 0, items: [] },
+      disk: { productId: null, kolicina: 0, items: [], dniSnemanja: 30, motionRecord: false },
       dodatnaOprema: [],
       montaza: { vkljuceno: false, napeljava: false, metrov: 0, zascitniMaterial: null },
     },
@@ -41,7 +41,7 @@ export function syncLokacije(videonadzor: Videonadzor, targetCount: number): Vid
   let lokacije = [...videonadzor.lokacije];
   if (nextCount > lokacije.length) {
     for (let index = lokacije.length; index < nextCount; index += 1) {
-      lokacije.push({ id: `loc-${index + 1}`, ime: `Lokacija ${index + 1}`, asortimaIdAssigned: null });
+      lokacije.push({ id: `loc-${index + 1}`, ime: `Lokacija ${index + 1}`, asortimaIdAssigned: null, slike: [] });
     }
   } else if (nextCount < lokacije.length) {
     const empty = lokacije.filter((lokacija) => !lokacija.ime.trim() || /^Lokacija \d+$/i.test(lokacija.ime.trim()));
@@ -77,9 +77,20 @@ export function systemTotal(videonadzor: Videonadzor, productById: Map<string, C
     return sum + qty * (Number(camera?.prodajnaCena ?? 0) + Number(bracket?.prodajnaCena ?? 0));
   }, 0);
   const snemalnik = videonadzor.snemalnik.productId ? productById.get(videonadzor.snemalnik.productId) : null;
-  const poeSwitch = videonadzor.poeSwitch.productId ? productById.get(videonadzor.poeSwitch.productId) : null;
-  const disk = videonadzor.disk.productId ? productById.get(videonadzor.disk.productId) : null;
-  return asortimaTotal + Number(snemalnik?.prodajnaCena ?? 0) + Number(poeSwitch?.prodajnaCena ?? 0) + Number(disk?.prodajnaCena ?? 0);
+  const switchItems = normalizedSelectedItems(videonadzor.poeSwitch);
+  const diskItems = normalizedSelectedItems(videonadzor.disk);
+  const switchTotal = switchItems.reduce((sum, item) => sum + Number(productById.get(item.productId)?.prodajnaCena ?? 0) * item.kolicina, 0);
+  const diskTotal = diskItems.reduce((sum, item) => sum + Number(productById.get(item.productId)?.prodajnaCena ?? 0) * item.kolicina, 0);
+  return asortimaTotal + Number(snemalnik?.prodajnaCena ?? 0) + switchTotal + diskTotal;
+}
+
+export function normalizedSelectedItems(input?: { productId?: string | null; kolicina?: number; items?: Array<{ productId: string; kolicina: number }> }) {
+  const items = (input?.items ?? [])
+    .map((item) => ({ productId: item.productId, kolicina: Math.max(0, Number(item.kolicina) || 0) }))
+    .filter((item) => item.productId && item.kolicina > 0);
+  if (items.length > 0) return items;
+  const qty = Math.max(0, Number(input?.kolicina ?? (input?.productId ? 1 : 0)) || 0);
+  return input?.productId && qty > 0 ? [{ productId: input.productId, kolicina: qty }] : [];
 }
 
 export function assignedCameraProducts(videonadzor: Videonadzor, productById: Map<string, CenikProduct>) {
