@@ -4,14 +4,14 @@ import { resolveActorId } from '../../utils/tenant';
 import { ProjectModel } from '../projects/schemas/project';
 import { ZahtevaModel } from './zahteva.model';
 import {
-  createPreskocenaPonudba,
+  createDefaultVideonadzorSystem,
   izracunajInPredlagajDisk,
+  nadaljujNaPonudbo,
   predlagajDisk,
   predlagajNosilce,
   predlagajPoESwitch,
   predlagajSnemalnik,
   resolveProjectForZahteva,
-  zakljucniZahtevo,
 } from './zahteva.service';
 
 function isObjectId(value: unknown) {
@@ -31,21 +31,20 @@ export async function createZahteva(req: Request, res: Response, next: NextFunct
     const project = await resolveProjectForZahteva(projectId);
     if (!project) return res.fail('Projekt ni najden.', 404);
 
-    const tipProjekta = req.body?.tipProjekta ?? 'videonadzor';
-    const pot = req.body?.pot ?? 'ogled';
-    if (!['videonadzor', 'alarm', 'domofon', 'pametna_hisa'].includes(tipProjekta)) {
-      return res.fail('Neznan tip projekta.', 400);
+    const activeRequestId = (project as any).activeRequestId;
+    if (activeRequestId && mongoose.isValidObjectId(activeRequestId)) {
+      const existing = await ZahtevaModel.findById(activeRequestId);
+      if (existing) return res.success(existing);
     }
-    if (!['ogled', 'paket', 'preskoceno'].includes(pot)) {
-      return res.fail('Neznana pot zahteve.', 400);
-    }
+
+    const sistemi = Array.isArray(req.body?.sistemi) && req.body.sistemi.length > 0
+      ? req.body.sistemi
+      : [createDefaultVideonadzorSystem()];
 
     const zahteva = await ZahtevaModel.create({
       projectId: project._id,
-      status: pot === 'preskoceno' ? 'preskoceno' : 'osnutek',
-      tipProjekta,
-      pot,
-      videonadzor: req.body?.videonadzor ?? undefined,
+      status: 'osnutek',
+      sistemi,
       createdBy: actorObjectId(req),
     });
 
@@ -56,12 +55,6 @@ export async function createZahteva(req: Request, res: Response, next: NextFunct
         $set: { activeRequestId: zahteva._id },
       }
     );
-
-    if (pot === 'preskoceno') {
-      const ponudba = await createPreskocenaPonudba(zahteva);
-      zahteva.generatedQuoteId = ponudba._id;
-      await zahteva.save();
-    }
 
     return res.success(zahteva, 201);
   } catch (error) {
@@ -93,9 +86,9 @@ export async function updateZahteva(req: Request, res: Response, next: NextFunct
   }
 }
 
-export async function zakljuciZahteva(req: Request, res: Response, next: NextFunction) {
+export async function nadaljujZahtevaNaPonudbo(req: Request, res: Response, next: NextFunction) {
   try {
-    const ponudba = await zakljucniZahtevo(req.params.id);
+    const ponudba = await nadaljujNaPonudbo(req.params.id);
     return res.success(ponudba);
   } catch (error: any) {
     if (error?.statusCode) return res.fail(error.message, error.statusCode);

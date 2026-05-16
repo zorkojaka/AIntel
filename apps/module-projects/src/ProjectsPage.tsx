@@ -23,18 +23,17 @@ type WorkspaceTab = (typeof VALID_TABS)[number];
 const shownForbiddenProjectToasts = new Set<string>();
 
 function parseProjectRoute(pathname: string) {
-  const match = pathname.match(/^\/projects\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?/);
+  const match = pathname.match(/^\/projects\/([^/]+)(?:\/([^/]+))?/);
   if (!match) return null;
   const projectId = decodeURIComponent(match[1]);
   const section = match[2] ?? null;
-  const detail = match[3] ?? null;
   if (section === "zahteva") {
-    return { projectId, tab: "zahteva" as WorkspaceTab, requestRouteMode: detail === "ogled" ? ("ogled" as const) : ("entry" as const) };
+    return { projectId, tab: "zahteva" as WorkspaceTab };
   }
   if (section === "ponudba") {
-    return { projectId, tab: "offers" as WorkspaceTab, requestRouteMode: "entry" as const };
+    return { projectId, tab: "offers" as WorkspaceTab };
   }
-  return { projectId, tab: null as WorkspaceTab | null, requestRouteMode: "entry" as const };
+  return { projectId, tab: null as WorkspaceTab | null };
 }
 
 function parseWorkspaceTab(value: string | null): WorkspaceTab | null {
@@ -101,7 +100,6 @@ export function ProjectsPage() {
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
   const [initialWorkspaceTab, setInitialWorkspaceTab] = useState<WorkspaceTab | null>(null);
-  const [initialRequestRouteMode, setInitialRequestRouteMode] = useState<"entry" | "ogled">("entry");
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isClientModalOpen, setClientModalOpen] = useState(false);
   const [isNewProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
@@ -301,7 +299,6 @@ export function ProjectsPage() {
         setInitialWorkspaceTab(tab);
       }
     }
-    setInitialRequestRouteMode(route?.requestRouteMode ?? "entry");
 
     if (isExecutionOnlyViewer) {
       const isAssignedProject = projects.some((project) => project.id === projectId);
@@ -791,7 +788,6 @@ export function ProjectsPage() {
           projectId={projectDetails.id}
           initialProject={projectDetails}
           initialTab={initialWorkspaceTab ?? undefined}
-          initialRequestRouteMode={initialRequestRouteMode}
           templates={templates}
           onBack={handleBackToList}
           onProjectUpdate={handleProjectUpdate}

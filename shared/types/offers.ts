@@ -20,6 +20,7 @@ export interface OfferLineItem {
 export interface OfferVersion {
   _id: string;
   projectId: string;
+  requestId?: string | null;
   baseTitle: string;
   versionNumber: number;
   title: string;

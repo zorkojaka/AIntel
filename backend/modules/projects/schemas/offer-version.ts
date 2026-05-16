@@ -32,6 +32,7 @@ export interface OfferVersionDocument extends Omit<OfferVersionType, '_id'>, Doc
 const OfferVersionSchema = new Schema<OfferVersionDocument>(
   {
     projectId: { type: String, required: true, index: true },
+    requestId: { type: String, default: null, index: true },
     baseTitle: { type: String, required: true },
     versionNumber: { type: Number, required: true },
     title: { type: String, required: true },

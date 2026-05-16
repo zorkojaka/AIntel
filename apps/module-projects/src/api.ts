@@ -1,4 +1,4 @@
-import type { OfferCandidate, ProjectOfferItem, Zahteva, ZahtevaPot, ZahtevaTipProjekta } from "./types";
+import type { OfferCandidate, ProjectOfferItem, Zahteva } from "./types";
 
 export async function fetchRequirementVariants(categorySlug?: string) {
   const query = categorySlug ? `?categorySlug=${encodeURIComponent(categorySlug)}` : "";
@@ -104,8 +104,8 @@ export async function fetchPredlogDisk(input: {
   return parseApiResponse(response, "Predloga diska ni mogoče pridobiti.");
 }
 
-export async function zakljuciZahteva(id: string): Promise<any> {
-  const response = await fetch(`/api/zahteve/${id}/zakljuci`, {
+export async function nadaljujZahtevaNaPonudbo(id: string): Promise<any> {
+  const response = await fetch(`/api/zahteve/${id}/nadaljuj-na-ponudbo`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   });
@@ -125,11 +125,7 @@ export async function fetchZahteva(id: string): Promise<Zahteva> {
   return parseApiResponse<Zahteva>(response, "Zahteve ni mogoče pridobiti.");
 }
 
-export async function createZahteva(input: {
-  projectId: string;
-  tipProjekta: ZahtevaTipProjekta;
-  pot: ZahtevaPot;
-}): Promise<Zahteva> {
+export async function createZahteva(input: { projectId: string; sistemi?: Zahteva["sistemi"] }): Promise<Zahteva> {
   const response = await fetch("/api/zahteve", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
