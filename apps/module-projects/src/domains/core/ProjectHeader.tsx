@@ -10,6 +10,7 @@ export type ProjectHeaderProps = {
   onPrimaryAction: () => void;
   onNewProject: () => void;
   primaryActionLabel?: string;
+  showPrimaryAction?: boolean;
 };
 
 const statusLabels: Record<ProjectStatus, string> = {
@@ -37,6 +38,7 @@ export function ProjectHeader({
   onPrimaryAction,
   onNewProject,
   primaryActionLabel = "Shrani",
+  showPrimaryAction = true,
 }: ProjectHeaderProps) {
   return (
     <div className="sticky top-0 z-20 hidden border-b bg-card md:block">
@@ -59,10 +61,12 @@ export function ProjectHeader({
             <Plus className="mr-2 h-4 w-4" />
             Nov projekt
           </Button>
-          <Button variant="outline" onClick={onPrimaryAction}>
-            <Save className="mr-2 h-4 w-4" />
-            {primaryActionLabel}
-          </Button>
+          {showPrimaryAction ? (
+            <Button variant="outline" onClick={onPrimaryAction}>
+              <Save className="mr-2 h-4 w-4" />
+              {primaryActionLabel}
+            </Button>
+          ) : null}
         </div>
       </div>
     </div>

@@ -20,11 +20,13 @@ import { useProjectTimeline, type StepKey, type StepStatus, type TimelineStep } 
 import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
 import { PhaseRibbon, type PhaseRibbonStatus } from "./PhaseRibbon";
 import { CommunicationPanel } from "../domains/communication/CommunicationPanel";
+import { RequestWizard } from "./RequestWizard";
 
-type WorkspaceTabValue = "items" | "offers" | "logistics" | "execution" | "closing";
+type WorkspaceTabValue = "zahteva" | "items" | "offers" | "logistics" | "execution" | "closing";
 type WorkspaceCSSVars = CSSProperties & { "--brand-color"?: string };
 const STEP_ORDER: StepKey[] = ["requirements", "offers", "logistics", "execution", "invoice"];
 const STEP_BY_TAB: Record<WorkspaceTabValue, StepKey> = {
+  zahteva: "requirements",
   items: "requirements",
   offers: "offers",
   logistics: "logistics",
@@ -32,7 +34,7 @@ const STEP_BY_TAB: Record<WorkspaceTabValue, StepKey> = {
   closing: "invoice",
 };
 const TAB_BY_STEP: Record<StepKey, WorkspaceTabValue> = {
-  requirements: "items",
+  requirements: "zahteva",
   offers: "offers",
   logistics: "logistics",
   execution: "execution",
@@ -79,6 +81,7 @@ interface ProjectWorkspaceProps {
   projectId: string;
   initialProject?: ProjectDetails | null;
   initialTab?: WorkspaceTabValue;
+  initialRequestRouteMode?: "entry" | "ogled";
   allowedTabs?: WorkspaceTabValue[];
   templates: Template[];
   onBack: () => void;
@@ -91,6 +94,7 @@ export function ProjectWorkspace({
   projectId,
   initialProject,
   initialTab,
+  initialRequestRouteMode = "entry",
   allowedTabs,
   templates,
   onBack,
@@ -99,14 +103,14 @@ export function ProjectWorkspace({
   brandColor,
 }: ProjectWorkspaceProps) {
   const allowedTabValues = useMemo<WorkspaceTabValue[]>(
-    () => (allowedTabs && allowedTabs.length > 0 ? allowedTabs : ["items", "offers", "logistics", "execution", "closing"]),
+    () => (allowedTabs && allowedTabs.length > 0 ? allowedTabs : ["zahteva", "offers", "logistics", "execution", "closing"]),
     [allowedTabs],
   );
   const initialResolvedTab = useMemo<WorkspaceTabValue>(() => {
     if (initialTab && allowedTabValues.includes(initialTab)) {
       return initialTab;
     }
-    return allowedTabValues[0] ?? "items";
+    return allowedTabValues[0] ?? "zahteva";
   }, [initialTab, allowedTabValues]);
   const { project, loading, error, refresh, setProject } = useProject(projectId, initialProject ?? null);
   const [activeTab, setActiveTab] = useState<WorkspaceTabValue>(initialResolvedTab);
@@ -156,7 +160,7 @@ export function ProjectWorkspace({
   const invoiceSectionRef = useRef<HTMLDivElement | null>(null);
   const timelineSteps = useProjectTimeline(project);
   const allTabsConfig: { value: WorkspaceTabValue; label: string }[] = [
-    { value: "items", label: "Zahteve" },
+    { value: "zahteva", label: "Zahteva" },
     { value: "offers", label: "Ponudbe" },
     { value: "logistics", label: "Priprava" },
     { value: "execution", label: "Izvedba" },
@@ -205,7 +209,7 @@ export function ProjectWorkspace({
 
   useEffect(() => {
     if (!allowedTabValues.includes(activeTab)) {
-      setActiveTab(allowedTabValues[0] ?? "items");
+      setActiveTab(allowedTabValues[0] ?? "zahteva");
     }
   }, [activeTab, allowedTabValues]);
 
@@ -709,7 +713,7 @@ export function ProjectWorkspace({
   };
 
   useEffect(() => {
-    const nextTab = initialTab ?? "items";
+    const nextTab = initialTab ?? "zahteva";
     setActiveTab(nextTab);
     hasInitializedActiveTabRef.current = initialTab ? true : false;
     prevActivePhaseStepRef.current = null;
@@ -719,7 +723,7 @@ export function ProjectWorkspace({
       prevActivePhaseStepRef.current = null;
       return;
     }
-    const targetTab = TAB_BY_STEP[activePhaseStepKey] ?? "items";
+    const targetTab = TAB_BY_STEP[activePhaseStepKey] ?? "zahteva";
     if (!hasInitializedActiveTabRef.current) {
       setActiveTab(targetTab);
       hasInitializedActiveTabRef.current = true;
@@ -767,6 +771,21 @@ export function ProjectWorkspace({
     }
   };
 
+  const pushProjectRoute = useCallback(
+    (tab: WorkspaceTabValue, detail?: "ogled") => {
+      const currentProjectId = project?.id ?? projectId;
+      const encodedId = encodeURIComponent(currentProjectId);
+      const path =
+        tab === "zahteva"
+          ? `/projects/${encodedId}/zahteva${detail === "ogled" ? "/ogled" : ""}`
+          : tab === "offers"
+            ? `/projects/${encodedId}/ponudba`
+            : `/projects/${encodedId}`;
+      window.history.pushState({ moduleId: "projects" }, "", path);
+    },
+    [project?.id, projectId]
+  );
+
   const handleCreateOffer = async () => {
     const updated = await onProjectUpdate(`${basePath}/offers`, { method: "POST" });
     applyProjectUpdate(updated);
@@ -813,7 +832,7 @@ export function ProjectWorkspace({
       } else {
         setOverrideStep(null);
       }
-      const targetTab = TAB_BY_STEP[step] ?? "items";
+      const targetTab = TAB_BY_STEP[step] ?? "zahteva";
       setActiveTab(targetTab);
       if (step === "invoice") {
         requestAnimationFrame(() => {
@@ -1006,6 +1025,7 @@ export function ProjectWorkspace({
       }
       requestOfferNavigation(() => {
         setActiveTab(next);
+        pushProjectRoute(next);
       });
     };
 
@@ -1043,6 +1063,7 @@ export function ProjectWorkspace({
           onPrimaryAction={handleHeaderPrimaryAction}
           onNewProject={handleNewProjectWithGuard}
           primaryActionLabel={activeTab === "offers" || activeTab === "logistics" || activeTab === "execution" ? "Shrani" : "Osveži"}
+          showPrimaryAction={activeTab !== "zahteva"}
         />
         <div className="max-w-[1280px] mx-auto px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6">
           <div className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground md:hidden">
@@ -1089,12 +1110,38 @@ export function ProjectWorkspace({
               <Tabs
                 value={activeTab}
                 onValueChange={(value) => {
-                  const next = (value as WorkspaceTabValue) ?? (allowedTabValues[0] ?? "items");
+                  const next = (value as WorkspaceTabValue) ?? (allowedTabValues[0] ?? "zahteva");
                   handleTabChangeWithGuard(next);
                 }}
                 className="space-y-6"
               >
                 <PhaseRibbon steps={phaseRibbonSteps} activeKey={activeTab} variant="tabs" />
+
+                {allowedTabValues.includes("zahteva") ? (
+                <TabsContent value="zahteva" className="mt-0 space-y-4">
+                  {activeTab === "zahteva" ? (
+                    <RequestWizard
+                      project={project}
+                      routeMode={initialRequestRouteMode}
+                      onProjectRequestChanged={(zahteva) => {
+                        setProject((prev) => ({
+                          ...prev,
+                          activeRequestId: zahteva._id,
+                          requestIds: Array.from(new Set([...(prev.requestIds ?? []), zahteva._id])),
+                        }));
+                      }}
+                      onNavigateOffer={() => {
+                        setActiveTab("offers");
+                        setOffersRefreshKey((key) => key + 1);
+                        pushProjectRoute("offers");
+                      }}
+                      onNavigateOgled={() => {
+                        pushProjectRoute("zahteva", "ogled");
+                      }}
+                    />
+                  ) : null}
+                </TabsContent>
+                ) : null}
 
                 {allowedTabValues.includes("items") ? (
                 <TabsContent value="items" className="mt-0 space-y-4">

@@ -26,6 +26,7 @@ export interface ProductDocument extends Document {
   isActive?: boolean;
   aaData?: {
     productCode?: string;
+    image?: string;
     category?: string;
     attributes?: Array<{ attribute: string; term: string }>;
     rawDescription?: string;
@@ -94,6 +95,7 @@ const ProductSchema = new Schema<ProductDocument>(
     aaData: {
       type: {
         productCode: { type: String, trim: true, default: '' },
+        image: { type: String, trim: true, default: '' },
         category: { type: String, trim: true, default: '' },
         attributes: [
           {

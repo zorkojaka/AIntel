@@ -1,4 +1,4 @@
-import type { OfferCandidate, ProjectOfferItem } from "./types";
+import type { OfferCandidate, ProjectOfferItem, Zahteva, ZahtevaPot, ZahtevaTipProjekta } from "./types";
 
 export async function fetchRequirementVariants(categorySlug?: string) {
   const query = categorySlug ? `?categorySlug=${encodeURIComponent(categorySlug)}` : "";
@@ -68,4 +68,125 @@ export async function downloadPdf(url: string, filename: string, init?: RequestI
   anchor.download = filename;
   anchor.click();
   window.URL.revokeObjectURL(objectUrl);
+}
+
+export async function fetchPredlogSnemalnik(input: {
+  kanali: number;
+  brand?: string;
+  poe?: boolean;
+}): Promise<CenikProduct | null> {
+  const params = new URLSearchParams();
+  params.set("kanali", String(input.kanali));
+  if (input.brand) params.set("brand", input.brand);
+  if (input.poe !== undefined) params.set("poe", String(input.poe));
+  const response = await fetch(`/api/zahteve/predlogi/snemalnik?${params.toString()}`);
+  return parseApiResponse<CenikProduct | null>(response, "Predloga snemalnika ni mogoče pridobiti.");
+}
+
+export async function fetchPredlogSwitch(portov: number): Promise<CenikProduct | null> {
+  const response = await fetch(`/api/zahteve/predlogi/switch?portov=${encodeURIComponent(String(portov))}`);
+  return parseApiResponse<CenikProduct | null>(response, "Predloga PoE switcha ni mogoče pridobiti.");
+}
+
+export async function fetchPredlogDisk(input: {
+  tb?: number;
+  cameraIds?: string[];
+  dni?: number;
+  motionRecord?: boolean;
+}): Promise<CenikProduct | null | { storage: { requiredTB: number; recommendedDiskTB: number; totalMbps: number }; product: CenikProduct | null }> {
+  const params = new URLSearchParams();
+  if (input.cameraIds?.length) params.set("cameraIds", input.cameraIds.join(","));
+  if (input.dni) params.set("dni", String(input.dni));
+  if (input.motionRecord !== undefined) params.set("motionRecord", String(input.motionRecord));
+  if (input.tb !== undefined) params.set("tb", String(input.tb));
+  params.set("surveillance", "true");
+  const response = await fetch(`/api/zahteve/predlogi/disk?${params.toString()}`);
+  return parseApiResponse(response, "Predloga diska ni mogoče pridobiti.");
+}
+
+export async function zakljuciZahteva(id: string): Promise<any> {
+  const response = await fetch(`/api/zahteve/${id}/zakljuci`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  return parseApiResponse<any>(response, "Zahteve ni mogoče zaključiti.");
+}
+
+async function parseApiResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const payload = await response.json();
+  if (!payload.success) {
+    throw new Error(payload.error ?? fallbackMessage);
+  }
+  return payload.data as T;
+}
+
+export async function fetchZahteva(id: string): Promise<Zahteva> {
+  const response = await fetch(`/api/zahteve/${id}`);
+  return parseApiResponse<Zahteva>(response, "Zahteve ni mogoče pridobiti.");
+}
+
+export async function createZahteva(input: {
+  projectId: string;
+  tipProjekta: ZahtevaTipProjekta;
+  pot: ZahtevaPot;
+}): Promise<Zahteva> {
+  const response = await fetch("/api/zahteve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return parseApiResponse<Zahteva>(response, "Zahteve ni mogoče ustvariti.");
+}
+
+export async function updateZahteva(id: string, changes: Partial<Zahteva>): Promise<Zahteva> {
+  const response = await fetch(`/api/zahteve/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+  return parseApiResponse<Zahteva>(response, "Zahteve ni mogoče shraniti.");
+}
+
+export type CenikProduct = {
+  _id: string;
+  ime: string;
+  prodajnaCena: number;
+  kratekOpis?: string;
+  povezavaDoSlike?: string;
+  aaData?: {
+    image?: string;
+  };
+  proizvajalec?: string;
+  categorySlugs?: string[];
+  classification?: {
+    productType?: "kamera" | "snemalnik" | "switch" | "disk" | "nosilec" | "kabel" | "pribor" | "storitev" | "alarm_komponenta" | "drugo";
+    manufacturer?: string;
+    cameraHousing?: "Bullet" | "Turret" | "Dome" | "PTZ" | "Panoramic" | "Fisheye" | "Thermal";
+    maxResolutionMP?: number;
+    hasPoE?: boolean;
+    lensFocalLength?: string;
+    irRangeM?: number;
+    nvrChannels?: number;
+    nvrHasPoE?: boolean;
+    poePortCount?: number;
+    switchSpeed?: "megabit" | "gigabit";
+    diskCapacityTB?: number;
+    isSurveillanceDisk?: boolean;
+    compatibleBracketCodes?: string[];
+    bracketCodeOwn?: string;
+  };
+};
+
+export function getProductImageUrl(product?: Pick<CenikProduct, "aaData" | "povezavaDoSlike"> | null) {
+  return product?.aaData?.image?.trim() || product?.povezavaDoSlike?.trim() || "";
+}
+
+export async function fetchCenikProducts(): Promise<CenikProduct[]> {
+  const response = await fetch("/api/cenik/products");
+  return parseApiResponse<CenikProduct[]>(response, "Cenika ni mogoče pridobiti.");
+}
+
+export async function fetchKompatibilniNosilci(kameraId: string): Promise<CenikProduct[]> {
+  const response = await fetch(`/api/zahteve/predlogi/nosilci?kameraId=${encodeURIComponent(kameraId)}`);
+  return parseApiResponse<CenikProduct[]>(response, "Nosilcev ni mogoče pridobiti.");
 }

@@ -97,6 +97,7 @@ export function mapAAProductToImportItem(product: AAProductRaw) {
     isService: false,
     aaData: {
       productCode: product.name,
+      image: product.image ?? '',
       category: product.category ?? '',
       attributes: product.attributes ?? [],
       rawDescription: description,

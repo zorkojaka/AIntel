@@ -152,7 +152,11 @@ function parseNvrChannels(product: AAProductRaw): number | undefined {
 }
 
 function parseNvrHasPoE(product: AAProductRaw) {
-  return /DRN-\d+R?P\b/i.test(product.name) || /poe/i.test(product.description) || Boolean(getAttribute(product.attributes, 'PoE switch'));
+  const codeCandidates = [product.name, product.id].map((value) => value.trim()).filter(Boolean);
+  if (codeCandidates.some((value) => /DRN-\d+R?P$/i.test(value) || /P$/i.test(value))) {
+    return true;
+  }
+  return /poe/i.test(product.description) || Boolean(getAttribute(product.attributes, 'PoE switch'));
 }
 
 function parseNvrHddSlots(product: AAProductRaw): number | undefined {
