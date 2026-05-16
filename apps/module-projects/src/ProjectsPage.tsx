@@ -319,7 +319,6 @@ export function ProjectsPage() {
 
   const handleSelectProject = (projectId: string) => {
     setInitialWorkspaceTab(isExecutionOnlyViewer ? "execution" : null);
-    setInitialRequestRouteMode("entry");
     window.history.pushState({ moduleId: "projects" }, "", `/projects/${encodeURIComponent(projectId)}`);
     loadProjectDetails(projectId);
   };
@@ -329,7 +328,6 @@ export function ProjectsPage() {
     setSelectedProjectId(null);
     setProjectDetails(null);
     setInitialWorkspaceTab(null);
-    setInitialRequestRouteMode("entry");
     if (window.location.pathname !== "/projects" || window.location.search) {
       window.history.replaceState({ moduleId: "projects" }, "", "/projects");
     }

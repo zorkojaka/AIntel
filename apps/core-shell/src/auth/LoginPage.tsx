@@ -40,6 +40,7 @@ export const LoginPage: React.FC = () => {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="ana@example.com"
+              autoComplete="email"
               required
             />
           </label>
@@ -51,6 +52,7 @@ export const LoginPage: React.FC = () => {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="••••••••"
+                autoComplete="current-password"
                 required
               />
               <button
