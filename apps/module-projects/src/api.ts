@@ -153,6 +153,9 @@ export type CenikProduct = {
   prodajnaCena: number;
   kratekOpis?: string;
   povezavaDoSlike?: string;
+  aaData?: {
+    image?: string;
+  };
   proizvajalec?: string;
   categorySlugs?: string[];
   classification?: {
@@ -173,6 +176,10 @@ export type CenikProduct = {
     bracketCodeOwn?: string;
   };
 };
+
+export function getProductImageUrl(product?: Pick<CenikProduct, "aaData" | "povezavaDoSlike"> | null) {
+  return product?.aaData?.image?.trim() || product?.povezavaDoSlike?.trim() || "";
+}
 
 export async function fetchCenikProducts(): Promise<CenikProduct[]> {
   const response = await fetch("/api/cenik/products");

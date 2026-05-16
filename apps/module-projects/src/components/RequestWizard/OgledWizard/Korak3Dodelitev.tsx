@@ -24,30 +24,14 @@ export function Korak3Dodelitev({ state, updateVideonadzor }: Korak3Props) {
   const assignmentCounts = countAssignments(lokacije);
   const assigned = lokacije.filter((lokacija) => lokacija.kameraId).length;
   const missing = lokacije.length - assigned;
-  const overAssigned = kosarica
-    .map((entry) => ({ id: entry.id, allowed: entry.kolicina, actual: assignmentCounts.get(entry.id) ?? 0 }))
-    .filter((entry) => entry.actual > entry.allowed);
 
   const selectCamera = (locationId: string, cameraId: string) => {
     updateVideonadzor((current) => {
-      const currentLocation = current.lokacije.find((lokacija) => lokacija.id === locationId);
-      const currentlySelected = currentLocation?.kameraId ?? null;
-      const nextCameraId = currentlySelected === cameraId ? null : cameraId;
-      const targetCart = current.kosarica.find((entry) => entry.id === cameraId);
-      if (!targetCart) return current;
-
-      if (nextCameraId) {
-        const currentCounts = countAssignments(current.lokacije);
-        const targetCount = currentCounts.get(cameraId) ?? 0;
-        if (currentlySelected !== cameraId && targetCount >= targetCart.kolicina) {
-          return current;
-        }
-      }
-
+      if (!current.kosarica.some((entry) => entry.id === cameraId)) return current;
       return {
         ...current,
         lokacije: current.lokacije.map((lokacija) =>
-          lokacija.id === locationId ? { ...lokacija, kameraId: nextCameraId } : lokacija
+          lokacija.id === locationId ? { ...lokacija, kameraId: cameraId } : lokacija
         ),
       };
     });
@@ -58,7 +42,7 @@ export function Korak3Dodelitev({ state, updateVideonadzor }: Korak3Props) {
       <div className="request-step-header">
         <div>
           <h3>Dodeli kamere lokacijam</h3>
-          <p className="text-sm text-muted-foreground">Klikni katero varianto na katero lokacijo.</p>
+          <p className="text-sm text-muted-foreground">Klikni celico in izberi varianto za lokacijo.</p>
         </div>
       </div>
 
@@ -78,7 +62,7 @@ export function Korak3Dodelitev({ state, updateVideonadzor }: Korak3Props) {
                         <span className="request-variant-color" style={{ background: COLORS[index % COLORS.length] }} />
                         {entry.id}
                       </span>
-                      <span className="request-variant-count">{assignedCount}/{entry.kolicina}</span>
+                      <span className="request-variant-count">{assignedCount}×</span>
                     </th>
                   );
                 })}
@@ -93,8 +77,6 @@ export function Korak3Dodelitev({ state, updateVideonadzor }: Korak3Props) {
                   </td>
                   {kosarica.map((entry, index) => {
                     const checked = lokacija.kameraId === entry.id;
-                    const assignedCount = assignmentCounts.get(entry.id) ?? 0;
-                    const disabled = !checked && assignedCount >= entry.kolicina;
                     return (
                       <td key={entry.id}>
                         <button
@@ -102,7 +84,6 @@ export function Korak3Dodelitev({ state, updateVideonadzor }: Korak3Props) {
                           className={`request-assignment-cell ${checked ? "is-selected" : ""}`}
                           style={{ "--variant-color": COLORS[index % COLORS.length] } as CSSProperties}
                           onClick={() => selectCamera(lokacija.id, entry.id)}
-                          disabled={disabled}
                           aria-label={`Dodeli varianto ${entry.id} lokaciji ${lokacija.ime}`}
                         >
                           {checked ? "✓" : ""}
@@ -118,14 +99,10 @@ export function Korak3Dodelitev({ state, updateVideonadzor }: Korak3Props) {
       )}
 
       <div className="request-assignment-footer">
-        <Badge variant={missing === 0 && overAssigned.length === 0 && lokacije.length > 0 ? "default" : "secondary"}>
+        <Badge variant={missing === 0 && lokacije.length > 0 ? "default" : "secondary"}>
           Dodeljeno: {assigned} od {lokacije.length}
         </Badge>
-        {overAssigned.length > 0 ? (
-          <span className="text-sm text-destructive">
-            {overAssigned.map((entry) => `Varianta ${entry.id} ima ${entry.allowed}, dodeljeno ${entry.actual}`).join(". ")}
-          </span>
-        ) : missing === 0 && lokacije.length > 0 ? (
+        {missing === 0 && lokacije.length > 0 ? (
           <span className="text-sm font-medium text-emerald-700">Vse lokacije pokrite</span>
         ) : (
           <span className="text-sm text-muted-foreground">{missing} lokacij brez kamere</span>

@@ -6,6 +6,7 @@ import {
   fetchPredlogDisk,
   fetchPredlogSnemalnik,
   fetchPredlogSwitch,
+  getProductImageUrl,
   type CenikProduct,
 } from "../../../api";
 import type { Zahteva } from "../../../types";
@@ -46,7 +47,7 @@ function assignedCameraProductIds(state: WizardState) {
     .map((lokacija) => (lokacija.kameraId ? byVariant.get(lokacija.kameraId) : null))
     .filter((id): id is string => Boolean(id));
   if (assigned.length > 0) return assigned;
-  return state.videonadzor.kosarica.flatMap((entry) => Array.from({ length: entry.kolicina }, () => entry.kameraProductId));
+  return state.videonadzor.kosarica.map((entry) => entry.kameraProductId);
 }
 
 function dominantBrand(products: CenikProduct[]) {
@@ -305,6 +306,11 @@ export function Korak4SnemalnikDodatki({ state, updateVideonadzor }: Korak4Props
                 className={`request-accessory-chip ${selected ? "is-active" : ""}`}
                 onClick={() => toggleAccessory(product)}
               >
+                {getProductImageUrl(product) ? (
+                  <img src={getProductImageUrl(product)} alt="" className="request-accessory-image" />
+                ) : (
+                  <span className="request-accessory-image request-product-image--empty" />
+                )}
                 {selected ? <Trash2 className="h-3.5 w-3.5" aria-hidden /> : <Plus className="h-3.5 w-3.5" aria-hidden />}
                 {product.ime}
               </button>
@@ -372,6 +378,11 @@ function ProductTrack({
           className={`request-equipment-choice ${selectedId === product._id ? "is-active" : ""}`}
           onClick={() => onSelect(product)}
         >
+          {getProductImageUrl(product) ? (
+            <img src={getProductImageUrl(product)} alt="" className="request-equipment-choice__image" />
+          ) : (
+            <span className="request-equipment-choice__image request-product-image--empty" />
+          )}
           <span className="truncate font-medium">{product.ime}</span>
           <span>{formatPrice(product.prodajnaCena)}</span>
         </button>
@@ -396,6 +407,11 @@ function ProductChoiceCard({
   }
   return (
     <div className={`request-selected-product ${selected ? "is-selected" : ""}`}>
+      {getProductImageUrl(product) ? (
+        <img src={getProductImageUrl(product)} alt="" className="request-selected-product__image" />
+      ) : (
+        <span className="request-selected-product__image request-product-image--empty" />
+      )}
       <div className="min-w-0 flex-1">
         <div className="truncate font-semibold">{product.ime}</div>
         <div className="text-xs text-muted-foreground">{details || product.kratekOpis || "Izbrana oprema"}</div>

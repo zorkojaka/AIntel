@@ -20,7 +20,6 @@ export interface ZahtevaDocument extends Document {
       id: string;
       kameraProductId: Types.ObjectId;
       nosilecProductId?: Types.ObjectId | null;
-      kolicina: number;
     }>;
     snemalnik: {
       productId?: Types.ObjectId | null;
@@ -82,7 +81,6 @@ const VideonadzorSchema = new Schema(
             id: { type: String, required: true, trim: true },
             kameraProductId: { type: ObjectId, ref: 'Product', required: true },
             nosilecProductId: { type: ObjectId, ref: 'Product', default: null },
-            kolicina: { type: Number, required: true, min: 1, default: 1 },
           },
           { _id: false }
         ),

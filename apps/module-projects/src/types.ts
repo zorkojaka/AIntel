@@ -170,7 +170,6 @@ export interface Zahteva {
       id: string;
       kameraProductId: string;
       nosilecProductId?: string | null;
-      kolicina: number;
     }>;
     snemalnik: {
       productId?: string | null;

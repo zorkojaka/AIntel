@@ -27,13 +27,10 @@ export function OgledWizard({ zahteva, onSaved, onNavigateOffer, onBackToEntry }
       <div className="flex flex-col gap-3 rounded-md border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2>Ogled za videonadzor</h2>
-          <p className="text-sm text-muted-foreground">
-            Samodejno shranjevanje je aktivno. {state.dirty ? "Spremembe čakajo na shranjevanje." : "Vse spremembe so shranjene."}
-          </p>
+          <p className="text-sm text-muted-foreground">{state.saving || state.dirty ? "Shranjujem..." : "Vse shranjeno ✓"}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={onBackToEntry}>Vstopni ekran</Button>
-          <Button onClick={() => void saveNow()} disabled={!state.dirty}>Shrani</Button>
         </div>
       </div>
       <Korak1Lokacije state={state} updateVideonadzor={updateVideonadzor} />

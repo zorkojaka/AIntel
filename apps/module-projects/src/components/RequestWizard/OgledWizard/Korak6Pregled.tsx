@@ -38,6 +38,10 @@ function lineFromProduct(section: string, product: CenikProduct | undefined | nu
   };
 }
 
+function variantQuantity(state: WizardState, variantId: string) {
+  return state.videonadzor.lokacije.filter((lokacija) => lokacija.kameraId === variantId).length;
+}
+
 export function Korak6Pregled({ state, saveNow, onNavigateOffer }: Korak6Props) {
   const [products, setProducts] = useState<CenikProduct[]>([]);
   const [loading, setLoading] = useState(false);
@@ -66,10 +70,11 @@ export function Korak6Pregled({ state, saveNow, onNavigateOffer }: Korak6Props) 
     const current = state.videonadzor;
     const result: ReviewLine[] = [];
     current.kosarica.forEach((entry) => {
+      const quantity = variantQuantity(state, entry.id);
       const camera = productById.get(entry.kameraProductId);
       const bracket = entry.nosilecProductId ? productById.get(entry.nosilecProductId) : null;
-      const cameraLine = lineFromProduct("Kamere", camera, entry.kolicina);
-      const bracketLine = lineFromProduct("Nosilci", bracket, entry.kolicina);
+      const cameraLine = lineFromProduct("Kamere", camera, quantity);
+      const bracketLine = lineFromProduct("Nosilci", bracket, quantity);
       if (cameraLine) result.push(cameraLine);
       if (bracketLine) result.push(bracketLine);
     });

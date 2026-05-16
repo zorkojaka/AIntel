@@ -262,8 +262,9 @@ async function buildOfferItems(zahteva: ZahtevaDocument) {
   const productRequests: Array<{ productId: string; kolicina: number; tip: 'material' | 'storitev' }> = [];
 
   for (const par of videonadzor.kosarica ?? []) {
-    addProductRequest(productRequests, par.kameraProductId, par.kolicina, 'material');
-    addProductRequest(productRequests, par.nosilecProductId, par.kolicina, 'material');
+    const kolicina = (videonadzor.lokacije ?? []).filter((lokacija) => lokacija.kameraId === par.id).length;
+    addProductRequest(productRequests, par.kameraProductId, kolicina, 'material');
+    addProductRequest(productRequests, par.nosilecProductId, kolicina, 'material');
   }
 
   addProductRequest(productRequests, videonadzor.snemalnik?.productId, 1, 'material');

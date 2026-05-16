@@ -34,7 +34,7 @@ const STEP_BY_TAB: Record<WorkspaceTabValue, StepKey> = {
   closing: "invoice",
 };
 const TAB_BY_STEP: Record<StepKey, WorkspaceTabValue> = {
-  requirements: "items",
+  requirements: "zahteva",
   offers: "offers",
   logistics: "logistics",
   execution: "execution",
@@ -103,14 +103,14 @@ export function ProjectWorkspace({
   brandColor,
 }: ProjectWorkspaceProps) {
   const allowedTabValues = useMemo<WorkspaceTabValue[]>(
-    () => (allowedTabs && allowedTabs.length > 0 ? allowedTabs : ["zahteva", "items", "offers", "logistics", "execution", "closing"]),
+    () => (allowedTabs && allowedTabs.length > 0 ? allowedTabs : ["zahteva", "offers", "logistics", "execution", "closing"]),
     [allowedTabs],
   );
   const initialResolvedTab = useMemo<WorkspaceTabValue>(() => {
     if (initialTab && allowedTabValues.includes(initialTab)) {
       return initialTab;
     }
-    return allowedTabValues[0] ?? "items";
+    return allowedTabValues[0] ?? "zahteva";
   }, [initialTab, allowedTabValues]);
   const { project, loading, error, refresh, setProject } = useProject(projectId, initialProject ?? null);
   const [activeTab, setActiveTab] = useState<WorkspaceTabValue>(initialResolvedTab);
@@ -161,7 +161,6 @@ export function ProjectWorkspace({
   const timelineSteps = useProjectTimeline(project);
   const allTabsConfig: { value: WorkspaceTabValue; label: string }[] = [
     { value: "zahteva", label: "Zahteva" },
-    { value: "items", label: "Zahteve" },
     { value: "offers", label: "Ponudbe" },
     { value: "logistics", label: "Priprava" },
     { value: "execution", label: "Izvedba" },
@@ -210,7 +209,7 @@ export function ProjectWorkspace({
 
   useEffect(() => {
     if (!allowedTabValues.includes(activeTab)) {
-      setActiveTab(allowedTabValues[0] ?? "items");
+      setActiveTab(allowedTabValues[0] ?? "zahteva");
     }
   }, [activeTab, allowedTabValues]);
 
@@ -714,7 +713,7 @@ export function ProjectWorkspace({
   };
 
   useEffect(() => {
-    const nextTab = initialTab ?? "items";
+    const nextTab = initialTab ?? "zahteva";
     setActiveTab(nextTab);
     hasInitializedActiveTabRef.current = initialTab ? true : false;
     prevActivePhaseStepRef.current = null;
@@ -724,7 +723,7 @@ export function ProjectWorkspace({
       prevActivePhaseStepRef.current = null;
       return;
     }
-    const targetTab = TAB_BY_STEP[activePhaseStepKey] ?? "items";
+    const targetTab = TAB_BY_STEP[activePhaseStepKey] ?? "zahteva";
     if (!hasInitializedActiveTabRef.current) {
       setActiveTab(targetTab);
       hasInitializedActiveTabRef.current = true;
@@ -833,7 +832,7 @@ export function ProjectWorkspace({
       } else {
         setOverrideStep(null);
       }
-      const targetTab = TAB_BY_STEP[step] ?? "items";
+      const targetTab = TAB_BY_STEP[step] ?? "zahteva";
       setActiveTab(targetTab);
       if (step === "invoice") {
         requestAnimationFrame(() => {
@@ -1064,6 +1063,7 @@ export function ProjectWorkspace({
           onPrimaryAction={handleHeaderPrimaryAction}
           onNewProject={handleNewProjectWithGuard}
           primaryActionLabel={activeTab === "offers" || activeTab === "logistics" || activeTab === "execution" ? "Shrani" : "Osveži"}
+          showPrimaryAction={activeTab !== "zahteva"}
         />
         <div className="max-w-[1280px] mx-auto px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6">
           <div className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground md:hidden">
@@ -1110,7 +1110,7 @@ export function ProjectWorkspace({
               <Tabs
                 value={activeTab}
                 onValueChange={(value) => {
-                  const next = (value as WorkspaceTabValue) ?? (allowedTabValues[0] ?? "items");
+                  const next = (value as WorkspaceTabValue) ?? (allowedTabValues[0] ?? "zahteva");
                   handleTabChangeWithGuard(next);
                 }}
                 className="space-y-6"

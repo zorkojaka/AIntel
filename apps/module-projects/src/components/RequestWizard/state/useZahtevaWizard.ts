@@ -10,6 +10,7 @@ export interface WizardState {
   zahtevaId: string;
   videonadzor: Zahteva["videonadzor"];
   dirty: boolean;
+  saving: boolean;
   lastSaved: Date | null;
 }
 
@@ -29,6 +30,7 @@ export function useZahtevaWizard(zahteva: Zahteva | null, onSaved?: (zahteva: Za
       zahtevaId: zahteva._id,
       videonadzor: zahteva.videonadzor,
       dirty: false,
+      saving: false,
       lastSaved: zahteva.updatedAt ? new Date(zahteva.updatedAt) : null,
     };
     setState(next);
@@ -43,17 +45,24 @@ export function useZahtevaWizard(zahteva: Zahteva | null, onSaved?: (zahteva: Za
     const current = latestStateRef.current;
     if (!current || !current.dirty) return true;
     try {
+      setState((prev) => (prev && prev.zahtevaId === current.zahtevaId ? { ...prev, saving: true } : prev));
       const saved = await updateZahteva(current.zahtevaId, {
         videonadzor: current.videonadzor,
       } as Partial<Zahteva>);
       setState((prev) =>
         prev && prev.zahtevaId === current.zahtevaId
-          ? { ...prev, dirty: false, lastSaved: new Date(saved.updatedAt ?? Date.now()) }
+          ? {
+              ...prev,
+              dirty: prev.videonadzor === current.videonadzor ? false : prev.dirty,
+              saving: false,
+              lastSaved: new Date(saved.updatedAt ?? Date.now()),
+            }
           : prev
       );
       onSaved?.(saved);
       return true;
     } catch (error) {
+      setState((prev) => (prev && prev.zahtevaId === current.zahtevaId ? { ...prev, saving: false } : prev));
       toast.error(error instanceof Error ? error.message : "Zahteve ni mogoče shraniti.");
       return false;
     }
@@ -65,7 +74,7 @@ export function useZahtevaWizard(zahteva: Zahteva | null, onSaved?: (zahteva: Za
     }
     saveTimerRef.current = window.setTimeout(() => {
       void saveNow();
-    }, 300);
+    }, 500);
   }, [saveNow]);
 
   const updateVideonadzor = useCallback(

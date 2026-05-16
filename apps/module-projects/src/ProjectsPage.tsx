@@ -18,7 +18,7 @@ import { getProjectPhase } from "./components/projectPhases";
 
 const API_PREFIX = "/api/projects";
 const VIEW_STORAGE_KEY = "projects:view-mode";
-const VALID_TABS = ["zahteva", "items", "offers", "logistics", "execution", "closing"] as const;
+const VALID_TABS = ["zahteva", "offers", "logistics", "execution", "closing"] as const;
 type WorkspaceTab = (typeof VALID_TABS)[number];
 const shownForbiddenProjectToasts = new Set<string>();
 
@@ -135,7 +135,7 @@ export function ProjectsPage() {
       return ["execution"];
     }
     if (!canAccessPreparationPhase) {
-      return ["zahteva", "items", "offers", "execution", "closing"];
+      return ["zahteva", "offers", "execution", "closing"];
     }
     return undefined;
   }, [canAccessPreparationPhase, isExecutionOnlyViewer]);

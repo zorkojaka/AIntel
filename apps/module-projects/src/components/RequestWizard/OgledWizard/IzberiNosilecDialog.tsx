@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../ui/dialog";
 import { Button } from "../../ui/button";
-import { fetchKompatibilniNosilci, type CenikProduct } from "../../../api";
+import { fetchKompatibilniNosilci, getProductImageUrl, type CenikProduct } from "../../../api";
 
 type IzberiNosilecDialogProps = {
   camera: CenikProduct | null;
@@ -64,8 +64,8 @@ export function IzberiNosilecDialog({ camera, open, onOpenChange, onConfirm }: I
         {camera ? (
           <div className="space-y-4">
             <div className="request-dialog-product">
-              {camera.povezavaDoSlike ? (
-                <img src={camera.povezavaDoSlike} alt="" className="request-dialog-product__image" />
+              {getProductImageUrl(camera) ? (
+                <img src={getProductImageUrl(camera)} alt="" className="request-dialog-product__image" />
               ) : (
                 <div className="request-dialog-product__image request-product-image--empty" />
               )}
@@ -94,6 +94,11 @@ export function IzberiNosilecDialog({ camera, open, onOpenChange, onConfirm }: I
                     checked={selectedId === nosilec._id}
                     onChange={() => setSelectedId(nosilec._id)}
                   />
+                  {getProductImageUrl(nosilec) ? (
+                    <img src={getProductImageUrl(nosilec)} alt="" className="request-radio-image" />
+                  ) : (
+                    <span className="request-radio-image request-product-image--empty" />
+                  )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{nosilec.ime}</span>
                     <span className="text-xs text-muted-foreground">

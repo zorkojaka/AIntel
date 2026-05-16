@@ -1,7 +1,7 @@
-import { Minus, Plus, ShoppingCart, Trash2 } from "lucide-react";
+import { Plus, ShoppingCart, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { fetchCenikProducts, type CenikProduct } from "../../../api";
+import { fetchCenikProducts, getProductImageUrl, type CenikProduct } from "../../../api";
 import type { Zahteva } from "../../../types";
 import { Badge } from "../../ui/badge";
 import { Button } from "../../ui/button";
@@ -33,8 +33,23 @@ function productBrand(product: CenikProduct) {
   return product.classification?.manufacturer || product.proizvajalec || "Brez proizvajalca";
 }
 
-function cartQuantity(state: WizardState) {
-  return (state.videonadzor.kosarica ?? []).reduce((sum, entry) => sum + (Number(entry.kolicina) || 0), 0);
+function cameraDescription(product?: CenikProduct | null) {
+  if (!product) return "Kamera";
+  const parts = [
+    product.classification?.maxResolutionMP ? `${product.classification.maxResolutionMP}MP` : null,
+    product.classification?.cameraHousing ?? null,
+    product.classification?.lensFocalLength ?? null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" ") : product.kratekOpis || "Kamera";
+}
+
+function bracketDescription(product?: CenikProduct | null) {
+  if (!product) return "brez nosilca";
+  return product.kratekOpis || product.classification?.bracketCodeOwn || "nosilec";
+}
+
+function assignedVariantCount(state: WizardState, variantId: string) {
+  return state.videonadzor.lokacije.filter((lokacija) => lokacija.kameraId === variantId).length;
 }
 
 export function Korak2Kosarica({ state, updateVideonadzor }: Korak2Props) {
@@ -94,10 +109,6 @@ export function Korak2Kosarica({ state, updateVideonadzor }: Korak2Props) {
     [brand, cameras, housing, resolution]
   );
 
-  const needed = state.videonadzor.lokacije.length;
-  const currentQuantity = cartQuantity(state);
-  const diff = currentQuantity - needed;
-
   const addToCart = (nosilec: CenikProduct | null) => {
     if (!selectedCamera) return;
     updateVideonadzor((current) => ({
@@ -108,21 +119,11 @@ export function Korak2Kosarica({ state, updateVideonadzor }: Korak2Props) {
           id: nextCartId(current.kosarica.map((entry) => entry.id)),
           kameraProductId: selectedCamera._id,
           nosilecProductId: nosilec?._id ?? null,
-          kolicina: 1,
         },
       ],
     }));
     setDialogOpen(false);
     setSelectedCamera(null);
-  };
-
-  const updateQuantity = (id: string, delta: number) => {
-    updateVideonadzor((current) => ({
-      ...current,
-      kosarica: current.kosarica.map((entry) =>
-        entry.id === id ? { ...entry, kolicina: Math.max(1, entry.kolicina + delta) } : entry
-      ),
-    }));
   };
 
   const deleteEntry = (id: string) => {
@@ -139,7 +140,7 @@ export function Korak2Kosarica({ state, updateVideonadzor }: Korak2Props) {
         <div>
           <h3>Sestavi košarico</h3>
           <p className="text-sm text-muted-foreground">
-            Vsaka kamera ima privzet nosilec. Isti model z drugim nosilcem dodaj kot ločen vnos.
+            Vsaka kartica je varianta. Količina se izračuna iz lokacij, ki jim dodeliš varianto.
           </p>
         </div>
       </div>
@@ -162,8 +163,8 @@ export function Korak2Kosarica({ state, updateVideonadzor }: Korak2Props) {
         ) : null}
         {filtered.map((camera) => (
           <article key={camera._id} className="request-product-card">
-            {camera.povezavaDoSlike ? (
-              <img src={camera.povezavaDoSlike} alt="" className="request-product-image" />
+            {getProductImageUrl(camera) ? (
+              <img src={getProductImageUrl(camera)} alt="" className="request-product-image" />
             ) : (
               <div className="request-product-image request-product-image--empty" />
             )}
@@ -206,26 +207,33 @@ export function Korak2Kosarica({ state, updateVideonadzor }: Korak2Props) {
             {state.videonadzor.kosarica.map((entry) => {
               const camera = productById.get(entry.kameraProductId);
               const bracket = entry.nosilecProductId ? productById.get(entry.nosilecProductId) : null;
+              const pairPrice = Number(camera?.prodajnaCena ?? 0) + Number(bracket?.prodajnaCena ?? 0);
               return (
-                <div key={entry.id} className="request-cart-row">
+                <div key={entry.id} className="request-cart-row request-cart-row--variant">
                   <Badge>{entry.id}</Badge>
+                  <div className="request-cart-pair-images">
+                    {getProductImageUrl(camera) ? (
+                      <img src={getProductImageUrl(camera)} alt="" className="request-cart-pair-image" />
+                    ) : (
+                      <span className="request-cart-pair-image request-product-image--empty" />
+                    )}
+                    <span className="request-cart-plus">+</span>
+                    {getProductImageUrl(bracket) ? (
+                      <img src={getProductImageUrl(bracket)} alt="" className="request-cart-pair-image" />
+                    ) : (
+                      <span className="request-cart-pair-image request-product-image--empty" />
+                    )}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">
                       {camera?.ime ?? "Kamera"} {bracket ? `+ ${bracket.ime}` : "+ brez nosilca"}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {formatPrice(Number(camera?.prodajnaCena ?? 0) + Number(bracket?.prodajnaCena ?? 0))}
+                      {cameraDescription(camera)} + {bracketDescription(bracket)}
                     </div>
+                    <div className="text-xs text-muted-foreground">Dodeljeno lokacijam: {assignedVariantCount(state, entry.id)}</div>
                   </div>
-                  <div className="request-qty-control">
-                    <Button size="icon" variant="ghost" onClick={() => updateQuantity(entry.id, -1)} aria-label="Zmanjšaj količino">
-                      <Minus className="h-4 w-4" aria-hidden />
-                    </Button>
-                    <span>{entry.kolicina}</span>
-                    <Button size="icon" variant="ghost" onClick={() => updateQuantity(entry.id, 1)} aria-label="Povečaj količino">
-                      <Plus className="h-4 w-4" aria-hidden />
-                    </Button>
-                  </div>
+                  <div className="text-right font-semibold">{formatPrice(pairPrice)}</div>
                   <Button size="icon" variant="ghost" onClick={() => deleteEntry(entry.id)} aria-label="Odstrani iz košarice">
                     <Trash2 className="h-4 w-4" aria-hidden />
                   </Button>
@@ -234,14 +242,10 @@ export function Korak2Kosarica({ state, updateVideonadzor }: Korak2Props) {
             })}
           </div>
         )}
-        <div className={`request-step-summary ${diff === 0 && needed > 0 ? "is-ok" : "is-warning"}`}>
-          {needed === 0
-            ? "Najprej dodaj lokacije."
-            : diff === 0
-              ? `${currentQuantity} kosov za ${needed} lokacij`
-              : diff < 0
-                ? `Še ${Math.abs(diff)} kamer manjka`
-                : `${diff} preveč v košarici`}
+        <div className={`request-step-summary ${state.videonadzor.kosarica.length > 0 ? "is-ok" : "is-warning"}`}>
+          {state.videonadzor.kosarica.length > 0
+            ? `${state.videonadzor.kosarica.length} variant za ${state.videonadzor.lokacije.length} lokacij`
+            : "Dodaj vsaj eno varianto kamere."}
         </div>
       </div>
 
