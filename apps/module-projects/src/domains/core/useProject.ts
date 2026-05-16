@@ -70,6 +70,8 @@ export function mapProject(data: any): ProjectDetails {
     createdAt: data.createdAt,
     salesUserId: data.salesUserId ?? null,
     assignedEmployeeIds: Array.isArray(data.assignedEmployeeIds) ? data.assignedEmployeeIds : [],
+    requestIds: Array.isArray(data.requestIds) ? data.requestIds.map((id: unknown) => String(id)) : [],
+    activeRequestId: data.activeRequestId ? String(data.activeRequestId) : null,
     phaseSignals: data.phaseSignals,
     customerDetail: mergedCustomerDetail,
     requirements: requirementsArray,

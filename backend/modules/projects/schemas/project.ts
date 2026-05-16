@@ -132,6 +132,8 @@ export interface Project {
   requirementsText?: string;
   salesUserId?: string | null;
   assignedEmployeeIds?: string[];
+  requestIds?: string[];
+  activeRequestId?: string | null;
   confirmedOfferVersionId?: string | null;
   requirementsTemplateVariantSlug?: string;
   requirements?: ProjectRequirement[];
@@ -311,6 +313,8 @@ const ProjectSchema = new Schema<ProjectDocument>(
     createdAt: { type: String, required: true },
     salesUserId: { type: Schema.Types.ObjectId, default: null },
     assignedEmployeeIds: { type: [Schema.Types.ObjectId], default: [] },
+    requestIds: { type: [Schema.Types.ObjectId], ref: 'Zahteva', default: [] },
+    activeRequestId: { type: Schema.Types.ObjectId, ref: 'Zahteva', default: null },
     confirmedOfferVersionId: { type: String, default: null },
     requirementsTemplateVariantSlug: { type: String, required: false },
     requirementsText: { type: String, default: "" },

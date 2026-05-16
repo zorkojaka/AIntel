@@ -20,6 +20,7 @@ import communicationSettingsRoutes from './modules/communication/routes/settings
 import communicationProjectRoutes from './modules/communication/routes/project.routes';
 import filesRoutes from './modules/files/routes';
 import photosRoutes from './modules/photos/routes';
+import zahteveRoutes from './modules/zahteve/zahteva.routes';
 import { requireRoles } from './middlewares/auth';
 import { ROLE_ADMIN, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from './utils/roles';
 
@@ -46,6 +47,7 @@ router.use('/admin', requireRoles([ROLE_ADMIN]), adminRoutes);
 router.use('/offers', offerPreviewRoutes);
 router.use('/files', filesRoutes);
 router.use('/photos', photosRoutes);
+router.use('/zahteve', zahteveRoutes);
 
 router.get('/', (_req, res) => {
   res.success({ status: 'AIntel CORE backend pripravljen' });

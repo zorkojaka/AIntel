@@ -20,11 +20,13 @@ import { useProjectTimeline, type StepKey, type StepStatus, type TimelineStep } 
 import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
 import { PhaseRibbon, type PhaseRibbonStatus } from "./PhaseRibbon";
 import { CommunicationPanel } from "../domains/communication/CommunicationPanel";
+import { RequestWizard } from "./RequestWizard";
 
-type WorkspaceTabValue = "items" | "offers" | "logistics" | "execution" | "closing";
+type WorkspaceTabValue = "zahteva" | "items" | "offers" | "logistics" | "execution" | "closing";
 type WorkspaceCSSVars = CSSProperties & { "--brand-color"?: string };
 const STEP_ORDER: StepKey[] = ["requirements", "offers", "logistics", "execution", "invoice"];
 const STEP_BY_TAB: Record<WorkspaceTabValue, StepKey> = {
+  zahteva: "requirements",
   items: "requirements",
   offers: "offers",
   logistics: "logistics",
@@ -79,6 +81,7 @@ interface ProjectWorkspaceProps {
   projectId: string;
   initialProject?: ProjectDetails | null;
   initialTab?: WorkspaceTabValue;
+  initialRequestRouteMode?: "entry" | "ogled";
   allowedTabs?: WorkspaceTabValue[];
   templates: Template[];
   onBack: () => void;
@@ -91,6 +94,7 @@ export function ProjectWorkspace({
   projectId,
   initialProject,
   initialTab,
+  initialRequestRouteMode = "entry",
   allowedTabs,
   templates,
   onBack,
@@ -99,7 +103,7 @@ export function ProjectWorkspace({
   brandColor,
 }: ProjectWorkspaceProps) {
   const allowedTabValues = useMemo<WorkspaceTabValue[]>(
-    () => (allowedTabs && allowedTabs.length > 0 ? allowedTabs : ["items", "offers", "logistics", "execution", "closing"]),
+    () => (allowedTabs && allowedTabs.length > 0 ? allowedTabs : ["zahteva", "items", "offers", "logistics", "execution", "closing"]),
     [allowedTabs],
   );
   const initialResolvedTab = useMemo<WorkspaceTabValue>(() => {
@@ -156,6 +160,7 @@ export function ProjectWorkspace({
   const invoiceSectionRef = useRef<HTMLDivElement | null>(null);
   const timelineSteps = useProjectTimeline(project);
   const allTabsConfig: { value: WorkspaceTabValue; label: string }[] = [
+    { value: "zahteva", label: "Zahteva" },
     { value: "items", label: "Zahteve" },
     { value: "offers", label: "Ponudbe" },
     { value: "logistics", label: "Priprava" },
@@ -767,6 +772,21 @@ export function ProjectWorkspace({
     }
   };
 
+  const pushProjectRoute = useCallback(
+    (tab: WorkspaceTabValue, detail?: "ogled") => {
+      const currentProjectId = project?.id ?? projectId;
+      const encodedId = encodeURIComponent(currentProjectId);
+      const path =
+        tab === "zahteva"
+          ? `/projects/${encodedId}/zahteva${detail === "ogled" ? "/ogled" : ""}`
+          : tab === "offers"
+            ? `/projects/${encodedId}/ponudba`
+            : `/projects/${encodedId}`;
+      window.history.pushState({ moduleId: "projects" }, "", path);
+    },
+    [project?.id, projectId]
+  );
+
   const handleCreateOffer = async () => {
     const updated = await onProjectUpdate(`${basePath}/offers`, { method: "POST" });
     applyProjectUpdate(updated);
@@ -1006,6 +1026,7 @@ export function ProjectWorkspace({
       }
       requestOfferNavigation(() => {
         setActiveTab(next);
+        pushProjectRoute(next);
       });
     };
 
@@ -1095,6 +1116,32 @@ export function ProjectWorkspace({
                 className="space-y-6"
               >
                 <PhaseRibbon steps={phaseRibbonSteps} activeKey={activeTab} variant="tabs" />
+
+                {allowedTabValues.includes("zahteva") ? (
+                <TabsContent value="zahteva" className="mt-0 space-y-4">
+                  {activeTab === "zahteva" ? (
+                    <RequestWizard
+                      project={project}
+                      routeMode={initialRequestRouteMode}
+                      onProjectRequestChanged={(zahteva) => {
+                        setProject((prev) => ({
+                          ...prev,
+                          activeRequestId: zahteva._id,
+                          requestIds: Array.from(new Set([...(prev.requestIds ?? []), zahteva._id])),
+                        }));
+                      }}
+                      onNavigateOffer={() => {
+                        setActiveTab("offers");
+                        setOffersRefreshKey((key) => key + 1);
+                        pushProjectRoute("offers");
+                      }}
+                      onNavigateOgled={() => {
+                        pushProjectRoute("zahteva", "ogled");
+                      }}
+                    />
+                  ) : null}
+                </TabsContent>
+                ) : null}
 
                 {allowedTabValues.includes("items") ? (
                 <TabsContent value="items" className="mt-0 space-y-4">

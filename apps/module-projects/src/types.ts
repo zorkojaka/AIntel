@@ -72,6 +72,8 @@ export interface ProjectSummary {
   requirementsTemplateVariantSlug?: string;
   salesUserId?: string | null;
   assignedEmployeeIds?: string[];
+  requestIds?: string[];
+  activeRequestId?: string | null;
   phaseSignals?: {
     hasOffers?: boolean;
     hasConfirmedOffer?: boolean;
@@ -145,4 +147,58 @@ export interface OfferCandidate {
   suggestedProductId?: string;
   suggestedName: string;
   quantity: number;
+}
+
+export type ZahtevaStatus = "osnutek" | "v_obdelavi" | "koncana" | "preskoceno";
+export type ZahtevaTipProjekta = "videonadzor" | "alarm" | "domofon" | "pametna_hisa";
+export type ZahtevaPot = "ogled" | "paket" | "preskoceno";
+
+export interface Zahteva {
+  _id: string;
+  projectId: string;
+  status: ZahtevaStatus;
+  tipProjekta: ZahtevaTipProjekta;
+  pot: ZahtevaPot;
+  videonadzor: {
+    lokacije: Array<{
+      id: string;
+      ime: string;
+      opis?: string;
+      kameraId?: string | null;
+    }>;
+    kosarica: Array<{
+      id: string;
+      kameraProductId: string;
+      nosilecProductId?: string | null;
+      kolicina: number;
+    }>;
+    snemalnik: {
+      productId?: string | null;
+      kanali: number;
+      hasPoE: boolean;
+    };
+    poeSwitch: {
+      productId?: string | null;
+      portov: number;
+    };
+    disk: {
+      productId?: string | null;
+      kapaciteta: number;
+      dniSnemanja: number;
+      motionRecord: boolean;
+    };
+    dodatnaOprema: Array<{
+      productId: string;
+      kolicina: number;
+    }>;
+    montaza: {
+      vkljuceno: boolean;
+      napeljava: boolean;
+      metrov: number;
+      zascitniMaterial?: "kanal" | "cev" | "brez" | null;
+    };
+  };
+  generatedQuoteId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }

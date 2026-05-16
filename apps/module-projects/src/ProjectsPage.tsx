@@ -18,9 +18,24 @@ import { getProjectPhase } from "./components/projectPhases";
 
 const API_PREFIX = "/api/projects";
 const VIEW_STORAGE_KEY = "projects:view-mode";
-const VALID_TABS = ["items", "offers", "logistics", "execution", "closing"] as const;
+const VALID_TABS = ["zahteva", "items", "offers", "logistics", "execution", "closing"] as const;
 type WorkspaceTab = (typeof VALID_TABS)[number];
 const shownForbiddenProjectToasts = new Set<string>();
+
+function parseProjectRoute(pathname: string) {
+  const match = pathname.match(/^\/projects\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?/);
+  if (!match) return null;
+  const projectId = decodeURIComponent(match[1]);
+  const section = match[2] ?? null;
+  const detail = match[3] ?? null;
+  if (section === "zahteva") {
+    return { projectId, tab: "zahteva" as WorkspaceTab, requestRouteMode: detail === "ogled" ? ("ogled" as const) : ("entry" as const) };
+  }
+  if (section === "ponudba") {
+    return { projectId, tab: "offers" as WorkspaceTab, requestRouteMode: "entry" as const };
+  }
+  return { projectId, tab: null as WorkspaceTab | null, requestRouteMode: "entry" as const };
+}
 
 function parseWorkspaceTab(value: string | null): WorkspaceTab | null {
   if (!value) return null;
@@ -85,7 +100,8 @@ export function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
-  const [initialWorkspaceTab, setInitialWorkspaceTab] = useState<"items" | "offers" | "logistics" | "execution" | "closing" | null>(null);
+  const [initialWorkspaceTab, setInitialWorkspaceTab] = useState<WorkspaceTab | null>(null);
+  const [initialRequestRouteMode, setInitialRequestRouteMode] = useState<"entry" | "ogled">("entry");
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isClientModalOpen, setClientModalOpen] = useState(false);
   const [isNewProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
@@ -119,7 +135,7 @@ export function ProjectsPage() {
       return ["execution"];
     }
     if (!canAccessPreparationPhase) {
-      return ["items", "offers", "execution", "closing"];
+      return ["zahteva", "items", "offers", "execution", "closing"];
     }
     return undefined;
   }, [canAccessPreparationPhase, isExecutionOnlyViewer]);
@@ -270,13 +286,14 @@ export function ProjectsPage() {
     if (!projectsLoaded) return;
     if (!viewerRolesLoaded) return;
 
+    const route = parseProjectRoute(window.location.pathname);
     const params = new URLSearchParams(window.location.search);
-    const projectId = params.get("projectId");
+    const projectId = route?.projectId ?? params.get("projectId");
     if (!projectId) {
       initialProjectFromUrlHandledRef.current = true;
       return;
     }
-    const tab = parseWorkspaceTab(params.get("tab"));
+    const tab = route?.tab ?? parseWorkspaceTab(params.get("tab"));
     if (tab) {
       if (tab === "logistics" && !canAccessPreparationPhase) {
         toast.error("Nimaš dostopa do faze Priprava.");
@@ -284,6 +301,7 @@ export function ProjectsPage() {
         setInitialWorkspaceTab(tab);
       }
     }
+    setInitialRequestRouteMode(route?.requestRouteMode ?? "entry");
 
     if (isExecutionOnlyViewer) {
       const isAssignedProject = projects.some((project) => project.id === projectId);
@@ -304,6 +322,8 @@ export function ProjectsPage() {
 
   const handleSelectProject = (projectId: string) => {
     setInitialWorkspaceTab(isExecutionOnlyViewer ? "execution" : null);
+    setInitialRequestRouteMode("entry");
+    window.history.pushState({ moduleId: "projects" }, "", `/projects/${encodeURIComponent(projectId)}`);
     loadProjectDetails(projectId);
   };
 
@@ -312,7 +332,8 @@ export function ProjectsPage() {
     setSelectedProjectId(null);
     setProjectDetails(null);
     setInitialWorkspaceTab(null);
-    if (window.location.search) {
+    setInitialRequestRouteMode("entry");
+    if (window.location.pathname !== "/projects" || window.location.search) {
       window.history.replaceState({ moduleId: "projects" }, "", "/projects");
     }
   };
@@ -770,6 +791,7 @@ export function ProjectsPage() {
           projectId={projectDetails.id}
           initialProject={projectDetails}
           initialTab={initialWorkspaceTab ?? undefined}
+          initialRequestRouteMode={initialRequestRouteMode}
           templates={templates}
           onBack={handleBackToList}
           onProjectUpdate={handleProjectUpdate}

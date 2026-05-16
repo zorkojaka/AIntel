@@ -357,6 +357,530 @@
   display: none;
 }
 
+.request-option {
+  display: flex;
+  min-height: 96px;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 1rem;
+  text-align: left;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.request-option--active {
+  border-color: var(--app-brand);
+  box-shadow: inset 0 0 0 1px var(--app-brand);
+  color: var(--app-text);
+}
+
+.request-option--disabled {
+  cursor: not-allowed;
+  background: var(--app-surface-soft);
+  color: var(--app-muted);
+}
+
+.request-option__title {
+  min-width: 0;
+  flex: 1;
+  font-weight: 650;
+}
+
+.request-path-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.request-path-card__icon {
+  display: inline-flex;
+  width: 2.25rem;
+  height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--app-brand) 12%, #ffffff 88%);
+  color: var(--app-brand);
+}
+
+.request-path-card--disabled {
+  opacity: 0.72;
+}
+
+.request-wizard-step {
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 1rem;
+}
+
+.request-wizard-step--future {
+  background: var(--app-surface-soft);
+  color: var(--app-muted);
+}
+
+.request-step-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.request-empty-state {
+  border: 1px dashed var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface-soft);
+  color: var(--app-muted);
+  padding: 0.85rem;
+  font-size: 0.9rem;
+}
+
+.request-location-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) 2.25rem;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.request-location-row [aria-label="Opis lokacije"] {
+  grid-column: 2 / 4;
+}
+
+.request-location-icon {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--app-brand) 10%, #ffffff 90%);
+  color: var(--app-brand);
+}
+
+.request-step-summary {
+  margin-top: 0.85rem;
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.request-step-summary.is-ok {
+  background: #e3f7ef;
+  color: #1e8358;
+}
+
+.request-step-summary.is-warning {
+  background: #fff4de;
+  color: #976208;
+}
+
+.request-filter-row {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.request-filter-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--app-muted);
+  text-transform: uppercase;
+}
+
+.request-filter-strip {
+  display: flex;
+  gap: 0.45rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  scrollbar-width: thin;
+}
+
+.request-filter-chip {
+  flex: 0 0 auto;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--app-muted);
+  padding: 0.42rem 0.72rem;
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.request-filter-chip.is-active {
+  border-color: var(--app-brand);
+  background: color-mix(in srgb, var(--app-brand) 10%, #ffffff 90%);
+  color: var(--app-brand);
+}
+
+.request-product-grid {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.request-product-card {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 0.75rem;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  padding: 0.65rem;
+}
+
+.request-product-image,
+.request-dialog-product__image {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.request-product-image--empty {
+  background: linear-gradient(135deg, #f3f6fb, #fff);
+}
+
+.request-cart-summary {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.75rem;
+  border-top: 1px solid var(--app-border);
+  padding-top: 1rem;
+}
+
+.request-cart-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 0.5rem;
+  align-items: center;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  padding: 0.55rem;
+}
+
+.request-qty-control {
+  display: inline-grid;
+  grid-template-columns: 2rem 1.6rem 2rem;
+  align-items: center;
+  justify-items: center;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+}
+
+.request-dialog-product {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.request-radio-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  padding: 0.65rem;
+}
+
+.request-radio-row input {
+  width: 1rem;
+  height: 1rem;
+}
+
+.request-dialog-total {
+  border-radius: 8px;
+  background: var(--app-surface-soft);
+  padding: 0.75rem;
+  font-weight: 700;
+}
+
+.request-assignment-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+}
+
+.request-assignment-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+}
+
+.request-assignment-table th,
+.request-assignment-table td {
+  border-bottom: 1px solid var(--app-border);
+  padding: 0.6rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.request-assignment-table th:not(:first-child),
+.request-assignment-table td:not(:first-child) {
+  text-align: center;
+}
+
+.request-variant-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 800;
+}
+
+.request-variant-color {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 3px;
+}
+
+.request-variant-count {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--app-muted);
+}
+
+.request-assignment-cell {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: #fff;
+  color: #fff;
+  font-weight: 800;
+}
+
+.request-assignment-cell.is-selected {
+  border-color: var(--variant-color);
+  background: var(--variant-color);
+}
+
+.request-assignment-cell:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.request-assignment-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  margin-top: 0.85rem;
+}
+
+.request-equipment-grid,
+.request-montaza-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.request-equipment-panel {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.85rem;
+}
+
+.request-selected-product {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface-soft);
+  padding: 0.75rem;
+}
+
+.request-selected-product.is-selected {
+  border-color: color-mix(in srgb, var(--app-brand) 45%, var(--app-border) 55%);
+  background: color-mix(in srgb, var(--app-brand) 7%, #ffffff 93%);
+}
+
+.request-equipment-track {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  scrollbar-width: thin;
+}
+
+.request-equipment-choice {
+  display: grid;
+  min-width: 190px;
+  max-width: 240px;
+  gap: 0.25rem;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--app-text);
+  padding: 0.65rem;
+  text-align: left;
+}
+
+.request-equipment-choice.is-active {
+  border-color: var(--app-brand);
+  box-shadow: inset 0 0 0 1px var(--app-brand);
+}
+
+.request-form-grid {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.request-form-grid label,
+.request-field-label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.request-checkbox-line {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.request-checkbox-line input {
+  width: 1rem;
+  height: 1rem;
+}
+
+.request-storage-note {
+  border-radius: 8px;
+  background: #e7f2ff;
+  color: #0d5fab;
+  padding: 0.65rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.request-accessory-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  max-width: 260px;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--app-muted);
+  padding: 0.45rem 0.7rem;
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.request-accessory-chip.is-active {
+  border-color: #1e8358;
+  background: #e3f7ef;
+  color: #1e8358;
+}
+
+.request-segmented {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.4rem;
+}
+
+.request-segmented button {
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.55rem;
+  font-weight: 650;
+}
+
+.request-segmented button.is-active {
+  border-color: var(--app-brand);
+  background: color-mix(in srgb, var(--app-brand) 9%, #ffffff 91%);
+  color: var(--app-brand);
+}
+
+.request-review {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.request-review-section {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  padding: 0.8rem;
+}
+
+.request-review-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.6rem;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.request-review-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  border-radius: 8px;
+  background: var(--app-text);
+  color: #fff;
+  padding: 0.9rem;
+}
+
+@media (min-width: 640px) {
+  .request-path-card {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .request-step-header {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .request-location-row {
+    grid-template-columns: 2rem minmax(0, 1fr) minmax(0, 1fr) 2.25rem;
+  }
+
+  .request-location-row [aria-label="Opis lokacije"] {
+    grid-column: auto;
+  }
+
+  .request-product-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .request-equipment-grid,
+  .request-montaza-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .request-equipment-grid .request-equipment-panel:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+
+  .request-form-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: end;
+  }
+
+  .request-segmented {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 .projects-workspace-shell .sticky.top-0.z-20 {
   border-bottom-color: var(--app-border);
   backdrop-filter: blur(8px);
