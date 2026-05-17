@@ -149,54 +149,69 @@ export interface OfferCandidate {
   quantity: number;
 }
 
-export type ZahtevaStatus = "osnutek" | "v_obdelavi" | "koncana" | "preskoceno";
-export type ZahtevaTipProjekta = "videonadzor" | "alarm" | "domofon" | "pametna_hisa";
-export type ZahtevaPot = "ogled" | "paket" | "preskoceno";
+export type ZahtevaStatus = "osnutek" | "koncana";
+export type ZahtevaTipSistema = "videonadzor" | "alarm" | "domofon" | "pametna_hisa";
 
 export interface Zahteva {
   _id: string;
   projectId: string;
   status: ZahtevaStatus;
-  tipProjekta: ZahtevaTipProjekta;
-  pot: ZahtevaPot;
-  videonadzor: {
-    lokacije: Array<{
-      id: string;
-      ime: string;
-      opis?: string;
-      kameraId?: string | null;
-    }>;
-    kosarica: Array<{
+  sistemi: Array<{
+    id: string;
+    tip: ZahtevaTipSistema;
+    steviloLokacij: number;
+    videonadzor?: {
+      asortima: Array<{
       id: string;
       kameraProductId: string;
       nosilecProductId?: string | null;
-    }>;
-    snemalnik: {
-      productId?: string | null;
-      kanali: number;
-      hasPoE: boolean;
+      }>;
+      lokacije: Array<{
+        id: string;
+        ime: string;
+        asortimaIdAssigned?: string | null;
+        slike?: Array<{
+          filename: string;
+          url: string;
+          uploadedAt?: string | null;
+        }>;
+      }>;
+      snemalnik: {
+        productId?: string | null;
+      };
+      poeSwitch: {
+        productId?: string | null;
+        kolicina?: number;
+        items?: Array<{
+          productId: string;
+          kolicina: number;
+        }>;
+      };
+      disk: {
+        productId?: string | null;
+        kolicina?: number;
+        items?: Array<{
+          productId: string;
+          kolicina: number;
+        }>;
+        dniSnemanja: number;
+        motionRecord: boolean;
+      };
+      dodatnaOprema?: Array<{
+        productId: string;
+        kolicina: number;
+      }>;
+      montaza: {
+        vkljuceno: boolean;
+        napeljava: boolean;
+        metrov: number;
+        zascitniMaterial?: "kanal" | "cev" | "brez" | null;
+      };
     };
-    poeSwitch: {
-      productId?: string | null;
-      portov: number;
-    };
-    disk: {
-      productId?: string | null;
-      kapaciteta: number;
-      dniSnemanja: number;
-      motionRecord: boolean;
-    };
-    dodatnaOprema: Array<{
-      productId: string;
-      kolicina: number;
-    }>;
-    montaza: {
-      vkljuceno: boolean;
-      napeljava: boolean;
-      metrov: number;
-      zascitniMaterial?: "kanal" | "cev" | "brez" | null;
-    };
-  };
+    alarm?: Record<string, unknown>;
+    domofon?: Record<string, unknown>;
+    pametnaHisa?: Record<string, unknown>;
+  }>;
   generatedQuoteId?: string | null;
   createdAt?: string;
   updatedAt?: string;

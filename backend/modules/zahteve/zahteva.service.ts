@@ -39,7 +39,16 @@ function vatRate(product: any) {
   return 22;
 }
 
-function lineFromProduct(product: any, quantity: number, tip: 'material' | 'storitev'): OfferLineItem {
+function buildZahtevaLocationPhotoItemId(zahtevaId: string, sistemId: string, lokacijaId: string) {
+  return `zahteva-location:${zahtevaId}:${sistemId}:${lokacijaId}`;
+}
+
+function lineFromProduct(
+  product: any,
+  quantity: number,
+  tip: 'material' | 'storitev',
+  extra?: Partial<OfferLineItem>
+): OfferLineItem {
   const unitPrice = Number(product?.prodajnaCena ?? 0);
   const qty = Math.max(0, Number(quantity) || 0);
   const vat = vatRate(product);
@@ -60,6 +69,7 @@ function lineFromProduct(product: any, quantity: number, tip: 'material' | 'stor
     casovnaNorma: Number(product?.casovnaNorma) || 0,
     dobavitelj: product?.dobavitelj ?? '',
     naslovDobavitelja: product?.naslovDobavitelja ?? '',
+    ...extra,
   };
 }
 
@@ -70,6 +80,7 @@ async function getNextOfferVersionNumber(projectId: string, baseTitle: string) {
 
 async function createOfferVersion(input: {
   projectId: string;
+  requestId?: string | null;
   baseTitle?: string;
   items: OfferLineItem[];
   comment?: string | null;
@@ -88,6 +99,7 @@ async function createOfferVersion(input: {
 
   const payload: any = {
     projectId: input.projectId,
+    requestId: input.requestId ?? null,
     baseTitle,
     versionNumber,
     title,
@@ -137,15 +149,21 @@ export async function resolveProjectForZahteva(projectId: string) {
   return ProjectModel.findOne({ id: projectId });
 }
 
-export async function createPreskocenaPonudba(zahteva: ZahtevaDocument) {
-  const project = await ProjectModel.findById(zahteva.projectId).lean();
-  const projectKey = project?.id ?? String(zahteva.projectId);
-  return createOfferVersion({
-    projectId: projectKey,
-    baseTitle: 'Ponudba',
-    items: [],
-    comment: 'Prazna ponudba iz preskočene zahteve.',
-  });
+export function createDefaultVideonadzorSystem() {
+  return {
+    id: 'sys-1',
+    tip: 'videonadzor' as const,
+    steviloLokacij: 1,
+    videonadzor: {
+      asortima: [],
+      lokacije: [{ id: 'loc-1', ime: 'Lokacija 1', asortimaIdAssigned: null, slike: [] }],
+      snemalnik: { productId: null },
+      poeSwitch: { productId: null, kolicina: 0, items: [] },
+      disk: { productId: null, kolicina: 0, items: [], dniSnemanja: 30, motionRecord: false },
+      dodatnaOprema: [],
+      montaza: { vkljuceno: false, napeljava: false, metrov: 0, zascitniMaterial: null },
+    },
+  };
 }
 
 export async function predlagajSnemalnik(skupajKamer: number, dominantenBrand?: string, potrebujePoE?: boolean) {
@@ -246,65 +264,90 @@ async function findManualProduct(pattern: RegExp) {
 }
 
 function addProductRequest(
-  requests: Array<{ productId: string; kolicina: number; tip: 'material' | 'storitev' }>,
+  requests: Array<{ productId: string; kolicina: number; tip: 'material' | 'storitev'; extra?: Partial<OfferLineItem> }>,
   productId: unknown,
   kolicina: number,
-  tip: 'material' | 'storitev'
+  tip: 'material' | 'storitev',
+  extra?: Partial<OfferLineItem>
 ) {
   if (!productId || !isObjectId(String(productId))) return;
   const qty = Number(kolicina) || 0;
   if (qty <= 0) return;
-  requests.push({ productId: String(productId), kolicina: qty, tip });
+  requests.push({ productId: String(productId), kolicina: qty, tip, extra });
+}
+
+function selectedEquipmentItems(input?: { productId?: unknown; kolicina?: number; items?: Array<{ productId?: unknown; kolicina?: number }> }) {
+  const items = (input?.items ?? [])
+    .map((item) => ({ productId: item.productId, kolicina: Math.max(0, Number(item.kolicina) || 0) }))
+    .filter((item) => item.productId && item.kolicina > 0);
+  if (items.length > 0) return items;
+  const qty = Math.max(0, Number(input?.kolicina ?? (input?.productId ? 1 : 0)) || 0);
+  return input?.productId && qty > 0 ? [{ productId: input.productId, kolicina: qty }] : [];
 }
 
 async function buildOfferItems(zahteva: ZahtevaDocument) {
-  const videonadzor = zahteva.videonadzor;
-  const productRequests: Array<{ productId: string; kolicina: number; tip: 'material' | 'storitev' }> = [];
+  const productRequests: Array<{ productId: string; kolicina: number; tip: 'material' | 'storitev'; extra?: Partial<OfferLineItem> }> = [];
 
-  for (const par of videonadzor.kosarica ?? []) {
-    const kolicina = (videonadzor.lokacije ?? []).filter((lokacija) => lokacija.kameraId === par.id).length;
-    addProductRequest(productRequests, par.kameraProductId, kolicina, 'material');
-    addProductRequest(productRequests, par.nosilecProductId, kolicina, 'material');
-  }
+  for (const sistem of zahteva.sistemi ?? []) {
+    if (sistem.tip !== 'videonadzor' || !sistem.videonadzor) continue;
+    const videonadzor = sistem.videonadzor;
 
-  addProductRequest(productRequests, videonadzor.snemalnik?.productId, 1, 'material');
-  addProductRequest(productRequests, videonadzor.poeSwitch?.productId, 1, 'material');
-  addProductRequest(productRequests, videonadzor.disk?.productId, 1, 'material');
+    for (const variant of videonadzor.asortima ?? []) {
+      const variantLokacije = (videonadzor.lokacije ?? []).filter((lokacija) => lokacija.asortimaIdAssigned === variant.id);
+      const kolicina = variantLokacije.length;
+      addProductRequest(productRequests, variant.kameraProductId, kolicina, 'material', {
+        requirementsLocationUnits: variantLokacije.map((lokacija) => ({
+          locationId: lokacija.id,
+          locationName: normalizeText(lokacija.ime, lokacija.id) || lokacija.id,
+          sourcePhotoItemId: buildZahtevaLocationPhotoItemId(String(zahteva._id), sistem.id, lokacija.id),
+        })),
+      });
+      addProductRequest(productRequests, variant.nosilecProductId, kolicina, 'material');
+    }
 
-  for (const dod of videonadzor.dodatnaOprema ?? []) {
-    addProductRequest(productRequests, dod.productId, dod.kolicina, 'material');
-  }
+    addProductRequest(productRequests, videonadzor.snemalnik?.productId, 1, 'material');
+    for (const item of selectedEquipmentItems(videonadzor.poeSwitch)) {
+      addProductRequest(productRequests, item.productId, item.kolicina, 'material');
+    }
+    for (const item of selectedEquipmentItems(videonadzor.disk)) {
+      addProductRequest(productRequests, item.productId, item.kolicina, 'material');
+    }
 
-  if (videonadzor.montaza?.vkljuceno) {
-    const stevKamer = (videonadzor.lokacije ?? []).filter((lokacija) => lokacija.kameraId).length;
-    const [montazaKamera, zagonSnem] = await Promise.all([
-      findManualProduct(/montaža.*kamera|montaza.*kamera/i),
-      findManualProduct(/zagon.*snemaln/i),
-    ]);
-    addProductRequest(productRequests, montazaKamera?._id, stevKamer, 'storitev');
-    addProductRequest(productRequests, zagonSnem?._id, 1, 'storitev');
+    for (const dod of videonadzor.dodatnaOprema ?? []) {
+      addProductRequest(productRequests, dod.productId, dod.kolicina, 'material');
+    }
 
-    if (videonadzor.montaza.napeljava) {
-      const metrov = Number(videonadzor.montaza.metrov) || 0;
-      const utp = await findManualProduct(/utp.*kabel/i);
-      addProductRequest(productRequests, utp?._id, metrov, 'material');
+    if (videonadzor.montaza?.vkljuceno) {
+      const stevKamer = (videonadzor.lokacije ?? []).filter((lokacija) => lokacija.asortimaIdAssigned).length;
+      const [montazaKamera, zagonSnem] = await Promise.all([
+        findManualProduct(/montaža.*kamera|montaza.*kamera/i),
+        findManualProduct(/zagon.*snemaln/i),
+      ]);
+      addProductRequest(productRequests, montazaKamera?._id, stevKamer, 'storitev');
+      addProductRequest(productRequests, zagonSnem?._id, 1, 'storitev');
 
-      if (videonadzor.montaza.zascitniMaterial === 'kanal') {
-        const [kanal, polaganje] = await Promise.all([
-          findManualProduct(/plastič.*kanal|plastic.*kanal/i),
-          findManualProduct(/polaganje.*kanal/i),
-        ]);
-        addProductRequest(productRequests, kanal?._id, metrov, 'material');
-        addProductRequest(productRequests, polaganje?._id, metrov, 'storitev');
-      }
+      if (videonadzor.montaza.napeljava) {
+        const metrov = Number(videonadzor.montaza.metrov) || 0;
+        const utp = await findManualProduct(/utp.*kabel/i);
+        addProductRequest(productRequests, utp?._id, metrov, 'material');
 
-      if (videonadzor.montaza.zascitniMaterial === 'cev') {
-        const [cev, polaganje] = await Promise.all([
-          findManualProduct(/gibljiv.*cev/i),
-          findManualProduct(/polaganje.*cev/i),
-        ]);
-        addProductRequest(productRequests, cev?._id, metrov, 'material');
-        addProductRequest(productRequests, polaganje?._id, metrov, 'storitev');
+        if (videonadzor.montaza.zascitniMaterial === 'kanal') {
+          const [kanal, polaganje] = await Promise.all([
+            findManualProduct(/plastič.*kanal|plastic.*kanal/i),
+            findManualProduct(/polaganje.*kanal/i),
+          ]);
+          addProductRequest(productRequests, kanal?._id, metrov, 'material');
+          addProductRequest(productRequests, polaganje?._id, metrov, 'storitev');
+        }
+
+        if (videonadzor.montaza.zascitniMaterial === 'cev') {
+          const [cev, polaganje] = await Promise.all([
+            findManualProduct(/gibljiv.*cev/i),
+            findManualProduct(/polaganje.*cev/i),
+          ]);
+          addProductRequest(productRequests, cev?._id, metrov, 'material');
+          addProductRequest(productRequests, polaganje?._id, metrov, 'storitev');
+        }
       }
     }
   }
@@ -316,12 +359,41 @@ async function buildOfferItems(zahteva: ZahtevaDocument) {
   return productRequests
     .map((entry) => {
       const product = productMap.get(entry.productId);
-      return product ? lineFromProduct(product, entry.kolicina, entry.tip) : null;
+      return product ? lineFromProduct(product, entry.kolicina, entry.tip, entry.extra) : null;
     })
     .filter((item): item is OfferLineItem => Boolean(item));
 }
 
-export async function zakljucniZahtevo(zahtevaId: string) {
+function validateZahtevaForOffer(zahteva: ZahtevaDocument) {
+  if (!Array.isArray(zahteva.sistemi) || zahteva.sistemi.length === 0) {
+    throw Object.assign(new Error('Zahteva nima dodanih sistemov.'), { statusCode: 400 });
+  }
+
+  for (const sistem of zahteva.sistemi) {
+    if (sistem.tip !== 'videonadzor') continue;
+    const videonadzor = sistem.videonadzor;
+    if (!videonadzor) {
+      throw Object.assign(new Error('Videonadzor sistem nima podatkov.'), { statusCode: 400 });
+    }
+    if (!Array.isArray(videonadzor.lokacije) || videonadzor.lokacije.length === 0) {
+      throw Object.assign(new Error('Videonadzor mora imeti vsaj eno lokacijo.'), { statusCode: 400 });
+    }
+    const variantIds = new Set((videonadzor.asortima ?? []).map((variant) => variant.id));
+    if (variantIds.size === 0) {
+      throw Object.assign(new Error('Videonadzor mora imeti vsaj eno varianto asortimana.'), { statusCode: 400 });
+    }
+    const missing = (videonadzor.lokacije ?? []).filter((lokacija) => !lokacija.asortimaIdAssigned);
+    if (missing.length > 0) {
+      throw Object.assign(new Error('Vse lokacije morajo imeti dodeljeno varianto.'), { statusCode: 400 });
+    }
+    const invalid = (videonadzor.lokacije ?? []).filter((lokacija) => !variantIds.has(String(lokacija.asortimaIdAssigned)));
+    if (invalid.length > 0) {
+      throw Object.assign(new Error('Lokacija ima dodeljeno neobstoječo varianto.'), { statusCode: 400 });
+    }
+  }
+}
+
+export async function nadaljujNaPonudbo(zahtevaId: string) {
   if (!isObjectId(zahtevaId)) {
     throw Object.assign(new Error('Neveljavna zahteva.'), { statusCode: 400 });
   }
@@ -336,11 +408,14 @@ export async function zakljucniZahtevo(zahtevaId: string) {
     if (existing) return existing;
   }
 
+  validateZahtevaForOffer(zahteva);
+
   const project = await ProjectModel.findById(zahteva.projectId).lean();
   const projectKey = project?.id ?? String(zahteva.projectId);
   const items = await buildOfferItems(zahteva);
   const ponudba = await createOfferVersion({
     projectId: projectKey,
+    requestId: String(zahteva._id),
     baseTitle: 'Ponudba',
     items,
     comment: 'Ponudba ustvarjena iz zahteve.',

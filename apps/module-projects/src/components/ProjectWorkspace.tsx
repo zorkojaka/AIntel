@@ -20,7 +20,7 @@ import { useProjectTimeline, type StepKey, type StepStatus, type TimelineStep } 
 import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
 import { PhaseRibbon, type PhaseRibbonStatus } from "./PhaseRibbon";
 import { CommunicationPanel } from "../domains/communication/CommunicationPanel";
-import { RequestWizard } from "./RequestWizard";
+import { ZahtevaView } from "./Zahteva";
 
 type WorkspaceTabValue = "zahteva" | "items" | "offers" | "logistics" | "execution" | "closing";
 type WorkspaceCSSVars = CSSProperties & { "--brand-color"?: string };
@@ -81,7 +81,6 @@ interface ProjectWorkspaceProps {
   projectId: string;
   initialProject?: ProjectDetails | null;
   initialTab?: WorkspaceTabValue;
-  initialRequestRouteMode?: "entry" | "ogled";
   allowedTabs?: WorkspaceTabValue[];
   templates: Template[];
   onBack: () => void;
@@ -94,7 +93,6 @@ export function ProjectWorkspace({
   projectId,
   initialProject,
   initialTab,
-  initialRequestRouteMode = "entry",
   allowedTabs,
   templates,
   onBack,
@@ -772,12 +770,12 @@ export function ProjectWorkspace({
   };
 
   const pushProjectRoute = useCallback(
-    (tab: WorkspaceTabValue, detail?: "ogled") => {
+    (tab: WorkspaceTabValue) => {
       const currentProjectId = project?.id ?? projectId;
       const encodedId = encodeURIComponent(currentProjectId);
       const path =
         tab === "zahteva"
-          ? `/projects/${encodedId}/zahteva${detail === "ogled" ? "/ogled" : ""}`
+          ? `/projects/${encodedId}/zahteva`
           : tab === "offers"
             ? `/projects/${encodedId}/ponudba`
             : `/projects/${encodedId}`;
@@ -1120,23 +1118,19 @@ export function ProjectWorkspace({
                 {allowedTabValues.includes("zahteva") ? (
                 <TabsContent value="zahteva" className="mt-0 space-y-4">
                   {activeTab === "zahteva" ? (
-                    <RequestWizard
+                    <ZahtevaView
                       project={project}
-                      routeMode={initialRequestRouteMode}
+                      onNavigateOffer={() => {
+                        setActiveTab("offers");
+                        setOffersRefreshKey((key) => key + 1);
+                        pushProjectRoute("offers");
+                      }}
                       onProjectRequestChanged={(zahteva) => {
                         setProject((prev) => ({
                           ...prev,
                           activeRequestId: zahteva._id,
                           requestIds: Array.from(new Set([...(prev.requestIds ?? []), zahteva._id])),
                         }));
-                      }}
-                      onNavigateOffer={() => {
-                        setActiveTab("offers");
-                        setOffersRefreshKey((key) => key + 1);
-                        pushProjectRoute("offers");
-                      }}
-                      onNavigateOgled={() => {
-                        pushProjectRoute("zahteva", "ogled");
                       }}
                     />
                   ) : null}

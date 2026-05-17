@@ -15,11 +15,17 @@ export interface OfferLineItem {
   casovnaNorma?: number;
   dobavitelj?: string;
   naslovDobavitelja?: string;
+  requirementsLocationUnits?: Array<{
+    locationId: string;
+    locationName: string;
+    sourcePhotoItemId: string;
+  }>;
 }
 
 export interface OfferVersion {
   _id: string;
   projectId: string;
+  requestId?: string | null;
   baseTitle: string;
   versionNumber: number;
   title: string;
