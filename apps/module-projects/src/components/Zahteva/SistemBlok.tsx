@@ -1,10 +1,10 @@
 import { Trash2, Video } from "lucide-react";
 import { useState } from "react";
-import type { CenikProduct } from "../../api";
+import type { CenikProduct, ExecutionRuleSettings } from "../../api";
 import { Button } from "../ui/button";
 import { DodajVariantoDialog } from "./DodajVariantoDialog";
 import { SekcijaDisk } from "./SekcijaDisk";
-import { SekcijaMontaza } from "./SekcijaMontaza";
+import { SekcijaIzvedba } from "./SekcijaIzvedba";
 import { SekcijaPoESwitch } from "./SekcijaPoESwitch";
 import { SekcijaSnemalnik } from "./SekcijaSnemalnik";
 import { TabelaAsortima } from "./TabelaAsortima";
@@ -16,12 +16,13 @@ type SistemBlokProps = {
   projectId: string;
   zahtevaId: string;
   sistem: ZahtevaSistem;
+  executionSettings: ExecutionRuleSettings | null;
   productById: Map<string, CenikProduct>;
   onChange: (next: ZahtevaSistem) => void;
   onRemove: () => void;
 };
 
-export function SistemBlok({ projectId, zahtevaId, sistem, productById, onChange, onRemove }: SistemBlokProps) {
+export function SistemBlok({ projectId, zahtevaId, sistem, executionSettings, productById, onChange, onRemove }: SistemBlokProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const videonadzor = sistem.videonadzor;
   if (sistem.tip !== "videonadzor" || !videonadzor) return null;
@@ -106,7 +107,12 @@ export function SistemBlok({ projectId, zahtevaId, sistem, productById, onChange
       <SekcijaSnemalnik videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
       <SekcijaPoESwitch videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
       <SekcijaDisk videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
-      <SekcijaMontaza videonadzor={videonadzor} onChange={updateVideo} />
+      <SekcijaIzvedba
+        sistem={sistem}
+        settings={executionSettings}
+        productById={productById}
+        onChange={(execution) => onChange({ ...sistem, execution })}
+      />
 
       <DodajVariantoDialog open={dialogOpen} onOpenChange={setDialogOpen} onConfirm={addVariants} />
     </section>

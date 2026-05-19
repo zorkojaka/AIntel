@@ -13,6 +13,7 @@ import {
   updateCommunicationTemplate,
 } from './api';
 import { OfferRulesSection } from './OfferRulesSection';
+import { ExecutionRulesSection } from './ExecutionRulesSection';
 import { RequirementTemplatesSection } from './RequirementTemplatesSection';
 import { CommunicationSenderSection } from './components/CommunicationSenderSection';
 import { CommunicationTemplatesSection } from './components/CommunicationTemplatesSection';
@@ -591,6 +592,7 @@ export const SettingsPage: React.FC = () => {
               saving={savingScope === 'sales'}
               loading={loading}
             />
+            <ExecutionRulesSection />
             <OfferRulesSection />
             <RequirementTemplatesSection />
           </div>

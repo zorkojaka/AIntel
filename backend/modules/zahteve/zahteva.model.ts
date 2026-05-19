@@ -2,6 +2,7 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
 export type ZahtevaStatus = 'osnutek' | 'koncana';
 export type ZahtevaTipSistema = 'videonadzor' | 'alarm' | 'domofon' | 'pametna_hisa';
+export type ZahtevaExecutionScenarioType = 'posiljanje' | 'izvedba' | 'izvedba_napeljava';
 
 export interface ZahtevaDocument extends Document {
   projectId: Types.ObjectId;
@@ -51,11 +52,13 @@ export interface ZahtevaDocument extends Document {
         productId: Types.ObjectId;
         kolicina: number;
       }>;
-      montaza: {
-        vkljuceno: boolean;
-        napeljava: boolean;
-        metrov: number;
-        zascitniMaterial?: 'kanal' | 'cev' | 'brez' | null;
+    };
+    execution?: {
+      scenarioType: ZahtevaExecutionScenarioType;
+      estimates?: {
+        napeljavaUr: number;
+        utpKabelMetrov: number;
+        kanalMetrov: number;
       };
     };
     alarm?: Record<string, unknown>;
@@ -160,11 +163,21 @@ const VideonadzorSchema = new Schema(
       ],
       default: [],
     },
-    montaza: {
-      vkljuceno: { type: Boolean, default: false },
-      napeljava: { type: Boolean, default: false },
-      metrov: { type: Number, default: 0, min: 0 },
-      zascitniMaterial: { type: String, enum: ['kanal', 'cev', 'brez', null], default: null },
+  },
+  { _id: false }
+);
+
+const ExecutionSchema = new Schema(
+  {
+    scenarioType: {
+      type: String,
+      enum: ['posiljanje', 'izvedba', 'izvedba_napeljava'],
+      default: 'posiljanje',
+    },
+    estimates: {
+      napeljavaUr: { type: Number, min: 0, default: 0 },
+      utpKabelMetrov: { type: Number, min: 0, default: 0 },
+      kanalMetrov: { type: Number, min: 0, default: 0 },
     },
   },
   { _id: false }
@@ -180,6 +193,7 @@ const SistemSchema = new Schema(
     },
     steviloLokacij: { type: Number, required: true, min: 0, default: 0 },
     videonadzor: { type: VideonadzorSchema, default: undefined },
+    execution: { type: ExecutionSchema, default: () => ({ scenarioType: 'posiljanje', estimates: { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0 } }) },
     alarm: { type: Schema.Types.Mixed, default: undefined },
     domofon: { type: Schema.Types.Mixed, default: undefined },
     pametnaHisa: { type: Schema.Types.Mixed, default: undefined },

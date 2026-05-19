@@ -70,6 +70,52 @@ export async function downloadPdf(url: string, filename: string, init?: RequestI
   window.URL.revokeObjectURL(objectUrl);
 }
 
+export type ExecutionQuantityRule = {
+  type: "fixed" | "per_unit" | "per_classification_field";
+  value?: number;
+  field?: string;
+};
+
+export type ExecutionScenario = {
+  type: "posiljanje" | "izvedba" | "izvedba_napeljava";
+  ime: string;
+  storitve: Array<{
+    id: string;
+    serviceProductId: string;
+    quantityRule: ExecutionQuantityRule;
+    description?: string;
+  }>;
+  defaultEstimates?: {
+    napeljavaUrPerKamera: number;
+    utpKabelMetrovPerKamera: number;
+    kanalMetrovPerKamera: number;
+  };
+};
+
+export type ProductServiceExecutionRule = {
+  id: string;
+  triggerType: "product" | "classification" | "category" | "project";
+  triggerValue: string;
+  triggerField?: string;
+  triggerFieldValue?: string;
+  serviceProductId: string;
+  quantityRule: ExecutionQuantityRule;
+  isActive: boolean;
+};
+
+export type ExecutionRuleSettings = {
+  id: string | null;
+  tenantId: string;
+  productServiceRules: ProductServiceExecutionRule[];
+  scenarios: ExecutionScenario[];
+  isConfigured: boolean;
+};
+
+export async function fetchExecutionRuleSettings(): Promise<ExecutionRuleSettings> {
+  const response = await fetch("/api/execution-rules");
+  return parseApiResponse<ExecutionRuleSettings>(response, "Pravil izvedbe ni mogoče pridobiti.");
+}
+
 export async function fetchPredlogSnemalnik(input: {
   kanali: number;
   brand?: string;

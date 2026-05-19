@@ -708,8 +708,7 @@
   margin-top: 0.85rem;
 }
 
-.request-equipment-grid,
-.request-montaza-grid {
+.request-equipment-grid {
   display: grid;
   gap: 0.85rem;
 }
@@ -1588,50 +1587,6 @@
   font-weight: 700;
 }
 
-.zahteva-montaza-line {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
-  gap: 0.45rem;
-  align-items: center;
-  font-size: 0.85rem;
-}
-
-.zahteva-montaza-line label,
-.zahteva-montaza-details label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-weight: 800;
-}
-
-.zahteva-montaza-line span {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--app-muted);
-  font-size: 0.78rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.zahteva-montaza-line button {
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
-  background: #fff;
-  color: var(--app-brand);
-  font-size: 0.78rem;
-  font-weight: 900;
-  padding: 0.32rem 0.5rem;
-}
-
-.zahteva-montaza-details {
-  display: grid;
-  gap: 0.55rem;
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
-  background: var(--app-surface-soft);
-  padding: 0.65rem;
-}
-
 .zahteva-meter-strip {
   display: grid;
   grid-auto-columns: minmax(56px, 1fr);
@@ -1653,14 +1608,6 @@
   border-color: var(--app-brand);
   background: var(--app-brand);
   color: #fff;
-}
-
-.zahteva-montaza-details select {
-  width: 100%;
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
-  background: #fff;
-  padding: 0.5rem;
 }
 
 .zahteva-bottom-total {
@@ -1729,19 +1676,6 @@
     grid-auto-columns: minmax(128px, 0.78fr);
   }
 
-  .zahteva-montaza-line {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .zahteva-montaza-line strong {
-    grid-column: 2 / 3;
-  }
-
-  .zahteva-montaza-line label,
-  .zahteva-montaza-line span {
-    grid-column: 2 / -1;
-  }
-
   .zahteva-bottom-total {
     align-items: stretch;
     flex-direction: column;
@@ -1787,8 +1721,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .request-equipment-grid,
-  .request-montaza-grid {
+  .request-equipment-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

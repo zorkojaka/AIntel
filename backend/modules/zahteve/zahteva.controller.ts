@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { resolveActorId } from '../../utils/tenant';
+import { resolveTenantId } from '../../utils/tenant';
 import { ProjectModel } from '../projects/schemas/project';
 import { ZahtevaModel } from './zahteva.model';
 import {
@@ -23,6 +24,41 @@ function actorObjectId(req: Request) {
   return actorId && mongoose.isValidObjectId(actorId) ? actorId : null;
 }
 
+function executionFromLegacyMontaza(montaza: any) {
+  const metrov = Math.max(0, Number(montaza?.metrov) || 0);
+  if (!montaza?.vkljuceno) {
+    return { scenarioType: 'posiljanje', estimates: { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0 } };
+  }
+  if (!montaza?.napeljava) {
+    return { scenarioType: 'izvedba', estimates: { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0 } };
+  }
+  return {
+    scenarioType: 'izvedba_napeljava',
+    estimates: {
+      napeljavaUr: 0,
+      utpKabelMetrov: metrov,
+      kanalMetrov: montaza?.zascitniMaterial === 'kanal' ? metrov : 0,
+    },
+  };
+}
+
+function sanitizeIncomingZahtevaPayload(payload: any) {
+  const next = { ...(payload ?? {}) };
+  if ('execution' in next) delete next.execution;
+  if (Array.isArray(next.sistemi)) {
+    next.sistemi = next.sistemi.map((sistem: any) => {
+      const cleanSistem = { ...sistem };
+      if (cleanSistem.videonadzor?.montaza) {
+        cleanSistem.execution = cleanSistem.execution ?? executionFromLegacyMontaza(cleanSistem.videonadzor.montaza);
+        const { montaza: _montaza, ...videonadzor } = cleanSistem.videonadzor;
+        cleanSistem.videonadzor = videonadzor;
+      }
+      return cleanSistem;
+    });
+  }
+  return next;
+}
+
 export async function createZahteva(req: Request, res: Response, next: NextFunction) {
   try {
     const projectId = String(req.body?.projectId ?? '').trim();
@@ -37,8 +73,9 @@ export async function createZahteva(req: Request, res: Response, next: NextFunct
       if (existing) return res.success(existing);
     }
 
-    const sistemi = Array.isArray(req.body?.sistemi) && req.body.sistemi.length > 0
-      ? req.body.sistemi
+    const payload = sanitizeIncomingZahtevaPayload(req.body);
+    const sistemi = Array.isArray(payload?.sistemi) && payload.sistemi.length > 0
+      ? payload.sistemi
       : [createDefaultVideonadzorSystem()];
 
     const zahteva = await ZahtevaModel.create({
@@ -77,7 +114,8 @@ export async function updateZahteva(req: Request, res: Response, next: NextFunct
   try {
     if (!isObjectId(req.params.id)) return res.fail('Neveljavna zahteva.', 400);
     const blocked = new Set(['_id', 'projectId', 'createdBy', 'createdAt', 'updatedAt', 'generatedQuoteId']);
-    const update = Object.fromEntries(Object.entries(req.body ?? {}).filter(([key]) => !blocked.has(key)));
+    const payload = sanitizeIncomingZahtevaPayload(req.body);
+    const update = Object.fromEntries(Object.entries(payload ?? {}).filter(([key]) => !blocked.has(key)));
     const zahteva = await ZahtevaModel.findByIdAndUpdate(req.params.id, { $set: update }, { new: true, runValidators: true });
     if (!zahteva) return res.fail('Zahteva ni najdena.', 404);
     return res.success(zahteva);
@@ -88,7 +126,7 @@ export async function updateZahteva(req: Request, res: Response, next: NextFunct
 
 export async function nadaljujZahtevaNaPonudbo(req: Request, res: Response, next: NextFunction) {
   try {
-    const ponudba = await nadaljujNaPonudbo(req.params.id);
+    const ponudba = await nadaljujNaPonudbo(req.params.id, resolveTenantId(req) ?? 'inteligent');
     return res.success(ponudba);
   } catch (error: any) {
     if (error?.statusCode) return res.fail(error.message, error.statusCode);

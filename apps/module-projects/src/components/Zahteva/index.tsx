@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchCenikProducts, type CenikProduct } from "../../api";
+import { fetchCenikProducts, fetchExecutionRuleSettings, type CenikProduct, type ExecutionRuleSettings } from "../../api";
 import type { ProjectDetails, Zahteva } from "../../types";
 import { Card } from "../ui/card";
 import { SistemBlok } from "./SistemBlok";
@@ -17,6 +17,7 @@ type ZahtevaViewProps = {
 export function ZahtevaView({ project, onProjectRequestChanged, onNavigateOffer }: ZahtevaViewProps) {
   const { zahteva, loading, saveState, updateZahtevaState } = useZahtevaState(project, onProjectRequestChanged);
   const [products, setProducts] = useState<CenikProduct[]>([]);
+  const [executionSettings, setExecutionSettings] = useState<ExecutionRuleSettings | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,6 +27,20 @@ export function ZahtevaView({ project, onProjectRequestChanged, onNavigateOffer 
       })
       .catch(() => {
         if (!cancelled) setProducts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchExecutionRuleSettings()
+      .then((settings) => {
+        if (!cancelled) setExecutionSettings(settings);
+      })
+      .catch(() => {
+        if (!cancelled) setExecutionSettings(null);
       });
     return () => {
       cancelled = true;
@@ -69,6 +84,7 @@ export function ZahtevaView({ project, onProjectRequestChanged, onNavigateOffer 
             projectId={resolvedProjectId}
             zahtevaId={resolvedZahtevaId}
             sistem={sistem}
+            executionSettings={executionSettings}
             productById={productById}
             onChange={(next) => {
               updateZahtevaState((current) => ({
