@@ -29,6 +29,7 @@ const DEFAULT_SCENARIOS: ExecutionScenario[] = [
       napeljavaUrPerKamera: 2,
       utpKabelMetrovPerKamera: 20,
       kanalMetrovPerKamera: 4,
+      kilometrinaKm: 0,
     },
   },
 ];
@@ -195,7 +196,7 @@ export function ExecutionRulesSection() {
               .map((suggestion) => ({
                 id: newId('scenario-service'),
                 serviceProductId: suggestion.serviceProductId,
-                quantityRule: defaultQuantityRule(),
+                quantityRule: suggestion.quantityRule ?? defaultQuantityRule(),
                 description: suggestion.description ?? '',
               })),
           ],
@@ -323,9 +324,10 @@ export function ExecutionRulesSection() {
               </div>
               {scenario.type === 'izvedba_napeljava' ? (
                 <div className="mt-4 grid gap-3 md:grid-cols-3">
-                  <Input label="Ur napeljave / kamera" type="number" value={scenario.defaultEstimates?.napeljavaUrPerKamera ?? 2} onChange={(event) => updateScenario(scenario.type, (current) => ({ ...current, defaultEstimates: { ...(current.defaultEstimates ?? { napeljavaUrPerKamera: 2, utpKabelMetrovPerKamera: 20, kanalMetrovPerKamera: 4 }), napeljavaUrPerKamera: Number(event.target.value) } }))} />
-                  <Input label="UTP metrov / kamera" type="number" value={scenario.defaultEstimates?.utpKabelMetrovPerKamera ?? 20} onChange={(event) => updateScenario(scenario.type, (current) => ({ ...current, defaultEstimates: { ...(current.defaultEstimates ?? { napeljavaUrPerKamera: 2, utpKabelMetrovPerKamera: 20, kanalMetrovPerKamera: 4 }), utpKabelMetrovPerKamera: Number(event.target.value) } }))} />
-                  <Input label="Kanal metrov / kamera" type="number" value={scenario.defaultEstimates?.kanalMetrovPerKamera ?? 4} onChange={(event) => updateScenario(scenario.type, (current) => ({ ...current, defaultEstimates: { ...(current.defaultEstimates ?? { napeljavaUrPerKamera: 2, utpKabelMetrovPerKamera: 20, kanalMetrovPerKamera: 4 }), kanalMetrovPerKamera: Number(event.target.value) } }))} />
+                  <Input label="Ur napeljave / kamera" type="number" value={scenario.defaultEstimates?.napeljavaUrPerKamera ?? 2} onChange={(event) => updateScenario(scenario.type, (current) => ({ ...current, defaultEstimates: { ...(current.defaultEstimates ?? { napeljavaUrPerKamera: 2, utpKabelMetrovPerKamera: 20, kanalMetrovPerKamera: 4, kilometrinaKm: 0 }), napeljavaUrPerKamera: Number(event.target.value) } }))} />
+                  <Input label="UTP metrov / kamera" type="number" value={scenario.defaultEstimates?.utpKabelMetrovPerKamera ?? 20} onChange={(event) => updateScenario(scenario.type, (current) => ({ ...current, defaultEstimates: { ...(current.defaultEstimates ?? { napeljavaUrPerKamera: 2, utpKabelMetrovPerKamera: 20, kanalMetrovPerKamera: 4, kilometrinaKm: 0 }), utpKabelMetrovPerKamera: Number(event.target.value) } }))} />
+                  <Input label="Kanal metrov / kamera" type="number" value={scenario.defaultEstimates?.kanalMetrovPerKamera ?? 4} onChange={(event) => updateScenario(scenario.type, (current) => ({ ...current, defaultEstimates: { ...(current.defaultEstimates ?? { napeljavaUrPerKamera: 2, utpKabelMetrovPerKamera: 20, kanalMetrovPerKamera: 4, kilometrinaKm: 0 }), kanalMetrovPerKamera: Number(event.target.value) } }))} />
+                  <Input label="Privzeta kilometrina (km)" type="number" value={scenario.defaultEstimates?.kilometrinaKm ?? 0} onChange={(event) => updateScenario(scenario.type, (current) => ({ ...current, defaultEstimates: { ...(current.defaultEstimates ?? { napeljavaUrPerKamera: 2, utpKabelMetrovPerKamera: 20, kanalMetrovPerKamera: 4, kilometrinaKm: 0 }), kilometrinaKm: Number(event.target.value) } }))} />
                 </div>
               ) : null}
             </div>

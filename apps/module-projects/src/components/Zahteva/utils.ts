@@ -34,7 +34,7 @@ export function createVideonadzorSystem(id: string): ZahtevaSistem {
     },
     execution: {
       scenarioType: "posiljanje",
-      estimates: { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0 },
+      estimates: { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0, kilometrinaKm: 0 },
     },
   };
 }

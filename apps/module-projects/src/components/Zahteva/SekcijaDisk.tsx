@@ -127,7 +127,8 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
       <div className="zahteva-product-track">
         {alternatives.map((product) => {
           const quantity = selectedItems.find((item) => item.productId === product._id)?.kolicina ?? 0;
-          const totalCapacity = (product.classification?.diskCapacityTB ?? 0) * quantity;
+          const displayQuantity = quantity > 0 ? quantity : 1;
+          const totalCapacity = (product.classification?.diskCapacityTB ?? 0) * displayQuantity;
           const days = recordingDaysForCapacity(totalCapacity, storage.totalMbps, cameras.length);
           const recommended = (product.classification?.diskCapacityTB ?? 0) >= storage.recommendedDiskTB;
           return (
@@ -137,7 +138,7 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
                 <strong>{product.ime}</strong>
                 <small>{product.classification?.diskCapacityTB ?? "-"} TB</small>
                 <b>{formatPrice(product.prodajnaCena)}</b>
-                <span className="zahteva-disk-days">{days ? `${days} dni za ${cameras.length} kam` : "0 dni"}</span>
+                <span className="zahteva-disk-days">{days ? `${days} dni za ${cameras.length} kam` : "—"}</span>
               </button>
               <div className="zahteva-qty-control">
                 <button type="button" onClick={() => setQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>−</button>

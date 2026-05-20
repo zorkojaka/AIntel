@@ -166,7 +166,7 @@ export function createDefaultVideonadzorSystem() {
     },
     execution: {
       scenarioType: 'posiljanje' as const,
-      estimates: { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0 },
+      estimates: { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0, kilometrinaKm: 0 },
     },
   };
 }

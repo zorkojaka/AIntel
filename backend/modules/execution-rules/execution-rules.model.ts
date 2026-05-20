@@ -36,6 +36,7 @@ export interface ExecutionScenario {
     napeljavaUrPerKamera: number;
     utpKabelMetrovPerKamera: number;
     kanalMetrovPerKamera: number;
+    kilometrinaKm: number;
   };
 }
 
@@ -103,6 +104,7 @@ const ScenarioSchema = new Schema<ExecutionScenario>(
       napeljavaUrPerKamera: { type: Number, min: 0, default: 2 },
       utpKabelMetrovPerKamera: { type: Number, min: 0, default: 20 },
       kanalMetrovPerKamera: { type: Number, min: 0, default: 4 },
+      kilometrinaKm: { type: Number, min: 0, default: 0 },
     },
   },
   { _id: false },

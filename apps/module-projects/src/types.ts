@@ -159,6 +159,7 @@ export interface ZahtevaExecution {
     napeljavaUr: number;
     utpKabelMetrov: number;
     kanalMetrov: number;
+    kilometrinaKm?: number;
   };
 }
 

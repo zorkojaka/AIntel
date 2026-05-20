@@ -32,6 +32,7 @@ type ProductResponse = ProductPayload & {
   isActive?: boolean;
   aaData?: ProductDocument['aaData'];
   classification?: ProductDocument['classification'];
+  categoryPriority?: 1 | 2 | 3 | null;
   status?: string;
   mergedIntoProductId?: string;
   createdAt: Date;
@@ -116,7 +117,7 @@ function buildPayload(body: Partial<ProductPayload>): ProductPayload {
   };
 }
 
-function sanitizeProduct(product: ProductDocument): ProductResponse {
+function sanitizeProduct(product: ProductDocument, categoryPriority?: 1 | 2 | 3 | null): ProductResponse {
   return {
     _id: product._id,
     externalSource: product.externalSource ?? '',
@@ -141,6 +142,7 @@ function sanitizeProduct(product: ProductDocument): ProductResponse {
     isActive: product.isActive !== false,
     aaData: product.aaData,
     classification: product.classification,
+    categoryPriority: categoryPriority ?? null,
     status: product.status ?? (product.isActive === false ? 'merged' : 'active'),
     mergedIntoProductId: product.mergedIntoProductId ? String(product.mergedIntoProductId) : '',
     createdAt: product.createdAt,
@@ -173,7 +175,8 @@ export async function getAllProducts(_req: Request, res: Response) {
       filter.isService = parseBoolean(isServiceQuery);
     }
     const products = await ProductModel.find(filter).lean();
-    const sanitized = products.map((product) => sanitizeProduct(product));
+    const categoryPriorityByPath = await buildCategoryPriorityMap();
+    const sanitized = products.map((product) => sanitizeProduct(product, resolvePriorityFromProductMap(categoryPriorityByPath, product as any)));
     const query = _req.query?.suggestForCategories;
     if (!query) {
       return res.success(sanitized);

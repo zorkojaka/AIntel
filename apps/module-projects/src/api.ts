@@ -89,6 +89,7 @@ export type ExecutionScenario = {
     napeljavaUrPerKamera: number;
     utpKabelMetrovPerKamera: number;
     kanalMetrovPerKamera: number;
+    kilometrinaKm?: number;
   };
 };
 
@@ -217,6 +218,7 @@ export type CenikProduct = {
     compatibleBracketCodes?: string[];
     bracketCodeOwn?: string;
   };
+  categoryPriority?: 1 | 2 | 3 | null;
 };
 
 export function getProductImageUrl(product?: Pick<CenikProduct, "aaData" | "povezavaDoSlike"> | null) {

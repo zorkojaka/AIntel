@@ -11,7 +11,17 @@ import {
 
 export const DEFAULT_EXECUTION_SCENARIOS: ExecutionScenario[] = [
   { type: 'posiljanje', ime: 'Pošiljanje', storitve: [] },
-  { type: 'izvedba', ime: 'Izvedba', storitve: [] },
+  {
+    type: 'izvedba',
+    ime: 'Izvedba',
+    storitve: [],
+    defaultEstimates: {
+      napeljavaUrPerKamera: 0,
+      utpKabelMetrovPerKamera: 0,
+      kanalMetrovPerKamera: 0,
+      kilometrinaKm: 0,
+    },
+  },
   {
     type: 'izvedba_napeljava',
     ime: 'Izvedba z napeljavo',
@@ -20,6 +30,7 @@ export const DEFAULT_EXECUTION_SCENARIOS: ExecutionScenario[] = [
       napeljavaUrPerKamera: 2,
       utpKabelMetrovPerKamera: 20,
       kanalMetrovPerKamera: 4,
+      kilometrinaKm: 0,
     },
   },
 ];
@@ -76,6 +87,10 @@ export function normalizeScenarios(input: any[]): ExecutionScenario[] {
         kanalMetrovPerKamera: cleanNumber(
           source.defaultEstimates?.kanalMetrovPerKamera,
           fallback.defaultEstimates?.kanalMetrovPerKamera ?? 4,
+        ),
+        kilometrinaKm: cleanNumber(
+          source.defaultEstimates?.kilometrinaKm,
+          fallback.defaultEstimates?.kilometrinaKm ?? 0,
         ),
       },
     };
@@ -154,16 +169,74 @@ function serviceSummary(product: any) {
 }
 
 export async function suggestExecutionRulesFromPriceList() {
-  const services = await ProductModel.find({ isService: true, isActive: { $ne: false } }).sort({ ime: 1 }).lean();
-  const findService = (patterns: RegExp[]) =>
-    services.find((service) => patterns.some((pattern) => pattern.test(cleanText(service.ime).toLowerCase())));
+  const priceListItems = await ProductModel.find({ isActive: { $ne: false } }).sort({ ime: 1 }).lean();
+  const services = priceListItems.filter((product) => product.isService);
+  const normalizedProductName = (product: any) =>
+    cleanText(product.ime)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+  const findService = (patterns: RegExp[], rejectPatterns: RegExp[] = []) =>
+    services.find((service) => {
+      const name = normalizedProductName(service);
+      return patterns.some((pattern) => pattern.test(name)) && !rejectPatterns.some((pattern) => pattern.test(name));
+    });
+  const findServices = (patterns: RegExp[]) =>
+    services.filter((service) => patterns.some((pattern) => pattern.test(normalizedProductName(service))));
+  const findProduct = (patterns: RegExp[], rejectPatterns: RegExp[] = []) =>
+    priceListItems.find((product) => {
+      const name = normalizedProductName(product);
+      return patterns.some((pattern) => pattern.test(name)) && !rejectPatterns.some((pattern) => pattern.test(name));
+    });
 
-  const cameraInstall = findService([/monta[zž]a.*kamer/, /kamer.*monta[zž]a/]);
-  const recorderStart = findService([/zagon.*snemaln/, /snemaln.*zagon/]);
-  const appTransfer = findService([/prenos.*aplikacij/, /aplikacij.*prenos/]);
-  const delivery = findService([/po[sš]tnin/, /dostav/]);
-  const mileage = findService([/kilometrin/, /prevoz/]);
-  const cabling = findService([/napeljav/, /kablir/]);
+  const cameraInstall =
+    findService([/^montaza.*kamer/, /montaza in konfiguracija.*kamer/], [/demontaz/, /remontaz/])
+    ?? findService([/konfiguracija.*kamer/, /kamer.*konfiguracija/], [/demontaz/, /remontaz/]);
+  const recorderServices = findServices([/zagon.*snemaln/, /konfiguracija.*snemaln/, /zagon.*nvr/, /nvr.*zagon/]);
+  const recorderByChannels = [4, 8, 16, 32, 64]
+    .map((channels) => ({
+      channels,
+      service: recorderServices.find((service) => {
+        const name = normalizedProductName(service);
+        return new RegExp(`(^|\\D)${channels}\\s*(ch|kanal|kanalni|kanalov)`).test(name);
+      }),
+    }))
+    .filter((entry): entry is { channels: number; service: any } => Boolean(entry.service));
+  const recorderFallback = recorderByChannels.length === 0 ? recorderServices[0] : null;
+  const recorderRules = recorderByChannels.length
+    ? recorderByChannels.map(({ channels, service }) => ({
+        id: makeId('suggested-rule'),
+        triggerType: 'classification' as const,
+        triggerValue: 'snemalnik',
+        triggerField: 'nvrChannels',
+        triggerFieldValue: String(channels),
+        serviceProductId: String(service._id),
+        serviceProduct: serviceSummary(service),
+        quantityRule: { type: 'fixed' as const, value: 1, field: '' },
+        isActive: true,
+        reason: `Najdena storitev za zagon snemalnika ${channels}ch.`,
+      }))
+    : recorderFallback
+      ? [{
+          id: makeId('suggested-rule'),
+          triggerType: 'classification' as const,
+          triggerValue: 'snemalnik',
+          triggerField: '',
+          triggerFieldValue: '',
+          serviceProductId: String(recorderFallback._id),
+          serviceProduct: serviceSummary(recorderFallback),
+          quantityRule: { type: 'fixed' as const, value: 1, field: '' },
+          isActive: true,
+          reason: 'Najdena splošna storitev za zagon snemalnika.',
+        }]
+      : [];
+  const appTransfer = findService([/prenos.*aplikacij/, /prikaz.*uporabe/, /namestitev.*aplikacij/]);
+  const delivery = findService([/postnin/, /dostav/, /posiljan/]);
+  const mileage = findService([/kilometrin/, /prevoz/, /\bkm\b/, /potni.*stroski/]);
+  const cabling = findService([/napeljav/, /delovn.*ur/, /ura.*napeljav/]);
+  const utpCable = findProduct([/\butp\b.*kabel/, /kabel.*\butp\b/, /vodnik/, /kabel/], [/baloon/, /balun/, /adapter/, /delovn.*ur/])
+    ?? findProduct([/\butp\b/], [/baloon/, /balun/, /adapter/]);
+  const channel = findProduct([/zascitn.*kanal/, /kanal.*zascitn/, /kabelsk.*kanal/, /\bkanal\b/, /\bcev\b/]);
 
   return {
     productServiceRules: [
@@ -179,20 +252,7 @@ export async function suggestExecutionRulesFromPriceList() {
             reason: 'Najdena storitev za montažo kamer.',
           }
         : null,
-      recorderStart
-        ? {
-            id: makeId('suggested-rule'),
-            triggerType: 'classification',
-            triggerValue: 'snemalnik',
-            triggerField: 'nvrChannels',
-            triggerFieldValue: '',
-            serviceProductId: String(recorderStart._id),
-            serviceProduct: serviceSummary(recorderStart),
-            quantityRule: { type: 'fixed', value: 1, field: '' },
-            isActive: true,
-            reason: 'Najdena storitev za zagon snemalnika.',
-          }
-        : null,
+      ...recorderRules,
       appTransfer
         ? {
             id: makeId('suggested-rule'),
@@ -211,10 +271,19 @@ export async function suggestExecutionRulesFromPriceList() {
         ? { type: 'posiljanje' as ExecutionScenarioType, serviceProductId: String(delivery._id), serviceProduct: serviceSummary(delivery), description: 'Poštnina' }
         : null,
       mileage
-        ? { type: 'izvedba' as ExecutionScenarioType, serviceProductId: String(mileage._id), serviceProduct: serviceSummary(mileage), description: 'Kilometrina' }
+        ? { type: 'izvedba' as ExecutionScenarioType, serviceProductId: String(mileage._id), serviceProduct: serviceSummary(mileage), description: 'Kilometrina', quantityRule: { type: 'per_classification_field' as const, value: 1, field: 'kilometrinaKm' } }
         : null,
       cabling
-        ? { type: 'izvedba_napeljava' as ExecutionScenarioType, serviceProductId: String(cabling._id), serviceProduct: serviceSummary(cabling), description: 'Napeljava' }
+        ? { type: 'izvedba_napeljava' as ExecutionScenarioType, serviceProductId: String(cabling._id), serviceProduct: serviceSummary(cabling), description: 'Delovne ure napeljave', quantityRule: { type: 'per_classification_field' as const, value: 1, field: 'napeljavaUr' } }
+        : null,
+      utpCable
+        ? { type: 'izvedba_napeljava' as ExecutionScenarioType, serviceProductId: String(utpCable._id), serviceProduct: serviceSummary(utpCable), description: 'UTP kabel', quantityRule: { type: 'per_classification_field' as const, value: 1, field: 'utpKabelMetrov' } }
+        : null,
+      channel
+        ? { type: 'izvedba_napeljava' as ExecutionScenarioType, serviceProductId: String(channel._id), serviceProduct: serviceSummary(channel), description: 'Zaščitni kanal', quantityRule: { type: 'per_classification_field' as const, value: 1, field: 'kanalMetrov' } }
+        : null,
+      mileage
+        ? { type: 'izvedba_napeljava' as ExecutionScenarioType, serviceProductId: String(mileage._id), serviceProduct: serviceSummary(mileage), description: 'Kilometrina', quantityRule: { type: 'per_classification_field' as const, value: 1, field: 'kilometrinaKm' } }
         : null,
     ].filter(Boolean),
   };

@@ -475,6 +475,7 @@ export type ExecutionScenario = {
     napeljavaUrPerKamera: number;
     utpKabelMetrovPerKamera: number;
     kanalMetrovPerKamera: number;
+    kilometrinaKm?: number;
   };
 };
 
@@ -514,6 +515,7 @@ export async function fetchExecutionRuleSuggestions(): Promise<{
     serviceProductId: string;
     serviceProduct?: ExecutionServiceProduct;
     description?: string;
+    quantityRule?: ExecutionQuantityRule;
   }>;
 }> {
   const response = await fetch('/api/execution-rules/suggestions', { method: 'POST' });
@@ -521,7 +523,7 @@ export async function fetchExecutionRuleSuggestions(): Promise<{
 }
 
 export async function fetchCenikServiceProducts(): Promise<CenikServiceProduct[]> {
-  const response = await fetch('/api/cenik/products?isService=true');
+  const response = await fetch('/api/cenik/products');
   return parseEnvelope<CenikServiceProduct[]>(response);
 }
 

@@ -20,6 +20,8 @@ type PreviewLine = {
   quantity: number;
   price: number;
   source: string;
+  estimateField?: "napeljavaUr" | "utpKabelMetrov" | "kanalMetrov" | "kilometrinaKm";
+  unit: string;
 };
 
 const SCENARIO_LABELS: Record<ExecutionScenario["type"], string> = {
@@ -64,6 +66,22 @@ function quantityFromRule(rule: { quantityRule: any }, baseQuantity: number, pro
   return Math.max(0, Number(rule.quantityRule?.value ?? 1) || 0);
 }
 
+function estimateFieldFromRule(rule: { quantityRule: any }) {
+  const field = rule.quantityRule?.type === "per_classification_field" ? rule.quantityRule.field : "";
+  return ["napeljavaUr", "utpKabelMetrov", "kanalMetrov", "kilometrinaKm"].includes(field) ? field as PreviewLine["estimateField"] : undefined;
+}
+
+function unitForLine(line: Pick<PreviewLine, "estimateField" | "name">) {
+  if (line.estimateField === "napeljavaUr") return "h";
+  if (line.estimateField === "utpKabelMetrov" || line.estimateField === "kanalMetrov") return "m";
+  if (line.estimateField === "kilometrinaKm") return "km";
+  const name = line.name.toLowerCase();
+  if (name.includes("[km]") || name.includes("kilometr")) return "km";
+  if (name.includes("[m]") || /\bkabel\b/.test(name) || /\bkanal\b/.test(name) || /\bcev\b/.test(name)) return "m";
+  if (/\b(ura|ure|ur)\b/.test(name)) return "h";
+  return "kos";
+}
+
 function ruleMatches(rule: ProductServiceExecutionRule, product: CenikProduct | undefined, projectTypes: Set<string>) {
   if (rule.triggerType === "project") return projectTypes.has(rule.triggerValue);
   if (!product) return false;
@@ -102,7 +120,7 @@ function buildPreview(
       const service = productById.get(rule.serviceProductId);
       const quantity = quantityFromRule(rule, 1);
       if (service && quantity > 0) {
-        lines.push({ key: rule.id, serviceProductId: rule.serviceProductId, name: service.ime, quantity, price: service.prodajnaCena, source: "Pravilo projekta" });
+        lines.push({ key: rule.id, serviceProductId: rule.serviceProductId, name: service.ime, quantity, price: service.prodajnaCena, source: "Pravilo projekta", unit: unitForLine({ name: service.ime }) });
       }
       continue;
     }
@@ -112,7 +130,7 @@ function buildPreview(
       const service = productById.get(rule.serviceProductId);
       const quantity = quantityFromRule(rule, item.quantity, product);
       if (service && quantity > 0) {
-        lines.push({ key: `${rule.id}-${item.productId}`, serviceProductId: rule.serviceProductId, name: service.ime, quantity, price: service.prodajnaCena, source: product?.ime ?? "Izdelek" });
+        lines.push({ key: `${rule.id}-${item.productId}`, serviceProductId: rule.serviceProductId, name: service.ime, quantity, price: service.prodajnaCena, source: product?.ime ?? "Izdelek", unit: unitForLine({ name: service.ime }) });
       }
     }
   }
@@ -123,8 +141,9 @@ function buildPreview(
   for (const serviceRule of scenario?.storitve ?? []) {
     const service = productById.get(serviceRule.serviceProductId);
     const quantity = quantityFromRule(serviceRule, cameras, undefined, estimates);
-    if (service && quantity > 0) {
-      lines.push({ key: serviceRule.id, serviceProductId: serviceRule.serviceProductId, name: service.ime, quantity, price: service.prodajnaCena, source: scenario?.ime ?? "Scenarij" });
+    const estimateField = estimateFieldFromRule(serviceRule);
+    if (service && (quantity > 0 || estimateField)) {
+      lines.push({ key: serviceRule.id, serviceProductId: serviceRule.serviceProductId, name: service.ime, quantity, price: service.prodajnaCena, source: scenario?.ime ?? "Scenarij", estimateField, unit: unitForLine({ name: service.ime, estimateField }) });
     }
   }
   return lines;
@@ -134,11 +153,13 @@ export function SekcijaIzvedba({ sistem, settings, productById, onChange }: Prop
   const scenarioType = sistem.execution?.scenarioType ?? "posiljanje";
   const cameras = cameraCount(sistem, productById);
   const scenario = settings?.scenarios.find((entry) => entry.type === scenarioType);
-  const estimates = sistem.execution?.estimates ?? {
+  const defaultEstimates = {
     napeljavaUr: cameras * (scenario?.defaultEstimates?.napeljavaUrPerKamera ?? 2),
     utpKabelMetrov: cameras * (scenario?.defaultEstimates?.utpKabelMetrovPerKamera ?? 20),
     kanalMetrov: cameras * (scenario?.defaultEstimates?.kanalMetrovPerKamera ?? 4),
+    kilometrinaKm: scenario?.defaultEstimates?.kilometrinaKm ?? 0,
   };
+  const estimates = { ...defaultEstimates, ...(sistem.execution?.estimates ?? {}) };
   const execution: ZahtevaExecution = { scenarioType, estimates };
   const preview = buildPreview(sistem, execution, settings, productById);
   const total = preview.reduce((sum, line) => sum + line.quantity * line.price, 0);
@@ -151,11 +172,12 @@ export function SekcijaIzvedba({ sistem, settings, productById, onChange }: Prop
         napeljavaUr: cameras * (nextScenario?.defaultEstimates?.napeljavaUrPerKamera ?? 2),
         utpKabelMetrov: cameras * (nextScenario?.defaultEstimates?.utpKabelMetrovPerKamera ?? 20),
         kanalMetrov: cameras * (nextScenario?.defaultEstimates?.kanalMetrovPerKamera ?? 4),
+        kilometrinaKm: nextScenario?.defaultEstimates?.kilometrinaKm ?? 0,
       },
     });
   };
 
-  const setEstimate = (key: "napeljavaUr" | "utpKabelMetrov" | "kanalMetrov", value: number) => {
+  const setEstimate = (key: "napeljavaUr" | "utpKabelMetrov" | "kanalMetrov" | "kilometrinaKm", value: number) => {
     onChange({ scenarioType, estimates: { ...estimates, [key]: Math.max(0, value) } });
   };
 
@@ -189,37 +211,35 @@ export function SekcijaIzvedba({ sistem, settings, productById, onChange }: Prop
         ))}
       </div>
 
-      {scenarioType === "izvedba_napeljava" ? (
-        <div className="mb-4 grid gap-3 md:grid-cols-3">
-          <label className="space-y-1 text-sm">
-            <span>Ur napeljave</span>
-            <Input type="number" value={estimates.napeljavaUr} onChange={(event) => setEstimate("napeljavaUr", Number(event.target.value))} />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span>Metrov UTP kabla</span>
-            <Input type="number" value={estimates.utpKabelMetrov} onChange={(event) => setEstimate("utpKabelMetrov", Number(event.target.value))} />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span>Metrov zaščitnega kanala</span>
-            <Input type="number" value={estimates.kanalMetrov} onChange={(event) => setEstimate("kanalMetrov", Number(event.target.value))} />
-          </label>
-        </div>
-      ) : null}
-
       <div className="rounded-md border border-border">
-        <div className="grid grid-cols-[1fr_90px_110px] gap-2 border-b border-border bg-muted px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
+        <div className="grid grid-cols-[1fr_130px_110px] gap-2 border-b border-border bg-muted px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
           <span>Storitev</span>
           <span>Količina</span>
           <span className="text-right">Cena</span>
         </div>
         {preview.length ? (
           preview.map((line) => (
-            <div key={line.key} className="grid grid-cols-[1fr_90px_110px] gap-2 border-b border-border px-3 py-2 text-sm last:border-b-0">
+            <div key={line.key} className="grid grid-cols-[1fr_130px_110px] items-center gap-2 border-b border-border px-3 py-2 text-sm last:border-b-0">
               <span>
                 {line.name}
                 <small className="block text-muted-foreground">{line.source}</small>
               </span>
-              <span>{line.quantity}</span>
+              <span>
+                {line.estimateField ? (
+                  <label className="flex items-center gap-2">
+                    <Input
+                      className="h-8 w-20"
+                      type="number"
+                      min={0}
+                      value={estimates[line.estimateField] ?? 0}
+                      onChange={(event) => setEstimate(line.estimateField!, Number(event.target.value))}
+                    />
+                    <span>{line.unit}</span>
+                  </label>
+                ) : (
+                  `${line.quantity} ${line.unit}`
+                )}
+              </span>
               <span className="text-right">{formatPrice(line.quantity * line.price)}</span>
             </div>
           ))
@@ -228,7 +248,7 @@ export function SekcijaIzvedba({ sistem, settings, productById, onChange }: Prop
         )}
       </div>
       <div className="mt-3 text-right text-sm">
-        Ocena cene izvedbe: <strong>{formatPrice(total)}</strong>
+        Ocena izvedbe: <strong>{formatPrice(total)}</strong>
       </div>
     </Card>
   );

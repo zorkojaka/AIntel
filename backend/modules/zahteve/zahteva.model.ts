@@ -59,6 +59,7 @@ export interface ZahtevaDocument extends Document {
         napeljavaUr: number;
         utpKabelMetrov: number;
         kanalMetrov: number;
+        kilometrinaKm?: number;
       };
     };
     alarm?: Record<string, unknown>;
@@ -178,6 +179,7 @@ const ExecutionSchema = new Schema(
       napeljavaUr: { type: Number, min: 0, default: 0 },
       utpKabelMetrov: { type: Number, min: 0, default: 0 },
       kanalMetrov: { type: Number, min: 0, default: 0 },
+      kilometrinaKm: { type: Number, min: 0, default: 0 },
     },
   },
   { _id: false }
