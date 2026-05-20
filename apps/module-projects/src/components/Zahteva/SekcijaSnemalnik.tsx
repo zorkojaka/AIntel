@@ -1,4 +1,4 @@
-import { Server } from "lucide-react";
+import { Square, Server } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
 import type { Videonadzor } from "./utils";
@@ -32,6 +32,7 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
   const allPoE = cameraProducts.length > 0 && cameraProducts.every((camera) => camera.classification?.hasPoE);
   const neededChannels = standardChannels(cameraCount);
   const autoAppliedRef = useRef("");
+  const manualNoneRef = useRef(false);
 
   const alternatives = useMemo(
     () =>
@@ -49,12 +50,31 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
   );
 
   useEffect(() => {
-    if (videonadzor.snemalnik.productId || alternatives.length === 0 || cameraCount === 0) return;
+    if (manualNoneRef.current || videonadzor.snemalnik.productId || alternatives.length === 0 || cameraCount === 0) return;
     const signature = `${cameraCount}|${brand}|${allPoE}`;
     if (autoAppliedRef.current === signature) return;
     autoAppliedRef.current = signature;
     onChange({ ...videonadzor, snemalnik: { productId: alternatives[0]._id } });
   }, [allPoE, alternatives, brand, cameraCount, onChange, videonadzor]);
+
+  const clearSnemalnik = () => {
+    manualNoneRef.current = true;
+    autoAppliedRef.current = `${cameraCount}|${brand}|${allPoE}`;
+    onChange({
+      ...videonadzor,
+      snemalnik: { productId: null },
+      disk: { ...videonadzor.disk, productId: null, kolicina: 0, items: [] },
+    });
+  };
+
+  const selectSnemalnik = (productId: string) => {
+    if (videonadzor.snemalnik.productId === productId) {
+      clearSnemalnik();
+      return;
+    }
+    manualNoneRef.current = false;
+    onChange({ ...videonadzor, snemalnik: { productId: productId } });
+  };
 
   return (
     <section className="zahteva-subsection">
@@ -63,12 +83,24 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
         <h4>Snemalnik</h4>
       </div>
       <div className="zahteva-product-track">
+        <button
+          type="button"
+          className={`zahteva-track-card zahteva-none-card ${!videonadzor.snemalnik.productId ? "is-active" : ""}`}
+          onClick={clearSnemalnik}
+        >
+          <span className="zahteva-image-empty zahteva-none-icon">
+            <Square className="h-6 w-6" aria-hidden />
+          </span>
+          <strong>Brez snemalnika</strong>
+          <small>Obstoječi sistem ali cloud snemanje</small>
+          <b>0,00 €</b>
+        </button>
         {alternatives.map((product, index) => (
           <button
             key={product._id}
             type="button"
             className={`zahteva-track-card ${videonadzor.snemalnik.productId === product._id ? "is-active" : ""} ${index === 0 ? "is-recommended" : ""}`}
-            onClick={() => onChange({ ...videonadzor, snemalnik: { productId: product._id } })}
+            onClick={() => selectSnemalnik(product._id)}
           >
             {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
             <strong>{product.ime}</strong>

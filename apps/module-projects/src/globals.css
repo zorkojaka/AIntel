@@ -1477,6 +1477,12 @@
   background: var(--app-surface-soft);
 }
 
+.zahteva-none-icon {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+}
+
 .zahteva-capacity-note {
   border: 1px solid var(--app-border);
   border-radius: 8px;
@@ -1566,6 +1572,13 @@
   color: var(--app-muted);
   font-size: 0.8rem;
   font-weight: 850;
+}
+
+.zahteva-muted-note {
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface-soft);
+  padding: 0.6rem 0.75rem;
 }
 
 .zahteva-disk-controls input[type="range"] {

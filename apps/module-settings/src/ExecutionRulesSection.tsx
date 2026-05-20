@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Button, Card, Input } from '@aintel/ui';
 import {
   fetchCenikServiceProducts,
@@ -11,6 +12,18 @@ import {
   type ExecutionScenario,
   type ProductServiceExecutionRule,
 } from './api';
+
+type PriceListSearchItem = {
+  id: string;
+  name: string;
+  code?: string;
+  categorySlugs?: string[];
+  categories?: string[];
+  isService?: boolean;
+  externalSource?: string;
+  unit?: string;
+  unitPrice: number;
+};
 
 const SCENARIO_LABELS: Record<ExecutionScenario['type'], string> = {
   posiljanje: 'Pošiljanje',
@@ -44,6 +57,14 @@ function defaultQuantityRule(): ExecutionQuantityRule {
 
 function serviceName(services: CenikServiceProduct[], id: string) {
   return services.find((service) => service._id === id)?.ime ?? 'Izberi storitev';
+}
+
+function selectedProduct(services: CenikServiceProduct[], id: string) {
+  return services.find((service) => service._id === id) ?? null;
+}
+
+function formatCurrency(value: number) {
+  return `${Number(value ?? 0).toLocaleString('sl-SI', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 }
 
 function mergeScenarios(input: ExecutionScenario[] = []) {
@@ -86,11 +107,6 @@ export function ExecutionRulesSection() {
     };
   }, []);
 
-  const serviceOptions = useMemo(
-    () => services.map((service) => ({ id: service._id, label: service.ime })),
-    [services],
-  );
-
   const updateSettings = (updater: (current: ExecutionRuleSettings) => ExecutionRuleSettings) => {
     setSettings((current) => (current ? updater(current) : current));
   };
@@ -104,7 +120,7 @@ export function ExecutionRulesSection() {
           id: newId('rule'),
           triggerType: 'classification',
           triggerValue: 'kamera',
-          serviceProductId: serviceOptions[0]?.id ?? '',
+          serviceProductId: '',
           quantityRule: { type: 'per_unit', value: 1, field: '' },
           isActive: true,
         },
@@ -146,7 +162,7 @@ export function ExecutionRulesSection() {
                 ...scenario.storitve,
                 {
                   id: newId('scenario-service'),
-                  serviceProductId: serviceOptions[0]?.id ?? '',
+                  serviceProductId: '',
                   quantityRule: defaultQuantityRule(),
                   description: '',
                 },
@@ -282,10 +298,11 @@ export function ExecutionRulesSection() {
                     </div>
                   </td>
                   <td className="px-3 py-2">
-                    <select className="w-full rounded border border-border px-2 py-2" value={rule.serviceProductId} onChange={(event) => updateRule(rule.id, { serviceProductId: event.target.value })}>
-                      <option value="">Izberi storitev</option>
-                      {serviceOptions.map((service) => <option key={service.id} value={service.id}>{service.label}</option>)}
-                    </select>
+                    <PriceListServiceAutocomplete
+                      selected={selectedProduct(services, rule.serviceProductId)}
+                      onSelect={(product) => updateRule(rule.id, { serviceProductId: product.id })}
+                      onClear={() => updateRule(rule.id, { serviceProductId: '' })}
+                    />
                   </td>
                   <td className="px-3 py-2">
                     <QuantityRuleEditor value={rule.quantityRule} onChange={(patch) => updateRuleQuantity(rule.id, patch)} />
@@ -311,10 +328,11 @@ export function ExecutionRulesSection() {
               <div className="space-y-2">
                 {scenario.storitve.map((service) => (
                   <div key={service.id} className="grid gap-2 md:grid-cols-[1fr_180px_1fr_auto]">
-                    <select className="rounded border border-border px-2 py-2 text-sm" value={service.serviceProductId} onChange={(event) => updateScenario(scenario.type, (current) => ({ ...current, storitve: current.storitve.map((entry) => entry.id === service.id ? { ...entry, serviceProductId: event.target.value } : entry) }))}>
-                      <option value="">Izberi storitev</option>
-                      {serviceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-                    </select>
+                    <PriceListServiceAutocomplete
+                      selected={selectedProduct(services, service.serviceProductId)}
+                      onSelect={(product) => updateScenario(scenario.type, (current) => ({ ...current, storitve: current.storitve.map((entry) => entry.id === service.id ? { ...entry, serviceProductId: product.id } : entry) }))}
+                      onClear={() => updateScenario(scenario.type, (current) => ({ ...current, storitve: current.storitve.map((entry) => entry.id === service.id ? { ...entry, serviceProductId: '' } : entry) }))}
+                    />
                     <QuantityRuleEditor value={service.quantityRule} onChange={(patch) => updateScenario(scenario.type, (current) => ({ ...current, storitve: current.storitve.map((entry) => entry.id === service.id ? { ...entry, quantityRule: { ...entry.quantityRule, ...patch } } : entry) }))} />
                     <Input value={service.description ?? ''} onChange={(event) => updateScenario(scenario.type, (current) => ({ ...current, storitve: current.storitve.map((entry) => entry.id === service.id ? { ...entry, description: event.target.value } : entry) }))} placeholder="opis" />
                     <Button type="button" variant="ghost" size="sm" onClick={() => updateScenario(scenario.type, (current) => ({ ...current, storitve: current.storitve.filter((entry) => entry.id !== service.id) }))}>Izbriši</Button>
@@ -357,6 +375,195 @@ export function ExecutionRulesSection() {
         ) : null}
       </Card>
     </section>
+  );
+}
+
+function PriceListServiceAutocomplete({
+  selected,
+  onSelect,
+  onClear,
+}: {
+  selected: CenikServiceProduct | null;
+  onSelect: (product: PriceListSearchItem) => void;
+  onClear: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<PriceListSearchItem[]>([]);
+  const [isOpen, setIsOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const fetchAbortRef = useRef<AbortController | null>(null);
+  const blurTimeoutRef = useRef<number | null>(null);
+  const dropdownInteractionRef = useRef(false);
+
+  const updateAnchorRect = useCallback(() => {
+    if (inputRef.current) {
+      setAnchorRect(inputRef.current.getBoundingClientRect());
+    }
+  }, []);
+
+  const openDropdown = useCallback(() => {
+    setIsOpen(true);
+    updateAnchorRect();
+  }, [updateAnchorRect]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setAnchorRect(null);
+      setResults([]);
+      setLoading(false);
+      fetchAbortRef.current?.abort();
+      fetchAbortRef.current = null;
+      return;
+    }
+
+    updateAnchorRect();
+    const onPositionChange = () => updateAnchorRect();
+    window.addEventListener('scroll', onPositionChange, true);
+    window.addEventListener('resize', onPositionChange);
+
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setResults([]);
+      setLoading(false);
+      return () => {
+        window.removeEventListener('scroll', onPositionChange, true);
+        window.removeEventListener('resize', onPositionChange);
+      };
+    }
+
+    setLoading(true);
+    fetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    fetchAbortRef.current = controller;
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/price-list/items/search?q=${encodeURIComponent(trimmed)}`, {
+          signal: controller.signal,
+        });
+        const payload = await response.json();
+        const data = Array.isArray(payload?.data) ? payload.data as PriceListSearchItem[] : [];
+        setResults(
+          data.sort((a, b) => {
+            const aPreferred = a.isService || a.externalSource === 'manual' ? 0 : 1;
+            const bPreferred = b.isService || b.externalSource === 'manual' ? 0 : 1;
+            return aPreferred - bPreferred;
+          }).slice(0, 12),
+        );
+      } catch (error) {
+        if ((error as DOMException)?.name !== 'AbortError') {
+          setResults([]);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }, 200);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+      window.removeEventListener('scroll', onPositionChange, true);
+      window.removeEventListener('resize', onPositionChange);
+    };
+  }, [isOpen, query, updateAnchorRect]);
+
+  useEffect(
+    () => () => {
+      fetchAbortRef.current?.abort();
+      if (blurTimeoutRef.current) window.clearTimeout(blurTimeoutRef.current);
+    },
+    [],
+  );
+
+  const handleSelect = (product: PriceListSearchItem) => {
+    onSelect(product);
+    setQuery('');
+    setIsOpen(false);
+  };
+
+  const portalTarget = typeof document !== 'undefined' ? document.body : null;
+
+  return (
+    <div className="relative">
+      {selected ? (
+        <div className="flex min-h-10 items-center justify-between gap-2 rounded border border-border bg-background px-3 py-2 text-sm">
+          <span className="min-w-0">
+            <span className="block truncate font-medium">{selected.ime}</span>
+            <span className="block text-xs text-muted-foreground">{formatCurrency(selected.prodajnaCena)}</span>
+          </span>
+          <button type="button" className="shrink-0 rounded px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={onClear} aria-label="Počisti storitev">
+            ×
+          </button>
+        </div>
+      ) : (
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          placeholder="Išči storitev..."
+          className="min-h-10 w-full rounded border border-border bg-background px-3 py-2 text-sm"
+          onChange={(event) => {
+            setQuery(event.target.value);
+            if (!isOpen) openDropdown();
+          }}
+          onFocus={() => {
+            if (blurTimeoutRef.current) window.clearTimeout(blurTimeoutRef.current);
+            openDropdown();
+          }}
+          onBlur={() => {
+            if (blurTimeoutRef.current) window.clearTimeout(blurTimeoutRef.current);
+            blurTimeoutRef.current = window.setTimeout(() => {
+              if (!dropdownInteractionRef.current) setIsOpen(false);
+            }, 100);
+          }}
+        />
+      )}
+
+      {isOpen && !selected && anchorRect && portalTarget
+        ? createPortal(
+            <div
+              className="fixed z-[9999] rounded border border-border bg-popover text-sm shadow-lg"
+              style={{ top: anchorRect.bottom + 4, left: anchorRect.left, width: anchorRect.width }}
+              onMouseEnter={() => {
+                dropdownInteractionRef.current = true;
+              }}
+              onMouseLeave={() => {
+                dropdownInteractionRef.current = false;
+              }}
+            >
+              <div className="max-h-72 overflow-y-auto py-1">
+                {loading ? <div className="px-3 py-2 text-xs text-muted-foreground">Iskanje...</div> : null}
+                {!loading && query.trim() && results.length === 0 ? <div className="px-3 py-2 text-xs text-muted-foreground">Ni zadetkov.</div> : null}
+                {!loading && !query.trim() ? <div className="px-3 py-2 text-xs text-muted-foreground">Začni pisati naziv storitve.</div> : null}
+                {!loading
+                  ? results.map((product) => (
+                      <button
+                        key={product.id}
+                        type="button"
+                        className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left hover:bg-muted/70"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => handleSelect(product)}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">{product.name}</span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {product.isService ? 'Storitev' : product.externalSource === 'manual' ? 'Ročni vnos' : 'Izdelek'}
+                            {product.unit ? ` • ${product.unit}` : ''}
+                            {product.categorySlugs?.length ? ` • ${product.categorySlugs.slice(0, 2).join(', ')}` : ''}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{formatCurrency(product.unitPrice)}</span>
+                      </button>
+                    ))
+                  : null}
+              </div>
+            </div>,
+            portalTarget,
+          )
+        : null}
+    </div>
   );
 }
 
