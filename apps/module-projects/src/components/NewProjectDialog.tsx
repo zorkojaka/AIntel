@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type Client, type ClientFormPayload } from "@aintel/module-crm";
-import { Loader2, RefreshCcw, Save, X } from "lucide-react";
+import { Bell, ChevronDown, Home, Loader2, RefreshCcw, Save, Search, Shield, Video, X } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -8,14 +8,14 @@ import { Textarea } from "./ui/textarea";
 import { Badge } from "./ui/badge";
 import { Checkbox } from "./ui/checkbox";
 import { cn } from "./ui/utils";
-import { CategoryMultiSelect } from "@aintel/ui";
 import type { Category, ProjectDetails } from "../types";
 
 type NewCustomerFormState = {
   name: string;
   isCompany: boolean;
   street: string;
-  cityDisplay: string;
+  postalCode: string;
+  postalCity: string;
   email: string;
   phone: string;
   contactPerson: string;
@@ -53,11 +53,21 @@ interface NewProjectDialogProps {
   initialProject?: ProjectDetails | null;
 }
 
+const PROJECT_CATEGORY_OPTIONS = [
+  { slug: "videonadzor", name: "Videonadzor", icon: Video },
+  { slug: "alarm", name: "Alarm", icon: Shield },
+  { slug: "domofon", name: "Domofon", icon: Bell },
+  { slug: "smarthome", name: "Pametni dom", icon: Home },
+] as const;
+
+const PROJECT_CATEGORY_SLUGS = new Set<string>(PROJECT_CATEGORY_OPTIONS.map((category) => category.slug));
+
 const emptyCustomerForm = (): NewCustomerFormState => ({
   name: "",
   isCompany: false,
   street: "",
-  cityDisplay: "",
+  postalCode: "",
+  postalCity: "",
   email: "",
   phone: "",
   contactPerson: "",
@@ -65,8 +75,9 @@ const emptyCustomerForm = (): NewCustomerFormState => ({
   notes: "",
 });
 
-function buildCustomerAddress(street: string, cityDisplay: string) {
-  const parts = [street.trim(), cityDisplay.trim()].filter(Boolean);
+function buildCustomerAddress(street: string, postalCode: string, postalCity: string) {
+  const cityLine = [postalCode.trim(), postalCity.trim()].filter(Boolean).join(" ");
+  const parts = [street.trim(), cityLine].filter(Boolean);
   return parts.length ? parts.join(", ") : undefined;
 }
 
@@ -80,9 +91,9 @@ function normalizeCustomerForm(form: NewCustomerFormState): ClientFormPayload {
     name: form.name.trim(),
     type: form.isCompany ? "company" : "individual",
     street: form.street.trim() || undefined,
-    postalCode: undefined,
-    postalCity: form.cityDisplay.trim() || undefined,
-    address: buildCustomerAddress(form.street, form.cityDisplay),
+    postalCode: form.postalCode.trim() || undefined,
+    postalCity: form.postalCity.trim() || undefined,
+    address: buildCustomerAddress(form.street, form.postalCode, form.postalCity),
     email: form.email.trim() || undefined,
     phone: form.phone.trim() || undefined,
     contactPerson: form.contactPerson.trim() || undefined,
@@ -124,7 +135,6 @@ export function NewProjectDialog({
   onReloadClients,
   onCreateProject,
   onUpdateProject,
-  categories,
   selectedCategorySlugs,
   onSelectCategories,
   isLoadingCategories,
@@ -132,6 +142,9 @@ export function NewProjectDialog({
   const [requirements, setRequirements] = useState(defaultRequirements);
   const [search, setSearch] = useState("");
   const [newCustomer, setNewCustomer] = useState<NewCustomerFormState>(emptyCustomerForm);
+  const [customerMode, setCustomerMode] = useState<"new" | "existing">("new");
+  const [quickAddress, setQuickAddress] = useState("");
+  const [showMoreCustomerFields, setShowMoreCustomerFields] = useState(false);
   const [customerError, setCustomerError] = useState<string | null>(null);
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
@@ -140,14 +153,18 @@ export function NewProjectDialog({
     if (!open) return;
     setRequirements(defaultRequirements);
     setSearch("");
+    setCustomerMode(initialProject?.client?.id ? "existing" : "new");
+    setQuickAddress("");
+    setShowMoreCustomerFields(false);
     setCustomerError(null);
     setIsSavingCustomer(false);
     if (initialProject) {
       setNewCustomer({
         name: initialProject.customerDetail?.name ?? "",
         isCompany: Boolean(initialProject.customerDetail?.taxId),
-        street: "",
-        cityDisplay: "",
+        street: initialProject.client?.street ?? "",
+        postalCode: initialProject.client?.postalCode ?? "",
+        postalCity: initialProject.client?.postalCity ?? "",
         email: initialProject.customerDetail?.email ?? "",
         phone: initialProject.customerDetail?.phone ?? "",
         contactPerson: "",
@@ -168,12 +185,20 @@ export function NewProjectDialog({
   }, [clients, search]);
 
   const selectedClient = clients.find((client) => client.id === selectedClientId) ?? null;
+  const selectedProjectCategorySlugs = useMemo(
+    () => selectedCategorySlugs.filter((slug) => PROJECT_CATEGORY_SLUGS.has(slug)),
+    [selectedCategorySlugs]
+  );
+  const hiddenLegacyCategorySlugs = useMemo(
+    () => selectedCategorySlugs.filter((slug) => !PROJECT_CATEGORY_SLUGS.has(slug)),
+    [selectedCategorySlugs]
+  );
   const selectedCategoryNames = useMemo(
     () =>
-      selectedCategorySlugs
-        .map((slug) => categories.find((category) => category.slug === slug)?.name ?? slug)
+      selectedProjectCategorySlugs
+        .map((slug) => PROJECT_CATEGORY_OPTIONS.find((category) => category.slug === slug)?.name ?? slug)
         .filter(Boolean),
-    [categories, selectedCategorySlugs]
+    [selectedProjectCategorySlugs]
   );
   const projectCodePreview = initialProject?.id ?? suggestedProjectCode;
   const previewCustomerName = selectedClient?.name ?? newCustomer.name;
@@ -189,6 +214,31 @@ export function NewProjectDialog({
     setCustomerError(null);
     onSelectClient(null);
     setNewCustomer((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleParseQuickAddress = () => {
+    const lines = quickAddress
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const postalMatch = lines[2]?.match(/^(\d{4})\s+(.+)$/);
+
+    setCustomerError(null);
+    onSelectClient(null);
+    setNewCustomer((prev) => ({
+      ...prev,
+      name: lines[0] ?? prev.name,
+      street: lines[1] ?? prev.street,
+      postalCode: postalMatch?.[1] ?? prev.postalCode,
+      postalCity: postalMatch?.[2] ?? prev.postalCity,
+    }));
+  };
+
+  const toggleProjectCategory = (slug: string) => {
+    const next = selectedProjectCategorySlugs.includes(slug)
+      ? selectedProjectCategorySlugs.filter((item) => item !== slug)
+      : [...selectedProjectCategorySlugs, slug];
+    onSelectCategories(next);
   };
 
   const validateNewCustomer = () => {
@@ -257,7 +307,7 @@ export function NewProjectDialog({
       const payload = {
         title: generatedTitle,
         requirements: requirements.trim(),
-        categories: selectedCategorySlugs,
+        categories: isEditing ? [...selectedProjectCategorySlugs, ...hiddenLegacyCategorySlugs] : selectedProjectCategorySlugs,
         clientId: clientSelection.clientId,
         client: clientSelection.client,
       };
@@ -283,9 +333,7 @@ export function NewProjectDialog({
           <DialogHeader className="flex shrink-0 flex-row items-center justify-between border-b px-6 py-4">
             <div className="flex flex-col gap-1">
               <DialogTitle>{isEditing ? "Uredi projekt" : "Nov projekt"}</DialogTitle>
-              <DialogDescription>
-                Najprej vnesite stranko, nato izberite kategorije. Naziv projekta se ustvari samodejno.
-              </DialogDescription>
+              <DialogDescription>Najprej vnesite stranko, nato opis in projektne kategorije.</DialogDescription>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -309,241 +357,314 @@ export function NewProjectDialog({
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-6">
             <div className="space-y-6">
-          <div className="grid gap-4">
-            <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <label className="text-sm font-medium text-foreground" htmlFor="project-title-preview">
-                Naziv projekta
-              </label>
-              <div
-                id="project-title-preview"
-                className="rounded-md border border-dashed border-slate-300 bg-white px-3 py-2 text-sm font-medium text-foreground"
-              >
-                {generatedTitle}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Naziv se ustvari iz ID-ja projekta, kategorij in izbrane oziroma nove stranke.
-              </p>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-foreground" htmlFor="project-reqs">
-                Opis ali zahteve
-              </label>
-              <Textarea
-                id="project-reqs"
-                value={requirements}
-                onChange={(event) => setRequirements(event.target.value)}
-                placeholder="Dodajte ključne informacije ali cilje projekta"
-                rows={3}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-foreground">Kategorije</p>
-                <p className="text-xs text-muted-foreground">
-                  Oznake pomagajo pri predlogah in filtriranju projektov.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="text-xs font-semibold text-muted-foreground underline transition hover:text-foreground disabled:cursor-not-allowed disabled:text-muted-foreground/60"
-                onClick={() => onSelectCategories([])}
-                disabled={isLoadingCategories || selectedCategorySlugs.length === 0}
-              >
-                Počisti
-              </button>
-            </div>
-            <CategoryMultiSelect
-              categories={categories}
-              value={selectedCategorySlugs}
-              onChange={onSelectCategories}
-              label=""
-            />
-            {isLoadingCategories && (
-              <p className="text-xs text-muted-foreground">Nalagam kategorije ...</p>
-            )}
-          </div>
-
-          <div className="rounded-lg border border-slate-200 p-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-medium text-foreground">Stranka projekta</p>
-                <p className="text-xs text-muted-foreground">
-                  Nova stranka je privzeti flow. Spodaj lahko še vedno izberete obstoječo stranko iz CRM.
-                </p>
-              </div>
-              <Button type="button" variant="ghost" onClick={() => onReloadClients()}>
-                <RefreshCcw className="mr-2 h-4 w-4" /> Osveži
-              </Button>
-            </div>
-
-            <div className="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
-              <label className="space-y-2 text-sm font-medium text-foreground">
-                <span>Ime Priimek / Naziv stranke</span>
-                <Input
-                  value={newCustomer.name}
-                  onChange={(event) => updateNewCustomer("name", event.target.value)}
-                  placeholder="npr. Janez Novak"
-                />
-              </label>
-              <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-foreground">
-                <Checkbox
-                  checked={newCustomer.isCompany}
-                  onChange={(event) => updateNewCustomer("isCompany", event.target.checked)}
-                />
-                <span>Podjetje</span>
-              </label>
-              <label className="space-y-2 text-sm font-medium text-foreground">
-                <span>Ulica</span>
-                <Input
-                  value={newCustomer.street}
-                  onChange={(event) => updateNewCustomer("street", event.target.value)}
-                  placeholder="npr. Ulica 123"
-                />
-              </label>
-              <label className="space-y-2 text-sm font-medium text-foreground">
-                <span>Mesto</span>
-                <Input
-                  value={newCustomer.cityDisplay}
-                  onChange={(event) => updateNewCustomer("cityDisplay", event.target.value)}
-                  placeholder="npr. 1000 Ljubljana"
-                />
-              </label>
-              <label className="space-y-2 text-sm font-medium text-foreground">
-                <span>E-pošta</span>
-                <Input
-                  type="email"
-                  value={newCustomer.email}
-                  onChange={(event) => updateNewCustomer("email", event.target.value)}
-                />
-              </label>
-              <label className="space-y-2 text-sm font-medium text-foreground">
-                <span>Telefon</span>
-                <Input
-                  value={newCustomer.phone}
-                  onChange={(event) => updateNewCustomer("phone", event.target.value)}
-                />
-              </label>
-              <label className="space-y-2 text-sm font-medium text-foreground">
-                <span>Kontaktna oseba</span>
-                <Input
-                  value={newCustomer.contactPerson}
-                  onChange={(event) => updateNewCustomer("contactPerson", event.target.value)}
-                />
-              </label>
-              <label className="space-y-2 text-sm font-medium text-foreground">
-                <span>Oznake</span>
-                <Input
-                  value={newCustomer.tags}
-                  onChange={(event) => updateNewCustomer("tags", event.target.value)}
-                  placeholder="npr. VIP, servis"
-                />
-              </label>
-              <div className="md:col-span-2">
-                <label className="space-y-2 text-sm font-medium text-foreground">
-                  <span>Opombe</span>
-                  <Textarea
-                    value={newCustomer.notes}
-                    onChange={(event) => updateNewCustomer("notes", event.target.value)}
-                    rows={3}
-                  />
-                </label>
-              </div>
-              {customerError ? (
-                <p className="md:col-span-2 text-sm text-destructive">{customerError}</p>
-              ) : null}
-              {selectedClient ? (
-                <div className="md:col-span-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">
-                  Uporabljena bo obstoječa stranka: <strong>{selectedClient.name}</strong>
-                </div>
-              ) : null}
-              <div className="md:col-span-2 flex justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={isSavingCustomer || isSubmitting}
-                  onClick={async () => {
-                    await saveNewCustomer();
-                  }}
-                >
-                  {isSavingCustomer ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Shrani stranko
-                </Button>
-              </div>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              <p className="text-sm font-medium text-foreground">Ali izberite obstoječo stranko</p>
-              <Input
-                placeholder="Išči po nazivu"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-
-              <div className="max-h-64 space-y-2 overflow-y-auto">
-                {isLoadingClients ? (
-                  <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Nalagam stranke ...
-                  </div>
-                ) : filteredClients.length === 0 ? (
-                  <div className="rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-muted-foreground">
-                    {clients.length === 0
-                      ? "CRM trenutno nima strank. Vnesite novo stranko zgoraj."
-                      : "Ni zadetkov. Poskusite z drugim iskalnim nizom."}
-                  </div>
-                ) : (
-                  filteredClients.map((client) => (
+              <section className="rounded-lg border border-slate-200 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Stranka</h3>
+                  <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-1">
                     <button
                       type="button"
-                      key={client.id}
                       onClick={() => {
+                        setCustomerMode("new");
+                        onSelectClient(null);
                         setCustomerError(null);
-                        onSelectClient(client.id);
                       }}
                       className={cn(
-                        "w-full rounded-lg border p-3 text-left transition",
-                        selectedClientId === client.id
-                          ? "border-primary bg-primary/5"
-                          : "border-slate-200 hover:border-primary"
+                        "rounded px-3 py-1.5 text-sm font-medium transition",
+                        customerMode === "new"
+                          ? "bg-white text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
                       )}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <p className="font-medium text-foreground">{client.name}</p>
-                          {client.address && (
-                            <p className="text-xs text-muted-foreground">{client.address}</p>
-                          )}
-                          {client.email && (
-                            <p className="text-xs text-muted-foreground">{client.email}</p>
-                          )}
-                        </div>
-                        <Badge variant={client.isComplete ? "default" : "secondary"}>
-                          {client.isComplete ? "Popolni podatki" : "Nepopolni podatki"}
-                        </Badge>
-                      </div>
+                      Nova stranka
                     </button>
-                  ))
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomerMode("existing");
+                        setCustomerError(null);
+                      }}
+                      className={cn(
+                        "rounded px-3 py-1.5 text-sm font-medium transition",
+                        customerMode === "existing"
+                          ? "bg-white text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      Obstoječa
+                    </button>
+                  </div>
+                </div>
+
+                {customerMode === "new" ? (
+                  <div className="mt-4 space-y-4">
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                      <label className="space-y-2 text-sm font-medium text-foreground" htmlFor="quick-address">
+                        <span>Hitri vnos naslova</span>
+                        <Textarea
+                          id="quick-address"
+                          value={quickAddress}
+                          onChange={(event) => setQuickAddress(event.target.value)}
+                          placeholder={"Janez Novak\nGlavna ulica 5\n1230 Domžale"}
+                          rows={3}
+                          className="bg-white"
+                        />
+                      </label>
+                      <div className="mt-3 flex justify-end">
+                        <Button type="button" variant="outline" onClick={handleParseQuickAddress}>
+                          Razčleni v polja
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3">
+                      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                        <label className="space-y-2 text-sm font-medium text-foreground">
+                          <span>Ime in priimek/naziv</span>
+                          <Input
+                            value={newCustomer.name}
+                            onChange={(event) => updateNewCustomer("name", event.target.value)}
+                            placeholder="Janez Novak"
+                          />
+                        </label>
+                        <label className="flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-foreground">
+                          <Checkbox
+                            checked={newCustomer.isCompany}
+                            onChange={(event) => updateNewCustomer("isCompany", event.target.checked)}
+                          />
+                          <span>Podjetje</span>
+                        </label>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-[2fr_1fr_1.5fr]">
+                        <label className="space-y-2 text-sm font-medium text-foreground">
+                          <span>Ulica</span>
+                          <Input
+                            value={newCustomer.street}
+                            onChange={(event) => updateNewCustomer("street", event.target.value)}
+                            placeholder="Glavna ulica 5"
+                          />
+                        </label>
+                        <label className="space-y-2 text-sm font-medium text-foreground">
+                          <span>Pošta</span>
+                          <Input
+                            value={newCustomer.postalCode}
+                            onChange={(event) => updateNewCustomer("postalCode", event.target.value)}
+                            placeholder="1230"
+                          />
+                        </label>
+                        <label className="space-y-2 text-sm font-medium text-foreground">
+                          <span>Mesto</span>
+                          <Input
+                            value={newCustomer.postalCity}
+                            onChange={(event) => updateNewCustomer("postalCity", event.target.value)}
+                            placeholder="Domžale"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <label className="space-y-2 text-sm font-medium text-foreground">
+                          <span>E-pošta</span>
+                          <Input
+                            type="email"
+                            value={newCustomer.email}
+                            onChange={(event) => updateNewCustomer("email", event.target.value)}
+                          />
+                        </label>
+                        <label className="space-y-2 text-sm font-medium text-foreground">
+                          <span>Telefon</span>
+                          <Input
+                            value={newCustomer.phone}
+                            onChange={(event) => updateNewCustomer("phone", event.target.value)}
+                          />
+                        </label>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="inline-flex w-fit items-center gap-1 text-sm font-medium text-primary"
+                        onClick={() => setShowMoreCustomerFields((prev) => !prev)}
+                      >
+                        Več
+                        <ChevronDown className={cn("h-4 w-4 transition", showMoreCustomerFields && "rotate-180")} />
+                      </button>
+
+                      {showMoreCustomerFields ? (
+                        <div className="grid gap-3 border-t border-slate-200 pt-3 md:grid-cols-2">
+                          <label className="space-y-2 text-sm font-medium text-foreground">
+                            <span>Kontaktna oseba</span>
+                            <Input
+                              value={newCustomer.contactPerson}
+                              onChange={(event) => updateNewCustomer("contactPerson", event.target.value)}
+                            />
+                          </label>
+                          <label className="space-y-2 text-sm font-medium text-foreground">
+                            <span>Oznake</span>
+                            <Input
+                              value={newCustomer.tags}
+                              onChange={(event) => updateNewCustomer("tags", event.target.value)}
+                              placeholder="VIP, servis"
+                            />
+                          </label>
+                          <label className="space-y-2 text-sm font-medium text-foreground md:col-span-2">
+                            <span>Opombe</span>
+                            <Textarea
+                              value={newCustomer.notes}
+                              onChange={(event) => updateNewCustomer("notes", event.target.value)}
+                              rows={3}
+                            />
+                          </label>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <div className="relative flex-1">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          className="pl-9"
+                          placeholder="Išči po nazivu"
+                          value={search}
+                          onChange={(event) => setSearch(event.target.value)}
+                        />
+                      </div>
+                      <Button type="button" variant="ghost" onClick={() => onReloadClients()}>
+                        <RefreshCcw className="mr-2 h-4 w-4" /> Osveži
+                      </Button>
+                    </div>
+
+                    <div className="max-h-64 space-y-2 overflow-y-auto">
+                      {isLoadingClients ? (
+                        <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" /> Nalagam stranke ...
+                        </div>
+                      ) : filteredClients.length === 0 ? (
+                        <div className="rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-muted-foreground">
+                          {clients.length === 0
+                            ? "CRM trenutno nima strank. Vnesite novo stranko."
+                            : "Ni zadetkov. Poskusite z drugim iskalnim nizom."}
+                        </div>
+                      ) : (
+                        filteredClients.map((client) => (
+                          <button
+                            type="button"
+                            key={client.id}
+                            onClick={() => {
+                              setCustomerError(null);
+                              onSelectClient(client.id);
+                            }}
+                            className={cn(
+                              "w-full rounded-lg border p-3 text-left transition",
+                              selectedClientId === client.id
+                                ? "border-primary bg-primary/5"
+                                : "border-slate-200 hover:border-primary"
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="font-medium text-foreground">{client.name}</p>
+                                {client.address && <p className="text-xs text-muted-foreground">{client.address}</p>}
+                                {client.email && <p className="text-xs text-muted-foreground">{client.email}</p>}
+                              </div>
+                              <Badge variant={client.isComplete ? "default" : "secondary"}>
+                                {client.isComplete ? "Popolni podatki" : "Nepopolni podatki"}
+                              </Badge>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
                 )}
-              </div>
-            </div>
-          </div>
+
+                {customerError ? <p className="mt-3 text-sm text-destructive">{customerError}</p> : null}
+                {selectedClient ? (
+                  <div className="mt-3 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">
+                    Uporabljena bo obstoječa stranka: <strong>{selectedClient.name}</strong>
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="space-y-2">
+                <label
+                  className="text-sm font-semibold uppercase tracking-wide text-muted-foreground"
+                  htmlFor="project-reqs"
+                >
+                  Opis / zahteva
+                </label>
+                <Textarea
+                  id="project-reqs"
+                  value={requirements}
+                  onChange={(event) => setRequirements(event.target.value)}
+                  placeholder="Kaj stranka želi"
+                  rows={4}
+                />
+              </section>
+
+              <section className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                    Kategorije projekta
+                  </h3>
+                  <button
+                    type="button"
+                    className="text-xs font-semibold text-muted-foreground underline transition hover:text-foreground disabled:cursor-not-allowed disabled:text-muted-foreground/60"
+                    onClick={() => onSelectCategories([])}
+                    disabled={selectedProjectCategorySlugs.length === 0}
+                  >
+                    Počisti
+                  </button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {PROJECT_CATEGORY_OPTIONS.map((category) => {
+                    const Icon = category.icon;
+                    const selected = selectedProjectCategorySlugs.includes(category.slug);
+                    return (
+                      <button
+                        key={category.slug}
+                        type="button"
+                        onClick={() => toggleProjectCategory(category.slug)}
+                        className={cn(
+                          "flex min-h-24 flex-col items-start justify-between rounded-lg border p-4 text-left transition",
+                          selected
+                            ? "border-primary bg-primary/5 text-primary shadow-sm"
+                            : "border-slate-200 bg-white text-foreground hover:border-primary/60"
+                        )}
+                      >
+                        <Icon className="h-6 w-6" />
+                        <span className="text-base font-semibold">{category.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {isLoadingCategories ? (
+                  <p className="text-xs text-muted-foreground">Nalagam projektne kategorije ...</p>
+                ) : null}
+              </section>
             </div>
           </div>
 
-          <DialogFooter className="shrink-0 border-t px-6 py-4">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Prekliči
-            </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting || isSavingCustomer || (!selectedClientId && !newCustomer.name.trim())}
-            >
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {submitText}
-            </Button>
+          <DialogFooter className="flex shrink-0 flex-col gap-3 border-t px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">Naziv: {generatedTitle || "PRJ-XXX"} (samodejno)</p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Prekliči
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  isSubmitting ||
+                  isSavingCustomer ||
+                  (customerMode === "existing" && !selectedClientId) ||
+                  (customerMode === "new" && !newCustomer.name.trim())
+                }
+              >
+                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {submitText}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>
