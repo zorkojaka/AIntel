@@ -146,6 +146,7 @@ export interface Project {
   templates: ProjectTemplate[];
   categories: string[];
   invoiceVersions?: any[];
+  routeCoordinates?: any;
 }
 
 export interface ProjectDocument extends Omit<Project, 'id'>, Document {
@@ -331,6 +332,7 @@ const ProjectSchema = new Schema<ProjectDocument>(
     categories: { type: [String], default: [] },
     offers: { type: [OfferSchema], default: [] },
     invoiceVersions: { type: [Schema.Types.Mixed], default: [] },
+    routeCoordinates: { type: Schema.Types.Mixed, default: null },
   },
   { versionKey: false }
 );

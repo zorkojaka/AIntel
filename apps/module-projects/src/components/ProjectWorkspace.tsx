@@ -2,8 +2,11 @@
 import { Button } from "./ui/button";
 import { Tabs, TabsContent } from "./ui/tabs";
 import { Card } from "./ui/card";
+import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { clearMobileTopbar, setMobileTopbar } from "@aintel/shared/utils/mobileTopbar";
+import { Check, Pencil, X } from "lucide-react";
 import { OfferVersion } from "../domains/offers/OfferVersionCard";
 import type { WorkOrder as LogisticsWorkOrder } from "@aintel/shared/types/logistics";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
@@ -53,7 +56,7 @@ const areRequirementListsEqual = (a?: RequirementRow[], b?: RequirementRow[]) =>
 function formatClientAddress(client?: ProjectClient | null) {
   if (!client) return "";
   const address = (client.street ?? client.address)?.trim();
-  const city = (client.city ?? client.mesto ?? client.postalCity)?.trim();
+  const city = [client.postalCode, client.city ?? client.mesto ?? client.postalCity].filter(Boolean).join(" ").trim();
   if (address && city) return `${address}, ${city}`;
   if (address) return address;
   if (city) return city;
@@ -66,6 +69,34 @@ function formatProjectDisplayId(project?: Pick<ProjectDetails, "projectNumber" |
     return `PRJ-${String(project.projectNumber).padStart(3, "0")}`;
   }
   return project.code?.trim() || project.id || "";
+}
+
+type ClientPanelDraft = {
+  name: string;
+  street: string;
+  postalCode: string;
+  postalCity: string;
+  email: string;
+  phone: string;
+  contactPerson: string;
+  notes: string;
+};
+
+function buildClientPanelDraft(client?: ProjectClient | null, fallback?: ProjectDetails["customerDetail"] | null): ClientPanelDraft {
+  return {
+    name: client?.name ?? fallback?.name ?? "",
+    street: client?.street ?? fallback?.address ?? "",
+    postalCode: client?.postalCode ?? "",
+    postalCity: client?.postalCity ?? client?.city ?? client?.mesto ?? "",
+    email: client?.email ?? fallback?.email ?? "",
+    phone: client?.phone ?? fallback?.phone ?? "",
+    contactPerson: client?.contactPerson ?? "",
+    notes: client?.notes ?? "",
+  };
+}
+
+function areClientPanelDraftsEqual(a: ClientPanelDraft, b: ClientPanelDraft) {
+  return (Object.keys(a) as Array<keyof ClientPanelDraft>).every((key) => a[key].trim() === b[key].trim());
 }
 
 function getProjectStatusLabel(status: ProjectStatus) {
@@ -150,6 +181,17 @@ export function ProjectWorkspace({
   const [communicationRefreshKey, setCommunicationRefreshKey] = useState(0);
   const [isOfferEditorDirty, setIsOfferEditorDirty] = useState(false);
   const [isUnsavedOfferDialogOpen, setIsUnsavedOfferDialogOpen] = useState(false);
+  const [isClientEditing, setIsClientEditing] = useState(false);
+  const [clientDraft, setClientDraft] = useState<ClientPanelDraft>(() => buildClientPanelDraft(initialProject?.client, initialProject?.customerDetail));
+  const [clientSavedDraft, setClientSavedDraft] = useState<ClientPanelDraft>(() => buildClientPanelDraft(initialProject?.client, initialProject?.customerDetail));
+  const [clientSaving, setClientSaving] = useState(false);
+  const [clientSavedVisible, setClientSavedVisible] = useState(false);
+  const [isRequirementsSummaryEditing, setIsRequirementsSummaryEditing] = useState(false);
+  const [requirementsSummaryDraft, setRequirementsSummaryDraft] = useState(project?.requirementsText ?? "");
+  const [requirementsSummarySavedVisible, setRequirementsSummarySavedVisible] = useState(false);
+  const [isUnsavedPanelDialogOpen, setIsUnsavedPanelDialogOpen] = useState(false);
+  const pendingPanelCloseRef = useRef<(() => void | Promise<void>) | null>(null);
+  const panelDirtyRef = useRef(false);
   const pendingOfferNavigationRef = useRef<(() => void | Promise<void>) | null>(null);
   const offerSaveHandlerRef = useRef<(() => Promise<boolean>) | null>(null);
   const logisticsSaveHandlerRef = useRef<(() => Promise<boolean>) | null>(null);
@@ -237,6 +279,11 @@ export function ProjectWorkspace({
 
   const requestOfferNavigation = useCallback(
     (action: () => void | Promise<void>) => {
+      if (panelDirtyRef.current) {
+        pendingPanelCloseRef.current = action;
+        setIsUnsavedPanelDialogOpen(true);
+        return;
+      }
       if (activeTab === "offers" && isOfferEditorDirty) {
         pendingOfferNavigationRef.current = action;
         setIsUnsavedOfferDialogOpen(true);
@@ -279,6 +326,8 @@ export function ProjectWorkspace({
   const infoCardAddress = formatClientAddress(displayedClient);
   const infoCardEmail = crmClient?.email ?? project?.customerDetail.email ?? "";
   const infoCardPhone = crmClient?.phone ?? project?.customerDetail.phone ?? "";
+  const isClientPanelDirty = isClientEditing && !areClientPanelDraftsEqual(clientDraft, clientSavedDraft);
+  const isRequirementsSummaryDirty = isRequirementsSummaryEditing && requirementsSummaryDraft !== requirementsText;
   const refreshAfterMutation = useProjectMutationRefresh(project?.id ?? projectId);
   const brandAccentColor = useMemo(() => {
     const trimmed = brandColor?.trim();
@@ -426,6 +475,19 @@ export function ProjectWorkspace({
   }, [project]);
 
   useEffect(() => {
+    if (!project || isClientEditing) return;
+    const nextDraft = buildClientPanelDraft(displayedClient, project.customerDetail);
+    setClientDraft(nextDraft);
+    setClientSavedDraft(nextDraft);
+  }, [displayedClient, isClientEditing, project]);
+
+  useEffect(() => {
+    if (!isRequirementsSummaryEditing) {
+      setRequirementsSummaryDraft(requirementsText);
+    }
+  }, [isRequirementsSummaryEditing, requirementsText]);
+
+  useEffect(() => {
     const firstVat = offerItems[0]?.vatRate ?? 22;
     setOfferVatRate(firstVat);
     if (offerItems.length > 0) {
@@ -535,6 +597,195 @@ export function ProjectWorkspace({
     if (!isRequirementsDirty || isSavingRequirements) return;
     await saveRequirementsChanges();
   }, [isRequirementsDirty, isSavingRequirements, saveRequirementsChanges]);
+
+  const showClientSavedIndicator = () => {
+    setClientSavedVisible(true);
+    window.setTimeout(() => setClientSavedVisible(false), 2500);
+  };
+
+  const showRequirementsSummarySavedIndicator = () => {
+    setRequirementsSummarySavedVisible(true);
+    window.setTimeout(() => setRequirementsSummarySavedVisible(false), 2500);
+  };
+
+  const startClientEditing = () => {
+    const nextDraft = buildClientPanelDraft(displayedClient, project?.customerDetail);
+    setClientDraft(nextDraft);
+    setClientSavedDraft(nextDraft);
+    setIsClientEditing(true);
+  };
+
+  const requestPanelEditorClose = (action: () => void) => {
+    if (isClientPanelDirty || isRequirementsSummaryDirty) {
+      pendingPanelCloseRef.current = action;
+      setIsUnsavedPanelDialogOpen(true);
+      return;
+    }
+    action();
+  };
+
+  const saveClientPanel = useCallback(async () => {
+    if (!project || clientSaving) return false;
+    setClientSaving(true);
+    try {
+      const street = clientDraft.street.trim();
+      const postalCode = clientDraft.postalCode.trim();
+      const postalCity = clientDraft.postalCity.trim();
+      const address = [street, [postalCode, postalCity].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+      const clientId = displayedClient.id ?? project.customerDetail.id ?? null;
+
+      if (clientId) {
+        const payload = {
+          name: clientDraft.name.trim(),
+          type: displayedClient.type ?? (displayedClient.vatNumber || project.customerDetail.taxId ? "company" : "individual"),
+          vatNumber: displayedClient.vatNumber ?? project.customerDetail.taxId,
+          address,
+          street,
+          postalCode,
+          postalCity,
+          email: clientDraft.email.trim() || undefined,
+          phone: clientDraft.phone.trim() || undefined,
+          contactPerson: clientDraft.contactPerson.trim() || undefined,
+          notes: clientDraft.notes.trim() || undefined,
+          tags: [],
+        };
+        const response = await fetch(`/api/crm/clients/${clientId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (!result.success) {
+          throw new Error(result.error ?? "Stranke ni mogoče shraniti.");
+        }
+        setRemoteClient(result.data ?? null);
+        setProject((prev) => ({
+          ...prev,
+          customer: result.data?.name ?? prev.customer,
+          customerDetail: {
+            ...prev.customerDetail,
+            id: result.data?.id ?? prev.customerDetail.id,
+            name: result.data?.name ?? prev.customerDetail.name,
+            address: result.data?.address ?? address,
+            email: result.data?.email ?? clientDraft.email,
+            phone: result.data?.phone ?? clientDraft.phone,
+          },
+        }));
+      } else {
+        const updated = await onProjectUpdate(basePath, {
+          method: "PUT",
+          body: JSON.stringify({
+            title: project.title,
+            customer: {
+              ...project.customerDetail,
+              name: clientDraft.name.trim(),
+              address,
+            },
+            status: project.status,
+            requirements,
+            requirementsText,
+            categories: project.categories ?? [],
+            templates,
+          }),
+        });
+        applyProjectUpdate(updated as ProjectDetails | null);
+      }
+
+      const nextDraft = { ...clientDraft };
+      setClientSavedDraft(nextDraft);
+      setIsClientEditing(false);
+      showClientSavedIndicator();
+      await refreshAfterMutation();
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Stranke ni mogoče shraniti.");
+      return false;
+    } finally {
+      setClientSaving(false);
+    }
+  }, [
+    applyProjectUpdate,
+    basePath,
+    clientDraft,
+    clientSaving,
+    displayedClient,
+    onProjectUpdate,
+    project,
+    refreshAfterMutation,
+    requirements,
+    requirementsText,
+    setProject,
+    templates,
+  ]);
+
+  const saveRequirementsSummary = useCallback(async () => {
+    if (!project || isSavingRequirements) return false;
+    const previousText = requirementsText;
+    setRequirementsText(requirementsSummaryDraft);
+    setIsSavingRequirements(true);
+    try {
+      const updated = await onProjectUpdate(basePath, {
+        method: "PUT",
+        body: JSON.stringify({
+          title: project.title,
+          customer: project.customerDetail,
+          status: project.status,
+          requirements,
+          requirementsText: requirementsSummaryDraft,
+          categories: project.categories ?? [],
+          templates,
+        }),
+      });
+      applyProjectUpdate(updated as ProjectDetails | null);
+      setIsRequirementsSummaryEditing(false);
+      showRequirementsSummarySavedIndicator();
+      await refreshAfterMutation();
+      return true;
+    } catch (error) {
+      setRequirementsText(previousText);
+      toast.error("Opisa projekta ni mogoče shraniti.");
+      return false;
+    } finally {
+      setIsSavingRequirements(false);
+    }
+  }, [
+    applyProjectUpdate,
+    basePath,
+    isSavingRequirements,
+    onProjectUpdate,
+    project,
+    refreshAfterMutation,
+    requirements,
+    requirementsSummaryDraft,
+    requirementsText,
+    templates,
+  ]);
+
+  const handleSavePanelEditorsAndContinue = async () => {
+    let saved = true;
+    if (isClientPanelDirty) {
+      saved = await saveClientPanel();
+    }
+    if (saved && isRequirementsSummaryDirty) {
+      saved = await saveRequirementsSummary();
+    }
+    if (!saved) return;
+    const action = pendingPanelCloseRef.current;
+    pendingPanelCloseRef.current = null;
+    setIsUnsavedPanelDialogOpen(false);
+    action?.();
+  };
+
+  const handleDiscardPanelEditorsAndContinue = () => {
+    setClientDraft(clientSavedDraft);
+    setIsClientEditing(false);
+    setRequirementsSummaryDraft(requirementsText);
+    setIsRequirementsSummaryEditing(false);
+    const action = pendingPanelCloseRef.current;
+    pendingPanelCloseRef.current = null;
+    setIsUnsavedPanelDialogOpen(false);
+    action?.();
+  };
 
   const handleDeleteOfferItem = async (id: string) => {
     const next = offerItems.filter((item) => item.id !== id);
@@ -783,6 +1034,10 @@ export function ProjectWorkspace({
     },
     [project?.id, projectId]
   );
+
+  useEffect(() => {
+    panelDirtyRef.current = isClientPanelDirty || isRequirementsSummaryDirty;
+  }, [isClientPanelDirty, isRequirementsSummaryDirty]);
 
   const handleCreateOffer = async () => {
     const updated = await onProjectUpdate(`${basePath}/offers`, { method: "POST" });
@@ -1070,20 +1325,139 @@ export function ProjectWorkspace({
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
             <div className="space-y-4 lg:col-span-3">
               <Card className="p-4">
-                <h3 className="mb-3">Stranka</h3>
-                <div className="space-y-2 text-sm">
-                  {project.customerDetail.taxId?.trim() ? <div>{project.customerDetail.taxId.trim()}</div> : null}
-                  {project.customerDetail.name?.trim() ? <div>{project.customerDetail.name.trim()}</div> : null}
-                  {infoCardAddress?.trim() ? <div>{infoCardAddress.trim()}</div> : null}
-                  {infoCardEmail?.trim() ? <div>{infoCardEmail.trim()}</div> : null}
-                  {infoCardPhone?.trim() ? <div>{infoCardPhone.trim()}</div> : null}
-                  {project.customerDetail.paymentTerms?.trim() ? <div>{project.customerDetail.paymentTerms.trim()}</div> : null}
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h3>Stranka</h3>
+                  <div className="flex items-center gap-2">
+                    {clientSavedVisible ? <span className="text-xs text-emerald-700">Shranjeno ✓</span> : null}
+                    {!isClientEditing ? (
+                      <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={startClientEditing}>
+                        <Pencil className="h-3.5 w-3.5" />
+                        Uredi
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
+                {isClientEditing ? (
+                  <div className="space-y-3 text-sm">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ime</label>
+                      <Input value={clientDraft.name} onChange={(event) => setClientDraft((prev) => ({ ...prev, name: event.target.value }))} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ulica</label>
+                      <Input value={clientDraft.street} onChange={(event) => setClientDraft((prev) => ({ ...prev, street: event.target.value }))} />
+                    </div>
+                    <div className="grid grid-cols-[80px_1fr] gap-2">
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pošta</label>
+                        <Input value={clientDraft.postalCode} onChange={(event) => setClientDraft((prev) => ({ ...prev, postalCode: event.target.value }))} />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Mesto</label>
+                        <Input value={clientDraft.postalCity} onChange={(event) => setClientDraft((prev) => ({ ...prev, postalCity: event.target.value }))} />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</label>
+                      <Input type="email" value={clientDraft.email} onChange={(event) => setClientDraft((prev) => ({ ...prev, email: event.target.value }))} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Telefon</label>
+                      <Input value={clientDraft.phone} onChange={(event) => setClientDraft((prev) => ({ ...prev, phone: event.target.value }))} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Kontaktna oseba</label>
+                      <Input value={clientDraft.contactPerson} onChange={(event) => setClientDraft((prev) => ({ ...prev, contactPerson: event.target.value }))} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Opombe</label>
+                      <Textarea rows={3} value={clientDraft.notes} onChange={(event) => setClientDraft((prev) => ({ ...prev, notes: event.target.value }))} />
+                    </div>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={clientSaving}
+                        onClick={() => requestPanelEditorClose(() => setIsClientEditing(false))}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Prekliči
+                      </Button>
+                      <Button type="button" size="sm" disabled={clientSaving || !isClientPanelDirty} onClick={() => void saveClientPanel()}>
+                        <Check className="h-3.5 w-3.5" />
+                        Shrani
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2 text-sm">
+                    {project.customerDetail.taxId?.trim() ? <div>{project.customerDetail.taxId.trim()}</div> : null}
+                    {project.customerDetail.name?.trim() ? <div>{project.customerDetail.name.trim()}</div> : null}
+                    {infoCardAddress?.trim() ? <div>{infoCardAddress.trim()}</div> : null}
+                    {infoCardEmail?.trim() ? <div>{infoCardEmail.trim()}</div> : null}
+                    {infoCardPhone?.trim() ? <div>{infoCardPhone.trim()}</div> : null}
+                    {displayedClient.contactPerson?.trim() ? <div>{displayedClient.contactPerson.trim()}</div> : null}
+                    {displayedClient.notes?.trim() ? <div className="text-muted-foreground">{displayedClient.notes.trim()}</div> : null}
+                    {project.customerDetail.paymentTerms?.trim() ? <div>{project.customerDetail.paymentTerms.trim()}</div> : null}
+                  </div>
+                )}
               </Card>
 
               <Card className="p-4">
-                <h3 className="mb-3">Zahteve</h3>
-                <p className="text-sm text-muted-foreground">{requirementsText}</p>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h3>Zahteve</h3>
+                  <div className="flex items-center gap-2">
+                    {requirementsSummarySavedVisible ? <span className="text-xs text-emerald-700">Shranjeno ✓</span> : null}
+                    {!isRequirementsSummaryEditing ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2"
+                        onClick={() => {
+                          setRequirementsSummaryDraft(requirementsText);
+                          setIsRequirementsSummaryEditing(true);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Uredi
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+                {isRequirementsSummaryEditing ? (
+                  <div className="space-y-3">
+                    <Textarea
+                      rows={5}
+                      value={requirementsSummaryDraft}
+                      onChange={(event) => setRequirementsSummaryDraft(event.target.value)}
+                    />
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isSavingRequirements}
+                        onClick={() => requestPanelEditorClose(() => setIsRequirementsSummaryEditing(false))}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Prekliči
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={isSavingRequirements || !isRequirementsSummaryDirty}
+                        onClick={() => void saveRequirementsSummary()}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        Shrani
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{requirementsText}</p>
+                )}
               </Card>
 
               <Card className="hidden p-4 lg:block">
@@ -1232,6 +1606,27 @@ export function ProjectWorkspace({
               Zavrzi
             </Button>
             <Button onClick={() => void handleSaveDirtyOfferAndContinue()}>
+              Shrani spremembe
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={isUnsavedPanelDialogOpen} onOpenChange={setIsUnsavedPanelDialogOpen}>
+        <DialogContent className="sm:max-w-md" hideCloseButton>
+          <DialogHeader>
+            <DialogTitle>Imaš neshranjene spremembe</DialogTitle>
+            <DialogDescription>
+              Kaj želiš narediti s spremembami v levem panelu?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsUnsavedPanelDialogOpen(false)}>
+              Prekliči
+            </Button>
+            <Button variant="secondary" onClick={handleDiscardPanelEditorsAndContinue}>
+              Zavrzi
+            </Button>
+            <Button onClick={() => void handleSavePanelEditorsAndContinue()}>
               Shrani spremembe
             </Button>
           </DialogFooter>

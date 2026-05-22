@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { CrmClientModel, CrmClient } from '../schemas/client';
+import { ProjectModel } from '../../projects/schemas/project';
 
 type ClientPayload = {
   name?: string;
@@ -188,6 +189,14 @@ export async function updateClient(req: Request, res: Response) {
       .filter(Boolean)
       .join(', ');
 
+    const existing = await CrmClientModel.findById(req.params.id);
+    if (!existing) {
+      return res.fail('Stranka ni najdena', 404);
+    }
+
+    const previousAddressKey = [existing.street, existing.postalCode, existing.postalCity, existing.address].filter(Boolean).join('|');
+    const nextAddressKey = [street, postalCode, postalCity, addressLine || payload.address?.trim()].filter(Boolean).join('|');
+
     const updated = await CrmClientModel.findByIdAndUpdate(
       req.params.id,
       {
@@ -207,8 +216,18 @@ export async function updateClient(req: Request, res: Response) {
       { new: true }
     );
 
-    if (!updated) {
-      return res.fail('Stranka ni najdena', 404);
+    if (previousAddressKey !== nextAddressKey) {
+      const customerNames = Array.from(new Set([existing.name, name].filter(Boolean)));
+      const taxIds = Array.from(new Set([existing.vat_number, type === 'company' ? vatNumber : undefined].filter(Boolean)));
+      await ProjectModel.updateMany(
+        {
+          $or: [
+            ...(customerNames.length ? [{ 'customer.name': { $in: customerNames } }] : []),
+            ...(taxIds.length ? [{ 'customer.taxId': { $in: taxIds } }] : []),
+          ],
+        },
+        { $set: { routeCoordinates: null } },
+      );
     }
 
     res.success(formatClient(updated));
