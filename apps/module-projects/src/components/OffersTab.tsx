@@ -22,7 +22,7 @@ import type { ProjectDetails } from "../types";
 import type { User } from "@aintel/shared/types/user";
 import type { Employee } from "@aintel/shared/types/employee";
 
-import { ArrowDown, ArrowLeft, Check, ChevronsUpDown, Download, Loader2, Pencil, Trash, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, Calculator, Check, ChevronsUpDown, Download, Loader2, Pencil, Trash, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
@@ -30,7 +30,14 @@ import { PriceListProductAutocomplete } from "./PriceListProductAutocomplete";
 import { OfferItemsMobile } from "./OfferItemsMobile";
 import { mapProject } from "../domains/core/useProject";
 import { useConfirmOffer } from "../domains/core/useConfirmOffer";
-import { downloadPdf } from "../api";
+import {
+  calculateProjectKm,
+  downloadPdf,
+  fetchExecutionRuleSettings,
+  fetchRouteCalculationSettings,
+  type ProjectKmCalculation,
+  type RouteCalculationSettings,
+} from "../api";
 import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
@@ -58,6 +65,13 @@ type OfferLineItemForm = {
   totalGross: number;
   discountPercent: number;
 };
+
+type KmCalculationState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "high"; result: ProjectKmCalculation }
+  | { status: "low"; result: ProjectKmCalculation }
+  | { status: "error"; message: string };
 
 type OfferImportMatch = {
   productId: string;
@@ -126,6 +140,9 @@ const clampMin = (value: unknown, fallback: number, min: number) => {
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, parsed);
 };
+
+const formatKm = (value: number) =>
+  value.toLocaleString("sl-SI", { maximumFractionDigits: 1 });
 
 const isItemValid = (item: OfferLineItem | OfferLineItemForm) =>
   item.name.trim() !== "" && item.unitPrice > 0;
@@ -271,6 +288,9 @@ export function OffersTab({
   const [showImportMappingHint, setShowImportMappingHint] = useState(false);
   const [linkedServiceSuggestions, setLinkedServiceSuggestions] = useState<Record<string, ProductServiceLink[]>>({});
   const [loadingLinkedServiceSuggestions, setLoadingLinkedServiceSuggestions] = useState<Record<string, boolean>>({});
+  const [routeCalculationSettings, setRouteCalculationSettings] = useState<RouteCalculationSettings | null>(null);
+  const [kmCalculationStates, setKmCalculationStates] = useState<Record<string, KmCalculationState>>({});
+  const [kilometrinaServiceProductIds, setKilometrinaServiceProductIds] = useState<Set<string>>(new Set());
 
   const paymentTermsInitRef = useRef<Record<string, boolean>>({});
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -288,6 +308,48 @@ export function OffersTab({
     textarea.style.height = "0px";
     textarea.style.height = `${Math.max(textarea.scrollHeight, 36)}px`;
   }, [comment]);
+
+  useEffect(() => {
+    let alive = true;
+    fetchRouteCalculationSettings()
+      .then((settings) => {
+        if (alive) {
+          setRouteCalculationSettings(settings);
+        }
+      })
+      .catch(() => {
+        if (alive) {
+          setRouteCalculationSettings({ routeCalculationAddress: "", orsApiConfigured: false });
+        }
+      });
+
+    fetchExecutionRuleSettings()
+      .then((settings) => {
+        if (!alive) return;
+        const ids = new Set<string>();
+        for (const scenario of settings.scenarios ?? []) {
+          for (const service of scenario.storitve ?? []) {
+            if (
+              service.quantityRule?.type === "per_classification_field" &&
+              service.quantityRule.field === "kilometrinaKm" &&
+              service.serviceProductId
+            ) {
+              ids.add(String(service.serviceProductId));
+            }
+          }
+        }
+        setKilometrinaServiceProductIds(ids);
+      })
+      .catch(() => {
+        if (alive) {
+          setKilometrinaServiceProductIds(new Set());
+        }
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const { settings } = useSettingsData();
   const paymentTermsOptions = useMemo(() => {
@@ -548,6 +610,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
     setCurrentOffer(null);
     setOverriddenVatIds(new Set());
     setProjectDetails(null);
+    setKmCalculationStates({});
     paymentTermsInitRef.current = {};
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -617,6 +680,38 @@ const loadOfferById = useCallback(async (offerId: string) => {
 
       return ensureTrailingBlank(next);
     });
+  };
+
+  const isKilometrinaOfferItem = (item: OfferLineItemForm) =>
+    !!item.productId && kilometrinaServiceProductIds.has(String(item.productId));
+
+  const isKmCalculationDisabled =
+    !routeCalculationSettings?.orsApiConfigured || !routeCalculationSettings?.routeCalculationAddress?.trim();
+
+  const applyKmSuggestion = (item: OfferLineItemForm, km: number) => {
+    updateItem(item.id, { quantity: km });
+  };
+
+  const handleCalculateKm = async (item: OfferLineItemForm) => {
+    if (!isKilometrinaOfferItem(item) || isKmCalculationDisabled) {
+      return;
+    }
+
+    setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "loading" } }));
+    try {
+      const result = await calculateProjectKm(projectId);
+      if (result.zanesljivost === "visoka") {
+        applyKmSuggestion(item, result.razdaljaSkupaj);
+        setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "high", result } }));
+        toast.success(`Kilometrina izračunana: ${formatKm(result.razdaljaSkupaj)} km.`);
+        return;
+      }
+      setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "low", result } }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Naslova ni bilo mogoče najti. Vnesi km ročno.";
+      setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "error", message } }));
+      toast.error(message);
+    }
   };
 
   const deleteRow = (id: string) => {
@@ -961,6 +1056,116 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       resolveSuggestedServiceQuantity,
     ],
   );
+
+  const renderKmCalculationButton = (item: OfferLineItemForm) => {
+    if (!isKilometrinaOfferItem(item)) {
+      return null;
+    }
+
+    const state = kmCalculationStates[item.id] ?? { status: "idle" };
+    const isLoading = state.status === "loading";
+    const disabled = isKmCalculationDisabled || isLoading;
+    const disabledNote = isKmCalculationDisabled ? "Nastavi naslov podjetja in API ključ" : null;
+
+    return (
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1.5 px-2 text-xs"
+          disabled={disabled}
+          onClick={() => void handleCalculateKm(item)}
+        >
+          {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Calculator className="h-3.5 w-3.5" />}
+          Izračunaj
+        </Button>
+        {disabledNote ? <span className="text-xs text-muted-foreground">{disabledNote}</span> : null}
+      </div>
+    );
+  };
+
+  const renderKmCalculationFeedback = (item: OfferLineItemForm) => {
+    if (!isKilometrinaOfferItem(item)) {
+      return null;
+    }
+
+    const state = kmCalculationStates[item.id] ?? { status: "idle" };
+    if (state.status === "high") {
+      return (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          {formatKm(state.result.razdaljaEnosmerno)} km × 2 = {formatKm(state.result.razdaljaSkupaj)} km
+        </div>
+      );
+    }
+
+    if (state.status === "low") {
+      const manualInputId = `km-manual-${item.id}`;
+      return (
+        <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <p>
+            Nisem prepričan o naslovu. Geocoder je našel: {state.result.naslovProjekt}. Preveri ali je pravi.
+          </p>
+          <p>
+            Predlog: {formatKm(state.result.razdaljaEnosmerno)} km × 2 = {formatKm(state.result.razdaljaSkupaj)} km
+            {state.result.razlog ? ` (${state.result.razlog})` : ""}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              onClick={() => applyKmSuggestion(item, state.result.razdaljaSkupaj)}
+            >
+              Uporabi predlog: {formatKm(state.result.razdaljaSkupaj)} km
+            </Button>
+            <Input
+              id={manualInputId}
+              type="number"
+              min={0}
+              className="h-8 w-28 text-right"
+              value={item.quantity}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                updateItem(item.id, { quantity: Number(event.target.value) })
+              }
+              aria-label="Ročni vnos kilometrine"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 px-2 text-xs"
+              onClick={() => document.getElementById(manualInputId)?.focus()}
+            >
+              Vnesi ročno
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    if (state.status === "error") {
+      return (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          {state.message || "Naslova ni bilo mogoče najti. Vnesi km ročno."}
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  const renderKmCalculationMobile = (item: OfferLineItemForm) => {
+    const button = renderKmCalculationButton(item);
+    const feedback = renderKmCalculationFeedback(item);
+    if (!button && !feedback) return null;
+    return (
+      <div className="mt-3 space-y-2">
+        {button}
+        {feedback}
+      </div>
+    );
+  };
 
   const openImportModal = () => {
     setImportError("");
@@ -2303,14 +2508,15 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           onDeleteItem={deleteRow}
           onSelectProduct={handleSelectProduct}
           onSelectCustomItem={handleSelectCustomItem}
+          renderItemActions={(item) => renderKmCalculationMobile(item as OfferLineItemForm)}
           renderSuggestions={(item) => renderLinkedServiceSuggestions(item as OfferLineItemForm)}
         />
 
         <div className="hidden md:block bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
           <Table className="w-full table-fixed">
           <colgroup>
-            <col style={{ width: "42%" }} />
-            <col style={{ width: "10%" }} />
+            <col style={{ width: "34%" }} />
+            <col style={{ width: "18%" }} />
             <col style={{ width: "10%" }} />
             <col style={{ width: "12%" }} />
             {usePerItemDiscount && <col style={{ width: "10%" }} />}
@@ -2349,6 +2555,8 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           <TableBody>
             {items.map((item, index) => {
               const suggestionContent = renderLinkedServiceSuggestions(item);
+              const kmButton = renderKmCalculationButton(item);
+              const kmFeedback = renderKmCalculationFeedback(item);
               return (
               <Fragment key={item.id}>
               <TableRow key={item.id} className="h-11">
@@ -2368,18 +2576,21 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 </TableCell>
 
                 <TableCell className="text-right align-middle">
-                  <Input
-                    className="text-right h-9"
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    value={item.quantity}
-                    onChange={(event) =>
-                      updateItem(item.id, {
-                        quantity: Number(event.target.value),
-                      })
-                    }
-                  />
+                  <div className="flex items-center justify-end gap-2">
+                    {kmButton}
+                    <Input
+                      className="h-9 w-24 text-right"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      value={item.quantity}
+                      onChange={(event) =>
+                        updateItem(item.id, {
+                          quantity: Number(event.target.value),
+                        })
+                      }
+                    />
+                  </div>
                 </TableCell>
 
                 <TableCell className="text-right align-middle">
@@ -2449,6 +2660,13 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 <TableRow key={`${item.id}-suggestions`}>
                   <TableCell colSpan={totalColumns} className="px-4 pb-4 pt-0">
                     {suggestionContent}
+                  </TableCell>
+                </TableRow>
+              ) : null}
+              {kmFeedback ? (
+                <TableRow key={`${item.id}-km`}>
+                  <TableCell colSpan={totalColumns} className="px-4 pb-4 pt-0">
+                    {kmFeedback}
                   </TableCell>
                 </TableRow>
               ) : null}
