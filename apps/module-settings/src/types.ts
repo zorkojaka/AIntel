@@ -51,6 +51,7 @@ export interface DocumentNumberingDto {
 export interface SettingsDto {
   companyName: string;
   address: string;
+  routeCalculationAddress?: string;
   postalCode?: string;
   city?: string;
   country?: string;
@@ -68,6 +69,7 @@ export interface SettingsDto {
   noteDefaultsByDoc?: NotesDefaultsByDoc;
   defaultPaymentTerms?: string;
   disclaimer?: string;
+  orsApiConfigured?: boolean;
 }
 
 export interface ApiEnvelope<T> {

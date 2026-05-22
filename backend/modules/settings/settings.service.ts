@@ -41,6 +41,7 @@ const DOCUMENT_TYPE_KEYS: DocumentTypeKey[] = [
 const DEFAULT_SETTINGS: Settings = {
   companyName: 'Vase podjetje d.o.o.',
   address: 'Glavna cesta 1, 1000 Ljubljana',
+  routeCalculationAddress: '',
   postalCode: '',
   city: '',
   country: '',
@@ -316,6 +317,7 @@ function sanitizeSettings(payload: SettingsUpdate, baseOverride?: Settings): Set
   return {
     companyName: sanitizeString(payload.companyName, base.companyName),
     address: sanitizeString(payload.address, base.address),
+    routeCalculationAddress: sanitizeString(payload.routeCalculationAddress, base.routeCalculationAddress ?? ''),
     postalCode: sanitizeString(payload.postalCode, base.postalCode ?? ''),
     city: sanitizeString(payload.city, base.city ?? ''),
     country: sanitizeString(payload.country, base.country ?? ''),

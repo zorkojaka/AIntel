@@ -15,6 +15,7 @@ import {
   updateStatus,
   updateProject,
   getOfferCandidates,
+  calculateProjectKm,
   updateProjectAssignments,
 } from '../controllers/project.controller';
 import {
@@ -53,6 +54,7 @@ router.post('/:id/status', requireProjectWrite, updateStatus);
 router.put('/:id', requireProjectWrite, updateProject);
 router.delete('/:id', requireProjectWrite, deleteProject);
 router.get('/:id/offer-candidates', getOfferCandidates);
+router.post('/:id/izracunaj-km', requireWorkOrderWrite, calculateProjectKm);
 router.post('/:id/items', requireProjectWrite, addItem);
 router.post('/:id/items/from-cenik', requireProjectWrite, addItemFromCenik);
 router.put('/:id/items/:itemId', requireProjectWrite, updateItem);

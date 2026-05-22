@@ -145,6 +145,7 @@ export function NewProjectDialog({
   const [customerMode, setCustomerMode] = useState<"new" | "existing">("new");
   const [quickAddress, setQuickAddress] = useState("");
   const [showMoreCustomerFields, setShowMoreCustomerFields] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [customerError, setCustomerError] = useState<string | null>(null);
   const [isSavingCustomer, setIsSavingCustomer] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
@@ -156,6 +157,7 @@ export function NewProjectDialog({
     setCustomerMode(initialProject?.client?.id ? "existing" : "new");
     setQuickAddress("");
     setShowMoreCustomerFields(false);
+    setShowDiscardConfirm(false);
     setCustomerError(null);
     setIsSavingCustomer(false);
     if (initialProject) {
@@ -209,6 +211,37 @@ export function NewProjectDialog({
 
   const isEditing = Boolean(initialProject?.id);
   const submitText = isEditing ? "Shrani projekt" : "Ustvari projekt";
+  const normalizedDefaultRequirements = defaultRequirements.trim();
+  const isDirty = useMemo(() => {
+    const hasEditedRequirements =
+      requirements.trim().length > 0 && requirements.trim() !== normalizedDefaultRequirements;
+
+    return (
+      Boolean(selectedClientId) ||
+      Boolean(quickAddress.trim()) ||
+      Boolean(newCustomer.name.trim()) ||
+      Boolean(newCustomer.street.trim()) ||
+      Boolean(newCustomer.postalCode.trim()) ||
+      Boolean(newCustomer.postalCity.trim()) ||
+      Boolean(newCustomer.email.trim()) ||
+      Boolean(newCustomer.phone.trim()) ||
+      hasEditedRequirements ||
+      selectedProjectCategorySlugs.length > 0
+    );
+  }, [newCustomer, normalizedDefaultRequirements, quickAddress, requirements, selectedClientId, selectedProjectCategorySlugs]);
+
+  const requestClose = () => {
+    if (isDirty) {
+      setShowDiscardConfirm(true);
+      return;
+    }
+    onOpenChange(false);
+  };
+
+  const discardAndClose = () => {
+    setShowDiscardConfirm(false);
+    onOpenChange(false);
+  };
 
   const updateNewCustomer = (field: keyof NewCustomerFormState, value: string | boolean) => {
     setCustomerError(null);
@@ -317,6 +350,7 @@ export function NewProjectDialog({
       } else {
         await onCreateProject(payload);
       }
+      setShowDiscardConfirm(false);
       onOpenChange(false);
     } catch (error) {
       console.error("Napaka pri shranjevanju projekta", error);
@@ -327,8 +361,32 @@ export function NewProjectDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden p-0 sm:max-w-4xl" hideCloseButton>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) {
+          onOpenChange(true);
+          return;
+        }
+        requestClose();
+      }}
+    >
+      <DialogContent
+        className="flex max-h-[90vh] flex-col overflow-hidden p-0 sm:max-w-4xl"
+        hideCloseButton
+        onEscapeKeyDown={(event) => {
+          if (isDirty) {
+            event.preventDefault();
+            setShowDiscardConfirm(true);
+          }
+        }}
+        onInteractOutside={(event) => {
+          if (isDirty) {
+            event.preventDefault();
+            setShowDiscardConfirm(true);
+          }
+        }}
+      >
         <form ref={formRef} onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <DialogHeader className="flex shrink-0 flex-row items-center justify-between border-b px-6 py-4">
             <div className="flex flex-col gap-1">
@@ -347,7 +405,7 @@ export function NewProjectDialog({
               <button
                 type="button"
                 aria-label="Zapri"
-                onClick={() => onOpenChange(false)}
+                onClick={requestClose}
                 className="inline-flex h-10 w-10 items-center justify-center rounded border border-border/70 bg-card text-foreground transition hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               >
                 <X className="h-4 w-4" />
@@ -649,7 +707,7 @@ export function NewProjectDialog({
           <DialogFooter className="flex shrink-0 flex-col gap-3 border-t px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-muted-foreground">Naziv: {generatedTitle || "PRJ-XXX"} (samodejno)</p>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={requestClose}>
                 Prekliči
               </Button>
               <Button
@@ -667,6 +725,28 @@ export function NewProjectDialog({
             </div>
           </DialogFooter>
         </form>
+        {showDiscardConfirm ? (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/35 px-4">
+            <div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="discard-project-form-title"
+              className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-xl"
+            >
+              <h3 id="discard-project-form-title" className="text-lg font-semibold text-foreground">
+                Imaš neshranjene spremembe. Kaj želiš?
+              </h3>
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button type="button" variant="outline" onClick={() => setShowDiscardConfirm(false)}>
+                  Nadaljuj urejanje
+                </Button>
+                <Button type="button" variant="destructive" onClick={discardAndClose}>
+                  Zavrži spremembe
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

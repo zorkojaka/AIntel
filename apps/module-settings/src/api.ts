@@ -128,6 +128,7 @@ function mergeDocumentNumbering(
 export const DEFAULT_SETTINGS: SettingsDto = {
   companyName: 'Vase podjetje d.o.o.',
   address: 'Glavna cesta 1',
+  routeCalculationAddress: '',
   postalCode: '1000',
   city: 'Ljubljana',
   country: 'Slovenija',

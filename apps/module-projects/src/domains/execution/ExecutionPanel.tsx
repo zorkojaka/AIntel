@@ -6,7 +6,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
-import { Camera, ChevronDown, ChevronRight, Download, Image as ImageIcon, Loader2, Pencil, Send, Trash2 } from "lucide-react";
+import { Calculator, Camera, ChevronDown, ChevronRight, Download, Image as ImageIcon, Loader2, Pencil, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
@@ -22,7 +22,7 @@ import { cn } from "../../components/ui/utils";
 import { MaterialOrderCard } from "../logistics/MaterialOrderCard";
 import { SignaturePad } from "./SignaturePad";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
-import { downloadPdf } from "../../api";
+import { calculateProjectKm, downloadPdf, fetchRouteCalculationSettings, type ProjectKmCalculation, type RouteCalculationSettings } from "../../api";
 import type { Employee } from "@aintel/shared/types/employee";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { WorkOrderConfirmationComposeDialog } from "../communication/WorkOrderConfirmationComposeDialog";
@@ -60,6 +60,12 @@ type ActiveUnitNoteEditor = {
 } | null;
 
 type NewExtraItemsState = Record<string, Record<string, boolean>>;
+type KmCalculationState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "high"; result: ProjectKmCalculation }
+  | { status: "low"; result: ProjectKmCalculation }
+  | { status: "error"; message: string };
 
 type PreparationPhoto = {
   _id: string;
@@ -118,6 +124,16 @@ function getExecutionModeLabel(mode: WorkOrderExecutionSpec["mode"] | undefined)
   if (mode === "per_unit") return "Po enotah";
   if (mode === "measured") return "Merjeno";
   return "Enostavno";
+}
+
+function isTravelCostItem(item: WorkOrderItemDraft) {
+  const name = (item.name ?? "").toLowerCase();
+  const unit = (item.unit ?? "").toLowerCase();
+  return name.includes("potni") && name.includes("stro") && (name.includes("[km]") || unit === "km");
+}
+
+function formatKm(value: number) {
+  return value.toLocaleString("sl-SI", { maximumFractionDigits: 1 });
 }
 
 function getPerUnitSummary(spec: WorkOrderExecutionSpec) {
@@ -573,6 +589,8 @@ export function ExecutionPanel({
   const [photoContext, setPhotoContext] = useState<PhotoContext | null>(null);
   const [photoCountRefreshKey, setPhotoCountRefreshKey] = useState(0);
   const [newExtraItems, setNewExtraItems] = useState<NewExtraItemsState>({});
+  const [routeCalculationSettings, setRouteCalculationSettings] = useState<RouteCalculationSettings | null>(null);
+  const [kmCalculationStates, setKmCalculationStates] = useState<Record<string, KmCalculationState>>({});
 
   const workOrders = useMemo(() => rawWorkOrders, [rawWorkOrders]);
 
@@ -590,6 +608,24 @@ export function ExecutionPanel({
       }
     };
     fetchEmployees();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    fetchRouteCalculationSettings()
+      .then((settings) => {
+        if (alive) {
+          setRouteCalculationSettings(settings);
+        }
+      })
+      .catch(() => {
+        if (alive) {
+          setRouteCalculationSettings({ routeCalculationAddress: "", orsApiConfigured: false });
+        }
+      });
     return () => {
       alive = false;
     };
@@ -1101,6 +1137,37 @@ export function ExecutionPanel({
     }
     updateDraftItem(order, itemId, values);
     setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
+  };
+
+  const isKmCalculationDisabled =
+    !routeCalculationSettings?.orsApiConfigured || !routeCalculationSettings?.routeCalculationAddress?.trim();
+
+  const applyKmSuggestion = (order: WorkOrder, item: WorkOrderItemDraft, km: number) => {
+    applyItemChange(order, item.id, {
+      executedQuantity: km,
+    });
+  };
+
+  const handleCalculateKm = async (order: WorkOrder, item: WorkOrderItemDraft) => {
+    const stateKey = `${order._id}:${item.id}`;
+    if (isKmCalculationDisabled || getOrderConfirmationState(order) === "signed_active") {
+      return;
+    }
+    setKmCalculationStates((prev) => ({ ...prev, [stateKey]: { status: "loading" } }));
+    try {
+      const result = await calculateProjectKm(projectId);
+      if (result.zanesljivost === "visoka") {
+        applyKmSuggestion(order, item, result.razdaljaSkupaj);
+        setKmCalculationStates((prev) => ({ ...prev, [stateKey]: { status: "high", result } }));
+        toast.success(`Kilometrina izračunana: ${formatKm(result.razdaljaSkupaj)} km.`);
+        return;
+      }
+      setKmCalculationStates((prev) => ({ ...prev, [stateKey]: { status: "low", result } }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Naslova ni bilo mogoče najti. Vnesi km ročno.";
+      setKmCalculationStates((prev) => ({ ...prev, [stateKey]: { status: "error", message } }));
+      toast.error(message);
+    }
   };
 
   const applyExtraExecutionFieldChange = (
@@ -1699,6 +1766,92 @@ export function ExecutionPanel({
     );
   };
 
+  const renderKmCalculationControls = (order: WorkOrder, item: WorkOrderItemDraft, compact = false) => {
+    if (!isTravelCostItem(item)) {
+      return null;
+    }
+    const stateKey = `${order._id}:${item.id}`;
+    const state = kmCalculationStates[stateKey] ?? { status: "idle" };
+    const isLoading = state.status === "loading";
+    const isLocked = getOrderConfirmationState(order) === "signed_active";
+    const disabled = isKmCalculationDisabled || isLoading || isLocked;
+    const disabledNote = isKmCalculationDisabled ? "Nastavi naslov podjetja in API ključ" : null;
+
+    return (
+      <div className={cn("space-y-2", compact ? "pt-1" : "pt-2")}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 px-2 text-xs"
+            disabled={disabled}
+            onClick={() => void handleCalculateKm(order, item)}
+          >
+            {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Calculator className="h-3.5 w-3.5" />}
+            Izračunaj km
+          </Button>
+          {disabledNote ? <span className="text-xs text-muted-foreground">{disabledNote}</span> : null}
+        </div>
+
+        {state.status === "high" ? (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            {formatKm(state.result.razdaljaEnosmerno)} km × 2 = {formatKm(state.result.razdaljaSkupaj)} km
+          </div>
+        ) : null}
+
+        {state.status === "low" ? (
+          <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <p>
+              Nisem prepričan o naslovu. Geocoder je našel: {state.result.naslovProjekt}. Preveri ali je pravi.
+            </p>
+            <p>
+              Predlog: {formatKm(state.result.razdaljaEnosmerno)} km × 2 = {formatKm(state.result.razdaljaSkupaj)} km
+              {state.result.razlog ? ` (${state.result.razlog})` : ""}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 px-2 text-xs"
+                disabled={isLocked}
+                onClick={() => applyKmSuggestion(order, item, state.result.razdaljaSkupaj)}
+              >
+                Uporabi predlog: {formatKm(state.result.razdaljaSkupaj)} km
+              </Button>
+              <Input
+                type="number"
+                min={0}
+                className="h-8 w-28 text-right"
+                disabled={isLocked}
+                value={item.executedQuantity ?? ""}
+                onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                  applyItemChange(order, item.id, { executedQuantity: Number(event.target.value) })
+                }
+                aria-label="Ročni vnos kilometrine"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-xs"
+                disabled={isLocked}
+              >
+                Vnesi ročno
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {state.status === "error" ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            {state.message || "Naslova ni bilo mogoče najti. Vnesi km ročno."}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   const selectedSignoffOrder = useMemo(
     () => workOrders.find((order) => order._id === signoffOrderId) ?? null,
     [signoffOrderId, workOrders],
@@ -2171,6 +2324,7 @@ export function ExecutionPanel({
                                                 className="pt-1"
                                               />
                                             ) : null}
+                                            {renderKmCalculationControls(order, item)}
                                           </div>
                                         )}
                                       </td>
@@ -2344,6 +2498,7 @@ export function ExecutionPanel({
                                       {hasVisibleInlineUnits ? <Badge variant="outline">Izvedeno {getPerUnitSummary(executionSpec).replace("Enote: ", "")}</Badge> : null}
                                     </div>
                                   ) : null}
+                                  {renderKmCalculationControls(order, item, true)}
                                   </div>
                                   <Checkbox
                                     className="mt-1 h-5 w-5 shrink-0"

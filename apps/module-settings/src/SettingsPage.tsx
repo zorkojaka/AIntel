@@ -725,6 +725,12 @@ const CompanySettingsForm: React.FC<CompanySettingsFormProps> = ({
           onChange={(event) => handleFieldChange('address', event.target.value)}
         />
         <Input
+          label="Naslov za izračun poti"
+          value={form.routeCalculationAddress ?? ''}
+          onChange={(event) => handleFieldChange('routeCalculationAddress', event.target.value)}
+          placeholder="Ulica, pošta, mesto"
+        />
+        <Input
           label="Poštna številka"
           value={form.postalCode ?? ''}
           onChange={(event) => handleFieldChange('postalCode', event.target.value)}

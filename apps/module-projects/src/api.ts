@@ -70,6 +70,33 @@ export async function downloadPdf(url: string, filename: string, init?: RequestI
   window.URL.revokeObjectURL(objectUrl);
 }
 
+export type ProjectKmCalculation = {
+  razdaljaEnosmerno: number;
+  razdaljaSkupaj: number;
+  zanesljivost: "visoka" | "nizka";
+  razlog?: string;
+  naslovPodjetje: string;
+  naslovProjekt: string;
+};
+
+export type RouteCalculationSettings = {
+  routeCalculationAddress?: string;
+  orsApiConfigured?: boolean;
+};
+
+export async function fetchRouteCalculationSettings(): Promise<RouteCalculationSettings> {
+  const response = await fetch("/api/settings");
+  return parseApiResponse<RouteCalculationSettings>(response, "Nastavitev kilometrine ni mogoče pridobiti.");
+}
+
+export async function calculateProjectKm(projectId: string): Promise<ProjectKmCalculation> {
+  const response = await fetch(`/api/projects/${projectId}/izracunaj-km`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  return parseApiResponse<ProjectKmCalculation>(response, "Kilometrine ni mogoče izračunati.");
+}
+
 export type ExecutionQuantityRule = {
   type: "fixed" | "per_unit" | "per_classification_field";
   value?: number;

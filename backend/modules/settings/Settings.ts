@@ -60,6 +60,7 @@ export interface DocumentNumberingSettings {
 export interface Settings {
   companyName: string;
   address: string;
+  routeCalculationAddress?: string;
   postalCode?: string;
   city?: string;
   country?: string;
@@ -164,6 +165,7 @@ const SettingsSchema = new Schema<SettingsDocument>(
     key: { type: String, required: true, unique: true, default: 'global' },
     companyName: { type: String, required: true, default: '' },
     address: { type: String, required: true, default: '' },
+    routeCalculationAddress: { type: String },
     postalCode: { type: String },
     city: { type: String },
     country: { type: String },
