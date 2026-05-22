@@ -22,7 +22,7 @@ import type { ProjectDetails } from "../types";
 import type { User } from "@aintel/shared/types/user";
 import type { Employee } from "@aintel/shared/types/employee";
 
-import { ArrowDown, ArrowLeft, Calculator, Check, ChevronsUpDown, Download, Loader2, Pencil, Trash, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, Check, ChevronsUpDown, Download, Loader2, Pencil, RefreshCw, Trash, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
@@ -69,8 +69,8 @@ type OfferLineItemForm = {
 type KmCalculationState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "high"; result: ProjectKmCalculation }
-  | { status: "low"; result: ProjectKmCalculation }
+  | { status: "calculated"; result: ProjectKmCalculation }
+  | { status: "manual" }
   | { status: "error"; message: string };
 
 type OfferImportMatch = {
@@ -292,6 +292,7 @@ export function OffersTab({
   const [kmCalculationStates, setKmCalculationStates] = useState<Record<string, KmCalculationState>>({});
   const [kilometrinaServiceProductIds, setKilometrinaServiceProductIds] = useState<Set<string>>(new Set());
 
+  const autoKmCalculationKeysRef = useRef<Set<string>>(new Set());
   const paymentTermsInitRef = useRef<Record<string, boolean>>({});
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(title);
@@ -611,6 +612,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
     setOverriddenVatIds(new Set());
     setProjectDetails(null);
     setKmCalculationStates({});
+    autoKmCalculationKeysRef.current.clear();
     paymentTermsInitRef.current = {};
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -685,14 +687,23 @@ const loadOfferById = useCallback(async (offerId: string) => {
   const isKilometrinaOfferItem = (item: OfferLineItemForm) =>
     !!item.productId && kilometrinaServiceProductIds.has(String(item.productId));
 
+  const handleItemUpdate = (id: string, changes: Partial<OfferLineItemForm>) => {
+    const current = items.find((item) => item.id === id);
+    if (current && Object.prototype.hasOwnProperty.call(changes, "quantity") && isKilometrinaOfferItem(current)) {
+      setKmCalculationStates((prev) => ({ ...prev, [id]: { status: "manual" } }));
+    }
+    updateItem(id, changes);
+  };
+
   const isKmCalculationDisabled =
     !routeCalculationSettings?.orsApiConfigured || !routeCalculationSettings?.routeCalculationAddress?.trim();
 
-  const applyKmSuggestion = (item: OfferLineItemForm, km: number) => {
-    updateItem(item.id, { quantity: km });
+  const applyKmResult = (item: OfferLineItemForm, result: ProjectKmCalculation) => {
+    updateItem(item.id, { quantity: result.razdaljaSkupaj });
+    setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "calculated", result } }));
   };
 
-  const handleCalculateKm = async (item: OfferLineItemForm) => {
+  const handleCalculateKm = async (item: OfferLineItemForm, mode: "auto" | "manual" = "manual") => {
     if (!isKilometrinaOfferItem(item) || isKmCalculationDisabled) {
       return;
     }
@@ -700,19 +711,37 @@ const loadOfferById = useCallback(async (offerId: string) => {
     setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "loading" } }));
     try {
       const result = await calculateProjectKm(projectId);
-      if (result.zanesljivost === "visoka") {
-        applyKmSuggestion(item, result.razdaljaSkupaj);
-        setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "high", result } }));
+      applyKmResult(item, result);
+      if (mode === "manual") {
         toast.success(`Kilometrina izračunana: ${formatKm(result.razdaljaSkupaj)} km.`);
-        return;
       }
-      setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "low", result } }));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Naslova ni bilo mogoče najti. Vnesi km ročno.";
       setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "error", message } }));
       toast.error(message);
     }
   };
+
+  useEffect(() => {
+    if (isKmCalculationDisabled || kilometrinaServiceProductIds.size === 0) {
+      return;
+    }
+
+    for (const item of items) {
+      if (!isKilometrinaOfferItem(item) || isEmptyOfferItem(item)) {
+        continue;
+      }
+
+      const autoKey = `${projectId}:${item.id}:${item.productId ?? ""}`;
+      if (autoKmCalculationKeysRef.current.has(autoKey)) {
+        continue;
+      }
+
+      autoKmCalculationKeysRef.current.add(autoKey);
+      void handleCalculateKm(item, "auto");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, isKmCalculationDisabled, kilometrinaServiceProductIds, projectId]);
 
   const deleteRow = (id: string) => {
     setLinkedServiceSuggestions((prev) => {
@@ -1057,6 +1086,65 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     ],
   );
 
+  const renderKmReliabilityNote = (item: OfferLineItemForm) => {
+    if (!isKilometrinaOfferItem(item)) {
+      return null;
+    }
+
+    const state = kmCalculationStates[item.id] ?? { status: "idle" };
+    if (state.status === "loading") {
+      return <span className="text-xs text-muted-foreground">računam...</span>;
+    }
+
+    if (state.status === "manual") {
+      return <span className="text-xs text-muted-foreground">ročno</span>;
+    }
+
+    if (state.status === "error") {
+      return (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button type="button" className="text-xs font-medium text-destructive underline-offset-2 hover:underline">
+              ⚠ napaka
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80 text-xs" align="start">
+            {state.message || "Naslova ni bilo mogoče najti. Vnesi km ročno."}
+          </PopoverContent>
+        </Popover>
+      );
+    }
+
+    if (state.status !== "calculated") {
+      return null;
+    }
+
+    const labelByReliability = {
+      visoka: { label: "✓ točno", className: "text-emerald-700" },
+      srednja: { label: "⚠ približek", className: "text-amber-700" },
+      nizka: { label: "⚠ preveri naslov", className: "text-amber-700" },
+    } satisfies Record<ProjectKmCalculation["zanesljivost"], { label: string; className: string }>;
+    const meta = labelByReliability[state.result.zanesljivost] ?? labelByReliability.nizka;
+
+    return (
+      <Popover>
+        <PopoverTrigger asChild>
+          <button type="button" className={`text-xs font-medium underline-offset-2 hover:underline ${meta.className}`}>
+            {meta.label}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-80 space-y-1 text-xs" align="start">
+          <p>Geocoder našel: {state.result.naslovProjekt}</p>
+          <p>
+            {formatKm(state.result.razdaljaEnosmerno)} km × 2 = {formatKm(state.result.razdaljaSkupaj)} km.
+          </p>
+          {state.result.zanesljivost !== "visoka" ? <p>Preveri naslov če ni točen.</p> : null}
+          {state.result.razlog ? <p>{state.result.razlog}</p> : null}
+        </PopoverContent>
+      </Popover>
+    );
+  };
+
   const renderKmCalculationButton = (item: OfferLineItemForm) => {
     if (!isKilometrinaOfferItem(item)) {
       return null;
@@ -1075,96 +1163,20 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           size="sm"
           className="h-8 gap-1.5 px-2 text-xs"
           disabled={disabled}
-          onClick={() => void handleCalculateKm(item)}
+          onClick={() => void handleCalculateKm(item, "manual")}
         >
-          {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Calculator className="h-3.5 w-3.5" />}
+          {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           Izračunaj
         </Button>
-        {disabledNote ? <span className="text-xs text-muted-foreground">{disabledNote}</span> : null}
+        {disabledNote ? <span className="text-xs text-muted-foreground">{disabledNote}</span> : renderKmReliabilityNote(item)}
       </div>
     );
-  };
-
-  const renderKmCalculationFeedback = (item: OfferLineItemForm) => {
-    if (!isKilometrinaOfferItem(item)) {
-      return null;
-    }
-
-    const state = kmCalculationStates[item.id] ?? { status: "idle" };
-    if (state.status === "high") {
-      return (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-          {formatKm(state.result.razdaljaEnosmerno)} km × 2 = {formatKm(state.result.razdaljaSkupaj)} km
-        </div>
-      );
-    }
-
-    if (state.status === "low") {
-      const manualInputId = `km-manual-${item.id}`;
-      return (
-        <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          <p>
-            Nisem prepričan o naslovu. Geocoder je našel: {state.result.naslovProjekt}. Preveri ali je pravi.
-          </p>
-          <p>
-            Predlog: {formatKm(state.result.razdaljaEnosmerno)} km × 2 = {formatKm(state.result.razdaljaSkupaj)} km
-            {state.result.razlog ? ` (${state.result.razlog})` : ""}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              className="h-8 px-2 text-xs"
-              onClick={() => applyKmSuggestion(item, state.result.razdaljaSkupaj)}
-            >
-              Uporabi predlog: {formatKm(state.result.razdaljaSkupaj)} km
-            </Button>
-            <Input
-              id={manualInputId}
-              type="number"
-              min={0}
-              className="h-8 w-28 text-right"
-              value={item.quantity}
-              onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                updateItem(item.id, { quantity: Number(event.target.value) })
-              }
-              aria-label="Ročni vnos kilometrine"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 px-2 text-xs"
-              onClick={() => document.getElementById(manualInputId)?.focus()}
-            >
-              Vnesi ročno
-            </Button>
-          </div>
-        </div>
-      );
-    }
-
-    if (state.status === "error") {
-      return (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          {state.message || "Naslova ni bilo mogoče najti. Vnesi km ročno."}
-        </div>
-      );
-    }
-
-    return null;
   };
 
   const renderKmCalculationMobile = (item: OfferLineItemForm) => {
     const button = renderKmCalculationButton(item);
-    const feedback = renderKmCalculationFeedback(item);
-    if (!button && !feedback) return null;
-    return (
-      <div className="mt-3 space-y-2">
-        {button}
-        {feedback}
-      </div>
-    );
+    if (!button) return null;
+    return <div className="mt-3">{button}</div>;
   };
 
   const openImportModal = () => {
@@ -2504,7 +2516,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           totals={totals}
           formatCurrency={formatCurrency}
           onRevealBlankItem={revealMobileBlankItem}
-          onUpdateItem={updateItem}
+          onUpdateItem={handleItemUpdate}
           onDeleteItem={deleteRow}
           onSelectProduct={handleSelectProduct}
           onSelectCustomItem={handleSelectCustomItem}
@@ -2556,7 +2568,6 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
             {items.map((item, index) => {
               const suggestionContent = renderLinkedServiceSuggestions(item);
               const kmButton = renderKmCalculationButton(item);
-              const kmFeedback = renderKmCalculationFeedback(item);
               return (
               <Fragment key={item.id}>
               <TableRow key={item.id} className="h-11">
@@ -2585,7 +2596,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                       min={0}
                       value={item.quantity}
                       onChange={(event) =>
-                        updateItem(item.id, {
+                        handleItemUpdate(item.id, {
                           quantity: Number(event.target.value),
                         })
                       }
@@ -2660,13 +2671,6 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 <TableRow key={`${item.id}-suggestions`}>
                   <TableCell colSpan={totalColumns} className="px-4 pb-4 pt-0">
                     {suggestionContent}
-                  </TableCell>
-                </TableRow>
-              ) : null}
-              {kmFeedback ? (
-                <TableRow key={`${item.id}-km`}>
-                  <TableCell colSpan={totalColumns} className="px-4 pb-4 pt-0">
-                    {kmFeedback}
                   </TableCell>
                 </TableRow>
               ) : null}
