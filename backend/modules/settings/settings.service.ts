@@ -95,6 +95,7 @@ const DEFAULT_SETTINGS: Settings = {
   defaultPaymentTerms: '',
   disclaimer: '',
   offerClauses: [],
+  phaseProgressionMode: 'manual',
 };
 
 let cachedSettings: Settings | null = null;
@@ -336,6 +337,10 @@ function sanitizeSettings(payload: SettingsUpdate, baseOverride?: Settings): Set
     noteDefaultsByDoc: noteDefaults,
     documentNumbering: normalizeDocumentNumbering(payload.documentNumbering, base, documentPrefix),
     offerClauses: [],
+    phaseProgressionMode:
+      payload.phaseProgressionMode === 'automatic' || payload.phaseProgressionMode === 'manual'
+        ? payload.phaseProgressionMode
+        : base.phaseProgressionMode ?? DEFAULT_SETTINGS.phaseProgressionMode,
   };
 }
 

@@ -195,6 +195,7 @@ export const DEFAULT_SETTINGS: SettingsDto = {
   noteDefaultsByDoc: createEmptyNoteDefaults(),
   defaultPaymentTerms: '',
   disclaimer: '',
+  phaseProgressionMode: 'manual',
 };
 
 export const DOCUMENT_PREFIX_LABELS: Record<DocumentPrefixKey, string> = {

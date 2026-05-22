@@ -19,7 +19,6 @@ import { generateRequirementsFromTemplates } from '../services/requirements-from
 import type { RequirementFieldType, RequirementFormulaConfig } from '../../shared/requirements.types';
 import { getOfferCandidatesFromRequirements } from '../services/offer-from-requirements';
 import { serializeProjectDetails } from '../services/project.service';
-import { createInvoiceFromClosing } from '../services/invoice.service';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
@@ -1083,7 +1082,7 @@ export async function saveSignature(req: Request, res: Response) {
       Math.max(0, ...(workOrder.confirmationVersions ?? []).map((version) => Number(version.versionNumber) || 0)) + 1;
     workOrder.confirmationVersions = (workOrder.confirmationVersions ?? []).map((version) => ({
       ...version,
-      state: version.state === 'active' || version.state === 'archived' ? 'superseded' : version.state,
+      state: version.state === 'active' ? 'superseded' : version.state,
     }));
     const nextVersion = buildConfirmationVersionSnapshot(workOrder, {
       signerName,
@@ -1100,12 +1099,9 @@ export async function saveSignature(req: Request, res: Response) {
     workOrder.customerSignature = signature;
     workOrder.customerSignedAt = signedAt;
     workOrder.customerRemark = customerRemark;
-    workOrder.status = 'completed';
     workOrder.markModified('confirmationVersions');
     await workOrder.save();
   }
-
-  project.status = 'completed';
 
   addTimeline(project, {
     type: 'execution',
@@ -1123,16 +1119,7 @@ export async function saveSignature(req: Request, res: Response) {
     },
   });
 
-  addTimeline(project, {
-    type: 'status-change',
-    title: 'Status spremenjen',
-    description: "Projekt prešel v fazo 'Zaključeno'",
-    timestamp: new Date().toLocaleString('sl-SI'),
-    user: 'Admin',
-  });
-
   await project.save();
-  await createInvoiceFromClosing(project.id);
 
   await recordSignatureCompletedCommunicationEvent({
     projectId: project.id,

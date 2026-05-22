@@ -72,6 +72,10 @@ function validatePayload(body: unknown): SettingsUpdate {
     iban: pickString(payload.iban),
     vatId: pickString(payload.vatId),
     directorName: pickString(payload.directorName),
+    phaseProgressionMode:
+      payload.phaseProgressionMode === 'automatic' || payload.phaseProgressionMode === 'manual'
+        ? payload.phaseProgressionMode
+        : undefined,
     notes: Array.isArray(payload.notes) ? (payload.notes as SettingsUpdate['notes']) : undefined,
     noteDefaultsByDoc:
       typeof payload.noteDefaultsByDoc === 'object' && payload.noteDefaultsByDoc !== null

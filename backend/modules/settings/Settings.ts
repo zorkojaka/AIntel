@@ -79,6 +79,7 @@ export interface Settings {
   defaultPaymentTerms?: string;
   disclaimer?: string;
   offerClauses?: LegacyOfferClause[];
+  phaseProgressionMode?: 'automatic' | 'manual';
 }
 
 export interface SettingsDocument extends Document, Settings {
@@ -194,7 +195,8 @@ const SettingsSchema = new Schema<SettingsDocument>(
     },
     defaultPaymentTerms: { type: String },
     disclaimer: { type: String },
-    offerClauses: { type: [LegacyClauseSchema], default: [] }
+    offerClauses: { type: [LegacyClauseSchema], default: [] },
+    phaseProgressionMode: { type: String, enum: ['automatic', 'manual'], default: 'manual' }
   },
   {
     timestamps: true,

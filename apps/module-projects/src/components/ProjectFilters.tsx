@@ -43,7 +43,6 @@ export function ProjectFilters({
           <SelectItem value="ponudbe">Ponudbe</SelectItem>
           <SelectItem value="priprava">Priprava</SelectItem>
           <SelectItem value="izvedba">Izvedba</SelectItem>
-          <SelectItem value="predaja">Predaja</SelectItem>
           <SelectItem value="racun">Račun</SelectItem>
         </SelectContent>
       </Select>
