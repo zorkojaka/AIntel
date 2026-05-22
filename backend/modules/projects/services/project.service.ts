@@ -26,8 +26,12 @@ function mapCrmClientToDto(client: CrmClient): ProjectClientDto {
   return {
     id: client._id.toString(),
     name: client.name,
+    type: client.type ?? null,
+    vatNumber: client.vat_number ?? null,
     email: client.email ?? null,
     phone: client.phone ?? null,
+    contactPerson: client.contact_person ?? null,
+    notes: client.notes ?? null,
     street: client.street ?? null,
     postalCode: client.postalCode ?? null,
     postalCity: client.postalCity ?? null,

@@ -593,12 +593,17 @@ export async function updateProject(req: Request, res: Response) {
     project.requirements = await generateRequirementsFromTemplates(categories, requestedVariantSlug);
   }
   if (req.body.customer) {
+    const previousAddress = project.customer.address ?? '';
+    const nextAddress = req.body.customer.address ?? project.customer.address;
     project.customer = {
       name: req.body.customer.name ?? project.customer.name,
       taxId: req.body.customer.taxId ?? project.customer.taxId,
-      address: req.body.customer.address ?? project.customer.address,
+      address: nextAddress,
       paymentTerms: req.body.customer.paymentTerms ?? project.customer.paymentTerms,
     };
+    if (nextAddress !== previousAddress) {
+      project.routeCoordinates = null;
+    }
   }
   if (Array.isArray(req.body.items)) {
     project.items = req.body.items.map((item: ProjectItem) => ({
