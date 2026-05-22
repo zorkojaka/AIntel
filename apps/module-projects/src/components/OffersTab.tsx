@@ -144,6 +144,63 @@ const clampMin = (value: unknown, fallback: number, min: number) => {
 const formatKm = (value: number) =>
   value.toLocaleString("sl-SI", { maximumFractionDigits: 1 });
 
+const normalizeAddressPart = (value?: string | null) =>
+  (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const formatProjectRouteAddress = (project?: ProjectDetails | null) => {
+  if (!project) return "";
+  const client = project.client ?? null;
+  const street = client?.street?.trim();
+  const postal = [client?.postalCode, client?.postalCity].map((part) => part?.trim()).filter(Boolean).join(" ");
+  const structured = [street, postal].filter(Boolean).join(", ");
+  return structured || client?.address?.trim() || project.customerDetail?.address?.trim() || "";
+};
+
+const extractAddressParts = (value: string) => {
+  const normalized = normalizeAddressPart(value);
+  const house = normalized.match(/\b(?!\d{4}\b)\d+[a-z]?\b/)?.[0] ?? "";
+  const postalCity = normalized.match(/\b\d{4}\s+([\p{L}\s-]+)/u)?.[1]?.trim() ?? "";
+  const segments = value.split(",").map((part) => normalizeAddressPart(part)).filter(Boolean);
+  const fallbackCity = segments.length > 1 ? segments[segments.length - 1].replace(/\b\d{4}\b/g, "").trim() : "";
+  const city = postalCity || fallbackCity;
+  const streetSource = segments[0] || normalized;
+  const street = streetSource
+    .replace(/\b\d{4}\b/g, " ")
+    .replace(/\b(?!\d{4}\b)\d+[a-z]?\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { normalized, street, house, city };
+};
+
+const compareRouteAddresses = (projectAddress: string, geocoderAddress: string) => {
+  const project = extractAddressParts(projectAddress);
+  const geocoder = extractAddressParts(geocoderAddress);
+  const streetMatches =
+    !!project.street &&
+    !!geocoder.street &&
+    (project.street.includes(geocoder.street) || geocoder.street.includes(project.street));
+  const cityMatches =
+    !!project.city &&
+    !!geocoder.city &&
+    (project.city.includes(geocoder.city) || geocoder.city.includes(project.city));
+  const houseMatches = !!project.house && geocoder.normalized.includes(project.house);
+
+  if (streetMatches && cityMatches && houseMatches) {
+    return { zanesljivost: "visoka" as const, razlog: "" };
+  }
+  if (streetMatches && cityMatches) {
+    const razlog = project.house && !houseMatches ? "manjka hišna št. ali se razlikuje" : "preveri hišno številko";
+    return { zanesljivost: "srednja" as const, razlog };
+  }
+  return { zanesljivost: "nizka" as const, razlog: "naslov se ne ujema dovolj natančno" };
+};
+
 const isItemValid = (item: OfferLineItem | OfferLineItemForm) =>
   item.name.trim() !== "" && item.unitPrice > 0;
 
@@ -1119,29 +1176,67 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       return null;
     }
 
-    const labelByReliability = {
-      visoka: { label: "✓ točno", className: "text-emerald-700" },
-      srednja: { label: "⚠ približek", className: "text-amber-700" },
-      nizka: { label: "⚠ preveri naslov", className: "text-amber-700" },
-    } satisfies Record<ProjectKmCalculation["zanesljivost"], { label: string; className: string }>;
-    const meta = labelByReliability[state.result.zanesljivost] ?? labelByReliability.nizka;
+    const projectAddress = formatProjectRouteAddress(projectDetails);
+    const comparison = compareRouteAddresses(projectAddress, state.result.naslovProjekt);
+    const isHigh = comparison.zanesljivost === "visoka";
+    const label = isHigh ? `✓ ${projectAddress || state.result.naslovProjekt}` : "⚠ glej";
+    const className = isHigh ? "text-emerald-700" : "text-amber-700";
 
     return (
       <Popover>
         <PopoverTrigger asChild>
-          <button type="button" className={`text-xs font-medium underline-offset-2 hover:underline ${meta.className}`}>
-            {meta.label}
+          <button type="button" className={`max-w-[220px] truncate text-xs font-medium underline-offset-2 hover:underline ${className}`}>
+            {label}
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-80 space-y-1 text-xs" align="start">
-          <p>Geocoder našel: {state.result.naslovProjekt}</p>
+          {projectAddress ? <p>Projekt: {projectAddress}</p> : null}
+          <p>Geocoder: {state.result.naslovProjekt}</p>
           <p>
             {formatKm(state.result.razdaljaEnosmerno)} km × 2 = {formatKm(state.result.razdaljaSkupaj)} km.
           </p>
-          {state.result.zanesljivost !== "visoka" ? <p>Preveri naslov če ni točen.</p> : null}
+          {!isHigh ? <p>{comparison.razlog}. Preveri naslov, če ni točen.</p> : null}
           {state.result.razlog ? <p>{state.result.razlog}</p> : null}
         </PopoverContent>
       </Popover>
+    );
+  };
+
+  const openClientAddressEditor = () => {
+    const clientId = projectDetails?.client?.id ?? projectDetails?.customerDetail?.id;
+    if (!clientId) {
+      toast.message("Stranka ni povezana s CRM zapisom. Naslov popravi pri podatkih projekta.");
+      return;
+    }
+    window.location.href = `/crm?clientId=${encodeURIComponent(String(clientId))}`;
+  };
+
+  const renderKmAddressComparison = (item: OfferLineItemForm) => {
+    if (!isKilometrinaOfferItem(item)) {
+      return null;
+    }
+    const state = kmCalculationStates[item.id] ?? { status: "idle" };
+    if (state.status !== "calculated") {
+      return null;
+    }
+
+    const projectAddress = formatProjectRouteAddress(projectDetails);
+    const comparison = compareRouteAddresses(projectAddress, state.result.naslovProjekt);
+    if (comparison.zanesljivost === "visoka") {
+      return null;
+    }
+
+    return (
+      <div className="space-y-1 text-xs text-muted-foreground">
+        {projectAddress ? <div>Projekt: {projectAddress}</div> : null}
+        <div>
+          Geocoder: {state.result.naslovProjekt}
+          {comparison.razlog ? ` (${comparison.razlog})` : ""}
+        </div>
+        <button type="button" className="font-medium text-primary underline-offset-2 hover:underline" onClick={openClientAddressEditor}>
+          Popravi naslov
+        </button>
+      </div>
     );
   };
 
@@ -1160,13 +1255,14 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         <Button
           type="button"
           variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 px-2 text-xs"
+          size="icon"
+          className="size-8 shrink-0"
           disabled={disabled}
           onClick={() => void handleCalculateKm(item, "manual")}
+          aria-label="Izračunaj kilometrino"
+          title="Izračunaj kilometrino"
         >
           {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Izračunaj
         </Button>
         {disabledNote ? <span className="text-xs text-muted-foreground">{disabledNote}</span> : renderKmReliabilityNote(item)}
       </div>
@@ -1175,8 +1271,14 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
 
   const renderKmCalculationMobile = (item: OfferLineItemForm) => {
     const button = renderKmCalculationButton(item);
+    const comparison = renderKmAddressComparison(item);
     if (!button) return null;
-    return <div className="mt-3">{button}</div>;
+    return (
+      <div className="mt-3 space-y-2">
+        {button}
+        {comparison}
+      </div>
+    );
   };
 
   const openImportModal = () => {
@@ -2568,11 +2670,13 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
             {items.map((item, index) => {
               const suggestionContent = renderLinkedServiceSuggestions(item);
               const kmButton = renderKmCalculationButton(item);
+              const kmAddressComparison = renderKmAddressComparison(item);
               return (
               <Fragment key={item.id}>
               <TableRow key={item.id} className="h-11">
                 <TableCell className="text-left pl-4 align-middle min-w-0">
-                  <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div className="min-w-0 flex-1">
                     <PriceListProductAutocomplete
                       value={item.name}
                       placeholder="Naziv ali iskanje v ceniku"
@@ -2583,12 +2687,13 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                       onCustomSelected={() => handleSelectCustomItem(item.id)}
                       onProductSelected={(product) => handleSelectProduct(item.id, product, index)}
                     />
+                    </div>
+                    {kmButton}
                   </div>
                 </TableCell>
 
                 <TableCell className="text-right align-middle">
                   <div className="flex items-center justify-end gap-2">
-                    {kmButton}
                     <Input
                       className="h-9 w-24 text-right"
                       type="number"
@@ -2671,6 +2776,13 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 <TableRow key={`${item.id}-suggestions`}>
                   <TableCell colSpan={totalColumns} className="px-4 pb-4 pt-0">
                     {suggestionContent}
+                  </TableCell>
+                </TableRow>
+              ) : null}
+              {kmAddressComparison ? (
+                <TableRow key={`${item.id}-km-address`}>
+                  <TableCell colSpan={totalColumns} className="px-4 pb-4 pt-0">
+                    <div className="pl-2">{kmAddressComparison}</div>
                   </TableCell>
                 </TableRow>
               ) : null}

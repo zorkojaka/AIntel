@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, TableRowActions } from '@aintel/ui';
 import { ClientForm } from './components/ClientForm';
 import { ClientsCardsMobile } from './components/ClientsCardsMobile';
@@ -15,6 +15,7 @@ export const CRMPage: React.FC = () => {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [showIncompleteOnly, setShowIncompleteOnly] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const handledClientIdRef = useRef<string | null>(null);
 
   const fetchClients = useCallback(async () => {
     setClientsError('');
@@ -53,6 +54,20 @@ export const CRMPage: React.FC = () => {
     setSelectedClient(client);
     setClientModalOpen(true);
   };
+
+  useEffect(() => {
+    const clientId = new URLSearchParams(window.location.search).get('clientId');
+    if (!clientId || handledClientIdRef.current === clientId || clientsLoading) {
+      return;
+    }
+    const client = clients.find((entry) => String(entry.id) === clientId);
+    if (!client) {
+      return;
+    }
+    handledClientIdRef.current = clientId;
+    setSearchTerm(client.name);
+    handleEditClient(client);
+  }, [clients, clientsLoading]);
 
   const closeClientModal = () => {
     setClientModalOpen(false);
