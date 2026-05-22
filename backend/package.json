@@ -10,6 +10,7 @@
     "seed:cenik": "ts-node scripts/seed-cenik.ts",
     "seed:settings": "ts-node scripts/seed-settings.ts",
     "migrate:employee-roles": "ts-node scripts/migrate-employee-roles.ts",
+    "migrate:zahteve-execution-cleanup": "ts-node scripts/migrate-zahteve-execution-cleanup.ts",
     "dev:create-admin": "ts-node --transpile-only scripts/devCreateAdmin.ts",
     "pdf:smoke": "ts-node --transpile-only scripts/pdf-smoke.ts",
     "db:reset-aa": "echo \"Dangerous: run ts-node scripts/DANGEROUS_reset_and_import_aa_api_products.ts --i-know-what-im-doing\"",

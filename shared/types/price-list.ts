@@ -6,6 +6,8 @@ export interface PriceListSearchItem {
   slugs?: string[];
   categorySlugs?: string[];
   categories?: string[];
+  isService?: boolean;
+  externalSource?: string;
   unit?: string;
   unitPrice: number;
   vatRate: number;

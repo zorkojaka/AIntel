@@ -36,6 +36,7 @@ import {
   ensureConfirmationVersionHistory,
   getActiveSignedConfirmationVersion,
 } from '../services/work-order-confirmation.service';
+import { calculateProjectRouteDistance } from '../services/route-distance.service';
 
 function normalizeSlug(value: string) {
   return value
@@ -479,6 +480,17 @@ export async function getOfferCandidates(req: Request, res: Response) {
   }
   const candidates = await getOfferCandidatesFromRequirements(project);
   return res.success(candidates);
+}
+
+export async function calculateProjectKm(req: Request, res: Response) {
+  try {
+    const result = await calculateProjectRouteDistance(req.params.id);
+    return res.success(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Kilometrine ni mogoče izračunati.';
+    const status = message.includes('ni najden') ? 404 : message.includes('ORS_API_KEY') ? 503 : 400;
+    return res.fail(message, status);
+  }
 }
 
 export async function createProject(req: Request, res: Response) {

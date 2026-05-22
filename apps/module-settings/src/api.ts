@@ -128,6 +128,7 @@ function mergeDocumentNumbering(
 export const DEFAULT_SETTINGS: SettingsDto = {
   companyName: 'Vase podjetje d.o.o.',
   address: 'Glavna cesta 1',
+  routeCalculationAddress: '',
   postalCode: '1000',
   city: 'Ljubljana',
   country: 'Slovenija',
@@ -435,6 +436,96 @@ export async function deleteOfferRule(id: string): Promise<void> {
     method: 'DELETE'
   });
   await parseEnvelope(response);
+}
+
+export type ExecutionQuantityRule = {
+  type: 'fixed' | 'per_unit' | 'per_classification_field';
+  value?: number;
+  field?: string;
+};
+
+export type ExecutionServiceProduct = {
+  id: string;
+  name: string;
+  unitPrice: number;
+};
+
+export type ProductServiceExecutionRule = {
+  id: string;
+  triggerType: 'product' | 'classification' | 'category' | 'project';
+  triggerValue: string;
+  triggerField?: string;
+  triggerFieldValue?: string;
+  serviceProductId: string;
+  serviceProduct?: ExecutionServiceProduct;
+  quantityRule: ExecutionQuantityRule;
+  isActive: boolean;
+};
+
+export type ExecutionScenario = {
+  type: 'posiljanje' | 'izvedba' | 'izvedba_napeljava';
+  ime: string;
+  storitve: Array<{
+    id: string;
+    serviceProductId: string;
+    serviceProduct?: ExecutionServiceProduct;
+    quantityRule: ExecutionQuantityRule;
+    description?: string;
+  }>;
+  defaultEstimates?: {
+    napeljavaUrPerKamera: number;
+    utpKabelMetrovPerKamera: number;
+    kanalMetrovPerKamera: number;
+    kilometrinaKm?: number;
+  };
+};
+
+export type ExecutionRuleSettings = {
+  id: string | null;
+  tenantId: string;
+  productServiceRules: ProductServiceExecutionRule[];
+  scenarios: ExecutionScenario[];
+  isConfigured: boolean;
+};
+
+export type CenikServiceProduct = {
+  _id: string;
+  ime: string;
+  prodajnaCena: number;
+  isService?: boolean;
+};
+
+export async function fetchExecutionRuleSettings(): Promise<ExecutionRuleSettings> {
+  const response = await fetch('/api/execution-rules');
+  return parseEnvelope<ExecutionRuleSettings>(response);
+}
+
+export async function saveExecutionRuleSettings(payload: Pick<ExecutionRuleSettings, 'productServiceRules' | 'scenarios'>): Promise<ExecutionRuleSettings> {
+  const response = await fetch('/api/execution-rules', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return parseEnvelope<ExecutionRuleSettings>(response);
+}
+
+export async function fetchExecutionRuleSuggestions(): Promise<{
+  productServiceRules: Array<ProductServiceExecutionRule & { reason?: string }>;
+  scenarios: Array<{
+    type: ExecutionScenario['type'];
+    serviceProductId: string;
+    serviceProduct?: ExecutionServiceProduct;
+    description?: string;
+    quantityRule?: ExecutionQuantityRule;
+  }>;
+}> {
+  const response = await fetch('/api/execution-rules/suggestions', { method: 'POST' });
+  return parseEnvelope(response);
+}
+
+export async function fetchCenikServiceProducts(): Promise<CenikServiceProduct[]> {
+  const response = await fetch('/api/cenik/products');
+  return parseEnvelope<CenikServiceProduct[]>(response);
 }
 
 export function applySettingsTheme(settings: SettingsDto) {

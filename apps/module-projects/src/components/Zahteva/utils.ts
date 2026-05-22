@@ -31,7 +31,10 @@ export function createVideonadzorSystem(id: string): ZahtevaSistem {
       poeSwitch: { productId: null, kolicina: 0, items: [] },
       disk: { productId: null, kolicina: 0, items: [], dniSnemanja: 30, motionRecord: false },
       dodatnaOprema: [],
-      montaza: { vkljuceno: false, napeljava: false, metrov: 0, zascitniMaterial: null },
+    },
+    execution: {
+      scenarioType: "posiljanje",
+      estimates: { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0, kilometrinaKm: 0 },
     },
   };
 }

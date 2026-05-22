@@ -42,6 +42,7 @@ type OfferItemsMobileProps = {
   onDeleteItem: (id: string) => void;
   onSelectProduct: (rowId: string, product: PriceListSearchItem, rowIndex: number) => void;
   onSelectCustomItem: (rowId: string) => void;
+  renderItemActions?: (item: OfferItemsMobileItem, rowIndex: number) => ReactNode;
   renderSuggestions?: (item: OfferItemsMobileItem, rowIndex: number) => ReactNode;
 };
 
@@ -58,6 +59,7 @@ export function OfferItemsMobile({
   onDeleteItem,
   onSelectProduct,
   onSelectCustomItem,
+  renderItemActions,
   renderSuggestions,
 }: OfferItemsMobileProps) {
   const blankItemRef = useRef<HTMLDivElement | null>(null);
@@ -197,6 +199,8 @@ export function OfferItemsMobile({
                   </div>
                 )}
               </div>
+
+              {renderItemActions ? renderItemActions(item, index) : null}
 
               <div className="mt-4 flex items-center justify-between border-t pt-3">
                 <span className="text-sm text-muted-foreground">Skupaj</span>

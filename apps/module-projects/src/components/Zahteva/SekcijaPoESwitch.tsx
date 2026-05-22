@@ -15,6 +15,18 @@ function syncPrimary<T extends { productId: string; kolicina: number }>(items: T
   return { productId: first?.productId ?? null, kolicina: first?.kolicina ?? 0, items };
 }
 
+function categoryPriorityRank(product: CenikProduct) {
+  return product.categoryPriority ?? 4;
+}
+
+function switchFitRank(product: CenikProduct, neededPorts: number) {
+  const ports = product.classification?.poePortCount ?? 0;
+  if (neededPorts <= 0) return ports;
+  const coversNeed = ports >= neededPorts ? 0 : 1;
+  const distance = coversNeed === 0 ? ports - neededPorts : neededPorts - ports + 100;
+  return coversNeed * 1000 + distance;
+}
+
 export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) {
   const cameras = useMemo(() => assignedCameraProducts(videonadzor, productById), [productById, videonadzor]);
   const selectedNvr = videonadzor.snemalnik.productId ? productById.get(videonadzor.snemalnik.productId) : null;
@@ -30,11 +42,17 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
       Array.from(productById.values())
         .filter((product) => product.classification?.productType === "switch")
         .filter((product) => (product.classification?.poePortCount ?? 0) > 0)
-        .sort((a, b) => (a.classification?.poePortCount ?? 0) - (b.classification?.poePortCount ?? 0) || a.prodajnaCena - b.prodajnaCena),
-    [productById],
+        .sort((a, b) => {
+          const fit = switchFitRank(a, neededPorts) - switchFitRank(b, neededPorts);
+          if (fit !== 0) return fit;
+          const priority = categoryPriorityRank(a) - categoryPriorityRank(b);
+          if (priority !== 0) return priority;
+          return (a.classification?.poePortCount ?? 0) - (b.classification?.poePortCount ?? 0) || a.prodajnaCena - b.prodajnaCena;
+        }),
+    [neededPorts, productById],
   );
 
-  const recommendedId = alternatives.find((product) => (product.classification?.poePortCount ?? 0) >= recommendedPorts)?._id ?? alternatives[0]?._id;
+  const recommendedId = alternatives.find((product) => (product.classification?.poePortCount ?? 0) >= Math.max(neededPorts, recommendedPorts))?._id ?? alternatives[0]?._id;
 
   const setQuantity = (productId: string, quantity: number) => {
     const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
@@ -58,7 +76,7 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
         Potrebnih {neededPorts} PoE portov • izbrano {selectedPorts} portov {selectedPorts >= neededPorts ? "✓" : "⚠"}
       </div>
       <div className="zahteva-product-track">
-        <button type="button" className={`zahteva-track-card zahteva-none-card ${selectedItems.length === 0 ? "is-active" : ""}`} onClick={clearSwitches}>
+        <button type="button" style={{ order: neededPorts <= 0 ? -1 : 1 }} className={`zahteva-track-card zahteva-none-card ${selectedItems.length === 0 ? "is-active" : ""}`} onClick={clearSwitches}>
           <strong>Brez switcha</strong>
           <small>{neededPorts <= 0 ? "priporočeno" : "ni dovolj portov"}</small>
           <b>0,00 €</b>

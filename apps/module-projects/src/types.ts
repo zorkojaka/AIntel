@@ -151,6 +151,17 @@ export interface OfferCandidate {
 
 export type ZahtevaStatus = "osnutek" | "koncana";
 export type ZahtevaTipSistema = "videonadzor" | "alarm" | "domofon" | "pametna_hisa";
+export type ZahtevaExecutionScenarioType = "posiljanje" | "izvedba" | "izvedba_napeljava";
+
+export interface ZahtevaExecution {
+  scenarioType: ZahtevaExecutionScenarioType;
+  estimates?: {
+    napeljavaUr: number;
+    utpKabelMetrov: number;
+    kanalMetrov: number;
+    kilometrinaKm?: number;
+  };
+}
 
 export interface Zahteva {
   _id: string;
@@ -201,13 +212,8 @@ export interface Zahteva {
         productId: string;
         kolicina: number;
       }>;
-      montaza: {
-        vkljuceno: boolean;
-        napeljava: boolean;
-        metrov: number;
-        zascitniMaterial?: "kanal" | "cev" | "brez" | null;
-      };
     };
+    execution?: ZahtevaExecution;
     alarm?: Record<string, unknown>;
     domofon?: Record<string, unknown>;
     pametnaHisa?: Record<string, unknown>;

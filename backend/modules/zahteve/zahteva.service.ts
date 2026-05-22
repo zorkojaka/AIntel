@@ -1,4 +1,4 @@
-import mongoose, { Types } from 'mongoose';
+﻿import mongoose, { Types } from 'mongoose';
 import type { OfferLineItem } from '../../../shared/types/offers';
 import { ProductModel, type ProductDocument } from '../cenik/product.model';
 import { ProjectModel } from '../projects/schemas/project';
@@ -7,6 +7,8 @@ import { calculateOfferTotals } from '../projects/services/offer-totals.service'
 import { generateOfferDocumentNumber } from '../projects/services/document-numbering.service';
 import { ZahtevaModel, type ZahtevaDocument } from './zahteva.model';
 import { dvcStorageCalculator } from './dvcStorageCalculator';
+import { ExecutionRuleSettingsModel } from '../execution-rules/execution-rules.model';
+import { DEFAULT_EXECUTION_SCENARIOS, normalizeScenarios } from '../execution-rules/execution-rules.service';
 
 const DEFAULT_PAYMENT_TERMS = '50% - avans, 50% - 10 dni po izvedbi';
 
@@ -161,7 +163,10 @@ export function createDefaultVideonadzorSystem() {
       poeSwitch: { productId: null, kolicina: 0, items: [] },
       disk: { productId: null, kolicina: 0, items: [], dniSnemanja: 30, motionRecord: false },
       dodatnaOprema: [],
-      montaza: { vkljuceno: false, napeljava: false, metrov: 0, zascitniMaterial: null },
+    },
+    execution: {
+      scenarioType: 'posiljanje' as const,
+      estimates: { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0, kilometrinaKm: 0 },
     },
   };
 }
@@ -253,16 +258,6 @@ export async function izracunajInPredlagajDisk(input: {
   return { storage, product };
 }
 
-async function findManualProduct(pattern: RegExp) {
-  return ProductModel.findOne({
-    ime: pattern,
-    externalSource: { $in: ['manual', 'services_sheet', ''] },
-    isActive: { $ne: false },
-  })
-    .sort({ prodajnaCena: 1 })
-    .lean();
-}
-
 function addProductRequest(
   requests: Array<{ productId: string; kolicina: number; tip: 'material' | 'storitev'; extra?: Partial<OfferLineItem> }>,
   productId: unknown,
@@ -285,12 +280,124 @@ function selectedEquipmentItems(input?: { productId?: unknown; kolicina?: number
   return input?.productId && qty > 0 ? [{ productId: input.productId, kolicina: qty }] : [];
 }
 
-async function buildOfferItems(zahteva: ZahtevaDocument) {
-  const productRequests: Array<{ productId: string; kolicina: number; tip: 'material' | 'storitev'; extra?: Partial<OfferLineItem> }> = [];
+function getByPath(source: any, path?: string) {
+  const cleanPath = normalizeText(path);
+  if (!cleanPath) return undefined;
+  return cleanPath.split('.').reduce((value, key) => (value == null ? undefined : value[key]), source);
+}
+
+function quantityFromRule(rule: any, baseQuantity: number, product?: any, estimates?: any) {
+  const quantityRule = rule?.quantityRule ?? {};
+  const type = quantityRule.type;
+  if (type === 'per_unit') {
+    return Math.max(0, Number(baseQuantity) || 0);
+  }
+  if (type === 'per_classification_field') {
+    const fieldValue = getByPath(product?.classification ?? estimates ?? {}, quantityRule.field);
+    const qty = Number(fieldValue);
+    return Number.isFinite(qty) && qty > 0 ? qty * Math.max(1, Number(baseQuantity) || 1) : 0;
+  }
+  return Math.max(0, Number(quantityRule.value ?? 1) || 0);
+}
+
+function executionProductMatches(rule: any, product: any, projectTypes: Set<string>) {
+  const triggerValue = normalizeText(rule.triggerValue);
+  if (!triggerValue) return false;
+  if (rule.triggerType === 'project') {
+    return projectTypes.has(triggerValue);
+  }
+  if (!product) return false;
+  if (rule.triggerType === 'product') {
+    return String(product._id) === triggerValue;
+  }
+  if (rule.triggerType === 'category') {
+    return (product.categorySlugs ?? []).map(String).includes(triggerValue);
+  }
+  if (rule.triggerType === 'classification') {
+    const productType = normalizeText(product.classification?.productType);
+    if (productType !== triggerValue) return false;
+    const triggerField = normalizeText(rule.triggerField);
+    if (!triggerField) return true;
+    const fieldValue = getByPath(product.classification, triggerField);
+    const expected = normalizeText(rule.triggerFieldValue);
+    return expected ? normalizeText(fieldValue) === expected : fieldValue !== undefined && fieldValue !== null && fieldValue !== '';
+  }
+  return false;
+}
+
+type ProductRequest = { productId: string; kolicina: number; tip: 'material' | 'storitev'; extra?: Partial<OfferLineItem> };
+type SystemProductRequests = { sistem: ZahtevaDocument['sistemi'][number]; requests: ProductRequest[] };
+
+async function addConfiguredExecutionRequests(
+  zahteva: ZahtevaDocument,
+  productRequests: ProductRequest[],
+  systemRequests: SystemProductRequests[],
+  tenantId: string,
+) {
+  const settings = await ExecutionRuleSettingsModel.findOne({ tenantId }).lean();
+  if (!settings) return;
+
+  const allMaterialRequests = systemRequests.flatMap((entry) => entry.requests.filter((request) => request.tip === 'material'));
+  const materialIds = Array.from(new Set(allMaterialRequests.map((entry) => entry.productId)));
+  const products = materialIds.length > 0 ? await ProductModel.find({ _id: { $in: materialIds } }).lean() : [];
+  const productMap = new Map<string, any>(products.map((product) => [String(product._id), product]));
+  const projectTypes = new Set((zahteva.sistemi ?? []).map((sistem) => sistem.tip));
+  const addedProjectRuleIds = new Set<string>();
+
+  for (const systemEntry of systemRequests) {
+    const materialRequests = systemEntry.requests.filter((entry) => entry.tip === 'material');
+    const systemTypes = new Set([systemEntry.sistem.tip]);
+
+    for (const rule of settings.productServiceRules ?? []) {
+      if (!rule.isActive) continue;
+      if (rule.triggerType === 'project') {
+        const pseudoProduct = {};
+        if (!executionProductMatches(rule, pseudoProduct, projectTypes)) continue;
+        if (addedProjectRuleIds.has(rule.id)) continue;
+        addedProjectRuleIds.add(rule.id);
+        addProductRequest(productRequests, rule.serviceProductId, quantityFromRule(rule, 1), 'storitev');
+        continue;
+      }
+
+      for (const request of materialRequests) {
+        const product = productMap.get(request.productId);
+        if (!executionProductMatches(rule, product, systemTypes)) continue;
+        addProductRequest(
+          productRequests,
+          rule.serviceProductId,
+          quantityFromRule(rule, request.kolicina, product),
+          'storitev',
+        );
+      }
+    }
+
+    const scenarios = normalizeScenarios(settings.scenarios ?? DEFAULT_EXECUTION_SCENARIOS);
+    const selectedType = systemEntry.sistem.execution?.scenarioType ?? 'posiljanje';
+    const scenario = scenarios.find((entry) => entry.type === selectedType);
+    const totalCameraCount = materialRequests.reduce((sum, request) => {
+      const product = productMap.get(request.productId);
+      return product?.classification?.productType === 'kamera' ? sum + request.kolicina : sum;
+    }, 0);
+    const estimates = systemEntry.sistem.execution?.estimates ?? {};
+
+    for (const service of scenario?.storitve ?? []) {
+      let quantity = quantityFromRule(service, Math.max(1, totalCameraCount), undefined, estimates);
+      if (service.quantityRule?.type === 'per_classification_field') {
+        quantity = Number(getByPath(estimates, service.quantityRule.field)) || 0;
+      }
+      addProductRequest(productRequests, service.serviceProductId, quantity, 'storitev');
+    }
+  }
+}
+
+async function buildOfferItems(zahteva: ZahtevaDocument, tenantId = 'inteligent') {
+  const productRequests: ProductRequest[] = [];
+  const systemRequests: SystemProductRequests[] = [];
 
   for (const sistem of zahteva.sistemi ?? []) {
     if (sistem.tip !== 'videonadzor' || !sistem.videonadzor) continue;
     const videonadzor = sistem.videonadzor;
+    const beforeSystemCount = productRequests.length;
 
     for (const variant of videonadzor.asortima ?? []) {
       const variantLokacije = (videonadzor.lokacije ?? []).filter((lokacija) => lokacija.asortimaIdAssigned === variant.id);
@@ -317,40 +424,10 @@ async function buildOfferItems(zahteva: ZahtevaDocument) {
       addProductRequest(productRequests, dod.productId, dod.kolicina, 'material');
     }
 
-    if (videonadzor.montaza?.vkljuceno) {
-      const stevKamer = (videonadzor.lokacije ?? []).filter((lokacija) => lokacija.asortimaIdAssigned).length;
-      const [montazaKamera, zagonSnem] = await Promise.all([
-        findManualProduct(/montaža.*kamera|montaza.*kamera/i),
-        findManualProduct(/zagon.*snemaln/i),
-      ]);
-      addProductRequest(productRequests, montazaKamera?._id, stevKamer, 'storitev');
-      addProductRequest(productRequests, zagonSnem?._id, 1, 'storitev');
-
-      if (videonadzor.montaza.napeljava) {
-        const metrov = Number(videonadzor.montaza.metrov) || 0;
-        const utp = await findManualProduct(/utp.*kabel/i);
-        addProductRequest(productRequests, utp?._id, metrov, 'material');
-
-        if (videonadzor.montaza.zascitniMaterial === 'kanal') {
-          const [kanal, polaganje] = await Promise.all([
-            findManualProduct(/plastič.*kanal|plastic.*kanal/i),
-            findManualProduct(/polaganje.*kanal/i),
-          ]);
-          addProductRequest(productRequests, kanal?._id, metrov, 'material');
-          addProductRequest(productRequests, polaganje?._id, metrov, 'storitev');
-        }
-
-        if (videonadzor.montaza.zascitniMaterial === 'cev') {
-          const [cev, polaganje] = await Promise.all([
-            findManualProduct(/gibljiv.*cev/i),
-            findManualProduct(/polaganje.*cev/i),
-          ]);
-          addProductRequest(productRequests, cev?._id, metrov, 'material');
-          addProductRequest(productRequests, polaganje?._id, metrov, 'storitev');
-        }
-      }
-    }
+    systemRequests.push({ sistem, requests: productRequests.slice(beforeSystemCount) });
   }
+
+  await addConfiguredExecutionRequests(zahteva, productRequests, systemRequests, tenantId);
 
   const productIds = Array.from(new Set(productRequests.map((entry) => entry.productId)));
   const products = await ProductModel.find({ _id: { $in: productIds } }).lean();
@@ -388,12 +465,12 @@ function validateZahtevaForOffer(zahteva: ZahtevaDocument) {
     }
     const invalid = (videonadzor.lokacije ?? []).filter((lokacija) => !variantIds.has(String(lokacija.asortimaIdAssigned)));
     if (invalid.length > 0) {
-      throw Object.assign(new Error('Lokacija ima dodeljeno neobstoječo varianto.'), { statusCode: 400 });
+      throw Object.assign(new Error('Lokacija ima dodeljeno neobstoje?o varianto.'), { statusCode: 400 });
     }
   }
 }
 
-export async function nadaljujNaPonudbo(zahtevaId: string) {
+export async function nadaljujNaPonudbo(zahtevaId: string, tenantId = 'inteligent') {
   if (!isObjectId(zahtevaId)) {
     throw Object.assign(new Error('Neveljavna zahteva.'), { statusCode: 400 });
   }
@@ -412,7 +489,7 @@ export async function nadaljujNaPonudbo(zahtevaId: string) {
 
   const project = await ProjectModel.findById(zahteva.projectId).lean();
   const projectKey = project?.id ?? String(zahteva.projectId);
-  const items = await buildOfferItems(zahteva);
+  const items = await buildOfferItems(zahteva, tenantId);
   const ponudba = await createOfferVersion({
     projectId: projectKey,
     requestId: String(zahteva._id),

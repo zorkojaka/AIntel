@@ -13,6 +13,7 @@ import {
   updateCommunicationTemplate,
 } from './api';
 import { OfferRulesSection } from './OfferRulesSection';
+import { ExecutionRulesSection } from './ExecutionRulesSection';
 import { RequirementTemplatesSection } from './RequirementTemplatesSection';
 import { CommunicationSenderSection } from './components/CommunicationSenderSection';
 import { CommunicationTemplatesSection } from './components/CommunicationTemplatesSection';
@@ -591,6 +592,7 @@ export const SettingsPage: React.FC = () => {
               saving={savingScope === 'sales'}
               loading={loading}
             />
+            <ExecutionRulesSection />
             <OfferRulesSection />
             <RequirementTemplatesSection />
           </div>
@@ -721,6 +723,12 @@ const CompanySettingsForm: React.FC<CompanySettingsFormProps> = ({
           label="Ulica"
           value={form.address}
           onChange={(event) => handleFieldChange('address', event.target.value)}
+        />
+        <Input
+          label="Naslov za izračun poti"
+          value={form.routeCalculationAddress ?? ''}
+          onChange={(event) => handleFieldChange('routeCalculationAddress', event.target.value)}
+          placeholder="Ulica, pošta, mesto"
         />
         <Input
           label="Poštna številka"

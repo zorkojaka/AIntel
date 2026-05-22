@@ -60,7 +60,6 @@ type ActiveUnitNoteEditor = {
 } | null;
 
 type NewExtraItemsState = Record<string, Record<string, boolean>>;
-
 type PreparationPhoto = {
   _id: string;
   id?: string;

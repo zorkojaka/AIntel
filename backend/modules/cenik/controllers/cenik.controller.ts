@@ -32,6 +32,7 @@ type ProductResponse = ProductPayload & {
   isActive?: boolean;
   aaData?: ProductDocument['aaData'];
   classification?: ProductDocument['classification'];
+  categoryPriority?: 1 | 2 | 3 | null;
   status?: string;
   mergedIntoProductId?: string;
   createdAt: Date;
@@ -116,7 +117,7 @@ function buildPayload(body: Partial<ProductPayload>): ProductPayload {
   };
 }
 
-function sanitizeProduct(product: ProductDocument): ProductResponse {
+function sanitizeProduct(product: ProductDocument, categoryPriority?: 1 | 2 | 3 | null): ProductResponse {
   return {
     _id: product._id,
     externalSource: product.externalSource ?? '',
@@ -141,6 +142,7 @@ function sanitizeProduct(product: ProductDocument): ProductResponse {
     isActive: product.isActive !== false,
     aaData: product.aaData,
     classification: product.classification,
+    categoryPriority: categoryPriority ?? null,
     status: product.status ?? (product.isActive === false ? 'merged' : 'active'),
     mergedIntoProductId: product.mergedIntoProductId ? String(product.mergedIntoProductId) : '',
     createdAt: product.createdAt,
@@ -173,7 +175,8 @@ export async function getAllProducts(_req: Request, res: Response) {
       filter.isService = parseBoolean(isServiceQuery);
     }
     const products = await ProductModel.find(filter).lean();
-    const sanitized = products.map((product) => sanitizeProduct(product));
+    const categoryPriorityByPath = await buildCategoryPriorityMap();
+    const sanitized = products.map((product) => sanitizeProduct(product, resolvePriorityFromProductMap(categoryPriorityByPath, product as any)));
     const query = _req.query?.suggestForCategories;
     if (!query) {
       return res.success(sanitized);
@@ -285,6 +288,7 @@ export async function searchPriceListItems(req: Request, res: Response) {
   if (!normalizedQuery) {
     return res.success([] as PriceListSearchItem[]);
   }
+  const queryTokens = normalizedQuery.split(' ').filter(Boolean);
 
   try {
     const includeInactive = String(req.query?.includeInactive ?? '').toLowerCase() === 'true';
@@ -298,6 +302,7 @@ export async function searchPriceListItems(req: Request, res: Response) {
         categories: 1,
         prodajnaCena: 1,
         isService: 1,
+        externalSource: 1,
         externalKey: 1,
         externalId: 1,
         aaData: 1,
@@ -329,24 +334,46 @@ export async function searchPriceListItems(req: Request, res: Response) {
 
         const nameStarts = normalizedName.startsWith(normalizedQuery);
         const nameIncludes = !nameStarts && normalizedName.includes(normalizedQuery);
+        const nameTokenIncludes =
+          !nameStarts &&
+          !nameIncludes &&
+          queryTokens.length > 1 &&
+          queryTokens.every((token) => normalizedName.includes(token));
         const slugStarts = [normalizedSlug, ...normalizedSlugs].some((value) =>
           value.startsWith(normalizedQuery),
         );
         const slugIncludes =
           !slugStarts &&
           [normalizedSlug, ...normalizedSlugs].some((value) => value.includes(normalizedQuery));
+        const slugTokenIncludes =
+          !slugStarts &&
+          !slugIncludes &&
+          queryTokens.length > 1 &&
+          [normalizedSlug, ...normalizedSlugs].some((value) => queryTokens.every((token) => value.includes(token)));
         const categoryIncludes = normalizedCategories.some((value) =>
           value.includes(normalizedQuery),
         );
+        const categoryTokenIncludes =
+          !categoryIncludes &&
+          queryTokens.length > 1 &&
+          normalizedCategories.some((value) => queryTokens.every((token) => value.includes(token)));
         const codeIncludes = normalizedCode.includes(normalizedQuery);
+        const codeTokenIncludes =
+          !codeIncludes &&
+          queryTokens.length > 1 &&
+          queryTokens.every((token) => normalizedCode.includes(token));
 
         if (
           !nameStarts &&
           !nameIncludes &&
+          !nameTokenIncludes &&
           !slugStarts &&
           !slugIncludes &&
+          !slugTokenIncludes &&
           !categoryIncludes &&
-          !codeIncludes
+          !categoryTokenIncludes &&
+          !codeIncludes &&
+          !codeTokenIncludes
         ) {
           return null;
         }
@@ -355,13 +382,21 @@ export async function searchPriceListItems(req: Request, res: Response) {
           ? 0
           : nameIncludes
             ? 1
-            : slugStarts
+            : nameTokenIncludes
               ? 2
-              : slugIncludes
+              : slugStarts
                 ? 3
-                : categoryIncludes
+                : slugIncludes
                   ? 4
-                  : 5;
+                  : slugTokenIncludes
+                    ? 5
+                    : categoryIncludes
+                      ? 6
+                      : categoryTokenIncludes
+                        ? 7
+                        : codeIncludes
+                          ? 8
+                          : 9;
 
         const sortName = normalizedName || name.toLowerCase();
         const sortCodeOrSlug =
@@ -380,6 +415,8 @@ export async function searchPriceListItems(req: Request, res: Response) {
           slugs: normalizedSlugs.length ? slugsRaw : undefined,
           categorySlugs: product.categorySlugs ?? undefined,
           categories: product.categories ?? undefined,
+          isService: Boolean(product.isService),
+          externalSource: product.externalSource ?? undefined,
           unit: resolveUnitFromName(name),
           unitPrice: Number(product.prodajnaCena ?? 0),
           vatRate: 22,

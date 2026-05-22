@@ -39,12 +39,25 @@ function toVideonadzorSystem(doc: any) {
         motionRecord: Boolean(old.disk?.motionRecord),
       },
       dodatnaOprema: Array.isArray(old.dodatnaOprema) ? old.dodatnaOprema : [],
-      montaza: {
-        vkljuceno: Boolean(old.montaza?.vkljuceno),
-        napeljava: Boolean(old.montaza?.napeljava),
-        metrov: Number(old.montaza?.metrov) || 0,
-        zascitniMaterial: old.montaza?.zascitniMaterial ?? null,
-      },
+    },
+    execution: executionFromLegacyMontaza(old.montaza),
+  };
+}
+
+function executionFromLegacyMontaza(montaza: any) {
+  const metrov = Math.max(0, Number(montaza?.metrov) || 0);
+  if (!montaza?.vkljuceno) {
+    return { scenarioType: 'posiljanje', estimates: { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0 } };
+  }
+  if (!montaza?.napeljava) {
+    return { scenarioType: 'izvedba', estimates: { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0 } };
+  }
+  return {
+    scenarioType: 'izvedba_napeljava',
+    estimates: {
+      napeljavaUr: 0,
+      utpKabelMetrov: metrov,
+      kanalMetrov: montaza?.zascitniMaterial === 'kanal' ? metrov : 0,
     },
   };
 }

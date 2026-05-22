@@ -1,0 +1,26 @@
+{
+  "projectId": "PRJ-132",
+  "zahtevaId": "6a0d6dd3aa68a0784376f697",
+  "offerId": "6a0d6ddcaa68a0784376f76e",
+  "checks": {
+    "montaza": true,
+    "zagon": true,
+    "app": true,
+    "napeljava": true,
+    "utp": true,
+    "kanal": true,
+    "km": true
+  },
+  "items": [
+    "Ajax VIDEO BulletCam (5 Mp/2.8 mm) BL",
+    "Ajax VIDEO NVR (8ch) BL",
+    "TRDI DISK 2TB WD Purple",
+    "Montaža in konfiguracija kamere V sodelovanju z AlarmAutomatika",
+    "Zagon in konfiguracija snemalnika - 8 kanalni V sodelovanju z AlarmAutomatika",
+    "Namestitev aplikacije in prikaz uporabe",
+    "Delovna ura napeljave vodnika*",
+    "Električni vodnik [m]",
+    "Instalacijski kanal - barven [2m]*",
+    "Potni stroški [km]*"
+  ]
+}

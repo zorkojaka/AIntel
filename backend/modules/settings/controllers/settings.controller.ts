@@ -58,6 +58,7 @@ function validatePayload(body: unknown): SettingsUpdate {
   return {
     companyName: pickString(payload.companyName),
     address: pickString(payload.address),
+    routeCalculationAddress: pickString(payload.routeCalculationAddress),
     postalCode: pickString(payload.postalCode),
     city: pickString(payload.city),
     country: pickString(payload.country),
@@ -92,12 +93,12 @@ function validatePayload(body: unknown): SettingsUpdate {
 export async function getSettingsController(_req: Request, res: Response) {
   try {
     const settings = await getSettings();
-    res.success(settings);
+    res.success({ ...settings, orsApiConfigured: Boolean(process.env.ORS_API_KEY?.trim()) });
   } catch (error) {
     console.error('Napaka pri pridobivanju nastavitev:', error);
     try {
       const fallback = await ensureSettingsDocument();
-      res.success(fallback);
+      res.success({ ...fallback, orsApiConfigured: Boolean(process.env.ORS_API_KEY?.trim()) });
     } catch (secondError) {
       console.error('Napaka pri inicializaciji nastavitev:', secondError);
       res.fail('Nastavitev ni mogoče naložiti.', 500);
@@ -112,7 +113,7 @@ export async function updateSettingsController(req: Request, res: Response) {
       return res.fail('Naziv podjetja in naslov sta obvezna.', 400);
     }
     const updated = await updateSettings(payload);
-    res.success(updated);
+    res.success({ ...updated, orsApiConfigured: Boolean(process.env.ORS_API_KEY?.trim()) });
   } catch (error) {
     console.error('Napaka pri posodabljanju nastavitev:', error);
     res.fail('Nastavitev ni mogoče shraniti.', 500);

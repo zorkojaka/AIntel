@@ -24,6 +24,7 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
   const cameras = useMemo(() => assignedCameraProducts(videonadzor, productById), [productById, videonadzor]);
   const cameraIds = useMemo(() => cameras.map((camera) => camera._id), [cameras]);
   const selectedNvr = videonadzor.snemalnik.productId ? productById.get(videonadzor.snemalnik.productId) : null;
+  const hasSnemalnik = Boolean(videonadzor.snemalnik.productId);
   const hddSlots = Math.max(1, Number(selectedNvr?.classification?.nvrHddSlots ?? 1) || 1);
   const selectedItems = normalizedSelectedItems(videonadzor.disk);
   const selectedDiskCount = selectedItems.reduce((sum, item) => sum + item.kolicina, 0);
@@ -39,6 +40,10 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
   const autoAppliedRef = useRef("");
 
   useEffect(() => {
+    if (!hasSnemalnik) {
+      setServerSuggestion(null);
+      return;
+    }
     if (cameraIds.length === 0) {
       setServerSuggestion(null);
       return;
@@ -63,7 +68,7 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [cameraIds, videonadzor.disk.dniSnemanja, videonadzor.disk.motionRecord]);
+  }, [cameraIds, hasSnemalnik, videonadzor.disk.dniSnemanja, videonadzor.disk.motionRecord]);
 
   const alternatives = useMemo(
     () =>
@@ -76,6 +81,7 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
   );
 
   useEffect(() => {
+    if (!hasSnemalnik) return;
     const suggested = serverSuggestion?.productId ? productById.get(serverSuggestion.productId) : null;
     const selected = suggested ?? alternatives.find((product) => (product.classification?.diskCapacityTB ?? 0) >= storage.recommendedDiskTB) ?? alternatives[0];
     if (!selected || selectedItems.length > 0) return;
@@ -83,7 +89,7 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
     if (autoAppliedRef.current === signature) return;
     autoAppliedRef.current = signature;
     onChange({ ...videonadzor, disk: { ...videonadzor.disk, ...syncPrimary([{ productId: selected._id, kolicina: 1 }]) } });
-  }, [alternatives, onChange, productById, selectedItems.length, serverSuggestion?.productId, storage.recommendedDiskTB, videonadzor]);
+  }, [alternatives, hasSnemalnik, onChange, productById, selectedItems.length, serverSuggestion?.productId, storage.recommendedDiskTB, videonadzor]);
 
   const setQuantity = (productId: string, quantity: number) => {
     const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
@@ -100,6 +106,10 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
         <HardDrive className="h-4 w-4" aria-hidden />
         <h4>Disk</h4>
       </div>
+      {!hasSnemalnik ? (
+        <div className="zahteva-storage-note zahteva-muted-note">Disk ni potreben brez snemalnika.</div>
+      ) : (
+        <>
       <div className="zahteva-recording-row">
         <span>Snemanje:</span>
         <input
@@ -127,7 +137,8 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
       <div className="zahteva-product-track">
         {alternatives.map((product) => {
           const quantity = selectedItems.find((item) => item.productId === product._id)?.kolicina ?? 0;
-          const totalCapacity = (product.classification?.diskCapacityTB ?? 0) * quantity;
+          const displayQuantity = quantity > 0 ? quantity : 1;
+          const totalCapacity = (product.classification?.diskCapacityTB ?? 0) * displayQuantity;
           const days = recordingDaysForCapacity(totalCapacity, storage.totalMbps, cameras.length);
           const recommended = (product.classification?.diskCapacityTB ?? 0) >= storage.recommendedDiskTB;
           return (
@@ -137,7 +148,7 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
                 <strong>{product.ime}</strong>
                 <small>{product.classification?.diskCapacityTB ?? "-"} TB</small>
                 <b>{formatPrice(product.prodajnaCena)}</b>
-                <span className="zahteva-disk-days">{days ? `${days} dni za ${cameras.length} kam` : "0 dni"}</span>
+                <span className="zahteva-disk-days">{days ? `${days} dni za ${cameras.length} kam` : "—"}</span>
               </button>
               <div className="zahteva-qty-control">
                 <button type="button" onClick={() => setQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>−</button>
@@ -148,6 +159,8 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
           );
         })}
       </div>
+        </>
+      )}
     </section>
   );
 }
