@@ -14,6 +14,7 @@ export type UseProjectResult = {
 type RefreshListener = () => Promise<void>;
 
 const projectRefreshListeners = new Map<string, Set<RefreshListener>>();
+const projectListRefreshListeners = new Set<RefreshListener>();
 
 export function registerProjectRefresh(projectId: string, listener: RefreshListener) {
   if (!projectId || typeof listener !== "function") return;
@@ -36,6 +37,21 @@ export async function triggerProjectRefresh(projectId: string) {
   const listeners = projectRefreshListeners.get(projectId);
   if (!listeners || listeners.size === 0) return;
   const callbacks = Array.from(listeners);
+  await Promise.allSettled(callbacks.map((callback) => callback()));
+}
+
+export function registerProjectListRefresh(listener: RefreshListener) {
+  if (typeof listener !== "function") return;
+  projectListRefreshListeners.add(listener);
+}
+
+export function unregisterProjectListRefresh(listener: RefreshListener) {
+  projectListRefreshListeners.delete(listener);
+}
+
+export async function triggerProjectListRefresh() {
+  if (projectListRefreshListeners.size === 0) return;
+  const callbacks = Array.from(projectListRefreshListeners);
   await Promise.allSettled(callbacks.map((callback) => callback()));
 }
 

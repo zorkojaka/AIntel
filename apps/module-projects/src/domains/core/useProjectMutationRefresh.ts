@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { triggerProjectRefresh } from "./useProject";
+import { triggerProjectListRefresh, triggerProjectRefresh } from "./useProject";
 
 type RefreshCallback = (() => Promise<void> | void) | null | undefined;
 
@@ -24,6 +24,11 @@ export function useProjectMutationRefresh(projectId?: string | null) {
         tasks.push(
           triggerProjectRefresh(projectId).catch((error) => {
             console.error("Project refresh failed", error);
+          }),
+        );
+        tasks.push(
+          triggerProjectListRefresh().catch((error) => {
+            console.error("Project list refresh failed", error);
           }),
         );
       }
