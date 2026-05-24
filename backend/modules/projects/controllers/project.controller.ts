@@ -207,10 +207,34 @@ function updateOfferAmount(project: Project) {
   project.offerAmount = Number(calculateOfferAmount(project.items).toFixed(2));
 }
 
+function hasIssuedWorkOrder(workOrders: any[]) {
+  return workOrders.some((order) => ['issued', 'in-progress', 'confirmed', 'completed'].includes(String(order?.status ?? '')));
+}
+
+async function reconcileProjectExecutionStatus(project: any, workOrders?: any[]) {
+  if (!project || project.status !== 'ordered') return project;
+
+  const activeWorkOrders =
+    workOrders ??
+    (await WorkOrderModel.find({ projectId: project.id, cancelledAt: null })
+      .select('status')
+      .lean());
+
+  if (!hasIssuedWorkOrder(activeWorkOrders)) return project;
+
+  await ProjectModel.updateOne(
+    { id: project.id, status: 'ordered' },
+    { $set: { status: 'in-progress' } },
+  );
+
+  return { ...project, status: 'in-progress' };
+}
+
 async function findProjectById(id: string) {
   const project =
     (await ProjectModel.findOne({ id }).lean()) || (await ProjectModel.findById(id).lean());
-  return project ?? null;
+  if (!project) return null;
+  return reconcileProjectExecutionStatus(project);
 }
 
 function getContextRoles(req: Request): string[] {
@@ -391,6 +415,24 @@ export async function listProjects(_req: Request, res: Response) {
     list.push(order);
     workOrdersByProject.set(projectId, list);
   });
+
+  const projectsNeedingExecutionStatus = all
+    .filter((project: any) => project?.status === 'ordered' && hasIssuedWorkOrder(workOrdersByProject.get(project.id) ?? []))
+    .map((project: any) => project.id)
+    .filter(Boolean);
+
+  if (projectsNeedingExecutionStatus.length > 0) {
+    await ProjectModel.updateMany(
+      { id: { $in: projectsNeedingExecutionStatus }, status: 'ordered' },
+      { $set: { status: 'in-progress' } },
+    );
+    const needsExecutionStatus = new Set(projectsNeedingExecutionStatus);
+    all.forEach((project: any) => {
+      if (needsExecutionStatus.has(project.id)) {
+        project.status = 'in-progress';
+      }
+    });
+  }
 
   const summaries = all.map((project: any) => {
     const summary = summarizeProject(project);
