@@ -15,6 +15,30 @@ function productBrand(product: CenikProduct) {
   return product.classification?.manufacturer || product.proizvajalec || "Brez proizvajalca";
 }
 
+function isIpCamera(product: CenikProduct) {
+  return product.classification?.productType === "kamera" && product.classification.cameraTechnology === "IP video";
+}
+
+function cameraMatches(camera: CenikProduct, filters: { brand?: string; housing?: string; resolution?: string }) {
+  return (
+    (!filters.brand || productBrand(camera) === filters.brand) &&
+    (!filters.housing || camera.classification?.cameraHousing === filters.housing) &&
+    (!filters.resolution || String(camera.classification?.maxResolutionMP) === filters.resolution)
+  );
+}
+
+function defaultBrand(values: string[]) {
+  return values.includes("DVC") ? "DVC" : values[0] ?? "";
+}
+
+function defaultHousing(values: string[]) {
+  return values.includes("Bullet") ? "Bullet" : values[0] ?? "";
+}
+
+function defaultResolution(values: string[]) {
+  return values.includes("4") ? "4" : values[0] ?? "";
+}
+
 export function DodajVariantoDialog({ open, onOpenChange, onConfirm }: DodajVariantoDialogProps) {
   const [products, setProducts] = useState<CenikProduct[]>([]);
   const [loading, setLoading] = useState(false);
@@ -34,29 +58,39 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm }: DodajVari
       .finally(() => setLoading(false));
   }, [open, products.length]);
 
-  const cameras = useMemo(() => products.filter((product) => product.classification?.productType === "kamera"), [products]);
+  const cameras = useMemo(() => products.filter(isIpCamera), [products]);
   const brands = useMemo(() => Array.from(new Set(cameras.map(productBrand))).sort((a, b) => a.localeCompare(b, "sl")), [cameras]);
+  const brandCameras = useMemo(() => cameras.filter((camera) => !brand || productBrand(camera) === brand), [brand, cameras]);
   const housings = useMemo(
-    () => Array.from(new Set(cameras.map((camera) => camera.classification?.cameraHousing).filter(Boolean))) as string[],
-    [cameras],
+    () =>
+      Array.from(
+        new Set(brandCameras.map((camera) => camera.classification?.cameraHousing).filter(Boolean)),
+      ) as string[],
+    [brandCameras],
   );
   const resolutions = useMemo(
-    () => Array.from(new Set(cameras.map((camera) => camera.classification?.maxResolutionMP).filter(Boolean))).sort((a, b) => Number(a) - Number(b)),
-    [cameras],
+    () =>
+      Array.from(
+        new Set(brandCameras.map((camera) => camera.classification?.maxResolutionMP).filter(Boolean)),
+      )
+        .map(String)
+        .sort((a, b) => Number(a) - Number(b)),
+    [brandCameras],
   );
 
   useEffect(() => {
-    if (!brand && brands.length) setBrand(brands.includes("DVC") ? "DVC" : brands[0]);
-    if (!housing && housings.length) setHousing(housings.includes("Bullet") ? "Bullet" : housings[0]);
-    if (!resolution && resolutions.length) setResolution(String(resolutions.includes(4) ? 4 : resolutions[0]));
+    if (!brand && brands.length) setBrand(defaultBrand(brands));
+    else if (brand && !brands.includes(brand)) setBrand(defaultBrand(brands));
+    if (!housing && housings.length) setHousing(defaultHousing(housings));
+    else if (housing && !housings.includes(housing)) setHousing(defaultHousing(housings));
+    if (!resolution && resolutions.length) setResolution(defaultResolution(resolutions));
+    else if (resolution && !resolutions.includes(resolution)) setResolution(defaultResolution(resolutions));
   }, [brand, brands, housing, housings, resolution, resolutions]);
 
   const filtered = useMemo(
     () =>
       cameras
-        .filter((camera) => !brand || productBrand(camera) === brand)
-        .filter((camera) => !housing || camera.classification?.cameraHousing === housing)
-        .filter((camera) => !resolution || String(camera.classification?.maxResolutionMP) === resolution)
+        .filter((camera) => cameraMatches(camera, { brand, housing, resolution }))
         .slice(0, 24),
     [brand, cameras, housing, resolution],
   );
@@ -92,7 +126,7 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm }: DodajVari
         <div className="zahteva-dialog-filters">
           <FilterStrip label="Proizvajalec" values={brands} selected={brand} onSelect={setBrand} />
           <FilterStrip label="Ohišje" values={housings} selected={housing} onSelect={setHousing} />
-          <FilterStrip label="MP" values={resolutions.map(String)} selected={resolution} onSelect={setResolution} />
+          <FilterStrip label="MP" values={resolutions} selected={resolution} onSelect={setResolution} />
         </div>
 
         <div className="zahteva-camera-list">
@@ -110,6 +144,7 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm }: DodajVari
                 <strong>{camera.ime}</strong>
                 <small>
                   {camera.classification?.maxResolutionMP ? `${camera.classification.maxResolutionMP}MP` : "Kamera"}
+                  {" • IP"}
                   {camera.classification?.cameraHousing ? ` • ${camera.classification.cameraHousing}` : ""}
                   {camera.classification?.hasPoE ? " • PoE" : ""}
                 </small>

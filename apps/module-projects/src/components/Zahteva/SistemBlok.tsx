@@ -5,6 +5,7 @@ import { Button } from "../ui/button";
 import { DodajVariantoDialog } from "./DodajVariantoDialog";
 import { SekcijaDisk } from "./SekcijaDisk";
 import { SekcijaIzvedba } from "./SekcijaIzvedba";
+import { SekcijaKameraNosilec } from "./SekcijaKameraNosilec";
 import { SekcijaPoESwitch } from "./SekcijaPoESwitch";
 import { SekcijaSnemalnik } from "./SekcijaSnemalnik";
 import { TabelaAsortima } from "./TabelaAsortima";
@@ -39,16 +40,21 @@ export function SistemBlok({ projectId, zahtevaId, sistem, executionSettings, pr
   const addVariants = (camera: CenikProduct, brackets: Array<CenikProduct | null>) => {
     let variants = [...videonadzor.asortima];
     const addedIds: string[] = [];
+    const wasEmpty = variants.length === 0;
     brackets.forEach((bracket) => {
       const id = nextVariantId(variants);
       variants = [...variants, { id, kameraProductId: camera._id, nosilecProductId: bracket?._id ?? null }];
       addedIds.push(id);
     });
-    const lokacije = videonadzor.lokacije.map((lokacija, index) =>
-      !lokacija.asortimaIdAssigned && index === 0 && addedIds[0]
-        ? { ...lokacija, asortimaIdAssigned: addedIds[0] }
-        : lokacija,
-    );
+    const firstAddedId = addedIds[0];
+    const lokacije =
+      wasEmpty && firstAddedId
+        ? videonadzor.lokacije.map((lokacija) => ({ ...lokacija, asortimaIdAssigned: firstAddedId }))
+        : videonadzor.lokacije.map((lokacija, index) =>
+            !lokacija.asortimaIdAssigned && index === 0 && firstAddedId
+              ? { ...lokacija, asortimaIdAssigned: firstAddedId }
+              : lokacija,
+          );
     updateVideo({ ...videonadzor, asortima: variants, lokacije });
   };
 
@@ -104,6 +110,7 @@ export function SistemBlok({ projectId, zahtevaId, sistem, executionSettings, pr
         onRemoveVarianta={removeVariant}
       />
 
+      <SekcijaKameraNosilec productById={productById} onAddVariant={(camera, bracket) => addVariants(camera, [bracket])} />
       <SekcijaSnemalnik videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
       <SekcijaPoESwitch videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
       <SekcijaDisk videonadzor={videonadzor} productById={productById} onChange={updateVideo} />

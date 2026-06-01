@@ -20,6 +20,15 @@ function dominantBrand(products: CenikProduct[]) {
   return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
 }
 
+function productBrand(product: CenikProduct) {
+  return product.classification?.manufacturer || product.proizvajalec || "Brez proizvajalca";
+}
+
+function defaultManufacturer(values: string[], preferred: string) {
+  if (preferred && values.includes(preferred)) return preferred;
+  return values.includes("DVC") ? "DVC" : values[0] ?? "";
+}
+
 function hddLabel(slots?: number) {
   const count = Math.max(1, Number(slots) || 1);
   return `${count} ${count === 1 ? "disk" : count === 2 ? "diska" : "diski"}`;
@@ -33,58 +42,94 @@ function matchesPoeFilter(product: CenikProduct | undefined, poeFilter: PoeFilte
   return poeFilter === "poe" ? hasPoE : !hasPoE;
 }
 
+function poeGroup(product: CenikProduct) {
+  return product.classification?.nvrHasPoE ? 0 : 1;
+}
+
+function categoryPriorityRank(product: CenikProduct) {
+  return product.categoryPriority ?? 4;
+}
+
 export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) {
   const cameraProducts = useMemo(() => assignedCameraProducts(videonadzor, productById), [productById, videonadzor]);
   const cameraCount = Math.max(cameraProducts.length, videonadzor.lokacije.length);
-  const brand = dominantBrand(cameraProducts);
+  const cameraBrand = dominantBrand(cameraProducts);
   const allPoE = cameraProducts.length > 0 && cameraProducts.every((camera) => camera.classification?.hasPoE);
   const neededChannels = standardChannels(cameraCount);
+  const [manufacturer, setManufacturer] = useState("");
   const [selectedChannels, setSelectedChannels] = useState(neededChannels);
   const [poeFilter, setPoeFilter] = useState<PoeFilter>("all");
   const autoAppliedRef = useRef("");
   const manualNoneRef = useRef(false);
+  const recommendedCardRef = useRef<HTMLButtonElement | null>(null);
 
-  useEffect(() => {
-    setSelectedChannels((current) => (current < neededChannels ? neededChannels : current));
-  }, [neededChannels]);
-
-  const channelOptions = useMemo(() => {
-    const fromProducts = Array.from(productById.values())
-      .filter((product) => product.classification?.productType === "snemalnik")
-      .map((product) => Number(product.classification?.nvrChannels ?? 0))
-      .filter((channels) => channels >= neededChannels);
-    return Array.from(new Set([neededChannels, ...fromProducts])).sort((a, b) => a - b);
-  }, [neededChannels, productById]);
-
-  const alternatives = useMemo(
-    () =>
-      Array.from(productById.values())
-        .filter((product) => product.classification?.productType === "snemalnik")
-        .filter((product) => (product.classification?.nvrChannels ?? 0) === selectedChannels)
-        .filter((product) => matchesPoeFilter(product, poeFilter))
-        .sort((a, b) => {
-          const brandScore =
-            Number((b.classification?.manufacturer || b.proizvajalec) === brand) - Number((a.classification?.manufacturer || a.proizvajalec) === brand);
-          const poeScore = Number(Boolean(b.classification?.nvrHasPoE) === allPoE) - Number(Boolean(a.classification?.nvrHasPoE) === allPoE);
-          return brandScore || poeScore || (a.classification?.nvrChannels ?? 0) - (b.classification?.nvrChannels ?? 0) || a.prodajnaCena - b.prodajnaCena;
-        })
-        .slice(0, 6),
-    [allPoE, brand, poeFilter, productById, selectedChannels],
+  const allRecorders = useMemo(
+    () => Array.from(productById.values()).filter((product) => product.classification?.productType === "snemalnik"),
+    [productById],
+  );
+  const manufacturers = useMemo(() => Array.from(new Set(allRecorders.map(productBrand))).sort((a, b) => a.localeCompare(b, "sl")), [allRecorders]);
+  const manufacturerRecorders = useMemo(
+    () => allRecorders.filter((product) => !manufacturer || productBrand(product) === manufacturer),
+    [allRecorders, manufacturer],
   );
 
   useEffect(() => {
-    if (manualNoneRef.current || alternatives.length === 0 || cameraCount === 0) return;
-    const selected = videonadzor.snemalnik.productId ? productById.get(videonadzor.snemalnik.productId) : null;
-    if (selected && selected.classification?.nvrChannels === selectedChannels && matchesPoeFilter(selected, poeFilter)) return;
-    const signature = `${cameraCount}|${brand}|${allPoE}|${selectedChannels}|${poeFilter}`;
+    if (!manufacturer && manufacturers.length) setManufacturer(defaultManufacturer(manufacturers, cameraBrand));
+    else if (manufacturer && !manufacturers.includes(manufacturer)) setManufacturer(defaultManufacturer(manufacturers, cameraBrand));
+  }, [cameraBrand, manufacturer, manufacturers]);
+
+  const channelOptions = useMemo(() => {
+    const fromProducts = manufacturerRecorders
+      .map((product) => Number(product.classification?.nvrChannels ?? 0))
+      .filter((channels) => channels > 0);
+    return Array.from(new Set([neededChannels, ...fromProducts])).sort((a, b) => a - b);
+  }, [manufacturerRecorders, neededChannels]);
+
+  useEffect(() => {
+    if (channelOptions.length && !channelOptions.includes(selectedChannels)) setSelectedChannels(channelOptions[0]);
+  }, [channelOptions, selectedChannels]);
+
+  const alternatives = useMemo(
+    () =>
+      manufacturerRecorders
+        .filter((product) => matchesPoeFilter(product, poeFilter))
+        .sort((a, b) => {
+          const channelScore = (a.classification?.nvrChannels ?? 0) - (b.classification?.nvrChannels ?? 0);
+          const visiblePoeScore = poeFilter === "all" ? poeGroup(a) - poeGroup(b) : 0;
+          const priorityScore = categoryPriorityRank(a) - categoryPriorityRank(b);
+          const brandScore =
+            Number(productBrand(b) === cameraBrand) - Number(productBrand(a) === cameraBrand);
+          const poeScore = Number(Boolean(b.classification?.nvrHasPoE) === allPoE) - Number(Boolean(a.classification?.nvrHasPoE) === allPoE);
+          return channelScore || visiblePoeScore || priorityScore || brandScore || poeScore || a.prodajnaCena - b.prodajnaCena;
+        }),
+    [allPoE, cameraBrand, manufacturerRecorders, poeFilter],
+  );
+
+  const recommendedId = useMemo(() => {
+    const withEnoughChannels = alternatives.filter((product) => (product.classification?.nvrChannels ?? 0) >= selectedChannels);
+    const preferred = [...withEnoughChannels].sort((a, b) => {
+      const poeScore = poeFilter === "all" && allPoE ? poeGroup(a) - poeGroup(b) : 0;
+      return poeScore || categoryPriorityRank(a) - categoryPriorityRank(b) || (a.classification?.nvrChannels ?? 0) - (b.classification?.nvrChannels ?? 0) || a.prodajnaCena - b.prodajnaCena;
+    })[0];
+    return preferred?._id ?? alternatives[0]?._id ?? null;
+  }, [allPoE, alternatives, poeFilter, selectedChannels]);
+
+  useEffect(() => {
+    if (manualNoneRef.current || !recommendedId || cameraCount === 0) return;
+    const signature = `${cameraCount}|${cameraBrand}|${manufacturer}|${allPoE}|${selectedChannels}|${poeFilter}|${recommendedId}`;
     if (autoAppliedRef.current === signature) return;
     autoAppliedRef.current = signature;
-    onChange({ ...videonadzor, snemalnik: { productId: alternatives[0]._id } });
-  }, [allPoE, alternatives, brand, cameraCount, onChange, poeFilter, productById, selectedChannels, videonadzor]);
+    if (videonadzor.snemalnik.productId === recommendedId) return;
+    onChange({ ...videonadzor, snemalnik: { productId: recommendedId } });
+  }, [allPoE, cameraBrand, cameraCount, manufacturer, onChange, poeFilter, recommendedId, selectedChannels, videonadzor]);
+
+  useEffect(() => {
+    recommendedCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+  }, [manufacturer, poeFilter, recommendedId, selectedChannels]);
 
   const clearSnemalnik = () => {
     manualNoneRef.current = true;
-    autoAppliedRef.current = `${cameraCount}|${brand}|${allPoE}|${selectedChannels}|${poeFilter}`;
+    autoAppliedRef.current = `${cameraCount}|${cameraBrand}|${manufacturer}|${allPoE}|${selectedChannels}|${poeFilter}|${recommendedId ?? ""}`;
     onChange({
       ...videonadzor,
       snemalnik: { productId: null },
@@ -108,6 +153,15 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
         <h4>Snemalnik</h4>
       </div>
       <div className="zahteva-dialog-filters">
+        <FilterStrip
+          label="Proizvajalec"
+          values={manufacturers}
+          selected={manufacturer}
+          onSelect={(value) => {
+            manualNoneRef.current = false;
+            setManufacturer(value);
+          }}
+        />
         <FilterStrip
           label="Kanali"
           values={channelOptions.map(String)}
@@ -140,11 +194,12 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
           <small>Obstoječi sistem ali cloud snemanje</small>
           <b>0,00 €</b>
         </button>
-        {alternatives.map((product, index) => (
+        {alternatives.map((product) => (
           <button
             key={product._id}
+            ref={product._id === recommendedId ? recommendedCardRef : undefined}
             type="button"
-            className={`zahteva-track-card ${videonadzor.snemalnik.productId === product._id ? "is-active" : ""} ${index === 0 ? "is-recommended" : ""}`}
+            className={`zahteva-track-card ${videonadzor.snemalnik.productId === product._id ? "is-active" : ""} ${product._id === recommendedId ? "is-recommended" : ""}`}
             onClick={() => selectSnemalnik(product._id)}
           >
             {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}

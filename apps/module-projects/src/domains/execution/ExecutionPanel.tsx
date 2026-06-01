@@ -126,13 +126,6 @@ function getPerUnitSummary(spec: WorkOrderExecutionSpec) {
   return `Enote: ${completedUnits}/${totalUnits}`;
 }
 
-function formatCompletedAt(value: string | null | undefined) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.valueOf())) return null;
-  return `${parsed.getDate()}.${parsed.getMonth() + 1}.${parsed.getFullYear()}`;
-}
-
 function getUnitCompletedBy(unit: WorkOrderExecutionUnit) {
   return unit.completedBy ?? unit.completedByEmployeeId ?? unit.executedBy ?? unit.executedByEmployeeId ?? unit.markedDoneBy ?? unit.doneBy ?? null;
 }
@@ -564,6 +557,7 @@ export function ExecutionPanel({
   const [startingCorrectionId, setStartingCorrectionId] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [currentEmployeeId, setCurrentEmployeeId] = useState<string | null>(null);
+  const [viewerRoles, setViewerRoles] = useState<string[]>([]);
   const [customerRemarkDraft, setCustomerRemarkDraft] = useState("");
   const [expandedExecutionItems, setExpandedExecutionItems] = useState<Record<string, boolean>>({});
   const [editingUnitNotes, setEditingUnitNotes] = useState<Record<string, boolean>>({});
@@ -603,10 +597,13 @@ export function ExecutionPanel({
         if (!alive) return;
         setCurrentEmployeeId(typeof payload?.data?.employee?.id === "string" ? payload.data.employee.id : null);
         const employeeId = typeof payload?.data?.employee?.id === "string" ? payload.data.employee.id : null;
+        const roles = Array.isArray(payload?.data?.employee?.roles) ? payload.data.employee.roles : [];
         setCurrentEmployeeId(employeeId);
+        setViewerRoles(roles.filter((role: unknown): role is string => typeof role === "string"));
       } catch {
         if (!alive) return;
         setCurrentEmployeeId(null);
+        setViewerRoles([]);
       }
     };
     fetchMe();
@@ -641,10 +638,46 @@ export function ExecutionPanel({
     return map;
   }, [employees]);
 
-  const renderCompletedByMeta = (completedBy: string | null | undefined, completedAt?: string | null) => {
-    if (!completedBy) return null;
-    const employeeName = employeeNameById.get(completedBy) ?? (completedBy === currentEmployeeId ? "jaz" : completedBy);
+  const canOverrideCompletionAssignee = useMemo(
+    () => viewerRoles.includes("ADMIN") || viewerRoles.includes("ORGANIZER"),
+    [viewerRoles],
+  );
+
+  const renderCompletedByMeta = (
+    completedBy: string | null | undefined,
+    completedAt?: string | null,
+    options?: {
+      disabled?: boolean;
+      onAssigneeChange?: (employeeId: string | null) => void;
+    },
+  ) => {
+    if (!completedBy && !(canOverrideCompletionAssignee && options?.onAssigneeChange)) return null;
+    const employeeName = completedBy
+      ? employeeNameById.get(completedBy) ?? (completedBy === currentEmployeeId ? "jaz" : completedBy)
+      : "Ni izbran";
     const completedAtLabel = completedAt ? formatExecutionDateTime(completedAt) : null;
+    if (canOverrideCompletionAssignee && options?.onAssigneeChange) {
+      return (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-700">
+          <span className="font-medium">Opravljeno:</span>
+          <select
+            className="h-8 min-w-[180px] rounded-md border border-emerald-200 bg-white px-2 text-xs font-medium text-emerald-800"
+            value={completedBy ?? ""}
+            disabled={options.disabled}
+            onChange={(event) => options.onAssigneeChange?.(event.target.value || null)}
+            aria-label="Izberi izvajalca naloge"
+          >
+            <option value="">Ni izbran</option>
+            {employees.map((employee) => (
+              <option key={employee.id} value={employee.id}>
+                {employee.name}
+              </option>
+            ))}
+          </select>
+          {completedAtLabel ? <span className="text-emerald-700/80">{completedAtLabel}</span> : null}
+        </div>
+      );
+    }
     return (
       <div className="text-xs font-medium text-emerald-700">
         Opravljeno: {employeeName}{completedAtLabel ? ` · ${completedAtLabel}` : ""}
@@ -652,14 +685,37 @@ export function ExecutionPanel({
     );
   };
 
-  const renderItemCompletedByMeta = (item: WorkOrderItemDraft) => {
+  const renderItemCompletedByMeta = (item: WorkOrderItemDraft, order?: WorkOrder, disabled = false) => {
     if (!item.isCompleted) return null;
-    return renderCompletedByMeta(item.completedBy, item.completedAt);
+    return renderCompletedByMeta(item.completedBy, item.completedAt, order ? {
+      disabled,
+      onAssigneeChange: (employeeId) => {
+        if (!employeeId) return;
+        applyItemChange(order, item.id, {
+          isCompleted: true,
+          completedBy: employeeId,
+        });
+      },
+    } : undefined);
   };
 
-  const renderUnitCompletedByMeta = (unit: WorkOrderExecutionUnit) => {
+  const renderUnitCompletedByMeta = (
+    order: WorkOrder,
+    item: WorkOrderItemDraft,
+    unit: WorkOrderExecutionUnit,
+    disabled = false,
+  ) => {
     if (!unit.isCompleted) return null;
-    return renderCompletedByMeta(getUnitCompletedBy(unit));
+    return renderCompletedByMeta(getUnitCompletedBy(unit), unit.completedAt, {
+      disabled,
+      onAssigneeChange: (employeeId) => {
+        if (!employeeId) return;
+        updateExecutionUnit(order, item.id, unit.id, {
+          completedBy: employeeId,
+          completedByEmployeeId: employeeId,
+        });
+      },
+    });
   };
 
   const getInitialDraftValues = (order: WorkOrder) => ({
@@ -826,16 +882,37 @@ export function ExecutionPanel({
     completedAt: checked ? new Date().toISOString() : null,
   });
 
-  const renderUnitCompletionMeta = (unit: WorkOrderExecutionUnit) => {
-    if (!unit.isCompleted) return null;
-    const employeeId = getUnitCompletedBy(unit);
-    const employeeName = employeeId ? employeeNameById.get(employeeId) ?? employeeId : null;
-    const completedAt = formatCompletedAt(unit.completedAt);
-    return (
-      <span className="text-xs text-muted-foreground">
-        Opravljeno{employeeName ? `: ${employeeName}` : ""}{completedAt ? ` · ${completedAt}` : ""}
-      </span>
-    );
+  const applyAllItemCompletionChange = (order: WorkOrder, checked: boolean) => {
+    if (getOrderConfirmationState(order) === "signed_active") {
+      return;
+    }
+
+    const current = getDraftValues(order);
+    const completionChanges = buildCompletionChanges(checked);
+    const nextItems = current.items.map((item: WorkOrderItemDraft) => {
+      const offeredValue = typeof item.offeredQuantity === "number" ? item.offeredQuantity : 0;
+      const executedValue = typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
+      const executionSpec = ensureExecutionSpec(item.executionSpec);
+
+      if (hasInlineExecutionUnits(item)) {
+        const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => ({
+          ...unit,
+          ...completionChanges,
+        }));
+        return syncItemCompletionFromUnits(item, nextUnits);
+      }
+
+      return {
+        ...item,
+        isCompleted: checked,
+        completedBy: checked ? currentEmployeeId : null,
+        completedAt: checked ? completionChanges.completedAt ?? new Date().toISOString() : null,
+        executedQuantity: checked ? (executedValue > 0 ? executedValue : offeredValue) : 0,
+      };
+    });
+
+    updateDraft(order, { items: nextItems });
+    setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
   };
 
   const addExecutionUnit = (order: WorkOrder, itemId: string) => {
@@ -1430,10 +1507,9 @@ export function ExecutionPanel({
                     {unit.location?.trim() && <span className="text-muted-foreground">·</span>}
                     {unit.location?.trim() && <span className="font-medium">{unit.location}</span>}
                     {noteText && <span className="text-xs text-muted-foreground">{noteText}</span>}
-                    {renderUnitCompletionMeta(unit)}
                   </div>
                 )}
-                {renderUnitCompletedByMeta(unit)}
+                {renderUnitCompletedByMeta(order, item, unit, isLocked)}
                 <PreparationPhotoThumbnails
                   projectId={projectId}
                   itemId={getWorkOrderItemPhotoId(item)}
@@ -1559,7 +1635,7 @@ export function ExecutionPanel({
                           Opomba: {unit.instructions?.trim() || unit.note?.trim()}
                         </div>
                       ) : null}
-                      {renderUnitCompletionMeta(unit)}
+                      {renderUnitCompletedByMeta(order, item, unit, isLocked)}
                       <PreparationPhotoThumbnails
                         projectId={projectId}
                         itemId={getWorkOrderItemPhotoId(item)}
@@ -1865,6 +1941,7 @@ export function ExecutionPanel({
                   const items: WorkOrderItemDraft[] = (draft.items ?? []) as WorkOrderItemDraft[];
                   const allItemsCompleted =
                     items.length > 0 && items.every((item: WorkOrderItemDraft) => !!item.isCompleted);
+                  const someItemsCompleted = items.some((item: WorkOrderItemDraft) => !!item.isCompleted);
                   const isOrderCompleted = allItemsCompleted;
                   const confirmationState = getOrderConfirmationState(order);
                   const isConfirmationLocked = confirmationState === "signed_active";
@@ -2077,7 +2154,24 @@ export function ExecutionPanel({
                               <tr>
                                 <th className="p-2 text-left font-semibold">Naziv</th>
                                 <th className="p-2 text-center font-semibold">IZVEDBA/NAROČILO</th>
-                                <th className="p-2 text-center font-semibold">Dokončano</th>
+                                <th className="p-2 text-center font-semibold"></th>
+                                <th className="p-2 text-center font-semibold" style={{ width: "40px" }}>
+                                  <Checkbox
+                                    className="h-5 w-5"
+                                    checked={allItemsCompleted}
+                                    disabled={isConfirmationLocked || items.length === 0}
+                                    ref={(element) => {
+                                      if (element) {
+                                        element.indeterminate = someItemsCompleted && !allItemsCompleted;
+                                      }
+                                    }}
+                                    onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                                      applyAllItemCompletionChange(order, event.target.checked)
+                                    }
+                                    aria-label="Označi ali odznači vse postavke"
+                                    title="Označi ali odznači vse postavke"
+                                  />
+                                </th>
                                 <th className="w-12 p-2 text-right font-semibold"></th>
                               </tr>
                             </thead>
@@ -2138,7 +2232,7 @@ export function ExecutionPanel({
                                         ) : (
                                           <div className="space-y-1">
                                             <p className="font-medium">{item.name || "-"}</p>
-                                            {renderItemCompletedByMeta(item)}
+                                            {renderItemCompletedByMeta(item, order, isConfirmationLocked)}
                                             <div className="flex flex-wrap items-center gap-2">
                                               <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
                                               {renderItemStatusBadge(item)}
@@ -2334,7 +2428,7 @@ export function ExecutionPanel({
                                   ) : (
                                     <div className="space-y-1">
                                       <p className="text-sm font-medium">{item.name}</p>
-                                      {renderItemCompletedByMeta(item)}
+                                      {renderItemCompletedByMeta(item, order, isConfirmationLocked)}
                                     </div>
                                   )}
                                   {!isNewExtraItem ? (

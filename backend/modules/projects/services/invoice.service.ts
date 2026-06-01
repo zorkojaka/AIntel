@@ -50,6 +50,7 @@ interface InvoiceVersion {
   status: InvoiceStatus;
   createdAt: string;
   issuedAt: string | null;
+  correctedFromInvoiceVersionId?: string | null;
   discountPercent: number;
   useGlobalDiscount: boolean;
   usePerItemDiscount: boolean;
@@ -342,6 +343,13 @@ export async function issueInvoiceVersion(projectId: string, versionId: string):
   });
   version.status = 'issued';
   version.issuedAt = new Date().toISOString();
+  const fallbackCorrectedFromInvoiceVersionId =
+    version.correctedFromInvoiceVersionId ??
+    cancelledIssuedVersionIds[0] ??
+    (project.invoiceVersions ?? [])
+      .filter((entry) => entry._id !== version._id && entry.status === 'cancelled')
+      .sort((a, b) => (b.versionNumber ?? 0) - (a.versionNumber ?? 0))[0]?._id ??
+    null;
   markInvoiceVersionsModified(project);
   let financeEntryCreated = false;
   try {
@@ -377,7 +385,7 @@ export async function issueInvoiceVersion(projectId: string, versionId: string):
         })),
         summary: version.summary,
       },
-      correctedFromInvoiceVersionId: cancelledIssuedVersionIds[0] ?? null,
+      correctedFromInvoiceVersionId: fallbackCorrectedFromInvoiceVersionId,
     });
   } catch (error) {
     console.error('[invoice] finance-snapshot failed', {
@@ -432,6 +440,7 @@ export async function cloneInvoiceVersion(projectId: string, versionId: string):
     status: 'draft',
     createdAt: new Date().toISOString(),
     issuedAt: null,
+    correctedFromInvoiceVersionId: version._id,
     discountPercent: version.discountPercent ?? 0,
     useGlobalDiscount: version.useGlobalDiscount ?? false,
     usePerItemDiscount: version.usePerItemDiscount ?? false,

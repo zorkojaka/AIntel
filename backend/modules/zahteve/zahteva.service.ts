@@ -328,6 +328,50 @@ function executionProductMatches(rule: any, product: any, projectTypes: Set<stri
 type ProductRequest = { productId: string; kolicina: number; tip: 'material' | 'storitev'; extra?: Partial<OfferLineItem> };
 type SystemProductRequests = { sistem: ZahtevaDocument['sistemi'][number]; requests: ProductRequest[] };
 
+function mergeProductRequestExtra(
+  current?: Partial<OfferLineItem>,
+  incoming?: Partial<OfferLineItem>,
+): Partial<OfferLineItem> | undefined {
+  if (!current && !incoming) return undefined;
+
+  const requirementsLocationUnits = [
+    ...(current?.requirementsLocationUnits ?? []),
+    ...(incoming?.requirementsLocationUnits ?? []),
+  ];
+  const merged: Partial<OfferLineItem> = { ...(incoming ?? {}), ...(current ?? {}) };
+
+  if (requirementsLocationUnits.length > 0) {
+    merged.requirementsLocationUnits = requirementsLocationUnits;
+  }
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function mergeProductRequests(requests: ProductRequest[]) {
+  const mergedRequests: ProductRequest[] = [];
+  const requestByKey = new Map<string, ProductRequest>();
+
+  for (const request of requests) {
+    const key = `${request.tip}:${request.productId}`;
+    const existing = requestByKey.get(key);
+
+    if (!existing) {
+      const copy: ProductRequest = {
+        ...request,
+        extra: mergeProductRequestExtra(undefined, request.extra),
+      };
+      requestByKey.set(key, copy);
+      mergedRequests.push(copy);
+      continue;
+    }
+
+    existing.kolicina += request.kolicina;
+    existing.extra = mergeProductRequestExtra(existing.extra, request.extra);
+  }
+
+  return mergedRequests;
+}
+
 async function addConfiguredExecutionRequests(
   zahteva: ZahtevaDocument,
   productRequests: ProductRequest[],
@@ -429,11 +473,12 @@ async function buildOfferItems(zahteva: ZahtevaDocument, tenantId = 'inteligent'
 
   await addConfiguredExecutionRequests(zahteva, productRequests, systemRequests, tenantId);
 
-  const productIds = Array.from(new Set(productRequests.map((entry) => entry.productId)));
+  const mergedProductRequests = mergeProductRequests(productRequests);
+  const productIds = Array.from(new Set(mergedProductRequests.map((entry) => entry.productId)));
   const products = await ProductModel.find({ _id: { $in: productIds } }).lean();
   const productMap = new Map(products.map((product: ProductDocument) => [String(product._id), product]));
 
-  return productRequests
+  return mergedProductRequests
     .map((entry) => {
       const product = productMap.get(entry.productId);
       return product ? lineFromProduct(product, entry.kolicina, entry.tip, entry.extra) : null;

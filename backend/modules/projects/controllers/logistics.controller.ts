@@ -890,7 +890,12 @@ function serializeWorkOrder(order: any): WorkOrder | null {
   };
 }
 
-function sanitizeIncomingExecutionSpec(input: any, existingSpec?: any, actorEmployeeId?: string | null) {
+function sanitizeIncomingExecutionSpec(
+  input: any,
+  existingSpec?: any,
+  actorEmployeeId?: string | null,
+  allowCompletionAssigneeOverride = false,
+) {
   if (!input || typeof input !== 'object') {
     return null;
   }
@@ -918,7 +923,10 @@ function sanitizeIncomingExecutionSpec(input: any, existingSpec?: any, actorEmpl
           const existingCompletedBy =
             normalizeExecutionUnitEmployeeId(existingUnit?.completedBy) ??
             normalizeExecutionUnitEmployeeId(existingUnit?.completedByEmployeeId);
-          const completedBy = isCompleted ? (wasCompleted ? existingCompletedBy : actorEmployeeId) ?? incomingCompletedBy ?? existingCompletedBy : null;
+          const preferredCompletedBy = allowCompletionAssigneeOverride ? incomingCompletedBy : null;
+          const completedBy = isCompleted
+            ? preferredCompletedBy ?? (wasCompleted ? existingCompletedBy : actorEmployeeId) ?? incomingCompletedBy ?? existingCompletedBy
+            : null;
           const incomingCompletedAt = normalizeExecutionUnitCompletedAt(unit?.completedAt);
           const existingCompletedAt = normalizeExecutionUnitCompletedAt(existingUnit?.completedAt);
           const completedAt = isCompleted ? (wasCompleted ? existingCompletedAt : null) ?? incomingCompletedAt ?? new Date() : null;
@@ -1445,6 +1453,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     const payload = req.body ?? {};
     const contextRoles = getContextRoles(req);
     const isExecutionOnlyMutation = isExecutionRoleWithoutPreparationAccess(contextRoles);
+    const allowCompletionAssigneeOverride = canEditPreparation(contextRoles);
     if (isExecutionOnlyMutation) {
       if (!actorEmployeeId) {
         return res.fail('Uporabnik ni povezan z monterjem.', 403);
@@ -1579,12 +1588,15 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
             }
             if (typeof incoming.isCompleted === 'boolean') {
               const wasCompleted = !!target.isCompleted;
+              const incomingCompletedBy = normalizeExecutionUnitEmployeeId(incoming.completedBy);
               target.isCompleted = incoming.isCompleted;
               if (incoming.isCompleted) {
                 target.completedBy =
-                  wasCompleted
-                    ? normalizeExecutionUnitEmployeeId(target.completedBy) ?? normalizeExecutionUnitEmployeeId(incoming.completedBy) ?? actorEmployeeId
-                    : actorEmployeeId ?? normalizeExecutionUnitEmployeeId(incoming.completedBy) ?? normalizeExecutionUnitEmployeeId(target.completedBy);
+                  allowCompletionAssigneeOverride && incomingCompletedBy
+                    ? incomingCompletedBy
+                    : wasCompleted
+                      ? normalizeExecutionUnitEmployeeId(target.completedBy) ?? incomingCompletedBy ?? actorEmployeeId
+                      : actorEmployeeId ?? incomingCompletedBy ?? normalizeExecutionUnitEmployeeId(target.completedBy);
                 target.completedAt =
                   (wasCompleted ? normalizeCompletedAt(target.completedAt) : null) ??
                   normalizeCompletedAt(incoming.completedAt) ??
@@ -1601,7 +1613,12 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
               target.offerItemId = incoming.offerItemId ?? null;
             }
             if ('executionSpec' in incoming) {
-              target.executionSpec = sanitizeIncomingExecutionSpec(incoming.executionSpec, target.executionSpec, actorEmployeeId);
+              target.executionSpec = sanitizeIncomingExecutionSpec(
+                incoming.executionSpec,
+                target.executionSpec,
+                actorEmployeeId,
+                allowCompletionAssigneeOverride,
+              );
             }
             return;
           }
@@ -1635,7 +1652,9 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           isCompleted: typeof incoming.isCompleted === 'boolean' ? incoming.isCompleted : false,
           completedBy:
             incoming.isCompleted === true
-              ? actorEmployeeId ?? normalizeExecutionUnitEmployeeId(incoming.completedBy)
+              ? allowCompletionAssigneeOverride
+                ? normalizeExecutionUnitEmployeeId(incoming.completedBy) ?? actorEmployeeId
+                : actorEmployeeId ?? normalizeExecutionUnitEmployeeId(incoming.completedBy)
               : null,
           completedAt:
             incoming.isCompleted === true
@@ -1645,7 +1664,12 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
             typeof incoming.casovnaNorma === 'number' && Number.isFinite(incoming.casovnaNorma)
               ? incoming.casovnaNorma
               : 0,
-          executionSpec: sanitizeIncomingExecutionSpec(incoming.executionSpec, null, actorEmployeeId),
+          executionSpec: sanitizeIncomingExecutionSpec(
+            incoming.executionSpec,
+            null,
+            actorEmployeeId,
+            allowCompletionAssigneeOverride,
+          ),
         });
       });
 

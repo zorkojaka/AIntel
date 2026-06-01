@@ -13,7 +13,7 @@
 }
 
 .offers-line-items-table [data-slot="table-container"] {
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 @media (max-width: 640px) {
@@ -1373,6 +1373,11 @@
   color: var(--app-muted);
   font-size: 0.75rem;
   font-weight: 700;
+}
+
+.zahteva-inline-action-row {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .zahteva-product-track {
