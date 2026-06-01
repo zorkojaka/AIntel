@@ -89,6 +89,7 @@ export interface WorkOrderDocument extends Document {
   title?: string;
   items: WorkOrderItem[];
   status: 'draft' | 'issued' | 'in-progress' | 'confirmed' | 'completed';
+  completedAt?: Date | null;
   scheduledAt: string | null;
   scheduledConfirmedAt?: Date | null;
   scheduledConfirmedBy?: string | null;
@@ -233,6 +234,7 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
       enum: ['draft', 'issued', 'in-progress', 'confirmed', 'completed'],
       default: 'draft',
     },
+    completedAt: { type: Date, default: null },
     scheduledAt: { type: String, default: null },
     scheduledConfirmedAt: { type: Date, default: null },
     scheduledConfirmedBy: { type: String, default: null },

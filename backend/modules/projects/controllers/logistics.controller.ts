@@ -830,6 +830,7 @@ function serializeWorkOrder(order: any): WorkOrder | null {
         };
       }),
     status: order.status,
+    completedAt: order.completedAt ? new Date(order.completedAt).toISOString() : null,
     scheduledAt: order.scheduledAt ?? null,
     scheduledConfirmedAt: order.scheduledConfirmedAt
       ? new Date(order.scheduledConfirmedAt).toISOString()
@@ -1693,7 +1694,12 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       payload.status === 'completed'
     ) {
       updates.status = payload.status;
-  }
+      if (payload.status === 'completed' && previousWorkOrderStatus !== 'completed') {
+        updates.completedAt = new Date();
+      } else if (payload.status !== 'completed') {
+        updates.completedAt = null;
+      }
+    }
 
   const updated = await WorkOrderModel.findOneAndUpdate({ _id: workOrderId, projectId }, { $set: updates }, { new: true });
   const [normalizedUpdated] = await normalizeAndPersistWorkOrdersServiceFlags(updated ? [updated] : []);

@@ -50,6 +50,7 @@ interface InvoiceVersion {
   status: InvoiceStatus;
   createdAt: string;
   issuedAt: string | null;
+  servicePerformedAt?: string | null;
   correctedFromInvoiceVersionId?: string | null;
   discountPercent: number;
   useGlobalDiscount: boolean;
@@ -242,6 +243,15 @@ async function aggregateClosingItems(project: ProjectDocument): Promise<{
   };
 }
 
+async function resolveServicePerformedAt(projectId: string) {
+  const completedOrder = await WorkOrderModel.findOne({ projectId, status: 'completed', cancelledAt: null })
+    .sort({ completedAt: -1, updatedAt: -1, createdAt: -1 })
+    .select('completedAt updatedAt createdAt')
+    .lean();
+  const date = completedOrder?.completedAt ?? completedOrder?.updatedAt ?? completedOrder?.createdAt ?? null;
+  return date ? new Date(date).toISOString() : null;
+}
+
 function ensureInvoiceVersion(project: ProjectDocument, versionId: string): InvoiceVersion {
   const version = (project.invoiceVersions ?? []).find((entry) => entry._id === versionId);
   if (!version) {
@@ -273,12 +283,14 @@ export async function createInvoiceFromClosing(projectId: string): Promise<Invoi
     useGlobalDiscount: source.useGlobalDiscount,
     usePerItemDiscount: source.usePerItemDiscount,
   });
+  const servicePerformedAt = await resolveServicePerformedAt(project.id);
   const version: InvoiceVersion = {
     _id: new Types.ObjectId().toString(),
     versionNumber: resolveNextVersionNumber(project),
     status: 'draft',
     createdAt: new Date().toISOString(),
     issuedAt: null,
+    servicePerformedAt,
     discountPercent: source.discountPercent,
     useGlobalDiscount: source.useGlobalDiscount,
     usePerItemDiscount: source.usePerItemDiscount,
@@ -343,6 +355,7 @@ export async function issueInvoiceVersion(projectId: string, versionId: string):
   });
   version.status = 'issued';
   version.issuedAt = new Date().toISOString();
+  version.servicePerformedAt = version.servicePerformedAt ?? (await resolveServicePerformedAt(project.id));
   const fallbackCorrectedFromInvoiceVersionId =
     version.correctedFromInvoiceVersionId ??
     cancelledIssuedVersionIds[0] ??
@@ -440,6 +453,7 @@ export async function cloneInvoiceVersion(projectId: string, versionId: string):
     status: 'draft',
     createdAt: new Date().toISOString(),
     issuedAt: null,
+    servicePerformedAt: version.servicePerformedAt ?? (await resolveServicePerformedAt(project.id)),
     correctedFromInvoiceVersionId: version._id,
     discountPercent: version.discountPercent ?? 0,
     useGlobalDiscount: version.useGlobalDiscount ?? false,

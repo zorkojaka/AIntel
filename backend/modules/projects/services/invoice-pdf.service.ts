@@ -13,6 +13,7 @@ export interface InvoiceVersion {
   status: 'draft' | 'issued';
   createdAt: string;
   issuedAt: string | null;
+  servicePerformedAt?: string | null;
   items: {
     name: string;
     unit: string;
@@ -53,6 +54,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
 
   const documentNumber = invoice.invoiceNumber ?? `${project.id}-${invoice.versionNumber}`;
   const issueDate = invoice.issuedAt ? new Date(invoice.issuedAt) : new Date(invoice.createdAt ?? Date.now());
+  const servicePerformedDate = invoice.servicePerformedAt ? formatDate(invoice.servicePerformedAt) : null;
   const dueDays = extractDueDays(project.customer?.paymentTerms) ?? 8;
   const dueDate = dueDays > 0 ? formatDate(addDays(issueDate, dueDays)) : null;
 
@@ -100,6 +102,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
     docType,
     documentNumber,
     issueDate: formatDate(issueDate),
+    servicePerformedDate,
     dueDate,
     company: companyProfile,
     customer,
