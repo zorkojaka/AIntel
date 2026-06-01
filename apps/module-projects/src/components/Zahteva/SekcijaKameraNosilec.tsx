@@ -57,28 +57,23 @@ export function SekcijaKameraNosilec({ productById, onAddVariant }: Props) {
         .sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || productBrand(a).localeCompare(productBrand(b), "sl") || a.prodajnaCena - b.prodajnaCena),
     [productById],
   );
-  const brands = useMemo(
-    () =>
-      Array.from(new Set(cameras.filter((camera) => cameraMatches(camera, { housing, resolution })).map(productBrand))).sort((a, b) =>
-        a.localeCompare(b, "sl"),
-      ),
-    [cameras, housing, resolution],
-  );
+  const brands = useMemo(() => Array.from(new Set(cameras.map(productBrand))).sort((a, b) => a.localeCompare(b, "sl")), [cameras]);
+  const brandCameras = useMemo(() => cameras.filter((camera) => !brand || productBrand(camera) === brand), [brand, cameras]);
   const housings = useMemo(
     () =>
       Array.from(
-        new Set(cameras.filter((camera) => cameraMatches(camera, { brand, resolution })).map((camera) => camera.classification?.cameraHousing).filter(Boolean)),
+        new Set(brandCameras.map((camera) => camera.classification?.cameraHousing).filter(Boolean)),
       ) as string[],
-    [brand, cameras, resolution],
+    [brandCameras],
   );
   const resolutions = useMemo(
     () =>
       Array.from(
-        new Set(cameras.filter((camera) => cameraMatches(camera, { brand, housing })).map((camera) => camera.classification?.maxResolutionMP).filter(Boolean)),
+        new Set(brandCameras.map((camera) => camera.classification?.maxResolutionMP).filter(Boolean)),
       )
         .map(String)
         .sort((a, b) => Number(a) - Number(b)),
-    [brand, cameras, housing],
+    [brandCameras],
   );
 
   useEffect(() => {
