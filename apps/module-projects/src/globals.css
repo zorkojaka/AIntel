@@ -13,7 +13,7 @@
 }
 
 .offers-line-items-table [data-slot="table-container"] {
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 @media (max-width: 640px) {
