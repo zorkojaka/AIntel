@@ -826,6 +826,39 @@ export function ExecutionPanel({
     completedAt: checked ? new Date().toISOString() : null,
   });
 
+  const applyAllItemCompletionChange = (order: WorkOrder, checked: boolean) => {
+    if (getOrderConfirmationState(order) === "signed_active") {
+      return;
+    }
+
+    const current = getDraftValues(order);
+    const completionChanges = buildCompletionChanges(checked);
+    const nextItems = current.items.map((item: WorkOrderItemDraft) => {
+      const offeredValue = typeof item.offeredQuantity === "number" ? item.offeredQuantity : 0;
+      const executedValue = typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
+      const executionSpec = ensureExecutionSpec(item.executionSpec);
+
+      if (hasInlineExecutionUnits(item)) {
+        const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => ({
+          ...unit,
+          ...completionChanges,
+        }));
+        return syncItemCompletionFromUnits(item, nextUnits);
+      }
+
+      return {
+        ...item,
+        isCompleted: checked,
+        completedBy: checked ? currentEmployeeId : null,
+        completedAt: checked ? completionChanges.completedAt ?? new Date().toISOString() : null,
+        executedQuantity: checked ? (executedValue > 0 ? executedValue : offeredValue) : 0,
+      };
+    });
+
+    updateDraft(order, { items: nextItems });
+    setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
+  };
+
   const renderUnitCompletionMeta = (unit: WorkOrderExecutionUnit) => {
     if (!unit.isCompleted) return null;
     const employeeId = getUnitCompletedBy(unit);
@@ -1865,6 +1898,7 @@ export function ExecutionPanel({
                   const items: WorkOrderItemDraft[] = (draft.items ?? []) as WorkOrderItemDraft[];
                   const allItemsCompleted =
                     items.length > 0 && items.every((item: WorkOrderItemDraft) => !!item.isCompleted);
+                  const someItemsCompleted = items.some((item: WorkOrderItemDraft) => !!item.isCompleted);
                   const isOrderCompleted = allItemsCompleted;
                   const confirmationState = getOrderConfirmationState(order);
                   const isConfirmationLocked = confirmationState === "signed_active";
@@ -2077,7 +2111,24 @@ export function ExecutionPanel({
                               <tr>
                                 <th className="p-2 text-left font-semibold">Naziv</th>
                                 <th className="p-2 text-center font-semibold">IZVEDBA/NAROČILO</th>
-                                <th className="p-2 text-center font-semibold">Dokončano</th>
+                                <th className="p-2 text-center font-semibold"></th>
+                                <th className="p-2 text-center font-semibold" style={{ width: "40px" }}>
+                                  <Checkbox
+                                    className="h-5 w-5"
+                                    checked={allItemsCompleted}
+                                    disabled={isConfirmationLocked || items.length === 0}
+                                    ref={(element) => {
+                                      if (element) {
+                                        element.indeterminate = someItemsCompleted && !allItemsCompleted;
+                                      }
+                                    }}
+                                    onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                                      applyAllItemCompletionChange(order, event.target.checked)
+                                    }
+                                    aria-label="Označi ali odznači vse postavke"
+                                    title="Označi ali odznači vse postavke"
+                                  />
+                                </th>
                                 <th className="w-12 p-2 text-right font-semibold"></th>
                               </tr>
                             </thead>
