@@ -18,6 +18,10 @@ function categoryPriorityRank(product: CenikProduct) {
   return product.categoryPriority ?? 4;
 }
 
+function isIpCamera(product: CenikProduct) {
+  return product.classification?.productType === "kamera" && product.classification.cameraTechnology === "IP video";
+}
+
 export function SekcijaKameraNosilec({ productById, onAddVariant }: Props) {
   const [brand, setBrand] = useState("");
   const [housing, setHousing] = useState("");
@@ -29,7 +33,7 @@ export function SekcijaKameraNosilec({ productById, onAddVariant }: Props) {
   const cameras = useMemo(
     () =>
       Array.from(productById.values())
-        .filter((product) => product.classification?.productType === "kamera")
+        .filter(isIpCamera)
         .sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || productBrand(a).localeCompare(productBrand(b), "sl") || a.prodajnaCena - b.prodajnaCena),
     [productById],
   );
@@ -98,6 +102,7 @@ export function SekcijaKameraNosilec({ productById, onAddVariant }: Props) {
             <strong>{camera.ime}</strong>
             <small>
               {camera.classification?.maxResolutionMP ? `${camera.classification.maxResolutionMP}MP` : "Kamera"}
+              {" • IP"}
               {camera.classification?.cameraHousing ? ` • ${camera.classification.cameraHousing}` : ""}
               {camera.classification?.hasPoE ? " • PoE" : ""}
             </small>

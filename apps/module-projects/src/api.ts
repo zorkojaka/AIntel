@@ -231,6 +231,7 @@ export type CenikProduct = {
   classification?: {
     productType?: "kamera" | "snemalnik" | "switch" | "disk" | "nosilec" | "kabel" | "pribor" | "storitev" | "alarm_komponenta" | "drugo";
     manufacturer?: string;
+    cameraTechnology?: "IP video" | "AHD" | "Analog";
     cameraHousing?: "Bullet" | "Turret" | "Dome" | "PTZ" | "Panoramic" | "Fisheye" | "Thermal";
     maxResolutionMP?: number;
     hasPoE?: boolean;

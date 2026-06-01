@@ -15,6 +15,10 @@ function productBrand(product: CenikProduct) {
   return product.classification?.manufacturer || product.proizvajalec || "Brez proizvajalca";
 }
 
+function isIpCamera(product: CenikProduct) {
+  return product.classification?.productType === "kamera" && product.classification.cameraTechnology === "IP video";
+}
+
 export function DodajVariantoDialog({ open, onOpenChange, onConfirm }: DodajVariantoDialogProps) {
   const [products, setProducts] = useState<CenikProduct[]>([]);
   const [loading, setLoading] = useState(false);
@@ -34,7 +38,7 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm }: DodajVari
       .finally(() => setLoading(false));
   }, [open, products.length]);
 
-  const cameras = useMemo(() => products.filter((product) => product.classification?.productType === "kamera"), [products]);
+  const cameras = useMemo(() => products.filter(isIpCamera), [products]);
   const brands = useMemo(() => Array.from(new Set(cameras.map(productBrand))).sort((a, b) => a.localeCompare(b, "sl")), [cameras]);
   const housings = useMemo(
     () => Array.from(new Set(cameras.map((camera) => camera.classification?.cameraHousing).filter(Boolean))) as string[],
@@ -110,6 +114,7 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm }: DodajVari
                 <strong>{camera.ime}</strong>
                 <small>
                   {camera.classification?.maxResolutionMP ? `${camera.classification.maxResolutionMP}MP` : "Kamera"}
+                  {" • IP"}
                   {camera.classification?.cameraHousing ? ` • ${camera.classification.cameraHousing}` : ""}
                   {camera.classification?.hasPoE ? " • PoE" : ""}
                 </small>
