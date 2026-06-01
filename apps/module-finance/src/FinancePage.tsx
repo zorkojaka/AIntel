@@ -206,6 +206,16 @@ function marginClass(marginPercent: number) {
   return 'is-low';
 }
 
+function getSnapshotMaterialPurchase(snapshot: FinanceSnapshot) {
+  return snapshot.items
+    .filter((item) => item.isService !== true)
+    .reduce((sum, item) => sum + (Number(item.totalPurchase) || 0), 0);
+}
+
+function getSnapshotLaborCost(snapshot: FinanceSnapshot) {
+  return snapshot.employeeEarnings.reduce((sum, earning) => sum + (Number(earning.earnings) || 0), 0);
+}
+
 function formatMonthLabel(month: number) {
   return new Date(Date.UTC(new Date().getFullYear(), month - 1, 1)).toLocaleString('sl-SI', { month: 'long' });
 }
@@ -718,7 +728,7 @@ export const FinancePage: React.FC = () => {
                 <table className="finance-table">
                   <thead>
                     <tr>
-                      <th>Račun</th><th>Projekt</th><th>Stranka</th><th>Datum</th><th>Prodaja (brez DDV)</th><th>Nabavna vrednost</th><th>Marža €</th><th>Marža %</th><th>Status plačila</th>
+                      <th>Račun</th><th>Projekt</th><th>Stranka</th><th>Datum</th><th>Prodajna brez DDV</th><th>Material - nabavna cena materiala</th><th>Delo - plačilo monterjem</th><th>Zaslužek</th><th>Marža %</th><th>Status plačila</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -726,6 +736,8 @@ export const FinancePage: React.FC = () => {
                       const marginPercent = snapshot.summary.totalSaleWithoutVat > 0
                         ? (snapshot.summary.totalMargin / snapshot.summary.totalSaleWithoutVat) * 100
                         : 0;
+                      const materialPurchase = getSnapshotMaterialPurchase(snapshot);
+                      const laborCost = getSnapshotLaborCost(snapshot);
                       const isPaid = snapshot.employeeEarnings.length > 0
                         ? snapshot.employeeEarnings.every((earning) => paidByEmployee[earning.employeeId] ?? earning.isPaid)
                         : false;
@@ -737,14 +749,15 @@ export const FinancePage: React.FC = () => {
                             <td>{snapshot.customer?.name ?? '-'}</td>
                             <td>{new Date(snapshot.issuedAt).toLocaleDateString('sl-SI')}</td>
                             <td>{currency.format(snapshot.summary.totalSaleWithoutVat)}</td>
-                            <td>{currency.format(snapshot.summary.totalPurchase)}</td>
+                            <td>{currency.format(materialPurchase)}</td>
+                            <td>{currency.format(laborCost)}</td>
                             <td>{currency.format(snapshot.summary.totalMargin)}</td>
                             <td><span className={`margin-badge ${marginClass(marginPercent)}`}>{marginPercent.toFixed(2)}%</span></td>
                             <td><span className={`status-badge ${isPaid ? 'is-paid' : 'is-pending'}`}>{statusLabel(isPaid)}</span></td>
                           </tr>
                           {expandedProjectRows[snapshot._id] && (
                             <tr className="expanded-row">
-                              <td colSpan={9}>
+                              <td colSpan={10}>
                                 <table className="inner-table">
                                   <thead>
                                     <tr>
