@@ -342,6 +342,14 @@ function normalizePhaseStatus(value: unknown) {
     : '';
 }
 
+function hasIssuedInvoice(project: any) {
+  const invoiceVersions = Array.isArray(project?.invoiceVersions) ? project.invoiceVersions : [];
+  return (
+    normalizePhaseStatus(project?.status) === 'invoiced' ||
+    invoiceVersions.some((invoice: any) => normalizePhaseStatus(invoice?.status) === 'issued')
+  );
+}
+
 function collectExecutionUnitStates(order: any) {
   const items = Array.isArray(order?.items) ? order.items : [];
   return items.flatMap((item: any) => {
@@ -357,7 +365,6 @@ function collectExecutionUnitStates(order: any) {
 
 function buildProjectPhaseSignals(project: any, workOrders: any[]) {
   const offers = Array.isArray(project?.offers) ? project.offers : [];
-  const invoiceVersions = Array.isArray(project?.invoiceVersions) ? project.invoiceVersions : [];
   const status = normalizePhaseStatus(project?.status);
   const executionUnitStates = workOrders.flatMap(collectExecutionUnitStates);
   const hasConfirmedOffer =
@@ -378,13 +385,42 @@ function buildProjectPhaseSignals(project: any, workOrders: any[]) {
     hasWorkOrder: workOrders.length > 0,
     allExecutionUnitsCompleted: executionUnitStates.length > 0 && executionUnitStates.every(Boolean),
     hasSignedDelivery,
-    hasIssuedInvoice: status === 'invoiced' || invoiceVersions.some((invoice: any) => normalizePhaseStatus(invoice?.status) === 'issued'),
+    hasIssuedInvoice: hasIssuedInvoice(project),
   };
+}
+
+function lifecycleProjectFilter(view: unknown) {
+  const normalized = typeof view === 'string' ? view.trim().toLowerCase() : 'active';
+  if (normalized === 'archived') {
+    return { archivedAt: { $ne: null } };
+  }
+  if (normalized === 'closed') {
+    return {
+      closedAt: { $ne: null },
+      $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }],
+    };
+  }
+  if (normalized === 'all') {
+    return {};
+  }
+  return {
+    $and: [
+      { $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }] },
+      { $or: [{ closedAt: null }, { closedAt: { $exists: false } }] },
+    ],
+  };
+}
+
+function combineProjectFilters(...filters: any[]) {
+  const activeFilters = filters.filter((filter) => filter && Object.keys(filter).length > 0);
+  if (activeFilters.length === 0) return {};
+  if (activeFilters.length === 1) return activeFilters[0];
+  return { $and: activeFilters };
 }
 
 export async function listProjects(_req: Request, res: Response) {
   const req = _req as Request;
-  let query: any = {};
+  let accessQuery: any = {};
   const hideFinancials = isExecutionOnlyViewer(req);
   if (hideFinancials) {
     const actorEmployeeId = getActorEmployeeId(req);
@@ -392,13 +428,14 @@ export async function listProjects(_req: Request, res: Response) {
       return res.success([]);
     }
     const orderProjectIds = await getExecutionAssignedProjectIds(actorEmployeeId);
-    query = {
+    accessQuery = {
       $or: [
         { assignedEmployeeIds: actorEmployeeId },
         ...(orderProjectIds.length > 0 ? [{ id: { $in: orderProjectIds } }] : []),
       ],
     };
   }
+  const query = combineProjectFilters(accessQuery, lifecycleProjectFilter(req.query?.view));
   const all = await ProjectModel.find(query).lean();
   const confirmedOfferIds = Array.from(
     new Set(
@@ -531,6 +568,66 @@ export async function updateProjectAssignments(req: Request, res: Response) {
 
   project.salesUserId = salesUserId;
   project.assignedEmployeeIds = assignedEmployeeIds ?? [];
+
+  await project.save();
+
+  return res.success(await responseProject(project.toObject()));
+}
+
+export async function updateProjectLifecycle(req: Request, res: Response) {
+  const project = await ProjectModel.findOne({ id: req.params.id });
+  if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+
+  const action = typeof req.body?.action === 'string' ? req.body.action.trim().toLowerCase() : '';
+  const actor = buildActorDisplayName(req as any);
+  const now = new Date();
+
+  if (action === 'archive') {
+    project.archivedAt = project.archivedAt ?? now;
+    project.archivedBy = project.archivedBy ?? actor;
+    addTimeline(project, {
+      type: 'edit',
+      title: 'Projekt arhiviran',
+      description: project.title,
+      timestamp: now.toLocaleString('sl-SI'),
+      user: actor,
+    });
+  } else if (action === 'unarchive') {
+    project.archivedAt = null;
+    project.archivedBy = null;
+    addTimeline(project, {
+      type: 'edit',
+      title: 'Projekt vrnjen iz arhiva',
+      description: project.title,
+      timestamp: now.toLocaleString('sl-SI'),
+      user: actor,
+    });
+  } else if (action === 'close') {
+    if (!hasIssuedInvoice(project)) {
+      return res.fail('Projekt lahko zaključiš šele, ko ima izdan račun.', 400);
+    }
+    project.closedAt = project.closedAt ?? now;
+    project.closedBy = project.closedBy ?? actor;
+    addTimeline(project, {
+      type: 'status-change',
+      title: 'Projekt zaključen',
+      description: 'Projekt je premaknjen med zaključene projekte.',
+      timestamp: now.toLocaleString('sl-SI'),
+      user: actor,
+    });
+  } else if (action === 'reopen') {
+    project.closedAt = null;
+    project.closedBy = null;
+    addTimeline(project, {
+      type: 'status-change',
+      title: 'Projekt ponovno odprt',
+      description: 'Projekt je vrnjen med aktivne projekte.',
+      timestamp: now.toLocaleString('sl-SI'),
+      user: actor,
+    });
+  } else {
+    return res.fail('Neznana lifecycle akcija projekta.', 400);
+  }
 
   await project.save();
 

@@ -20,6 +20,7 @@ const API_PREFIX = "/api/projects";
 const VIEW_STORAGE_KEY = "projects:view-mode";
 const VALID_TABS = ["zahteva", "offers", "logistics", "execution", "closing"] as const;
 type WorkspaceTab = (typeof VALID_TABS)[number];
+type ProjectLifecycleView = "active" | "closed" | "archived" | "all";
 const shownForbiddenProjectToasts = new Set<string>();
 
 function parseProjectRoute(pathname: string) {
@@ -53,6 +54,10 @@ function toSummary(project: ProjectDetails): ProjectSummary {
     quotedTotalWithVat: project.quotedTotalWithVat,
     invoiceAmount: project.invoiceAmount,
     createdAt: project.createdAt,
+    archivedAt: project.archivedAt ?? null,
+    archivedBy: project.archivedBy ?? null,
+    closedAt: project.closedAt ?? null,
+    closedBy: project.closedBy ?? null,
     categories: project.categories ?? [],
     requirementsTemplateVariantSlug: project.requirementsTemplateVariantSlug,
     phaseSignals: project.phaseSignals,
@@ -112,6 +117,7 @@ export function ProjectsPage() {
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [projectsViewMode, setProjectsViewMode] = useState<"list" | "kanban">("list");
   const [searchQuery, setSearchQuery] = useState("");
+  const [projectLifecycleView, setProjectLifecycleView] = useState<ProjectLifecycleView>("active");
   const [phaseFilter, setPhaseFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [newProjectCategorySlugs, setNewProjectCategorySlugs] = useState<string[]>([]);
@@ -206,7 +212,7 @@ export function ProjectsPage() {
 
   const fetchProjectList = useCallback(async () => {
     try {
-      const response = await fetch(API_PREFIX);
+      const response = await fetch(`${API_PREFIX}?view=${encodeURIComponent(projectLifecycleView)}`);
       const result = await response.json();
       if (!result.success) {
         toast.error(result.error ?? "Napaka pri nalaganju projektov.");
@@ -218,7 +224,7 @@ export function ProjectsPage() {
     } finally {
       setProjectsLoaded(true);
     }
-  }, []);
+  }, [projectLifecycleView]);
 
   const sortCategories = useCallback(
     (list: Category[]) =>
@@ -419,6 +425,47 @@ export function ProjectsPage() {
       }
     } catch (error) {
       toast.error("Napaka pri brisanju projekta.");
+    }
+  };
+
+  const handleLifecycleProject = async (
+    project: ProjectSummary,
+    action: "archive" | "unarchive" | "close" | "reopen"
+  ) => {
+    const confirmMessages: Record<typeof action, string> = {
+      archive: `Arhiviraj projekt ${project.title}?`,
+      unarchive: `Vrni projekt ${project.title} iz arhiva?`,
+      close: `Zaključi projekt ${project.title}?`,
+      reopen: `Ponovno odpri projekt ${project.title}?`,
+    };
+    if (!globalThis.confirm(confirmMessages[action])) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_PREFIX}/${project.id}/lifecycle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const result = await response.json();
+      if (!result.success) {
+        toast.error(result.error ?? "Projekta ni bilo mogoče posodobiti.");
+        return;
+      }
+      const mapped = mapProject(result.data);
+      setProjectDetails((current) => (current?.id === mapped.id ? mapped : current));
+      setTemplates((current) => (projectDetails?.id === mapped.id ? mapped.templates : current));
+      await fetchProjectList();
+      const messages: Record<typeof action, string> = {
+        archive: "Projekt je arhiviran.",
+        unarchive: "Projekt je vrnjen iz arhiva.",
+        close: "Projekt je zaključen.",
+        reopen: "Projekt je ponovno odprt.",
+      };
+      toast.success(messages[action]);
+    } catch {
+      toast.error("Napaka pri posodabljanju projekta.");
     }
   };
 
@@ -756,6 +803,8 @@ export function ProjectsPage() {
               <ProjectFilters
                 searchQuery={searchQuery}
                 onSearchQueryChange={setSearchQuery}
+                lifecycleView={projectLifecycleView}
+                onLifecycleViewChange={(value) => setProjectLifecycleView(value as ProjectLifecycleView)}
                 phaseFilter={phaseFilter}
                 onPhaseFilterChange={setPhaseFilter}
                 categoryFilter={categoryFilter}
@@ -772,6 +821,10 @@ export function ProjectsPage() {
                 categories={categories}
                 onEditProject={handleEditProject}
                 onDeleteProject={handleDeleteProject}
+                onArchiveProject={(project) => handleLifecycleProject(project, "archive")}
+                onUnarchiveProject={(project) => handleLifecycleProject(project, "unarchive")}
+                onCloseProject={(project) => handleLifecycleProject(project, "close")}
+                onReopenProject={(project) => handleLifecycleProject(project, "reopen")}
                 readOnly={isExecutionOnlyViewer}
                 hideFinancials={isExecutionOnlyViewer}
               />

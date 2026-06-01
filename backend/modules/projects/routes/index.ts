@@ -17,6 +17,7 @@ import {
   getOfferCandidates,
   calculateProjectKm,
   updateProjectAssignments,
+  updateProjectLifecycle,
 } from '../controllers/project.controller';
 import {
   applyOfferTemplate,
@@ -50,6 +51,7 @@ router.get('/offer-templates', listOfferTemplates);
 router.post('/', requireProjectWrite, createProject);
 router.get('/:id', getProject);
 router.patch('/:id/assignments', requireProjectWrite, updateProjectAssignments);
+router.post('/:id/lifecycle', requireProjectWrite, updateProjectLifecycle);
 router.post('/:id/status', requireProjectWrite, updateStatus);
 router.put('/:id', requireProjectWrite, updateProject);
 router.delete('/:id', requireProjectWrite, deleteProject);
