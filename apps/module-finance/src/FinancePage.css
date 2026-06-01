@@ -99,6 +99,55 @@
   margin-bottom: 12px;
 }
 
+.finance-period-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.finance-period-header,
+.finance-section-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.finance-period-header h2,
+.finance-section-title h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.finance-period-header p,
+.finance-section-title span {
+  display: block;
+  margin-top: 4px;
+  color: var(--finance-muted, #607289);
+  font-size: 13px;
+}
+
+.finance-period-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.finance-check-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--finance-border, #dbe4f0);
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.finance-check-option input {
+  margin: 0;
+}
+
 .finance-filter-bar input[type='search'] {
   min-width: 240px;
   flex: 1;

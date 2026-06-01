@@ -4,6 +4,7 @@ import './FinancePage.css';
 
 type Role = 'ADMIN' | 'FINANCE' | 'EXECUTION' | 'SALES' | 'ORGANIZER';
 type TabKey = 'projekti' | 'zaposleni' | 'podjetje';
+type PeriodMode = 'monthly' | 'yearly';
 
 interface MePayload {
   employeeId?: string | null;
@@ -30,6 +31,7 @@ interface FinanceSnapshotItem {
   totalSale: number;
   totalPurchase: number;
   margin: number;
+  isService?: boolean;
 }
 
 interface SnapshotEmployeeEarning {
@@ -86,7 +88,7 @@ interface PipelineSummary {
   statuses: Array<{ status: string; count: number; totalGross: number }>;
   winRate: number;
 }
-interface ProjectListItem { id: string; title: string; customer?: { name?: string }; status?: string; offerAmount?: number; quotedTotalWithVat?: number; updatedAt?: string; createdAt?: string }
+interface ProjectListItem { id: string; title: string; customer?: string | { name?: string }; status?: string; offerAmount?: number; quotedTotalWithVat?: number; updatedAt?: string; createdAt?: string }
 
 interface ProductCooccurrenceRow { productA: { id: string; name: string }; productB: { id: string; name: string }; count: number; totalRevenue: number }
 interface ProductBundleRow { product: { id: string; name: string }; companions: Array<{ id: string; name: string; count: number; share: number }> }
@@ -146,10 +148,52 @@ async function fetchApi<T>(url: string): Promise<T> {
   return payload.data;
 }
 
+async function fetchAllSnapshots(): Promise<FinanceSnapshot[]> {
+  const limit = 200;
+  const firstPage = await fetchApi<SnapshotListEnvelope>(`/api/finance/snapshots?limit=${limit}&page=1`);
+  const items = [...(firstPage.items ?? [])];
+  let page = 2;
+  while ((items.length % limit) === 0 && items.length > 0) {
+    const nextPage = await fetchApi<SnapshotListEnvelope>(`/api/finance/snapshots?limit=${limit}&page=${page}`);
+    const nextItems = nextPage.items ?? [];
+    if (nextItems.length === 0) break;
+    items.push(...nextItems);
+    if (nextItems.length < limit) break;
+    page += 1;
+  }
+  return items;
+}
+
 function toIsoDay(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return '';
   return date.toISOString().slice(0, 10);
+}
+
+function toYear(value: string | undefined | null) {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.valueOf()) ? date.getFullYear() : null;
+}
+
+function toMonthKey(value: string | undefined | null) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.valueOf())) return null;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatMonthKeyLabel(monthKey: string) {
+  const [year, month] = monthKey.split('-').map(Number);
+  if (!year || !month) return monthKey;
+  const label = new Date(Date.UTC(year, month - 1, 1)).toLocaleString('sl-SI', { month: 'long', year: 'numeric' });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function getProjectDate(project: ProjectListItem) {
+  return project.updatedAt ?? project.createdAt ?? null;
+}
+
+function getProjectCustomerName(project: ProjectListItem) {
+  return typeof project.customer === 'string' ? project.customer : project.customer?.name ?? '-';
 }
 
 function statusLabel(isPaid: boolean) {
@@ -176,20 +220,13 @@ export const FinancePage: React.FC = () => {
 
   const [snapshots, setSnapshots] = useState<FinanceSnapshot[]>([]);
   const [employees, setEmployees] = useState<EmployeeSummary[]>([]);
-  const [monthly, setMonthly] = useState<MonthlySummary[]>([]);
-  const [products, setProducts] = useState<ProductFrequency[]>([]);
-  const [pipeline, setPipeline] = useState<PipelineSummary | null>(null);
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
-  const [pairRows, setPairRows] = useState<ProductCooccurrenceRow[]>([]);
-  const [bundleRows, setBundleRows] = useState<ProductBundleRow[]>([]);
   const [coView, setCoView] = useState<'pairs' | 'bundles'>('pairs');
+  const [periodMode, setPeriodMode] = useState<PeriodMode>('yearly');
+  const [selectedYears, setSelectedYears] = useState<number[]>([new Date().getFullYear()]);
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([toMonthKey(new Date().toISOString()) ?? '']);
 
   const [projectSearch, setProjectSearch] = useState('');
-  const [projectFrom, setProjectFrom] = useState('');
-  const [projectTo, setProjectTo] = useState('');
-  const [employeesFrom, setEmployeesFrom] = useState('');
-  const [employeesTo, setEmployeesTo] = useState('');
 
   const [expandedProjectRows, setExpandedProjectRows] = useState<Record<string, boolean>>({});
   const [expandedEmployeeRows, setExpandedEmployeeRows] = useState<Record<string, boolean>>({});
@@ -216,31 +253,19 @@ export const FinancePage: React.FC = () => {
         const mappedRoles = (me.roles ?? []) as Role[];
         const canSeeCompany = mappedRoles.includes('ADMIN') || mappedRoles.includes('FINANCE');
 
-        const [snapshotData, employeeData, monthlyData, productData, pipelineData, projectsData, coData, bundleData] = await Promise.all([
-          fetchApi<SnapshotListEnvelope>('/api/finance/snapshots?limit=300'),
+        const [snapshotData, employeeData, projectsData] = await Promise.all([
+          fetchAllSnapshots(),
           fetchApi<EmployeeSummary[]>('/api/finance/employees-summary'),
-          canSeeCompany
-            ? fetchApi<MonthlySummary[]>(`/api/finance/monthly-summary?year=${new Date().getFullYear()}`)
-            : Promise.resolve([]),
-          canSeeCompany ? fetchApi<ProductFrequency[]>('/api/finance/product-frequency?limit=10') : Promise.resolve([]),
-          canSeeCompany ? fetchApi<PipelineSummary>('/api/finance/pipeline') : Promise.resolve(null),
-          canSeeCompany ? fetchApi<ProjectListItem[]>(`/api/projects?year=${new Date().getFullYear()}`) : Promise.resolve([]),
-          canSeeCompany ? fetchApi<ProductCooccurrenceRow[]>(`/api/finance/analytics/product-cooccurrence?year=${new Date().getFullYear()}`) : Promise.resolve([]),
-          canSeeCompany ? fetchApi<ProductBundleRow[]>(`/api/finance/analytics/product-bundles?year=${new Date().getFullYear()}`) : Promise.resolve([]),
+          canSeeCompany ? fetchApi<ProjectListItem[]>('/api/projects?view=all') : Promise.resolve([]),
         ]);
 
         if (cancelled) return;
 
         setRoles(mappedRoles);
         setEmployeeId(me.employeeId ?? null);
-        setSnapshots(snapshotData.items ?? []);
+        setSnapshots(snapshotData);
         setEmployees(employeeData);
-        setMonthly(monthlyData);
-        setProducts(productData);
-        setPipeline(pipelineData);
         setProjects(projectsData ?? []);
-        setPairRows(coData ?? []);
-        setBundleRows(bundleData ?? []);
       } catch (loadError) {
         if (!cancelled) {
           setError(loadError instanceof Error ? loadError.message : 'Napaka pri nalaganju podatkov.');
@@ -258,42 +283,81 @@ export const FinancePage: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
-    if (!isAdminOrFinance) return;
-    let cancelled = false;
+  const yearOptions = useMemo(() => {
+    const years = new Set<number>([new Date().getFullYear(), ...selectedYears]);
+    snapshots.forEach((snapshot) => {
+      const year = toYear(snapshot.issuedAt);
+      if (year) years.add(year);
+    });
+    projects.forEach((project) => {
+      const year = toYear(getProjectDate(project));
+      if (year) years.add(year);
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [projects, selectedYears, snapshots]);
 
-    Promise.all([
-      fetchApi<MonthlySummary[]>(`/api/finance/monthly-summary?year=${selectedYear}`),
-      fetchApi<ProductFrequency[]>(`/api/finance/product-frequency?limit=10&dateFrom=${selectedYear}-01-01&dateTo=${selectedYear}-12-31`),
-      fetchApi<ProjectListItem[]>(`/api/projects?year=${selectedYear}`),
-      fetchApi<ProductCooccurrenceRow[]>(`/api/finance/analytics/product-cooccurrence?year=${selectedYear}`),
-      fetchApi<ProductBundleRow[]>(`/api/finance/analytics/product-bundles?year=${selectedYear}`),
-    ])
-      .then(([monthlyData, productData, projectData, cooccurrenceData, bundleData]) => {
-        if (cancelled) return;
-        setMonthly(monthlyData);
-        setProducts(productData);
-        setProjects(projectData ?? []);
-        setPairRows(cooccurrenceData ?? []);
-        setBundleRows(bundleData ?? []);
-      })
-      .catch((loadError) => {
-        if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : 'Napaka pri nalaganju podatkov.');
-        }
-      });
+  const monthOptions = useMemo(() => {
+    const months = new Set<string>(selectedMonths.filter(Boolean));
+    const currentMonth = toMonthKey(new Date().toISOString());
+    if (currentMonth) months.add(currentMonth);
+    snapshots.forEach((snapshot) => {
+      const monthKey = toMonthKey(snapshot.issuedAt);
+      if (monthKey) months.add(monthKey);
+    });
+    projects.forEach((project) => {
+      const monthKey = toMonthKey(getProjectDate(project));
+      if (monthKey) months.add(monthKey);
+    });
+    return Array.from(months).sort((a, b) => b.localeCompare(a));
+  }, [projects, selectedMonths, snapshots]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedYear, isAdminOrFinance]);
+  const matchesSelectedPeriod = (value: string | undefined | null) => {
+    if (periodMode === 'monthly') {
+      if (selectedMonths.length === 0) return true;
+      const monthKey = toMonthKey(value);
+      return Boolean(monthKey && selectedMonths.includes(monthKey));
+    }
+    if (selectedYears.length === 0) return true;
+    const year = toYear(value);
+    return Boolean(year && selectedYears.includes(year));
+  };
+
+  const periodSnapshots = useMemo(
+    () => snapshots.filter((snapshot) => matchesSelectedPeriod(snapshot.issuedAt)),
+    [periodMode, selectedMonths, selectedYears, snapshots],
+  );
+
+  const periodProjects = useMemo(
+    () => projects.filter((project) => matchesSelectedPeriod(getProjectDate(project))),
+    [periodMode, projects, selectedMonths, selectedYears],
+  );
+
+  const periodLabel = useMemo(() => {
+    if (periodMode === 'monthly') {
+      return selectedMonths.length
+        ? selectedMonths.map(formatMonthKeyLabel).join(', ')
+        : 'Vsi meseci';
+    }
+    return selectedYears.length ? selectedYears.join(', ') : 'Vsa leta';
+  }, [periodMode, selectedMonths, selectedYears]);
+
+  const toggleSelectedYear = (year: number) => {
+    setSelectedYears((current) => {
+      const next = current.includes(year) ? current.filter((entry) => entry !== year) : [...current, year];
+      return next.sort((a, b) => b - a);
+    });
+  };
+
+  const toggleSelectedMonth = (monthKey: string) => {
+    setSelectedMonths((current) => {
+      const next = current.includes(monthKey) ? current.filter((entry) => entry !== monthKey) : [...current, monthKey];
+      return next.sort((a, b) => b.localeCompare(a));
+    });
+  };
 
   const filteredSnapshots = useMemo(() => {
     const term = projectSearch.trim().toLowerCase();
-    return snapshots.filter((snapshot) => {
-      const day = toIsoDay(snapshot.issuedAt);
-      if (projectFrom && day < projectFrom) return false;
-      if (projectTo && day > projectTo) return false;
+    return periodSnapshots.filter((snapshot) => {
       if (!term) return true;
       return (
         snapshot.projectId.toLowerCase().includes(term) ||
@@ -301,7 +365,7 @@ export const FinancePage: React.FC = () => {
         snapshot.invoiceNumber.toLowerCase().includes(term)
       );
     });
-  }, [projectFrom, projectSearch, projectTo, snapshots]);
+  }, [periodSnapshots, projectSearch]);
 
   const projectSummary = useMemo(() => {
     const totalRevenue = filteredSnapshots.reduce((sum, row) => sum + row.summary.totalSaleWithoutVat, 0);
@@ -318,11 +382,7 @@ export const FinancePage: React.FC = () => {
   const employeeBreakdownMap = useMemo(() => {
     const map = new Map<string, EmployeeProjectBreakdown[]>();
 
-    snapshots.forEach((snapshot) => {
-      const issuedDay = toIsoDay(snapshot.issuedAt);
-      if (employeesFrom && issuedDay < employeesFrom) return;
-      if (employeesTo && issuedDay > employeesTo) return;
-
+    periodSnapshots.forEach((snapshot) => {
       snapshot.employeeEarnings.forEach((earning) => {
         const resolvedPaid = paidByEmployee[earning.employeeId] ?? earning.isPaid;
         const entry: EmployeeProjectBreakdown = {
@@ -341,7 +401,7 @@ export const FinancePage: React.FC = () => {
     });
 
     return map;
-  }, [employeesFrom, employeesTo, paidByEmployee, snapshots]);
+  }, [paidByEmployee, periodSnapshots]);
 
   const employeeRows = useMemo(() => {
     return employees
@@ -374,7 +434,7 @@ export const FinancePage: React.FC = () => {
 
   const executionProjects = useMemo(() => {
     if (!isExecutionOnly || !employeeId) return [];
-    return snapshots
+    return periodSnapshots
       .map((snapshot) => {
         const employeeEarning = snapshot.employeeEarnings.find((entry) => entry.employeeId === employeeId);
         if (!employeeEarning) return null;
@@ -390,23 +450,7 @@ export const FinancePage: React.FC = () => {
         };
       })
       .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
-  }, [employeeId, isExecutionOnly, paidByEmployee, snapshots]);
-
-  const monthlyMax = useMemo(() => monthly.reduce((max, row) => Math.max(max, row.totalSaleWithVat), 0), [monthly]);
-
-  const pipelineByStatus = useMemo(() => {
-    const map = new Map<string, { count: number; totalGross: number }>();
-    (pipeline?.statuses ?? []).forEach((status) => {
-      map.set(status.status, status);
-    });
-    return map;
-  }, [pipeline]);
-
-  const totalOpenOfferValue = useMemo(() => {
-    const draft = pipelineByStatus.get('draft')?.totalGross ?? 0;
-    const offered = pipelineByStatus.get('offered')?.totalGross ?? 0;
-    return draft + offered;
-  }, [pipelineByStatus]);
+  }, [employeeId, isExecutionOnly, paidByEmployee, periodSnapshots]);
 
   const toggleProjectRow = (id: string) => {
     setExpandedProjectRows((current) => ({ ...current, [id]: !current[id] }));
@@ -450,6 +494,138 @@ export const FinancePage: React.FC = () => {
     setPaidByEmployee((current) => ({ ...current, [id]: true }));
   };
 
+  const productRows = useMemo<ProductFrequency[]>(() => {
+    const byProduct = new Map<string, ProductFrequency>();
+    periodSnapshots.forEach((snapshot) => {
+      snapshot.items.forEach((item) => {
+        const key = item.productId ?? item.name;
+        const current = byProduct.get(key) ?? {
+          productId: item.productId,
+          name: item.name,
+          totalQuantity: 0,
+          totalRevenue: 0,
+          totalMargin: 0,
+        };
+        current.totalQuantity += Number(item.quantity) || 0;
+        current.totalRevenue += Number(item.totalSale) || 0;
+        current.totalMargin += Number(item.margin) || 0;
+        byProduct.set(key, current);
+      });
+    });
+    return Array.from(byProduct.values()).sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 10);
+  }, [periodSnapshots]);
+
+  const periodChartRows = useMemo(() => {
+    const rows = new Map<string, MonthlySummary & { name: string; marginPct: number; projectIds: Set<string> }>();
+    periodSnapshots.forEach((snapshot) => {
+      const key = periodMode === 'monthly' ? toMonthKey(snapshot.issuedAt) : String(toYear(snapshot.issuedAt) ?? '');
+      if (!key) return;
+      const current = rows.get(key) ?? {
+        month: periodMode === 'monthly' ? Number(key.slice(5, 7)) : 1,
+        name: periodMode === 'monthly' ? formatMonthKeyLabel(key) : key,
+        totalSaleWithVat: 0,
+        totalSaleWithoutVat: 0,
+        totalPurchase: 0,
+        totalMargin: 0,
+        marginPct: 0,
+        projectIds: new Set<string>(),
+      };
+      current.totalSaleWithVat += snapshot.summary.totalSaleWithVat;
+      current.totalSaleWithoutVat += snapshot.summary.totalSaleWithoutVat;
+      current.totalPurchase += snapshot.summary.totalPurchase;
+      current.totalMargin += snapshot.summary.totalMargin;
+      current.projectIds.add(snapshot.projectId);
+      rows.set(key, current);
+    });
+    return Array.from(rows.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, row]) => ({
+        ...row,
+        marginPct: row.totalSaleWithoutVat > 0 ? (row.totalMargin / row.totalSaleWithoutVat) * 100 : 0,
+        projectCount: row.projectIds.size,
+      }));
+  }, [periodMode, periodSnapshots]);
+
+  const pairRows = useMemo<ProductCooccurrenceRow[]>(() => {
+    const pairMap = new Map<string, ProductCooccurrenceRow>();
+    periodSnapshots.forEach((snapshot) => {
+      const productsInSnapshot = new Map<string, { id: string; name: string; revenue: number }>();
+      snapshot.items.forEach((item) => {
+        if (!item.productId) return;
+        const id = String(item.productId);
+        const current = productsInSnapshot.get(id) ?? { id, name: item.name, revenue: 0 };
+        current.revenue += item.totalSale;
+        productsInSnapshot.set(id, current);
+      });
+      const list = Array.from(productsInSnapshot.values()).sort((a, b) => a.id.localeCompare(b.id));
+      for (let i = 0; i < list.length; i += 1) {
+        for (let j = i + 1; j < list.length; j += 1) {
+          const productA = list[i];
+          const productB = list[j];
+          const key = `${productA.id}:${productB.id}`;
+          const current = pairMap.get(key) ?? {
+            productA: { id: productA.id, name: productA.name },
+            productB: { id: productB.id, name: productB.name },
+            count: 0,
+            totalRevenue: 0,
+          };
+          current.count += 1;
+          current.totalRevenue += productA.revenue + productB.revenue;
+          pairMap.set(key, current);
+        }
+      }
+    });
+    return Array.from(pairMap.values()).sort((a, b) => b.count - a.count).slice(0, 20);
+  }, [periodSnapshots]);
+
+  const bundleRows = useMemo<ProductBundleRow[]>(() => {
+    const totalByProduct = new Map<string, number>();
+    const bundleMap = new Map<string, ProductBundleRow>();
+    pairRows.forEach((pair) => {
+      totalByProduct.set(pair.productA.id, (totalByProduct.get(pair.productA.id) ?? 0) + pair.count);
+      totalByProduct.set(pair.productB.id, (totalByProduct.get(pair.productB.id) ?? 0) + pair.count);
+    });
+    pairRows.forEach((pair) => {
+      [
+        [pair.productA, pair.productB],
+        [pair.productB, pair.productA],
+      ].forEach(([product, companion]) => {
+        const current = bundleMap.get(product.id) ?? { product, companions: [] };
+        const total = totalByProduct.get(product.id) || 1;
+        current.companions.push({
+          id: companion.id,
+          name: companion.name,
+          count: pair.count,
+          share: (pair.count / total) * 100,
+        });
+        bundleMap.set(product.id, current);
+      });
+    });
+    return Array.from(bundleMap.values())
+      .map((row) => ({ ...row, companions: row.companions.sort((a, b) => b.count - a.count).slice(0, 3) }))
+      .slice(0, 20);
+  }, [pairRows]);
+
+  const pipeline = useMemo<PipelineSummary>(() => {
+    const statusMap = new Map<string, { status: string; count: number; totalGross: number }>();
+    periodProjects.forEach((project) => {
+      const status = String(project.status ?? 'draft');
+      const current = statusMap.get(status) ?? { status, count: 0, totalGross: 0 };
+      current.count += 1;
+      current.totalGross += Number(project.quotedTotalWithVat ?? project.offerAmount ?? 0);
+      statusMap.set(status, current);
+    });
+    const accepted = (statusMap.get('accepted')?.count ?? 0) + (statusMap.get('confirmed')?.count ?? 0);
+    const rejected = statusMap.get('rejected')?.count ?? 0;
+    return {
+      statuses: Array.from(statusMap.values()),
+      winRate: accepted + rejected > 0 ? (accepted / (accepted + rejected)) * 100 : 0,
+    };
+  }, [periodProjects]);
+
+  const monthly = periodChartRows;
+  const products = productRows;
+
   if (loading) {
     return (
       <div className="finance-page">
@@ -480,6 +656,42 @@ export const FinancePage: React.FC = () => {
         </div>
       </header>
 
+      <section className="finance-panel finance-period-panel">
+        <div className="finance-period-header">
+          <div>
+            <h2>Obdobje prikaza</h2>
+            <p>{periodLabel}</p>
+          </div>
+          <div className="finance-tabs" role="tablist" aria-label="Način obdobja">
+            <button className={periodMode === 'monthly' ? 'is-active' : ''} type="button" onClick={() => setPeriodMode('monthly')}>Mesečni</button>
+            <button className={periodMode === 'yearly' ? 'is-active' : ''} type="button" onClick={() => setPeriodMode('yearly')}>Letni</button>
+          </div>
+        </div>
+        <div className="finance-period-options">
+          {periodMode === 'monthly'
+            ? monthOptions.map((monthKey) => (
+                <label key={monthKey} className="finance-check-option">
+                  <input
+                    type="checkbox"
+                    checked={selectedMonths.includes(monthKey)}
+                    onChange={() => toggleSelectedMonth(monthKey)}
+                  />
+                  <span>{formatMonthKeyLabel(monthKey)}</span>
+                </label>
+              ))
+            : yearOptions.map((year) => (
+                <label key={year} className="finance-check-option">
+                  <input
+                    type="checkbox"
+                    checked={selectedYears.includes(year)}
+                    onChange={() => toggleSelectedYear(year)}
+                  />
+                  <span>{year}</span>
+                </label>
+              ))}
+        </div>
+      </section>
+
       {tab === 'projekti' && (
         <>
           <section className="finance-cards-grid">
@@ -491,8 +703,6 @@ export const FinancePage: React.FC = () => {
 
           <section className="finance-panel">
             <div className="finance-filter-bar">
-              <input type="date" value={projectFrom} onChange={(event) => setProjectFrom(event.target.value)} aria-label="Datum od" />
-              <input type="date" value={projectTo} onChange={(event) => setProjectTo(event.target.value)} aria-label="Datum do" />
               <input
                 type="search"
                 placeholder="Išči po stranki/projektu/računu"
@@ -576,11 +786,6 @@ export const FinancePage: React.FC = () => {
           </section>
 
           <section className="finance-panel">
-            <div className="finance-filter-bar">
-              <input type="date" value={employeesFrom} onChange={(event) => setEmployeesFrom(event.target.value)} aria-label="Datum od" />
-              <input type="date" value={employeesTo} onChange={(event) => setEmployeesTo(event.target.value)} aria-label="Datum do" />
-            </div>
-
             {employeeRows.length === 0 ? (
               <div className="finance-state">Ni zaslužkov za izbran datum.</div>
             ) : (
@@ -736,18 +941,18 @@ export const FinancePage: React.FC = () => {
         const confirmedCount = (statusMap.get('confirmed')?.count ?? 0) + (statusMap.get('accepted')?.count ?? 0);
         const rejectedCount = statusMap.get('rejected')?.count ?? 0;
         const winRate = confirmedCount + rejectedCount > 0 ? (confirmedCount / (confirmedCount + rejectedCount)) * 100 : 0;
-        const yearSnapshots = snapshots.filter((s) => new Date(s.issuedAt).getFullYear() === selectedYear);
+        const yearSnapshots = periodSnapshots;
         const revenueSum = yearSnapshots.reduce((a,b)=>a+b.summary.totalSaleWithoutVat,0);
         const marginSum = yearSnapshots.reduce((a,b)=>a+b.summary.totalMargin,0);
         const invoiceCount = yearSnapshots.length;
-        const projectRows = [...(projects ?? [])].filter((p)=>{const d=new Date(p?.updatedAt ?? p?.createdAt ?? '').getFullYear(); return d===selectedYear;}).sort((a,b)=>new Date(b?.updatedAt ?? b?.createdAt ?? '').valueOf()-new Date(a?.updatedAt ?? a?.createdAt ?? '').valueOf());
+        const projectRows = [...(periodProjects ?? [])].sort((a,b)=>new Date(b?.updatedAt ?? b?.createdAt ?? '').valueOf()-new Date(a?.updatedAt ?? a?.createdAt ?? '').valueOf());
         const offerRows = projectRows.filter((p)=>sentCount>=0 && ['offer_sent','offered','confirmed','accepted','rejected'].includes(String(p.status ?? '')));
         const offersValue = offerRows.reduce((a,b)=>a+Number(b.quotedTotalWithVat ?? b.offerAmount ?? 0),0);
         const acceptedOffers = offerRows.filter((p)=>['confirmed','accepted'].includes(String(p.status ?? ''))).length;
         const productRows = [...(products ?? [])].sort((a,b)=>(b?.totalRevenue ?? 0)-(a?.totalRevenue ?? 0)).slice(0,10);
-        const monthlyChart = (monthly ?? []).map((m)=>({ ...m, marginPct: (m?.totalSaleWithoutVat ?? 0)>0 ? ((m?.totalMargin ?? 0)/(m?.totalSaleWithoutVat ?? 0))*100 : 0, name: formatMonthLabel(m?.month ?? 1)}));
+        const monthlyChart = (monthly ?? []).map((m: any)=>({ ...m, marginPct: (m?.totalSaleWithoutVat ?? 0)>0 ? ((m?.totalMargin ?? 0)/(m?.totalSaleWithoutVat ?? 0))*100 : 0, name: m?.name ?? formatMonthLabel(m?.month ?? 1)}));
         return (<section className="space-y-4">
-          <div className="flex items-center justify-between"><h2 className="text-xl font-semibold">Pregled podjetja</h2><select className="border rounded px-3 py-2" value={selectedYear} onChange={(e)=>setSelectedYear(Number(e.target.value))}>{[2024,2025,2026].map(y=><option key={y} value={y}>{y}</option>)}</select></div>
+          <div className="finance-section-title"><h2>Pregled podjetja</h2><span>{periodLabel}</span></div>
           <section className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <article className="finance-card"><span>Skupni prihodki leta</span><strong>{currency.format(revenueSum)}</strong></article>
             <article className="finance-card"><span>Skupna marža %</span><strong>{revenueSum>0?((marginSum/revenueSum)*100).toFixed(2):'0.00'}%</strong></article>
@@ -757,9 +962,9 @@ export const FinancePage: React.FC = () => {
           <article className="finance-panel"><h2>Mesečni prihodki</h2>{monthlyChart.length===0?<div className="finance-state">Ni podatkov za izbrano leto.</div>:<div className="h-72"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={monthlyChart}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis yAxisId="left"/><YAxis yAxisId="right" orientation="right"/><Tooltip/><Bar yAxisId="left" dataKey="totalSaleWithoutVat" name="Prodajna cena" fill="#2563eb"/><Bar yAxisId="left" dataKey="totalPurchase" name="Nabavna cena" fill="#f97316"/><Line yAxisId="right" type="monotone" dataKey="marginPct" name="Marža %" stroke="#16a34a"/></ComposedChart></ResponsiveContainer></div>}</article>
           <article className="finance-panel"><h2>Top 10 produktov</h2>{productRows?.length ? <div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Naziv</th><th>Količina</th><th>Prihodek</th><th>Marža</th></tr></thead><tbody>{productRows?.map((p)=><tr key={`${p?.productId ?? 'x'}-${p?.name ?? 'izdelek'}`}><td>{p?.name ?? '-'}</td><td>{p?.totalQuantity ?? 0}</td><td>{currency.format(p?.totalRevenue ?? 0)}</td><td>{currency.format(p?.totalMargin ?? 0)}</td></tr>) ?? []}</tbody></table></div> : <div className="finance-state">Ni produktnih podatkov.</div>}</article>
           <article className="finance-panel"><h2>Pipeline funnel</h2><div className="pipeline-cards"><div className="pipeline-card"><span>Osnutki</span><strong>{draftCount}</strong></div><div className="pipeline-card"><span>Poslane ponudbe</span><strong>{sentCount}</strong></div><div className="pipeline-card"><span>Sprejeto</span><strong>{confirmedCount}</strong></div><div className="pipeline-card"><span>Zavrnjeno</span><strong>{rejectedCount}</strong></div></div><div className="pipeline-highlight">Win rate: {winRate.toFixed(2)}%</div></article>
-          <article className="finance-panel"><h2>Pregled projektov</h2>{projectRows?.length ? <div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Projekt</th><th>Stranka</th><th>Status</th><th>Vrednost ponudbe</th><th>Datum</th></tr></thead><tbody>{projectRows?.map((r)=><tr key={r?.id ?? `${r?.title ?? 'projekt'}-${r?.updatedAt ?? ''}`} className="is-clickable" onClick={()=> r?.id && (window.location.href=`/projects/${r.id}`)}><td>{r?.title ?? '-'}</td><td>{r?.customer?.name ?? '-'}</td><td>{r?.status ?? '-'}</td><td>{currency.format(Number(r?.quotedTotalWithVat ?? r?.offerAmount ?? 0))}</td><td>{new Date(r?.updatedAt ?? r?.createdAt ?? '').toLocaleDateString('sl-SI')}</td></tr>) ?? []}</tbody></table></div> : <div className="finance-state">Ni projektov za izbrano leto.</div>}</article>
+          <article className="finance-panel"><h2>Pregled projektov</h2>{projectRows?.length ? <div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Projekt</th><th>Stranka</th><th>Status</th><th>Vrednost ponudbe</th><th>Datum</th></tr></thead><tbody>{projectRows?.map((r)=><tr key={r?.id ?? `${r?.title ?? 'projekt'}-${r?.updatedAt ?? ''}`} className="is-clickable" onClick={()=> r?.id && (window.location.href=`/projects/${r.id}`)}><td>{r?.title ?? '-'}</td><td>{getProjectCustomerName(r)}</td><td>{r?.status ?? '-'}</td><td>{currency.format(Number(r?.quotedTotalWithVat ?? r?.offerAmount ?? 0))}</td><td>{new Date(r?.updatedAt ?? r?.createdAt ?? '').toLocaleDateString('sl-SI')}</td></tr>) ?? []}</tbody></table></div> : <div className="finance-state">Ni projektov za izbrano obdobje.</div>}</article>
           <article className="finance-panel"><h2>Pogosto kupljeni skupaj</h2><div className="flex gap-2 mb-3"><button className={`finance-btn ${coView==='pairs' ? 'is-active' : ''}`} onClick={()=>setCoView('pairs')}>Pari produktov</button><button className={`finance-btn ${coView==='bundles' ? 'is-active' : ''}`} onClick={()=>setCoView('bundles')}>Bundli (3+)</button></div>{coView==='pairs' ? (pairRows?.length ? <div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Produkt A</th><th>Produkt B</th><th>Skupaj prodano</th><th>Skupna vrednost</th></tr></thead><tbody>{pairRows?.map((r)=> <tr key={`${r?.productA?.id ?? 'a'}-${r?.productB?.id ?? 'b'}`}><td>{r?.productA?.name ?? '-'}</td><td>{r?.productB?.name ?? '-'}</td><td>{r?.count ?? 0}×</td><td>{currency.format(r?.totalRevenue ?? 0)}</td></tr>) ?? []}</tbody></table></div> : <div className="finance-state">Ni parov produktov.</div>) : (bundleRows?.length ? <div className="space-y-3">{bundleRows?.map((row)=><div key={row?.product?.id ?? row?.product?.name ?? 'bundle'}><p>Ko nekdo kupi <strong>{row?.product?.name ?? '-'}</strong>, pogosto kupi tudi:</p><ul>{row?.companions?.map((c)=><li key={`${row?.product?.id ?? 'x'}-${c?.id ?? 'y'}`}>- {c?.name ?? '-'} ({c?.count ?? 0}× / {(c?.share ?? 0).toFixed(0)}%)</li>) ?? []}</ul></div>) ?? []}</div> : <div className="finance-state">Ni bundle podatkov.</div>)}</article>
-          <article className="finance-panel"><h2>Izdane ponudbe</h2><div className="pipeline-sub">Skupna vrednost: <strong>{currency.format(offersValue)}</strong> · % sprejetih: <strong>{offerRows.length>0?((acceptedOffers/offerRows.length)*100).toFixed(2):'0.00'}%</strong></div><div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Projekt</th><th>Stranka</th><th>Vrednost</th><th>Status</th><th>Datum</th></tr></thead><tbody>{offerRows.map((r)=><tr key={`offer-${r.id}`}><td>{r.title}</td><td>{r.customer?.name ?? '-'}</td><td>{currency.format(Number(r.quotedTotalWithVat ?? r.offerAmount ?? 0))}</td><td>{['confirmed','accepted'].includes(String(r.status))?'sprejeto':String(r.status)==='rejected'?'zavrnjeno':'čakanje'}</td><td>{new Date(r.updatedAt ?? r.createdAt ?? '').toLocaleDateString('sl-SI')}</td></tr>)}</tbody></table></div></article>
+          <article className="finance-panel"><h2>Izdane ponudbe</h2><div className="pipeline-sub">Skupna vrednost: <strong>{currency.format(offersValue)}</strong> · % sprejetih: <strong>{offerRows.length>0?((acceptedOffers/offerRows.length)*100).toFixed(2):'0.00'}%</strong></div><div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Projekt</th><th>Stranka</th><th>Vrednost</th><th>Status</th><th>Datum</th></tr></thead><tbody>{offerRows.map((r)=><tr key={`offer-${r.id}`}><td>{r.title}</td><td>{getProjectCustomerName(r)}</td><td>{currency.format(Number(r.quotedTotalWithVat ?? r.offerAmount ?? 0))}</td><td>{['confirmed','accepted'].includes(String(r.status))?'sprejeto':String(r.status)==='rejected'?'zavrnjeno':'čakanje'}</td><td>{new Date(r.updatedAt ?? r.createdAt ?? '').toLocaleDateString('sl-SI')}</td></tr>)}</tbody></table></div></article>
         </section>);
       })()}
     </div>
