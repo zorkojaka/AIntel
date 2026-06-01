@@ -12,7 +12,7 @@ import { Toaster } from "./components/ui/sonner";
 import { Button } from "./components/ui/button";
 import { Category, ProjectDetails, ProjectSummary, Template, ProjectStatus } from "./types";
 import { NewProjectDialog } from "./components/NewProjectDialog";
-import { mapProject } from "./domains/core/useProject";
+import { mapProject, registerProjectListRefresh, unregisterProjectListRefresh } from "./domains/core/useProject";
 import { canAccessPreparation } from "@aintel/shared/utils/preparationAccess";
 import { getProjectPhase } from "./components/projectPhases";
 
@@ -204,7 +204,7 @@ export function ProjectsPage() {
     }
   }, [projectFormInitial, crmClients]);
 
-  const fetchProjectList = async () => {
+  const fetchProjectList = useCallback(async () => {
     try {
       const response = await fetch(API_PREFIX);
       const result = await response.json();
@@ -218,7 +218,7 @@ export function ProjectsPage() {
     } finally {
       setProjectsLoaded(true);
     }
-  };
+  }, []);
 
   const sortCategories = useCallback(
     (list: Category[]) =>
@@ -247,7 +247,14 @@ export function ProjectsPage() {
   useEffect(() => {
     fetchProjectList();
     fetchCategories();
-  }, [fetchCategories]);
+  }, [fetchCategories, fetchProjectList]);
+
+  useEffect(() => {
+    registerProjectListRefresh(fetchProjectList);
+    return () => {
+      unregisterProjectListRefresh(fetchProjectList);
+    };
+  }, [fetchProjectList]);
 
   useEffect(() => {
     if (!categories.length) return;
@@ -328,6 +335,7 @@ export function ProjectsPage() {
     setSelectedProjectId(null);
     setProjectDetails(null);
     setInitialWorkspaceTab(null);
+    void fetchProjectList();
     if (window.location.pathname !== "/projects" || window.location.search) {
       window.history.replaceState({ moduleId: "projects" }, "", "/projects");
     }

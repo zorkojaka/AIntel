@@ -22,7 +22,7 @@ import type { ProjectDetails } from "../types";
 import type { User } from "@aintel/shared/types/user";
 import type { Employee } from "@aintel/shared/types/employee";
 
-import { ArrowDown, ArrowLeft, Calculator, Check, ChevronsUpDown, Download, Loader2, Pencil, Trash, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, Check, ChevronsUpDown, Download, Loader2, Pencil, RefreshCw, Trash, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
@@ -69,8 +69,8 @@ type OfferLineItemForm = {
 type KmCalculationState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "high"; result: ProjectKmCalculation }
-  | { status: "low"; result: ProjectKmCalculation }
+  | { status: "calculated"; result: ProjectKmCalculation }
+  | { status: "manual" }
   | { status: "error"; message: string };
 
 type OfferImportMatch = {
@@ -143,6 +143,63 @@ const clampMin = (value: unknown, fallback: number, min: number) => {
 
 const formatKm = (value: number) =>
   value.toLocaleString("sl-SI", { maximumFractionDigits: 1 });
+
+const normalizeAddressPart = (value?: string | null) =>
+  (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const formatProjectRouteAddress = (project?: ProjectDetails | null) => {
+  if (!project) return "";
+  const client = project.client ?? null;
+  const street = client?.street?.trim();
+  const postal = [client?.postalCode, client?.postalCity].map((part) => part?.trim()).filter(Boolean).join(" ");
+  const structured = [street, postal].filter(Boolean).join(", ");
+  return structured || client?.address?.trim() || project.customerDetail?.address?.trim() || "";
+};
+
+const extractAddressParts = (value: string) => {
+  const normalized = normalizeAddressPart(value);
+  const house = normalized.match(/\b(?!\d{4}\b)\d+[a-z]?\b/)?.[0] ?? "";
+  const postalCity = normalized.match(/\b\d{4}\s+([\p{L}\s-]+)/u)?.[1]?.trim() ?? "";
+  const segments = value.split(",").map((part) => normalizeAddressPart(part)).filter(Boolean);
+  const fallbackCity = segments.length > 1 ? segments[segments.length - 1].replace(/\b\d{4}\b/g, "").trim() : "";
+  const city = postalCity || fallbackCity;
+  const streetSource = segments[0] || normalized;
+  const street = streetSource
+    .replace(/\b\d{4}\b/g, " ")
+    .replace(/\b(?!\d{4}\b)\d+[a-z]?\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { normalized, street, house, city };
+};
+
+const compareRouteAddresses = (projectAddress: string, geocoderAddress: string) => {
+  const project = extractAddressParts(projectAddress);
+  const geocoder = extractAddressParts(geocoderAddress);
+  const streetMatches =
+    !!project.street &&
+    !!geocoder.street &&
+    (project.street.includes(geocoder.street) || geocoder.street.includes(project.street));
+  const cityMatches =
+    !!project.city &&
+    !!geocoder.city &&
+    (project.city.includes(geocoder.city) || geocoder.city.includes(project.city));
+  const houseMatches = !!project.house && geocoder.normalized.includes(project.house);
+
+  if (streetMatches && cityMatches && houseMatches) {
+    return { zanesljivost: "visoka" as const, razlog: "" };
+  }
+  if (streetMatches && cityMatches) {
+    const razlog = project.house && !houseMatches ? "manjka hišna št. ali se razlikuje" : "preveri hišno številko";
+    return { zanesljivost: "srednja" as const, razlog };
+  }
+  return { zanesljivost: "nizka" as const, razlog: "naslov se ne ujema dovolj natančno" };
+};
 
 const isItemValid = (item: OfferLineItem | OfferLineItemForm) =>
   item.name.trim() !== "" && item.unitPrice > 0;
@@ -292,6 +349,7 @@ export function OffersTab({
   const [kmCalculationStates, setKmCalculationStates] = useState<Record<string, KmCalculationState>>({});
   const [kilometrinaServiceProductIds, setKilometrinaServiceProductIds] = useState<Set<string>>(new Set());
 
+  const autoKmCalculationKeysRef = useRef<Set<string>>(new Set());
   const paymentTermsInitRef = useRef<Record<string, boolean>>({});
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(title);
@@ -611,6 +669,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
     setOverriddenVatIds(new Set());
     setProjectDetails(null);
     setKmCalculationStates({});
+    autoKmCalculationKeysRef.current.clear();
     paymentTermsInitRef.current = {};
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -685,14 +744,23 @@ const loadOfferById = useCallback(async (offerId: string) => {
   const isKilometrinaOfferItem = (item: OfferLineItemForm) =>
     !!item.productId && kilometrinaServiceProductIds.has(String(item.productId));
 
+  const handleItemUpdate = (id: string, changes: Partial<OfferLineItemForm>) => {
+    const current = items.find((item) => item.id === id);
+    if (current && Object.prototype.hasOwnProperty.call(changes, "quantity") && isKilometrinaOfferItem(current)) {
+      setKmCalculationStates((prev) => ({ ...prev, [id]: { status: "manual" } }));
+    }
+    updateItem(id, changes);
+  };
+
   const isKmCalculationDisabled =
     !routeCalculationSettings?.orsApiConfigured || !routeCalculationSettings?.routeCalculationAddress?.trim();
 
-  const applyKmSuggestion = (item: OfferLineItemForm, km: number) => {
-    updateItem(item.id, { quantity: km });
+  const applyKmResult = (item: OfferLineItemForm, result: ProjectKmCalculation) => {
+    updateItem(item.id, { quantity: result.razdaljaSkupaj });
+    setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "calculated", result } }));
   };
 
-  const handleCalculateKm = async (item: OfferLineItemForm) => {
+  const handleCalculateKm = async (item: OfferLineItemForm, mode: "auto" | "manual" = "manual") => {
     if (!isKilometrinaOfferItem(item) || isKmCalculationDisabled) {
       return;
     }
@@ -700,19 +768,37 @@ const loadOfferById = useCallback(async (offerId: string) => {
     setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "loading" } }));
     try {
       const result = await calculateProjectKm(projectId);
-      if (result.zanesljivost === "visoka") {
-        applyKmSuggestion(item, result.razdaljaSkupaj);
-        setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "high", result } }));
+      applyKmResult(item, result);
+      if (mode === "manual") {
         toast.success(`Kilometrina izračunana: ${formatKm(result.razdaljaSkupaj)} km.`);
-        return;
       }
-      setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "low", result } }));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Naslova ni bilo mogoče najti. Vnesi km ročno.";
       setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "error", message } }));
       toast.error(message);
     }
   };
+
+  useEffect(() => {
+    if (isKmCalculationDisabled || kilometrinaServiceProductIds.size === 0) {
+      return;
+    }
+
+    for (const item of items) {
+      if (!isKilometrinaOfferItem(item) || isEmptyOfferItem(item)) {
+        continue;
+      }
+
+      const autoKey = `${projectId}:${item.id}:${item.productId ?? ""}`;
+      if (autoKmCalculationKeysRef.current.has(autoKey)) {
+        continue;
+      }
+
+      autoKmCalculationKeysRef.current.add(autoKey);
+      void handleCalculateKm(item, "auto");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, isKmCalculationDisabled, kilometrinaServiceProductIds, projectId]);
 
   const deleteRow = (id: string) => {
     setLinkedServiceSuggestions((prev) => {
@@ -1057,6 +1143,103 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     ],
   );
 
+  const renderKmReliabilityNote = (item: OfferLineItemForm) => {
+    if (!isKilometrinaOfferItem(item)) {
+      return null;
+    }
+
+    const state = kmCalculationStates[item.id] ?? { status: "idle" };
+    if (state.status === "loading") {
+      return <span className="text-xs text-muted-foreground">računam...</span>;
+    }
+
+    if (state.status === "manual") {
+      return <span className="text-xs text-muted-foreground">ročno</span>;
+    }
+
+    if (state.status === "error") {
+      return (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button type="button" className="text-xs font-medium text-destructive underline-offset-2 hover:underline">
+              ⚠ napaka
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80 text-xs" align="start">
+            {state.message || "Naslova ni bilo mogoče najti. Vnesi km ročno."}
+          </PopoverContent>
+        </Popover>
+      );
+    }
+
+    if (state.status !== "calculated") {
+      return null;
+    }
+
+    const projectAddress = formatProjectRouteAddress(projectDetails);
+    const comparison = compareRouteAddresses(projectAddress, state.result.naslovProjekt);
+    const isHigh = comparison.zanesljivost === "visoka";
+    const label = isHigh ? `✓ ${projectAddress || state.result.naslovProjekt}` : "⚠ glej";
+    const className = isHigh ? "text-emerald-700" : "text-amber-700";
+
+    return (
+      <Popover>
+        <PopoverTrigger asChild>
+          <button type="button" className={`max-w-[220px] truncate text-xs font-medium underline-offset-2 hover:underline ${className}`}>
+            {label}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-80 space-y-1 text-xs" align="start">
+          {projectAddress ? <p>Projekt: {projectAddress}</p> : null}
+          <p>Geocoder: {state.result.naslovProjekt}</p>
+          <p>
+            {formatKm(state.result.razdaljaEnosmerno)} km × 2 = {formatKm(state.result.razdaljaSkupaj)} km.
+          </p>
+          {!isHigh ? <p>{comparison.razlog}. Preveri naslov, če ni točen.</p> : null}
+          {state.result.razlog ? <p>{state.result.razlog}</p> : null}
+        </PopoverContent>
+      </Popover>
+    );
+  };
+
+  const openClientAddressEditor = () => {
+    const clientId = projectDetails?.client?.id ?? projectDetails?.customerDetail?.id;
+    if (!clientId) {
+      toast.message("Stranka ni povezana s CRM zapisom. Naslov popravi pri podatkih projekta.");
+      return;
+    }
+    window.location.href = `/crm?clientId=${encodeURIComponent(String(clientId))}`;
+  };
+
+  const renderKmAddressComparison = (item: OfferLineItemForm) => {
+    if (!isKilometrinaOfferItem(item)) {
+      return null;
+    }
+    const state = kmCalculationStates[item.id] ?? { status: "idle" };
+    if (state.status !== "calculated") {
+      return null;
+    }
+
+    const projectAddress = formatProjectRouteAddress(projectDetails);
+    const comparison = compareRouteAddresses(projectAddress, state.result.naslovProjekt);
+    if (comparison.zanesljivost === "visoka") {
+      return null;
+    }
+
+    return (
+      <div className="space-y-1 text-xs text-muted-foreground">
+        {projectAddress ? <div>Projekt: {projectAddress}</div> : null}
+        <div>
+          Geocoder: {state.result.naslovProjekt}
+          {comparison.razlog ? ` (${comparison.razlog})` : ""}
+        </div>
+        <button type="button" className="font-medium text-primary underline-offset-2 hover:underline" onClick={openClientAddressEditor}>
+          Popravi naslov
+        </button>
+      </div>
+    );
+  };
+
   const renderKmCalculationButton = (item: OfferLineItemForm) => {
     if (!isKilometrinaOfferItem(item)) {
       return null;
@@ -1072,97 +1255,28 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         <Button
           type="button"
           variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 px-2 text-xs"
+          size="icon"
+          className="size-8 shrink-0"
           disabled={disabled}
-          onClick={() => void handleCalculateKm(item)}
+          onClick={() => void handleCalculateKm(item, "manual")}
+          aria-label="Izračunaj kilometrino"
+          title="Izračunaj kilometrino"
         >
-          {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Calculator className="h-3.5 w-3.5" />}
-          Izračunaj
+          {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
         </Button>
-        {disabledNote ? <span className="text-xs text-muted-foreground">{disabledNote}</span> : null}
+        {disabledNote ? <span className="text-xs text-muted-foreground">{disabledNote}</span> : renderKmReliabilityNote(item)}
       </div>
     );
   };
 
-  const renderKmCalculationFeedback = (item: OfferLineItemForm) => {
-    if (!isKilometrinaOfferItem(item)) {
-      return null;
-    }
-
-    const state = kmCalculationStates[item.id] ?? { status: "idle" };
-    if (state.status === "high") {
-      return (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-          {formatKm(state.result.razdaljaEnosmerno)} km × 2 = {formatKm(state.result.razdaljaSkupaj)} km
-        </div>
-      );
-    }
-
-    if (state.status === "low") {
-      const manualInputId = `km-manual-${item.id}`;
-      return (
-        <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          <p>
-            Nisem prepričan o naslovu. Geocoder je našel: {state.result.naslovProjekt}. Preveri ali je pravi.
-          </p>
-          <p>
-            Predlog: {formatKm(state.result.razdaljaEnosmerno)} km × 2 = {formatKm(state.result.razdaljaSkupaj)} km
-            {state.result.razlog ? ` (${state.result.razlog})` : ""}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              className="h-8 px-2 text-xs"
-              onClick={() => applyKmSuggestion(item, state.result.razdaljaSkupaj)}
-            >
-              Uporabi predlog: {formatKm(state.result.razdaljaSkupaj)} km
-            </Button>
-            <Input
-              id={manualInputId}
-              type="number"
-              min={0}
-              className="h-8 w-28 text-right"
-              value={item.quantity}
-              onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                updateItem(item.id, { quantity: Number(event.target.value) })
-              }
-              aria-label="Ročni vnos kilometrine"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 px-2 text-xs"
-              onClick={() => document.getElementById(manualInputId)?.focus()}
-            >
-              Vnesi ročno
-            </Button>
-          </div>
-        </div>
-      );
-    }
-
-    if (state.status === "error") {
-      return (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          {state.message || "Naslova ni bilo mogoče najti. Vnesi km ročno."}
-        </div>
-      );
-    }
-
-    return null;
-  };
-
   const renderKmCalculationMobile = (item: OfferLineItemForm) => {
     const button = renderKmCalculationButton(item);
-    const feedback = renderKmCalculationFeedback(item);
-    if (!button && !feedback) return null;
+    const comparison = renderKmAddressComparison(item);
+    if (!button) return null;
     return (
       <div className="mt-3 space-y-2">
         {button}
-        {feedback}
+        {comparison}
       </div>
     );
   };
@@ -2504,7 +2618,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           totals={totals}
           formatCurrency={formatCurrency}
           onRevealBlankItem={revealMobileBlankItem}
-          onUpdateItem={updateItem}
+          onUpdateItem={handleItemUpdate}
           onDeleteItem={deleteRow}
           onSelectProduct={handleSelectProduct}
           onSelectCustomItem={handleSelectCustomItem}
@@ -2513,16 +2627,16 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         />
 
         <div className="hidden md:block bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
-          <Table className="w-full table-fixed">
+          <Table className="w-full min-w-[980px] table-fixed">
           <colgroup>
-            <col style={{ width: "34%" }} />
-            <col style={{ width: "18%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "12%" }} />
-            {usePerItemDiscount && <col style={{ width: "10%" }} />}
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "12%" }} />
-            <col style={{ width: "4%" }} />
+            <col style={{ width: usePerItemDiscount ? "30%" : "34%" }} />
+            <col style={{ width: usePerItemDiscount ? "14%" : "18%" }} />
+            <col style={{ width: usePerItemDiscount ? "9%" : "10%" }} />
+            <col style={{ width: usePerItemDiscount ? "11%" : "12%" }} />
+            {usePerItemDiscount && <col style={{ width: "9%" }} />}
+            <col style={{ width: usePerItemDiscount ? "8%" : "10%" }} />
+            <col style={{ width: usePerItemDiscount ? "14%" : "12%" }} />
+            <col style={{ width: usePerItemDiscount ? "5%" : "4%" }} />
           </colgroup>
           <TableHeader>
             <TableRow className="h-11">
@@ -2556,12 +2670,13 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
             {items.map((item, index) => {
               const suggestionContent = renderLinkedServiceSuggestions(item);
               const kmButton = renderKmCalculationButton(item);
-              const kmFeedback = renderKmCalculationFeedback(item);
+              const kmAddressComparison = renderKmAddressComparison(item);
               return (
               <Fragment key={item.id}>
               <TableRow key={item.id} className="h-11">
                 <TableCell className="text-left pl-4 align-middle min-w-0">
-                  <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div className="min-w-0 flex-1">
                     <PriceListProductAutocomplete
                       value={item.name}
                       placeholder="Naziv ali iskanje v ceniku"
@@ -2572,12 +2687,13 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                       onCustomSelected={() => handleSelectCustomItem(item.id)}
                       onProductSelected={(product) => handleSelectProduct(item.id, product, index)}
                     />
+                    </div>
+                    {kmButton}
                   </div>
                 </TableCell>
 
                 <TableCell className="text-right align-middle">
                   <div className="flex items-center justify-end gap-2">
-                    {kmButton}
                     <Input
                       className="h-9 w-24 text-right"
                       type="number"
@@ -2585,7 +2701,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                       min={0}
                       value={item.quantity}
                       onChange={(event) =>
-                        updateItem(item.id, {
+                        handleItemUpdate(item.id, {
                           quantity: Number(event.target.value),
                         })
                       }
@@ -2663,10 +2779,10 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                   </TableCell>
                 </TableRow>
               ) : null}
-              {kmFeedback ? (
-                <TableRow key={`${item.id}-km`}>
+              {kmAddressComparison ? (
+                <TableRow key={`${item.id}-km-address`}>
                   <TableCell colSpan={totalColumns} className="px-4 pb-4 pt-0">
-                    {kmFeedback}
+                    <div className="pl-2">{kmAddressComparison}</div>
                   </TableCell>
                 </TableRow>
               ) : null}

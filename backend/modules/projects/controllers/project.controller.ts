@@ -19,7 +19,6 @@ import { generateRequirementsFromTemplates } from '../services/requirements-from
 import type { RequirementFieldType, RequirementFormulaConfig } from '../../shared/requirements.types';
 import { getOfferCandidatesFromRequirements } from '../services/offer-from-requirements';
 import { serializeProjectDetails } from '../services/project.service';
-import { createInvoiceFromClosing } from '../services/invoice.service';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
@@ -208,10 +207,55 @@ function updateOfferAmount(project: Project) {
   project.offerAmount = Number(calculateOfferAmount(project.items).toFixed(2));
 }
 
+async function reconcileProjectOfferStatus(project: any, savedOfferProjectIds?: Set<string>) {
+  if (!project || project.status !== 'draft') return project;
+
+  const hasSavedOfferItems =
+    savedOfferProjectIds?.has(project.id) ??
+    ((await OfferVersionModel.exists({
+      projectId: project.id,
+      'items.0': { $exists: true },
+    })) != null);
+
+  if (!hasSavedOfferItems) return project;
+
+  await ProjectModel.updateOne(
+    { id: project.id, status: 'draft' },
+    { $set: { status: 'offered' } },
+  );
+
+  return { ...project, status: 'offered' };
+}
+
+function hasIssuedWorkOrder(workOrders: any[]) {
+  return workOrders.some((order) => ['issued', 'in-progress', 'confirmed', 'completed'].includes(String(order?.status ?? '')));
+}
+
+async function reconcileProjectExecutionStatus(project: any, workOrders?: any[]) {
+  if (!project || project.status !== 'ordered') return project;
+
+  const activeWorkOrders =
+    workOrders ??
+    (await WorkOrderModel.find({ projectId: project.id, cancelledAt: null })
+      .select('status')
+      .lean());
+
+  if (!hasIssuedWorkOrder(activeWorkOrders)) return project;
+
+  await ProjectModel.updateOne(
+    { id: project.id, status: 'ordered' },
+    { $set: { status: 'in-progress' } },
+  );
+
+  return { ...project, status: 'in-progress' };
+}
+
 async function findProjectById(id: string) {
   const project =
     (await ProjectModel.findOne({ id }).lean()) || (await ProjectModel.findById(id).lean());
-  return project ?? null;
+  if (!project) return null;
+  const offerReconciled = await reconcileProjectOfferStatus(project);
+  return reconcileProjectExecutionStatus(offerReconciled);
 }
 
 function getContextRoles(req: Request): string[] {
@@ -379,6 +423,17 @@ export async function listProjects(_req: Request, res: Response) {
   );
 
   const projectIds = all.map((project: any) => project.id).filter(Boolean);
+  const savedOfferProjectIds =
+    projectIds.length > 0
+      ? new Set(
+          (
+            await OfferVersionModel.distinct('projectId', {
+              projectId: { $in: projectIds },
+              'items.0': { $exists: true },
+            })
+          ).map((projectId: any) => String(projectId)),
+        )
+      : new Set<string>();
   const workOrders =
     projectIds.length > 0
       ? await WorkOrderModel.find({ projectId: { $in: projectIds } })
@@ -392,6 +447,42 @@ export async function listProjects(_req: Request, res: Response) {
     list.push(order);
     workOrdersByProject.set(projectId, list);
   });
+
+  const projectsNeedingOfferStatus = all
+    .filter((project: any) => project?.status === 'draft' && savedOfferProjectIds.has(project.id))
+    .map((project: any) => project.id)
+    .filter(Boolean);
+
+  if (projectsNeedingOfferStatus.length > 0) {
+    await ProjectModel.updateMany(
+      { id: { $in: projectsNeedingOfferStatus }, status: 'draft' },
+      { $set: { status: 'offered' } },
+    );
+    const needsOfferStatus = new Set(projectsNeedingOfferStatus);
+    all.forEach((project: any) => {
+      if (needsOfferStatus.has(project.id)) {
+        project.status = 'offered';
+      }
+    });
+  }
+
+  const projectsNeedingExecutionStatus = all
+    .filter((project: any) => project?.status === 'ordered' && hasIssuedWorkOrder(workOrdersByProject.get(project.id) ?? []))
+    .map((project: any) => project.id)
+    .filter(Boolean);
+
+  if (projectsNeedingExecutionStatus.length > 0) {
+    await ProjectModel.updateMany(
+      { id: { $in: projectsNeedingExecutionStatus }, status: 'ordered' },
+      { $set: { status: 'in-progress' } },
+    );
+    const needsExecutionStatus = new Set(projectsNeedingExecutionStatus);
+    all.forEach((project: any) => {
+      if (needsExecutionStatus.has(project.id)) {
+        project.status = 'in-progress';
+      }
+    });
+  }
 
   const summaries = all.map((project: any) => {
     const summary = summarizeProject(project);
@@ -1088,7 +1179,7 @@ export async function saveSignature(req: Request, res: Response) {
       Math.max(0, ...(workOrder.confirmationVersions ?? []).map((version) => Number(version.versionNumber) || 0)) + 1;
     workOrder.confirmationVersions = (workOrder.confirmationVersions ?? []).map((version) => ({
       ...version,
-      state: version.state === 'active' || version.state === 'archived' ? 'superseded' : version.state,
+      state: version.state === 'active' ? 'superseded' : version.state,
     }));
     const nextVersion = buildConfirmationVersionSnapshot(workOrder, {
       signerName,
@@ -1105,12 +1196,9 @@ export async function saveSignature(req: Request, res: Response) {
     workOrder.customerSignature = signature;
     workOrder.customerSignedAt = signedAt;
     workOrder.customerRemark = customerRemark;
-    workOrder.status = 'completed';
     workOrder.markModified('confirmationVersions');
     await workOrder.save();
   }
-
-  project.status = 'completed';
 
   addTimeline(project, {
     type: 'execution',
@@ -1128,16 +1216,7 @@ export async function saveSignature(req: Request, res: Response) {
     },
   });
 
-  addTimeline(project, {
-    type: 'status-change',
-    title: 'Status spremenjen',
-    description: "Projekt prešel v fazo 'Zaključeno'",
-    timestamp: new Date().toLocaleString('sl-SI'),
-    user: 'Admin',
-  });
-
   await project.save();
-  await createInvoiceFromClosing(project.id);
 
   await recordSignatureCompletedCommunicationEvent({
     projectId: project.id,

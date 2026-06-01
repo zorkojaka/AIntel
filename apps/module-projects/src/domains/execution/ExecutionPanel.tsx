@@ -2661,7 +2661,7 @@ export function ExecutionPanel({
                       S podpisom naročnik potrjuje, da so bila vsa dela izvedena, oprema dobavljena, pregledana in delujoča. Morebitne pripombe so navedene v tem dokumentu.
                     </p>
                     <p className="mt-3 text-sm text-muted-foreground">
-                      S tem se projekt šteje za zaključen.
+                      Podpis je del predaje in ne izstavi računa.
                     </p>
                     <div className="mt-4 space-y-2">
                       <label className="text-sm font-medium">Opombe naročnika</label>
@@ -2710,7 +2710,7 @@ export function ExecutionPanel({
                       S podpisom naročnik potrjuje, da so bila vsa dela izvedena, oprema dobavljena, pregledana in delujoča. Morebitne pripombe so navedene v tem dokumentu.
                     </p>
                     <p className="mt-3 text-sm text-muted-foreground">
-                      S tem se projekt šteje za zaključen.
+                      Podpis je del predaje in ne izstavi računa.
                     </p>
                     <div className="mt-4 space-y-2">
                       <label className="text-sm font-medium">Opombe naročnika</label>

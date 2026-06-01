@@ -1,0 +1,50 @@
+﻿<!doctype html>
+<html lang="sl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kilometrina primerjava naslova</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f6f7f9; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #111827; }
+    .wrap { width: 1120px; margin: 48px auto; display: grid; gap: 30px; }
+    h2 { margin: 0 0 10px; font-size: 15px; color: #334155; }
+    .card { background: #fff; border: 1px solid #dbe1ea; border-radius: 8px; overflow: hidden; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
+    .header, .row { display: grid; grid-template-columns: 34% 18% 10% 12% 10% 12% 4%; align-items: center; min-height: 46px; }
+    .header { color: #6b7280; font-size: 13px; font-weight: 600; border-bottom: 1px solid #e5e7eb; }
+    .row { font-size: 14px; }
+    .cell { padding: 8px 12px; }
+    .name { padding-left: 18px; font-weight: 500; display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .product { min-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .right { text-align: right; }
+    .qty { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+    button { width: 32px; height: 32px; border: 1px solid #cbd5e1; background: #fff; border-radius: 6px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; color: #1f2937; }
+    .note { font-size: 12px; font-weight: 600; white-space: nowrap; max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
+    .ok { color: #047857; }
+    .warn { color: #b45309; }
+    input { width: 86px; height: 36px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0 10px; text-align: right; font-size: 14px; }
+    .trash { color: #6b7280; text-align: center; }
+    .details { border-top: 1px solid transparent; padding: 0 18px 12px 18px; font-size: 12px; line-height: 1.45; color: #6b7280; }
+    .details a { color: #2563eb; font-weight: 600; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section>
+      <h2>Visoka zanesljivost</h2>
+      <div class="card">
+        <div class="header"><div class="cell name">Naziv</div><div class="cell right">Količina</div><div class="cell right">Enota</div><div class="cell right">Cena</div><div class="cell right">DDV %</div><div class="cell right">Skupaj</div><div></div></div>
+        <div class="row"><div class="cell name"><span class="product">Potni stroški [km]</span><button>↻</button><span class="note ok">✓ Kalce 22b, 1370 Logatec</span></div><div class="cell qty"><input value="58,8" /></div><div class="cell right">km</div><div class="cell right">0,43 €</div><div class="cell right">22</div><div class="cell right">30,85 €</div><div class="trash">🗑</div></div>
+      </div>
+    </section>
+    <section>
+      <h2>Srednja zanesljivost</h2>
+      <div class="card">
+        <div class="header"><div class="cell name">Naziv</div><div class="cell right">Količina</div><div class="cell right">Enota</div><div class="cell right">Cena</div><div class="cell right">DDV %</div><div class="cell right">Skupaj</div><div></div></div>
+        <div class="row"><div class="cell name"><span class="product">Potni stroški [km]</span><button>↻</button><span class="note warn">⚠ glej</span></div><div class="cell qty"><input value="58,8" /></div><div class="cell right">km</div><div class="cell right">0,43 €</div><div class="cell right">22</div><div class="cell right">30,85 €</div><div class="trash">🗑</div></div>
+        <div class="details"><div>Projekt: Kalce 22b, 1370 Logatec</div><div>Geocoder: Kalce, Logatec (manjka hišna št. ali se razlikuje)</div><a href="#">Popravi naslov</a></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

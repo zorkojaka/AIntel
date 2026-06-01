@@ -1145,6 +1145,7 @@ export function LogisticsPanel({
 
   const canIssueOrder = Boolean(resolvedSchedule && hasAssignedTeam && isTermConfirmed);
   const canIssueWorkOrder = canIssueOrder && isMaterialReadyForIssue;
+  const isManualPhaseProgression = (settings.phaseProgressionMode ?? "manual") === "manual";
   const issueRequirements = [
     {
       label: "Izvedbena ekipa",
@@ -2690,7 +2691,16 @@ export function LogisticsPanel({
           ) : null}
           {renderTaskPreview(selectedWorkOrder)}
           <div className="flex justify-end border-t border-border/60 pt-4">
-            <Button size="sm" onClick={handleIssueWorkOrder} disabled={!canIssueWorkOrder || savingWorkOrder || issuingOrder}>
+            <Button
+              size="sm"
+              onClick={handleIssueWorkOrder}
+              disabled={!canIssueWorkOrder || savingWorkOrder || issuingOrder}
+              className={
+                canIssueWorkOrder && isManualPhaseProgression
+                  ? "border-green-600 bg-green-600 text-white hover:bg-green-700"
+                  : undefined
+              }
+            >
               {issuingOrder ? "Izdajam..." : "Izdaj delovni nalog"}
             </Button>
           </div>

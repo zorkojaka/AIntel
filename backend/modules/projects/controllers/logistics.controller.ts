@@ -31,6 +31,8 @@ import {
   resolveConfirmationState,
 } from '../services/work-order-confirmation.service';
 import { canEditPreparation } from '../../../../shared/utils/preparationAccess';
+import { getSettings } from '../../settings/settings.service';
+import { createInvoiceFromClosing } from '../services/invoice.service';
 import {
   buildActorDisplayName,
   recordOfferConfirmedCommunicationEvent,
@@ -984,6 +986,80 @@ function resolveScheduleConfirmerLabel(req: Request) {
   return resolveActorId(req);
 }
 
+function isMaterialItemReadyForIssue(item: any) {
+  const plannedQty = typeof item?.quantity === 'number' && Number.isFinite(item.quantity) ? Math.max(0, item.quantity) : 0;
+  if (plannedQty <= 0) return true;
+  const orderedQty = typeof item?.orderedQty === 'number' && Number.isFinite(item.orderedQty) ? Math.max(0, item.orderedQty) : 0;
+  const step = resolveMaterialStep(item?.materialStep);
+  return orderedQty >= plannedQty && (step === 'Za prevzem' || step === 'Prevzeto' || step === 'Pripravljeno');
+}
+
+async function getPreparationReadiness(projectId: string, workOrderId: string) {
+  const [workOrder, materialOrders] = await Promise.all([
+    WorkOrderModel.findOne({ _id: workOrderId, projectId, cancelledAt: null }).lean(),
+    MaterialOrderModel.find({ projectId, workOrderId, status: { $ne: 'cancelled' }, cancelledAt: null }).lean(),
+  ]);
+  if (!workOrder) return { ready: false };
+
+  const assignedEmployeeIds = Array.isArray(workOrder.assignedEmployeeIds) ? workOrder.assignedEmployeeIds : [];
+  const hasAssignedTeam = assignedEmployeeIds.length > 0;
+  const hasSchedule = typeof workOrder.scheduledAt === 'string' && workOrder.scheduledAt.trim().length > 0;
+  const hasConfirmedSchedule = Boolean(workOrder.scheduledConfirmedAt);
+  const materialItems = materialOrders.flatMap((order: any) => (order.items ?? []).filter((item: any) => !item.isExtra));
+  const materialReady = materialItems.length === 0 || materialItems.every(isMaterialItemReadyForIssue);
+
+  return {
+    ready: hasAssignedTeam && hasSchedule && hasConfirmedSchedule && materialReady,
+    workOrder,
+  };
+}
+
+async function moveProjectToExecution(params: {
+  projectId: string;
+  workOrderId: string;
+  req: Request;
+  mode: 'automatic' | 'manual';
+}) {
+  const { projectId, workOrderId, req, mode } = params;
+  const project = await ProjectModel.findOne({ id: projectId });
+  if (!project || project.status !== 'ordered') return false;
+
+  project.status = 'in-progress';
+  addTimeline(project, {
+    type: 'status-change',
+    title: mode === 'automatic' ? 'Avtomatski prehod faze' : 'Status spremenjen',
+    description:
+      mode === 'automatic'
+        ? "Projekt je samodejno prešel v fazo 'Izvedba', ker so zahteve priprave izpolnjene."
+        : "Projekt prešel v fazo 'Izvedba' po izdaji delovnega naloga.",
+    timestamp: new Date().toISOString(),
+    user: buildActorDisplayName(req as any),
+    metadata: {
+      workOrderId,
+      mode,
+      actorEmployeeId: resolveActorEmployeeId(req) ?? '',
+    },
+  });
+  await project.save();
+  return true;
+}
+
+async function applyAutomaticPreparationProgression(projectId: string, workOrderId: string, req: Request) {
+  const settings = await getSettings();
+  if (settings.phaseProgressionMode !== 'automatic') return false;
+
+  const readiness = await getPreparationReadiness(projectId, workOrderId);
+  if (!readiness.ready) return false;
+
+  const workOrder = await WorkOrderModel.findOne({ _id: workOrderId, projectId });
+  if (!workOrder || workOrder.status === 'issued' || workOrder.status === 'in-progress' || workOrder.status === 'completed') {
+    return false;
+  }
+  workOrder.status = 'issued';
+  await workOrder.save();
+  return moveProjectToExecution({ projectId, workOrderId, req, mode: 'automatic' });
+}
+
 async function resolveEmployeeIdForTenant(tenantId: string, value: unknown) {
   const nextId = typeof value === 'string' ? value.trim() : '';
   if (!nextId) {
@@ -1358,6 +1434,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     if (!existing) {
       return res.fail('Delovni nalog ni najden.', 404);
     }
+    const previousWorkOrderStatus = existing.status;
 
     const tenantId = resolveTenantId(req);
     if (!tenantId) {
@@ -1827,7 +1904,37 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     }
   }
 
-    return res.success(serializeWorkOrder(normalizedUpdated ?? updated));
+  const nextWorkOrderStatus = String((normalizedUpdated ?? updated)?.status ?? '');
+  let shouldRefreshResponseOrder = false;
+  if (previousWorkOrderStatus !== 'issued' && nextWorkOrderStatus === 'issued') {
+    await moveProjectToExecution({ projectId, workOrderId, req, mode: 'manual' });
+  } else {
+    shouldRefreshResponseOrder = await applyAutomaticPreparationProgression(projectId, workOrderId, req);
+  }
+
+  if (previousWorkOrderStatus !== 'completed' && nextWorkOrderStatus === 'completed') {
+    await createInvoiceFromClosing(projectId);
+    const project = await ProjectModel.findOne({ id: projectId });
+    if (project) {
+      addTimeline(project, {
+        type: 'execution',
+        title: 'Delovni nalog zaključen',
+        description: 'Pripravljen je osnutek računa. Račun še ni izstavljen.',
+        timestamp: new Date().toISOString(),
+        user: buildActorDisplayName(req as any),
+        metadata: {
+          workOrderId,
+          actorEmployeeId: resolveActorEmployeeId(req) ?? '',
+        },
+      });
+      await project.save();
+    }
+  }
+
+  const responseOrder = shouldRefreshResponseOrder
+    ? await WorkOrderModel.findOne({ _id: workOrderId, projectId }).lean()
+    : normalizedUpdated ?? updated;
+  return res.success(serializeWorkOrder(responseOrder));
   } catch (err) {
     next(err);
   }
@@ -2091,6 +2198,17 @@ export async function advanceMaterialOrderStep(req: Request, res: Response, next
     const serializedMaterialOrders = refreshedMaterialOrders
       .map(serializeMaterialOrder)
       .filter((order): order is MaterialOrder => order !== null);
+
+    const workOrderIds = Array.from(
+      new Set<string>(
+        refreshedMaterialOrders
+          .map((order: any) => (order.workOrderId ? String(order.workOrderId) : ''))
+          .filter(Boolean)
+      )
+    );
+    for (const relatedWorkOrderId of workOrderIds) {
+      await applyAutomaticPreparationProgression(projectId, relatedWorkOrderId, req);
+    }
 
     return res.success({ materialOrders: serializedMaterialOrders });
   } catch (err) {

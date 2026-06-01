@@ -35,7 +35,7 @@ interface StatusBanner {
   text: string;
 }
 
-type FormSaveScope = 'company' | 'documents' | 'sales';
+type FormSaveScope = 'company' | 'documents' | 'sales' | 'system';
 type DocumentTabKey = DocumentTypeKey;
 type SettingsSectionKey = 'company' | 'documents' | 'communication' | 'sales' | 'system';
 
@@ -599,12 +599,16 @@ export const SettingsPage: React.FC = () => {
         );
       case 'system':
         return (
-          <Card title="Sistemsko stanje">
-            <div className="space-y-3 text-sm text-muted-foreground">
-              <p>To območje je namenjeno tehničnim in naprednim nastavitvam.</p>
-              <p>Trenutno dodatne sistemske nastavitve še niso uvedene v uporabniški vmesnik.</p>
-            </div>
-          </Card>
+          <SystemSettingsSection
+            form={form}
+            onFieldChange={handleFieldChange}
+            onSubmit={async (event) => {
+              event.preventDefault();
+              await persistSettings('system');
+            }}
+            saving={savingScope === 'system'}
+            loading={loading}
+          />
         );
       default:
         return null;
@@ -930,6 +934,60 @@ const SalesDefaultsSection: React.FC<SalesDefaultsSectionProps> = ({
     <div className="flex flex-wrap items-center gap-3">
       <Button type="submit" disabled={saving || loading}>
         {saving ? 'Shranjujem ...' : 'Shrani prodajne nastavitve'}
+      </Button>
+    </div>
+  </form>
+);
+
+interface SystemSettingsSectionProps {
+  form: SettingsDto;
+  onFieldChange: <K extends keyof Omit<SettingsDto, 'documentPrefix'>>(
+    field: K,
+    value: Omit<SettingsDto, 'documentPrefix'>[K]
+  ) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  saving: boolean;
+  loading: boolean;
+}
+
+const SystemSettingsSection: React.FC<SystemSettingsSectionProps> = ({
+  form,
+  onFieldChange,
+  onSubmit,
+  saving,
+  loading,
+}) => (
+  <form className="space-y-6" onSubmit={onSubmit}>
+    <Card title="Napredovanje faz">
+      <div className="flex flex-wrap gap-2">
+        {[
+          { value: 'automatic', label: 'Avtomatsko' },
+          { value: 'manual', label: 'Ročno' },
+        ].map((option) => {
+          const isActive = (form.phaseProgressionMode ?? 'manual') === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() =>
+                onFieldChange('phaseProgressionMode', option.value as SettingsDto['phaseProgressionMode'])
+              }
+              className={`rounded-md border px-4 py-2 text-sm font-medium transition ${
+                isActive
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </Card>
+
+    <div className="flex flex-wrap items-center gap-3">
+      <Button type="submit" disabled={saving || loading}>
+        {saving ? 'Shranjujem ...' : 'Shrani sistem'}
       </Button>
     </div>
   </form>

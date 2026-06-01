@@ -73,7 +73,7 @@ export async function downloadPdf(url: string, filename: string, init?: RequestI
 export type ProjectKmCalculation = {
   razdaljaEnosmerno: number;
   razdaljaSkupaj: number;
-  zanesljivost: "visoka" | "nizka";
+  zanesljivost: "visoka" | "srednja" | "nizka";
   razlog?: string;
   naslovPodjetje: string;
   naslovProjekt: string;
