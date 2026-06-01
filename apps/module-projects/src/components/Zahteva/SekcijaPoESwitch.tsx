@@ -1,5 +1,5 @@
 import { Network } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
 import type { Videonadzor } from "./utils";
 import { assignedCameraProducts, formatPrice, normalizedSelectedItems, standardPorts } from "./utils";
@@ -36,6 +36,7 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
   const recommendedPorts = standardPorts(neededPorts);
   const selectedItems = normalizedSelectedItems(videonadzor.poeSwitch);
   const selectedPorts = selectedItems.reduce((sum, item) => sum + (productById.get(item.productId)?.classification?.poePortCount ?? 0) * item.kolicina, 0);
+  const recommendedCardRef = useRef<HTMLDivElement | null>(null);
 
   const alternatives = useMemo(
     () =>
@@ -43,16 +44,29 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
         .filter((product) => product.classification?.productType === "switch")
         .filter((product) => (product.classification?.poePortCount ?? 0) > 0)
         .sort((a, b) => {
-          const fit = switchFitRank(a, neededPorts) - switchFitRank(b, neededPorts);
-          if (fit !== 0) return fit;
+          const portScore = (a.classification?.poePortCount ?? 0) - (b.classification?.poePortCount ?? 0);
           const priority = categoryPriorityRank(a) - categoryPriorityRank(b);
           if (priority !== 0) return priority;
-          return (a.classification?.poePortCount ?? 0) - (b.classification?.poePortCount ?? 0) || a.prodajnaCena - b.prodajnaCena;
+          const fit = switchFitRank(a, neededPorts) - switchFitRank(b, neededPorts);
+          if (fit !== 0) return fit;
+          return portScore || a.prodajnaCena - b.prodajnaCena;
         }),
     [neededPorts, productById],
   );
 
-  const recommendedId = alternatives.find((product) => (product.classification?.poePortCount ?? 0) >= Math.max(neededPorts, recommendedPorts))?._id ?? alternatives[0]?._id;
+  const recommendedId =
+    alternatives
+      .filter((product) => (product.classification?.poePortCount ?? 0) >= Math.max(neededPorts, recommendedPorts))
+      .sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || (a.classification?.poePortCount ?? 0) - (b.classification?.poePortCount ?? 0) || a.prodajnaCena - b.prodajnaCena)[0]?._id ?? alternatives[0]?._id;
+
+  useEffect(() => {
+    recommendedCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+  }, [recommendedId]);
+
+  useEffect(() => {
+    if (neededPorts <= 0 || !recommendedId || videonadzor.poeSwitch.productId === recommendedId) return;
+    onChange({ ...videonadzor, poeSwitch: syncPrimary([{ productId: recommendedId, kolicina: 1 }]) });
+  }, [neededPorts, onChange, recommendedId, videonadzor]);
 
   const setQuantity = (productId: string, quantity: number) => {
     const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
@@ -84,7 +98,11 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
         {alternatives.map((product) => {
           const quantity = selectedItems.find((item) => item.productId === product._id)?.kolicina ?? 0;
           return (
-            <div key={product._id} className={`zahteva-track-card ${quantity > 0 ? "is-active" : ""} ${product._id === recommendedId ? "is-recommended" : ""}`}>
+            <div
+              key={product._id}
+              ref={product._id === recommendedId ? recommendedCardRef : undefined}
+              className={`zahteva-track-card ${quantity > 0 ? "is-active" : ""} ${product._id === recommendedId ? "is-recommended" : ""}`}
+            >
               <button type="button" className="zahteva-track-main" onClick={() => setQuantity(product._id, quantity > 0 ? quantity : 1)}>
                 {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
                 <strong>{product.ime}</strong>

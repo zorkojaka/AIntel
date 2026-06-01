@@ -37,6 +37,10 @@ function poeGroup(product: CenikProduct) {
   return product.classification?.nvrHasPoE ? 0 : 1;
 }
 
+function categoryPriorityRank(product: CenikProduct) {
+  return product.categoryPriority ?? 4;
+}
+
 export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) {
   const cameraProducts = useMemo(() => assignedCameraProducts(videonadzor, productById), [productById, videonadzor]);
   const cameraCount = Math.max(cameraProducts.length, videonadzor.lokacije.length);
@@ -65,29 +69,32 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
         .sort((a, b) => {
           const channelScore = (a.classification?.nvrChannels ?? 0) - (b.classification?.nvrChannels ?? 0);
           const visiblePoeScore = poeFilter === "all" ? poeGroup(a) - poeGroup(b) : 0;
+          const priorityScore = categoryPriorityRank(a) - categoryPriorityRank(b);
           const brandScore =
             Number((b.classification?.manufacturer || b.proizvajalec) === brand) - Number((a.classification?.manufacturer || a.proizvajalec) === brand);
           const poeScore = Number(Boolean(b.classification?.nvrHasPoE) === allPoE) - Number(Boolean(a.classification?.nvrHasPoE) === allPoE);
-          return channelScore || visiblePoeScore || brandScore || poeScore || a.prodajnaCena - b.prodajnaCena;
+          return channelScore || visiblePoeScore || priorityScore || brandScore || poeScore || a.prodajnaCena - b.prodajnaCena;
         }),
     [allPoE, brand, poeFilter, productById],
   );
 
   const recommendedId = useMemo(() => {
     const withEnoughChannels = alternatives.filter((product) => (product.classification?.nvrChannels ?? 0) >= selectedChannels);
-    const preferred = poeFilter === "all" && allPoE ? withEnoughChannels.find((product) => product.classification?.nvrHasPoE) : null;
-    return preferred?._id ?? withEnoughChannels[0]?._id ?? alternatives[0]?._id ?? null;
+    const preferred = [...withEnoughChannels].sort((a, b) => {
+      const poeScore = poeFilter === "all" && allPoE ? poeGroup(a) - poeGroup(b) : 0;
+      return poeScore || categoryPriorityRank(a) - categoryPriorityRank(b) || (a.classification?.nvrChannels ?? 0) - (b.classification?.nvrChannels ?? 0) || a.prodajnaCena - b.prodajnaCena;
+    })[0];
+    return preferred?._id ?? alternatives[0]?._id ?? null;
   }, [allPoE, alternatives, poeFilter, selectedChannels]);
 
   useEffect(() => {
     if (manualNoneRef.current || !recommendedId || cameraCount === 0) return;
-    const selected = videonadzor.snemalnik.productId ? productById.get(videonadzor.snemalnik.productId) : null;
-    if (selected && matchesPoeFilter(selected, poeFilter)) return;
-    const signature = `${cameraCount}|${brand}|${allPoE}|${selectedChannels}|${poeFilter}`;
+    const signature = `${cameraCount}|${brand}|${allPoE}|${selectedChannels}|${poeFilter}|${recommendedId}`;
     if (autoAppliedRef.current === signature) return;
     autoAppliedRef.current = signature;
+    if (videonadzor.snemalnik.productId === recommendedId) return;
     onChange({ ...videonadzor, snemalnik: { productId: recommendedId } });
-  }, [allPoE, brand, cameraCount, onChange, poeFilter, productById, recommendedId, selectedChannels, videonadzor]);
+  }, [allPoE, brand, cameraCount, onChange, poeFilter, recommendedId, selectedChannels, videonadzor]);
 
   useEffect(() => {
     recommendedCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
@@ -95,7 +102,7 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
 
   const clearSnemalnik = () => {
     manualNoneRef.current = true;
-    autoAppliedRef.current = `${cameraCount}|${brand}|${allPoE}|${selectedChannels}|${poeFilter}`;
+    autoAppliedRef.current = `${cameraCount}|${brand}|${allPoE}|${selectedChannels}|${poeFilter}|${recommendedId ?? ""}`;
     onChange({
       ...videonadzor,
       snemalnik: { productId: null },
