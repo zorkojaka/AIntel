@@ -115,10 +115,6 @@ export function SekcijaKameraNosilec({ productById, onAddVariant }: Props) {
       <div className="zahteva-subsection-title">
         <Camera className="h-4 w-4" aria-hidden />
         <h4>Kamera</h4>
-        <Button type="button" size="sm" onClick={addSelected} disabled={!selectedCamera}>
-          <Plus className="h-4 w-4" aria-hidden />
-          Dodaj varianto
-        </Button>
       </div>
       <div className="zahteva-dialog-filters">
         <FilterStrip label="Proizvajalec" values={brands} selected={brand} onSelect={setBrand} />
@@ -174,6 +170,12 @@ export function SekcijaKameraNosilec({ productById, onAddVariant }: Props) {
             <b>{formatPrice(bracket.prodajnaCena)}</b>
           </button>
         ))}
+      </div>
+      <div className="zahteva-inline-action-row">
+        <Button type="button" size="sm" onClick={addSelected} disabled={!selectedCamera}>
+          <Plus className="h-4 w-4" aria-hidden />
+          Dodaj varianto
+        </Button>
       </div>
     </section>
   );
