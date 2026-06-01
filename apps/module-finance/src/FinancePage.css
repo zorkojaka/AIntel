@@ -153,6 +153,31 @@
   font-size: 12px;
 }
 
+.finance-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.employee-project-detail {
+  display: grid;
+  gap: 10px;
+}
+
+.employee-project-detail__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--finance-muted, #607289);
+}
+
+.employee-project-detail__header strong {
+  color: var(--color-text-primary, #0f172a);
+}
+
 .margin-badge,
 .status-badge {
   display: inline-flex;

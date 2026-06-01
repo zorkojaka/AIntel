@@ -92,12 +92,30 @@ interface ProductCooccurrenceRow { productA: { id: string; name: string }; produ
 interface ProductBundleRow { product: { id: string; name: string }; companions: Array<{ id: string; name: string; count: number; share: number }> }
 
 interface EmployeeProjectBreakdown {
+  snapshotId: string;
   projectId: string;
   invoiceNumber: string;
   customerName: string;
   issuedAt: string;
   earnings: number;
   isPaid: boolean;
+}
+
+interface EmployeeProjectEarningDetailItem {
+  name: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  total: number;
+}
+
+interface EmployeeProjectEarningDetail {
+  snapshotId: string;
+  projectId: string;
+  invoiceNumber: string;
+  totalEarnings: number;
+  itemTotal: number;
+  items: EmployeeProjectEarningDetailItem[];
 }
 
 interface ExecutionProjectEarningRow {
@@ -175,6 +193,10 @@ export const FinancePage: React.FC = () => {
 
   const [expandedProjectRows, setExpandedProjectRows] = useState<Record<string, boolean>>({});
   const [expandedEmployeeRows, setExpandedEmployeeRows] = useState<Record<string, boolean>>({});
+  const [expandedEmployeeProjectRows, setExpandedEmployeeProjectRows] = useState<Record<string, boolean>>({});
+  const [employeeProjectDetails, setEmployeeProjectDetails] = useState<Record<string, EmployeeProjectEarningDetail>>({});
+  const [employeeProjectDetailsLoading, setEmployeeProjectDetailsLoading] = useState<Record<string, boolean>>({});
+  const [employeeProjectDetailsError, setEmployeeProjectDetailsError] = useState<Record<string, string>>({});
   const [paidByEmployee, setPaidByEmployee] = useState<Record<string, boolean>>({});
 
   const isExecutionOnly = useMemo(() => {
@@ -304,6 +326,7 @@ export const FinancePage: React.FC = () => {
       snapshot.employeeEarnings.forEach((earning) => {
         const resolvedPaid = paidByEmployee[earning.employeeId] ?? earning.isPaid;
         const entry: EmployeeProjectBreakdown = {
+          snapshotId: snapshot._id,
           projectId: snapshot.projectId,
           invoiceNumber: snapshot.invoiceNumber,
           customerName: snapshot.customer?.name ?? '-',
@@ -391,6 +414,35 @@ export const FinancePage: React.FC = () => {
 
   const toggleEmployeeRow = (id: string) => {
     setExpandedEmployeeRows((current) => ({ ...current, [id]: !current[id] }));
+  };
+
+  const detailKey = (employeeIdValue: string, snapshotId: string) => `${employeeIdValue}:${snapshotId}`;
+
+  const toggleEmployeeProjectRow = async (employeeIdValue: string, project: EmployeeProjectBreakdown) => {
+    const key = detailKey(employeeIdValue, project.snapshotId);
+    const nextExpanded = !expandedEmployeeProjectRows[key];
+    setExpandedEmployeeProjectRows((current) => ({ ...current, [key]: nextExpanded }));
+    if (!nextExpanded || employeeProjectDetails[key] || employeeProjectDetailsLoading[key]) return;
+
+    setEmployeeProjectDetailsLoading((current) => ({ ...current, [key]: true }));
+    setEmployeeProjectDetailsError((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    try {
+      const detail = await fetchApi<EmployeeProjectEarningDetail>(
+        `/api/finance/employees/${encodeURIComponent(employeeIdValue)}/snapshots/${encodeURIComponent(project.snapshotId)}/earnings`,
+      );
+      setEmployeeProjectDetails((current) => ({ ...current, [key]: detail }));
+    } catch (detailError) {
+      setEmployeeProjectDetailsError((current) => ({
+        ...current,
+        [key]: detailError instanceof Error ? detailError.message : 'Razčlembe ni mogoče naložiti.',
+      }));
+    } finally {
+      setEmployeeProjectDetailsLoading((current) => ({ ...current, [key]: false }));
+    }
   };
 
   const markEmployeePaid = (id: string) => {
@@ -560,16 +612,78 @@ export const FinancePage: React.FC = () => {
                                   <tr><th>Projekt</th><th>Račun</th><th>Stranka</th><th>Datum</th><th>Zaslužek</th><th>Status</th></tr>
                                 </thead>
                                 <tbody>
-                                  {row.projects.map((project) => (
-                                    <tr key={`${row.employeeId}-${project.invoiceNumber}-${project.projectId}`}>
-                                      <td>{project.projectId}</td>
-                                      <td>{project.invoiceNumber}</td>
-                                      <td>{project.customerName}</td>
-                                      <td>{new Date(project.issuedAt).toLocaleDateString('sl-SI')}</td>
-                                      <td>{currency.format(project.earnings)}</td>
-                                      <td><span className={`status-badge ${project.isPaid ? 'is-paid' : 'is-pending'}`}>{statusLabel(project.isPaid)}</span></td>
-                                    </tr>
-                                  ))}
+                                  {row.projects.map((project) => {
+                                    const key = detailKey(row.employeeId, project.snapshotId);
+                                    const detail = employeeProjectDetails[key];
+                                    const isExpanded = !!expandedEmployeeProjectRows[key];
+                                    const isLoadingDetail = !!employeeProjectDetailsLoading[key];
+                                    const detailError = employeeProjectDetailsError[key];
+                                    return (
+                                      <React.Fragment key={`${row.employeeId}-${project.snapshotId}`}>
+                                        <tr
+                                          className="is-clickable"
+                                          onClick={() => {
+                                            void toggleEmployeeProjectRow(row.employeeId, project);
+                                          }}
+                                        >
+                                          <td>{project.projectId}</td>
+                                          <td>{project.invoiceNumber}</td>
+                                          <td>{project.customerName}</td>
+                                          <td>{new Date(project.issuedAt).toLocaleDateString('sl-SI')}</td>
+                                          <td>{currency.format(project.earnings)}</td>
+                                          <td><span className={`status-badge ${project.isPaid ? 'is-paid' : 'is-pending'}`}>{statusLabel(project.isPaid)}</span></td>
+                                        </tr>
+                                        {isExpanded && (
+                                          <tr className="expanded-row">
+                                            <td colSpan={6}>
+                                              {isLoadingDetail ? (
+                                                <div className="finance-state">Nalagam razčlembo...</div>
+                                              ) : detailError ? (
+                                                <div className="finance-state finance-state--error">{detailError}</div>
+                                              ) : detail ? (
+                                                <div className="employee-project-detail">
+                                                  <div className="employee-project-detail__header">
+                                                    <strong>Kaj je naredil</strong>
+                                                    <span>
+                                                      Skupaj: {currency.format(detail.totalEarnings)}
+                                                      {Math.abs(detail.itemTotal - detail.totalEarnings) > 0.01
+                                                        ? ` · postavke: ${currency.format(detail.itemTotal)}`
+                                                        : ''}
+                                                    </span>
+                                                  </div>
+                                                  <div className="finance-row-actions">
+                                                    <button type="button" className="finance-btn" onClick={() => { window.location.href = `/projects/${project.projectId}`; }}>
+                                                      Odpri projekt
+                                                    </button>
+                                                  </div>
+                                                  {detail.items.length === 0 ? (
+                                                    <div className="finance-state">Ni razčlenjenih postavk za ta zaslužek.</div>
+                                                  ) : (
+                                                    <table className="inner-table">
+                                                      <thead>
+                                                        <tr><th>Postavka</th><th>Količina</th><th>Enota</th><th>Cena za zaposlenega</th><th>Skupaj</th></tr>
+                                                      </thead>
+                                                      <tbody>
+                                                        {detail.items.map((item) => (
+                                                          <tr key={`${key}-${item.name}-${item.unit}-${item.quantity}`}>
+                                                            <td>{item.name}</td>
+                                                            <td>{item.quantity.toLocaleString('sl-SI')}</td>
+                                                            <td>{item.unit}</td>
+                                                            <td>{currency.format(item.unitPrice)}</td>
+                                                            <td>{currency.format(item.total)}</td>
+                                                          </tr>
+                                                        ))}
+                                                      </tbody>
+                                                    </table>
+                                                  )}
+                                                </div>
+                                              ) : null}
+                                            </td>
+                                          </tr>
+                                        )}
+                                      </React.Fragment>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             </td>

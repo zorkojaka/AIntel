@@ -8,6 +8,7 @@ import {
 } from '../controllers/financeController';
 import {
   basketAnalysis,
+  employeeProjectEarningDetail,
   employeesSummary,
   monthlySummary,
   pipelineSummary,
@@ -32,6 +33,7 @@ router.get('/monthly-summary', monthlySummary);
 router.get('/product-frequency', productFrequency);
 router.get('/basket-analysis', basketAnalysis);
 router.get('/employees-summary', employeesSummary);
+router.get('/employees/:employeeId/snapshots/:snapshotId/earnings', employeeProjectEarningDetail);
 router.get('/pipeline', pipelineSummary);
 router.get('/analytics/product-cooccurrence', productCooccurrence);
 router.get('/analytics/product-bundles', productBundles);
