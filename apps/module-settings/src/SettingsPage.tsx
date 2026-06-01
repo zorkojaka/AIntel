@@ -985,6 +985,26 @@ const SystemSettingsSection: React.FC<SystemSettingsSectionProps> = ({
       </div>
     </Card>
 
+    <Card title="Zaključek delovnega naloga">
+      <label className="block space-y-2">
+        <span className="text-sm font-medium text-foreground">Podpis za zaključek delovnega naloga</span>
+        <select
+          className="h-10 w-full max-w-sm rounded-md border border-border bg-background px-3 text-sm text-foreground"
+          value={form.workOrderCompletionSignatureMode ?? 'optional'}
+          onChange={(event) =>
+            onFieldChange(
+              'workOrderCompletionSignatureMode',
+              event.target.value as SettingsDto['workOrderCompletionSignatureMode'],
+            )
+          }
+        >
+          <option value="none">Brez</option>
+          <option value="optional">Opcijsko</option>
+          <option value="required">Zahtevano</option>
+        </select>
+      </label>
+    </Card>
+
     <div className="flex flex-wrap items-center gap-3">
       <Button type="submit" disabled={saving || loading}>
         {saving ? 'Shranjujem ...' : 'Shrani sistem'}
