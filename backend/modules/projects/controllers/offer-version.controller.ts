@@ -1242,6 +1242,10 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
     }
 
     const created = await OfferVersionModel.create(payload);
+    await ProjectModel.updateOne(
+      { id: projectId, status: 'draft' },
+      { $set: { status: 'offered' } },
+    );
     const plain = created.toObject();
     return res.success(serializeOffer(plain as OfferVersion));
   } catch (err) {

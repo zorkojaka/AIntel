@@ -207,6 +207,26 @@ function updateOfferAmount(project: Project) {
   project.offerAmount = Number(calculateOfferAmount(project.items).toFixed(2));
 }
 
+async function reconcileProjectOfferStatus(project: any, savedOfferProjectIds?: Set<string>) {
+  if (!project || project.status !== 'draft') return project;
+
+  const hasSavedOfferItems =
+    savedOfferProjectIds?.has(project.id) ??
+    ((await OfferVersionModel.exists({
+      projectId: project.id,
+      'items.0': { $exists: true },
+    })) != null);
+
+  if (!hasSavedOfferItems) return project;
+
+  await ProjectModel.updateOne(
+    { id: project.id, status: 'draft' },
+    { $set: { status: 'offered' } },
+  );
+
+  return { ...project, status: 'offered' };
+}
+
 function hasIssuedWorkOrder(workOrders: any[]) {
   return workOrders.some((order) => ['issued', 'in-progress', 'confirmed', 'completed'].includes(String(order?.status ?? '')));
 }
@@ -234,7 +254,8 @@ async function findProjectById(id: string) {
   const project =
     (await ProjectModel.findOne({ id }).lean()) || (await ProjectModel.findById(id).lean());
   if (!project) return null;
-  return reconcileProjectExecutionStatus(project);
+  const offerReconciled = await reconcileProjectOfferStatus(project);
+  return reconcileProjectExecutionStatus(offerReconciled);
 }
 
 function getContextRoles(req: Request): string[] {
@@ -402,6 +423,17 @@ export async function listProjects(_req: Request, res: Response) {
   );
 
   const projectIds = all.map((project: any) => project.id).filter(Boolean);
+  const savedOfferProjectIds =
+    projectIds.length > 0
+      ? new Set(
+          (
+            await OfferVersionModel.distinct('projectId', {
+              projectId: { $in: projectIds },
+              'items.0': { $exists: true },
+            })
+          ).map((projectId: any) => String(projectId)),
+        )
+      : new Set<string>();
   const workOrders =
     projectIds.length > 0
       ? await WorkOrderModel.find({ projectId: { $in: projectIds } })
@@ -415,6 +447,24 @@ export async function listProjects(_req: Request, res: Response) {
     list.push(order);
     workOrdersByProject.set(projectId, list);
   });
+
+  const projectsNeedingOfferStatus = all
+    .filter((project: any) => project?.status === 'draft' && savedOfferProjectIds.has(project.id))
+    .map((project: any) => project.id)
+    .filter(Boolean);
+
+  if (projectsNeedingOfferStatus.length > 0) {
+    await ProjectModel.updateMany(
+      { id: { $in: projectsNeedingOfferStatus }, status: 'draft' },
+      { $set: { status: 'offered' } },
+    );
+    const needsOfferStatus = new Set(projectsNeedingOfferStatus);
+    all.forEach((project: any) => {
+      if (needsOfferStatus.has(project.id)) {
+        project.status = 'offered';
+      }
+    });
+  }
 
   const projectsNeedingExecutionStatus = all
     .filter((project: any) => project?.status === 'ordered' && hasIssuedWorkOrder(workOrdersByProject.get(project.id) ?? []))

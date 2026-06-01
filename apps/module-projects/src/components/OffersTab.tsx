@@ -2627,16 +2627,16 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         />
 
         <div className="hidden md:block bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
-          <Table className="w-full table-fixed">
+          <Table className="w-full min-w-[980px] table-fixed">
           <colgroup>
-            <col style={{ width: "34%" }} />
-            <col style={{ width: "18%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "12%" }} />
-            {usePerItemDiscount && <col style={{ width: "10%" }} />}
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "12%" }} />
-            <col style={{ width: "4%" }} />
+            <col style={{ width: usePerItemDiscount ? "30%" : "34%" }} />
+            <col style={{ width: usePerItemDiscount ? "14%" : "18%" }} />
+            <col style={{ width: usePerItemDiscount ? "9%" : "10%" }} />
+            <col style={{ width: usePerItemDiscount ? "11%" : "12%" }} />
+            {usePerItemDiscount && <col style={{ width: "9%" }} />}
+            <col style={{ width: usePerItemDiscount ? "8%" : "10%" }} />
+            <col style={{ width: usePerItemDiscount ? "14%" : "12%" }} />
+            <col style={{ width: usePerItemDiscount ? "5%" : "4%" }} />
           </colgroup>
           <TableHeader>
             <TableRow className="h-11">
