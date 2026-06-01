@@ -5,6 +5,7 @@ import { Button } from "../ui/button";
 import { DodajVariantoDialog } from "./DodajVariantoDialog";
 import { SekcijaDisk } from "./SekcijaDisk";
 import { SekcijaIzvedba } from "./SekcijaIzvedba";
+import { SekcijaKameraNosilec } from "./SekcijaKameraNosilec";
 import { SekcijaPoESwitch } from "./SekcijaPoESwitch";
 import { SekcijaSnemalnik } from "./SekcijaSnemalnik";
 import { TabelaAsortima } from "./TabelaAsortima";
@@ -104,6 +105,7 @@ export function SistemBlok({ projectId, zahtevaId, sistem, executionSettings, pr
         onRemoveVarianta={removeVariant}
       />
 
+      <SekcijaKameraNosilec productById={productById} onAddVariant={(camera, bracket) => addVariants(camera, [bracket])} />
       <SekcijaSnemalnik videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
       <SekcijaPoESwitch videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
       <SekcijaDisk videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
