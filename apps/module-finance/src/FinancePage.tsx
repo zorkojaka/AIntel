@@ -680,24 +680,26 @@ export const FinancePage: React.FC = () => {
         <div className="finance-period-options">
           {periodMode === 'monthly'
             ? monthOptions.map((monthKey) => (
-                <label key={monthKey} className="finance-check-option">
-                  <input
-                    type="checkbox"
-                    checked={selectedMonths.includes(monthKey)}
-                    onChange={() => toggleSelectedMonth(monthKey)}
-                  />
+                <button
+                  key={monthKey}
+                  type="button"
+                  className={`finance-period-card ${selectedMonths.includes(monthKey) ? 'is-selected' : ''}`}
+                  aria-pressed={selectedMonths.includes(monthKey)}
+                  onClick={() => toggleSelectedMonth(monthKey)}
+                >
                   <span>{formatMonthKeyLabel(monthKey)}</span>
-                </label>
+                </button>
               ))
             : yearOptions.map((year) => (
-                <label key={year} className="finance-check-option">
-                  <input
-                    type="checkbox"
-                    checked={selectedYears.includes(year)}
-                    onChange={() => toggleSelectedYear(year)}
-                  />
+                <button
+                  key={year}
+                  type="button"
+                  className={`finance-period-card ${selectedYears.includes(year) ? 'is-selected' : ''}`}
+                  aria-pressed={selectedYears.includes(year)}
+                  onClick={() => toggleSelectedYear(year)}
+                >
                   <span>{year}</span>
-                </label>
+                </button>
               ))}
         </div>
       </section>
