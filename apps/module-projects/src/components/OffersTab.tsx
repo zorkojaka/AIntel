@@ -350,6 +350,7 @@ export function OffersTab({
   const [kilometrinaServiceProductIds, setKilometrinaServiceProductIds] = useState<Set<string>>(new Set());
 
   const autoKmCalculationKeysRef = useRef<Set<string>>(new Set());
+  const manualKmItemIdsRef = useRef<Set<string>>(new Set());
   const paymentTermsInitRef = useRef<Record<string, boolean>>({});
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(title);
@@ -670,6 +671,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
     setProjectDetails(null);
     setKmCalculationStates({});
     autoKmCalculationKeysRef.current.clear();
+    manualKmItemIdsRef.current.clear();
     paymentTermsInitRef.current = {};
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -747,6 +749,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
   const handleItemUpdate = (id: string, changes: Partial<OfferLineItemForm>) => {
     const current = items.find((item) => item.id === id);
     if (current && Object.prototype.hasOwnProperty.call(changes, "quantity") && isKilometrinaOfferItem(current)) {
+      manualKmItemIdsRef.current.add(id);
       setKmCalculationStates((prev) => ({ ...prev, [id]: { status: "manual" } }));
     }
     updateItem(id, changes);
@@ -755,7 +758,11 @@ const loadOfferById = useCallback(async (offerId: string) => {
   const isKmCalculationDisabled =
     !routeCalculationSettings?.orsApiConfigured || !routeCalculationSettings?.routeCalculationAddress?.trim();
 
-  const applyKmResult = (item: OfferLineItemForm, result: ProjectKmCalculation) => {
+  const applyKmResult = (item: OfferLineItemForm, result: ProjectKmCalculation, mode: "auto" | "manual") => {
+    if (mode === "auto" && manualKmItemIdsRef.current.has(item.id)) {
+      return;
+    }
+    manualKmItemIdsRef.current.delete(item.id);
     updateItem(item.id, { quantity: result.razdaljaSkupaj });
     setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "calculated", result } }));
   };
@@ -765,10 +772,13 @@ const loadOfferById = useCallback(async (offerId: string) => {
       return;
     }
 
+    if (mode === "manual") {
+      manualKmItemIdsRef.current.delete(item.id);
+    }
     setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "loading" } }));
     try {
       const result = await calculateProjectKm(projectId);
-      applyKmResult(item, result);
+      applyKmResult(item, result, mode);
       if (mode === "manual") {
         toast.success(`Kilometrina izračunana: ${formatKm(result.razdaljaSkupaj)} km.`);
       }
@@ -789,6 +799,11 @@ const loadOfferById = useCallback(async (offerId: string) => {
         continue;
       }
 
+      const state = kmCalculationStates[item.id];
+      if (manualKmItemIdsRef.current.has(item.id) || state?.status === "manual" || state?.status === "loading") {
+        continue;
+      }
+
       const autoKey = `${projectId}:${item.id}:${item.productId ?? ""}`;
       if (autoKmCalculationKeysRef.current.has(autoKey)) {
         continue;
@@ -798,7 +813,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
       void handleCalculateKm(item, "auto");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, isKmCalculationDisabled, kilometrinaServiceProductIds, projectId]);
+  }, [items, isKmCalculationDisabled, kilometrinaServiceProductIds, kmCalculationStates, projectId]);
 
   const deleteRow = (id: string) => {
     setLinkedServiceSuggestions((prev) => {
