@@ -2627,15 +2627,15 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         />
 
         <div className="hidden md:block bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
-          <Table className="w-full min-w-[980px] table-fixed">
+          <Table className="w-full table-fixed">
           <colgroup>
-            <col style={{ width: usePerItemDiscount ? "30%" : "34%" }} />
-            <col style={{ width: usePerItemDiscount ? "14%" : "18%" }} />
-            <col style={{ width: usePerItemDiscount ? "9%" : "10%" }} />
+            <col style={{ width: usePerItemDiscount ? "32%" : "38%" }} />
+            <col style={{ width: usePerItemDiscount ? "12%" : "14%" }} />
+            <col style={{ width: "8%" }} />
             <col style={{ width: usePerItemDiscount ? "11%" : "12%" }} />
-            {usePerItemDiscount && <col style={{ width: "9%" }} />}
-            <col style={{ width: usePerItemDiscount ? "8%" : "10%" }} />
-            <col style={{ width: usePerItemDiscount ? "14%" : "12%" }} />
+            {usePerItemDiscount && <col style={{ width: "8%" }} />}
+            <col style={{ width: usePerItemDiscount ? "7%" : "8%" }} />
+            <col style={{ width: usePerItemDiscount ? "15%" : "13%" }} />
             <col style={{ width: usePerItemDiscount ? "5%" : "4%" }} />
           </colgroup>
           <TableHeader>
@@ -2695,7 +2695,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 <TableCell className="text-right align-middle">
                   <div className="flex items-center justify-end gap-2">
                     <Input
-                      className="h-9 w-24 text-right"
+                      className="h-9 w-full max-w-20 text-right"
                       type="number"
                       inputMode="decimal"
                       min={0}
@@ -2711,7 +2711,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
 
                 <TableCell className="text-right align-middle">
                   <Input
-                    className="text-right h-9"
+                    className="h-9 w-full text-right"
                     value={item.unit}
                     onChange={(event) =>
                       updateItem(item.id, { unit: event.target.value })
@@ -2734,7 +2734,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 {usePerItemDiscount && (
                   <TableCell className="text-right align-middle">
                     <Input
-                      className="text-right h-9"
+                      className="h-9 w-full text-right"
                       type="number"
                       inputMode="decimal"
                       value={item.discountPercent ?? 0}
