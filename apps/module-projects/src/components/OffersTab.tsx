@@ -141,6 +141,9 @@ const clampMin = (value: unknown, fallback: number, min: number) => {
   return Math.max(min, parsed);
 };
 
+const getOfferDisplayNumber = (offer?: { documentNumber?: string | null; title?: string | null; baseTitle?: string | null } | null) =>
+  offer?.documentNumber || offer?.title || offer?.baseTitle || null;
+
 const formatKm = (value: number) =>
   value.toLocaleString("sl-SI", { maximumFractionDigits: 1 });
 
@@ -2221,7 +2224,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
               <SelectContent>
                 {versions.map((v) => (
                   <SelectItem key={v._id} value={v._id}>
-                    {v.title} –{" "}
+                    {getOfferDisplayNumber(v) || "Ponudba"} –{" "}
                     {formatCurrency(
                       v.totalGrossAfterDiscount ?? v.totalWithVat ?? v.totalGross ?? 0
                     )}
@@ -2518,7 +2521,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 className="text-xl font-semibold text-left"
                 onClick={() => setIsEditingTitle(true)}
               >
-                {title || "Ponudba"}
+                {getOfferDisplayNumber(currentOffer) || title || "Ponudba"}
               </button>
             )}
           </div>
