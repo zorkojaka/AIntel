@@ -41,6 +41,22 @@ function unique(values: string[]) {
   return Array.from(new Set(values.map(normalizeSlug).filter(Boolean)));
 }
 
+function resolveProductPageUrl(product: AAProductRaw) {
+  const categoryPath = (product.category ?? '')
+    .split(':')
+    .map((part) => normalizeSlug(part.trim()))
+    .filter(Boolean)
+    .join('/');
+  const productSlug = normalizeSlug(product.name);
+  const productId = product.id.replace(/^0+/, '') || product.id;
+
+  if (!categoryPath || !productSlug || !productId) {
+    return 'https://b2b.alarmautomatika.com/si';
+  }
+
+  return `https://b2b.alarmautomatika.com/si/${categoryPath}/${productSlug}/${productId}`;
+}
+
 function resolveCategorySlugs(product: AAProductRaw, productType: string | undefined, manufacturer: string | undefined) {
   const rawCategoryParts = (product.category ?? '')
     .split(':')
@@ -90,7 +106,7 @@ export function mapAAProductToImportItem(product: AAProductRaw) {
     kratekOpis: description.slice(0, 200),
     dolgOpis: description,
     povezavaDoSlike: product.image ?? '',
-    povezavaDoProdukta: 'https://b2b.alarmautomatika.com/si',
+    povezavaDoProdukta: resolveProductPageUrl(product),
     proizvajalec: manufacturer,
     dobavitelj: defaults.dobavitelj,
     naslovDobavitelja: defaults.naslovDobavitelja,
