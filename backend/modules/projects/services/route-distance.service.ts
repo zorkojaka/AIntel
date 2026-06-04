@@ -58,7 +58,16 @@ function roundKm(value: number) {
   return Math.round(value * 10) / 10;
 }
 
-async function geocode(address: string, apiKey: string) {
+function buildGeocodeQueries(address: string) {
+  const queries = [address];
+  const withoutLjubljanaDistrict = address.replace(/\b\d{4}\s+Ljubljana-[^,\s]+/gi, 'Ljubljana');
+  if (withoutLjubljanaDistrict !== address) {
+    queries.push(withoutLjubljanaDistrict);
+  }
+  return [...new Set(queries.map((query) => query.trim()).filter(Boolean))];
+}
+
+async function geocodeSingle(address: string, apiKey: string) {
   const url = new URL('https://api.openrouteservice.org/geocode/search');
   url.searchParams.set('api_key', apiKey);
   url.searchParams.set('text', address);
@@ -87,6 +96,13 @@ async function geocode(address: string, apiKey: string) {
       return confidence >= 0.8 || confidence >= bestConfidence - 0.05;
     }),
   };
+}
+
+async function geocode(address: string, apiKey: string) {
+  const results = await Promise.all(buildGeocodeQueries(address).map((query) => geocodeSingle(query, apiKey)));
+  return results
+    .filter((result): result is NonNullable<typeof result> => Boolean(result))
+    .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0] ?? null;
 }
 
 async function routeDistanceMeters(from: [number, number], to: [number, number], apiKey: string) {

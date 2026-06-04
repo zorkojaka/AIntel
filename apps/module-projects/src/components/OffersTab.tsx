@@ -170,7 +170,11 @@ const extractAddressParts = (value: string) => {
   const house = normalized.match(/\b(?!\d{4}\b)\d+[a-z]?\b/)?.[0] ?? "";
   const postalCity = normalized.match(/\b\d{4}\s+([\p{L}\s-]+)/u)?.[1]?.trim() ?? "";
   const segments = value.split(",").map((part) => normalizeAddressPart(part)).filter(Boolean);
-  const fallbackCity = segments.length > 1 ? segments[segments.length - 1].replace(/\b\d{4}\b/g, "").trim() : "";
+  const fallbackCity =
+    segments
+      .slice(1)
+      .map((segment) => segment.replace(/\b\d{4}\b/g, "").trim())
+      .find((segment) => segment && !["slovenia", "slovenija"].includes(segment)) ?? "";
   const city = postalCity || fallbackCity;
   const streetSource = segments[0] || normalized;
   const street = streetSource
