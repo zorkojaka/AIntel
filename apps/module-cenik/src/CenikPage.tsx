@@ -1,6 +1,6 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, DataTable, Input, CategoryMultiSelect, TableRowActions } from '@aintel/ui';
-import { FileDown, FileUp, Pencil, Save, Trash2, X } from 'lucide-react';
+import { ExternalLink, FileDown, FileUp, Pencil, Save, Trash2, X } from 'lucide-react';
 import { clearMobileTopbar, setMobileTopbar } from '@aintel/shared/utils/mobileTopbar';
 import type { ProductServiceLink, ProductServiceLinkQuantityMode } from '@aintel/shared/types/product-service-link';
 import FilterBar from './components/FilterBar';
@@ -255,6 +255,18 @@ const emptyProduct = (): Product => ({
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('sl-SI', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 }).format(value);
+
+function getProductPageUrl(product: Product) {
+  const value = product.povezavaDoProdukta?.trim();
+  if (!value) return '';
+
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
 
 const formatDateTime = (value?: string) => {
   if (!value) return '-';
@@ -1494,27 +1506,46 @@ export const CenikPage: React.FC = () => {
                   { header: 'Opis', accessor: 'kratekOpis' },
                   {
                     header: 'Akcije',
-                    accessor: (row: Product) => (
-                      <div className="flex justify-end">
-                        <TableRowActions
-                          onEdit={() => startEdit(row)}
-                          onDelete={() => handleDelete(row._id)}
-                          deleteConfirmTitle="Izbriši produkt"
-                          deleteConfirmMessage="Si prepričan, da želiš izbrisati ta produkt?"
-                        />
-                      </div>
-                    )
+                    accessor: (row: Product) => {
+                      const productPageUrl = getProductPageUrl(row);
+
+                      return (
+                        <div className="flex justify-end gap-1">
+                          {productPageUrl ? (
+                            <a
+                              href={productPageUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={`Odpri spletno stran ${row.ime}`}
+                              title="Odpri spletno stran produkta"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded border border-border/70 bg-card text-foreground transition hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </a>
+                          ) : null}
+                          <TableRowActions
+                            onEdit={() => startEdit(row)}
+                            onDelete={() => handleDelete(row._id)}
+                            deleteConfirmTitle="Izbriši produkt"
+                            deleteConfirmMessage="Si prepričan, da želiš izbrisati ta produkt?"
+                          />
+                        </div>
+                      );
+                    }
                   }
                 ]}
                 data={filteredProducts}
               />
             </div>
             <div className="grid gap-3 md:hidden">
-              {filteredProducts.map((product) => (
-                <article
-                  key={product._id ?? `${product.ime}-${product.proizvajalec}`}
-                  className="rounded-xl border border-border bg-card p-3 shadow-sm"
-                >
+              {filteredProducts.map((product) => {
+                const productPageUrl = getProductPageUrl(product);
+
+                return (
+                  <article
+                    key={product._id ?? `${product.ime}-${product.proizvajalec}`}
+                    className="rounded-xl border border-border bg-card p-3 shadow-sm"
+                  >
                   <div className="flex items-start gap-3">
                     <div className="min-w-0 flex-1 space-y-1.5">
                       <div className="flex items-start justify-between gap-2">
@@ -1522,6 +1553,18 @@ export const CenikPage: React.FC = () => {
                           {product.ime}
                         </h3>
                         <div className="flex shrink-0 items-center gap-1">
+                          {productPageUrl ? (
+                            <a
+                              href={productPageUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={`Odpri spletno stran ${product.ime}`}
+                              title="Odpri spletno stran produkta"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded border border-border/70 bg-card text-foreground transition hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </a>
+                          ) : null}
                           <Button
                             type="button"
                             variant="ghost"
@@ -1565,7 +1608,8 @@ export const CenikPage: React.FC = () => {
                     </div>
                   </div>
                 </article>
-              ))}
+                );
+              })}
             </div>
             {filteredProducts.length === 0 && (
               <p className="text-center text-sm text-muted-foreground">
