@@ -34,6 +34,7 @@ interface AddressParts {
   streetLine: string;
   streetName: string;
   houseNumber: string;
+  houseNumberBase: string;
   postalCode: string;
   city: string;
   cityCore: string;
@@ -94,6 +95,7 @@ function parseAddressParts(address: string): AddressParts {
   const beforePostal = postalMatch?.index != null ? original.slice(0, postalMatch.index) : original.split(',')[0] ?? original;
   const streetLine = normalize(beforePostal.replace(/,+$/g, ''));
   const houseNumber = streetLine.match(/\b\d+[a-z]?\b/i)?.[0] ?? '';
+  const houseNumberBase = houseNumber.match(/\d+/)?.[0] ?? '';
   const streetName = normalize(streetLine.replace(/\b\d+[a-z]?\b/gi, ''));
 
   return {
@@ -101,6 +103,7 @@ function parseAddressParts(address: string): AddressParts {
     streetLine,
     streetName,
     houseNumber,
+    houseNumberBase,
     postalCode,
     city,
     cityCore,
@@ -124,16 +127,33 @@ function buildGeocodeQueries(address: string) {
   add(parts.original);
 
   const city = parts.cityCore || parts.city;
+  const streetLineWithoutHouse = normalize(parts.streetName);
+  const hasHouseLetter = /[a-z]$/i.test(parts.houseNumber);
   if (parts.streetLine && city) {
     add(`${parts.streetLine}, ${city}, Slovenija`);
   }
   if (parts.streetLine && parts.postalCode && city) {
     add(`${parts.streetLine}, ${parts.postalCode} ${city}, Slovenija`);
   }
+  if (streetLineWithoutHouse && parts.houseNumber && city) {
+    add(`${streetLineWithoutHouse} ${parts.houseNumber}, ${city}, Slovenija`);
+    if (parts.postalCode) {
+      add(`${streetLineWithoutHouse} ${parts.houseNumber}, ${parts.postalCode} ${city}, Slovenija`);
+    }
+  }
+  if (streetLineWithoutHouse && hasHouseLetter && parts.houseNumberBase && city) {
+    add(`${streetLineWithoutHouse} ${parts.houseNumberBase}, ${city}, Slovenija`);
+    if (parts.postalCode) {
+      add(`${streetLineWithoutHouse} ${parts.houseNumberBase}, ${parts.postalCode} ${city}, Slovenija`);
+    }
+  }
 
   const withoutPrefix = withoutLeadingStreetType(parts.streetName);
   if (withoutPrefix && withoutPrefix !== parts.streetName && parts.houseNumber && city) {
     add(`${withoutPrefix} ${parts.houseNumber}, ${city}, Slovenija`);
+    if (hasHouseLetter && parts.houseNumberBase) {
+      add(`${withoutPrefix} ${parts.houseNumberBase}, ${city}, Slovenija`);
+    }
   }
 
   return { parts, queries: Array.from(queries) };
@@ -148,11 +168,18 @@ function scoreGeocodeFeature(feature: GeocodeFeature, parts: AddressParts) {
   const expectedStreet = normalizeSearchText(withoutLeadingStreetType(parts.streetName));
   const expectedCity = normalizeSearchText(parts.cityCore || parts.city);
   const expectedHouse = normalizeSearchText(parts.houseNumber);
+  const expectedHouseBase = normalizeSearchText(parts.houseNumberBase);
   const confidence = typeof properties.confidence === 'number' ? properties.confidence : 0;
 
   let score = confidence;
-  if (expectedHouse && (house === expectedHouse || label.includes(expectedHouse))) {
-    score += 2;
+  if (expectedHouse) {
+    if (house === expectedHouse || label.includes(expectedHouse)) {
+      score += 4;
+    } else if (expectedHouseBase && (house === expectedHouseBase || label.includes(expectedHouseBase))) {
+      score += 2;
+    } else {
+      score -= 2;
+    }
   }
   if (expectedStreet) {
     const streetWords = expectedStreet.split(' ').filter((word) => word.length > 2 && !['cesta', 'ulica', 'pot', 'trg'].includes(word));
@@ -170,6 +197,23 @@ function scoreGeocodeFeature(feature: GeocodeFeature, parts: AddressParts) {
   }
 
   return score;
+}
+
+function resolveHouseMatch(feature: GeocodeFeature, parts: AddressParts) {
+  const label = normalizeSearchText(feature.properties?.label);
+  const house = normalizeSearchText(feature.properties?.housenumber);
+  const expectedHouse = normalizeSearchText(parts.houseNumber);
+  const expectedHouseBase = normalizeSearchText(parts.houseNumberBase);
+  if (!expectedHouse) {
+    return 'not_required' as const;
+  }
+  if (house === expectedHouse || label.includes(expectedHouse)) {
+    return 'exact' as const;
+  }
+  if (expectedHouseBase && (house === expectedHouseBase || label.includes(expectedHouseBase))) {
+    return 'base' as const;
+  }
+  return 'missing' as const;
 }
 
 async function fetchGeocodeFeatures(query: string, apiKey: string) {
@@ -221,6 +265,7 @@ async function geocode(address: string, apiKey: string) {
     coordinates,
     label: normalize(best.properties?.label) || address,
     confidence: typeof best.properties?.confidence === 'number' ? best.properties.confidence : null,
+    houseMatch: resolveHouseMatch(best, parts),
     ambiguous: candidates.slice(1).some((candidate) => {
       const bestScore = candidates[0]?.score ?? 0;
       return candidate.score >= bestScore - 0.25;
@@ -309,6 +354,14 @@ export async function calculateProjectRouteDistance(projectId: string): Promise<
   if (companyGeo.ambiguous || projectGeo.ambiguous) {
     reasons.push('geocoder je vrnil več možnih zadetkov');
     zanesljivostProcent = Math.min(zanesljivostProcent, 75);
+  }
+  if (companyGeo.houseMatch === 'base' || projectGeo.houseMatch === 'base') {
+    reasons.push('geocoder je uporabil hišno številko brez črke');
+    zanesljivostProcent = Math.min(zanesljivostProcent, 80);
+  }
+  if (companyGeo.houseMatch === 'missing' || projectGeo.houseMatch === 'missing') {
+    reasons.push('geocoder ni potrdil hišne številke');
+    zanesljivostProcent = Math.min(zanesljivostProcent, 60);
   }
   if ((companyGeo.confidence ?? 1) < 0.8 || (projectGeo.confidence ?? 1) < 0.8) {
     reasons.push('geocoder confidence je nizek');
