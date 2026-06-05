@@ -14,6 +14,7 @@ export interface CategorySettingsDocument extends Document {
   level: CategorySettingsLevel;
   isActive: boolean;
   priority: CategorySettingsPriority;
+  marginPercent: number;
   productCountInApi: number;
   productCountActive: number;
   lastSyncedAt?: Date | null;
@@ -33,6 +34,7 @@ const CategorySettingsSchema = new Schema<CategorySettingsDocument>(
     level: { type: Number, required: true, enum: [1, 2, 3] },
     isActive: { type: Boolean, required: true, default: false },
     priority: { type: Number, enum: [1, 2, 3, null], default: null },
+    marginPercent: { type: Number, required: true, min: 0, default: 0 },
     productCountInApi: { type: Number, required: true, min: 0, default: 0 },
     productCountActive: { type: Number, required: true, min: 0, default: 0 },
     lastSyncedAt: { type: Date, default: null },

@@ -26,6 +26,12 @@ type Product = {
   defaultExecutionMode?: "simple" | "per_unit" | "measured";
   defaultInstructionsTemplate?: string;
   categorySlugs?: string[];
+  pricingRule?: {
+    marginPercent: number;
+    basePrice: number;
+    increaseAmount: number;
+    appliedCategoryPath: string;
+  } | null;
   isService?: boolean;
   isActive?: boolean;
   status?: string;
@@ -256,12 +262,8 @@ const emptyProduct = (): Product => ({
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('sl-SI', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 }).format(value);
 
-function isReolinkProduct(product: Product) {
-  return !product.isService && product.proizvajalec?.trim().toLowerCase() === 'reolink';
-}
-
 function ProductPriceDisplay({ product }: { product: Product }) {
-  if (!isReolinkProduct(product)) {
+  if (!product.pricingRule) {
     return <span>{formatCurrency(product.prodajnaCena)}</span>;
   }
 
@@ -274,6 +276,9 @@ function ProductPriceDisplay({ product }: { product: Product }) {
       <div>
         <span className="font-medium text-muted-foreground">Prodajna cena: </span>
         <span className="font-semibold text-foreground">{formatCurrency(product.prodajnaCena)}</span>
+      </div>
+      <div className="text-muted-foreground">
+        +{product.pricingRule.marginPercent}% ({formatCurrency(product.pricingRule.increaseAmount)}) | {product.pricingRule.appliedCategoryPath}
       </div>
     </div>
   );

@@ -1,7 +1,6 @@
 import { IMPORT_DEFAULTS } from './importDefaults';
 import { classifyProduct, getAttribute } from './classifier';
 import type { AAProductRaw } from './types';
-import { calculateReolinkSellingPrice, isReolinkProduct } from '../services/reolink-pricing';
 import { applyReolinkImageOverride } from '../services/reolink-image-overrides';
 
 const AA_PRODUCT_FIELDS = [
@@ -92,9 +91,7 @@ export function mapAAProductToImportItem(product: AAProductRaw) {
   const manufacturer = getAttribute(product.attributes, 'Manufacturer') ?? classification.manufacturer ?? '';
   const discount = Number.isFinite(product.discount ?? 0) ? product.discount ?? 0 : 0;
   const finalPurchasePrice = roundMoney(product.price * (1 - discount / 100));
-  const sellingPrice = isReolinkProduct({ proizvajalec: manufacturer, isService: false })
-    ? calculateReolinkSellingPrice(finalPurchasePrice)
-    : roundMoney(product.price);
+  const sellingPrice = roundMoney(product.price);
   const description = product.description ?? '';
   const defaults = IMPORT_DEFAULTS.aa_api;
 

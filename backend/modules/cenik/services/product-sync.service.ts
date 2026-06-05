@@ -11,7 +11,8 @@ import {
   syncAAProductActiveStateWithCategorySettings,
 } from './category-settings.service';
 import { IMPORT_DEFAULTS } from '../sync/importDefaults';
-import { applyReolinkSellingPrice, isReolinkProduct } from './reolink-pricing';
+import { CategorySettingsModel } from '../category-settings.model';
+import { resolveCategoryMarginPricingInfo } from './category-margin-pricing';
 import { applyReolinkImageOverride } from './reolink-image-overrides';
 
 type NormalizedProduct = {
@@ -483,10 +484,8 @@ function validateAndNormalizeRow(
   }
 
   const prodajnaCena = product.prodajnaCena;
-  const reolinkProduct = isReolinkProduct({ proizvajalec: proizvajalecRaw, isService: isServiceRaw });
   if (
     (!providedFields || providedFields.includes('prodajnaCena')) &&
-    !reolinkProduct &&
     (!assertNumber(prodajnaCena) || (prodajnaCena as number) <= 0)
   ) {
     errors.push({ index, rowId, field: 'prodajnaCena', reason: 'must be a number > 0' });
@@ -524,12 +523,7 @@ function validateAndNormalizeRow(
   }
 
   const normalizedNabavnaCena = assertNumber(nabavnaCena) ? (nabavnaCena as number) : 0;
-  const normalizedProdajnaCena = applyReolinkSellingPrice({
-    nabavnaCena: normalizedNabavnaCena,
-    prodajnaCena: assertNumber(prodajnaCena) ? (prodajnaCena as number) : 0,
-    proizvajalec: proizvajalecRaw,
-    isService: isServiceRaw,
-  }).prodajnaCena;
+  const normalizedProdajnaCena = assertNumber(prodajnaCena) ? (prodajnaCena as number) : 0;
 
   const normalized: NormalizedProduct = applyReolinkImageOverride({
     source: sourceForRow,
@@ -744,6 +738,23 @@ function buildInvalidCreateRow(row: NormalizedProduct): ImportInvalidRow | null 
     ...toPlanRowBase(row),
     action: 'invalid',
     errors,
+  };
+}
+
+async function loadCategoryMarginSettings() {
+  return CategorySettingsModel.find({ source: 'aa_api', marginPercent: { $gt: 0 } })
+    .select({ path: 1, topLevel: 1, subLevel: 1, thirdLevel: 1, isActive: 1, marginPercent: 1 })
+    .lean();
+}
+
+function applyCategoryMarginToRow(row: NormalizedProduct, settings: Awaited<ReturnType<typeof loadCategoryMarginSettings>>) {
+  const info = resolveCategoryMarginPricingInfo(row as any, settings);
+  if (!info) {
+    return row;
+  }
+  return {
+    ...row,
+    prodajnaCena: Math.round((row.nabavnaCena * (1 + info.marginPercent / 100) + Number.EPSILON) * 100) / 100,
   };
 }
 
@@ -1171,6 +1182,7 @@ function resolveRowWithStoredDecision(
 async function analyzeProducts(source: string, items: unknown[]): Promise<{ plan: ImportPlan; normalizedRows: NormalizedProduct[] }> {
   const defaults = getImportDefaults(source);
   const seenKeys = new Map<string, number>();
+  const categoryMarginSettings = await loadCategoryMarginSettings();
   const normalizedRows: NormalizedProduct[] = [];
   const invalidRows: ImportInvalidRow[] = [];
 
@@ -1201,7 +1213,7 @@ async function analyzeProducts(source: string, items: unknown[]): Promise<{ plan
       });
       return;
     }
-    normalizedRows.push(normalized);
+    normalizedRows.push(applyCategoryMarginToRow(normalized, categoryMarginSettings));
   });
 
   const existingProducts = await loadExistingProducts();

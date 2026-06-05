@@ -4,6 +4,7 @@ import {
   type CategorySettingsSegmentType,
 } from '../category-settings.model';
 import { ProductModel } from '../product.model';
+import { resolveCategoryMarginPricingInfo } from './category-margin-pricing';
 
 type CategoryParts = {
   path: string;
@@ -31,6 +32,7 @@ type CategoryUpdate = {
   path: string;
   isActive?: boolean;
   priority?: CategorySettingsPriority;
+  marginPercent?: number;
   notes?: string;
 };
 
@@ -217,6 +219,7 @@ async function upsertMissingCategories(categories: CategoryParts[]) {
           $setOnInsert: {
             isActive: defaultActive,
             priority: null,
+            marginPercent: 0,
             productCountActive: 0,
             notes: '',
             createdAt: now,
@@ -376,12 +379,43 @@ function sanitizePriority(value: unknown): CategorySettingsPriority | undefined 
   return undefined;
 }
 
+function sanitizeMarginPercent(value: unknown) {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 500) {
+    throw new Error('Margin percent must be between 0 and 500.');
+  }
+  return Math.round((parsed + Number.EPSILON) * 100) / 100;
+}
+
 function buildUpdatePayload(update: CategoryUpdate) {
   const $set: Record<string, unknown> = {};
   if (typeof update.isActive === 'boolean') $set.isActive = update.isActive;
   if (update.priority !== undefined) $set.priority = update.priority;
+  if (update.marginPercent !== undefined) $set.marginPercent = update.marginPercent;
   if (typeof update.notes === 'string') $set.notes = update.notes.trim();
   return $set;
+}
+
+async function recalculateProductPricesFromCategoryMargins() {
+  const settings = await CategorySettingsModel.find({ source: SOURCE, marginPercent: { $gt: 0 } })
+    .select({ path: 1, topLevel: 1, subLevel: 1, thirdLevel: 1, isActive: 1, marginPercent: 1 })
+    .lean();
+  const products = await ProductModel.find({ isService: { $ne: true }, isActive: { $ne: false } })
+    .select({ _id: 1, categorySlugs: 1, nabavnaCena: 1, prodajnaCena: 1, proizvajalec: 1, aaData: 1 })
+    .lean();
+
+  const updates = products
+    .map((product) => {
+      const info = resolveCategoryMarginPricingInfo(product as any, settings);
+      if (!info) return null;
+      const nextPrice = Math.round((product.nabavnaCena * (1 + info.marginPercent / 100) + Number.EPSILON) * 100) / 100;
+      if (nextPrice === product.prodajnaCena) return null;
+      return ProductModel.updateOne({ _id: product._id }, { $set: { prodajnaCena: nextPrice } });
+    })
+    .filter(Boolean);
+
+  await Promise.all(updates);
 }
 
 function isProductAllowedBySettings(
@@ -419,6 +453,7 @@ export async function updateCategorySettingById(id: string, input: Omit<Category
   if (input.priority !== undefined && priority === undefined) {
     throw new Error('Priority must be 1, 2, 3, or null.');
   }
+  const marginPercent = sanitizeMarginPercent(input.marginPercent);
 
   const current = await CategorySettingsModel.findById(id);
   if (!current) return null;
@@ -427,6 +462,7 @@ export async function updateCategorySettingById(id: string, input: Omit<Category
     path: current.path,
     isActive: input.isActive,
     priority,
+    marginPercent,
     notes: input.notes,
   });
 
@@ -455,6 +491,10 @@ export async function updateCategorySettingById(id: string, input: Omit<Category
     );
   }
 
+  if (marginPercent !== undefined) {
+    await recalculateProductPricesFromCategoryMargins();
+  }
+
   return CategorySettingsModel.findById(id).lean();
 }
 
@@ -469,11 +509,13 @@ export async function bulkUpdateCategorySettings(updates: CategoryUpdate[]) {
     if (rawUpdate.priority !== undefined && priority === undefined) {
       throw new Error(`Invalid priority for "${path}".`);
     }
+    const marginPercent = sanitizeMarginPercent(rawUpdate.marginPercent);
 
     const update = buildUpdatePayload({
       path,
       isActive: rawUpdate.isActive,
       priority,
+      marginPercent,
       notes: rawUpdate.notes,
     });
     if (Object.keys(update).length === 0) continue;
@@ -523,6 +565,10 @@ export async function bulkUpdateCategorySettings(updates: CategoryUpdate[]) {
   }
 
   await syncAAProductActiveStateWithCategorySettings();
+
+  if (updates.some((update) => update.marginPercent !== undefined)) {
+    await recalculateProductPricesFromCategoryMargins();
+  }
 
   return listCategorySettings();
 }
