@@ -8,6 +8,7 @@ export interface RouteDistanceResult {
   razdaljaEnosmerno: number;
   razdaljaSkupaj: number;
   zanesljivost: RouteDistanceReliability;
+  zanesljivostProcent: number;
   razlog?: string;
   naslovPodjetje: string;
   naslovProjekt: string;
@@ -295,6 +296,9 @@ export async function calculateProjectRouteDistance(projectId: string): Promise<
   const razdaljaEnosmerno = roundKm(distanceMeters / 1000);
   const razdaljaSkupaj = roundKm(razdaljaEnosmerno * 2);
   const reasons: string[] = [];
+  let zanesljivostProcent = Math.round(
+    Math.min(companyGeo.confidence ?? 0.6, projectGeo.confidence ?? 0.6) * 100
+  );
 
   if (!hasPostalCode(companyAddress) || !hasCity(companyAddress)) {
     reasons.push('naslov podjetja je nepopoln');
@@ -304,15 +308,20 @@ export async function calculateProjectRouteDistance(projectId: string): Promise<
   }
   if (companyGeo.ambiguous || projectGeo.ambiguous) {
     reasons.push('geocoder je vrnil več možnih zadetkov');
+    zanesljivostProcent = Math.min(zanesljivostProcent, 75);
   }
   if ((companyGeo.confidence ?? 1) < 0.8 || (projectGeo.confidence ?? 1) < 0.8) {
     reasons.push('geocoder confidence je nizek');
+  }
+  if (reasons.length > 0) {
+    zanesljivostProcent = Math.min(zanesljivostProcent, 70);
   }
 
   const result: RouteDistanceResult = {
     razdaljaEnosmerno,
     razdaljaSkupaj,
     zanesljivost: reasons.length > 0 ? 'nizka' : 'visoka',
+    zanesljivostProcent,
     razlog: reasons.length > 0 ? reasons.join(', ') : undefined,
     naslovPodjetje: companyGeo.label,
     naslovProjekt: projectGeo.label,

@@ -347,6 +347,7 @@ export function OffersTab({
   const [loadingLinkedServiceSuggestions, setLoadingLinkedServiceSuggestions] = useState<Record<string, boolean>>({});
   const [routeCalculationSettings, setRouteCalculationSettings] = useState<RouteCalculationSettings | null>(null);
   const [kmCalculationStates, setKmCalculationStates] = useState<Record<string, KmCalculationState>>({});
+  const [manualKmQuantities, setManualKmQuantities] = useState<Record<string, number>>({});
   const [kilometrinaServiceProductIds, setKilometrinaServiceProductIds] = useState<Set<string>>(new Set());
 
   const paymentTermsInitRef = useRef<Record<string, boolean>>({});
@@ -462,6 +463,7 @@ export function OffersTab({
     setLastSavedSnapshot(EMPTY_OFFER_SNAPSHOT);
     setLinkedServiceSuggestions({});
     setLoadingLinkedServiceSuggestions({});
+    setManualKmQuantities({});
   }, []);
 
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
@@ -549,6 +551,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
       }));
 
       setItems(ensureTrailingBlank([...mapped]));
+      setManualKmQuantities({});
       setLinkedServiceSuggestions({});
       setLoadingLinkedServiceSuggestions({});
       setLastSavedSnapshot(
@@ -668,6 +671,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
     setOverriddenVatIds(new Set());
     setProjectDetails(null);
     setKmCalculationStates({});
+    setManualKmQuantities({});
     paymentTermsInitRef.current = {};
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -745,6 +749,10 @@ const loadOfferById = useCallback(async (offerId: string) => {
   const handleItemUpdate = (id: string, changes: Partial<OfferLineItemForm>) => {
     const current = items.find((item) => item.id === id);
     if (current && Object.prototype.hasOwnProperty.call(changes, "quantity") && isKilometrinaOfferItem(current)) {
+      const nextQuantity = Number(changes.quantity);
+      if (Number.isFinite(nextQuantity)) {
+        setManualKmQuantities((prev) => ({ ...prev, [id]: nextQuantity }));
+      }
       setKmCalculationStates((prev) => ({ ...prev, [id]: { status: "manual" } }));
     }
     updateItem(id, changes);
@@ -754,6 +762,12 @@ const loadOfferById = useCallback(async (offerId: string) => {
     !routeCalculationSettings?.orsApiConfigured || !routeCalculationSettings?.routeCalculationAddress?.trim();
 
   const applyKmResult = (item: OfferLineItemForm, result: ProjectKmCalculation) => {
+    setManualKmQuantities((prev) => {
+      if (!(item.id in prev)) return prev;
+      const next = { ...prev };
+      delete next[item.id];
+      return next;
+    });
     updateItem(item.id, { quantity: result.razdaljaSkupaj });
     setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "calculated", result } }));
   };
@@ -783,6 +797,12 @@ const loadOfferById = useCallback(async (offerId: string) => {
       return next;
     });
     setLoadingLinkedServiceSuggestions((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setManualKmQuantities((prev) => {
       if (!(id in prev)) return prev;
       const next = { ...prev };
       delete next[id];
@@ -1169,6 +1189,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-80 space-y-1 text-xs" align="start">
+          <p>Od: {state.result.naslovPodjetje}</p>
+          <p>Do: {state.result.naslovProjekt}</p>
+          <p>Zanesljivost: {state.result.zanesljivostProcent ?? "?"}%</p>
           {projectAddress ? <p>Projekt: {projectAddress}</p> : null}
           <p>Geocoder: {state.result.naslovProjekt}</p>
           <p>
@@ -1207,6 +1230,8 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
 
     return (
       <div className="space-y-1 text-xs text-muted-foreground">
+        <div>Izračun: {state.result.naslovPodjetje} -&gt; {state.result.naslovProjekt}</div>
+        <div>Zanesljivost: {state.result.zanesljivostProcent ?? "?"}%</div>
         {projectAddress ? <div>Projekt: {projectAddress}</div> : null}
         <div>
           Geocoder: {state.result.naslovProjekt}
@@ -1369,11 +1394,16 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     const cleanItems = items
       .filter((i) => !isEmptyOfferItem(i))
       .filter((i) => i.name.trim() !== "" && i.unitPrice > 0)
-      .map((i) => ({
+      .map((i) => {
+        const quantity =
+          isKilometrinaOfferItem(i) && manualKmQuantities[i.id] !== undefined
+            ? manualKmQuantities[i.id]
+            : i.quantity;
+        return {
         id: i.id,
         productId: i.productId,
         name: i.name,
-        quantity: i.quantity,
+        quantity,
         unit: i.unit,
         unitPrice: i.unitPrice,
         vatRate: i.vatRate,
@@ -1381,7 +1411,8 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         totalVat: i.totalVat,
         totalGross: i.totalGross,
         discountPercent: usePerItemDiscount ? i.discountPercent ?? 0 : 0,
-      }));
+        };
+      });
 
     const effectiveGlobalPercent = useGlobalDiscount ? globalDiscountPercent : 0;
 
