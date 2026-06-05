@@ -1530,7 +1530,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
   };
 
   const ensureSavedOffer = async () => {
-    if (currentOffer?._id) {
+    if (currentOffer?._id && !isDirty) {
       return currentOffer;
     }
     return handleSave();
