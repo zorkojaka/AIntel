@@ -349,7 +349,6 @@ export function OffersTab({
   const [kmCalculationStates, setKmCalculationStates] = useState<Record<string, KmCalculationState>>({});
   const [kilometrinaServiceProductIds, setKilometrinaServiceProductIds] = useState<Set<string>>(new Set());
 
-  const autoKmCalculationKeysRef = useRef<Set<string>>(new Set());
   const paymentTermsInitRef = useRef<Record<string, boolean>>({});
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(title);
@@ -669,7 +668,6 @@ const loadOfferById = useCallback(async (offerId: string) => {
     setOverriddenVatIds(new Set());
     setProjectDetails(null);
     setKmCalculationStates({});
-    autoKmCalculationKeysRef.current.clear();
     paymentTermsInitRef.current = {};
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -760,7 +758,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
     setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "calculated", result } }));
   };
 
-  const handleCalculateKm = async (item: OfferLineItemForm, mode: "auto" | "manual" = "manual") => {
+  const handleCalculateKm = async (item: OfferLineItemForm) => {
     if (!isKilometrinaOfferItem(item) || isKmCalculationDisabled) {
       return;
     }
@@ -769,36 +767,13 @@ const loadOfferById = useCallback(async (offerId: string) => {
     try {
       const result = await calculateProjectKm(projectId);
       applyKmResult(item, result);
-      if (mode === "manual") {
-        toast.success(`Kilometrina izračunana: ${formatKm(result.razdaljaSkupaj)} km.`);
-      }
+      toast.success(`Kilometrina izračunana: ${formatKm(result.razdaljaSkupaj)} km.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Naslova ni bilo mogoče najti. Vnesi km ročno.";
       setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "error", message } }));
       toast.error(message);
     }
   };
-
-  useEffect(() => {
-    if (isKmCalculationDisabled || kilometrinaServiceProductIds.size === 0) {
-      return;
-    }
-
-    for (const item of items) {
-      if (!isKilometrinaOfferItem(item) || isEmptyOfferItem(item)) {
-        continue;
-      }
-
-      const autoKey = `${projectId}:${item.id}:${item.productId ?? ""}`;
-      if (autoKmCalculationKeysRef.current.has(autoKey)) {
-        continue;
-      }
-
-      autoKmCalculationKeysRef.current.add(autoKey);
-      void handleCalculateKm(item, "auto");
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, isKmCalculationDisabled, kilometrinaServiceProductIds, projectId]);
 
   const deleteRow = (id: string) => {
     setLinkedServiceSuggestions((prev) => {
@@ -1262,7 +1237,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           size="icon"
           className="size-8 shrink-0"
           disabled={disabled}
-          onClick={() => void handleCalculateKm(item, "manual")}
+          onClick={() => void handleCalculateKm(item)}
           aria-label="Izračunaj kilometrino"
           title="Izračunaj kilometrino"
         >
