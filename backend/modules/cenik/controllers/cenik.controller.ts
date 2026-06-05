@@ -3,6 +3,8 @@ import { ProductDocument, ProductModel } from '../product.model';
 import type { PriceListSearchItem } from '../../../../shared/types/price-list';
 import { precheckProductCandidate } from '../services/product-sync.service';
 import { buildCategoryPriorityMap, resolvePriorityFromProductMap } from '../services/category-settings.service';
+import { applyReolinkSellingPrice } from '../services/reolink-pricing';
+import { applyReolinkImageOverride } from '../services/reolink-image-overrides';
 
 type ProductPayload = Pick<
   ProductDocument,
@@ -97,7 +99,7 @@ function normalizeCategorySlugs(input: unknown): string[] {
 }
 
 function buildPayload(body: Partial<ProductPayload>): ProductPayload {
-  return {
+  return applyReolinkImageOverride(applyReolinkSellingPrice({
     ime: castText(body.ime),
     categorySlugs: normalizeCategorySlugs(body.categorySlugs),
     isService: parseBoolean(body.isService),
@@ -114,11 +116,11 @@ function buildPayload(body: Partial<ProductPayload>): ProductPayload {
     casovnaNorma: castText(body.casovnaNorma),
     defaultExecutionMode: parseExecutionMode(body.defaultExecutionMode),
     defaultInstructionsTemplate: castText(body.defaultInstructionsTemplate),
-  };
+  }));
 }
 
 function sanitizeProduct(product: ProductDocument, categoryPriority?: 1 | 2 | 3 | null): ProductResponse {
-  return {
+  return applyReolinkImageOverride({
     _id: product._id,
     externalSource: product.externalSource ?? '',
     externalId: product.externalId ?? '',
@@ -147,7 +149,7 @@ function sanitizeProduct(product: ProductDocument, categoryPriority?: 1 | 2 | 3 
     mergedIntoProductId: product.mergedIntoProductId ? String(product.mergedIntoProductId) : '',
     createdAt: product.createdAt,
     updatedAt: product.updatedAt
-  };
+  });
 }
 
 function sortBySuggested(products: ProductResponse[], suggested: string[]) {

@@ -70,6 +70,7 @@ export async function sendOfferCommunicationEmail(
     subject: string;
     body: string;
     selectedAttachments: Array<'offer_pdf' | 'project_pdf'>;
+    selectedOfferIds?: string[];
   }
 ) {
   const response = await fetch(`/api/projects/${projectId}/offers/${offerId}/send`, {

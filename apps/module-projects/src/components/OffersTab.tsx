@@ -904,7 +904,11 @@ const loadOfferById = useCallback(async (offerId: string) => {
       maximumFractionDigits: 2,
     })} €`;
   const totalColumns = usePerItemDiscount ? 8 : 7;
-  const summaryLabelColSpan = totalColumns - 2;
+  const summaryLabelColSpan = totalColumns - 1;
+  const totalColumnClassName =
+    "sticky right-0 z-10 bg-card text-right align-middle pr-4 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)]";
+  const totalFooterColumnClassName =
+    "sticky right-0 z-10 bg-muted/50 text-right tabular-nums pr-4 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)]";
 
   const sanitizeFilenamePart = (value: string) =>
     value
@@ -2627,16 +2631,16 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         />
 
         <div className="hidden md:block bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
-          <Table className="w-full min-w-[980px] table-fixed">
+          <Table className="w-full table-fixed">
           <colgroup>
-            <col style={{ width: usePerItemDiscount ? "30%" : "34%" }} />
-            <col style={{ width: usePerItemDiscount ? "14%" : "18%" }} />
-            <col style={{ width: usePerItemDiscount ? "9%" : "10%" }} />
+            <col style={{ width: usePerItemDiscount ? "31%" : "38%" }} />
+            <col style={{ width: usePerItemDiscount ? "12%" : "13%" }} />
+            <col style={{ width: usePerItemDiscount ? "8%" : "8%" }} />
             <col style={{ width: usePerItemDiscount ? "11%" : "12%" }} />
             {usePerItemDiscount && <col style={{ width: "9%" }} />}
-            <col style={{ width: usePerItemDiscount ? "8%" : "10%" }} />
-            <col style={{ width: usePerItemDiscount ? "14%" : "12%" }} />
+            <col style={{ width: usePerItemDiscount ? "8%" : "8%" }} />
             <col style={{ width: usePerItemDiscount ? "5%" : "4%" }} />
+            <col style={{ width: usePerItemDiscount ? "16%" : "17%" }} />
           </colgroup>
           <TableHeader>
             <TableRow className="h-11">
@@ -2660,10 +2664,10 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
               <TableHead className="text-right align-middle">
                 DDV %
               </TableHead>
-              <TableHead className="text-right align-middle pr-4">
+              <TableHead className="text-center align-middle" />
+              <TableHead className={totalColumnClassName}>
                 Skupaj
               </TableHead>
-              <TableHead className="text-center align-middle" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -2692,10 +2696,10 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                   </div>
                 </TableCell>
 
-                <TableCell className="text-right align-middle">
+                <TableCell className="text-right align-middle px-1">
                   <div className="flex items-center justify-end gap-2">
                     <Input
-                      className="h-9 w-24 text-right"
+                      className="h-9 w-full min-w-0 text-right"
                       type="number"
                       inputMode="decimal"
                       min={0}
@@ -2709,9 +2713,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                   </div>
                 </TableCell>
 
-                <TableCell className="text-right align-middle">
+                <TableCell className="text-right align-middle px-1">
                   <Input
-                    className="text-right h-9"
+                    className="h-9 w-full min-w-0 text-right"
                     value={item.unit}
                     onChange={(event) =>
                       updateItem(item.id, { unit: event.target.value })
@@ -2732,9 +2736,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 </TableCell>
 
                 {usePerItemDiscount && (
-                  <TableCell className="text-right align-middle">
+                  <TableCell className="text-right align-middle px-1">
                     <Input
-                      className="text-right h-9"
+                      className="h-9 w-full min-w-0 text-right"
                       type="number"
                       inputMode="decimal"
                       value={item.discountPercent ?? 0}
@@ -2753,13 +2757,6 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                   </span>
                 </TableCell>
 
-                <TableCell className="text-right align-middle pr-4">
-                  {(item.totalGross || 0).toLocaleString("sl-SI", {
-                    minimumFractionDigits: 2,
-                  })}{" "}
-                  €
-                </TableCell>
-
                 <TableCell className="text-center align-middle">
                   {items.length > 1 && (
                     <Button
@@ -2771,6 +2768,14 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                     </Button>
                   )}
                 </TableCell>
+
+                <TableCell className={totalColumnClassName}>
+                  {(item.totalGross || 0).toLocaleString("sl-SI", {
+                    minimumFractionDigits: 2,
+                  })}{" "}
+                  €
+                </TableCell>
+
               </TableRow>
               {suggestionContent ? (
                 <TableRow key={`${item.id}-suggestions`}>
@@ -2795,10 +2800,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
               <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
                 Osnova brez DDV
               </TableCell>
-              <TableCell className="text-right tabular-nums pr-4">
+              <TableCell className={totalFooterColumnClassName}>
                 {formatCurrency(totals.baseWithoutVat ?? 0)}
               </TableCell>
-              <TableCell />
             </TableRow>
 
             {usePerItemDiscount && (totals.perItemDiscountAmount ?? 0) > 0 && (
@@ -2806,10 +2810,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
                   Popust po produktih
                 </TableCell>
-                <TableCell className="text-right tabular-nums pr-4">
+                <TableCell className={totalFooterColumnClassName}>
                   -{formatCurrency(totals.perItemDiscountAmount ?? 0)}
                 </TableCell>
-                <TableCell />
               </TableRow>
             )}
 
@@ -2818,10 +2821,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
                   Popust na celotno ponudbo ({globalDiscountPercent || 0}%)
                 </TableCell>
-                <TableCell className="text-right tabular-nums pr-4">
+                <TableCell className={totalFooterColumnClassName}>
                   -{formatCurrency(totals.globalDiscountAmount ?? 0)}
                 </TableCell>
-                <TableCell />
               </TableRow>
             )}
 
@@ -2829,30 +2831,27 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
               <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
                 Osnova po popustih
               </TableCell>
-              <TableCell className="text-right tabular-nums pr-4">
+              <TableCell className={totalFooterColumnClassName}>
                 {formatCurrency(totals.baseAfterDiscount ?? 0)}
               </TableCell>
-              <TableCell />
             </TableRow>
 
             <TableRow>
               <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
                 DDV ({vatMode}%)
               </TableCell>
-              <TableCell className="text-right tabular-nums pr-4">
+              <TableCell className={totalFooterColumnClassName}>
                 {formatCurrency(vatAmount)}
               </TableCell>
-              <TableCell />
             </TableRow>
 
             <TableRow className="font-semibold">
               <TableCell colSpan={summaryLabelColSpan} className="text-right pr-4">
                 Skupaj za plačilo (z DDV)
               </TableCell>
-              <TableCell className="text-right tabular-nums pr-4">
+              <TableCell className={totalFooterColumnClassName}>
                 {formatCurrency(totalGrossAfterDiscount)}
               </TableCell>
-              <TableCell />
             </TableRow>
           </TableFooter>
           </Table>
@@ -3157,6 +3156,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         projectName={projectDetails?.title ?? ""}
         offerNumber={currentOffer?.documentNumber ?? currentOffer?.title ?? currentOffer?.baseTitle ?? ""}
         offerTotal={Number(currentOffer?.totalWithVat ?? currentOffer?.totalGrossAfterDiscount ?? currentOffer?.totalGross ?? 0)}
+        offerVersions={versions}
         companyName={settings?.companyName ?? ""}
         onSent={handleCommunicationSent}
       />

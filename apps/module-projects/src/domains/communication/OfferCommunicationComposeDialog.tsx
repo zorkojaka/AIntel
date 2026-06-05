@@ -18,6 +18,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { fetchCommunicationSenderSettings, fetchCommunicationTemplates, sendOfferCommunicationEmail } from './api';
+import type { OfferVersionSummary } from '@aintel/shared/types/offers';
 
 interface OfferCommunicationComposeDialogProps {
   open: boolean;
@@ -29,6 +30,7 @@ interface OfferCommunicationComposeDialogProps {
   projectName: string;
   offerNumber: string;
   offerTotal: number;
+  offerVersions: OfferVersionSummary[];
   companyName: string;
   onSent: () => Promise<void> | void;
 }
@@ -46,7 +48,7 @@ function formatTotal(value: number) {
 
 const ATTACHMENT_OPTIONS: Array<{ value: CommunicationAttachmentType; label: string }> = [
   { value: 'offer_pdf', label: 'PDF ponudbe' },
-  { value: 'project_pdf', label: 'PDF projekta' },
+  { value: 'project_pdf', label: 'Opisi produktov' },
 ];
 
 export function OfferCommunicationComposeDialog({
@@ -59,6 +61,7 @@ export function OfferCommunicationComposeDialog({
   projectName,
   offerNumber,
   offerTotal,
+  offerVersions,
   companyName,
   onSent,
 }: OfferCommunicationComposeDialogProps) {
@@ -74,6 +77,7 @@ export function OfferCommunicationComposeDialog({
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [selectedAttachments, setSelectedAttachments] = useState<CommunicationAttachmentType[]>([]);
+  const [selectedOfferIds, setSelectedOfferIds] = useState<string[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -164,6 +168,7 @@ export function OfferCommunicationComposeDialog({
         setSubject(defaultTemplate ? replacePlaceholders(defaultTemplate.subjectTemplate, initialContext) : '');
         setBody(defaultTemplate ? replacePlaceholders(defaultTemplate.bodyTemplate, initialContext) : '');
         setSelectedAttachments(defaultTemplate?.defaultAttachments ?? ['offer_pdf']);
+        setSelectedOfferIds(offerId ? [offerId] : []);
         setIsDirty(false);
       } catch (error) {
         if (!active) return;
@@ -177,6 +182,7 @@ export function OfferCommunicationComposeDialog({
         setSubject('');
         setBody('');
         setSelectedAttachments(['offer_pdf']);
+        setSelectedOfferIds(offerId ? [offerId] : []);
         setIsDirty(false);
         setInitError(error instanceof Error ? error.message : 'Inicializacija komunikacije ni uspela.');
       } finally {
@@ -190,7 +196,7 @@ export function OfferCommunicationComposeDialog({
     return () => {
       active = false;
     };
-  }, [companyName, customerName, normalizedCustomerEmail, offerNumber, offerTotal, open, projectName, reloadKey]);
+  }, [companyName, customerName, normalizedCustomerEmail, offerId, offerNumber, offerTotal, open, projectName, reloadKey]);
 
   const selectedTemplate = useMemo(
     () => templates.find((entry) => entry.id === selectedTemplateId) ?? null,
@@ -229,9 +235,18 @@ export function OfferCommunicationComposeDialog({
     setIsDirty(true);
   };
 
+  const toggleOfferVersion = (versionId: string, checked: boolean) => {
+    setSelectedOfferIds((prev) =>
+      checked ? Array.from(new Set([...prev, versionId])) : prev.filter((entry) => entry !== versionId)
+    );
+    setIsDirty(true);
+  };
+
   const attachmentsDisabled = !offerId;
+  const offerSelectionDisabled = !offerId;
   const senderDisabled = !senderSettings?.enabled;
   const missingCustomerEmail = !normalizedCustomerEmail;
+  const hasOfferAttachment = selectedAttachments.some((entry) => entry === 'offer_pdf' || entry === 'project_pdf');
 
   const handleSend = async () => {
     if (!offerId) {
@@ -249,6 +264,7 @@ export function OfferCommunicationComposeDialog({
         subject,
         body,
         selectedAttachments,
+        selectedOfferIds,
       });
       await onSent();
       onOpenChange(false);
@@ -382,6 +398,35 @@ export function OfferCommunicationComposeDialog({
               ) : null}
             </div>
             <div className="space-y-2">
+              <div className="text-sm font-medium">Verzije ponudb v emailu</div>
+              <div className="grid gap-2 md:grid-cols-2">
+                {offerVersions.map((version) => (
+                  <label
+                    key={version._id}
+                    className={`flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${
+                      offerSelectionDisabled ? 'cursor-not-allowed opacity-50' : ''
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedOfferIds.includes(version._id)}
+                      disabled={offerSelectionDisabled}
+                      onChange={(event) => toggleOfferVersion(version._id, event.target.checked)}
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{version.title}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {version.documentNumber || `Verzija ${version.versionNumber}`} - {formatTotal(version.totalWithVat ?? version.totalGrossAfterDiscount ?? version.totalGross)} EUR
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {hasOfferAttachment && selectedOfferIds.length === 0 ? (
+                <p className="text-xs text-destructive">Za priloge izberi vsaj eno verzijo ponudbe.</p>
+              ) : null}
+            </div>
+            <div className="space-y-2">
               <div className="text-sm font-medium">Priloge</div>
               <div className="flex flex-wrap gap-3">
                 {ATTACHMENT_OPTIONS.map((attachment) => (
@@ -414,7 +459,16 @@ export function OfferCommunicationComposeDialog({
           <Button
             type="button"
             onClick={() => void handleSend()}
-            disabled={loading || sending || senderDisabled || !offerId || !to.trim() || !subject.trim() || !body.trim()}
+            disabled={
+              loading ||
+              sending ||
+              senderDisabled ||
+              !offerId ||
+              !to.trim() ||
+              !subject.trim() ||
+              !body.trim() ||
+              (hasOfferAttachment && selectedOfferIds.length === 0)
+            }
           >
             {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Pošlji

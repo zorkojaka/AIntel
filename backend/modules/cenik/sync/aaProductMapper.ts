@@ -1,6 +1,8 @@
 import { IMPORT_DEFAULTS } from './importDefaults';
 import { classifyProduct, getAttribute } from './classifier';
 import type { AAProductRaw } from './types';
+import { calculateReolinkSellingPrice, isReolinkProduct } from '../services/reolink-pricing';
+import { applyReolinkImageOverride } from '../services/reolink-image-overrides';
 
 const AA_PRODUCT_FIELDS = [
   'externalSource',
@@ -90,10 +92,13 @@ export function mapAAProductToImportItem(product: AAProductRaw) {
   const manufacturer = getAttribute(product.attributes, 'Manufacturer') ?? classification.manufacturer ?? '';
   const discount = Number.isFinite(product.discount ?? 0) ? product.discount ?? 0 : 0;
   const finalPurchasePrice = roundMoney(product.price * (1 - discount / 100));
+  const sellingPrice = isReolinkProduct({ proizvajalec: manufacturer, isService: false })
+    ? calculateReolinkSellingPrice(finalPurchasePrice)
+    : roundMoney(product.price);
   const description = product.description ?? '';
   const defaults = IMPORT_DEFAULTS.aa_api;
 
-  return {
+  return applyReolinkImageOverride({
     externalSource: 'aa_api',
     externalId: product.id,
     externalKey: `aa_api:${product.id}`,
@@ -102,7 +107,7 @@ export function mapAAProductToImportItem(product: AAProductRaw) {
     categorySlugs: resolveCategorySlugs(product, classification.productType, manufacturer),
     purchasePriceWithoutVat: finalPurchasePrice,
     nabavnaCena: finalPurchasePrice,
-    prodajnaCena: roundMoney(product.price),
+    prodajnaCena: sellingPrice,
     kratekOpis: description.slice(0, 200),
     dolgOpis: description,
     povezavaDoSlike: product.image ?? '',
@@ -123,7 +128,7 @@ export function mapAAProductToImportItem(product: AAProductRaw) {
     },
     classification,
     __providedFields: AA_PRODUCT_FIELDS,
-  };
+  });
 }
 
 export function mapAAProductsToImportItems(products: AAProductRaw[]) {

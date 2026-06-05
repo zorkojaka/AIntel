@@ -102,10 +102,10 @@ export async function resolveCommunicationAttachment(params: {
   }
 
   const buffer = await generateOfferDescriptionsPdf(offer as any);
-  const descriptionLabel = sanitizeFilePart(`Projekt ${projectIdentifier}`) || "Projekt";
+  const descriptionLabel = sanitizeFilePart(`Opisi ${offerIdentifier} ${projectIdentifier}`) || "Opisi";
   return {
     type,
-    refId: projectId,
+    refId: offerId,
     filename: `${descriptionLabel}.pdf`,
     content: buffer,
     contentType: "application/pdf",

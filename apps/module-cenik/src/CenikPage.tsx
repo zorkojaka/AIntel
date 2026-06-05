@@ -256,6 +256,29 @@ const emptyProduct = (): Product => ({
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('sl-SI', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 }).format(value);
 
+function isReolinkProduct(product: Product) {
+  return !product.isService && product.proizvajalec?.trim().toLowerCase() === 'reolink';
+}
+
+function ProductPriceDisplay({ product }: { product: Product }) {
+  if (!isReolinkProduct(product)) {
+    return <span>{formatCurrency(product.prodajnaCena)}</span>;
+  }
+
+  return (
+    <div className="space-y-0.5 text-xs leading-5">
+      <div>
+        <span className="font-medium text-muted-foreground">Nabavna cena: </span>
+        <span className="font-semibold text-foreground">{formatCurrency(product.nabavnaCena)}</span>
+      </div>
+      <div>
+        <span className="font-medium text-muted-foreground">Prodajna cena: </span>
+        <span className="font-semibold text-foreground">{formatCurrency(product.prodajnaCena)}</span>
+      </div>
+    </div>
+  );
+}
+
 function getProductPageUrl(product: Product) {
   const value = product.povezavaDoProdukta?.trim();
   if (!value) return '';
@@ -1500,7 +1523,7 @@ export const CenikPage: React.FC = () => {
                   },
                   {
                     header: 'Prodajna cena',
-                    accessor: (row: Product) => formatCurrency(row.prodajnaCena)
+                    accessor: (row: Product) => <ProductPriceDisplay product={row} />
                   },
                   { header: 'Proizvajalec', accessor: 'proizvajalec' },
                   { header: 'Opis', accessor: 'kratekOpis' },
@@ -1592,9 +1615,7 @@ export const CenikPage: React.FC = () => {
                       <CategoryChipRow slugs={product.categorySlugs ?? []} lookup={categoryLookup} />
 
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                        <span className="font-semibold text-foreground">
-                          {formatCurrency(product.prodajnaCena)}
-                        </span>
+                        <ProductPriceDisplay product={product} />
                         <span className="text-muted-foreground">•</span>
                         <span className="min-w-0 truncate text-muted-foreground">
                           <span className="font-medium text-foreground">Proizvajalec:</span>{" "}

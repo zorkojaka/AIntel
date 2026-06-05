@@ -18,6 +18,19 @@ function sanitizeAttachmentTypes(value: unknown) {
   );
 }
 
+function sanitizeOfferIds(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      value
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter((entry) => entry.length > 0)
+    )
+  );
+}
+
 function resolveActorProfile(req: Request) {
   const authEmployee = (req as any)?.authEmployee;
   const authUser = (req as any)?.authUser;
@@ -46,6 +59,7 @@ export async function sendOfferCommunicationController(req: Request, res: Respon
       subject: typeof req.body?.subject === "string" ? req.body.subject : null,
       body: typeof req.body?.body === "string" ? req.body.body : null,
       selectedAttachments: sanitizeAttachmentTypes(req.body?.selectedAttachments),
+      selectedOfferIds: sanitizeOfferIds(req.body?.selectedOfferIds),
       actorUserId: (req as any)?.context?.actorUserId ?? null,
       actorDisplayName: buildActorDisplayName(req as any),
       actorProfile: resolveActorProfile(req),

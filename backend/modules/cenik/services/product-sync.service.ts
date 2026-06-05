@@ -11,6 +11,8 @@ import {
   syncAAProductActiveStateWithCategorySettings,
 } from './category-settings.service';
 import { IMPORT_DEFAULTS } from '../sync/importDefaults';
+import { applyReolinkSellingPrice, isReolinkProduct } from './reolink-pricing';
+import { applyReolinkImageOverride } from './reolink-image-overrides';
 
 type NormalizedProduct = {
   source: string;
@@ -481,8 +483,10 @@ function validateAndNormalizeRow(
   }
 
   const prodajnaCena = product.prodajnaCena;
+  const reolinkProduct = isReolinkProduct({ proizvajalec: proizvajalecRaw, isService: isServiceRaw });
   if (
     (!providedFields || providedFields.includes('prodajnaCena')) &&
+    !reolinkProduct &&
     (!assertNumber(prodajnaCena) || (prodajnaCena as number) <= 0)
   ) {
     errors.push({ index, rowId, field: 'prodajnaCena', reason: 'must be a number > 0' });
@@ -519,7 +523,15 @@ function validateAndNormalizeRow(
     return { normalized: null, errors };
   }
 
-  const normalized: NormalizedProduct = {
+  const normalizedNabavnaCena = assertNumber(nabavnaCena) ? (nabavnaCena as number) : 0;
+  const normalizedProdajnaCena = applyReolinkSellingPrice({
+    nabavnaCena: normalizedNabavnaCena,
+    prodajnaCena: assertNumber(prodajnaCena) ? (prodajnaCena as number) : 0,
+    proizvajalec: proizvajalecRaw,
+    isService: isServiceRaw,
+  }).prodajnaCena;
+
+  const normalized: NormalizedProduct = applyReolinkImageOverride({
     source: sourceForRow,
     externalSource: sourceForRow,
     externalId: externalIdRaw,
@@ -530,8 +542,8 @@ function validateAndNormalizeRow(
     purchasePriceWithoutVat: assertNumber(product.purchasePriceWithoutVat)
       ? (product.purchasePriceWithoutVat as number)
       : undefined,
-    nabavnaCena: assertNumber(nabavnaCena) ? (nabavnaCena as number) : 0,
-    prodajnaCena: assertNumber(prodajnaCena) ? (prodajnaCena as number) : 0,
+    nabavnaCena: normalizedNabavnaCena,
+    prodajnaCena: normalizedProdajnaCena,
     kratekOpis: normalizeText(product.kratekOpis) || undefined,
     dolgOpis: normalizeText(product.dolgOpis) || undefined,
     povezavaDoSlike: normalizeUrl(product.povezavaDoSlike) || undefined,
@@ -552,8 +564,8 @@ function validateAndNormalizeRow(
       externalId: externalIdRaw,
       ime,
       categorySlugs,
-      nabavnaCena: assertNumber(nabavnaCena) ? (nabavnaCena as number) : 0,
-      prodajnaCena: assertNumber(prodajnaCena) ? (prodajnaCena as number) : 0,
+      nabavnaCena: normalizedNabavnaCena,
+      prodajnaCena: normalizedProdajnaCena,
       proizvajalec: proizvajalecRaw,
       dobavitelj,
       isService: product.isService as boolean,
@@ -567,7 +579,7 @@ function validateAndNormalizeRow(
     }),
     weakNameKey: buildWeakNameKey({ ime }),
     providedFields,
-  };
+  });
 
   return { normalized, errors };
 }
