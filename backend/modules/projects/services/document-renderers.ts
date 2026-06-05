@@ -54,6 +54,7 @@ export interface DocumentPreviewContext {
   docType: DocumentNumberingKind;
   documentNumber: string;
   issueDate: string;
+  servicePerformedDate?: string | null;
   validUntil?: string | null;
   dueDate?: string | null;
   paymentTerms?: string | null;
@@ -522,6 +523,9 @@ export function renderInvoicePdf(context: DocumentPreviewContext) {
 
   const notesBlock = buildNotesList(context.notes);
   const metaExtras: string[] = [];
+  if (context.servicePerformedDate) {
+    metaExtras.push(`<p><span class="muted">Datum opravljene storitve:</span> ${context.servicePerformedDate}</p>`);
+  }
   if (context.dueDate) {
     metaExtras.push(`<p><span class="muted">Rok plačila:</span> ${context.dueDate}</p>`);
   } else if (context.totals?.dueDays) {

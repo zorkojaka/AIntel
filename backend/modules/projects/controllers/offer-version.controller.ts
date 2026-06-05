@@ -1487,7 +1487,11 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
       return res.success(null);
     }
 
-    existing.title = body.title ?? existing.title;
+    if (body.title !== undefined) {
+      const nextBaseTitle = extractBaseTitle(normalizeText(body.title, existing.baseTitle));
+      existing.baseTitle = nextBaseTitle;
+      existing.title = `${nextBaseTitle}_${existing.versionNumber || 1}`;
+    }
     existing.validUntil = body.validUntil ? new Date(body.validUntil).toISOString() : existing.validUntil;
     existing.paymentTerms = body.paymentTerms ?? existing.paymentTerms ?? null;
     const normalizedComment = normalizeText(body?.comment, existing.comment ?? '');

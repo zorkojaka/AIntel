@@ -72,6 +72,10 @@ export interface ProjectSummary {
   quotedTotalWithVat: number;
   invoiceAmount: number;
   createdAt: string;
+  archivedAt?: string | null;
+  archivedBy?: string | null;
+  closedAt?: string | null;
+  closedBy?: string | null;
   categories: string[];
   requirementsTemplateVariantSlug?: string;
   salesUserId?: string | null;

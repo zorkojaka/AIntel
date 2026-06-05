@@ -26,6 +26,7 @@ import { downloadPdf } from "../../api";
 import type { Employee } from "@aintel/shared/types/employee";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { WorkOrderConfirmationComposeDialog } from "../communication/WorkOrderConfirmationComposeDialog";
+import { useSettingsData } from "@aintel/module-settings";
 
 interface ExecutionPanelProps {
   projectId: string;
@@ -544,6 +545,7 @@ export function ExecutionPanel({
   const rawWorkOrders = logistics?.workOrders ?? [];
   const materialOrders = logistics?.materialOrders ?? [];
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
+  const { settings } = useSettingsData({ applyTheme: false });
   const [pendingWorkOrders, setPendingWorkOrders] = useState<Record<string, WorkOrderDraft>>({});
   const [pendingMaterialOrders, setPendingMaterialOrders] = useState<Record<string, MaterialOrder>>({});
   const [completingId, setCompletingId] = useState<string | null>(null);
@@ -642,6 +644,9 @@ export function ExecutionPanel({
     () => viewerRoles.includes("ADMIN") || viewerRoles.includes("ORGANIZER"),
     [viewerRoles],
   );
+  const signatureMode = settings.workOrderCompletionSignatureMode ?? "optional";
+  const isSignatureDisabled = signatureMode === "none";
+  const isSignatureRequired = signatureMode === "required";
 
   const renderCompletedByMeta = (
     completedBy: string | null | undefined,
@@ -1026,26 +1031,33 @@ export function ExecutionPanel({
     async (
       orderId: string,
       overrides?: { status?: WorkOrderStatus },
-      options?: { skipRefresh?: boolean },
+      options?: { skipRefresh?: boolean; statusOnly?: boolean },
     ) => {
       const order = workOrders.find((candidate) => candidate._id === orderId);
       if (!order) return false;
-      if (getOrderConfirmationState(order) === "signed_active") {
+      const isStatusOnlyCompletion = options?.statusOnly === true && overrides?.status === "completed";
+      if (getOrderConfirmationState(order) === "signed_active" && !isStatusOnlyCompletion) {
         toast.error("Potrdilo delovnega naloga je podpisano. Izvedbenih vrednosti ni več mogoče spreminjati.");
         return false;
       }
       const draft = getDraftValues(order);
+      const requestBody = options?.statusOnly
+        ? {
+            workOrderId: orderId,
+            status: overrides?.status ?? order.status,
+          }
+        : {
+            workOrderId: orderId,
+            status: overrides?.status ?? (draft.status === "issued" ? "in-progress" : draft.status ?? order.status),
+            executionNote: draft.executionNote?.trim() ? draft.executionNote : null,
+            items: buildItemPayload(draft.items ?? []),
+          };
       setSavingStates((prev) => ({ ...prev, [orderId]: "saving" }));
       try {
         const response = await fetch(`/api/projects/${projectId}/work-orders/${orderId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            workOrderId: orderId,
-            status: overrides?.status ?? (draft.status === "issued" ? "in-progress" : draft.status ?? order.status),
-            executionNote: draft.executionNote?.trim() ? draft.executionNote : null,
-            items: buildItemPayload(draft.items ?? []),
-          }),
+          body: JSON.stringify(requestBody),
         });
         const payload = await response.json();
         if (!payload.success) {
@@ -1130,8 +1142,25 @@ export function ExecutionPanel({
   );
 
   const handleCompleteWorkOrder = async (order: WorkOrder) => {
-    if (getOrderConfirmationState(order) === "signed_active") {
-      toast.error("Potrdilo delovnega naloga je podpisano. Delovni nalog je zaklenjen.");
+    const confirmationState = getOrderConfirmationState(order);
+    if (confirmationState === "signed_active") {
+      setCompletingId(order._id);
+      const success = await saveWorkOrder(order._id, { status: "completed" }, { statusOnly: true });
+      if (success) {
+        toast.success("Delovni nalog zaključen.");
+      } else {
+        toast.error("Delovnega naloga ni mogoče zaključiti.");
+      }
+      setCompletingId(null);
+      return;
+    }
+    if (isSignatureRequired && confirmationState !== "signed_active") {
+      if (unsavedChanges[order._id]) {
+        const saved = await saveWorkOrder(order._id);
+        if (!saved) return;
+      }
+      toast.error("Za zaključek delovnega naloga je zahtevan podpis.");
+      setSignoffOrderId(order._id);
       return;
     }
     setCompletingId(order._id);
@@ -1943,6 +1972,7 @@ export function ExecutionPanel({
                     items.length > 0 && items.every((item: WorkOrderItemDraft) => !!item.isCompleted);
                   const someItemsCompleted = items.some((item: WorkOrderItemDraft) => !!item.isCompleted);
                   const isOrderCompleted = allItemsCompleted;
+                  const isWorkOrderStatusCompleted = order.status === "completed";
                   const confirmationState = getOrderConfirmationState(order);
                   const isConfirmationLocked = confirmationState === "signed_active";
                   const requiresResign = confirmationState === "resign_required";
@@ -2614,7 +2644,25 @@ export function ExecutionPanel({
                                   "Shrani delovni nalog"
                                 )}
                               </Button>
-                              {isOrderCompleted && !isConfirmationLocked ? (
+                              {!isWorkOrderStatusCompleted ? (
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => handleCompleteWorkOrder(order)}
+                                  disabled={!allItemsCompleted || isSavingOrder || isCompletingOrder}
+                                >
+                                  {isCompletingOrder ? (
+                                    <>
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                      Zaključujem...
+                                    </>
+                                  ) : isSignatureRequired && !isConfirmationLocked ? (
+                                    "Podpiši pred zaključkom"
+                                  ) : (
+                                    "Zaključi delovni nalog"
+                                  )}
+                                </Button>
+                              ) : null}
+                              {isOrderCompleted && !isConfirmationLocked && !isSignatureDisabled ? (
                                 <Button
                                   variant="secondary"
                                   onClick={() => setSignoffOrderId(order._id)}

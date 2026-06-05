@@ -1,6 +1,8 @@
 import { FinanceSnapshotModel } from '../schemas/finance-snapshot';
 import { OfferVersionModel } from '../../projects/schemas/offer-version';
 import { EmployeeModel } from '../../employees/schemas/employee';
+import { WorkOrderModel } from '../../projects/schemas/work-order';
+import { EmployeeServiceRateModel } from '../../employee-profiles/schemas/employee-service-rate';
 
 type DateRange = { from?: Date; to?: Date };
 type YearFilter = number | null;
@@ -11,6 +13,79 @@ const CACHE_TTL_MS = 60 * 60 * 1000;
 function toNumber(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function round(value: number) {
+  return Number(value.toFixed(2));
+}
+
+function normalizeText(value: unknown) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function isObjectId(value: string | null | undefined) {
+  return Boolean(value && /^[a-f\d]{24}$/i.test(value));
+}
+
+function normalizeEmployeeId(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (value && typeof value === 'object') {
+    if (typeof (value as { toHexString?: unknown }).toHexString === 'function') {
+      return (value as { toHexString: () => string }).toHexString();
+    }
+    const objectValue = value as { _id?: unknown; id?: unknown };
+    const nestedValue = objectValue._id ?? objectValue.id;
+    if (nestedValue && nestedValue !== value) {
+      return normalizeEmployeeId(nestedValue);
+    }
+    if (typeof (value as { toString?: unknown }).toString === 'function') {
+      const stringValue = String(value);
+      return stringValue && stringValue !== '[object Object]' ? stringValue : null;
+    }
+  }
+  return null;
+}
+
+function getCompletedBy(item: any): string | null {
+  return (
+    normalizeEmployeeId(item?.completedBy) ??
+    normalizeEmployeeId(item?.completedByEmployeeId) ??
+    normalizeEmployeeId(item?.executedBy) ??
+    normalizeEmployeeId(item?.executedByEmployeeId) ??
+    normalizeEmployeeId(item?.markedDoneBy) ??
+    normalizeEmployeeId(item?.markedDoneByEmployeeId) ??
+    normalizeEmployeeId(item?.doneBy) ??
+    normalizeEmployeeId(item?.doneByEmployeeId)
+  );
+}
+
+function getMatchingServiceItemsForSnapshotItem(workOrders: any[], snapshotItem: any) {
+  const productId = snapshotItem.productId ? String(snapshotItem.productId) : null;
+  const name = normalizeText(snapshotItem.name);
+  return workOrders.flatMap((workOrder) =>
+    (workOrder.items ?? []).filter((item: any) => {
+      if (item.isService !== true) return false;
+      if (productId && item.productId && String(item.productId) === productId) return true;
+      return Boolean(name && normalizeText(item.name) === name);
+    }),
+  );
+}
+
+async function getEmployeeServiceUnitPrice(employeeId: string, serviceProductId: string, snapshotUnitPriceSale: number) {
+  if (!isObjectId(employeeId) || !isObjectId(serviceProductId)) return 0;
+
+  const rate = await EmployeeServiceRateModel.findOne({
+    employeeId,
+    serviceProductId,
+    isActive: true,
+  }).lean();
+  if (!rate) return 0;
+
+  const overridePrice = rate.overridePrice === null || rate.overridePrice === undefined ? null : toNumber(rate.overridePrice, 0);
+  return overridePrice ?? round(snapshotUnitPriceSale * (toNumber(rate.defaultPercent, 0) / 100));
 }
 
 function normalizeRange(range: DateRange) {
@@ -214,6 +289,74 @@ export async function getEmployeesSummary(range: DateRange) {
     ...row,
     employeeName: employeeMap.get(String(row.employeeId)) ?? String(row.employeeId),
   }));
+}
+
+export async function getEmployeeProjectEarningDetail(employeeId: string, snapshotId: string) {
+  const normalizedEmployeeId = normalizeEmployeeId(employeeId);
+  if (!normalizedEmployeeId || !isObjectId(snapshotId)) return null;
+
+  const snapshot = await FinanceSnapshotModel.findOne({
+    _id: snapshotId,
+    superseded: { $ne: true },
+    'employeeEarnings.employeeId': normalizedEmployeeId,
+  }).lean();
+  if (!snapshot) return null;
+
+  const earning = (snapshot.employeeEarnings ?? []).find((entry) => String(entry.employeeId) === normalizedEmployeeId);
+  if (!earning) return null;
+
+  const workOrders = await WorkOrderModel.find({ projectId: snapshot.projectId }).lean();
+  const items: Array<{ name: string; quantity: number; unit: string; unitPrice: number; total: number }> = [];
+
+  for (const snapshotItem of snapshot.items ?? []) {
+    if (!snapshotItem.isService || !snapshotItem.productId) continue;
+
+    const serviceProductId = String(snapshotItem.productId);
+    const unitPrice = await getEmployeeServiceUnitPrice(
+      normalizedEmployeeId,
+      serviceProductId,
+      toNumber(snapshotItem.unitPriceSale, 0),
+    );
+    if (unitPrice <= 0) continue;
+
+    let quantity = 0;
+    const workOrderItems = getMatchingServiceItemsForSnapshotItem(workOrders, snapshotItem);
+    workOrderItems.forEach((workOrderItem: any) => {
+      const executionUnits = workOrderItem.executionSpec?.executionUnits ?? [];
+      if (executionUnits.length === 0) {
+        if (!workOrderItem.isCompleted || getCompletedBy(workOrderItem) !== normalizedEmployeeId) return;
+        quantity += toNumber(workOrderItem.executedQuantity, toNumber(snapshotItem.quantity, 1));
+        return;
+      }
+      executionUnits.forEach((unit: any) => {
+        if (unit.isCompleted && getCompletedBy(unit) === normalizedEmployeeId) {
+          quantity += 1;
+        }
+      });
+    });
+
+    if (quantity > 0) {
+      items.push({
+        name: snapshotItem.name,
+        quantity,
+        unit: snapshotItem.unit,
+        unitPrice,
+        total: round(unitPrice * quantity),
+      });
+    }
+  }
+
+  return {
+    snapshotId: String(snapshot._id),
+    projectId: snapshot.projectId,
+    invoiceNumber: snapshot.invoiceNumber,
+    customerName: snapshot.customer?.name ?? '',
+    issuedAt: snapshot.issuedAt,
+    totalEarnings: round(toNumber(earning.earnings, 0)),
+    isPaid: Boolean(earning.isPaid),
+    items,
+    itemTotal: round(items.reduce((sum, item) => sum + item.total, 0)),
+  };
 }
 
 export async function getPipelineSummary() {

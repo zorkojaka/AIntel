@@ -127,6 +127,7 @@ export interface WorkOrder {
   title?: string | null;
   items: WorkOrderItem[];
   status: WorkOrderStatus;
+  completedAt?: string | null;
   scheduledAt: string | null;
   scheduledConfirmedAt?: string | null;
   scheduledConfirmedBy?: string | null;

@@ -141,9 +141,6 @@ const clampMin = (value: unknown, fallback: number, min: number) => {
   return Math.max(min, parsed);
 };
 
-const getOfferDisplayNumber = (offer?: { documentNumber?: string | null; title?: string | null; baseTitle?: string | null } | null) =>
-  offer?.documentNumber || offer?.title || offer?.baseTitle || null;
-
 const formatKm = (value: number) =>
   value.toLocaleString("sl-SI", { maximumFractionDigits: 1 });
 
@@ -170,11 +167,7 @@ const extractAddressParts = (value: string) => {
   const house = normalized.match(/\b(?!\d{4}\b)\d+[a-z]?\b/)?.[0] ?? "";
   const postalCity = normalized.match(/\b\d{4}\s+([\p{L}\s-]+)/u)?.[1]?.trim() ?? "";
   const segments = value.split(",").map((part) => normalizeAddressPart(part)).filter(Boolean);
-  const fallbackCity =
-    segments
-      .slice(1)
-      .map((segment) => segment.replace(/\b\d{4}\b/g, "").trim())
-      .find((segment) => segment && !["slovenia", "slovenija"].includes(segment)) ?? "";
+  const fallbackCity = segments.length > 1 ? segments[segments.length - 1].replace(/\b\d{4}\b/g, "").trim() : "";
   const city = postalCity || fallbackCity;
   const streetSource = segments[0] || normalized;
   const street = streetSource
@@ -354,10 +347,9 @@ export function OffersTab({
   const [loadingLinkedServiceSuggestions, setLoadingLinkedServiceSuggestions] = useState<Record<string, boolean>>({});
   const [routeCalculationSettings, setRouteCalculationSettings] = useState<RouteCalculationSettings | null>(null);
   const [kmCalculationStates, setKmCalculationStates] = useState<Record<string, KmCalculationState>>({});
+  const [manualKmQuantities, setManualKmQuantities] = useState<Record<string, number>>({});
   const [kilometrinaServiceProductIds, setKilometrinaServiceProductIds] = useState<Set<string>>(new Set());
 
-  const autoKmCalculationKeysRef = useRef<Set<string>>(new Set());
-  const manualKmItemIdsRef = useRef<Set<string>>(new Set());
   const paymentTermsInitRef = useRef<Record<string, boolean>>({});
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(title);
@@ -471,6 +463,7 @@ export function OffersTab({
     setLastSavedSnapshot(EMPTY_OFFER_SNAPSHOT);
     setLinkedServiceSuggestions({});
     setLoadingLinkedServiceSuggestions({});
+    setManualKmQuantities({});
   }, []);
 
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
@@ -558,6 +551,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
       }));
 
       setItems(ensureTrailingBlank([...mapped]));
+      setManualKmQuantities({});
       setLinkedServiceSuggestions({});
       setLoadingLinkedServiceSuggestions({});
       setLastSavedSnapshot(
@@ -677,8 +671,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
     setOverriddenVatIds(new Set());
     setProjectDetails(null);
     setKmCalculationStates({});
-    autoKmCalculationKeysRef.current.clear();
-    manualKmItemIdsRef.current.clear();
+    setManualKmQuantities({});
     paymentTermsInitRef.current = {};
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -756,7 +749,10 @@ const loadOfferById = useCallback(async (offerId: string) => {
   const handleItemUpdate = (id: string, changes: Partial<OfferLineItemForm>) => {
     const current = items.find((item) => item.id === id);
     if (current && Object.prototype.hasOwnProperty.call(changes, "quantity") && isKilometrinaOfferItem(current)) {
-      manualKmItemIdsRef.current.add(id);
+      const nextQuantity = Number(changes.quantity);
+      if (Number.isFinite(nextQuantity)) {
+        setManualKmQuantities((prev) => ({ ...prev, [id]: nextQuantity }));
+      }
       setKmCalculationStates((prev) => ({ ...prev, [id]: { status: "manual" } }));
     }
     updateItem(id, changes);
@@ -765,62 +761,33 @@ const loadOfferById = useCallback(async (offerId: string) => {
   const isKmCalculationDisabled =
     !routeCalculationSettings?.orsApiConfigured || !routeCalculationSettings?.routeCalculationAddress?.trim();
 
-  const applyKmResult = (item: OfferLineItemForm, result: ProjectKmCalculation, mode: "auto" | "manual") => {
-    if (mode === "auto" && manualKmItemIdsRef.current.has(item.id)) {
-      return;
-    }
-    manualKmItemIdsRef.current.delete(item.id);
+  const applyKmResult = (item: OfferLineItemForm, result: ProjectKmCalculation) => {
+    setManualKmQuantities((prev) => {
+      if (!(item.id in prev)) return prev;
+      const next = { ...prev };
+      delete next[item.id];
+      return next;
+    });
     updateItem(item.id, { quantity: result.razdaljaSkupaj });
     setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "calculated", result } }));
   };
 
-  const handleCalculateKm = async (item: OfferLineItemForm, mode: "auto" | "manual" = "manual") => {
+  const handleCalculateKm = async (item: OfferLineItemForm) => {
     if (!isKilometrinaOfferItem(item) || isKmCalculationDisabled) {
       return;
     }
 
-    if (mode === "manual") {
-      manualKmItemIdsRef.current.delete(item.id);
-    }
     setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "loading" } }));
     try {
       const result = await calculateProjectKm(projectId);
-      applyKmResult(item, result, mode);
-      if (mode === "manual") {
-        toast.success(`Kilometrina izračunana: ${formatKm(result.razdaljaSkupaj)} km.`);
-      }
+      applyKmResult(item, result);
+      toast.success(`Kilometrina izračunana: ${formatKm(result.razdaljaSkupaj)} km.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Naslova ni bilo mogoče najti. Vnesi km ročno.";
       setKmCalculationStates((prev) => ({ ...prev, [item.id]: { status: "error", message } }));
       toast.error(message);
     }
   };
-
-  useEffect(() => {
-    if (isKmCalculationDisabled || kilometrinaServiceProductIds.size === 0) {
-      return;
-    }
-
-    for (const item of items) {
-      if (!isKilometrinaOfferItem(item) || isEmptyOfferItem(item)) {
-        continue;
-      }
-
-      const state = kmCalculationStates[item.id];
-      if (manualKmItemIdsRef.current.has(item.id) || state?.status === "manual" || state?.status === "loading") {
-        continue;
-      }
-
-      const autoKey = `${projectId}:${item.id}:${item.productId ?? ""}`;
-      if (autoKmCalculationKeysRef.current.has(autoKey)) {
-        continue;
-      }
-
-      autoKmCalculationKeysRef.current.add(autoKey);
-      void handleCalculateKm(item, "auto");
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, isKmCalculationDisabled, kilometrinaServiceProductIds, kmCalculationStates, projectId]);
 
   const deleteRow = (id: string) => {
     setLinkedServiceSuggestions((prev) => {
@@ -830,6 +797,12 @@ const loadOfferById = useCallback(async (offerId: string) => {
       return next;
     });
     setLoadingLinkedServiceSuggestions((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setManualKmQuantities((prev) => {
       if (!(id in prev)) return prev;
       const next = { ...prev };
       delete next[id];
@@ -926,7 +899,11 @@ const loadOfferById = useCallback(async (offerId: string) => {
       maximumFractionDigits: 2,
     })} €`;
   const totalColumns = usePerItemDiscount ? 8 : 7;
-  const summaryLabelColSpan = totalColumns - 2;
+  const summaryLabelColSpan = totalColumns - 1;
+  const totalColumnClassName =
+    "sticky right-0 z-10 bg-card text-right align-middle pr-4 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)]";
+  const totalFooterColumnClassName =
+    "sticky right-0 z-10 bg-muted/50 text-right tabular-nums pr-4 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)]";
 
   const sanitizeFilenamePart = (value: string) =>
     value
@@ -1212,6 +1189,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-80 space-y-1 text-xs" align="start">
+          <p>Od: {state.result.naslovPodjetje}</p>
+          <p>Do: {state.result.naslovProjekt}</p>
+          <p>Zanesljivost: {state.result.zanesljivostProcent ?? "?"}%</p>
           {projectAddress ? <p>Projekt: {projectAddress}</p> : null}
           <p>Geocoder: {state.result.naslovProjekt}</p>
           <p>
@@ -1250,6 +1230,8 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
 
     return (
       <div className="space-y-1 text-xs text-muted-foreground">
+        <div>Izračun: {state.result.naslovPodjetje} -&gt; {state.result.naslovProjekt}</div>
+        <div>Zanesljivost: {state.result.zanesljivostProcent ?? "?"}%</div>
         {projectAddress ? <div>Projekt: {projectAddress}</div> : null}
         <div>
           Geocoder: {state.result.naslovProjekt}
@@ -1280,7 +1262,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           size="icon"
           className="size-8 shrink-0"
           disabled={disabled}
-          onClick={() => void handleCalculateKm(item, "manual")}
+          onClick={() => void handleCalculateKm(item)}
           aria-label="Izračunaj kilometrino"
           title="Izračunaj kilometrino"
         >
@@ -1412,11 +1394,16 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     const cleanItems = items
       .filter((i) => !isEmptyOfferItem(i))
       .filter((i) => i.name.trim() !== "" && i.unitPrice > 0)
-      .map((i) => ({
+      .map((i) => {
+        const quantity =
+          isKilometrinaOfferItem(i) && manualKmQuantities[i.id] !== undefined
+            ? manualKmQuantities[i.id]
+            : i.quantity;
+        return {
         id: i.id,
         productId: i.productId,
         name: i.name,
-        quantity: i.quantity,
+        quantity,
         unit: i.unit,
         unitPrice: i.unitPrice,
         vatRate: i.vatRate,
@@ -1424,7 +1411,8 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         totalVat: i.totalVat,
         totalGross: i.totalGross,
         discountPercent: usePerItemDiscount ? i.discountPercent ?? 0 : 0,
-      }));
+        };
+      });
 
     const effectiveGlobalPercent = useGlobalDiscount ? globalDiscountPercent : 0;
 
@@ -1548,7 +1536,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
   };
 
   const ensureSavedOffer = async () => {
-    if (currentOffer?._id) {
+    if (currentOffer?._id && !isDirty) {
       return currentOffer;
     }
     return handleSave();
@@ -2228,7 +2216,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
               <SelectContent>
                 {versions.map((v) => (
                   <SelectItem key={v._id} value={v._id}>
-                    {getOfferDisplayNumber(v) || "Ponudba"} –{" "}
+                    {v.title} –{" "}
                     {formatCurrency(
                       v.totalGrossAfterDiscount ?? v.totalWithVat ?? v.totalGross ?? 0
                     )}
@@ -2525,7 +2513,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 className="text-xl font-semibold text-left"
                 onClick={() => setIsEditingTitle(true)}
               >
-                {getOfferDisplayNumber(currentOffer) || title || "Ponudba"}
+                {title || "Ponudba"}
               </button>
             )}
           </div>
@@ -2651,14 +2639,14 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         <div className="hidden md:block bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
           <Table className="w-full table-fixed">
           <colgroup>
-            <col style={{ width: usePerItemDiscount ? "32%" : "38%" }} />
-            <col style={{ width: usePerItemDiscount ? "12%" : "14%" }} />
-            <col style={{ width: "8%" }} />
+            <col style={{ width: usePerItemDiscount ? "31%" : "38%" }} />
+            <col style={{ width: usePerItemDiscount ? "12%" : "13%" }} />
+            <col style={{ width: usePerItemDiscount ? "8%" : "8%" }} />
             <col style={{ width: usePerItemDiscount ? "11%" : "12%" }} />
-            {usePerItemDiscount && <col style={{ width: "8%" }} />}
-            <col style={{ width: usePerItemDiscount ? "7%" : "8%" }} />
-            <col style={{ width: usePerItemDiscount ? "15%" : "13%" }} />
+            {usePerItemDiscount && <col style={{ width: "9%" }} />}
+            <col style={{ width: usePerItemDiscount ? "8%" : "8%" }} />
             <col style={{ width: usePerItemDiscount ? "5%" : "4%" }} />
+            <col style={{ width: usePerItemDiscount ? "16%" : "17%" }} />
           </colgroup>
           <TableHeader>
             <TableRow className="h-11">
@@ -2682,10 +2670,10 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
               <TableHead className="text-right align-middle">
                 DDV %
               </TableHead>
-              <TableHead className="text-right align-middle pr-4">
+              <TableHead className="text-center align-middle" />
+              <TableHead className={totalColumnClassName}>
                 Skupaj
               </TableHead>
-              <TableHead className="text-center align-middle" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -2714,10 +2702,10 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                   </div>
                 </TableCell>
 
-                <TableCell className="text-right align-middle">
+                <TableCell className="text-right align-middle px-1">
                   <div className="flex items-center justify-end gap-2">
                     <Input
-                      className="h-9 w-full max-w-20 text-right"
+                      className="h-9 w-full min-w-0 text-right"
                       type="number"
                       inputMode="decimal"
                       min={0}
@@ -2731,9 +2719,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                   </div>
                 </TableCell>
 
-                <TableCell className="text-right align-middle">
+                <TableCell className="text-right align-middle px-1">
                   <Input
-                    className="h-9 w-full text-right"
+                    className="h-9 w-full min-w-0 text-right"
                     value={item.unit}
                     onChange={(event) =>
                       updateItem(item.id, { unit: event.target.value })
@@ -2754,9 +2742,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 </TableCell>
 
                 {usePerItemDiscount && (
-                  <TableCell className="text-right align-middle">
+                  <TableCell className="text-right align-middle px-1">
                     <Input
-                      className="h-9 w-full text-right"
+                      className="h-9 w-full min-w-0 text-right"
                       type="number"
                       inputMode="decimal"
                       value={item.discountPercent ?? 0}
@@ -2775,13 +2763,6 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                   </span>
                 </TableCell>
 
-                <TableCell className="text-right align-middle pr-4">
-                  {(item.totalGross || 0).toLocaleString("sl-SI", {
-                    minimumFractionDigits: 2,
-                  })}{" "}
-                  €
-                </TableCell>
-
                 <TableCell className="text-center align-middle">
                   {items.length > 1 && (
                     <Button
@@ -2793,6 +2774,14 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                     </Button>
                   )}
                 </TableCell>
+
+                <TableCell className={totalColumnClassName}>
+                  {(item.totalGross || 0).toLocaleString("sl-SI", {
+                    minimumFractionDigits: 2,
+                  })}{" "}
+                  €
+                </TableCell>
+
               </TableRow>
               {suggestionContent ? (
                 <TableRow key={`${item.id}-suggestions`}>
@@ -2817,10 +2806,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
               <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
                 Osnova brez DDV
               </TableCell>
-              <TableCell className="text-right tabular-nums pr-4">
+              <TableCell className={totalFooterColumnClassName}>
                 {formatCurrency(totals.baseWithoutVat ?? 0)}
               </TableCell>
-              <TableCell />
             </TableRow>
 
             {usePerItemDiscount && (totals.perItemDiscountAmount ?? 0) > 0 && (
@@ -2828,10 +2816,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
                   Popust po produktih
                 </TableCell>
-                <TableCell className="text-right tabular-nums pr-4">
+                <TableCell className={totalFooterColumnClassName}>
                   -{formatCurrency(totals.perItemDiscountAmount ?? 0)}
                 </TableCell>
-                <TableCell />
               </TableRow>
             )}
 
@@ -2840,10 +2827,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                 <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
                   Popust na celotno ponudbo ({globalDiscountPercent || 0}%)
                 </TableCell>
-                <TableCell className="text-right tabular-nums pr-4">
+                <TableCell className={totalFooterColumnClassName}>
                   -{formatCurrency(totals.globalDiscountAmount ?? 0)}
                 </TableCell>
-                <TableCell />
               </TableRow>
             )}
 
@@ -2851,30 +2837,27 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
               <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
                 Osnova po popustih
               </TableCell>
-              <TableCell className="text-right tabular-nums pr-4">
+              <TableCell className={totalFooterColumnClassName}>
                 {formatCurrency(totals.baseAfterDiscount ?? 0)}
               </TableCell>
-              <TableCell />
             </TableRow>
 
             <TableRow>
               <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
                 DDV ({vatMode}%)
               </TableCell>
-              <TableCell className="text-right tabular-nums pr-4">
+              <TableCell className={totalFooterColumnClassName}>
                 {formatCurrency(vatAmount)}
               </TableCell>
-              <TableCell />
             </TableRow>
 
             <TableRow className="font-semibold">
               <TableCell colSpan={summaryLabelColSpan} className="text-right pr-4">
                 Skupaj za plačilo (z DDV)
               </TableCell>
-              <TableCell className="text-right tabular-nums pr-4">
+              <TableCell className={totalFooterColumnClassName}>
                 {formatCurrency(totalGrossAfterDiscount)}
               </TableCell>
-              <TableCell />
             </TableRow>
           </TableFooter>
           </Table>
@@ -3179,6 +3162,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         projectName={projectDetails?.title ?? ""}
         offerNumber={currentOffer?.documentNumber ?? currentOffer?.title ?? currentOffer?.baseTitle ?? ""}
         offerTotal={Number(currentOffer?.totalWithVat ?? currentOffer?.totalGrossAfterDiscount ?? currentOffer?.totalGross ?? 0)}
+        offerVersions={versions}
         companyName={settings?.companyName ?? ""}
         onSent={handleCommunicationSent}
       />

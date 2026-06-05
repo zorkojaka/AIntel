@@ -19,6 +19,12 @@ function parseOptionalPriority(value: unknown): CategorySettingsPriority | undef
   return parsePriority(value);
 }
 
+function parseMarginPercent(value: unknown) {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 export async function getCategorySettings(_req: Request, res: Response) {
   try {
     return res.success(await listCategorySettings());
@@ -33,6 +39,7 @@ export async function updateCategorySetting(req: Request, res: Response) {
     const updated = await updateCategorySettingById(req.params.id, {
       isActive: req.body?.isActive,
       priority: parseOptionalPriority(req.body?.priority) as CategorySettingsPriority | undefined,
+      marginPercent: parseMarginPercent(req.body?.marginPercent),
       notes: req.body?.notes,
     });
 
@@ -56,6 +63,7 @@ export async function bulkUpdateCategorySettingsController(req: Request, res: Re
       path: update.path,
       isActive: update.isActive,
       priority: parsePriority(update.priority),
+      marginPercent: parseMarginPercent(update.marginPercent),
       notes: update.notes,
     }));
 

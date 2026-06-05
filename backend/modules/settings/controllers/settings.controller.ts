@@ -76,6 +76,12 @@ function validatePayload(body: unknown): SettingsUpdate {
       payload.phaseProgressionMode === 'automatic' || payload.phaseProgressionMode === 'manual'
         ? payload.phaseProgressionMode
         : undefined,
+    workOrderCompletionSignatureMode:
+      payload.workOrderCompletionSignatureMode === 'none' ||
+      payload.workOrderCompletionSignatureMode === 'optional' ||
+      payload.workOrderCompletionSignatureMode === 'required'
+        ? payload.workOrderCompletionSignatureMode
+        : undefined,
     notes: Array.isArray(payload.notes) ? (payload.notes as SettingsUpdate['notes']) : undefined,
     noteDefaultsByDoc:
       typeof payload.noteDefaultsByDoc === 'object' && payload.noteDefaultsByDoc !== null

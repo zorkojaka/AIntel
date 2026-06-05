@@ -6,6 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 interface ProjectFiltersProps {
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
+  lifecycleView: string;
+  onLifecycleViewChange: (value: string) => void;
   phaseFilter: string;
   onPhaseFilterChange: (value: string) => void;
   categoryFilter: string;
@@ -16,6 +18,8 @@ interface ProjectFiltersProps {
 export function ProjectFilters({
   searchQuery,
   onSearchQueryChange,
+  lifecycleView,
+  onLifecycleViewChange,
   phaseFilter,
   onPhaseFilterChange,
   categoryFilter,
@@ -33,6 +37,17 @@ export function ProjectFilters({
           className="pl-9"
         />
       </div>
+      <Select value={lifecycleView} onValueChange={onLifecycleViewChange}>
+        <SelectTrigger className="w-full md:w-44">
+          <SelectValue placeholder="Pregled" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="active">Aktivni</SelectItem>
+          <SelectItem value="closed">ZakljuÄeni</SelectItem>
+          <SelectItem value="archived">Arhivirani</SelectItem>
+          <SelectItem value="all">Vsi</SelectItem>
+        </SelectContent>
+      </Select>
       <Select value={phaseFilter} onValueChange={onPhaseFilterChange}>
         <SelectTrigger className="w-full md:w-48">
           <SelectValue placeholder="Faza" />

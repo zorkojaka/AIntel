@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import {
   getBasketAnalysis,
+  getEmployeeProjectEarningDetail,
   getEmployeesSummary,
   getMonthlySummary,
   getPipelineSummary,
@@ -37,6 +38,16 @@ export async function monthlySummary(req: Request, res: Response) {
 
 export async function employeesSummary(req: Request, res: Response) {
   const data = await getEmployeesSummary(buildRange(req));
+  return res.success(data);
+}
+
+export async function employeeProjectEarningDetail(req: Request, res: Response) {
+  const employeeId = typeof req.params.employeeId === 'string' ? req.params.employeeId.trim() : '';
+  const snapshotId = typeof req.params.snapshotId === 'string' ? req.params.snapshotId.trim() : '';
+  const data = await getEmployeeProjectEarningDetail(employeeId, snapshotId);
+  if (!data) {
+    return res.fail('Razčlemba zaslužka ni najdena.', 404);
+  }
   return res.success(data);
 }
 

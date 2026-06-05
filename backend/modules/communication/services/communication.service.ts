@@ -454,6 +454,7 @@ function resolveSenderIdentity(
 export async function sendOfferCommunicationEmail(input: {
   projectId: string;
   offerId: string;
+  selectedOfferIds?: string[];
   to: unknown;
   cc?: unknown;
   bcc?: unknown;
@@ -479,14 +480,23 @@ export async function sendOfferCommunicationEmail(input: {
     throw new Error("Pošiljatelj ni pravilno nastavljen.");
   }
 
-  const [project, offer, globalSettings] = await Promise.all([
+  const explicitSelectedOfferIds = Array.isArray(input.selectedOfferIds)
+    ? input.selectedOfferIds.map((entry) => sanitizeString(entry)).filter(Boolean)
+    : [];
+  const selectedOfferIds = Array.from(new Set(explicitSelectedOfferIds.length > 0 ? explicitSelectedOfferIds : [input.offerId]));
+
+  const [project, offer, selectedOffers, globalSettings] = await Promise.all([
     ProjectModel.findOne({ id: input.projectId }),
     OfferVersionModel.findOne({ _id: input.offerId, projectId: input.projectId }),
+    OfferVersionModel.find({ _id: { $in: selectedOfferIds }, projectId: input.projectId }).lean(),
     getSettings(),
   ]);
 
   if (!project || !offer) {
     throw new Error("Projekt ali ponudba nista najdena.");
+  }
+  if (selectedOfferIds.length > 0 && selectedOffers.length !== selectedOfferIds.length) {
+    throw new Error("Ena ali vec izbranih verzij ponudbe ni najdena.");
   }
 
   const effectiveSender = resolveSenderIdentity(senderSettings, input.actorProfile);
@@ -561,11 +571,23 @@ export async function sendOfferCommunicationEmail(input: {
       ? input.selectedAttachments
       : template?.defaultAttachments ?? [];
 
-  const attachments = await Promise.all(
-    selectedAttachments.map((type) =>
-      resolveCommunicationAttachment({ type, projectId: input.projectId, offerId: input.offerId })
-    )
-  );
+  const offerAttachmentTypes = selectedAttachments.filter((type) => type === "offer_pdf" || type === "project_pdf");
+  const otherAttachmentTypes = selectedAttachments.filter((type) => type !== "offer_pdf" && type !== "project_pdf");
+  const attachmentRequests = [
+    ...offerAttachmentTypes.flatMap((type) =>
+      selectedOfferIds.map((selectedOfferId) => ({
+        type,
+        projectId: input.projectId,
+        offerId: selectedOfferId,
+      }))
+    ),
+    ...otherAttachmentTypes.map((type) => ({
+      type,
+      projectId: input.projectId,
+      offerId: input.offerId,
+    })),
+  ];
+  const attachments = await Promise.all(attachmentRequests.map((params) => resolveCommunicationAttachment(params)));
 
   const selectedAttachmentRecords: CommunicationAttachmentRecord[] = attachments.map((attachment) => ({
     type: attachment.type,

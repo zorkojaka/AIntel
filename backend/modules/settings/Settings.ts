@@ -39,6 +39,7 @@ export interface LegacyOfferClause {
 }
 
 export type DocumentNumberingReset = 'never' | 'yearly';
+export type WorkOrderCompletionSignatureMode = 'none' | 'optional' | 'required';
 
 export interface DocumentNumberingConfig {
   pattern: string;
@@ -80,6 +81,7 @@ export interface Settings {
   disclaimer?: string;
   offerClauses?: LegacyOfferClause[];
   phaseProgressionMode?: 'automatic' | 'manual';
+  workOrderCompletionSignatureMode?: WorkOrderCompletionSignatureMode;
 }
 
 export interface SettingsDocument extends Document, Settings {
@@ -196,7 +198,8 @@ const SettingsSchema = new Schema<SettingsDocument>(
     defaultPaymentTerms: { type: String },
     disclaimer: { type: String },
     offerClauses: { type: [LegacyClauseSchema], default: [] },
-    phaseProgressionMode: { type: String, enum: ['automatic', 'manual'], default: 'manual' }
+    phaseProgressionMode: { type: String, enum: ['automatic', 'manual'], default: 'manual' },
+    workOrderCompletionSignatureMode: { type: String, enum: ['none', 'optional', 'required'], default: 'optional' }
   },
   {
     timestamps: true,

@@ -74,6 +74,7 @@ export type ProjectKmCalculation = {
   razdaljaEnosmerno: number;
   razdaljaSkupaj: number;
   zanesljivost: "visoka" | "srednja" | "nizka";
+  zanesljivostProcent?: number;
   razlog?: string;
   naslovPodjetje: string;
   naslovProjekt: string;

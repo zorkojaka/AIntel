@@ -1,4 +1,4 @@
-import { CalendarDays, Pencil, Trash2 } from "lucide-react";
+import { Archive, CalendarDays, CheckCircle2, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { TableRowActions } from "@aintel/ui";
 import { Badge } from "./ui/badge";
@@ -11,6 +11,10 @@ interface ProjectListProps {
   categories: Category[];
   onEditProject: (project: ProjectSummary) => void;
   onDeleteProject: (project: ProjectSummary) => void;
+  onArchiveProject?: (project: ProjectSummary) => void;
+  onUnarchiveProject?: (project: ProjectSummary) => void;
+  onCloseProject?: (project: ProjectSummary) => void;
+  onReopenProject?: (project: ProjectSummary) => void;
   readOnly?: boolean;
   hideFilters?: boolean;
   hideFinancials?: boolean;
@@ -72,12 +76,23 @@ function getDateValue(value: string) {
   return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
 }
 
+function canCloseProject(project: ProjectSummary) {
+  return project.status === "invoiced" || project.phaseSignals?.hasIssuedInvoice === true;
+}
+
+const lifecycleButtonClasses =
+  "inline-flex h-8 w-8 items-center justify-center rounded border border-border/70 bg-card text-foreground transition hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+
 export function ProjectList({
   projects,
   onSelectProject,
   categories,
   onEditProject,
   onDeleteProject,
+  onArchiveProject,
+  onUnarchiveProject,
+  onCloseProject,
+  onReopenProject,
   readOnly = false,
   hideFilters = false,
   hideFinancials = false,
@@ -146,6 +161,53 @@ export function ProjectList({
     </TableHead>
   );
 
+  const renderLifecycleActions = (project: ProjectSummary) => (
+    <>
+      {project.closedAt ? (
+        <button
+          type="button"
+          className={lifecycleButtonClasses}
+          onClick={() => onReopenProject?.(project)}
+          title="Ponovno odpri projekt"
+          aria-label={`Ponovno odpri ${project.title}`}
+        >
+          <RotateCcw className="h-4 w-4" />
+        </button>
+      ) : canCloseProject(project) ? (
+        <button
+          type="button"
+          className={lifecycleButtonClasses}
+          onClick={() => onCloseProject?.(project)}
+          title="Zaključi projekt"
+          aria-label={`Zaključi ${project.title}`}
+        >
+          <CheckCircle2 className="h-4 w-4" />
+        </button>
+      ) : null}
+      {project.archivedAt ? (
+        <button
+          type="button"
+          className={lifecycleButtonClasses}
+          onClick={() => onUnarchiveProject?.(project)}
+          title="Vrni iz arhiva"
+          aria-label={`Vrni iz arhiva ${project.title}`}
+        >
+          <RotateCcw className="h-4 w-4" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={lifecycleButtonClasses}
+          onClick={() => onArchiveProject?.(project)}
+          title="Arhiviraj projekt"
+          aria-label={`Arhiviraj ${project.title}`}
+        >
+          <Archive className="h-4 w-4" />
+        </button>
+      )}
+    </>
+  );
+
   if (filteredProjects.length === 0) {
     return (
       <div className="space-y-4">
@@ -206,12 +268,15 @@ export function ProjectList({
                 <TableCell>{formatDate(project.createdAt)}</TableCell>
                 {!readOnly ? (
                   <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
-                    <TableRowActions
-                      onEdit={() => onEditProject(project)}
-                      onDelete={() => onDeleteProject(project)}
-                      deleteConfirmTitle="Izbriši projekt"
-                      deleteConfirmMessage="Si prepričan, da želiš izbrisati ta projekt? Tega dejanja ni mogoče razveljaviti."
-                    />
+                    <div className="flex justify-end gap-1">
+                      {renderLifecycleActions(project)}
+                      <TableRowActions
+                        onEdit={() => onEditProject(project)}
+                        onDelete={() => onDeleteProject(project)}
+                        deleteConfirmTitle="Izbriši projekt"
+                        deleteConfirmMessage="Si prepričan, da želiš izbrisati ta projekt? Tega dejanja ni mogoče razveljaviti."
+                      />
+                    </div>
                   </TableCell>
                 ) : null}
               </TableRow>
@@ -238,6 +303,7 @@ export function ProjectList({
               </div>
               {!readOnly ? (
                 <div className="flex shrink-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
+                  {renderLifecycleActions(project)}
                   <button
                     type="button"
                     onClick={() => onEditProject(project)}

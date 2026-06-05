@@ -3,6 +3,13 @@ import { ProductDocument, ProductModel } from '../product.model';
 import type { PriceListSearchItem } from '../../../../shared/types/price-list';
 import { precheckProductCandidate } from '../services/product-sync.service';
 import { buildCategoryPriorityMap, resolvePriorityFromProductMap } from '../services/category-settings.service';
+import {
+  applyCategoryMarginSellingPrice,
+  loadCategoryMarginSettings,
+  resolveCategoryMarginPricingInfo,
+  type CategoryMarginPricingInfo,
+} from '../services/category-margin-pricing';
+import { applyReolinkImageOverride } from '../services/reolink-image-overrides';
 
 type ProductPayload = Pick<
   ProductDocument,
@@ -33,6 +40,7 @@ type ProductResponse = ProductPayload & {
   aaData?: ProductDocument['aaData'];
   classification?: ProductDocument['classification'];
   categoryPriority?: 1 | 2 | 3 | null;
+  pricingRule?: CategoryMarginPricingInfo | null;
   status?: string;
   mergedIntoProductId?: string;
   createdAt: Date;
@@ -96,8 +104,8 @@ function normalizeCategorySlugs(input: unknown): string[] {
   return Array.from(new Set(normalized));
 }
 
-function buildPayload(body: Partial<ProductPayload>): ProductPayload {
-  return {
+async function buildPayload(body: Partial<ProductPayload>): Promise<ProductPayload> {
+  return applyReolinkImageOverride(await applyCategoryMarginSellingPrice({
     ime: castText(body.ime),
     categorySlugs: normalizeCategorySlugs(body.categorySlugs),
     isService: parseBoolean(body.isService),
@@ -114,11 +122,16 @@ function buildPayload(body: Partial<ProductPayload>): ProductPayload {
     casovnaNorma: castText(body.casovnaNorma),
     defaultExecutionMode: parseExecutionMode(body.defaultExecutionMode),
     defaultInstructionsTemplate: castText(body.defaultInstructionsTemplate),
-  };
+  }));
 }
 
-function sanitizeProduct(product: ProductDocument, categoryPriority?: 1 | 2 | 3 | null): ProductResponse {
-  return {
+function sanitizeProduct(
+  product: ProductDocument,
+  categoryPriority?: 1 | 2 | 3 | null,
+  marginSettings: Awaited<ReturnType<typeof loadCategoryMarginSettings>> = [],
+): ProductResponse {
+  const pricingRule = resolveCategoryMarginPricingInfo(product as any, marginSettings);
+  return applyReolinkImageOverride({
     _id: product._id,
     externalSource: product.externalSource ?? '',
     externalId: product.externalId ?? '',
@@ -143,11 +156,12 @@ function sanitizeProduct(product: ProductDocument, categoryPriority?: 1 | 2 | 3 
     aaData: product.aaData,
     classification: product.classification,
     categoryPriority: categoryPriority ?? null,
+    pricingRule,
     status: product.status ?? (product.isActive === false ? 'merged' : 'active'),
     mergedIntoProductId: product.mergedIntoProductId ? String(product.mergedIntoProductId) : '',
     createdAt: product.createdAt,
     updatedAt: product.updatedAt
-  };
+  });
 }
 
 function sortBySuggested(products: ProductResponse[], suggested: string[]) {
@@ -176,7 +190,12 @@ export async function getAllProducts(_req: Request, res: Response) {
     }
     const products = await ProductModel.find(filter).lean();
     const categoryPriorityByPath = await buildCategoryPriorityMap();
-    const sanitized = products.map((product) => sanitizeProduct(product, resolvePriorityFromProductMap(categoryPriorityByPath, product as any)));
+    const marginSettings = await loadCategoryMarginSettings();
+    const sanitized = products.map((product) => sanitizeProduct(
+      product,
+      resolvePriorityFromProductMap(categoryPriorityByPath, product as any),
+      marginSettings,
+    ));
     const query = _req.query?.suggestForCategories;
     if (!query) {
       return res.success(sanitized);
@@ -199,7 +218,8 @@ export async function getProductById(req: Request, res: Response) {
     if (!product) {
       return res.fail('Produkt ne obstaja', 404);
     }
-    res.success(sanitizeProduct(product));
+    const marginSettings = await loadCategoryMarginSettings();
+    res.success(sanitizeProduct(product, null, marginSettings));
   } catch (error) {
     res.fail('Napaka pri iskanju produkta');
   }
@@ -207,7 +227,7 @@ export async function getProductById(req: Request, res: Response) {
 
 export async function createProduct(req: Request, res: Response) {
   try {
-    const payload = buildPayload(req.body);
+    const payload = await buildPayload(req.body);
     if (!payload.ime || !payload.categorySlugs.length) {
       return res.fail('Ime in vsaj ena kategorija sta obvezni', 400);
     }
@@ -228,7 +248,8 @@ export async function createProduct(req: Request, res: Response) {
       }
     }
     const created = await ProductModel.create(payload);
-    res.success(sanitizeProduct(created), 201);
+    const marginSettings = await loadCategoryMarginSettings();
+    res.success(sanitizeProduct(created, null, marginSettings), 201);
   } catch (error) {
     res.fail('Napaka pri dodajanju produkta');
   }
@@ -236,7 +257,7 @@ export async function createProduct(req: Request, res: Response) {
 
 export async function precheckCreateProduct(req: Request, res: Response) {
   try {
-    const payload = buildPayload(req.body);
+    const payload = await buildPayload(req.body);
     if (!payload.ime || !payload.categorySlugs.length) {
       return res.fail('Ime in vsaj ena kategorija sta obvezni', 400);
     }
@@ -255,7 +276,7 @@ export async function precheckCreateProduct(req: Request, res: Response) {
 
 export async function updateProduct(req: Request, res: Response) {
   try {
-    const payload = buildPayload(req.body);
+    const payload = await buildPayload(req.body);
     const updatePayload: Partial<ProductPayload> = { ...payload };
     if (req.body.categorySlugs === undefined) {
       delete updatePayload.categorySlugs;
@@ -264,7 +285,8 @@ export async function updateProduct(req: Request, res: Response) {
     if (!updated) {
       return res.fail('Produkt ne obstaja', 404);
     }
-    res.success(sanitizeProduct(updated));
+    const marginSettings = await loadCategoryMarginSettings();
+    res.success(sanitizeProduct(updated, null, marginSettings));
   } catch (error) {
     res.fail('Napaka pri posodabljanju produkta');
   }

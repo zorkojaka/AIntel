@@ -96,6 +96,7 @@ const DEFAULT_SETTINGS: Settings = {
   disclaimer: '',
   offerClauses: [],
   phaseProgressionMode: 'manual',
+  workOrderCompletionSignatureMode: 'optional',
 };
 
 let cachedSettings: Settings | null = null;
@@ -341,6 +342,12 @@ function sanitizeSettings(payload: SettingsUpdate, baseOverride?: Settings): Set
       payload.phaseProgressionMode === 'automatic' || payload.phaseProgressionMode === 'manual'
         ? payload.phaseProgressionMode
         : base.phaseProgressionMode ?? DEFAULT_SETTINGS.phaseProgressionMode,
+    workOrderCompletionSignatureMode:
+      payload.workOrderCompletionSignatureMode === 'none' ||
+      payload.workOrderCompletionSignatureMode === 'optional' ||
+      payload.workOrderCompletionSignatureMode === 'required'
+        ? payload.workOrderCompletionSignatureMode
+        : base.workOrderCompletionSignatureMode ?? DEFAULT_SETTINGS.workOrderCompletionSignatureMode,
   };
 }
 

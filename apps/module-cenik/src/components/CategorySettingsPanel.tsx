@@ -20,6 +20,7 @@ type CategorySetting = {
   level: 1 | 2 | 3;
   isActive: boolean;
   priority: CategoryPriority;
+  marginPercent: number;
   productCountInApi: number;
   productCountActive: number;
   lastSyncedAt?: string | null;
@@ -42,6 +43,8 @@ type SegmentGroup = {
   productCountActive: number;
   activeChildren: number;
   priority: CategoryPriority;
+  marginPercent: number;
+  hasMixedMargin: boolean;
   hasMixedPriority: boolean;
 };
 
@@ -89,6 +92,12 @@ function priorityValue(priority: CategoryPriority) {
 function parsePriority(value: string): CategoryPriority {
   if (value === '1' || value === '2' || value === '3') return Number(value) as 1 | 2 | 3;
   return null;
+}
+
+function parseMarginPercent(value: string) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.min(500, Math.round((parsed + Number.EPSILON) * 100) / 100);
 }
 
 function formatPriority(priority: CategoryPriority, inherited?: CategoryPriority) {
@@ -168,6 +177,8 @@ export function CategorySettingsPanel() {
             productCountActive: setting.productCountActive,
             activeChildren: setting.isActive ? 1 : 0,
             priority: setting.priority,
+            marginPercent: setting.marginPercent ?? 0,
+            hasMixedMargin: false,
             hasMixedPriority: false,
           });
           segmentsByTop.set(setting.topLevel, segments);
@@ -183,8 +194,11 @@ export function CategorySettingsPanel() {
       segments.forEach((segment) => {
         segment.children.sort((a, b) => b.productCountInApi - a.productCountInApi || a.subLevel?.localeCompare(b.subLevel ?? '', 'sl') || 0);
         const priorities = new Set(segment.children.map((child) => child.priority ?? null));
+        const margins = new Set(segment.children.map((child) => child.marginPercent ?? 0));
         segment.hasMixedPriority = priorities.size > 1;
+        segment.hasMixedMargin = margins.size > 1;
         segment.priority = segment.hasMixedPriority ? null : segment.children[0]?.priority ?? null;
+        segment.marginPercent = segment.hasMixedMargin ? 0 : segment.children[0]?.marginPercent ?? 0;
       });
       segments.sort((a, b) => b.productCountInApi - a.productCountInApi || a.name.localeCompare(b.name, 'sl'));
     });
@@ -292,6 +306,17 @@ export function CategorySettingsPanel() {
     );
   }
 
+  function setSegmentMargin(segment: SegmentGroup, marginPercent: number) {
+    setSettings((prev) =>
+      prev.map((setting) => {
+        if (setting.level === 3 && setting.topLevel === segment.topLevel && setting.thirdLevel === segment.name) {
+          return { ...setting, marginPercent, isDirty: true };
+        }
+        return setting;
+      }),
+    );
+  }
+
   function applyRecommendedDefaults() {
     const confirmed = window.confirm('Naložim priporočene nastavitve za videonadzor, alarm, domofon in mrežno opremo?');
     if (!confirmed) return;
@@ -355,6 +380,7 @@ export function CategorySettingsPanel() {
         path: setting.path,
         isActive: setting.isActive,
         priority: setting.priority,
+        marginPercent: setting.marginPercent ?? 0,
         notes: setting.notes,
       }));
     if (updates.length === 0) return;
@@ -493,7 +519,7 @@ export function CategorySettingsPanel() {
           const isExpanded = expanded.has(top.path);
           return (
             <div key={top.path} className="border-b border-border/60 last:border-b-0">
-              <div className="grid grid-cols-[auto_auto_1fr_auto] items-center gap-2 px-3 py-3 md:grid-cols-[auto_auto_1fr_150px_120px]">
+              <div className="grid grid-cols-[auto_auto_1fr_auto] items-center gap-2 px-3 py-3 md:grid-cols-[auto_auto_1fr_110px_120px_120px]">
                 <button
                   type="button"
                   className="inline-flex h-8 w-8 items-center justify-center rounded border border-border/60"
@@ -520,7 +546,8 @@ export function CategorySettingsPanel() {
                     {top.productCountInApi} v API | {top.productCountActive} aktivnih v bazi
                   </div>
                 </div>
-                <span className="hidden text-xs text-muted-foreground md:block">Prioriteta na brandu</span>
+                <span className="hidden text-xs text-muted-foreground md:block">Prioriteta</span>
+                <span className="hidden text-xs text-muted-foreground md:block">Marža %</span>
                 <span className="hidden text-right text-xs text-muted-foreground md:block">
                   {segments.length > 0 ? `${segments.length} segmentov` : `${subs.length} sub`}
                 </span>
@@ -535,7 +562,7 @@ export function CategorySettingsPanel() {
                         const isSegmentActive = segment.children.length > 0 && segment.activeChildren === segment.children.length;
                         return (
                           <div key={segment.key}>
-                            <div className="grid grid-cols-[auto_auto_1fr_auto] items-center gap-2 px-4 py-2 pl-9 md:grid-cols-[auto_auto_1fr_150px_120px]">
+                            <div className="grid grid-cols-[auto_auto_1fr_auto] items-center gap-2 px-4 py-2 pl-9 md:grid-cols-[auto_auto_1fr_110px_120px_120px]">
                               <button
                                 type="button"
                                 className="inline-flex h-7 w-7 items-center justify-center rounded border border-border/60"
@@ -581,11 +608,25 @@ export function CategorySettingsPanel() {
                                 <option value="2">Prioriteta 2</option>
                                 <option value="3">Prioriteta 3</option>
                               </select>
+                              <input
+                                type="number"
+                                min={0}
+                                max={500}
+                                step="0.01"
+                                value={segment.hasMixedMargin ? '' : segment.marginPercent}
+                                onChange={(event) => setSegmentMargin(segment, parseMarginPercent(event.target.value))}
+                                placeholder={segment.hasMixedMargin ? 'Mešano' : '0'}
+                                disabled={!isSegmentActive}
+                                className="hidden rounded border border-border bg-background px-2 py-1 text-right text-sm disabled:opacity-50 md:block"
+                              />
+                              <span className="hidden text-right text-xs text-muted-foreground md:block">
+                                {segment.marginPercent > 0 && !segment.hasMixedMargin ? `+${segment.marginPercent}%` : ''}
+                              </span>
                             </div>
                             {isSegmentExpanded && (
                               <div className="divide-y divide-border/40 bg-background/70">
                                 {segment.children.map((third) => (
-                                  <div key={third.path} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 px-4 py-2 pl-20 md:grid-cols-[auto_1fr_150px_120px]">
+                                  <div key={third.path} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 px-4 py-2 pl-20 md:grid-cols-[auto_1fr_110px_120px_120px]">
                                     <input
                                       type="checkbox"
                                       checked={third.isActive}
@@ -602,6 +643,16 @@ export function CategorySettingsPanel() {
                                       {third.priority ? `Prioriteta ${third.priority}` : 'Brez prioritete'}
                                     </span>
                                     <input
+                                      type="number"
+                                      min={0}
+                                      max={500}
+                                      step="0.01"
+                                      value={third.marginPercent ?? 0}
+                                      onChange={(event) => updateSetting(third.path, { marginPercent: parseMarginPercent(event.target.value) })}
+                                      disabled={!third.isActive}
+                                      className="hidden rounded border border-border bg-background px-2 py-1 text-right text-sm disabled:opacity-50 md:block"
+                                    />
+                                    <input
                                       type="text"
                                       value={third.notes}
                                       onChange={(event) => updateSetting(third.path, { notes: event.target.value })}
@@ -616,7 +667,7 @@ export function CategorySettingsPanel() {
                         );
                       })}
                       {unsegmentedSubs.map((sub) => (
-                        <div key={sub.path} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 px-4 py-2 pl-20 md:grid-cols-[auto_1fr_150px_120px]">
+                        <div key={sub.path} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 px-4 py-2 pl-20 md:grid-cols-[auto_1fr_110px_120px_120px]">
                           <input
                             type="checkbox"
                             checked={sub.isActive}
@@ -640,13 +691,23 @@ export function CategorySettingsPanel() {
                             <option value="2">Prioriteta 2</option>
                             <option value="3">Prioriteta 3</option>
                           </select>
+                          <input
+                            type="number"
+                            min={0}
+                            max={500}
+                            step="0.01"
+                            value={sub.marginPercent ?? 0}
+                            onChange={(event) => updateSetting(sub.path, { marginPercent: parseMarginPercent(event.target.value) })}
+                            disabled={!sub.isActive}
+                            className="hidden rounded border border-border bg-background px-2 py-1 text-right text-sm disabled:opacity-50 md:block"
+                          />
                         </div>
                       ))}
                     </>
                   ) : (
                     subs.map((sub) => {
                       return (
-                        <div key={sub.path} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 px-4 py-2 pl-12 md:grid-cols-[auto_1fr_150px_120px]">
+                        <div key={sub.path} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 px-4 py-2 pl-12 md:grid-cols-[auto_1fr_110px_120px_120px]">
                           <input
                             type="checkbox"
                             checked={sub.isActive}
@@ -677,6 +738,16 @@ export function CategorySettingsPanel() {
                             <option value="2">Prioriteta 2</option>
                             <option value="3">Prioriteta 3</option>
                           </select>
+                          <input
+                            type="number"
+                            min={0}
+                            max={500}
+                            step="0.01"
+                            value={sub.marginPercent ?? 0}
+                            onChange={(event) => updateSetting(sub.path, { marginPercent: parseMarginPercent(event.target.value) })}
+                            disabled={!sub.isActive}
+                            className="hidden rounded border border-border bg-background px-2 py-1 text-right text-sm disabled:opacity-50 md:block"
+                          />
                           <input
                             type="text"
                             value={sub.notes}

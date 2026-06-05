@@ -196,6 +196,7 @@ export const DEFAULT_SETTINGS: SettingsDto = {
   defaultPaymentTerms: '',
   disclaimer: '',
   phaseProgressionMode: 'manual',
+  workOrderCompletionSignatureMode: 'optional',
 };
 
 export const DOCUMENT_PREFIX_LABELS: Record<DocumentPrefixKey, string> = {

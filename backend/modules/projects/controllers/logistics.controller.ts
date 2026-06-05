@@ -830,6 +830,7 @@ function serializeWorkOrder(order: any): WorkOrder | null {
         };
       }),
     status: order.status,
+    completedAt: order.completedAt ? new Date(order.completedAt).toISOString() : null,
     scheduledAt: order.scheduledAt ?? null,
     scheduledConfirmedAt: order.scheduledConfirmedAt
       ? new Date(order.scheduledConfirmedAt).toISOString()
@@ -1472,9 +1473,21 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     }
     ensureConfirmationVersionHistory(existing);
     const confirmationLocked = isConfirmationLocked(existing);
+    const isCompletionStatusRequest = payload.status === 'completed' && previousWorkOrderStatus !== 'completed';
+    const signatureMode = isCompletionStatusRequest
+      ? (await getSettings()).workOrderCompletionSignatureMode ?? 'optional'
+      : 'optional';
+    if (isCompletionStatusRequest && signatureMode === 'required' && !confirmationLocked) {
+      return res.fail('Zaključek delovnega naloga zahteva podpis potrdila.', 400);
+    }
     const lockedConfirmationFields = ['status', 'executionNote', 'items'] as const;
     const hasLockedConfirmationMutation = confirmationLocked
-      && lockedConfirmationFields.some((field) => field in payload);
+      && lockedConfirmationFields.some((field) => {
+        if (field === 'status' && payload.status === 'completed') {
+          return false;
+        }
+        return field in payload;
+      });
     if (hasLockedConfirmationMutation) {
       return res.fail('Potrdilo delovnega naloga je že podpisano. Potrjenih izvedbenih vrednosti ni več mogoče spreminjati.', 409);
     }
@@ -1693,7 +1706,12 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       payload.status === 'completed'
     ) {
       updates.status = payload.status;
-  }
+      if (payload.status === 'completed' && previousWorkOrderStatus !== 'completed') {
+        updates.completedAt = new Date();
+      } else if (payload.status !== 'completed') {
+        updates.completedAt = null;
+      }
+    }
 
   const updated = await WorkOrderModel.findOneAndUpdate({ _id: workOrderId, projectId }, { $set: updates }, { new: true });
   const [normalizedUpdated] = await normalizeAndPersistWorkOrdersServiceFlags(updated ? [updated] : []);

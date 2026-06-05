@@ -147,6 +147,10 @@ export interface Project {
   categories: string[];
   invoiceVersions?: any[];
   routeCoordinates?: any;
+  archivedAt?: Date | null;
+  archivedBy?: string | null;
+  closedAt?: Date | null;
+  closedBy?: string | null;
 }
 
 export interface ProjectDocument extends Omit<Project, 'id'>, Document {
@@ -333,6 +337,10 @@ const ProjectSchema = new Schema<ProjectDocument>(
     offers: { type: [OfferSchema], default: [] },
     invoiceVersions: { type: [Schema.Types.Mixed], default: [] },
     routeCoordinates: { type: Schema.Types.Mixed, default: null },
+    archivedAt: { type: Date, default: null },
+    archivedBy: { type: String, default: null },
+    closedAt: { type: Date, default: null },
+    closedBy: { type: String, default: null },
   },
   { versionKey: false }
 );
@@ -371,6 +379,10 @@ export function summarizeProject(project: Project | ProjectDocument) {
     invoiceAmount: project.invoiceAmount,
     createdAt: project.createdAt,
     categories: project.categories ?? [],
+    archivedAt: project.archivedAt ? new Date(project.archivedAt).toISOString() : null,
+    archivedBy: project.archivedBy ?? null,
+    closedAt: project.closedAt ? new Date(project.closedAt).toISOString() : null,
+    closedBy: project.closedBy ?? null,
   };
 }
 
