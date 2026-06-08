@@ -18,6 +18,7 @@ type NewCustomerFormState = {
   postalCity: string;
   email: string;
   phone: string;
+  taxId: string;
   contactPerson: string;
   tags: string;
   notes: string;
@@ -70,6 +71,7 @@ const emptyCustomerForm = (): NewCustomerFormState => ({
   postalCity: "",
   email: "",
   phone: "",
+  taxId: "",
   contactPerson: "",
   tags: "",
   notes: "",
@@ -96,6 +98,7 @@ function normalizeCustomerForm(form: NewCustomerFormState): ClientFormPayload {
     address: buildCustomerAddress(form.street, form.postalCode, form.postalCity),
     email: form.email.trim() || undefined,
     phone: form.phone.trim() || undefined,
+    vatNumber: form.isCompany && form.taxId.trim() ? form.taxId.trim().toUpperCase() : undefined,
     contactPerson: form.contactPerson.trim() || undefined,
     tags,
     notes: form.notes.trim() || undefined,
@@ -169,6 +172,7 @@ export function NewProjectDialog({
         postalCity: initialProject.client?.postalCity ?? "",
         email: initialProject.customerDetail?.email ?? "",
         phone: initialProject.customerDetail?.phone ?? "",
+        taxId: initialProject.customerDetail?.taxId ?? "",
         contactPerson: "",
         tags: "",
         notes: "",
@@ -225,6 +229,7 @@ export function NewProjectDialog({
       Boolean(newCustomer.postalCity.trim()) ||
       Boolean(newCustomer.email.trim()) ||
       Boolean(newCustomer.phone.trim()) ||
+      Boolean(newCustomer.taxId.trim()) ||
       hasEditedRequirements ||
       selectedProjectCategorySlugs.length > 0
     );
@@ -281,6 +286,12 @@ export function NewProjectDialog({
     }
     if (normalized.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized.email)) {
       return "E-pošta ni veljavna.";
+    }
+    if (normalized.type === "company" && !normalized.vatNumber) {
+      return "Davčna številka je obvezna za podjetja.";
+    }
+    if (normalized.vatNumber && !/^SI\d{8}$/.test(normalized.vatNumber)) {
+      return "Davčna številka mora biti v obliki SI12345678.";
     }
     return null;
   };
@@ -492,6 +503,18 @@ export function NewProjectDialog({
                           <span>Podjetje</span>
                         </label>
                       </div>
+
+                      {newCustomer.isCompany ? (
+                        <label className="space-y-2 text-sm font-medium text-foreground">
+                          <span>Davčna številka</span>
+                          <Input
+                            value={newCustomer.taxId}
+                            onChange={(event) => updateNewCustomer("taxId", event.target.value)}
+                            placeholder="SI88888888"
+                            autoCapitalize="characters"
+                          />
+                        </label>
+                      ) : null}
 
                       <div className="grid gap-3 md:grid-cols-[2fr_1fr_1.5fr]">
                         <label className="space-y-2 text-sm font-medium text-foreground">
