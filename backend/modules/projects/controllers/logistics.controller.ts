@@ -312,6 +312,45 @@ function normalizeCompletedAt(value: unknown) {
   return Number.isNaN(parsed.valueOf()) ? null : parsed;
 }
 
+function normalizeWorkOrderTimeTracking(input: unknown, actorEmployeeId?: string | null) {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+  const events = Array.isArray((input as { events?: unknown }).events)
+    ? (input as { events: unknown[] }).events
+        .map((event) => {
+          if (!event || typeof event !== 'object') return null;
+          const eventType = (event as { type?: unknown }).type;
+          if (eventType !== 'play' && eventType !== 'pause') return null;
+          const timestamp = normalizeCompletedAt((event as { timestamp?: unknown }).timestamp);
+          if (!timestamp) return null;
+          return {
+            type: eventType,
+            timestamp,
+            employeeId:
+              normalizeExecutionUnitEmployeeId((event as { employeeId?: unknown }).employeeId) ??
+              actorEmployeeId ??
+              null,
+          };
+        })
+        .filter((event): event is NonNullable<typeof event> => event !== null)
+    : [];
+  return { events };
+}
+
+function serializeWorkOrderTimeTracking(input: unknown) {
+  const normalized = normalizeWorkOrderTimeTracking(input);
+  return normalized
+    ? {
+        events: normalized.events.map((event) => ({
+          type: event.type,
+          timestamp: event.timestamp.toISOString(),
+          employeeId: normalizeExecutionUnitEmployeeId(event.employeeId),
+        })),
+      }
+    : null;
+}
+
 function resolveActorEmployeeId(req: Request) {
   return (
     normalizeExecutionUnitEmployeeId((req as any)?.context?.actorEmployeeId) ??
@@ -395,6 +434,7 @@ function mergeGeneratedWorkOrderItems(existingItems: any[], generatedItems: any[
       itemNote:
         typeof existing?.itemNote === 'string' || existing?.itemNote === null ? existing.itemNote : item.itemNote,
       isCompleted: typeof existing?.isCompleted === 'boolean' ? existing.isCompleted : item.isCompleted,
+      timeTracking: normalizeWorkOrderTimeTracking(existing?.timeTracking),
       executionSpec: mergeExecutionSpec(existing?.executionSpec, productDefaults),
     };
   });
@@ -412,6 +452,7 @@ function mergeGeneratedWorkOrderItems(existingItems: any[], generatedItems: any[
     )
     .map((item) => ({
       ...item,
+      timeTracking: normalizeWorkOrderTimeTracking(item?.timeTracking),
       executionSpec: sanitizeExecutionSpec(item?.executionSpec),
     }));
 
@@ -449,6 +490,7 @@ function mapOfferItemsToWorkOrderItems(
       casovnaNorma: typeof (item as any).casovnaNorma === 'number' && Number.isFinite((item as any).casovnaNorma)
         ? (item as any).casovnaNorma
         : 0,
+      timeTracking: null,
       executionSpec: buildRequirementsExecutionSpec(item, productDefaults),
     };
   });
@@ -826,6 +868,7 @@ function serializeWorkOrder(order: any): WorkOrder | null {
             typeof item.casovnaNorma === 'number' && Number.isFinite(item.casovnaNorma)
               ? item.casovnaNorma
               : 0,
+          timeTracking: serializeWorkOrderTimeTracking(item.timeTracking),
           executionSpec: sanitizeExecutionSpec(item.executionSpec),
         };
       }),
@@ -1625,6 +1668,9 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
             if (!isExecutionOnlyMutation && (typeof incoming.offerItemId === 'string' || incoming.offerItemId === null)) {
               target.offerItemId = incoming.offerItemId ?? null;
             }
+            if ('timeTracking' in incoming) {
+              target.timeTracking = normalizeWorkOrderTimeTracking(incoming.timeTracking, actorEmployeeId);
+            }
             if ('executionSpec' in incoming) {
               target.executionSpec = sanitizeIncomingExecutionSpec(
                 incoming.executionSpec,
@@ -1677,6 +1723,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
             typeof incoming.casovnaNorma === 'number' && Number.isFinite(incoming.casovnaNorma)
               ? incoming.casovnaNorma
               : 0,
+          timeTracking: normalizeWorkOrderTimeTracking(incoming.timeTracking, actorEmployeeId),
           executionSpec: sanitizeIncomingExecutionSpec(
             incoming.executionSpec,
             null,

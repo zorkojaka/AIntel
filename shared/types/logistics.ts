@@ -88,6 +88,18 @@ export interface WorkOrderExecutionSpec {
   executionUnits?: WorkOrderExecutionUnit[];
 }
 
+export type WorkOrderTimeTrackingEventType = "play" | "pause";
+
+export interface WorkOrderTimeTrackingEvent {
+  type: WorkOrderTimeTrackingEventType;
+  timestamp: string;
+  employeeId?: string | null;
+}
+
+export interface WorkOrderTimeTracking {
+  events: WorkOrderTimeTrackingEvent[];
+}
+
 export interface WorkOrderItem extends LogisticsMaterialItem {
   offerItemId?: string | null;
   isService?: boolean;
@@ -101,6 +113,7 @@ export interface WorkOrderItem extends LogisticsMaterialItem {
   completedAt?: string | null;
   casovnaNorma?: number;
   executionSpec?: WorkOrderExecutionSpec | null;
+  timeTracking?: WorkOrderTimeTracking | null;
 }
 
 export interface WorkLogEntry {
