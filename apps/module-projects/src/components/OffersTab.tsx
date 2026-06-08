@@ -1498,11 +1498,12 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
 
     setSaving(true);
     try {
+      const offerIdBeingSaved = selectedOfferId;
       const payloadBody = buildPayloadFromCurrentState();
-      const url = selectedOfferId
-        ? `/api/projects/${projectId}/offers/${selectedOfferId}`
+      const url = offerIdBeingSaved
+        ? `/api/projects/${projectId}/offers/${offerIdBeingSaved}`
         : `/api/projects/${projectId}/offers`;
-      const method = selectedOfferId ? "PUT" : "POST";
+      const method = offerIdBeingSaved ? "PUT" : "POST";
 
       const response = await fetch(url, {
         method,
@@ -1517,8 +1518,13 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       }
 
       const created: OfferVersion = payload.data;
+      const savedOfferId = offerIdBeingSaved ?? created._id ?? null;
+      if (savedOfferId) {
+        selectedOfferIdRef.current = savedOfferId;
+        setSelectedOfferId(savedOfferId);
+      }
       await refreshAfterMutation(
-        () => refreshOffers(created._id ?? selectedOfferId ?? null),
+        () => refreshOffers(savedOfferId, !savedOfferId),
         async () => {
           await fetchProjectDetails();
         },
