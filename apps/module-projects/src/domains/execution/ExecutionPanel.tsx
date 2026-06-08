@@ -438,7 +438,8 @@ function normalizeSearchText(value: string | null | undefined) {
 }
 
 function isWireRoutingLaborItem(item: WorkOrderItemDraft) {
-  return normalizeSearchText(item.name).includes("delovne ure napeljave vodnika");
+  const normalizedName = normalizeSearchText(item.name);
+  return normalizedName.includes("napeljave vodnika") || normalizedName.includes("napeljava vodnika");
 }
 
 function getTimeTrackingEvents(item: WorkOrderItemDraft): WorkOrderTimeTrackingEvent[] {
