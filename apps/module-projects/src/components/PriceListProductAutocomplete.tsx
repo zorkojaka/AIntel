@@ -165,6 +165,16 @@ export function PriceListProductAutocomplete({
   };
 
   const portalTarget = typeof document !== "undefined" ? document.body : null;
+  const dropdownMetrics =
+    anchorRect && typeof window !== "undefined"
+      ? (() => {
+          const viewportWidth = window.innerWidth;
+          const viewportPadding = 12;
+          const width = Math.min(Math.max(anchorRect.width, 560), Math.max(anchorRect.width, viewportWidth - viewportPadding * 2));
+          const left = Math.max(viewportPadding, Math.min(anchorRect.left, viewportWidth - width - viewportPadding));
+          return { left, width };
+        })()
+      : null;
 
   return (
     <div className="relative">
@@ -185,14 +195,14 @@ export function PriceListProductAutocomplete({
         onBlur={handleBlur}
       />
 
-      {isOpen && !disabled && anchorRect && portalTarget
+      {isOpen && !disabled && anchorRect && dropdownMetrics && portalTarget
         ? createPortal(
             <div
               className="fixed z-[9999] rounded border bg-popover text-sm shadow"
               style={{
                 top: anchorRect.bottom + 4,
-                left: anchorRect.left,
-                width: anchorRect.width,
+                left: dropdownMetrics.left,
+                width: dropdownMetrics.width,
               }}
               onMouseEnter={() => {
                 dropdownInteractionRef.current = true;
