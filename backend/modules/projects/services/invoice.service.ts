@@ -3,11 +3,6 @@ import { ProjectModel, type Project, type ProjectDocument, addTimeline, type Pro
 import { WorkOrderModel } from '../schemas/work-order';
 import { OfferVersionModel } from '../schemas/offer-version';
 import type { OfferLineItem } from '../../../../shared/types/offers';
-import {
-  financeEntries,
-  nextFinanceId,
-  type FinanceEntry,
-} from '../../finance/schemas/financeEntry';
 import { createFinanceSnapshot } from '../../finance/services/finance-snapshot.service';
 
 type InvoiceStatus = 'draft' | 'issued' | 'cancelled';
@@ -341,7 +336,6 @@ export async function issueInvoiceVersion(projectId: string, versionId: string):
       invoiceVersionId: versionId,
       previousStatus,
       nextStatus: version.status,
-      financeEntryCreated: false,
       reason: 'already-issued',
     });
     return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id, includeProjectStatus: true });
@@ -364,16 +358,6 @@ export async function issueInvoiceVersion(projectId: string, versionId: string):
       .sort((a, b) => (b.versionNumber ?? 0) - (a.versionNumber ?? 0))[0]?._id ??
     null;
   markInvoiceVersionsModified(project);
-  let financeEntryCreated = false;
-  try {
-    financeEntryCreated = recordFinanceEntryForInvoice(project, version);
-  } catch (error) {
-    console.error('[invoice] finance-entry failed', {
-      projectId,
-      invoiceVersionId: versionId,
-      error,
-    });
-  }
   try {
     await createFinanceSnapshot({
       project: {
@@ -401,11 +385,21 @@ export async function issueInvoiceVersion(projectId: string, versionId: string):
       correctedFromInvoiceVersionId: fallbackCorrectedFromInvoiceVersionId,
     });
   } catch (error) {
-    console.error('[invoice] finance-snapshot failed', {
+    version.status = previousStatus;
+    version.issuedAt = null;
+    cancelledIssuedVersionIds.forEach((cancelledId) => {
+      const entry = (project.invoiceVersions ?? []).find((candidate) => String(candidate._id) === cancelledId);
+      if (entry) {
+        entry.status = 'issued';
+      }
+    });
+    markInvoiceVersionsModified(project);
+    console.error('[invoice] finance-snapshot failed; invoice issue aborted', {
       projectId,
       invoiceVersionId: versionId,
       error,
     });
+    throw new Error('Računa ni mogoče izdati, ker finančnega snapshota ni bilo mogoče ustvariti.');
   }
 
   if (project.status !== 'invoiced') {
@@ -425,7 +419,6 @@ export async function issueInvoiceVersion(projectId: string, versionId: string):
     invoiceVersionId: versionId,
     previousStatus,
     nextStatus: version.status,
-    financeEntryCreated,
   });
   return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id, includeProjectStatus: true });
 }
@@ -591,46 +584,6 @@ function markInvoiceVersionsModified(project: ProjectDocument) {
   if (typeof project.markModified === 'function') {
     project.markModified('invoiceVersions');
   }
-}
-
-function recordFinanceEntryForInvoice(project: ProjectDocument, version: InvoiceVersion) {
-  if (!version.issuedAt) {
-    return false;
-  }
-  const existingEntry = financeEntries.find((entry) => entry.id_racuna === version._id);
-  if (existingEntry) {
-    return false;
-  }
-
-  const summary = version.summary ?? {
-    baseWithoutVat: 0,
-    discountedBase: 0,
-    vatAmount: 0,
-    totalWithVat: 0,
-  };
-  const netAmount = summary.discountedBase ?? summary.baseWithoutVat ?? 0;
-  const entry: FinanceEntry = {
-    id: nextFinanceId(),
-    id_projekta: project.id,
-    id_racuna: version._id,
-    datum_izdaje: new Date(version.issuedAt).toISOString().slice(0, 10),
-    znesek_skupaj: summary.totalWithVat ?? 0,
-    ddv: summary.vatAmount ?? 0,
-    znesek_brez_ddv: netAmount,
-    nabavna_vrednost: 0,
-    dobicek: netAmount,
-    stranka: project.customer?.name ?? 'Stranka',
-    artikli: (version.items ?? []).map((item) => ({
-      naziv: item.name,
-      kolicina: item.quantity,
-      cena_nabavna: 0,
-      cena_prodajna: item.totalWithVat ?? item.totalWithoutVat ?? 0,
-    })),
-    kategorija_prihodka: 'storitev',
-    oznaka: 'čaka na plačilo',
-  };
-  financeEntries.push(entry);
-  return true;
 }
 
 function normalizeWorkOrderStatus(value: unknown) {

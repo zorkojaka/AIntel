@@ -27,6 +27,14 @@ function isEnvEnabled(value?: string) {
   return typeof value === 'string' && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }
 
+function normalizeRolesForResponse(roles: unknown) {
+  if (!Array.isArray(roles)) return [];
+  const normalized = roles
+    .map((role) => (typeof role === 'string' ? toCanonicalRole(role) : null))
+    .filter((role): role is string => !!role);
+  return [...new Set(normalized)];
+}
+
 function buildAppUrl(req: Request) {
   const origin = req.headers.origin || req.headers.referer;
   if (origin && typeof origin === 'string') {
@@ -86,25 +94,24 @@ export async function me(req: Request, res: Response) {
     ? await EmployeeProfileModel.findOne({ tenantId: user.tenantId, employeeId: employee._id }).lean()
     : null;
 
-  const employeeRoles = employee?.roles ? employee.roles : [];
-  const normalizedRoles = Array.isArray(employeeRoles)
-    ? employeeRoles
-        .map((role) => (typeof role === 'string' ? toCanonicalRole(role) : null))
-        .filter((role): role is string => !!role)
-    : [];
+  const employeeRoles = normalizeRolesForResponse(employee?.roles);
+  const userRoles = normalizeRolesForResponse(user.roles);
+  const effectiveRoles = employee ? employeeRoles : userRoles;
 
   return res.success({
     tenantId: user.tenantId,
+    roles: effectiveRoles,
     user: {
       id: String(user._id),
       email: user.email,
       status: user.status ?? (user.active ? 'ACTIVE' : 'DISABLED'),
+      roles: userRoles,
     },
     employee: employee
       ? {
           id: String(employee._id),
           name: employee.name,
-          roles: normalizedRoles,
+          roles: employeeRoles,
         }
       : null,
     profile: profile
@@ -173,6 +180,7 @@ export async function invite(req: Request, res: Response) {
     name: employeeName || email,
     status: 'INVITED',
     active: false,
+    roles: roles ?? [],
     employeeId: employeeId ?? null,
     inviteTokenHash: tokenHash,
     inviteTokenExpiresAt: expiresAt,

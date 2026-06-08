@@ -77,7 +77,7 @@ function hasAccess(moduleId: ModuleId, roles: string[]) {
 
 function AppContent() {
   const { status, me, logout } = useAuth();
-  const roles = me?.employee?.roles ?? [];
+  const roles = me?.roles ?? me?.employee?.roles ?? me?.user?.roles ?? [];
   const initialModule = useMemo(() => getModuleIdFromPath(window.location.pathname), []);
   const [activeModule, setActiveModule] = useState<ModuleId>(initialModule);
   const [routeKey, setRouteKey] = useState(() => `${window.location.pathname}${window.location.search}`);

@@ -5,6 +5,15 @@ import { OfferVersionModel } from '../../projects/schemas/offer-version';
 import { EmployeeServiceRateModel } from '../../employee-profiles/schemas/employee-service-rate';
 import { FinanceSnapshotModel, type FinanceSnapshotDocument } from '../schemas/finance-snapshot';
 
+const financeSnapshotDebugEnabled =
+  process.env.NODE_ENV !== 'production' && ['1', 'true', 'yes', 'on'].includes((process.env.AINTEL_FINANCE_DEBUG ?? '').trim().toLowerCase());
+
+function debugSnapshotLog(...args: unknown[]) {
+  if (financeSnapshotDebugEnabled) {
+    console.log(...args);
+  }
+}
+
 type InvoiceItemType = 'Osnovno' | 'Dodatno' | 'Manj';
 
 interface InvoiceItemInput {
@@ -234,8 +243,8 @@ export async function createFinanceSnapshot(params: {
   actorUserId?: string | null;
 }) {
   const { project, invoiceVersion, correctedFromInvoiceVersionId } = params;
-  console.log('[Snapshot] Raw invoice version:', JSON.stringify(invoiceVersion, null, 2));
-  console.log(
+  debugSnapshotLog('[Snapshot] Raw invoice version:', JSON.stringify(invoiceVersion, null, 2));
+  debugSnapshotLog(
     '[Snapshot] Invoice items:',
     JSON.stringify(
       (invoiceVersion.items ?? []).map((item) => ({
@@ -267,7 +276,7 @@ export async function createFinanceSnapshot(params: {
   });
 
   const resolvedProductIds = (invoiceVersion.items ?? []).map((item) => {
-    console.log('[Snapshot] FULL invoice item:', JSON.stringify(item, null, 2));
+    debugSnapshotLog('[Snapshot] FULL invoice item:', JSON.stringify(item, null, 2));
     const explicitProductId = getInvoiceItemProductReference(item);
     if (explicitProductId) return explicitProductId;
 
@@ -288,7 +297,7 @@ export async function createFinanceSnapshot(params: {
     WorkOrderModel.find({ projectId: project.id }).lean(),
   ]);
   workOrders.forEach((workOrder) => {
-    console.log(
+    debugSnapshotLog(
       '[Snapshot] Work order items:',
       JSON.stringify(
         workOrder?.items?.map((item) => ({
@@ -299,7 +308,7 @@ export async function createFinanceSnapshot(params: {
       )
     );
     (workOrder?.items ?? []).forEach((item) => {
-      console.log('[Snapshot] FULL WO item:', JSON.stringify(item, null, 2));
+      debugSnapshotLog('[Snapshot] FULL WO item:', JSON.stringify(item, null, 2));
     });
   });
 
@@ -352,7 +361,7 @@ export async function createFinanceSnapshot(params: {
     if (rateByEmployeeProduct.has(key)) {
       return rateByEmployeeProduct.get(key) ?? null;
     }
-    console.log('[Snapshot] Looking up rate for employee:', employeeId, 'service:', serviceProductId);
+    debugSnapshotLog('[Snapshot] Looking up rate for employee:', employeeId, 'service:', serviceProductId);
     const rate = isObjectId(employeeId) && isObjectId(serviceProductId)
       ? await EmployeeServiceRateModel.findOne({
         employeeId,
@@ -360,7 +369,7 @@ export async function createFinanceSnapshot(params: {
         isActive: true,
       }).lean()
       : null;
-    console.log(
+    debugSnapshotLog(
       '[Snapshot] Found rate:',
       rate
         ? {
@@ -381,8 +390,8 @@ export async function createFinanceSnapshot(params: {
 
   const snapshotItems = (invoiceVersion.items ?? []).map((item, index) => {
     const resolvedProductId = resolvedProductIds[index];
-    console.log('[Snapshot] Looking up product:', item.productId);
-    console.log('[Snapshot] Resolved product reference:', {
+    debugSnapshotLog('[Snapshot] Looking up product:', item.productId);
+    debugSnapshotLog('[Snapshot] Resolved product reference:', {
       directProductId: item.productId,
       product: item.product,
       cenikItemId: item.cenikItemId,
@@ -391,7 +400,7 @@ export async function createFinanceSnapshot(params: {
       resolvedProductId,
     });
     const product = resolveProductForItem(item, index);
-    console.log(
+    debugSnapshotLog(
       '[Snapshot] Found product:',
       product
         ? {
@@ -442,7 +451,7 @@ export async function createFinanceSnapshot(params: {
     let serviceLaborPurchaseTotal = 0;
     const invoiceItem = (invoiceVersion.items ?? []).find((item) => item.name === snapshotItem.name) ?? null;
     workOrders.forEach((workOrder) => {
-      console.log(
+      debugSnapshotLog(
         '[Snapshot] Matching invoice item:',
         snapshotItem.name,
         'to WO items:',
@@ -462,7 +471,7 @@ export async function createFinanceSnapshot(params: {
 
     for (const workOrderItem of workOrderItems) {
       const executionUnits = workOrderItem.executionSpec?.executionUnits ?? [];
-      console.log(
+      debugSnapshotLog(
         '[Snapshot] Service item execution units:',
         JSON.stringify(
           executionUnits.map((unit) => ({
@@ -476,7 +485,7 @@ export async function createFinanceSnapshot(params: {
       );
       if (executionUnits.length === 0) {
         const completedByEmployeeId = getWorkOrderItemCompletedBy(workOrderItem as ServiceWorkOrderItemWithCompletion);
-        console.log('[Snapshot] Service item completed by:', {
+        debugSnapshotLog('[Snapshot] Service item completed by:', {
           name: workOrderItem.name,
           isCompleted: workOrderItem.isCompleted,
           completedByEmployeeId,

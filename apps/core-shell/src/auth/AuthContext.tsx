@@ -4,6 +4,7 @@ type AuthUser = {
   id: string;
   email: string;
   status: string;
+  roles?: string[];
 };
 
 type AuthEmployee = {
@@ -23,6 +24,7 @@ type EmployeeProfile = {
 
 export type MePayload = {
   tenantId: string;
+  roles?: string[];
   user: AuthUser;
   employee: AuthEmployee | null;
   profile: EmployeeProfile | null;
