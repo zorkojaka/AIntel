@@ -75,6 +75,25 @@ function getMatchingServiceItemsForSnapshotItem(workOrders: any[], snapshotItem:
   );
 }
 
+function getCompletedQuantityForEmployee(workOrderItem: any, employeeId: string) {
+  const executionUnits = workOrderItem.executionSpec?.executionUnits ?? [];
+  if (executionUnits.length === 0) {
+    if (!workOrderItem.isCompleted || getCompletedBy(workOrderItem) !== employeeId) return 0;
+    return toNumber(workOrderItem.executedQuantity, 0);
+  }
+  return executionUnits.reduce((sum: number, unit: any) => {
+    return unit.isCompleted && getCompletedBy(unit) === employeeId ? sum + 1 : sum;
+  }, 0);
+}
+
+function getCompletedQuantity(workOrderItem: any) {
+  const executionUnits = workOrderItem.executionSpec?.executionUnits ?? [];
+  if (executionUnits.length === 0) {
+    return workOrderItem.isCompleted ? toNumber(workOrderItem.executedQuantity, 0) : 0;
+  }
+  return executionUnits.reduce((sum: number, unit: any) => (unit.isCompleted ? sum + 1 : sum), 0);
+}
+
 async function resolveRateServiceProductId(serviceProductId: string) {
   if (!isObjectId(serviceProductId)) return serviceProductId;
   const product = await ProductModel.findById(serviceProductId).select('mergedIntoProductId').lean();
@@ -321,36 +340,41 @@ export async function getEmployeeProjectEarningDetail(employeeId: string, snapsh
     if (!snapshotItem.isService || !snapshotItem.productId) continue;
 
     const serviceProductId = String(snapshotItem.productId);
-    const unitPrice = await getEmployeeServiceUnitPrice(
+    const configuredUnitPrice = await getEmployeeServiceUnitPrice(
       normalizedEmployeeId,
       serviceProductId,
       toNumber(snapshotItem.unitPriceSale, 0),
     );
-    if (unitPrice <= 0) continue;
 
-    let quantity = 0;
     const workOrderItems = getMatchingServiceItemsForSnapshotItem(workOrders, snapshotItem);
-    workOrderItems.forEach((workOrderItem: any) => {
-      const executionUnits = workOrderItem.executionSpec?.executionUnits ?? [];
-      if (executionUnits.length === 0) {
-        if (!workOrderItem.isCompleted || getCompletedBy(workOrderItem) !== normalizedEmployeeId) return;
-        quantity += toNumber(workOrderItem.executedQuantity, toNumber(snapshotItem.quantity, 1));
-        return;
-      }
-      executionUnits.forEach((unit: any) => {
-        if (unit.isCompleted && getCompletedBy(unit) === normalizedEmployeeId) {
-          quantity += 1;
-        }
-      });
-    });
+    const quantity = workOrderItems.reduce(
+      (sum: number, workOrderItem: any) => sum + getCompletedQuantityForEmployee(workOrderItem, normalizedEmployeeId),
+      0,
+    );
+    const totalCompletedQuantity = workOrderItems.reduce(
+      (sum: number, workOrderItem: any) => sum + getCompletedQuantity(workOrderItem),
+      0,
+    );
 
     if (quantity > 0) {
+      const unitPrice =
+        configuredUnitPrice > 0
+          ? configuredUnitPrice
+          : totalCompletedQuantity > 0
+            ? round(toNumber(snapshotItem.totalPurchase, 0) / totalCompletedQuantity)
+            : 0;
+      const total =
+        configuredUnitPrice > 0
+          ? round(unitPrice * quantity)
+          : totalCompletedQuantity > 0
+            ? round(toNumber(snapshotItem.totalPurchase, 0) * (quantity / totalCompletedQuantity))
+            : 0;
       items.push({
         name: snapshotItem.name,
         quantity,
         unit: snapshotItem.unit,
         unitPrice,
-        total: round(unitPrice * quantity),
+        total,
       });
     }
   }
