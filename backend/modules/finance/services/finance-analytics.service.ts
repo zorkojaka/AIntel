@@ -3,6 +3,7 @@ import { OfferVersionModel } from '../../projects/schemas/offer-version';
 import { EmployeeModel } from '../../employees/schemas/employee';
 import { WorkOrderModel } from '../../projects/schemas/work-order';
 import { EmployeeServiceRateModel } from '../../employee-profiles/schemas/employee-service-rate';
+import { ProductModel } from '../../cenik/product.model';
 
 type DateRange = { from?: Date; to?: Date };
 type YearFilter = number | null;
@@ -74,12 +75,20 @@ function getMatchingServiceItemsForSnapshotItem(workOrders: any[], snapshotItem:
   );
 }
 
+async function resolveRateServiceProductId(serviceProductId: string) {
+  if (!isObjectId(serviceProductId)) return serviceProductId;
+  const product = await ProductModel.findById(serviceProductId).select('mergedIntoProductId').lean();
+  const mergedIntoProductId = normalizeEmployeeId((product as { mergedIntoProductId?: unknown } | null)?.mergedIntoProductId);
+  return mergedIntoProductId && isObjectId(mergedIntoProductId) ? mergedIntoProductId : serviceProductId;
+}
+
 async function getEmployeeServiceUnitPrice(employeeId: string, serviceProductId: string, snapshotUnitPriceSale: number) {
   if (!isObjectId(employeeId) || !isObjectId(serviceProductId)) return 0;
+  const rateServiceProductId = await resolveRateServiceProductId(serviceProductId);
 
   const rate = await EmployeeServiceRateModel.findOne({
     employeeId,
-    serviceProductId,
+    serviceProductId: rateServiceProductId,
     isActive: true,
   }).lean();
   if (!rate) return 0;

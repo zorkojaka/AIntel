@@ -153,6 +153,7 @@ type ServiceWorkOrderItemWithCompletion = {
 };
 
 type RateValue = { defaultPercent: number; overridePrice: number | null };
+type RateLookupProduct = { productId: string; rateProductId: string };
 
 function normalizeEmployeeId(value: unknown): string | null {
   if (typeof value === 'string') {
@@ -210,6 +211,18 @@ function getInvoiceItemProductReference(item: InvoiceItemInput) {
     normalizeRefId(item.cenikItemId) ??
     normalizeRefId(item.itemId)
   );
+}
+
+async function resolveRateLookupProduct(serviceProductId: string): Promise<RateLookupProduct> {
+  if (!isObjectId(serviceProductId)) {
+    return { productId: serviceProductId, rateProductId: serviceProductId };
+  }
+  const product = await ProductModel.findById(serviceProductId).select('_id mergedIntoProductId isActive status').lean();
+  const mergedIntoProductId = normalizeRefId((product as { mergedIntoProductId?: unknown } | null)?.mergedIntoProductId);
+  return {
+    productId: serviceProductId,
+    rateProductId: mergedIntoProductId && isObjectId(mergedIntoProductId) ? mergedIntoProductId : serviceProductId,
+  };
 }
 
 function getServiceWorkOrderItemsForProduct(workOrders: Array<Pick<WorkOrderDocument, 'items'>>, productId: string) {
@@ -355,17 +368,22 @@ export async function createFinanceSnapshot(params: {
 
   const employeeEarningsMap = new Map<string, number>();
   const rateByEmployeeProduct = new Map<string, RateValue | null>();
+  const rateLookupProductByProductId = new Map<string, Promise<RateLookupProduct>>();
 
   const getRateForEmployeeProduct = async (employeeId: string, serviceProductId: string) => {
-    const key = `${employeeId}:${serviceProductId}`;
+    if (!rateLookupProductByProductId.has(serviceProductId)) {
+      rateLookupProductByProductId.set(serviceProductId, resolveRateLookupProduct(serviceProductId));
+    }
+    const { rateProductId } = await rateLookupProductByProductId.get(serviceProductId)!;
+    const key = `${employeeId}:${rateProductId}`;
     if (rateByEmployeeProduct.has(key)) {
       return rateByEmployeeProduct.get(key) ?? null;
     }
-    debugSnapshotLog('[Snapshot] Looking up rate for employee:', employeeId, 'service:', serviceProductId);
-    const rate = isObjectId(employeeId) && isObjectId(serviceProductId)
+    debugSnapshotLog('[Snapshot] Looking up rate for employee:', employeeId, 'service:', serviceProductId, 'rateProduct:', rateProductId);
+    const rate = isObjectId(employeeId) && isObjectId(rateProductId)
       ? await EmployeeServiceRateModel.findOne({
         employeeId,
-        serviceProductId,
+        serviceProductId: rateProductId,
         isActive: true,
       }).lean()
       : null;
