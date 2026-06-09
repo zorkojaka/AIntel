@@ -6,7 +6,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
-import { Camera, ChevronDown, ChevronRight, Download, Image as ImageIcon, Loader2, Pencil, Send, Trash2 } from "lucide-react";
+import { Camera, ChevronDown, ChevronRight, Download, Image as ImageIcon, Loader2, Pause, Pencil, Play, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
@@ -17,6 +17,7 @@ import type {
   WorkOrderExecutionUnit,
   WorkOrderItem,
   WorkOrderStatus,
+  WorkOrderTimeTrackingEvent,
 } from "@aintel/shared/types/logistics";
 import { cn } from "../../components/ui/utils";
 import { MaterialOrderCard } from "../logistics/MaterialOrderCard";
@@ -399,6 +400,7 @@ function mergeDraftItems(
         typeof serverItem.isCompleted === "boolean"
           ? serverItem.isCompleted
           : previousItem.isCompleted,
+      timeTracking: serverItem.timeTracking ?? previousItem.timeTracking ?? null,
       executionSpec: ensureExecutionSpec(serverItem.executionSpec ?? previousItem.executionSpec),
     };
     return hasInlineExecutionUnits(mergedItem)
@@ -426,6 +428,56 @@ function formatExecutionDateTime(value: string | null | undefined) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function normalizeSearchText(value: string | null | undefined) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function isWireRoutingLaborItem(item: WorkOrderItemDraft) {
+  const normalizedName = normalizeSearchText(item.name);
+  return normalizedName.includes("napeljave vodnika") || normalizedName.includes("napeljava vodnika");
+}
+
+function getTimeTrackingEvents(item: WorkOrderItemDraft): WorkOrderTimeTrackingEvent[] {
+  return Array.isArray(item.timeTracking?.events) ? item.timeTracking.events : [];
+}
+
+function isTimeTrackingRunning(item: WorkOrderItemDraft) {
+  const events = getTimeTrackingEvents(item);
+  return events[events.length - 1]?.type === "play";
+}
+
+function calculateTrackedMinutes(events: WorkOrderTimeTrackingEvent[]) {
+  let totalMs = 0;
+  let activeStart: Date | null = null;
+  events.forEach((event) => {
+    const eventDate = new Date(event.timestamp);
+    if (Number.isNaN(eventDate.valueOf())) return;
+    if (event.type === "play") {
+      activeStart = eventDate;
+      return;
+    }
+    if (event.type === "pause" && activeStart) {
+      totalMs += Math.max(0, eventDate.getTime() - activeStart.getTime());
+      activeStart = null;
+    }
+  });
+  if (activeStart) {
+    totalMs += Math.max(0, Date.now() - activeStart.getTime());
+  }
+  return Math.round(totalMs / 60000);
+}
+
+function formatTrackedMinutes(minutes: number) {
+  if (minutes <= 0) return "0 min";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder > 0 ? `${hours} h ${remainder} min` : `${hours} h`;
 }
 
 function getOrderConfirmationState(order: WorkOrder) {
@@ -750,6 +802,7 @@ export function ExecutionPanel({
         itemNote: item.itemNote ?? "",
         isExtra: !!item.isExtra,
         isCompleted: !!item.isCompleted,
+        timeTracking: item.timeTracking ?? null,
         executionSpec: ensureExecutionSpec(item.executionSpec),
       };
       return hasInlineExecutionUnits(normalizedItem)
@@ -1024,6 +1077,7 @@ export function ExecutionPanel({
       isCompleted: !!item.isCompleted,
       completedBy: item.completedBy ?? null,
       completedAt: item.completedAt ?? null,
+      timeTracking: item.timeTracking ?? null,
       executionSpec: ensureExecutionSpec(item.executionSpec),
     }));
 
@@ -1031,7 +1085,7 @@ export function ExecutionPanel({
     async (
       orderId: string,
       overrides?: { status?: WorkOrderStatus },
-      options?: { skipRefresh?: boolean; statusOnly?: boolean },
+      options?: { skipRefresh?: boolean; statusOnly?: boolean; draftOverride?: WorkOrderDraft },
     ) => {
       const order = workOrders.find((candidate) => candidate._id === orderId);
       if (!order) return false;
@@ -1040,7 +1094,7 @@ export function ExecutionPanel({
         toast.error("Potrdilo delovnega naloga je podpisano. Izvedbenih vrednosti ni več mogoče spreminjati.");
         return false;
       }
-      const draft = getDraftValues(order);
+      const draft = options?.draftOverride ?? getDraftValues(order);
       const requestBody = options?.statusOnly
         ? {
             workOrderId: orderId,
@@ -1206,6 +1260,90 @@ export function ExecutionPanel({
     }
     updateDraftItem(order, itemId, values);
     setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
+  };
+
+  const toggleItemTimeTracking = async (order: WorkOrder, item: WorkOrderItemDraft) => {
+    if (getOrderConfirmationState(order) === "signed_active") {
+      return;
+    }
+    const current = getDraftValues(order);
+    const draftItem = current.items.find((candidate) => candidate.id === item.id) ?? item;
+    const nextType: WorkOrderTimeTrackingEvent["type"] = isTimeTrackingRunning(draftItem) ? "pause" : "play";
+    const nextEvents = [
+      ...getTimeTrackingEvents(draftItem),
+      {
+        type: nextType,
+        timestamp: new Date().toISOString(),
+        employeeId: currentEmployeeId,
+      },
+    ];
+    const nextItems = current.items.map((candidate) =>
+      candidate.id === item.id
+        ? {
+            ...candidate,
+            timeTracking: { events: nextEvents },
+          }
+        : candidate,
+    );
+    const nextDraft = { ...current, items: nextItems };
+    updateDraft(order, { items: nextItems });
+    setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
+    const success = await saveWorkOrder(order._id, undefined, { skipRefresh: true, draftOverride: nextDraft });
+    if (success) {
+      toast.success(nextType === "play" ? "Merjenje časa se je začelo." : "Merjenje časa je ustavljeno.");
+    }
+  };
+
+  const renderItemTimeTracking = (order: WorkOrder, item: WorkOrderItemDraft, compact = false, disabled = false) => {
+    if (!isWireRoutingLaborItem(item)) return null;
+    const events = getTimeTrackingEvents(item);
+    const isRunning = isTimeTrackingRunning(item);
+    const trackedLabel = formatTrackedMinutes(calculateTrackedMinutes(events));
+    const visibleEvents = events.slice(-8).reverse();
+    const isSaving = savingStates[order._id] === "saving";
+    return (
+      <div className={cn("space-y-2 rounded-md border border-border/60 bg-background/60 p-2", compact ? "mt-2" : "mt-1")}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant={isRunning ? "secondary" : "outline"}
+            size="sm"
+            className="h-8 px-2 text-xs"
+            disabled={disabled || isSaving}
+            onClick={() => void toggleItemTimeTracking(order, item)}
+          >
+            {isSaving ? (
+              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+            ) : isRunning ? (
+              <Pause className="mr-1 h-4 w-4" />
+            ) : (
+              <Play className="mr-1 h-4 w-4" />
+            )}
+            {isRunning ? "Pavza" : "Play"}
+          </Button>
+          <Badge variant={isRunning ? "default" : "outline"}>
+            {isRunning ? "Teče" : "Ustavljeno"}
+          </Badge>
+          <span className="text-xs text-muted-foreground">Skupaj: {trackedLabel}</span>
+        </div>
+        {visibleEvents.length > 0 ? (
+          <div className="space-y-1 text-xs text-muted-foreground">
+            {visibleEvents.map((event, index) => {
+              const employeeLabel = event.employeeId
+                ? employeeNameById.get(event.employeeId) ?? (event.employeeId === currentEmployeeId ? "jaz" : event.employeeId)
+                : null;
+              return (
+                <div key={`${event.timestamp}-${event.type}-${index}`} className="flex flex-wrap items-center gap-1">
+                  <span className="font-medium text-foreground/80">{event.type === "play" ? "Play" : "Pavza"}</span>
+                  <span>{formatExecutionDateTime(event.timestamp) ?? event.timestamp}</span>
+                  {employeeLabel ? <span>· {employeeLabel}</span> : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    );
   };
 
   const applyExtraExecutionFieldChange = (
@@ -2294,6 +2432,7 @@ export function ExecutionPanel({
                                                 className="pt-1"
                                               />
                                             ) : null}
+                                            {renderItemTimeTracking(order, item, false, isConfirmationLocked)}
                                           </div>
                                         )}
                                       </td>
@@ -2467,6 +2606,7 @@ export function ExecutionPanel({
                                       {hasVisibleInlineUnits ? <Badge variant="outline">Izvedeno {getPerUnitSummary(executionSpec).replace("Enote: ", "")}</Badge> : null}
                                     </div>
                                   ) : null}
+                                  {!isNewExtraItem ? renderItemTimeTracking(order, item, true, isConfirmationLocked) : null}
                                   </div>
                                   <Checkbox
                                     className="mt-1 h-5 w-5 shrink-0"

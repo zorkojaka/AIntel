@@ -18,6 +18,13 @@ interface WorkOrderItem {
   completedBy?: string | null;
   completedAt?: Date | null;
   casovnaNorma?: number;
+  timeTracking?: {
+    events: Array<{
+      type: 'play' | 'pause';
+      timestamp: Date;
+      employeeId?: string | null;
+    }>;
+  } | null;
     executionSpec?: {
       mode?: 'simple' | 'per_unit' | 'measured';
       locationSummary?: string | null;
@@ -133,6 +140,27 @@ const workOrderItemSchema = new Schema<WorkOrderItem>(
     completedBy: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
     completedAt: { type: Date, default: null },
     casovnaNorma: { type: Number, default: 0 },
+    timeTracking: {
+      type: new Schema(
+        {
+          events: {
+            type: [
+              new Schema(
+                {
+                  type: { type: String, enum: ['play', 'pause'], required: true },
+                  timestamp: { type: Date, required: true },
+                  employeeId: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
+                },
+                { _id: false }
+              ),
+            ],
+            default: [],
+          },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
     executionSpec: {
       type: new Schema(
         {

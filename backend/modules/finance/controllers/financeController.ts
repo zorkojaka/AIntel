@@ -1,102 +1,18 @@
 import { Request, Response } from 'express';
-import {
-  FinanceEntry,
-  FinanceYearlySummary,
-  RevenueCategory,
-  financeEntries,
-  nextFinanceId,
-} from '../schemas/financeEntry';
+import { FinanceYearlySummary, financeEntries } from '../schemas/financeEntry';
 
-interface AddFromInvoicePayload {
-  id_projekta: string;
-  id_racuna: string;
-  datum_izdaje: string;
-  znesek_skupaj?: number;
-  ddv?: number;
-  znesek_brez_ddv?: number;
-  nabavna_vrednost?: number;
-  stranka: string;
-  artikli: {
-    naziv: string;
-    kolicina: number;
-    cena_nabavna: number;
-    cena_prodajna: number;
-  }[];
-  kategorija_prihodka: RevenueCategory;
-  oznaka: FinanceEntry['oznaka'];
-}
-
-function toISODate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? new Date().toISOString().slice(0, 10) : date.toISOString().slice(0, 10);
-}
-
-function calculateTotals(payload: AddFromInvoicePayload) {
-  const lineTotals = payload.artikli.reduce(
-    (acc, item) => {
-      const revenue = item.cena_prodajna * item.kolicina;
-      const cost = item.cena_nabavna * item.kolicina;
-      acc.revenue += revenue;
-      acc.cost += cost;
-      return acc;
-    },
-    { revenue: 0, cost: 0 }
-  );
-
-  const znesek_skupaj = payload.znesek_skupaj ?? lineTotals.revenue;
-  const nabavna_vrednost = payload.nabavna_vrednost ?? lineTotals.cost;
-  const ddv = payload.ddv ?? Math.round(znesek_skupaj * 0.2);
-  const znesek_brez_ddv = payload.znesek_brez_ddv ?? znesek_skupaj - ddv;
-  const dobicek = znesek_brez_ddv - nabavna_vrednost;
-
-  return {
-    znesek_skupaj,
-    nabavna_vrednost,
-    ddv,
-    znesek_brez_ddv,
-    dobicek,
-  };
-}
-
-export function addFromInvoice(req: Request, res: Response) {
-  const payload = req.body as AddFromInvoicePayload;
-
-  if (!payload?.id_projekta || !payload?.id_racuna || !payload?.stranka) {
-    return res.fail('Manjkajo ključni podatki računa (id_projekta, id_racuna, stranka).', 400);
-  }
-
-  if (!payload.artikli || payload.artikli.length === 0) {
-    return res.fail('Račun mora vsebovati vsaj en artikel.', 400);
-  }
-
-  const { znesek_skupaj, nabavna_vrednost, ddv, znesek_brez_ddv, dobicek } = calculateTotals(payload);
-
-  const entry: FinanceEntry = {
-    id: nextFinanceId(),
-    id_projekta: payload.id_projekta,
-    id_racuna: payload.id_racuna,
-    datum_izdaje: toISODate(payload.datum_izdaje),
-    znesek_skupaj,
-    ddv,
-    znesek_brez_ddv,
-    nabavna_vrednost,
-    dobicek,
-    stranka: payload.stranka,
-    artikli: payload.artikli,
-    kategorija_prihodka: payload.kategorija_prihodka,
-    oznaka: payload.oznaka,
-  };
-
-  financeEntries.push(entry);
-
-  return res.success(entry, 201);
+export function addFromInvoice(_req: Request, res: Response) {
+  res.setHeader('X-AIntel-Finance-Source', 'legacy-in-memory-non-authoritative');
+  return res.fail('Legacy finance entry writes are disabled. Finance uses persistent invoice snapshots.', 410);
 }
 
 export function listFinanceEntries(_req: Request, res: Response) {
+  res.setHeader('X-AIntel-Finance-Source', 'legacy-in-memory-non-authoritative');
   return res.success(financeEntries);
 }
 
 export function getYearlySummary(req: Request, res: Response) {
+  res.setHeader('X-AIntel-Finance-Source', 'legacy-in-memory-non-authoritative');
   const year = req.query.year ? Number(req.query.year) : new Date().getFullYear();
   const months = new Map<string, FinanceYearlySummary['months'][number]>();
 
@@ -135,6 +51,7 @@ export function getYearlySummary(req: Request, res: Response) {
 }
 
 export function getProjectFinance(req: Request, res: Response) {
+  res.setHeader('X-AIntel-Finance-Source', 'legacy-in-memory-non-authoritative');
   const projectId = req.params.id;
   const projectEntries = financeEntries.filter((entry) => entry.id_projekta === projectId);
 
@@ -160,6 +77,7 @@ export function getProjectFinance(req: Request, res: Response) {
 }
 
 export function getClientFinance(req: Request, res: Response) {
+  res.setHeader('X-AIntel-Finance-Source', 'legacy-in-memory-non-authoritative');
   const clientId = decodeURIComponent(req.params.id);
   const clientEntries = financeEntries.filter((entry) => entry.stranka === clientId);
 

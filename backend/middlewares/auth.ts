@@ -4,18 +4,12 @@ import jwt from 'jsonwebtoken';
 import { UserModel } from '../modules/users/schemas/user';
 import { EmployeeModel } from '../modules/employees/schemas/employee';
 import { ROLE_ADMIN, toCanonicalRole } from '../utils/roles';
-
-const JWT_COOKIE_NAME = 'aintel_session';
-const DEFAULT_JWT_SECRET = 'aintel_dev_secret';
+import { authCookieName, getJwtSecret } from '../modules/auth/services/auth.service';
 
 type SessionPayload = {
   userId: string;
   tenantId: string;
 };
-
-function getJwtSecret() {
-  return process.env.AINTEL_JWT_SECRET || DEFAULT_JWT_SECRET;
-}
 
 function normalizeRoles(roles: unknown) {
   if (!Array.isArray(roles)) return [];
@@ -26,7 +20,7 @@ function normalizeRoles(roles: unknown) {
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const token = req.cookies?.[JWT_COOKIE_NAME];
+  const token = req.cookies?.[authCookieName];
   if (!token) {
     return res.fail('Neprijavljen uporabnik.', 401);
   }
@@ -94,4 +88,4 @@ export function requireRoles(requiredRoles: string[]) {
   };
 }
 
-export const authCookieName = JWT_COOKIE_NAME;
+export { authCookieName };

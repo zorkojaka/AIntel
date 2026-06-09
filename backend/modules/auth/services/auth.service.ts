@@ -2,9 +2,8 @@ import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 
-import { authCookieName } from '../../../middlewares/auth';
-
 const DEFAULT_JWT_SECRET = 'aintel_dev_secret';
+export const authCookieName = 'aintel_session';
 
 export function hashPassword(password: string) {
   return bcrypt.hash(password, 12);
@@ -22,7 +21,14 @@ export function generateTokenPair(expiresInMs: number) {
 }
 
 export function getJwtSecret() {
-  return process.env.AINTEL_JWT_SECRET || DEFAULT_JWT_SECRET;
+  const configured = process.env.AINTEL_JWT_SECRET?.trim();
+  if (configured) {
+    return configured;
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('AINTEL_JWT_SECRET is required in production.');
+  }
+  return DEFAULT_JWT_SECRET;
 }
 
 export function getJwtDays() {

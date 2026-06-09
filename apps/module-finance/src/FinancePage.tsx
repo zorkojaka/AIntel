@@ -476,7 +476,7 @@ export const FinancePage: React.FC = () => {
     const key = detailKey(employeeIdValue, project.snapshotId);
     const nextExpanded = !expandedEmployeeProjectRows[key];
     setExpandedEmployeeProjectRows((current) => ({ ...current, [key]: nextExpanded }));
-    if (!nextExpanded || employeeProjectDetails[key] || employeeProjectDetailsLoading[key]) return;
+    if (!nextExpanded || employeeProjectDetailsLoading[key]) return;
 
     setEmployeeProjectDetailsLoading((current) => ({ ...current, [key]: true }));
     setEmployeeProjectDetailsError((current) => {

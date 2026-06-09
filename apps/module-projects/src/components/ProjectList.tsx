@@ -144,12 +144,13 @@ export function ProjectList({
     setSortDir(column === "datum" ? "desc" : "asc");
   };
 
-  const renderSortableHeader = (column: SortColumn, label: string, className = "") => (
-    hideFinancials && (column === "ponudba" || column === "racuni") ? null : <TableHead className={className}>
+  const renderSortableHeader = (column: SortColumn, label: string, className = "") => {
+    const headerClassName = column === "racuni" && !className.includes("w-") ? `w-32 ${className}` : className;
+    return hideFinancials && (column === "ponudba" || column === "racuni") ? null : <TableHead className={headerClassName}>
       <button
         type="button"
         className={`inline-flex items-center gap-1 select-none font-semibold uppercase tracking-wide text-muted-foreground transition hover:text-foreground ${
-          className.includes("text-right") ? "w-full justify-end" : ""
+          headerClassName.includes("text-right") ? "w-full justify-end" : ""
         }`}
         onClick={() => handleSort(column)}
         aria-label={`Razvrsti po stolpcu ${label}`}
@@ -158,8 +159,8 @@ export function ProjectList({
         <span>{label}</span>
         <span className="inline-block w-3 text-xs">{sortColumn === column ? (sortDir === "asc" ? "\u2191" : "\u2193") : ""}</span>
       </button>
-    </TableHead>
-  );
+    </TableHead>;
+  };
 
   const renderLifecycleActions = (project: ProjectSummary) => (
     <>
@@ -222,16 +223,16 @@ export function ProjectList({
   return (
     <div className="space-y-4">
       <div className="projects-table-shell hidden rounded-[var(--radius-card)] border bg-card overflow-hidden md:block">
-        <Table>
+        <Table className="table-fixed">
           <TableHeader>
             <TableRow>
-              {renderSortableHeader("projekt", "Projekt")}
-              {renderSortableHeader("stranka", "Stranka")}
-              {renderSortableHeader("status", "Status")}
-              {!hideFinancials ? renderSortableHeader("ponudba", "Ponudba", "text-right") : null}
+              {renderSortableHeader("projekt", "Projekt", hideFinancials ? "w-[38%]" : "w-[28%]")}
+              {renderSortableHeader("stranka", "Stranka", hideFinancials ? "w-[24%]" : "w-[18%]")}
+              {renderSortableHeader("status", "Status", "w-32")}
+              {!hideFinancials ? renderSortableHeader("ponudba", "Ponudba", "w-32 text-right") : null}
               {renderSortableHeader("racuni", "Računi", "text-right")}
-              {renderSortableHeader("datum", "Datum")}
-              {!readOnly ? <TableHead className="text-right">Akcije</TableHead> : null}
+              {renderSortableHeader("datum", "Datum", "w-28")}
+              {!readOnly ? <TableHead className="w-40 text-right">Akcije</TableHead> : null}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -241,9 +242,9 @@ export function ProjectList({
                 className="cursor-pointer"
                 onClick={() => onSelectProject(project.id)}
               >
-                <TableCell className="font-medium">
-                  <div className="flex flex-col gap-1">
-                    <span>{project.title}</span>
+                <TableCell className="whitespace-normal align-top font-medium">
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <span className="break-words leading-5">{project.title}</span>
                     {project.categories && project.categories.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {project.categories.map((categoryId) => {
@@ -259,16 +260,18 @@ export function ProjectList({
                     )}
                   </div>
                 </TableCell>
-                <TableCell>{project.customer}</TableCell>
-                <TableCell>
+                <TableCell className="whitespace-normal align-top">
+                  <span className="block break-words leading-5">{project.customer}</span>
+                </TableCell>
+                <TableCell className="align-top">
                   <Badge className={statusColors[project.status]}>{statusLabels[project.status]}</Badge>
                 </TableCell>
-                {!hideFinancials ? <TableCell className="text-right">{formatAmount(project.quotedTotalWithVat)}</TableCell> : null}
-                {!hideFinancials ? <TableCell className="text-right">{formatAmount(project.invoiceAmount)}</TableCell> : null}
-                <TableCell>{formatDate(project.createdAt)}</TableCell>
+                {!hideFinancials ? <TableCell className="text-right align-top">{formatAmount(project.quotedTotalWithVat)}</TableCell> : null}
+                {!hideFinancials ? <TableCell className="text-right align-top">{formatAmount(project.invoiceAmount)}</TableCell> : null}
+                <TableCell className="align-top">{formatDate(project.createdAt)}</TableCell>
                 {!readOnly ? (
-                  <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
-                    <div className="flex justify-end gap-1">
+                  <TableCell className="text-right align-top" onClick={(event) => event.stopPropagation()}>
+                    <div className="flex shrink-0 justify-end gap-1">
                       {renderLifecycleActions(project)}
                       <TableRowActions
                         onEdit={() => onEditProject(project)}
