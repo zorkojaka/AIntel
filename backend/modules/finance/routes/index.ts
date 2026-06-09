@@ -17,6 +17,7 @@ import {
   productFrequency,
   snapshotByProject,
   snapshotsList,
+  updateEmployeeProjectEarningPayment,
 } from '../controllers/finance-analytics.controller';
 
 const router = Router();
@@ -34,6 +35,7 @@ router.get('/product-frequency', productFrequency);
 router.get('/basket-analysis', basketAnalysis);
 router.get('/employees-summary', employeesSummary);
 router.get('/employees/:employeeId/snapshots/:snapshotId/earnings', employeeProjectEarningDetail);
+router.patch('/employees/:employeeId/snapshots/:snapshotId/payment', updateEmployeeProjectEarningPayment);
 router.get('/pipeline', pipelineSummary);
 router.get('/analytics/product-cooccurrence', productCooccurrence);
 router.get('/analytics/product-bundles', productBundles);

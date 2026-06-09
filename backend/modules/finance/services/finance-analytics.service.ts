@@ -392,6 +392,51 @@ export async function getEmployeeProjectEarningDetail(employeeId: string, snapsh
   };
 }
 
+export async function setEmployeeProjectEarningPaid(params: {
+  employeeId: string;
+  snapshotId: string;
+  isPaid: boolean;
+  paidBy?: string | null;
+}) {
+  const normalizedEmployeeId = normalizeEmployeeId(params.employeeId);
+  if (!normalizedEmployeeId || !isObjectId(params.snapshotId)) return null;
+
+  const snapshot = await FinanceSnapshotModel.findOne({
+    _id: params.snapshotId,
+    superseded: { $ne: true },
+    'employeeEarnings.employeeId': normalizedEmployeeId,
+  });
+  if (!snapshot) return null;
+
+  const paidAt = params.isPaid ? new Date() : null;
+  const paidBy = params.isPaid ? params.paidBy ?? null : null;
+  const updated = await FinanceSnapshotModel.findOneAndUpdate(
+    {
+      _id: params.snapshotId,
+      superseded: { $ne: true },
+      'employeeEarnings.employeeId': normalizedEmployeeId,
+    },
+    {
+      $set: {
+        'employeeEarnings.$.isPaid': params.isPaid,
+        'employeeEarnings.$.paidAt': paidAt,
+        'employeeEarnings.$.paidBy': paidBy,
+      },
+    },
+    { new: true },
+  ).lean();
+  const earning = updated?.employeeEarnings?.find((entry) => String(entry.employeeId) === normalizedEmployeeId);
+  if (!updated || !earning) return null;
+
+  return {
+    snapshotId: String(updated._id),
+    employeeId: normalizedEmployeeId,
+    isPaid: Boolean(earning.isPaid),
+    paidAt: earning.paidAt ?? null,
+    paidBy: earning.paidBy ?? null,
+  };
+}
+
 export async function getPipelineSummary() {
   const offers = await OfferVersionModel.find().lean();
   const byStatus = new Map<string, { count: number; totalGross: number }>();

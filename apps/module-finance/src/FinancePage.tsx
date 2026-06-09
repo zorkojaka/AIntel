@@ -38,6 +38,8 @@ interface SnapshotEmployeeEarning {
   employeeId: string;
   earnings: number;
   isPaid: boolean;
+  paidAt?: string | null;
+  paidBy?: string | null;
 }
 
 interface FinanceSnapshot {
@@ -148,6 +150,25 @@ async function fetchApi<T>(url: string): Promise<T> {
   return payload.data;
 }
 
+async function patchApi<T>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+    body: JSON.stringify(body),
+  });
+
+  const payload = (await response.json()) as ApiEnvelope<T>;
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.error ?? `Napaka API (${response.status})`);
+  }
+  return payload.data;
+}
+
 async function fetchAllSnapshots(): Promise<FinanceSnapshot[]> {
   const limit = 200;
   const firstPage = await fetchApi<SnapshotListEnvelope>(`/api/finance/snapshots?limit=${limit}&page=1`);
@@ -200,6 +221,10 @@ function statusLabel(isPaid: boolean) {
   return isPaid ? 'Plačano' : 'Čaka na plačilo';
 }
 
+function detailKey(employeeIdValue: string, snapshotId: string) {
+  return `${employeeIdValue}:${snapshotId}`;
+}
+
 function marginClass(marginPercent: number) {
   if (marginPercent > 40) return 'is-high';
   if (marginPercent >= 20) return 'is-medium';
@@ -244,7 +269,8 @@ export const FinancePage: React.FC = () => {
   const [employeeProjectDetails, setEmployeeProjectDetails] = useState<Record<string, EmployeeProjectEarningDetail>>({});
   const [employeeProjectDetailsLoading, setEmployeeProjectDetailsLoading] = useState<Record<string, boolean>>({});
   const [employeeProjectDetailsError, setEmployeeProjectDetailsError] = useState<Record<string, string>>({});
-  const [paidByEmployee, setPaidByEmployee] = useState<Record<string, boolean>>({});
+  const [paidByEmployeeProject, setPaidByEmployeeProject] = useState<Record<string, boolean>>({});
+  const [employeePaymentSaving, setEmployeePaymentSaving] = useState<Record<string, boolean>>({});
 
   const isExecutionOnly = useMemo(() => {
     const roleSet = new Set(roles);
@@ -394,7 +420,8 @@ export const FinancePage: React.FC = () => {
 
     periodSnapshots.forEach((snapshot) => {
       snapshot.employeeEarnings.forEach((earning) => {
-        const resolvedPaid = paidByEmployee[earning.employeeId] ?? earning.isPaid;
+        const paymentKey = detailKey(earning.employeeId, snapshot._id);
+        const resolvedPaid = paidByEmployeeProject[paymentKey] ?? earning.isPaid;
         const entry: EmployeeProjectBreakdown = {
           snapshotId: snapshot._id,
           projectId: snapshot.projectId,
@@ -411,7 +438,7 @@ export const FinancePage: React.FC = () => {
     });
 
     return map;
-  }, [paidByEmployee, periodSnapshots]);
+  }, [paidByEmployeeProject, periodSnapshots]);
 
   const employeeRows = useMemo(() => {
     return employees
@@ -448,7 +475,8 @@ export const FinancePage: React.FC = () => {
       .map((snapshot) => {
         const employeeEarning = snapshot.employeeEarnings.find((entry) => entry.employeeId === employeeId);
         if (!employeeEarning) return null;
-        const isPaid = paidByEmployee[employeeId] ?? employeeEarning.isPaid;
+        const paymentKey = detailKey(employeeId, snapshot._id);
+        const isPaid = paidByEmployeeProject[paymentKey] ?? employeeEarning.isPaid;
         return {
           id: snapshot._id,
           projectId: snapshot.projectId,
@@ -460,7 +488,7 @@ export const FinancePage: React.FC = () => {
         };
       })
       .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
-  }, [employeeId, isExecutionOnly, paidByEmployee, periodSnapshots]);
+  }, [employeeId, isExecutionOnly, paidByEmployeeProject, periodSnapshots]);
 
   const toggleProjectRow = (id: string) => {
     setExpandedProjectRows((current) => ({ ...current, [id]: !current[id] }));
@@ -469,8 +497,6 @@ export const FinancePage: React.FC = () => {
   const toggleEmployeeRow = (id: string) => {
     setExpandedEmployeeRows((current) => ({ ...current, [id]: !current[id] }));
   };
-
-  const detailKey = (employeeIdValue: string, snapshotId: string) => `${employeeIdValue}:${snapshotId}`;
 
   const toggleEmployeeProjectRow = async (employeeIdValue: string, project: EmployeeProjectBreakdown) => {
     const key = detailKey(employeeIdValue, project.snapshotId);
@@ -499,9 +525,33 @@ export const FinancePage: React.FC = () => {
     }
   };
 
-  const markEmployeePaid = (id: string) => {
+  const markEmployeeProjectPaid = async (employeeIdValue: string, project: EmployeeProjectBreakdown, isPaid: boolean) => {
     if (!isAdminOrFinance) return;
-    setPaidByEmployee((current) => ({ ...current, [id]: true }));
+    const key = detailKey(employeeIdValue, project.snapshotId);
+    setEmployeePaymentSaving((current) => ({ ...current, [key]: true }));
+    try {
+      await patchApi<{ snapshotId: string; employeeId: string; isPaid: boolean }>(
+        `/api/finance/employees/${encodeURIComponent(employeeIdValue)}/snapshots/${encodeURIComponent(project.snapshotId)}/payment`,
+        { isPaid },
+      );
+      setPaidByEmployeeProject((current) => ({ ...current, [key]: isPaid }));
+      setSnapshots((current) =>
+        current.map((snapshot) =>
+          snapshot._id === project.snapshotId
+            ? {
+                ...snapshot,
+                employeeEarnings: snapshot.employeeEarnings.map((earning) =>
+                  earning.employeeId === employeeIdValue ? { ...earning, isPaid } : earning,
+                ),
+              }
+            : snapshot,
+        ),
+      );
+    } catch (paymentError) {
+      setError(paymentError instanceof Error ? paymentError.message : 'Statusa plačila ni mogoče shraniti.');
+    } finally {
+      setEmployeePaymentSaving((current) => ({ ...current, [key]: false }));
+    }
   };
 
   const productRows = useMemo<ProductFrequency[]>(() => {
@@ -741,7 +791,7 @@ export const FinancePage: React.FC = () => {
                       const materialPurchase = getSnapshotMaterialPurchase(snapshot);
                       const laborCost = getSnapshotLaborCost(snapshot);
                       const isPaid = snapshot.employeeEarnings.length > 0
-                        ? snapshot.employeeEarnings.every((earning) => paidByEmployee[earning.employeeId] ?? earning.isPaid)
+                        ? snapshot.employeeEarnings.every((earning) => paidByEmployeeProject[detailKey(earning.employeeId, snapshot._id)] ?? earning.isPaid)
                         : false;
                       return (
                         <React.Fragment key={snapshot._id}>
@@ -807,7 +857,7 @@ export const FinancePage: React.FC = () => {
               <div className="finance-table-wrap">
                 <table className="finance-table">
                   <thead>
-                    <tr><th>Ime</th><th>Št. projektov</th><th>Skupaj</th><th>Plačano</th><th>Neplačano</th><th>Akcija</th></tr>
+                    <tr><th>Ime</th><th>Št. projektov</th><th>Skupaj</th><th>Plačano</th><th>Neplačano</th></tr>
                   </thead>
                   <tbody>
                     {employeeRows.map((row) => (
@@ -818,18 +868,13 @@ export const FinancePage: React.FC = () => {
                           <td>{currency.format(row.totalEarned)}</td>
                           <td>{currency.format(row.totalPaid)}</td>
                           <td>{currency.format(row.totalUnpaid)}</td>
-                          <td>
-                            <button type="button" className="finance-btn" onClick={(event) => { event.stopPropagation(); markEmployeePaid(row.employeeId); }}>
-                              Označi kot plačano
-                            </button>
-                          </td>
                         </tr>
                         {expandedEmployeeRows[row.employeeId] && (
                           <tr className="expanded-row">
-                            <td colSpan={6}>
+                            <td colSpan={5}>
                               <table className="inner-table">
                                 <thead>
-                                  <tr><th>Projekt</th><th>Račun</th><th>Stranka</th><th>Datum</th><th>Zaslužek</th><th>Status</th></tr>
+                                  <tr><th>Projekt</th><th>Račun</th><th>Stranka</th><th>Datum</th><th>Zaslužek</th><th>Status</th><th>Akcija</th></tr>
                                 </thead>
                                 <tbody>
                                   {row.projects.map((project) => {
@@ -838,6 +883,7 @@ export const FinancePage: React.FC = () => {
                                     const isExpanded = !!expandedEmployeeProjectRows[key];
                                     const isLoadingDetail = !!employeeProjectDetailsLoading[key];
                                     const detailError = employeeProjectDetailsError[key];
+                                    const isSavingPayment = !!employeePaymentSaving[key];
                                     return (
                                       <React.Fragment key={`${row.employeeId}-${project.snapshotId}`}>
                                         <tr
@@ -852,10 +898,23 @@ export const FinancePage: React.FC = () => {
                                           <td>{new Date(project.issuedAt).toLocaleDateString('sl-SI')}</td>
                                           <td>{currency.format(project.earnings)}</td>
                                           <td><span className={`status-badge ${project.isPaid ? 'is-paid' : 'is-pending'}`}>{statusLabel(project.isPaid)}</span></td>
+                                          <td>
+                                            <button
+                                              type="button"
+                                              className="finance-btn"
+                                              disabled={isSavingPayment}
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                void markEmployeeProjectPaid(row.employeeId, project, !project.isPaid);
+                                              }}
+                                            >
+                                              {isSavingPayment ? 'Shranjujem...' : project.isPaid ? 'Prekliči plačilo' : 'Označi kot plačano'}
+                                            </button>
+                                          </td>
                                         </tr>
                                         {isExpanded && (
                                           <tr className="expanded-row">
-                                            <td colSpan={6}>
+                                            <td colSpan={7}>
                                               {isLoadingDetail ? (
                                                 <div className="finance-state">Nalagam razčlembo...</div>
                                               ) : detailError ? (

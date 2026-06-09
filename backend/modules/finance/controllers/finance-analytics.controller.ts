@@ -8,6 +8,7 @@ import {
   getProductBundles,
   getProductCooccurrence,
   getProductFrequency,
+  setEmployeeProjectEarningPaid,
 } from '../services/finance-analytics.service';
 import { getProjectSnapshot, listFinanceSnapshots } from '../services/finance-snapshot.service';
 
@@ -47,6 +48,29 @@ export async function employeeProjectEarningDetail(req: Request, res: Response) 
   const data = await getEmployeeProjectEarningDetail(employeeId, snapshotId);
   if (!data) {
     return res.fail('Razčlemba zaslužka ni najdena.', 404);
+  }
+  return res.success(data);
+}
+
+function resolvePaidBy(req: Request) {
+  const authUserId = typeof (req as any).authUser?._id === 'string' ? (req as any).authUser._id : '';
+  if (authUserId) return authUserId;
+  const userId = typeof (req as any).user?._id === 'string' ? (req as any).user._id : '';
+  return userId || null;
+}
+
+export async function updateEmployeeProjectEarningPayment(req: Request, res: Response) {
+  const employeeId = typeof req.params.employeeId === 'string' ? req.params.employeeId.trim() : '';
+  const snapshotId = typeof req.params.snapshotId === 'string' ? req.params.snapshotId.trim() : '';
+  const isPaid = req.body?.isPaid === true;
+  const data = await setEmployeeProjectEarningPaid({
+    employeeId,
+    snapshotId,
+    isPaid,
+    paidBy: resolvePaidBy(req),
+  });
+  if (!data) {
+    return res.fail('Zaslužek zaposlenega ni najden.', 404);
   }
   return res.success(data);
 }
