@@ -9,21 +9,18 @@ import { normalizePayload } from './middleware/normalizePayload';
 import { errorHandler } from './errorHandler';
 import { isMongoConnected } from '../db/mongo';
 
+const DEFAULT_PRODUCTION_ORIGINS = ['https://aintel.inteligent.si', 'https://testaintel.inteligent.si'];
+
 function createCorsOptions() {
   if (process.env.NODE_ENV !== 'production') {
     return { origin: true, credentials: true };
   }
 
-  const allowedOrigins = (process.env.AINTEL_ALLOWED_ORIGINS ?? '')
+  const configuredOrigins = (process.env.AINTEL_ALLOWED_ORIGINS ?? '')
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
-
-  if (allowedOrigins.length === 0) {
-    throw new Error('AINTEL_ALLOWED_ORIGINS is required in production.');
-  }
-
-  const allowed = new Set(allowedOrigins);
+  const allowed = new Set([...DEFAULT_PRODUCTION_ORIGINS, ...configuredOrigins]);
   return {
     credentials: true,
     origin(origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) {
