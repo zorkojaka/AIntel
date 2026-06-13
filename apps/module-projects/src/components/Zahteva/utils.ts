@@ -3,8 +3,11 @@ import type { Zahteva } from "../../types";
 
 export type ZahtevaSistem = Zahteva["sistemi"][number];
 export type Videonadzor = NonNullable<ZahtevaSistem["videonadzor"]>;
+export type Alarm = NonNullable<ZahtevaSistem["alarm"]>;
 export type AsortimaVariant = Videonadzor["asortima"][number];
 export type Lokacija = Videonadzor["lokacije"][number];
+export type AlarmSenzor = Alarm["senzorji"][number];
+export type AlarmLokacija = Alarm["lokacije"][number];
 
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -12,7 +15,7 @@ export function nextSystemId(sistemi: Zahteva["sistemi"]) {
   return `sys-${sistemi.length + 1}`;
 }
 
-export function nextVariantId(existing: AsortimaVariant[]) {
+export function nextVariantId(existing: Array<{ id: string }>) {
   for (const letter of LETTERS) {
     if (!existing.some((entry) => entry.id === letter)) return letter;
   }
@@ -39,6 +42,27 @@ export function createVideonadzorSystem(id: string): ZahtevaSistem {
   };
 }
 
+export function createAlarmSystem(id: string): ZahtevaSistem {
+  return {
+    id,
+    tip: "alarm",
+    steviloLokacij: 1,
+    alarm: {
+      senzorji: [],
+      lokacije: [{ id: "loc-1", ime: "Lokacija 1", senzorIdAssigned: null, slike: [] }],
+      centrala: { productId: null, autoSelected: true },
+      upravljanje: [],
+      sirene: [],
+      pozarPoplava: [],
+      dodatnaOprema: [],
+    },
+    execution: {
+      scenarioType: "posiljanje",
+      estimates: { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0, kilometrinaKm: 0 },
+    },
+  };
+}
+
 export function syncLokacije(videonadzor: Videonadzor, targetCount: number): Videonadzor {
   const nextCount = Math.max(1, Math.min(64, Math.round(targetCount)));
   let lokacije = [...videonadzor.lokacije];
@@ -54,8 +78,27 @@ export function syncLokacije(videonadzor: Videonadzor, targetCount: number): Vid
   return { ...videonadzor, lokacije };
 }
 
+export function syncAlarmLokacije(alarm: Alarm, targetCount: number): Alarm {
+  const nextCount = Math.max(1, Math.min(64, Math.round(targetCount)));
+  let lokacije = [...alarm.lokacije];
+  if (nextCount > lokacije.length) {
+    for (let index = lokacije.length; index < nextCount; index += 1) {
+      lokacije.push({ id: `loc-${index + 1}`, ime: `Lokacija ${index + 1}`, senzorIdAssigned: null, slike: [] });
+    }
+  } else if (nextCount < lokacije.length) {
+    const empty = lokacije.filter((lokacija) => !lokacija.ime.trim() || /^Lokacija \d+$/i.test(lokacija.ime.trim()));
+    const filled = lokacije.filter((lokacija) => !empty.includes(lokacija));
+    lokacije = [...filled, ...empty].slice(0, nextCount);
+  }
+  return { ...alarm, lokacije };
+}
+
 export function assignmentCount(videonadzor: Videonadzor, variantId: string) {
   return videonadzor.lokacije.filter((lokacija) => lokacija.asortimaIdAssigned === variantId).length;
+}
+
+export function alarmAssignmentCount(alarm: Alarm, senzorId: string) {
+  return alarm.lokacije.filter((lokacija) => lokacija.senzorIdAssigned === senzorId).length;
 }
 
 export function productLabel(product?: CenikProduct | null) {
@@ -85,6 +128,18 @@ export function systemTotal(videonadzor: Videonadzor, productById: Map<string, C
   const switchTotal = switchItems.reduce((sum, item) => sum + Number(productById.get(item.productId)?.prodajnaCena ?? 0) * item.kolicina, 0);
   const diskTotal = diskItems.reduce((sum, item) => sum + Number(productById.get(item.productId)?.prodajnaCena ?? 0) * item.kolicina, 0);
   return asortimaTotal + Number(snemalnik?.prodajnaCena ?? 0) + switchTotal + diskTotal;
+}
+
+export function alarmTotal(alarm: Alarm, productById: Map<string, CenikProduct>) {
+  const sensorsTotal = alarm.senzorji.reduce((sum, senzor) => {
+    const qty = alarmAssignmentCount(alarm, senzor.id);
+    const product = productById.get(senzor.senzorProductId);
+    return sum + qty * Number(product?.prodajnaCena ?? 0);
+  }, 0);
+  const centrala = alarm.centrala.productId ? productById.get(alarm.centrala.productId) : null;
+  const equipment = [...alarm.upravljanje, ...alarm.sirene, ...alarm.pozarPoplava, ...(alarm.dodatnaOprema ?? [])];
+  const equipmentTotal = equipment.reduce((sum, item) => sum + Number(productById.get(item.productId)?.prodajnaCena ?? 0) * item.kolicina, 0);
+  return sensorsTotal + Number(centrala?.prodajnaCena ?? 0) + equipmentTotal;
 }
 
 export function normalizedSelectedItems(input?: { productId?: string | null; kolicina?: number; items?: Array<{ productId: string; kolicina: number }> }) {

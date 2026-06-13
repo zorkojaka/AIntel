@@ -45,6 +45,10 @@ function buildZahtevaLocationPhotoItemId(zahtevaId: string, sistemId: string, lo
   return `zahteva-location:${zahtevaId}:${sistemId}:${lokacijaId}`;
 }
 
+function buildAlarmLocationPhotoItemId(zahtevaId: string, sistemId: string, lokacijaId: string) {
+  return `zahteva-alarm-location:${zahtevaId}:${sistemId}:${lokacijaId}`;
+}
+
 function lineFromProduct(
   product: any,
   quantity: number,
@@ -439,6 +443,40 @@ async function buildOfferItems(zahteva: ZahtevaDocument, tenantId = 'inteligent'
   const systemRequests: SystemProductRequests[] = [];
 
   for (const sistem of zahteva.sistemi ?? []) {
+    if (sistem.tip === 'alarm' && sistem.alarm) {
+      const alarm = sistem.alarm as any;
+      const beforeSystemCount = productRequests.length;
+
+      for (const senzor of alarm.senzorji ?? []) {
+        const senzorLokacije = (alarm.lokacije ?? []).filter((lokacija: any) => lokacija.senzorIdAssigned === senzor.id);
+        const kolicina = senzorLokacije.length;
+        addProductRequest(productRequests, senzor.senzorProductId, kolicina, 'material', {
+          requirementsLocationUnits: senzorLokacije.map((lokacija: any) => ({
+            locationId: lokacija.id,
+            locationName: normalizeText(lokacija.ime, lokacija.id) || lokacija.id,
+            sourcePhotoItemId: buildAlarmLocationPhotoItemId(String(zahteva._id), sistem.id, lokacija.id),
+          })),
+        });
+      }
+
+      addProductRequest(productRequests, alarm.centrala?.productId, 1, 'material');
+      for (const item of alarm.upravljanje ?? []) {
+        addProductRequest(productRequests, item.productId, item.kolicina, 'material');
+      }
+      for (const item of alarm.sirene ?? []) {
+        addProductRequest(productRequests, item.productId, item.kolicina, 'material');
+      }
+      for (const item of alarm.pozarPoplava ?? []) {
+        addProductRequest(productRequests, item.productId, item.kolicina, 'material');
+      }
+      for (const item of alarm.dodatnaOprema ?? []) {
+        addProductRequest(productRequests, item.productId, item.kolicina, 'material');
+      }
+
+      systemRequests.push({ sistem, requests: productRequests.slice(beforeSystemCount) });
+      continue;
+    }
+
     if (sistem.tip !== 'videonadzor' || !sistem.videonadzor) continue;
     const videonadzor = sistem.videonadzor;
     const beforeSystemCount = productRequests.length;
@@ -492,6 +530,32 @@ function validateZahtevaForOffer(zahteva: ZahtevaDocument) {
   }
 
   for (const sistem of zahteva.sistemi) {
+    if (sistem.tip === 'alarm') {
+      const alarm = sistem.alarm as any;
+      if (!alarm) {
+        throw Object.assign(new Error('Alarm sistem nima podatkov.'), { statusCode: 400 });
+      }
+      if (!Array.isArray(alarm.lokacije) || alarm.lokacije.length === 0) {
+        throw Object.assign(new Error('Alarm mora imeti vsaj eno lokacijo.'), { statusCode: 400 });
+      }
+      const senzorIds = new Set((alarm.senzorji ?? []).map((senzor: any) => senzor.id));
+      if (senzorIds.size === 0) {
+        throw Object.assign(new Error('Alarm mora imeti vsaj en senzor.'), { statusCode: 400 });
+      }
+      if (!alarm.centrala?.productId) {
+        throw Object.assign(new Error('Alarm mora imeti izbrano centralo.'), { statusCode: 400 });
+      }
+      const missing = (alarm.lokacije ?? []).filter((lokacija: any) => !lokacija.senzorIdAssigned);
+      if (missing.length > 0) {
+        throw Object.assign(new Error('Vse alarmne lokacije morajo imeti dodeljen senzor.'), { statusCode: 400 });
+      }
+      const invalid = (alarm.lokacije ?? []).filter((lokacija: any) => !senzorIds.has(String(lokacija.senzorIdAssigned)));
+      if (invalid.length > 0) {
+        throw Object.assign(new Error('Alarmna lokacija ima dodeljen neobstoječi senzor.'), { statusCode: 400 });
+      }
+      continue;
+    }
+
     if (sistem.tip !== 'videonadzor') continue;
     const videonadzor = sistem.videonadzor;
     if (!videonadzor) {

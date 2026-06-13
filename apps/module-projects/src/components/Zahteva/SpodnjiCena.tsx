@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { nadaljujZahtevaNaPonudbo, type CenikProduct } from "../../api";
 import type { Zahteva } from "../../types";
 import { Button } from "../ui/button";
-import { formatPrice, systemTotal } from "./utils";
+import { alarmTotal, formatPrice, systemTotal } from "./utils";
 
 type Props = {
   zahteva: Zahteva;
@@ -15,14 +15,21 @@ type Props = {
 export function SpodnjiCena({ zahteva, productById, onNavigateOffer }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const total = zahteva.sistemi.reduce((sum, sistem) => {
-    if (sistem.tip !== "videonadzor" || !sistem.videonadzor) return sum;
-    return sum + systemTotal(sistem.videonadzor, productById);
+    if (sistem.tip === "videonadzor" && sistem.videonadzor) return sum + systemTotal(sistem.videonadzor, productById);
+    if (sistem.tip === "alarm" && sistem.alarm) return sum + alarmTotal(sistem.alarm, productById);
+    return sum;
   }, 0);
 
   const canContinue = zahteva.sistemi.some((sistem) => {
-    if (sistem.tip !== "videonadzor" || !sistem.videonadzor) return false;
-    const variantIds = new Set(sistem.videonadzor.asortima.map((variant) => variant.id));
-    return sistem.videonadzor.lokacije.length > 0 && sistem.videonadzor.lokacije.every((lokacija) => lokacija.asortimaIdAssigned && variantIds.has(lokacija.asortimaIdAssigned));
+    if (sistem.tip === "videonadzor" && sistem.videonadzor) {
+      const variantIds = new Set(sistem.videonadzor.asortima.map((variant) => variant.id));
+      return sistem.videonadzor.lokacije.length > 0 && sistem.videonadzor.lokacije.every((lokacija) => lokacija.asortimaIdAssigned && variantIds.has(lokacija.asortimaIdAssigned));
+    }
+    if (sistem.tip === "alarm" && sistem.alarm) {
+      const senzorIds = new Set(sistem.alarm.senzorji.map((senzor) => senzor.id));
+      return Boolean(sistem.alarm.centrala.productId) && sistem.alarm.lokacije.length > 0 && sistem.alarm.lokacije.every((lokacija) => lokacija.senzorIdAssigned && senzorIds.has(lokacija.senzorIdAssigned));
+    }
+    return false;
   });
 
   const submit = async () => {
