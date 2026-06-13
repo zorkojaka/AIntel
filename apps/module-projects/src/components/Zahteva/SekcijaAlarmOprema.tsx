@@ -217,7 +217,7 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
     onChange({ ...alarm, [field]: Array.from(byId.entries()).map(([id, kolicina]) => ({ productId: id, kolicina })) });
   };
 
-  const hubOptions = projectMode === "fibra" ? hubs : needsHub2 ? photoHubs : basicHubs;
+  const hubOptions = hubs;
 
   return (
     <>
