@@ -16,8 +16,6 @@ type QuantityField = "upravljanje" | "sirene" | "pozarPoplava" | "dodatnaOprema"
 type AlarmProjectMode = "wireless" | "fibra";
 type SensorFilter = {
   tip: string;
-  sistem: string;
-  okolje: string;
   verifikacija: string;
   barva: string;
 };
@@ -117,8 +115,6 @@ function sensorColor(product: CenikProduct) {
 function sensorMatches(product: CenikProduct, filters: SensorFilter) {
   return (
     (filters.tip === "Vse" || sensorKind(product) === filters.tip) &&
-    (filters.sistem === "Vse" || sensorSystem(product) === filters.sistem) &&
-    (filters.okolje === "Vse" || sensorEnvironment(product) === filters.okolje) &&
     (filters.verifikacija === "Vse" || sensorVerification(product) === filters.verifikacija) &&
     (filters.barva === "Vse" || sensorColor(product) === filters.barva)
   );
@@ -151,8 +147,6 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
   const [projectMode, setProjectMode] = useState<AlarmProjectMode>("wireless");
   const [sensorFilters, setSensorFilters] = useState<SensorFilter>({
     tip: "Vse",
-    sistem: "Vse",
-    okolje: "Vse",
     verifikacija: "Vse",
     barva: "Vse",
   });
@@ -167,9 +161,9 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
   );
   const sensors = useMemo(() => products.filter(isSensor).sort(sortProducts), [products]);
   const filteredSensors = useMemo(() => sensors.filter((sensor) => sensorMatches(sensor, sensorFilters)), [sensors, sensorFilters]);
+  const indoorSensors = useMemo(() => filteredSensors.filter((sensor) => sensorEnvironment(sensor) === "Notranji"), [filteredSensors]);
+  const outdoorSensors = useMemo(() => filteredSensors.filter((sensor) => sensorEnvironment(sensor) === "Zunanji"), [filteredSensors]);
   const sensorTipOptions = useMemo(() => filterOptions(sensors, sensorKind), [sensors]);
-  const sensorSistemOptions = useMemo(() => filterOptions(sensors, sensorSystem), [sensors]);
-  const sensorOkoljeOptions = useMemo(() => filterOptions(sensors, sensorEnvironment), [sensors]);
   const sensorVerifikacijaOptions = useMemo(() => filterOptions(sensors, sensorVerification), [sensors]);
   const sensorBarvaOptions = useMemo(() => filterOptions(sensors, sensorColor), [sensors]);
   const hubs = useMemo(() => products.filter(isHub).sort((a, b) => a.prodajnaCena - b.prodajnaCena), [products]);
@@ -190,20 +184,16 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
   useEffect(() => {
     const nextFilters = { ...sensorFilters };
     if (!sensorTipOptions.includes(nextFilters.tip)) nextFilters.tip = "Vse";
-    if (!sensorSistemOptions.includes(nextFilters.sistem)) nextFilters.sistem = "Vse";
-    if (!sensorOkoljeOptions.includes(nextFilters.okolje)) nextFilters.okolje = "Vse";
     if (!sensorVerifikacijaOptions.includes(nextFilters.verifikacija)) nextFilters.verifikacija = "Vse";
     if (!sensorBarvaOptions.includes(nextFilters.barva)) nextFilters.barva = "Vse";
     if (
       nextFilters.tip !== sensorFilters.tip ||
-      nextFilters.sistem !== sensorFilters.sistem ||
-      nextFilters.okolje !== sensorFilters.okolje ||
       nextFilters.verifikacija !== sensorFilters.verifikacija ||
       nextFilters.barva !== sensorFilters.barva
     ) {
       setSensorFilters(nextFilters);
     }
-  }, [sensorBarvaOptions, sensorFilters, sensorOkoljeOptions, sensorSistemOptions, sensorTipOptions, sensorVerifikacijaOptions]);
+  }, [sensorBarvaOptions, sensorFilters, sensorTipOptions, sensorVerifikacijaOptions]);
 
   const setHub = (productId: string | null) => {
     onChange({ ...alarm, centrala: { productId, autoSelected: false } });
@@ -245,13 +235,12 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
         </div>
         <div className="zahteva-dialog-filters">
           <FilterStrip label="Tip" values={sensorTipOptions} selected={sensorFilters.tip} onSelect={(tip) => setSensorFilters((current) => ({ ...current, tip }))} />
-          <FilterStrip label="Sistem" values={sensorSistemOptions} selected={sensorFilters.sistem} onSelect={(sistem) => setSensorFilters((current) => ({ ...current, sistem }))} />
-          <FilterStrip label="Okolje" values={sensorOkoljeOptions} selected={sensorFilters.okolje} onSelect={(okolje) => setSensorFilters((current) => ({ ...current, okolje }))} />
           <FilterStrip label="Verifikacija" values={sensorVerifikacijaOptions} selected={sensorFilters.verifikacija} onSelect={(verifikacija) => setSensorFilters((current) => ({ ...current, verifikacija }))} />
           <FilterStrip label="Barva" values={sensorBarvaOptions} selected={sensorFilters.barva} onSelect={(barva) => setSensorFilters((current) => ({ ...current, barva }))} />
         </div>
+        <div className="zahteva-sensor-group-title">Notranji senzorji</div>
         <div className="zahteva-product-track zahteva-alarm-track">
-          {filteredSensors.map((product) => (
+          {indoorSensors.map((product) => (
             <button key={product._id} type="button" className="zahteva-track-card zahteva-alarm-card" title={product.ime} onClick={() => onAddSenzor(product)}>
               {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
               <strong>{productDisplayName(product)}</strong>
@@ -267,8 +256,9 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
               </span>
             </button>
           ))}
-          {filteredSensors.length === 0 ? <div className="zahteva-empty">Ni alarmnih senzorjev za izbrane filtre.</div> : null}
+          {indoorSensors.length === 0 ? <div className="zahteva-empty">Ni notranjih senzorjev za izbrane filtre.</div> : null}
         </div>
+        <SensorProductGroup title="Zunanji senzorji" products={outdoorSensors} emptyText="Ni zunanjih senzorjev za izbrane filtre." onAddSenzor={onAddSenzor} />
       </section>
 
       <section className="zahteva-subsection">
@@ -300,6 +290,43 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
       <QuantitySection icon={<BellRing className="h-4 w-4" aria-hidden />} title="Sirene" products={sirens} items={alarm.sirene} onSetQuantity={(productId, quantity) => setQuantity("sirene", productId, quantity)} />
       <QuantitySection icon={<Flame className="h-4 w-4" aria-hidden />} title="Požarni / poplavni" products={fireFlood} items={alarm.pozarPoplava} onSetQuantity={(productId, quantity) => setQuantity("pozarPoplava", productId, quantity)} />
       <QuantitySection icon={<Package className="h-4 w-4" aria-hidden />} title="Pametna stikala / moduli" products={smartHomeModules} items={alarm.dodatnaOprema ?? []} onSetQuantity={(productId, quantity) => setQuantity("dodatnaOprema", productId, quantity)} />
+    </>
+  );
+}
+
+function SensorProductGroup({
+  title,
+  products,
+  emptyText,
+  onAddSenzor,
+}: {
+  title: string;
+  products: CenikProduct[];
+  emptyText: string;
+  onAddSenzor: (product: CenikProduct) => void;
+}) {
+  return (
+    <>
+      <div className="zahteva-sensor-group-title">{title}</div>
+      <div className="zahteva-product-track zahteva-alarm-track">
+        {products.map((product) => (
+          <button key={product._id} type="button" className="zahteva-track-card zahteva-alarm-card" title={product.ime} onClick={() => onAddSenzor(product)}>
+            {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
+            <strong>{productDisplayName(product)}</strong>
+            <small>
+              {sensorKind(product)} • {sensorSystem(product)} • {sensorEnvironment(product)}
+              {isPhotoVerificationSensorName(product.ime) ? " • photo" : ""}
+              {sensorColor(product) ? ` • ${sensorColor(product)}` : ""}
+            </small>
+            <b>{formatPrice(product.prodajnaCena)}</b>
+            <span className="zahteva-card-action">
+              <Plus className="h-3 w-3" aria-hidden />
+              Dodaj
+            </span>
+          </button>
+        ))}
+        {products.length === 0 ? <div className="zahteva-empty">{emptyText}</div> : null}
+      </div>
     </>
   );
 }

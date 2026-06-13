@@ -1470,6 +1470,13 @@
   min-height: 168px;
 }
 
+.zahteva-sensor-group-title {
+  color: var(--app-text);
+  font-size: 0.78rem;
+  font-weight: 900;
+  margin: 0.35rem 0 0.25rem;
+}
+
 .zahteva-alarm-card strong {
   line-height: 1.18;
   overflow: visible;
