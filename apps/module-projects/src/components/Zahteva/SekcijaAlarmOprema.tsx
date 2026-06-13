@@ -102,6 +102,10 @@ function sensorEnvironment(product: CenikProduct) {
   return /\boutdoor\b/i.test(product.ime) ? "Zunanji" : "Notranji";
 }
 
+function isDoorWindowSensor(product: CenikProduct) {
+  return /doorprotect|glassprotect/i.test(product.ime);
+}
+
 function sensorVerification(product: CenikProduct) {
   return isPhotoVerificationSensorName(product.ime) ? "Photo" : "Brez photo";
 }
@@ -161,8 +165,9 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
   );
   const sensors = useMemo(() => products.filter(isSensor).sort(sortProducts), [products]);
   const filteredSensors = useMemo(() => sensors.filter((sensor) => sensorMatches(sensor, sensorFilters)), [sensors, sensorFilters]);
-  const indoorSensors = useMemo(() => filteredSensors.filter((sensor) => sensorEnvironment(sensor) === "Notranji"), [filteredSensors]);
-  const outdoorSensors = useMemo(() => filteredSensors.filter((sensor) => sensorEnvironment(sensor) === "Zunanji"), [filteredSensors]);
+  const doorWindowSensors = useMemo(() => filteredSensors.filter(isDoorWindowSensor), [filteredSensors]);
+  const indoorSensors = useMemo(() => filteredSensors.filter((sensor) => !isDoorWindowSensor(sensor) && sensorEnvironment(sensor) === "Notranji"), [filteredSensors]);
+  const outdoorSensors = useMemo(() => filteredSensors.filter((sensor) => !isDoorWindowSensor(sensor) && sensorEnvironment(sensor) === "Zunanji"), [filteredSensors]);
   const sensorTipOptions = useMemo(() => filterOptions(sensors, sensorKind), [sensors]);
   const sensorVerifikacijaOptions = useMemo(() => filterOptions(sensors, sensorVerification), [sensors]);
   const sensorBarvaOptions = useMemo(() => filterOptions(sensors, sensorColor), [sensors]);
@@ -238,6 +243,7 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
           <FilterStrip label="Verifikacija" values={sensorVerifikacijaOptions} selected={sensorFilters.verifikacija} onSelect={(verifikacija) => setSensorFilters((current) => ({ ...current, verifikacija }))} />
           <FilterStrip label="Barva" values={sensorBarvaOptions} selected={sensorFilters.barva} onSelect={(barva) => setSensorFilters((current) => ({ ...current, barva }))} />
         </div>
+        <SensorProductGroup title="Vrata / okna" products={doorWindowSensors} emptyText="Ni senzorjev za vrata, okna ali steklo za izbrane filtre." onAddSenzor={onAddSenzor} />
         <div className="zahteva-sensor-group-title">Notranji senzorji</div>
         <div className="zahteva-product-track zahteva-alarm-track">
           {indoorSensors.map((product) => (
