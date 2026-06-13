@@ -34,7 +34,7 @@ function isAjaxAlarmProduct(product: CenikProduct) {
 }
 
 export function isAjaxServiceSparePart(product: CenikProduct) {
-  return isAjaxAlarmProduct(product) && /\b(case|bracket)\b/i.test(product.ime);
+  return isAjaxAlarmProduct(product) && /\b(case|bracket|holder|battery)\b/i.test(product.ime);
 }
 
 function isHub(product: CenikProduct) {
@@ -61,7 +61,8 @@ function isPhotoHub(product: CenikProduct) {
 }
 
 function isControl(product: CenikProduct) {
-  return isAjaxAlarmProduct(product) && !isAjaxServiceSparePart(product) && /keypad|spacecontrol|button|doublebutton/i.test(product.ime);
+  if (!isAjaxAlarmProduct(product) || isAjaxServiceSparePart(product)) return false;
+  return /keypad|spacecontrol/i.test(product.ime) || /^ajax button (bl|wh)$/i.test(product.ime.trim());
 }
 
 function isSiren(product: CenikProduct) {
@@ -72,11 +73,11 @@ function isFireFlood(product: CenikProduct) {
   return isAjaxAlarmProduct(product) && !isAjaxServiceSparePart(product) && /fireprotect|leaksprotect|manualcall/i.test(product.ime);
 }
 
-function isAccessory(product: CenikProduct) {
+function isSmartHomeModule(product: CenikProduct) {
   const name = normalizeName(product.ime);
   if (!isAjaxAlarmProduct(product) || isAjaxServiceSparePart(product)) return false;
   if (isSensor(product) || isHub(product) || isControl(product) || isSiren(product) || isFireFlood(product)) return false;
-  return /holder|rex|relay|socket|wall|frame|cover|transmitter|uartbridge|ocbridge|module|power|supply|din|vhfbridge/i.test(name);
+  return /button|switch|relay|socket|wall|frame|cover|transmitter|uartbridge|ocbridge|module|power|supply|din|vhfbridge|light|dimmer/i.test(name);
 }
 
 function sensorKind(product: CenikProduct) {
@@ -159,7 +160,7 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
   const controls = useMemo(() => products.filter(isControl).sort(sortProducts), [products]);
   const sirens = useMemo(() => products.filter(isSiren).sort(sortProducts), [products]);
   const fireFlood = useMemo(() => products.filter(isFireFlood).sort(sortProducts), [products]);
-  const accessories = useMemo(() => products.filter(isAccessory).sort(sortProducts), [products]);
+  const smartHomeModules = useMemo(() => products.filter(isSmartHomeModule).sort(sortProducts), [products]);
   const needsHub2 = alarmNeedsHub2(alarm, productById);
   const recommendedHub = needsHub2 ? photoHubs[0] : basicHubs[0];
 
@@ -245,7 +246,7 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
       <QuantitySection icon={<Keyboard className="h-4 w-4" aria-hidden />} title="Upravljanje" products={controls} items={alarm.upravljanje} onSetQuantity={(productId, quantity) => setQuantity("upravljanje", productId, quantity)} />
       <QuantitySection icon={<BellRing className="h-4 w-4" aria-hidden />} title="Sirene" products={sirens} items={alarm.sirene} onSetQuantity={(productId, quantity) => setQuantity("sirene", productId, quantity)} />
       <QuantitySection icon={<Flame className="h-4 w-4" aria-hidden />} title="Požarni / poplavni" products={fireFlood} items={alarm.pozarPoplava} onSetQuantity={(productId, quantity) => setQuantity("pozarPoplava", productId, quantity)} />
-      <QuantitySection icon={<Package className="h-4 w-4" aria-hidden />} title="Dodatna oprema" products={accessories} items={alarm.dodatnaOprema ?? []} onSetQuantity={(productId, quantity) => setQuantity("dodatnaOprema", productId, quantity)} />
+      <QuantitySection icon={<Package className="h-4 w-4" aria-hidden />} title="Pametna stikala / moduli" products={smartHomeModules} items={alarm.dodatnaOprema ?? []} onSetQuantity={(productId, quantity) => setQuantity("dodatnaOprema", productId, quantity)} />
     </>
   );
 }

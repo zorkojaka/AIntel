@@ -151,7 +151,7 @@ function inferAlarmSystemLine(product: AAProductLike) {
 
 function isAjaxServiceSparePart(product: AAProductLike) {
   const name = normalizeComparable(getProductName(product));
-  return /\bajax\b/.test(name) && /\b(case|bracket)\b/.test(name);
+  return /\bajax\b/.test(name) && /\b(case|bracket|holder|battery)\b/.test(name);
 }
 
 export function deriveAAThirdLevelCategory(product: AAProductLike): CategoryParts | null {
