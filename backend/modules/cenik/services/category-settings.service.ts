@@ -149,6 +149,11 @@ function inferAlarmSystemLine(product: AAProductLike) {
   return normalizeBrand(product.proizvajalec || getAttribute(product, 'Manufacturer'));
 }
 
+function isAjaxServiceSparePart(product: AAProductLike) {
+  const name = normalizeComparable(getProductName(product));
+  return /\bajax\b/.test(name) && /\b(case|bracket)\b/.test(name);
+}
+
 export function deriveAAThirdLevelCategory(product: AAProductLike): CategoryParts | null {
   const base = splitAACategory(getProductCategory(product));
   if (!base?.subLevel) return null;
@@ -157,7 +162,7 @@ export function deriveAAThirdLevelCategory(product: AAProductLike): CategoryPart
   let segmentType: CategorySettingsSegmentType = null;
 
   if (base.topLevel === 'Protivlomni sistemi') {
-    thirdLevel = inferAlarmSystemLine(product);
+    thirdLevel = isAjaxServiceSparePart(product) ? 'Ajax servis / rezervni deli' : inferAlarmSystemLine(product);
     segmentType = 'system_line';
   } else {
     thirdLevel = inferAAProductBrand(product);
@@ -666,6 +671,8 @@ export function resolvePriorityFromMap(priorityByPath: Map<string, CategorySetti
 }
 
 export function resolvePriorityFromProductMap(priorityByPath: Map<string, CategorySettingsPriority>, product: AAProductLike) {
+  if (isAjaxServiceSparePart(product)) return 3;
+
   const third = deriveAAThirdLevelCategory(product);
   if (third) {
     const thirdPriority = priorityByPath.get(third.path);

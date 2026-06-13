@@ -1,6 +1,6 @@
-import { BellRing, Flame, Keyboard, Plus, RadioReceiver, ShieldCheck } from "lucide-react";
+import { BellRing, Flame, Keyboard, Package, Plus, RadioReceiver, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
 import type { Alarm } from "./utils";
 import { formatPrice } from "./utils";
@@ -12,7 +12,14 @@ type Props = {
   onAddSenzor: (product: CenikProduct) => void;
 };
 
-type QuantityField = "upravljanje" | "sirene" | "pozarPoplava";
+type QuantityField = "upravljanje" | "sirene" | "pozarPoplava" | "dodatnaOprema";
+type SensorFilter = {
+  tip: string;
+  sistem: string;
+  okolje: string;
+  verifikacija: string;
+  barva: string;
+};
 
 function normalizeName(value: string) {
   return value.toLowerCase();
@@ -26,6 +33,10 @@ function isAjaxAlarmProduct(product: CenikProduct) {
   return product.classification?.productType === "alarm_komponenta" || (product.categorySlugs ?? []).some((slug) => slug === "ajax" || slug === "alarm");
 }
 
+export function isAjaxServiceSparePart(product: CenikProduct) {
+  return isAjaxAlarmProduct(product) && /\b(case|bracket)\b/i.test(product.ime);
+}
+
 function isHub(product: CenikProduct) {
   return /\bhub\b/i.test(product.ime);
 }
@@ -36,7 +47,7 @@ export function isPhotoVerificationSensorName(name: string) {
 
 function isSensor(product: CenikProduct) {
   const name = normalizeName(product.ime);
-  if (!isAjaxAlarmProduct(product)) return false;
+  if (!isAjaxAlarmProduct(product) || isAjaxServiceSparePart(product)) return false;
   if (isHub(product) || /keypad|spacecontrol|siren|fireprotect|leaksprotect|button|relay|socket|wall|frame|cover|doorbell|lifequality/i.test(name)) return false;
   return /motion|doorprotect|glassprotect|combiprotect|curtain|seismo/i.test(name);
 }
@@ -50,15 +61,65 @@ function isPhotoHub(product: CenikProduct) {
 }
 
 function isControl(product: CenikProduct) {
-  return isAjaxAlarmProduct(product) && /keypad|spacecontrol|button|doublebutton/i.test(product.ime);
+  return isAjaxAlarmProduct(product) && !isAjaxServiceSparePart(product) && /keypad|spacecontrol|button|doublebutton/i.test(product.ime);
 }
 
 function isSiren(product: CenikProduct) {
-  return isAjaxAlarmProduct(product) && /siren/i.test(product.ime);
+  return isAjaxAlarmProduct(product) && !isAjaxServiceSparePart(product) && /siren/i.test(product.ime);
 }
 
 function isFireFlood(product: CenikProduct) {
-  return isAjaxAlarmProduct(product) && /fireprotect|leaksprotect|manualcall/i.test(product.ime);
+  return isAjaxAlarmProduct(product) && !isAjaxServiceSparePart(product) && /fireprotect|leaksprotect|manualcall/i.test(product.ime);
+}
+
+function isAccessory(product: CenikProduct) {
+  const name = normalizeName(product.ime);
+  if (!isAjaxAlarmProduct(product) || isAjaxServiceSparePart(product)) return false;
+  if (isSensor(product) || isHub(product) || isControl(product) || isSiren(product) || isFireFlood(product)) return false;
+  return /holder|rex|relay|socket|wall|frame|cover|transmitter|uartbridge|ocbridge|module|power|supply|din|vhfbridge/i.test(name);
+}
+
+function sensorKind(product: CenikProduct) {
+  const name = normalizeName(product.ime);
+  if (/doorprotect/i.test(name)) return "Magnetni";
+  if (/glassprotect/i.test(name)) return "Steklo";
+  if (/curtain/i.test(name)) return "Zavesa";
+  if (/combiprotect/i.test(name)) return "Kombinirani";
+  if (/seismo/i.test(name)) return "Seizmični";
+  if (/motion/i.test(name)) return "Gibanje";
+  return "Ostalo";
+}
+
+function sensorSystem(product: CenikProduct) {
+  return /\bfibra\b/i.test(product.ime) ? "Fibra" : "Ajax";
+}
+
+function sensorEnvironment(product: CenikProduct) {
+  return /\boutdoor\b/i.test(product.ime) ? "Zunanji" : "Notranji";
+}
+
+function sensorVerification(product: CenikProduct) {
+  return isPhotoVerificationSensorName(product.ime) ? "Photo" : "Brez photo";
+}
+
+function sensorColor(product: CenikProduct) {
+  if (/\bbl\b/i.test(product.ime)) return "Črna";
+  if (/\bwh\b/i.test(product.ime)) return "Bela";
+  return "";
+}
+
+function sensorMatches(product: CenikProduct, filters: SensorFilter) {
+  return (
+    (filters.tip === "Vse" || sensorKind(product) === filters.tip) &&
+    (filters.sistem === "Vse" || sensorSystem(product) === filters.sistem) &&
+    (filters.okolje === "Vse" || sensorEnvironment(product) === filters.okolje) &&
+    (filters.verifikacija === "Vse" || sensorVerification(product) === filters.verifikacija) &&
+    (filters.barva === "Vse" || sensorColor(product) === filters.barva)
+  );
+}
+
+function filterOptions(products: CenikProduct[], resolver: (product: CenikProduct) => string) {
+  return ["Vse", ...Array.from(new Set(products.map(resolver).filter(Boolean))).sort((a, b) => a.localeCompare(b, "sl"))];
 }
 
 function sortProducts(a: CenikProduct, b: CenikProduct) {
@@ -77,13 +138,28 @@ export function alarmNeedsHub2(alarm: Alarm, productById: Map<string, CenikProdu
 }
 
 export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }: Props) {
-  const products = useMemo(() => Array.from(productById.values()).filter(isAjaxAlarmProduct), [productById]);
+  const [sensorFilters, setSensorFilters] = useState<SensorFilter>({
+    tip: "Vse",
+    sistem: "Vse",
+    okolje: "Vse",
+    verifikacija: "Vse",
+    barva: "Vse",
+  });
+
+  const products = useMemo(() => Array.from(productById.values()).filter(isAjaxAlarmProduct).filter((product) => !isAjaxServiceSparePart(product)), [productById]);
   const sensors = useMemo(() => products.filter(isSensor).sort(sortProducts), [products]);
+  const filteredSensors = useMemo(() => sensors.filter((sensor) => sensorMatches(sensor, sensorFilters)), [sensors, sensorFilters]);
+  const sensorTipOptions = useMemo(() => filterOptions(sensors, sensorKind), [sensors]);
+  const sensorSistemOptions = useMemo(() => filterOptions(sensors, sensorSystem), [sensors]);
+  const sensorOkoljeOptions = useMemo(() => filterOptions(sensors, sensorEnvironment), [sensors]);
+  const sensorVerifikacijaOptions = useMemo(() => filterOptions(sensors, sensorVerification), [sensors]);
+  const sensorBarvaOptions = useMemo(() => filterOptions(sensors, sensorColor), [sensors]);
   const basicHubs = useMemo(() => products.filter(isBasicHub).sort((a, b) => a.prodajnaCena - b.prodajnaCena), [products]);
   const photoHubs = useMemo(() => products.filter(isPhotoHub).sort((a, b) => a.prodajnaCena - b.prodajnaCena), [products]);
   const controls = useMemo(() => products.filter(isControl).sort(sortProducts), [products]);
   const sirens = useMemo(() => products.filter(isSiren).sort(sortProducts), [products]);
   const fireFlood = useMemo(() => products.filter(isFireFlood).sort(sortProducts), [products]);
+  const accessories = useMemo(() => products.filter(isAccessory).sort(sortProducts), [products]);
   const needsHub2 = alarmNeedsHub2(alarm, productById);
   const recommendedHub = needsHub2 ? photoHubs[0] : basicHubs[0];
 
@@ -98,7 +174,7 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
 
   const setQuantity = (field: QuantityField, productId: string, quantity: number) => {
     const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
-    const byId = new Map(alarm[field].map((item) => [item.productId, item.kolicina]));
+    const byId = new Map((alarm[field] ?? []).map((item) => [item.productId, item.kolicina]));
     if (nextQuantity > 0) byId.set(productId, nextQuantity);
     else byId.delete(productId);
     onChange({ ...alarm, [field]: Array.from(byId.entries()).map(([id, kolicina]) => ({ productId: id, kolicina })) });
@@ -111,15 +187,26 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
       <section className="zahteva-subsection">
         <div className="zahteva-subsection-title">
           <ShieldCheck className="h-4 w-4" aria-hidden />
-          <h4>Senzorji</h4>
+          <h4>Senzorji gibanja in varovanja</h4>
           <small>najprej dodaj senzorje in jih dodeli lokacijam</small>
         </div>
+        <div className="zahteva-dialog-filters">
+          <FilterStrip label="Tip" values={sensorTipOptions} selected={sensorFilters.tip} onSelect={(tip) => setSensorFilters((current) => ({ ...current, tip }))} />
+          <FilterStrip label="Sistem" values={sensorSistemOptions} selected={sensorFilters.sistem} onSelect={(sistem) => setSensorFilters((current) => ({ ...current, sistem }))} />
+          <FilterStrip label="Okolje" values={sensorOkoljeOptions} selected={sensorFilters.okolje} onSelect={(okolje) => setSensorFilters((current) => ({ ...current, okolje }))} />
+          <FilterStrip label="Verifikacija" values={sensorVerifikacijaOptions} selected={sensorFilters.verifikacija} onSelect={(verifikacija) => setSensorFilters((current) => ({ ...current, verifikacija }))} />
+          <FilterStrip label="Barva" values={sensorBarvaOptions} selected={sensorFilters.barva} onSelect={(barva) => setSensorFilters((current) => ({ ...current, barva }))} />
+        </div>
         <div className="zahteva-product-track">
-          {sensors.map((product) => (
+          {filteredSensors.map((product) => (
             <button key={product._id} type="button" className="zahteva-track-card" onClick={() => onAddSenzor(product)}>
               {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
               <strong>{product.ime}</strong>
-              <small>{isPhotoVerificationSensorName(product.ime) ? "Photoverifikacija" : "Senzor"}</small>
+              <small>
+                {sensorKind(product)} • {sensorSystem(product)} • {sensorEnvironment(product)}
+                {isPhotoVerificationSensorName(product.ime) ? " • photo" : ""}
+                {sensorColor(product) ? ` • ${sensorColor(product)}` : ""}
+              </small>
               <b>{formatPrice(product.prodajnaCena)}</b>
               <span className="zahteva-card-action">
                 <Plus className="h-3 w-3" aria-hidden />
@@ -127,7 +214,7 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
               </span>
             </button>
           ))}
-          {sensors.length === 0 ? <div className="zahteva-empty">Ni alarmnih senzorjev v ceniku.</div> : null}
+          {filteredSensors.length === 0 ? <div className="zahteva-empty">Ni alarmnih senzorjev za izbrane filtre.</div> : null}
         </div>
       </section>
 
@@ -158,6 +245,7 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
       <QuantitySection icon={<Keyboard className="h-4 w-4" aria-hidden />} title="Upravljanje" products={controls} items={alarm.upravljanje} onSetQuantity={(productId, quantity) => setQuantity("upravljanje", productId, quantity)} />
       <QuantitySection icon={<BellRing className="h-4 w-4" aria-hidden />} title="Sirene" products={sirens} items={alarm.sirene} onSetQuantity={(productId, quantity) => setQuantity("sirene", productId, quantity)} />
       <QuantitySection icon={<Flame className="h-4 w-4" aria-hidden />} title="Požarni / poplavni" products={fireFlood} items={alarm.pozarPoplava} onSetQuantity={(productId, quantity) => setQuantity("pozarPoplava", productId, quantity)} />
+      <QuantitySection icon={<Package className="h-4 w-4" aria-hidden />} title="Dodatna oprema" products={accessories} items={alarm.dodatnaOprema ?? []} onSetQuantity={(productId, quantity) => setQuantity("dodatnaOprema", productId, quantity)} />
     </>
   );
 }
@@ -193,7 +281,7 @@ function QuantitySection({
                 <b>{formatPrice(product.prodajnaCena)}</b>
               </button>
               <div className="zahteva-qty-control">
-                <button type="button" onClick={() => onSetQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>−</button>
+                <button type="button" onClick={() => onSetQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>-</button>
                 <span>{quantity}</span>
                 <button type="button" onClick={() => onSetQuantity(product._id, quantity + 1)} aria-label={`Povečaj ${product.ime}`}>+</button>
               </div>
@@ -203,5 +291,20 @@ function QuantitySection({
         {products.length === 0 ? <div className="zahteva-empty">Ni izdelkov za ta sklop.</div> : null}
       </div>
     </section>
+  );
+}
+
+function FilterStrip({ label, values, selected, onSelect }: { label: string; values: string[]; selected: string; onSelect: (value: string) => void }) {
+  return (
+    <div className="zahteva-filter-row">
+      <span>{label}</span>
+      <div>
+        {values.map((value) => (
+          <button key={value} type="button" className={selected === value ? "is-active" : ""} onClick={() => onSelect(value)}>
+            {value}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
