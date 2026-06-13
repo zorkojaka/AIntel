@@ -13,6 +13,7 @@ type Props = {
 };
 
 type QuantityField = "upravljanje" | "sirene" | "pozarPoplava" | "dodatnaOprema";
+type AlarmProjectMode = "wireless" | "fibra";
 type SensorFilter = {
   tip: string;
   sistem: string;
@@ -37,8 +38,12 @@ export function isAjaxServiceSparePart(product: CenikProduct) {
   return isAjaxAlarmProduct(product) && /\b(case|bracket|holder|battery)\b/i.test(product.ime);
 }
 
+function isFibraProduct(product: CenikProduct) {
+  return /\bfibra\b/i.test(product.ime);
+}
+
 function isHub(product: CenikProduct) {
-  return /\bhub\b/i.test(product.ime);
+  return /^ajax hub(2|\b)/i.test(product.ime.trim()) && !/psu|power|battery|bracket|case|\bbp\b/i.test(product.ime);
 }
 
 export function isPhotoVerificationSensorName(name: string) {
@@ -139,6 +144,7 @@ export function alarmNeedsHub2(alarm: Alarm, productById: Map<string, CenikProdu
 }
 
 export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }: Props) {
+  const [projectMode, setProjectMode] = useState<AlarmProjectMode>("wireless");
   const [sensorFilters, setSensorFilters] = useState<SensorFilter>({
     tip: "Vse",
     sistem: "Vse",
@@ -147,7 +153,14 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
     barva: "Vse",
   });
 
-  const products = useMemo(() => Array.from(productById.values()).filter(isAjaxAlarmProduct).filter((product) => !isAjaxServiceSparePart(product)), [productById]);
+  const products = useMemo(
+    () =>
+      Array.from(productById.values())
+        .filter(isAjaxAlarmProduct)
+        .filter((product) => !isAjaxServiceSparePart(product))
+        .filter((product) => projectMode === "fibra" || !isFibraProduct(product)),
+    [productById, projectMode],
+  );
   const sensors = useMemo(() => products.filter(isSensor).sort(sortProducts), [products]);
   const filteredSensors = useMemo(() => sensors.filter((sensor) => sensorMatches(sensor, sensorFilters)), [sensors, sensorFilters]);
   const sensorTipOptions = useMemo(() => filterOptions(sensors, sensorKind), [sensors]);
@@ -155,6 +168,7 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
   const sensorOkoljeOptions = useMemo(() => filterOptions(sensors, sensorEnvironment), [sensors]);
   const sensorVerifikacijaOptions = useMemo(() => filterOptions(sensors, sensorVerification), [sensors]);
   const sensorBarvaOptions = useMemo(() => filterOptions(sensors, sensorColor), [sensors]);
+  const hubs = useMemo(() => products.filter(isHub).sort((a, b) => a.prodajnaCena - b.prodajnaCena), [products]);
   const basicHubs = useMemo(() => products.filter(isBasicHub).sort((a, b) => a.prodajnaCena - b.prodajnaCena), [products]);
   const photoHubs = useMemo(() => products.filter(isPhotoHub).sort((a, b) => a.prodajnaCena - b.prodajnaCena), [products]);
   const controls = useMemo(() => products.filter(isControl).sort(sortProducts), [products]);
@@ -169,6 +183,24 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
     onChange({ ...alarm, centrala: { productId: recommendedHub._id, autoSelected: true } });
   }, [alarm, onChange, recommendedHub]);
 
+  useEffect(() => {
+    const nextFilters = { ...sensorFilters };
+    if (!sensorTipOptions.includes(nextFilters.tip)) nextFilters.tip = "Vse";
+    if (!sensorSistemOptions.includes(nextFilters.sistem)) nextFilters.sistem = "Vse";
+    if (!sensorOkoljeOptions.includes(nextFilters.okolje)) nextFilters.okolje = "Vse";
+    if (!sensorVerifikacijaOptions.includes(nextFilters.verifikacija)) nextFilters.verifikacija = "Vse";
+    if (!sensorBarvaOptions.includes(nextFilters.barva)) nextFilters.barva = "Vse";
+    if (
+      nextFilters.tip !== sensorFilters.tip ||
+      nextFilters.sistem !== sensorFilters.sistem ||
+      nextFilters.okolje !== sensorFilters.okolje ||
+      nextFilters.verifikacija !== sensorFilters.verifikacija ||
+      nextFilters.barva !== sensorFilters.barva
+    ) {
+      setSensorFilters(nextFilters);
+    }
+  }, [sensorBarvaOptions, sensorFilters, sensorOkoljeOptions, sensorSistemOptions, sensorTipOptions, sensorVerifikacijaOptions]);
+
   const setHub = (productId: string | null) => {
     onChange({ ...alarm, centrala: { productId, autoSelected: false } });
   };
@@ -181,10 +213,26 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
     onChange({ ...alarm, [field]: Array.from(byId.entries()).map(([id, kolicina]) => ({ productId: id, kolicina })) });
   };
 
-  const hubOptions = needsHub2 ? photoHubs : basicHubs;
+  const hubOptions = projectMode === "fibra" ? hubs : needsHub2 ? photoHubs : basicHubs;
 
   return (
     <>
+      <section className="zahteva-subsection">
+        <div className="zahteva-subsection-title">
+          <RadioReceiver className="h-4 w-4" aria-hidden />
+          <h4>Ajax projekt</h4>
+          <small>{projectMode === "wireless" ? "brezžični sistem brez Fibra elementov" : "žični Fibra sistem z vsemi Ajax elementi"}</small>
+        </div>
+        <div className="zahteva-dialog-filters">
+          <FilterStrip
+            label="Sistem"
+            values={["Ajax brezžični", "Ajax Fibra"]}
+            selected={projectMode === "wireless" ? "Ajax brezžični" : "Ajax Fibra"}
+            onSelect={(value) => setProjectMode(value === "Ajax Fibra" ? "fibra" : "wireless")}
+          />
+        </div>
+      </section>
+
       <section className="zahteva-subsection">
         <div className="zahteva-subsection-title">
           <ShieldCheck className="h-4 w-4" aria-hidden />
