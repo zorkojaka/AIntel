@@ -1,4 +1,4 @@
-import { BellRing, Flame, Keyboard, Package, Plus, RadioReceiver, ShieldCheck } from "lucide-react";
+import { BellRing, ChevronDown, Flame, Keyboard, Package, Plus, RadioReceiver, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
@@ -14,6 +14,7 @@ type Props = {
 
 type QuantityField = "upravljanje" | "sirene" | "pozarPoplava" | "dodatnaOprema";
 type AlarmProjectMode = "wireless" | "fibra";
+type AlarmCollapseKey = "ajaxProject" | "sensors" | "doorWindowSensors" | "indoorSensors" | "outdoorSensors" | "hub" | QuantityField;
 type SensorFilter = {
   tip: string;
   verifikacija: string;
@@ -95,7 +96,7 @@ function sensorKind(product: CenikProduct) {
 }
 
 function sensorSystem(product: CenikProduct) {
-  return /\bfibra\b/i.test(product.ime) ? "Fibra" : "Ajax";
+  return isFibraProduct(product) ? "Fibra" : "Ajax";
 }
 
 function sensorEnvironment(product: CenikProduct) {
@@ -149,6 +150,7 @@ export function alarmNeedsHub2(alarm: Alarm, productById: Map<string, CenikProdu
 
 export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }: Props) {
   const [projectMode, setProjectMode] = useState<AlarmProjectMode>("wireless");
+  const [collapsedSections, setCollapsedSections] = useState<Partial<Record<AlarmCollapseKey, boolean>>>({});
   const [sensorFilters, setSensorFilters] = useState<SensorFilter>({
     tip: "Vse",
     verifikacija: "Vse",
@@ -200,6 +202,11 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
     }
   }, [sensorBarvaOptions, sensorFilters, sensorTipOptions, sensorVerifikacijaOptions]);
 
+  const isCollapsed = (key: AlarmCollapseKey) => Boolean(collapsedSections[key]);
+  const toggleCollapse = (key: AlarmCollapseKey) => {
+    setCollapsedSections((current) => ({ ...current, [key]: !current[key] }));
+  };
+
   const setHub = (productId: string | null) => {
     onChange({ ...alarm, centrala: { productId, autoSelected: false } });
   };
@@ -217,36 +224,165 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
   return (
     <>
       <section className="zahteva-subsection">
-        <div className="zahteva-subsection-title">
-          <RadioReceiver className="h-4 w-4" aria-hidden />
-          <h4>Ajax projekt</h4>
-          <small>{projectMode === "wireless" ? "brezžični sistem brez Fibra elementov" : "žični Fibra sistem z vsemi Ajax elementi"}</small>
-        </div>
-        <div className="zahteva-dialog-filters">
-          <FilterStrip
-            label="Sistem"
-            values={["Ajax brezžični", "Ajax Fibra"]}
-            selected={projectMode === "wireless" ? "Ajax brezžični" : "Ajax Fibra"}
-            onSelect={(value) => setProjectMode(value === "Ajax Fibra" ? "fibra" : "wireless")}
-          />
-        </div>
+        <CollapsibleHeader
+          icon={<RadioReceiver className="h-4 w-4" aria-hidden />}
+          title="Ajax projekt"
+          description={projectMode === "wireless" ? "brezžični sistem brez Fibra elementov" : "žični Fibra sistem z vsemi Ajax elementi"}
+          collapsed={isCollapsed("ajaxProject")}
+          onToggle={() => toggleCollapse("ajaxProject")}
+        />
+        {!isCollapsed("ajaxProject") ? (
+          <div className="zahteva-dialog-filters">
+            <FilterStrip
+              label="Sistem"
+              values={["Ajax brezžični", "Ajax Fibra"]}
+              selected={projectMode === "wireless" ? "Ajax brezžični" : "Ajax Fibra"}
+              onSelect={(value) => setProjectMode(value === "Ajax Fibra" ? "fibra" : "wireless")}
+            />
+          </div>
+        ) : null}
       </section>
 
       <section className="zahteva-subsection">
-        <div className="zahteva-subsection-title">
-          <ShieldCheck className="h-4 w-4" aria-hidden />
-          <h4>Senzorji gibanja in varovanja</h4>
-          <small>najprej dodaj senzorje in jih dodeli lokacijam</small>
-        </div>
-        <div className="zahteva-dialog-filters">
-          <FilterStrip label="Tip" values={sensorTipOptions} selected={sensorFilters.tip} onSelect={(tip) => setSensorFilters((current) => ({ ...current, tip }))} />
-          <FilterStrip label="Verifikacija" values={sensorVerifikacijaOptions} selected={sensorFilters.verifikacija} onSelect={(verifikacija) => setSensorFilters((current) => ({ ...current, verifikacija }))} />
-          <FilterStrip label="Barva" values={sensorBarvaOptions} selected={sensorFilters.barva} onSelect={(barva) => setSensorFilters((current) => ({ ...current, barva }))} />
-        </div>
-        <SensorProductGroup title="Vrata / okna" products={doorWindowSensors} emptyText="Ni senzorjev za vrata, okna ali steklo za izbrane filtre." onAddSenzor={onAddSenzor} />
-        <div className="zahteva-sensor-group-title">Notranji senzorji</div>
+        <CollapsibleHeader
+          icon={<ShieldCheck className="h-4 w-4" aria-hidden />}
+          title="Senzorji gibanja in varovanja"
+          description="najprej dodaj senzorje in jih dodeli lokacijam"
+          collapsed={isCollapsed("sensors")}
+          onToggle={() => toggleCollapse("sensors")}
+        />
+        {!isCollapsed("sensors") ? (
+          <>
+            <div className="zahteva-dialog-filters">
+              <FilterStrip label="Tip" values={sensorTipOptions} selected={sensorFilters.tip} onSelect={(tip) => setSensorFilters((current) => ({ ...current, tip }))} />
+              <FilterStrip label="Verifikacija" values={sensorVerifikacijaOptions} selected={sensorFilters.verifikacija} onSelect={(verifikacija) => setSensorFilters((current) => ({ ...current, verifikacija }))} />
+              <FilterStrip label="Barva" values={sensorBarvaOptions} selected={sensorFilters.barva} onSelect={(barva) => setSensorFilters((current) => ({ ...current, barva }))} />
+            </div>
+            <SensorProductGroup title="Vrata / okna" products={doorWindowSensors} emptyText="Ni senzorjev za vrata, okna ali steklo za izbrane filtre." collapsed={isCollapsed("doorWindowSensors")} onToggle={() => toggleCollapse("doorWindowSensors")} onAddSenzor={onAddSenzor} />
+            <SensorProductGroup title="Notranji senzorji" products={indoorSensors} emptyText="Ni notranjih senzorjev za izbrane filtre." collapsed={isCollapsed("indoorSensors")} onToggle={() => toggleCollapse("indoorSensors")} onAddSenzor={onAddSenzor} />
+            <SensorProductGroup title="Zunanji senzorji" products={outdoorSensors} emptyText="Ni zunanjih senzorjev za izbrane filtre." collapsed={isCollapsed("outdoorSensors")} onToggle={() => toggleCollapse("outdoorSensors")} onAddSenzor={onAddSenzor} />
+          </>
+        ) : null}
+      </section>
+
+      <section className="zahteva-subsection">
+        <CollapsibleHeader
+          icon={<RadioReceiver className="h-4 w-4" aria-hidden />}
+          title="Centrala"
+          description={needsHub2 ? "photoverifikacija zahteva Hub 2" : "osnovni hub zadošča"}
+          collapsed={isCollapsed("hub")}
+          onToggle={() => toggleCollapse("hub")}
+        />
+        {!isCollapsed("hub") ? (
+          <div className="zahteva-product-track zahteva-alarm-track">
+            {hubOptions.map((product) => (
+              <button
+                key={product._id}
+                type="button"
+                className={`zahteva-track-card zahteva-alarm-card ${alarm.centrala.productId === product._id ? "is-active" : ""} ${recommendedHub?._id === product._id ? "is-recommended" : ""}`}
+                title={product.ime}
+                onClick={() => setHub(product._id)}
+              >
+                {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
+                <strong>{productDisplayName(product)}</strong>
+                <small>{recommendedHub?._id === product._id ? "Priporočeno" : "Centrala"}</small>
+                <b>{formatPrice(product.prodajnaCena)}</b>
+              </button>
+            ))}
+            {hubOptions.length === 0 ? <div className="zahteva-empty">Ni ustrezne centrale v ceniku.</div> : null}
+          </div>
+        ) : null}
+      </section>
+
+      <QuantitySection
+        icon={<Keyboard className="h-4 w-4" aria-hidden />}
+        title="Upravljanje"
+        products={controls}
+        items={alarm.upravljanje}
+        collapsed={isCollapsed("upravljanje")}
+        onToggle={() => toggleCollapse("upravljanje")}
+        onSetQuantity={(productId, quantity) => setQuantity("upravljanje", productId, quantity)}
+      />
+      <QuantitySection
+        icon={<BellRing className="h-4 w-4" aria-hidden />}
+        title="Sirene"
+        products={sirens}
+        items={alarm.sirene}
+        collapsed={isCollapsed("sirene")}
+        onToggle={() => toggleCollapse("sirene")}
+        onSetQuantity={(productId, quantity) => setQuantity("sirene", productId, quantity)}
+      />
+      <QuantitySection
+        icon={<Flame className="h-4 w-4" aria-hidden />}
+        title="Požarni / poplavni"
+        products={fireFlood}
+        items={alarm.pozarPoplava}
+        collapsed={isCollapsed("pozarPoplava")}
+        onToggle={() => toggleCollapse("pozarPoplava")}
+        onSetQuantity={(productId, quantity) => setQuantity("pozarPoplava", productId, quantity)}
+      />
+      <QuantitySection
+        icon={<Package className="h-4 w-4" aria-hidden />}
+        title="Pametna stikala / moduli"
+        products={smartHomeModules}
+        items={alarm.dodatnaOprema ?? []}
+        collapsed={isCollapsed("dodatnaOprema")}
+        onToggle={() => toggleCollapse("dodatnaOprema")}
+        onSetQuantity={(productId, quantity) => setQuantity("dodatnaOprema", productId, quantity)}
+      />
+    </>
+  );
+}
+
+function CollapsibleHeader({
+  icon,
+  title,
+  description,
+  collapsed,
+  onToggle,
+}: {
+  icon: ReactNode;
+  title: string;
+  description?: string;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button type="button" className="zahteva-subsection-title zahteva-collapse-header" aria-expanded={!collapsed} onClick={onToggle}>
+      <span className="zahteva-title-main">
+        {icon}
+        <h4>{title}</h4>
+      </span>
+      {description ? <small>{description}</small> : null}
+      <ChevronDown className={`h-4 w-4 zahteva-collapse-icon ${collapsed ? "is-collapsed" : ""}`} aria-hidden />
+    </button>
+  );
+}
+
+function SensorProductGroup({
+  title,
+  products,
+  emptyText,
+  collapsed,
+  onToggle,
+  onAddSenzor,
+}: {
+  title: string;
+  products: CenikProduct[];
+  emptyText: string;
+  collapsed: boolean;
+  onToggle: () => void;
+  onAddSenzor: (product: CenikProduct) => void;
+}) {
+  return (
+    <>
+      <button type="button" className="zahteva-sensor-group-title zahteva-sensor-collapse" aria-expanded={!collapsed} onClick={onToggle}>
+        <span>{title}</span>
+        <ChevronDown className={`h-4 w-4 zahteva-collapse-icon ${collapsed ? "is-collapsed" : ""}`} aria-hidden />
+      </button>
+      {!collapsed ? (
         <div className="zahteva-product-track zahteva-alarm-track">
-          {indoorSensors.map((product) => (
+          {products.map((product) => (
             <button key={product._id} type="button" className="zahteva-track-card zahteva-alarm-card" title={product.ime} onClick={() => onAddSenzor(product)}>
               {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
               <strong>{productDisplayName(product)}</strong>
@@ -262,77 +398,9 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
               </span>
             </button>
           ))}
-          {indoorSensors.length === 0 ? <div className="zahteva-empty">Ni notranjih senzorjev za izbrane filtre.</div> : null}
+          {products.length === 0 ? <div className="zahteva-empty">{emptyText}</div> : null}
         </div>
-        <SensorProductGroup title="Zunanji senzorji" products={outdoorSensors} emptyText="Ni zunanjih senzorjev za izbrane filtre." onAddSenzor={onAddSenzor} />
-      </section>
-
-      <section className="zahteva-subsection">
-        <div className="zahteva-subsection-title">
-          <RadioReceiver className="h-4 w-4" aria-hidden />
-          <h4>Centrala</h4>
-          <small>{needsHub2 ? "photoverifikacija zahteva Hub 2" : "osnovni hub zadošča"}</small>
-        </div>
-        <div className="zahteva-product-track zahteva-alarm-track">
-          {hubOptions.map((product) => (
-            <button
-              key={product._id}
-              type="button"
-              className={`zahteva-track-card zahteva-alarm-card ${alarm.centrala.productId === product._id ? "is-active" : ""} ${recommendedHub?._id === product._id ? "is-recommended" : ""}`}
-              title={product.ime}
-              onClick={() => setHub(product._id)}
-            >
-              {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
-              <strong>{productDisplayName(product)}</strong>
-              <small>{recommendedHub?._id === product._id ? "Priporočeno" : "Centrala"}</small>
-              <b>{formatPrice(product.prodajnaCena)}</b>
-            </button>
-          ))}
-          {hubOptions.length === 0 ? <div className="zahteva-empty">Ni ustrezne centrale v ceniku.</div> : null}
-        </div>
-      </section>
-
-      <QuantitySection icon={<Keyboard className="h-4 w-4" aria-hidden />} title="Upravljanje" products={controls} items={alarm.upravljanje} onSetQuantity={(productId, quantity) => setQuantity("upravljanje", productId, quantity)} />
-      <QuantitySection icon={<BellRing className="h-4 w-4" aria-hidden />} title="Sirene" products={sirens} items={alarm.sirene} onSetQuantity={(productId, quantity) => setQuantity("sirene", productId, quantity)} />
-      <QuantitySection icon={<Flame className="h-4 w-4" aria-hidden />} title="Požarni / poplavni" products={fireFlood} items={alarm.pozarPoplava} onSetQuantity={(productId, quantity) => setQuantity("pozarPoplava", productId, quantity)} />
-      <QuantitySection icon={<Package className="h-4 w-4" aria-hidden />} title="Pametna stikala / moduli" products={smartHomeModules} items={alarm.dodatnaOprema ?? []} onSetQuantity={(productId, quantity) => setQuantity("dodatnaOprema", productId, quantity)} />
-    </>
-  );
-}
-
-function SensorProductGroup({
-  title,
-  products,
-  emptyText,
-  onAddSenzor,
-}: {
-  title: string;
-  products: CenikProduct[];
-  emptyText: string;
-  onAddSenzor: (product: CenikProduct) => void;
-}) {
-  return (
-    <>
-      <div className="zahteva-sensor-group-title">{title}</div>
-      <div className="zahteva-product-track zahteva-alarm-track">
-        {products.map((product) => (
-          <button key={product._id} type="button" className="zahteva-track-card zahteva-alarm-card" title={product.ime} onClick={() => onAddSenzor(product)}>
-            {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
-            <strong>{productDisplayName(product)}</strong>
-            <small>
-              {sensorKind(product)} • {sensorSystem(product)} • {sensorEnvironment(product)}
-              {isPhotoVerificationSensorName(product.ime) ? " • photo" : ""}
-              {sensorColor(product) ? ` • ${sensorColor(product)}` : ""}
-            </small>
-            <b>{formatPrice(product.prodajnaCena)}</b>
-            <span className="zahteva-card-action">
-              <Plus className="h-3 w-3" aria-hidden />
-              Dodaj
-            </span>
-          </button>
-        ))}
-        {products.length === 0 ? <div className="zahteva-empty">{emptyText}</div> : null}
-      </div>
+      ) : null}
     </>
   );
 }
@@ -342,41 +410,44 @@ function QuantitySection({
   title,
   products,
   items,
+  collapsed,
+  onToggle,
   onSetQuantity,
 }: {
   icon: ReactNode;
   title: string;
   products: CenikProduct[];
   items: Array<{ productId: string; kolicina: number }>;
+  collapsed: boolean;
+  onToggle: () => void;
   onSetQuantity: (productId: string, quantity: number) => void;
 }) {
   return (
     <section className="zahteva-subsection">
-      <div className="zahteva-subsection-title">
-        {icon}
-        <h4>{title}</h4>
-      </div>
-      <div className="zahteva-product-track zahteva-alarm-track">
-        {products.map((product) => {
-          const quantity = selectedQuantity(items, product._id);
-          return (
-            <div key={product._id} className={`zahteva-track-card zahteva-alarm-card ${quantity > 0 ? "is-active" : ""}`} title={product.ime}>
-              <button type="button" className="zahteva-track-main" onClick={() => onSetQuantity(product._id, quantity > 0 ? quantity : 1)}>
-                {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
-                <strong>{productDisplayName(product)}</strong>
-                <small>{title}</small>
-                <b>{formatPrice(product.prodajnaCena)}</b>
-              </button>
-              <div className="zahteva-qty-control">
-                <button type="button" onClick={() => onSetQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>-</button>
-                <span>{quantity}</span>
-                <button type="button" onClick={() => onSetQuantity(product._id, quantity + 1)} aria-label={`Povečaj ${product.ime}`}>+</button>
+      <CollapsibleHeader icon={icon} title={title} collapsed={collapsed} onToggle={onToggle} />
+      {!collapsed ? (
+        <div className="zahteva-product-track zahteva-alarm-track">
+          {products.map((product) => {
+            const quantity = selectedQuantity(items, product._id);
+            return (
+              <div key={product._id} className={`zahteva-track-card zahteva-alarm-card ${quantity > 0 ? "is-active" : ""}`} title={product.ime}>
+                <button type="button" className="zahteva-track-main" onClick={() => onSetQuantity(product._id, quantity > 0 ? quantity : 1)}>
+                  {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
+                  <strong>{productDisplayName(product)}</strong>
+                  <small>{title}</small>
+                  <b>{formatPrice(product.prodajnaCena)}</b>
+                </button>
+                <div className="zahteva-qty-control">
+                  <button type="button" onClick={() => onSetQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>-</button>
+                  <span>{quantity}</span>
+                  <button type="button" onClick={() => onSetQuantity(product._id, quantity + 1)} aria-label={`Povečaj ${product.ime}`}>+</button>
+                </div>
               </div>
-            </div>
-          );
-        })}
-        {products.length === 0 ? <div className="zahteva-empty">Ni izdelkov za ta sklop.</div> : null}
-      </div>
+            );
+          })}
+          {products.length === 0 ? <div className="zahteva-empty">Ni izdelkov za ta sklop.</div> : null}
+        </div>
+      ) : null}
     </section>
   );
 }
