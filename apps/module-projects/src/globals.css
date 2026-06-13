@@ -1462,6 +1462,27 @@
   font-weight: 900;
 }
 
+.zahteva-alarm-track {
+  grid-auto-columns: minmax(178px, 0.88fr);
+}
+
+.zahteva-alarm-card {
+  min-height: 168px;
+}
+
+.zahteva-alarm-card strong {
+  line-height: 1.18;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  word-break: normal;
+}
+
+.zahteva-alarm-card small {
+  line-height: 1.25;
+  white-space: normal;
+}
+
 .zahteva-track-card small {
   color: var(--app-muted);
   font-size: 0.72rem;

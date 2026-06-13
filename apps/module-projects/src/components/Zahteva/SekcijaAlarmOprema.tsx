@@ -136,6 +136,10 @@ function selectedQuantity(items: Array<{ productId: string; kolicina: number }>,
   return items.find((item) => item.productId === productId)?.kolicina ?? 0;
 }
 
+function productDisplayName(product: CenikProduct) {
+  return product.ime.replace(/^ajax\s+/i, "").trim() || product.ime;
+}
+
 export function alarmNeedsHub2(alarm: Alarm, productById: Map<string, CenikProduct>) {
   return alarm.senzorji.some((senzor) => {
     const product = productById.get(senzor.senzorProductId);
@@ -246,11 +250,11 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
           <FilterStrip label="Verifikacija" values={sensorVerifikacijaOptions} selected={sensorFilters.verifikacija} onSelect={(verifikacija) => setSensorFilters((current) => ({ ...current, verifikacija }))} />
           <FilterStrip label="Barva" values={sensorBarvaOptions} selected={sensorFilters.barva} onSelect={(barva) => setSensorFilters((current) => ({ ...current, barva }))} />
         </div>
-        <div className="zahteva-product-track">
+        <div className="zahteva-product-track zahteva-alarm-track">
           {filteredSensors.map((product) => (
-            <button key={product._id} type="button" className="zahteva-track-card" onClick={() => onAddSenzor(product)}>
+            <button key={product._id} type="button" className="zahteva-track-card zahteva-alarm-card" title={product.ime} onClick={() => onAddSenzor(product)}>
               {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
-              <strong>{product.ime}</strong>
+              <strong>{productDisplayName(product)}</strong>
               <small>
                 {sensorKind(product)} • {sensorSystem(product)} • {sensorEnvironment(product)}
                 {isPhotoVerificationSensorName(product.ime) ? " • photo" : ""}
@@ -273,16 +277,17 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
           <h4>Centrala</h4>
           <small>{needsHub2 ? "photoverifikacija zahteva Hub 2" : "osnovni hub zadošča"}</small>
         </div>
-        <div className="zahteva-product-track">
+        <div className="zahteva-product-track zahteva-alarm-track">
           {hubOptions.map((product) => (
             <button
               key={product._id}
               type="button"
-              className={`zahteva-track-card ${alarm.centrala.productId === product._id ? "is-active" : ""} ${recommendedHub?._id === product._id ? "is-recommended" : ""}`}
+              className={`zahteva-track-card zahteva-alarm-card ${alarm.centrala.productId === product._id ? "is-active" : ""} ${recommendedHub?._id === product._id ? "is-recommended" : ""}`}
+              title={product.ime}
               onClick={() => setHub(product._id)}
             >
               {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
-              <strong>{product.ime}</strong>
+              <strong>{productDisplayName(product)}</strong>
               <small>{recommendedHub?._id === product._id ? "Priporočeno" : "Centrala"}</small>
               <b>{formatPrice(product.prodajnaCena)}</b>
             </button>
@@ -318,14 +323,14 @@ function QuantitySection({
         {icon}
         <h4>{title}</h4>
       </div>
-      <div className="zahteva-product-track">
+      <div className="zahteva-product-track zahteva-alarm-track">
         {products.map((product) => {
           const quantity = selectedQuantity(items, product._id);
           return (
-            <div key={product._id} className={`zahteva-track-card ${quantity > 0 ? "is-active" : ""}`}>
+            <div key={product._id} className={`zahteva-track-card zahteva-alarm-card ${quantity > 0 ? "is-active" : ""}`} title={product.ime}>
               <button type="button" className="zahteva-track-main" onClick={() => onSetQuantity(product._id, quantity > 0 ? quantity : 1)}>
                 {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
-                <strong>{product.ime}</strong>
+                <strong>{productDisplayName(product)}</strong>
                 <small>{title}</small>
                 <b>{formatPrice(product.prodajnaCena)}</b>
               </button>
