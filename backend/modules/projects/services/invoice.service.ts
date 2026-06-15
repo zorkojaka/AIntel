@@ -4,6 +4,13 @@ import { WorkOrderModel } from '../schemas/work-order';
 import { OfferVersionModel } from '../schemas/offer-version';
 import type { OfferLineItem } from '../../../../shared/types/offers';
 import { createFinanceSnapshot } from '../../finance/services/finance-snapshot.service';
+import { FinanceSnapshotModel } from '../../finance/schemas/finance-snapshot';
+import {
+  generateInvoiceSequentialNumber,
+  parseInvoiceSequentialNumber,
+  previewInvoiceSequentialNumber,
+  syncInvoiceSequentialCounterAtLeast,
+} from './document-numbering.service';
 
 type InvoiceStatus = 'draft' | 'issued' | 'cancelled';
 type InvoiceItemType = 'Osnovno' | 'Dodatno' | 'Manj';
@@ -42,6 +49,8 @@ interface InvoiceSummary {
 interface InvoiceVersion {
   _id: string;
   versionNumber: number;
+  invoiceNumber?: string | null;
+  invoiceSequence?: number | null;
   status: InvoiceStatus;
   createdAt: string;
   issuedAt: string | null;
@@ -59,6 +68,7 @@ interface InvoiceListResponse {
   activeVersionId: string | null;
   updatedVersion?: InvoiceVersion;
   projectStatus?: ProjectStatus;
+  nextInvoiceNumber?: string;
 }
 
 function round(value: number) {
@@ -114,6 +124,52 @@ function serializeResponse(project: Project | ProjectDocument): InvoiceListRespo
 
 function findDraftVersion(project: ProjectDocument): InvoiceVersion | null {
   return (project.invoiceVersions ?? []).find((version) => version.status === 'draft') ?? null;
+}
+
+async function assertInvoiceNumberAvailable(invoiceNumber: string, currentVersionId: string) {
+  const [existingSnapshot, existingProject] = await Promise.all([
+    FinanceSnapshotModel.findOne({ invoiceNumber, invoiceVersionId: { $ne: currentVersionId } }).select({ _id: 1 }).lean(),
+    ProjectModel.findOne({
+      invoiceVersions: {
+        $elemMatch: {
+          invoiceNumber,
+          _id: { $ne: currentVersionId },
+        },
+      },
+    }).select({ id: 1 }).lean(),
+  ]);
+
+  if (existingSnapshot || existingProject) {
+    throw new Error(`Številka računa ${invoiceNumber} je že uporabljena.`);
+  }
+}
+
+async function resolveInvoiceNumberForIssue(version: InvoiceVersion, issuedAt: Date, override?: unknown) {
+  const normalizedOverride = typeof override === 'string' ? override.trim() : '';
+  if (normalizedOverride) {
+    const parsed = parseInvoiceSequentialNumber(normalizedOverride);
+    if (!parsed) {
+      throw new Error('Številka računa mora biti v obliki zaporedna/mesec/leto, npr. 50/6/2026.');
+    }
+    if (parsed.month !== issuedAt.getMonth() + 1 || parsed.year !== issuedAt.getFullYear()) {
+      throw new Error(`Številka računa mora imeti trenutni mesec in leto izdaje (${issuedAt.getMonth() + 1}/${issuedAt.getFullYear()}).`);
+    }
+    await assertInvoiceNumberAvailable(parsed.number, version._id);
+    await syncInvoiceSequentialCounterAtLeast(parsed.sequence, parsed.year, issuedAt);
+    return { invoiceNumber: parsed.number, invoiceSequence: parsed.sequence };
+  }
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const generated = await generateInvoiceSequentialNumber(issuedAt);
+    try {
+      await assertInvoiceNumberAvailable(generated.number, version._id);
+      return { invoiceNumber: generated.number, invoiceSequence: generated.sequence };
+    } catch (error) {
+      if (attempt === 9) throw error;
+    }
+  }
+
+  throw new Error('Naslednje številke računa ni mogoče določiti.');
 }
 
 async function buildConfirmedOfferIndex(project: ProjectDocument) {
@@ -266,6 +322,11 @@ export async function getInvoiceVersions(projectId: string): Promise<InvoiceList
   return serializeResponse(project);
 }
 
+export async function getNextInvoiceNumber(projectId: string) {
+  await findProjectOrFail(projectId);
+  return previewInvoiceSequentialNumber(new Date());
+}
+
 export async function createInvoiceFromClosing(projectId: string): Promise<InvoiceListResponse> {
   const project = await findProjectOrFail(projectId);
   const existingDraft = findDraftVersion(project);
@@ -326,10 +387,13 @@ export async function updateInvoiceVersion(projectId: string, versionId: string,
   return serializeResponse(project);
 }
 
-export async function issueInvoiceVersion(projectId: string, versionId: string): Promise<InvoiceListResponse> {
+export async function issueInvoiceVersion(projectId: string, versionId: string, payload?: { invoiceNumber?: unknown }): Promise<InvoiceListResponse> {
   const project = await findProjectOrFail(projectId);
   const version = ensureInvoiceVersion(project, versionId);
   const previousStatus = version.status;
+  const previousIssuedAt = version.issuedAt;
+  const previousInvoiceNumber = version.invoiceNumber;
+  const previousInvoiceSequence = version.invoiceSequence;
   if (version.status === 'issued') {
     console.log('[invoice] issue skipped', {
       projectId,
@@ -347,8 +411,12 @@ export async function issueInvoiceVersion(projectId: string, versionId: string):
       cancelledIssuedVersionIds.push(String(entry._id));
     }
   });
+  const issuedAt = new Date();
+  const numbering = await resolveInvoiceNumberForIssue(version, issuedAt, payload?.invoiceNumber);
   version.status = 'issued';
-  version.issuedAt = new Date().toISOString();
+  version.issuedAt = issuedAt.toISOString();
+  version.invoiceNumber = numbering.invoiceNumber;
+  version.invoiceSequence = numbering.invoiceSequence;
   version.servicePerformedAt = version.servicePerformedAt ?? (await resolveServicePerformedAt(project.id));
   const fallbackCorrectedFromInvoiceVersionId =
     version.correctedFromInvoiceVersionId ??
@@ -369,6 +437,7 @@ export async function issueInvoiceVersion(projectId: string, versionId: string):
       invoiceVersion: {
         _id: version._id,
         versionNumber: version.versionNumber,
+        invoiceNumber: version.invoiceNumber,
         issuedAt: version.issuedAt,
         items: version.items.map((item) => ({
           id: item.id,
@@ -386,7 +455,9 @@ export async function issueInvoiceVersion(projectId: string, versionId: string):
     });
   } catch (error) {
     version.status = previousStatus;
-    version.issuedAt = null;
+    version.issuedAt = previousIssuedAt ?? null;
+    version.invoiceNumber = previousInvoiceNumber ?? null;
+    version.invoiceSequence = previousInvoiceSequence ?? null;
     cancelledIssuedVersionIds.forEach((cancelledId) => {
       const entry = (project.invoiceVersions ?? []).find((candidate) => String(candidate._id) === cancelledId);
       if (entry) {

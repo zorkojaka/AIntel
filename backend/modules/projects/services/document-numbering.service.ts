@@ -113,6 +113,104 @@ export async function generateDocumentNumber(docType: DocumentNumberingKind, ref
 export const generateOfferDocumentNumber = (referenceDate: Date = new Date()) =>
   generateDocumentNumber('OFFER', referenceDate);
 
+function formatInvoiceSequentialNumber(sequence: number, referenceDate: Date, yearOverride?: number | null) {
+  const date = referenceDate instanceof Date && !Number.isNaN(referenceDate.valueOf()) ? referenceDate : new Date();
+  const year = yearOverride ?? date.getFullYear();
+  const month = date.getMonth() + 1;
+  return `${Math.max(1, Math.floor(sequence))}/${month}/${year}`;
+}
+
+export function parseInvoiceSequentialNumber(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d+)\/(\d{1,2})\/(\d{4})$/);
+  if (!match) return null;
+
+  const sequence = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (!Number.isInteger(sequence) || sequence < 1 || !Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year < 2000) {
+    return null;
+  }
+
+  return { sequence, month, year, number: `${sequence}/${month}/${year}` };
+}
+
+async function resolveInvoiceCounterContext(referenceDate: Date = new Date()) {
+  const config = await getDocumentNumberingConfig('INVOICE');
+  const date = referenceDate instanceof Date && !Number.isNaN(referenceDate.valueOf()) ? referenceDate : new Date();
+  const effectiveYear = config.yearOverride ?? date.getFullYear();
+  const counterKey = resolveCounterKey(config, 'INVOICE', effectiveYear);
+  const baseSequence = resolveInitialSequence(config);
+  return { config, date, effectiveYear, counterKey, baseSequence };
+}
+
+export async function previewInvoiceSequentialNumber(referenceDate: Date = new Date()) {
+  const { config, date, effectiveYear, counterKey, baseSequence } = await resolveInvoiceCounterContext(referenceDate);
+  const counter = await DocumentCounterModel.findById(counterKey).lean();
+  const sequence = Math.max(baseSequence, (counter?.value ?? baseSequence - 1) + 1);
+  return {
+    number: formatInvoiceSequentialNumber(sequence, date, config.yearOverride),
+    sequence,
+    month: date.getMonth() + 1,
+    year: effectiveYear,
+  };
+}
+
+export async function generateInvoiceSequentialNumber(referenceDate: Date = new Date()) {
+  const { config, date, effectiveYear, counterKey, baseSequence } = await resolveInvoiceCounterContext(referenceDate);
+  const updatePipeline: PipelineStage[] = [
+    {
+      $set: {
+        value: {
+          $add: [
+            { $ifNull: ['$value', baseSequence - 1] },
+            1,
+          ],
+        },
+      },
+    },
+  ];
+
+  const counter = await DocumentCounterModel.findOneAndUpdate(
+    { _id: counterKey },
+    updatePipeline as any,
+    { new: true, upsert: true }
+  ).lean();
+
+  const sequence = counter?.value ?? baseSequence;
+  return {
+    number: formatInvoiceSequentialNumber(sequence, date, config.yearOverride),
+    sequence,
+    month: date.getMonth() + 1,
+    year: effectiveYear,
+  };
+}
+
+export async function syncInvoiceSequentialCounterAtLeast(sequence: number, year: number, referenceDate: Date = new Date()) {
+  const config = await getDocumentNumberingConfig('INVOICE');
+  const effectiveYear = config.yearOverride ?? year;
+  const counterKey = resolveCounterKey(config, 'INVOICE', effectiveYear);
+  const normalizedSequence = Math.max(1, Math.floor(sequence));
+
+  await DocumentCounterModel.findOneAndUpdate(
+    { _id: counterKey },
+    [
+      {
+        $set: {
+          value: {
+            $max: [
+              { $ifNull: ['$value', 0] },
+              normalizedSequence,
+            ],
+          },
+        },
+      },
+    ] as any,
+    { new: true, upsert: true }
+  );
+}
+
 export async function getNumberingExample(docType: DocumentNumberingKind) {
   const config = await getDocumentNumberingConfig(docType);
   const example = formatNumberExample(

@@ -34,6 +34,7 @@ interface InvoiceItemInput {
 interface InvoiceVersionInput {
   _id: string;
   versionNumber: number;
+  invoiceNumber?: string | null;
   issuedAt: string | null;
   items: InvoiceItemInput[];
   summary?: {
@@ -583,7 +584,7 @@ export async function createFinanceSnapshot(params: {
   const snapshot = await FinanceSnapshotModel.create({
     projectId: project.id,
     invoiceVersionId: invoiceVersion._id,
-    invoiceNumber: `${project.id}-${invoiceVersion.versionNumber}`,
+    invoiceNumber: invoiceVersion.invoiceNumber || `${project.id}-${invoiceVersion.versionNumber}`,
     issuedAt: normalizeDate(invoiceVersion.issuedAt),
     customer: {
       name: optionalString(project.customer?.name),

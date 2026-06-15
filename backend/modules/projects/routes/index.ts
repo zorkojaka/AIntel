@@ -85,6 +85,7 @@ router.get('/:projectId/work-orders/:workOrderId/pdf', logisticsController.expor
 router.get('/:projectId/material-orders/:materialOrderId/pdf', logisticsController.exportMaterialOrderPdf);
 router.get('/:projectId/invoices', invoiceController.listInvoices);
 router.post('/:projectId/invoices/from-closing', requireProjectWrite, invoiceController.createInvoice);
+router.get('/:projectId/invoices/next-number', requireProjectWrite, invoiceController.nextInvoiceNumber);
 router.patch('/:projectId/invoices/:versionId', requireProjectWrite, invoiceController.updateInvoice);
 router.post('/:projectId/invoices/:versionId/issue', requireProjectWrite, invoiceController.issueInvoice);
 router.post('/:projectId/invoices/:versionId/clone-for-edit', requireProjectWrite, invoiceController.cloneInvoiceForEdit);
