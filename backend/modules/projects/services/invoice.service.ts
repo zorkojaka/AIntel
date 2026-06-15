@@ -126,14 +126,15 @@ function findDraftVersion(project: ProjectDocument): InvoiceVersion | null {
   return (project.invoiceVersions ?? []).find((version) => version.status === 'draft') ?? null;
 }
 
-async function assertInvoiceNumberAvailable(invoiceNumber: string, currentVersionId: string) {
+async function assertInvoiceNumberAvailable(invoiceNumber: string, currentVersionId: string, allowedVersionIds: string[] = []) {
+  const allowedIds = Array.from(new Set([currentVersionId, ...allowedVersionIds].filter(Boolean)));
   const [existingSnapshot, existingProject] = await Promise.all([
-    FinanceSnapshotModel.findOne({ invoiceNumber, invoiceVersionId: { $ne: currentVersionId } }).select({ _id: 1 }).lean(),
+    FinanceSnapshotModel.findOne({ invoiceNumber, invoiceVersionId: { $nin: allowedIds } }).select({ _id: 1 }).lean(),
     ProjectModel.findOne({
       invoiceVersions: {
         $elemMatch: {
           invoiceNumber,
-          _id: { $ne: currentVersionId },
+          _id: { $nin: allowedIds },
         },
       },
     }).select({ id: 1 }).lean(),
@@ -144,8 +145,49 @@ async function assertInvoiceNumberAvailable(invoiceNumber: string, currentVersio
   }
 }
 
-async function resolveInvoiceNumberForIssue(version: InvoiceVersion, issuedAt: Date, override?: unknown) {
+function getInvoiceCorrectionChainIds(versions: InvoiceVersion[], version: InvoiceVersion) {
+  const byId = new Map(versions.map((entry) => [entry._id, entry]));
+  const allowed = new Set<string>([version._id]);
+
+  let parentId = version.correctedFromInvoiceVersionId ?? null;
+  while (parentId && byId.has(parentId) && !allowed.has(parentId)) {
+    allowed.add(parentId);
+    parentId = byId.get(parentId)?.correctedFromInvoiceVersionId ?? null;
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    versions.forEach((entry) => {
+      if (entry.correctedFromInvoiceVersionId && allowed.has(entry.correctedFromInvoiceVersionId) && !allowed.has(entry._id)) {
+        allowed.add(entry._id);
+        changed = true;
+      }
+    });
+  }
+
+  return Array.from(allowed);
+}
+
+async function resolveInvoiceNumberForIssue(
+  version: InvoiceVersion,
+  issuedAt: Date,
+  override?: unknown,
+  allowedVersionIds: string[] = [],
+) {
   const normalizedOverride = typeof override === 'string' ? override.trim() : '';
+  if (version.correctedFromInvoiceVersionId && version.invoiceNumber) {
+    const correctionNumber = version.invoiceNumber.trim();
+    if (normalizedOverride && normalizedOverride !== correctionNumber) {
+      throw new Error('Popravek računa mora ohraniti isto številko računa.');
+    }
+    await assertInvoiceNumberAvailable(correctionNumber, version._id, allowedVersionIds);
+    const parsed = parseInvoiceSequentialNumber(correctionNumber);
+    return {
+      invoiceNumber: correctionNumber,
+      invoiceSequence: parsed?.sequence ?? version.invoiceSequence ?? null,
+    };
+  }
   if (normalizedOverride) {
     const parsed = parseInvoiceSequentialNumber(normalizedOverride);
     if (!parsed) {
@@ -154,7 +196,7 @@ async function resolveInvoiceNumberForIssue(version: InvoiceVersion, issuedAt: D
     if (parsed.month !== issuedAt.getMonth() + 1 || parsed.year !== issuedAt.getFullYear()) {
       throw new Error(`Številka računa mora imeti trenutni mesec in leto izdaje (${issuedAt.getMonth() + 1}/${issuedAt.getFullYear()}).`);
     }
-    await assertInvoiceNumberAvailable(parsed.number, version._id);
+    await assertInvoiceNumberAvailable(parsed.number, version._id, allowedVersionIds);
     await syncInvoiceSequentialCounterAtLeast(parsed.sequence, parsed.year, issuedAt);
     return { invoiceNumber: parsed.number, invoiceSequence: parsed.sequence };
   }
@@ -162,7 +204,7 @@ async function resolveInvoiceNumberForIssue(version: InvoiceVersion, issuedAt: D
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const generated = await generateInvoiceSequentialNumber(issuedAt);
     try {
-      await assertInvoiceNumberAvailable(generated.number, version._id);
+      await assertInvoiceNumberAvailable(generated.number, version._id, allowedVersionIds);
       return { invoiceNumber: generated.number, invoiceSequence: generated.sequence };
     } catch (error) {
       if (attempt === 9) throw error;
@@ -208,6 +250,7 @@ async function aggregateClosingItems(project: ProjectDocument): Promise<{
   discountPercent: number;
   useGlobalDiscount: boolean;
   usePerItemDiscount: boolean;
+  vatMode: number | null;
 }> {
   const projectId = project.id;
   const workOrders = await WorkOrderModel.find({ projectId }).lean();
@@ -273,7 +316,8 @@ async function aggregateClosingItems(project: ProjectDocument): Promise<{
       (entry.productId && offerIndex.itemsByProductId.get(entry.productId)) ||
       null;
     const unitPrice = matchedOfferItem ? toNumber(matchedOfferItem.unitPrice, 0) : 0;
-    const vatPercent = matchedOfferItem ? toNumber(matchedOfferItem.vatRate, 22) : 22;
+    const offerVatMode = offerIndex.offer ? toNumber(offerIndex.offer.vatMode, 22) : null;
+    const vatPercent = offerVatMode ?? (matchedOfferItem ? toNumber(matchedOfferItem.vatRate, 22) : 22);
     invoiceItems.push({
       id: entry.offerItemId ?? entry.productId ?? `${entry.name}:${entry.unit}:${type}`,
       name: entry.name || 'Neimenovana postavka',
@@ -289,8 +333,9 @@ async function aggregateClosingItems(project: ProjectDocument): Promise<{
   return {
     items: invoiceItems,
     discountPercent: toNumber(offerIndex.offer?.globalDiscountPercent ?? offerIndex.offer?.discountPercent, 0),
-    useGlobalDiscount: Boolean(offerIndex.offer?.useGlobalDiscount ?? false),
+    useGlobalDiscount: Boolean(offerIndex.offer?.useGlobalDiscount ?? true),
     usePerItemDiscount: Boolean(offerIndex.offer?.usePerItemDiscount ?? false),
+    vatMode: offerIndex.offer ? toNumber(offerIndex.offer.vatMode, 22) : null,
   };
 }
 
@@ -338,6 +383,7 @@ export async function createInvoiceFromClosing(projectId: string): Promise<Invoi
     discountPercent: source.discountPercent,
     useGlobalDiscount: source.useGlobalDiscount,
     usePerItemDiscount: source.usePerItemDiscount,
+    vatMode: source.vatMode,
   });
   const servicePerformedAt = await resolveServicePerformedAt(project.id);
   const version: InvoiceVersion = {
@@ -412,7 +458,12 @@ export async function issueInvoiceVersion(projectId: string, versionId: string, 
     }
   });
   const issuedAt = new Date();
-  const numbering = await resolveInvoiceNumberForIssue(version, issuedAt, payload?.invoiceNumber);
+  const numbering = await resolveInvoiceNumberForIssue(
+    version,
+    issuedAt,
+    payload?.invoiceNumber,
+    getInvoiceCorrectionChainIds(project.invoiceVersions ?? [], version),
+  );
   version.status = 'issued';
   version.issuedAt = issuedAt.toISOString();
   version.invoiceNumber = numbering.invoiceNumber;
@@ -514,6 +565,8 @@ export async function cloneInvoiceVersion(projectId: string, versionId: string):
   const clone: InvoiceVersion = {
     _id: new Types.ObjectId().toString(),
     versionNumber: resolveNextVersionNumber(project),
+    invoiceNumber: version.invoiceNumber ?? null,
+    invoiceSequence: version.invoiceSequence ?? null,
     status: 'draft',
     createdAt: new Date().toISOString(),
     issuedAt: null,
@@ -534,6 +587,7 @@ interface RecalculateOptions {
   discountPercent?: number;
   useGlobalDiscount?: boolean;
   usePerItemDiscount?: boolean;
+  vatMode?: number | null;
 }
 
 function recalculateItems(items: InvoiceItemPayload[], options: RecalculateOptions = {}) {
@@ -573,7 +627,7 @@ function recalculateItems(items: InvoiceItemPayload[], options: RecalculateOptio
   const globalDiscountCandidates = preparedItems.filter((item) => item.lineAfterPerItemDiscount > 0);
   let allocatedGlobalDiscount = 0;
 
-  const updatedItems: InvoiceItem[] = preparedItems.map((item) => {
+  let updatedItems: InvoiceItem[] = preparedItems.map((item) => {
     let itemGlobalDiscount = 0;
     const isLastCandidate =
       globalDiscountCandidates.length > 0 &&
@@ -609,10 +663,39 @@ function recalculateItems(items: InvoiceItemPayload[], options: RecalculateOptio
   });
 
   const discountedBase = round(updatedItems.reduce((sum, current) => sum + current.totalWithoutVat, 0));
-  const vatAmount = round(
-    updatedItems.reduce((sum, current) => sum + (current.totalWithVat - current.totalWithoutVat), 0),
-  );
-  const totalWithVat = round(updatedItems.reduce((sum, current) => sum + current.totalWithVat, 0));
+  const vatMode = typeof options.vatMode === 'number' && Number.isFinite(options.vatMode) ? options.vatMode : null;
+  if (vatMode !== null) {
+    const targetVatAmount = round(discountedBase * (vatMode / 100));
+    const vatCandidates = updatedItems.filter((item) => item.totalWithoutVat > 0);
+    let allocatedVat = 0;
+    updatedItems = updatedItems.map((item) => {
+      if (vatCandidates.length === 0 || item.totalWithoutVat <= 0) {
+        return {
+          ...item,
+          vatPercent: vatMode,
+          totalWithVat: item.totalWithoutVat,
+        };
+      }
+      const isLastCandidate = item.id === vatCandidates[vatCandidates.length - 1].id;
+      const itemVat = isLastCandidate
+        ? round(targetVatAmount - allocatedVat)
+        : round(targetVatAmount * (item.totalWithoutVat / discountedBase));
+      if (!isLastCandidate) {
+        allocatedVat = round(allocatedVat + itemVat);
+      }
+      return {
+        ...item,
+        vatPercent: vatMode,
+        totalWithVat: round(item.totalWithoutVat + itemVat),
+      };
+    });
+  }
+  const vatAmount = vatMode !== null
+    ? round(discountedBase * (vatMode / 100))
+    : round(updatedItems.reduce((sum, current) => sum + (current.totalWithVat - current.totalWithoutVat), 0));
+  const totalWithVat = vatMode !== null
+    ? round(discountedBase + vatAmount)
+    : round(updatedItems.reduce((sum, current) => sum + current.totalWithVat, 0));
 
   return {
     items: updatedItems,

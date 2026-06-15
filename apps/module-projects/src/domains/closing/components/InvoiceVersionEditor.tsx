@@ -134,6 +134,7 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
   }, [activeVersion?._id, activeVersion?.invoiceNumber, activeVersion?.status, fetchNextInvoiceNumber]);
 
   const canEdit = draftVersion?.status === "draft";
+  const isCorrectionDraft = Boolean(draftVersion?.correctedFromInvoiceVersionId);
   const items = draftVersion?.items ?? [];
   const calculatedSummary = useMemo(() => calculateSummary(items), [items]);
   const summary = draftVersion?.summary ?? calculatedSummary;
@@ -312,7 +313,7 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
               id="invoice-number"
               value={invoiceNumberDraft}
               onChange={(event) => setInvoiceNumberDraft(event.target.value)}
-              readOnly={!canEdit}
+              readOnly={!canEdit || isCorrectionDraft}
               placeholder="50/6/2026"
             />
             {canEdit ? (

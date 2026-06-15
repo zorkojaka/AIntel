@@ -31,6 +31,7 @@ export interface InvoiceVersion {
   status: InvoiceStatus;
   createdAt: string;
   issuedAt?: string | null;
+  correctedFromInvoiceVersionId?: string | null;
   items: InvoiceItem[];
   summary: InvoiceSummary;
 }
