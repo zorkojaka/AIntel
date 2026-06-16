@@ -44,6 +44,14 @@ const TAB_BY_STEP: Record<StepKey, WorkspaceTabValue> = {
   invoice: "closing",
 };
 
+function resolveWorkspaceStepFromTimeline(steps: TimelineStep[], allowedStepKeys: Set<StepKey>): StepKey | null {
+  const visibleSteps = steps.filter((step) => allowedStepKeys.has(step.key));
+  const activeStep = visibleSteps.find((step) => step.status === "inProgress");
+  if (activeStep) return activeStep.key;
+  const lastCompletedStep = [...visibleSteps].reverse().find((step) => step.status === "done");
+  return lastCompletedStep?.key ?? visibleSteps[0]?.key ?? null;
+}
+
 import { RequirementsPanel, RequirementRow } from "../domains/requirements/RequirementsPanel";
 import { OffersPanel } from "../domains/offers/OffersPanel";
 import { ExecutionPanel } from "../domains/execution/ExecutionPanel";
@@ -230,6 +238,10 @@ export function ProjectWorkspace({
     const activeStep = timelineSteps.find((step) => step.status === "inProgress");
     return activeStep?.key ?? null;
   }, [timelineSteps]);
+  const initialTimelineStepKey = useMemo<StepKey | null>(
+    () => resolveWorkspaceStepFromTimeline(timelineSteps, allowedStepKeys),
+    [timelineSteps, allowedStepKeys],
+  );
   const phaseRibbonSteps = useMemo(() => {
     return tabsConfig.map((tab) => {
       const stepKey = STEP_BY_TAB[tab.value];
@@ -962,21 +974,29 @@ export function ProjectWorkspace({
   };
 
   useEffect(() => {
-    const nextTab = initialTab ?? "zahteva";
-    setActiveTab(nextTab);
-    hasInitializedActiveTabRef.current = initialTab ? true : false;
+    if (initialTab && allowedTabValues.includes(initialTab)) {
+      setActiveTab(initialTab);
+      hasInitializedActiveTabRef.current = true;
+    } else {
+      hasInitializedActiveTabRef.current = false;
+    }
     prevActivePhaseStepRef.current = null;
-  }, [project?.id, initialTab]);
+  }, [project?.id, initialTab, allowedTabValues]);
   useEffect(() => {
-    if (!activePhaseStepKey) {
+    const targetStepKey = activePhaseStepKey ?? initialTimelineStepKey;
+    if (!targetStepKey) {
       prevActivePhaseStepRef.current = null;
       return;
     }
-    const targetTab = TAB_BY_STEP[activePhaseStepKey] ?? "zahteva";
+    const targetTab = TAB_BY_STEP[targetStepKey] ?? "zahteva";
+    if (!allowedTabValues.includes(targetTab)) {
+      prevActivePhaseStepRef.current = targetStepKey;
+      return;
+    }
     if (!hasInitializedActiveTabRef.current) {
       setActiveTab(targetTab);
       hasInitializedActiveTabRef.current = true;
-    } else {
+    } else if (activePhaseStepKey) {
       const previousKey = prevActivePhaseStepRef.current;
       if (previousKey) {
         const prevIndex = STEP_ORDER.indexOf(previousKey);
@@ -986,8 +1006,8 @@ export function ProjectWorkspace({
         }
       }
     }
-    prevActivePhaseStepRef.current = activePhaseStepKey;
-  }, [activePhaseStepKey]);
+    prevActivePhaseStepRef.current = targetStepKey;
+  }, [activePhaseStepKey, allowedTabValues, initialTimelineStepKey]);
 
   const handleProceedToOffer = async () => {
     const currentProject = project;

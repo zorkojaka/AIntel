@@ -33,19 +33,31 @@ const SCENARIO_LABELS: Record<ExecutionScenario["type"], string> = {
 function selectedMaterial(sistem: ZahtevaSistem) {
   const result: Array<{ productId: string; quantity: number }> = [];
   const v = sistem.tip === "videonadzor" ? sistem.videonadzor : null;
-  if (!v) return result;
-
-  for (const variant of v.asortima ?? []) {
-    const quantity = (v.lokacije ?? []).filter((lokacija) => lokacija.asortimaIdAssigned === variant.id).length;
-    if (quantity > 0) {
-      result.push({ productId: variant.kameraProductId, quantity });
-      if (variant.nosilecProductId) result.push({ productId: variant.nosilecProductId, quantity });
+  if (v) {
+    for (const variant of v.asortima ?? []) {
+      const quantity = (v.lokacije ?? []).filter((lokacija) => lokacija.asortimaIdAssigned === variant.id).length;
+      if (quantity > 0) {
+        result.push({ productId: variant.kameraProductId, quantity });
+        if (variant.nosilecProductId) result.push({ productId: variant.nosilecProductId, quantity });
+      }
     }
+    if (v.snemalnik?.productId) result.push({ productId: v.snemalnik.productId, quantity: 1 });
+    for (const item of normalizedSelectedItems(v.poeSwitch)) result.push({ productId: item.productId, quantity: item.kolicina });
+    for (const item of normalizedSelectedItems(v.disk)) result.push({ productId: item.productId, quantity: item.kolicina });
+    for (const item of v.dodatnaOprema ?? []) result.push({ productId: item.productId, quantity: item.kolicina });
+    return result;
   }
-  if (v.snemalnik?.productId) result.push({ productId: v.snemalnik.productId, quantity: 1 });
-  for (const item of normalizedSelectedItems(v.poeSwitch)) result.push({ productId: item.productId, quantity: item.kolicina });
-  for (const item of normalizedSelectedItems(v.disk)) result.push({ productId: item.productId, quantity: item.kolicina });
-  for (const item of v.dodatnaOprema ?? []) result.push({ productId: item.productId, quantity: item.kolicina });
+
+  const alarm = sistem.tip === "alarm" ? sistem.alarm : null;
+  if (!alarm) return result;
+  for (const senzor of alarm.senzorji ?? []) {
+    const quantity = (alarm.lokacije ?? []).filter((lokacija) => lokacija.senzorIdAssigned === senzor.id).length;
+    if (quantity > 0) result.push({ productId: senzor.senzorProductId, quantity });
+  }
+  if (alarm.centrala?.productId) result.push({ productId: alarm.centrala.productId, quantity: 1 });
+  for (const item of [...(alarm.upravljanje ?? []), ...(alarm.sirene ?? []), ...(alarm.pozarPoplava ?? []), ...(alarm.dodatnaOprema ?? [])]) {
+    result.push({ productId: item.productId, quantity: item.kolicina });
+  }
   return result;
 }
 

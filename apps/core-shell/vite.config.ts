@@ -9,6 +9,8 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: '@', replacement: path.resolve(__dirname, 'src') },
+      { find: /^@aintel\/module-projects$/, replacement: path.resolve(__dirname, '../module-projects/src') },
+      { find: /^@aintel\/module-projects\/src\/(.*)$/, replacement: path.resolve(__dirname, '../module-projects/src/$1') },
       { find: /^@aintel\/shared\/(.*)$/, replacement: path.resolve(__dirname, '../../shared/$1') },
       { find: '@aintel/shared', replacement: path.resolve(__dirname, '../../shared') },
     ],

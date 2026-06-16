@@ -40,7 +40,7 @@ const DOC_DEFAULTS: Record<PdfDocumentType, PdfDocumentSettings> = {
     docType: 'INVOICE',
     numberingRule: { ...DEFAULT_DOCUMENT_SETTINGS.numberingRule, prefix: 'RAC' },
     defaultTexts: {
-      paymentTerms: 'Placilo v 8 dneh po izstavitvi racuna.',
+      paymentTerms: '',
       disclaimer: 'Racun je izdan na podlagi izvedenih storitev.',
     },
   },

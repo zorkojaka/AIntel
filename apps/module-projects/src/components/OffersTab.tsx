@@ -677,7 +677,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
   }, [projectId]);
 
 
-  const recalcItem = (item: OfferLineItemForm): OfferLineItemForm => {
+  const recalcItem = (item: OfferLineItemForm, vatModeOverride?: 0 | 9.5 | 22): OfferLineItemForm => {
     const quantity = clampMin(item.quantity, 1, 0);
     const unitPrice = clampPositive(item.unitPrice, 0);
     const vatRate = clampPositive(item.vatRate, 0);
@@ -686,7 +686,8 @@ const loadOfferById = useCallback(async (offerId: string) => {
 
     const net = Number((quantity * unitPrice * (1 - perItemDiscount / 100)).toFixed(2));
 
-    const effectiveVatRate = vatMode === 0 ? 0 : vatMode ?? vatRate;
+    const activeVatMode = vatModeOverride ?? vatMode;
+    const effectiveVatRate = activeVatMode === 0 ? 0 : activeVatMode ?? vatRate;
     const totalVat = Number((net * (effectiveVatRate / 100)).toFixed(2));
     const totalGross = Number((net + totalVat).toFixed(2));
 
@@ -949,8 +950,8 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     setVatMode(mode);
     setItems((prev) =>
       prev.map((item) => {
-        if (overriddenVatIds.has(item.id)) return recalcItem(item);
-        return recalcItem({ ...item, vatRate: mode });
+        if (overriddenVatIds.has(item.id)) return recalcItem(item, mode);
+        return recalcItem({ ...item, vatRate: mode }, mode);
       })
     );
   };

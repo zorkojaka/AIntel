@@ -2083,10 +2083,17 @@ export function ExecutionPanel({
   const handleCustomerSignoff = useCallback(
     async (signature: string, signerName: string) => {
       if (!selectedSignoffOrder?._id) return;
+      if (unsavedChanges[selectedSignoffOrder._id]) {
+        const saved = await saveWorkOrder(selectedSignoffOrder._id, undefined, { skipRefresh: true });
+        if (!saved) {
+          toast.error("Pred podpisom ni bilo mogoče shraniti sprememb izvedbe.");
+          return;
+        }
+      }
       await onSaveSignature(signature, signerName, selectedSignoffOrder._id, customerRemarkDraft);
       setSignoffOrderId(null);
     },
-    [customerRemarkDraft, onSaveSignature, selectedSignoffOrder],
+    [customerRemarkDraft, onSaveSignature, saveWorkOrder, selectedSignoffOrder, unsavedChanges],
   );
 
   const hasWorkOrders = workOrders.length > 0;

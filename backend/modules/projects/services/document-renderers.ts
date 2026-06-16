@@ -821,6 +821,7 @@ export function renderProductDescriptionsHtml(
   const extraStyles = `
     @page { size: A4; margin: 16mm 14mm; }
     body { font-family: Arial, sans-serif; color: #111; }
+    .page { min-height: auto; display: block; }
     .descriptions-header { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #dbe2ea; break-inside: avoid; page-break-inside: avoid; }
     .descriptions-header h1 { margin: 0 0 4px 0; font-size: 20px; }
     .descriptions-header p { margin: 0; color: #475569; font-size: 11px; white-space: pre-wrap; }

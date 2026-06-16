@@ -3,6 +3,7 @@ import {
   cloneInvoiceVersion,
   createInvoiceFromClosing,
   getInvoiceVersions,
+  getNextInvoiceNumber,
   issueInvoiceVersion,
   updateInvoiceVersion,
 } from '../services/invoice.service';
@@ -24,6 +25,15 @@ function handleError(res: Response, error: unknown) {
 export async function listInvoices(req: Request, res: Response) {
   try {
     const payload = await getInvoiceVersions(getProjectId(req));
+    return res.success(payload);
+  } catch (error) {
+    return handleError(res, error);
+  }
+}
+
+export async function nextInvoiceNumber(req: Request, res: Response) {
+  try {
+    const payload = await getNextInvoiceNumber(getProjectId(req));
     return res.success(payload);
   } catch (error) {
     return handleError(res, error);
@@ -52,7 +62,9 @@ export async function updateInvoice(req: Request, res: Response) {
 
 export async function issueInvoice(req: Request, res: Response) {
   try {
-    const payload = await issueInvoiceVersion(getProjectId(req), getVersionId(req));
+    const payload = await issueInvoiceVersion(getProjectId(req), getVersionId(req), {
+      invoiceNumber: req.body?.invoiceNumber,
+    });
     return res.success(payload);
   } catch (error) {
     return handleError(res, error);

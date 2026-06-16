@@ -6,7 +6,7 @@ import { SistemBlok } from "./SistemBlok";
 import { SpodnjiCena } from "./SpodnjiCena";
 import { TipProjektaTrak } from "./TipProjektaTrak";
 import { useZahtevaState } from "./state/useZahtevaState";
-import { createVideonadzorSystem, nextSystemId } from "./utils";
+import { createAlarmSystem, createVideonadzorSystem, nextSystemId } from "./utils";
 
 type ZahtevaViewProps = {
   project: ProjectDetails;
@@ -56,6 +56,13 @@ export function ZahtevaView({ project, onProjectRequestChanged, onNavigateOffer 
     }));
   }, [updateZahtevaState]);
 
+  const addAlarm = useCallback(() => {
+    updateZahtevaState((current) => ({
+      ...current,
+      sistemi: [...current.sistemi, createAlarmSystem(nextSystemId(current.sistemi))],
+    }));
+  }, [updateZahtevaState]);
+
   const saveLabel = saveState === "saving" ? "Shranjujem..." : saveState === "error" ? "Napaka pri shranjevanju" : "Vse shranjeno ✓";
 
   if (loading || !zahteva) {
@@ -75,7 +82,7 @@ export function ZahtevaView({ project, onProjectRequestChanged, onNavigateOffer 
         <span className={`zahteva-save-state is-${saveState}`}>{saveLabel}</span>
       </div>
 
-      <TipProjektaTrak onAddVideonadzor={addVideonadzor} />
+      <TipProjektaTrak onAddVideonadzor={addVideonadzor} onAddAlarm={addAlarm} />
 
       <div className="zahteva-systems">
         {zahteva.sistemi.map((sistem) => (

@@ -26,9 +26,12 @@ export interface InvoiceSummary {
 export interface InvoiceVersion {
   _id: string;
   versionNumber: number;
+  invoiceNumber?: string | null;
+  invoiceSequence?: number | null;
   status: InvoiceStatus;
   createdAt: string;
   issuedAt?: string | null;
+  correctedFromInvoiceVersionId?: string | null;
   items: InvoiceItem[];
   summary: InvoiceSummary;
 }
@@ -38,6 +41,13 @@ interface InvoiceApiResponse {
   activeVersionId: string | null;
   updatedVersion?: InvoiceVersion;
   projectStatus?: ProjectStatus;
+}
+
+export interface NextInvoiceNumberResponse {
+  number: string;
+  sequence: number;
+  month: number;
+  year: number;
 }
 
 async function requestInvoiceApi(projectId: string, path: string, options?: RequestInit) {
@@ -153,12 +163,29 @@ export function useInvoiceVersions(projectId?: string | null) {
     [projectId, resolveActiveVersion, runAction],
   );
 
-  const issue = useCallback(async (): Promise<InvoiceVersion | null> => {
+  const fetchNextInvoiceNumber = useCallback(async (): Promise<NextInvoiceNumberResponse | null> => {
+    if (!projectId) return null;
+    try {
+      const response = await fetch(`/api/projects/${projectId}/invoices/next-number`);
+      const payload = await response.json();
+      if (!payload.success) {
+        throw new Error(payload.error ?? "Naslednje številke računa ni mogoče pridobiti.");
+      }
+      return payload.data as NextInvoiceNumberResponse;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Naslednje številke računa ni mogoče pridobiti.";
+      toast.error(message);
+      return null;
+    }
+  }, [projectId]);
+
+  const issue = useCallback(async (invoiceNumber?: string): Promise<InvoiceVersion | null> => {
     if (!projectId || !resolveActiveVersion || resolveActiveVersion.status !== "draft") return null;
     const result = await runAction(
       () =>
         requestInvoiceApi(projectId, `/invoices/${resolveActiveVersion._id}/issue`, {
           method: "POST",
+          body: JSON.stringify({ invoiceNumber }),
         }),
       "Račun izdan.",
     );
@@ -185,6 +212,7 @@ export function useInvoiceVersions(projectId?: string | null) {
     refresh: fetchVersions,
     createFromClosing,
     saveDraft,
+    fetchNextInvoiceNumber,
     issue,
     cloneForEdit,
   };

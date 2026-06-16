@@ -222,7 +222,42 @@ export interface Zahteva {
       }>;
     };
     execution?: ZahtevaExecution;
-    alarm?: Record<string, unknown>;
+    alarm?: {
+      senzorji: Array<{
+        id: string;
+        senzorProductId: string;
+      }>;
+      lokacije: Array<{
+        id: string;
+        ime: string;
+        senzorIdAssigned?: string | null;
+        slike?: Array<{
+          filename: string;
+          url: string;
+          uploadedAt?: string | null;
+        }>;
+      }>;
+      centrala: {
+        productId?: string | null;
+        autoSelected?: boolean;
+      };
+      upravljanje: Array<{
+        productId: string;
+        kolicina: number;
+      }>;
+      sirene: Array<{
+        productId: string;
+        kolicina: number;
+      }>;
+      pozarPoplava: Array<{
+        productId: string;
+        kolicina: number;
+      }>;
+      dodatnaOprema?: Array<{
+        productId: string;
+        kolicina: number;
+      }>;
+    };
     domofon?: Record<string, unknown>;
     pametnaHisa?: Record<string, unknown>;
   }>;

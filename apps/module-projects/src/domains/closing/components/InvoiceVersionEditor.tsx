@@ -90,6 +90,10 @@ function generateId() {
   return `inv-item-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function filenameSafe(value: string) {
+  return value.trim().replace(/[^\w.-]+/g, "-").replace(/-+/g, "-");
+}
+
 export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
   const {
     versions,
@@ -99,21 +103,38 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
     saving,
     createFromClosing,
     saveDraft,
+    fetchNextInvoiceNumber,
     issue,
     cloneForEdit,
   } = useInvoiceVersions(projectId ?? null);
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
   const [draftVersion, setDraftVersion] = useState<InvoiceVersion | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [invoiceNumberDraft, setInvoiceNumberDraft] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [creditDownloading, setCreditDownloading] = useState(false);
 
   useEffect(() => {
     setDraftVersion(cloneVersion(activeVersion));
+    setInvoiceNumberDraft(activeVersion?.invoiceNumber ?? "");
     setDirty(false);
   }, [activeVersion]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeVersion || activeVersion.status !== "draft" || activeVersion.invoiceNumber) return;
+    fetchNextInvoiceNumber().then((next) => {
+      if (!cancelled && next?.number) {
+        setInvoiceNumberDraft(next.number);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeVersion?._id, activeVersion?.invoiceNumber, activeVersion?.status, fetchNextInvoiceNumber]);
+
   const canEdit = draftVersion?.status === "draft";
+  const isCorrectionDraft = Boolean(draftVersion?.correctedFromInvoiceVersionId);
   const items = draftVersion?.items ?? [];
   const calculatedSummary = useMemo(() => calculateSummary(items), [items]);
   const summary = draftVersion?.summary ?? calculatedSummary;
@@ -168,7 +189,7 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
       const saved = await handleSave();
       if (!saved) return;
     }
-    const issuedVersion = await issue();
+    const issuedVersion = await issue(invoiceNumberDraft);
     if (!issuedVersion) {
       return;
     }
@@ -185,7 +206,8 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
     if (!draftVersion || !projectId) return;
     try {
       setDownloading(true);
-      const filename = `racun-${projectId}-${draftVersion.versionNumber ?? draftVersion._id}.pdf`;
+      const numberPart = filenameSafe(draftVersion.invoiceNumber || invoiceNumberDraft || String(draftVersion.versionNumber ?? draftVersion._id));
+      const filename = `racun-${numberPart}.pdf`;
       await downloadPdf(`/api/projects/${projectId}/invoices/${draftVersion._id}/pdf`, filename);
       toast.success("Račun prenesen.");
     } catch (error) {
@@ -200,7 +222,8 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
     if (!draftVersion || !projectId) return;
     try {
       setCreditDownloading(true);
-      const filename = `dobropis-${projectId}-${draftVersion.versionNumber ?? draftVersion._id}.pdf`;
+      const numberPart = filenameSafe(draftVersion.invoiceNumber || invoiceNumberDraft || String(draftVersion.versionNumber ?? draftVersion._id));
+      const filename = `dobropis-${numberPart}.pdf`;
       await downloadPdf(`/api/projects/${projectId}/invoices/${draftVersion._id}/pdf?docType=CREDIT_NOTE`, filename);
       toast.success("Dobropis prenesen.");
     } catch (error) {
@@ -281,6 +304,23 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
                 Dodaj postavko
               </Button>
             )}
+          </div>
+          <div className="grid gap-1 max-w-sm">
+            <label className="text-sm font-medium" htmlFor="invoice-number">
+              Številka računa
+            </label>
+            <Input
+              id="invoice-number"
+              value={invoiceNumberDraft}
+              onChange={(event) => setInvoiceNumberDraft(event.target.value)}
+              readOnly={!canEdit || isCorrectionDraft}
+              placeholder="50/6/2026"
+            />
+            {canEdit ? (
+              <p className="text-xs text-muted-foreground m-0">
+                Po potrebi popravi zaporedno številko pred izdajo računa.
+              </p>
+            ) : null}
           </div>
           <div className="overflow-x-auto">
             <Table>

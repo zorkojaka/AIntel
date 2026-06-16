@@ -1267,6 +1267,14 @@
   white-space: nowrap;
 }
 
+.zahteva-assignment-info img,
+.zahteva-assignment-info > .zahteva-image-empty {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
 .zahteva-assignment-info small + small {
   color: var(--app-muted);
   font-weight: 800;
@@ -1375,6 +1383,33 @@
   font-weight: 700;
 }
 
+.zahteva-collapse-header {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.zahteva-title-main {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.zahteva-collapse-icon {
+  color: var(--app-muted);
+  flex: 0 0 auto;
+  transition: transform 120ms ease;
+}
+
+.zahteva-collapse-icon.is-collapsed {
+  transform: rotate(-90deg);
+}
+
 .zahteva-inline-action-row {
   display: flex;
   justify-content: flex-end;
@@ -1454,6 +1489,43 @@
   font-weight: 900;
 }
 
+.zahteva-alarm-track {
+  grid-auto-columns: minmax(178px, 0.88fr);
+}
+
+.zahteva-alarm-card {
+  min-height: 168px;
+}
+
+.zahteva-sensor-group-title {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  background: transparent;
+  color: var(--app-text);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 900;
+  margin: 0.35rem 0 0.25rem;
+  padding: 0;
+  text-align: left;
+}
+
+.zahteva-alarm-card strong {
+  line-height: 1.18;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  word-break: normal;
+}
+
+.zahteva-alarm-card small {
+  line-height: 1.25;
+  white-space: normal;
+}
+
 .zahteva-track-card small {
   color: var(--app-muted);
   font-size: 0.72rem;
@@ -1466,6 +1538,15 @@
 .zahteva-track-card b {
   align-self: end;
   font-size: 0.82rem;
+}
+
+.zahteva-card-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
 .zahteva-disk-days {
