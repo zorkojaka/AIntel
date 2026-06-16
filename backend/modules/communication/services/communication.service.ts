@@ -436,7 +436,7 @@ function formatRoleLabel(role: string | null | undefined) {
 
 function resolveSenderIdentity(
   senderSettings: CommunicationSenderSettings,
-  actorProfile?: {
+  _actorProfile?: {
     name?: string | null;
     email?: string | null;
     phone?: string | null;
@@ -444,10 +444,10 @@ function resolveSenderIdentity(
   } | null
 ) {
   return {
-    senderName: sanitizeString(actorProfile?.name) || senderSettings.senderName,
-    senderEmail: sanitizeString(actorProfile?.email).toLowerCase() || senderSettings.senderEmail,
-    senderPhone: sanitizeString(actorProfile?.phone) || senderSettings.senderPhone || "",
-    senderRole: sanitizeString(actorProfile?.role) || senderSettings.senderRole || "",
+    senderName: senderSettings.senderName,
+    senderEmail: senderSettings.senderEmail,
+    senderPhone: senderSettings.senderPhone || "",
+    senderRole: senderSettings.senderRole || "",
   };
 }
 
