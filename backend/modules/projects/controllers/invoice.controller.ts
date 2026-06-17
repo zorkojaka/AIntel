@@ -53,6 +53,7 @@ export async function updateInvoice(req: Request, res: Response) {
   try {
     const payload = await updateInvoiceVersion(getProjectId(req), getVersionId(req), {
       items: Array.isArray(req.body?.items) ? req.body.items : [],
+      invoiceNumber: req.body?.invoiceNumber,
     });
     return res.success(payload);
   } catch (error) {
