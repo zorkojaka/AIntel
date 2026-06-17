@@ -176,11 +176,8 @@ async function resolveInvoiceNumberForIssue(
   allowedVersionIds: string[] = [],
 ) {
   const normalizedOverride = typeof override === 'string' ? override.trim() : '';
-  if (version.correctedFromInvoiceVersionId && version.invoiceNumber) {
+  if (version.correctedFromInvoiceVersionId && version.invoiceNumber && !normalizedOverride) {
     const correctionNumber = version.invoiceNumber.trim();
-    if (normalizedOverride && normalizedOverride !== correctionNumber) {
-      throw new Error('Popravek računa mora ohraniti isto številko računa.');
-    }
     await assertInvoiceNumberAvailable(correctionNumber, version._id, allowedVersionIds);
     const parsed = parseInvoiceSequentialNumber(correctionNumber);
     return {
@@ -416,22 +413,17 @@ export async function updateInvoiceVersion(
     throw new Error('Izdane verzije ni mogoče urejati.');
   }
   const invoiceNumber = typeof payload.invoiceNumber === 'string' ? payload.invoiceNumber.trim() : '';
-  if (version.correctedFromInvoiceVersionId && invoiceNumber && invoiceNumber !== (version.invoiceNumber ?? '').trim()) {
-    throw new Error('Popravek računa mora ohraniti isto številko računa.');
-  }
-  if (!version.correctedFromInvoiceVersionId) {
-    if (invoiceNumber) {
-      const parsed = parseInvoiceSequentialNumber(invoiceNumber);
-      if (!parsed) {
-        throw new Error('Številka računa mora biti v obliki zaporedna/mesec/leto, npr. 50/6/2026.');
-      }
-      await assertInvoiceNumberAvailable(parsed.number, version._id);
-      version.invoiceNumber = parsed.number;
-      version.invoiceSequence = parsed.sequence;
-    } else {
-      version.invoiceNumber = null;
-      version.invoiceSequence = null;
+  if (invoiceNumber) {
+    const parsed = parseInvoiceSequentialNumber(invoiceNumber);
+    if (!parsed) {
+      throw new Error('Številka računa mora biti v obliki zaporedna/mesec/leto, npr. 50/6/2026.');
     }
+    await assertInvoiceNumberAvailable(parsed.number, version._id, getInvoiceCorrectionChainIds(project.invoiceVersions ?? [], version));
+    version.invoiceNumber = parsed.number;
+    version.invoiceSequence = parsed.sequence;
+  } else {
+    version.invoiceNumber = null;
+    version.invoiceSequence = null;
   }
   const inputItems = Array.isArray(payload?.items) ? payload.items : [];
   const existingItemsById = new Map((version.items ?? []).map((item) => [item.id, item]));
