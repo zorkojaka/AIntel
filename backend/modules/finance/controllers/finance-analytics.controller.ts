@@ -1,4 +1,6 @@
 import { Request, Response } from 'express';
+import { ProjectModel } from '../../projects/schemas/project';
+import { FinanceSnapshotModel } from '../schemas/finance-snapshot';
 import {
   getBasketAnalysis,
   getEmployeeProjectEarningDetail,
@@ -108,6 +110,59 @@ export async function snapshotsList(req: Request, res: Response) {
     projectId: projectId || undefined,
   });
   return res.success(data);
+}
+
+export async function invoicesList(_req: Request, res: Response) {
+  const projects = await ProjectModel.find({
+    invoiceVersions: { $exists: true, $ne: [] },
+  })
+    .select({ id: 1, title: 1, customer: 1, invoiceVersions: 1 })
+    .lean();
+
+  const invoiceVersionIds = projects.flatMap((project: any) =>
+    (project.invoiceVersions ?? [])
+      .map((version: any) => String(version?._id ?? ''))
+      .filter(Boolean),
+  );
+  const snapshots = invoiceVersionIds.length
+    ? await FinanceSnapshotModel.find({ invoiceVersionId: { $in: invoiceVersionIds } })
+        .select({ invoiceVersionId: 1, superseded: 1 })
+        .lean()
+    : [];
+  const snapshotByVersionId = new Map<string, { superseded?: boolean }>(
+    snapshots.map((snapshot: any) => [String(snapshot.invoiceVersionId), snapshot]),
+  );
+
+  const rows = projects.flatMap((project: any) =>
+    (project.invoiceVersions ?? [])
+      .filter((version: any) => version?.invoiceNumber)
+      .map((version: any) => {
+        const versionId = String(version._id);
+        const snapshot = snapshotByVersionId.get(versionId);
+        return {
+          projectId: project.id,
+          projectTitle: project.title ?? project.id,
+          customerName: project.customer?.name ?? '',
+          invoiceVersionId: versionId,
+          versionNumber: version.versionNumber ?? null,
+          invoiceNumber: version.invoiceNumber ?? '',
+          status: version.status ?? 'draft',
+          issuedAt: version.issuedAt ?? null,
+          createdAt: version.createdAt ?? null,
+          totalWithVat: version.summary?.totalWithVat ?? 0,
+          totalWithoutVat: version.summary?.discountedBase ?? version.summary?.baseWithoutVat ?? 0,
+          hasFinanceSnapshot: Boolean(snapshot && snapshot.superseded !== true),
+        };
+      }),
+  );
+
+  rows.sort((a, b) => {
+    const left = new Date(a.issuedAt ?? a.createdAt ?? 0).valueOf();
+    const right = new Date(b.issuedAt ?? b.createdAt ?? 0).valueOf();
+    return right - left;
+  });
+
+  return res.success({ items: rows });
 }
 
 export async function snapshotByProject(req: Request, res: Response) {

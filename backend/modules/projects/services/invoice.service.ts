@@ -129,11 +129,12 @@ function findDraftVersion(project: ProjectDocument): InvoiceVersion | null {
 async function assertInvoiceNumberAvailable(invoiceNumber: string, currentVersionId: string, allowedVersionIds: string[] = []) {
   const allowedIds = Array.from(new Set([currentVersionId, ...allowedVersionIds].filter(Boolean)));
   const [existingSnapshot, existingProject] = await Promise.all([
-    FinanceSnapshotModel.findOne({ invoiceNumber, invoiceVersionId: { $nin: allowedIds } }).select({ _id: 1 }).lean(),
+    FinanceSnapshotModel.findOne({ invoiceNumber, invoiceVersionId: { $nin: allowedIds }, superseded: { $ne: true } }).select({ _id: 1 }).lean(),
     ProjectModel.findOne({
       invoiceVersions: {
         $elemMatch: {
           invoiceNumber,
+          status: { $in: ['draft', 'issued'] },
           _id: { $nin: allowedIds },
         },
       },
@@ -596,6 +597,29 @@ export async function cloneInvoiceVersion(projectId: string, versionId: string):
   markInvoiceVersionsModified(project);
   await project.save();
   return buildInvoiceResponse(project, { activeVersionId: clone._id, updatedVersionId: clone._id });
+}
+
+export async function cancelInvoiceVersion(projectId: string, versionId: string): Promise<InvoiceListResponse> {
+  const project = await findProjectOrFail(projectId);
+  const version = ensureInvoiceVersion(project, versionId);
+  if (version.status !== 'cancelled') {
+    version.status = 'cancelled';
+    markInvoiceVersionsModified(project);
+    addTimeline(project, {
+      type: 'status-change',
+      title: 'Račun odstranjen',
+      description: `Račun ${version.invoiceNumber ?? `verzija ${version.versionNumber}`} je bil odstranjen iz aktivnih računov.`,
+      timestamp: new Date().toISOString(),
+      user: 'system',
+      metadata: { invoiceVersionId: version._id, invoiceNumber: version.invoiceNumber ?? null },
+    });
+    await FinanceSnapshotModel.updateMany(
+      { invoiceVersionId: version._id },
+      { $set: { superseded: true } },
+    );
+    await project.save();
+  }
+  return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id, includeProjectStatus: true });
 }
 interface RecalculateOptions {
   discountPercent?: number;

@@ -89,6 +89,7 @@ router.get('/:projectId/invoices/next-number', requireProjectWrite, invoiceContr
 router.patch('/:projectId/invoices/:versionId', requireProjectWrite, invoiceController.updateInvoice);
 router.post('/:projectId/invoices/:versionId/issue', requireProjectWrite, invoiceController.issueInvoice);
 router.post('/:projectId/invoices/:versionId/clone-for-edit', requireProjectWrite, invoiceController.cloneInvoiceForEdit);
+router.delete('/:projectId/invoices/:versionId', requireProjectWrite, invoiceController.cancelInvoice);
 router.get('/:projectId/invoices/:versionId/pdf', invoiceController.exportInvoicePdf);
 router.post('/:id/deliveries/:deliveryId/receive', requireProjectWrite, receiveDelivery);
 router.post('/:id/signature', requireWorkOrderWrite, saveSignature);
