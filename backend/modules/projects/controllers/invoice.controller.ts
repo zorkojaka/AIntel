@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import {
+  cancelInvoiceVersion,
   cloneInvoiceVersion,
   createInvoiceFromClosing,
   getInvoiceVersions,
@@ -76,6 +77,15 @@ export async function cloneInvoiceForEdit(req: Request, res: Response) {
   try {
     const payload = await cloneInvoiceVersion(getProjectId(req), getVersionId(req));
     return res.success(payload, 201);
+  } catch (error) {
+    return handleError(res, error);
+  }
+}
+
+export async function cancelInvoice(req: Request, res: Response) {
+  try {
+    const payload = await cancelInvoiceVersion(getProjectId(req), getVersionId(req));
+    return res.success(payload);
   } catch (error) {
     return handleError(res, error);
   }

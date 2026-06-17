@@ -129,11 +129,12 @@ function findDraftVersion(project: ProjectDocument): InvoiceVersion | null {
 async function assertInvoiceNumberAvailable(invoiceNumber: string, currentVersionId: string, allowedVersionIds: string[] = []) {
   const allowedIds = Array.from(new Set([currentVersionId, ...allowedVersionIds].filter(Boolean)));
   const [existingSnapshot, existingProject] = await Promise.all([
-    FinanceSnapshotModel.findOne({ invoiceNumber, invoiceVersionId: { $nin: allowedIds } }).select({ _id: 1 }).lean(),
+    FinanceSnapshotModel.findOne({ invoiceNumber, invoiceVersionId: { $nin: allowedIds }, superseded: { $ne: true } }).select({ _id: 1 }).lean(),
     ProjectModel.findOne({
       invoiceVersions: {
         $elemMatch: {
           invoiceNumber,
+          status: { $in: ['draft', 'issued'] },
           _id: { $nin: allowedIds },
         },
       },
@@ -176,11 +177,8 @@ async function resolveInvoiceNumberForIssue(
   allowedVersionIds: string[] = [],
 ) {
   const normalizedOverride = typeof override === 'string' ? override.trim() : '';
-  if (version.correctedFromInvoiceVersionId && version.invoiceNumber) {
+  if (version.correctedFromInvoiceVersionId && version.invoiceNumber && !normalizedOverride) {
     const correctionNumber = version.invoiceNumber.trim();
-    if (normalizedOverride && normalizedOverride !== correctionNumber) {
-      throw new Error('Popravek računa mora ohraniti isto številko računa.');
-    }
     await assertInvoiceNumberAvailable(correctionNumber, version._id, allowedVersionIds);
     const parsed = parseInvoiceSequentialNumber(correctionNumber);
     return {
@@ -416,22 +414,17 @@ export async function updateInvoiceVersion(
     throw new Error('Izdane verzije ni mogoče urejati.');
   }
   const invoiceNumber = typeof payload.invoiceNumber === 'string' ? payload.invoiceNumber.trim() : '';
-  if (version.correctedFromInvoiceVersionId && invoiceNumber && invoiceNumber !== (version.invoiceNumber ?? '').trim()) {
-    throw new Error('Popravek računa mora ohraniti isto številko računa.');
-  }
-  if (!version.correctedFromInvoiceVersionId) {
-    if (invoiceNumber) {
-      const parsed = parseInvoiceSequentialNumber(invoiceNumber);
-      if (!parsed) {
-        throw new Error('Številka računa mora biti v obliki zaporedna/mesec/leto, npr. 50/6/2026.');
-      }
-      await assertInvoiceNumberAvailable(parsed.number, version._id);
-      version.invoiceNumber = parsed.number;
-      version.invoiceSequence = parsed.sequence;
-    } else {
-      version.invoiceNumber = null;
-      version.invoiceSequence = null;
+  if (invoiceNumber) {
+    const parsed = parseInvoiceSequentialNumber(invoiceNumber);
+    if (!parsed) {
+      throw new Error('Številka računa mora biti v obliki zaporedna/mesec/leto, npr. 50/6/2026.');
     }
+    await assertInvoiceNumberAvailable(parsed.number, version._id, getInvoiceCorrectionChainIds(project.invoiceVersions ?? [], version));
+    version.invoiceNumber = parsed.number;
+    version.invoiceSequence = parsed.sequence;
+  } else {
+    version.invoiceNumber = null;
+    version.invoiceSequence = null;
   }
   const inputItems = Array.isArray(payload?.items) ? payload.items : [];
   const existingItemsById = new Map((version.items ?? []).map((item) => [item.id, item]));
@@ -604,6 +597,29 @@ export async function cloneInvoiceVersion(projectId: string, versionId: string):
   markInvoiceVersionsModified(project);
   await project.save();
   return buildInvoiceResponse(project, { activeVersionId: clone._id, updatedVersionId: clone._id });
+}
+
+export async function cancelInvoiceVersion(projectId: string, versionId: string): Promise<InvoiceListResponse> {
+  const project = await findProjectOrFail(projectId);
+  const version = ensureInvoiceVersion(project, versionId);
+  if (version.status !== 'cancelled') {
+    version.status = 'cancelled';
+    markInvoiceVersionsModified(project);
+    addTimeline(project, {
+      type: 'status-change',
+      title: 'Račun odstranjen',
+      description: `Račun ${version.invoiceNumber ?? `verzija ${version.versionNumber}`} je bil odstranjen iz aktivnih računov.`,
+      timestamp: new Date().toISOString(),
+      user: 'system',
+      metadata: { invoiceVersionId: version._id, invoiceNumber: version.invoiceNumber ?? null },
+    });
+    await FinanceSnapshotModel.updateMany(
+      { invoiceVersionId: version._id },
+      { $set: { superseded: true } },
+    );
+    await project.save();
+  }
+  return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id, includeProjectStatus: true });
 }
 interface RecalculateOptions {
   discountPercent?: number;

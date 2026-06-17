@@ -3,7 +3,7 @@ import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, 
 import './FinancePage.css';
 
 type Role = 'ADMIN' | 'FINANCE' | 'EXECUTION' | 'SALES' | 'ORGANIZER';
-type TabKey = 'projekti' | 'zaposleni' | 'podjetje';
+type TabKey = 'projekti' | 'zaposleni' | 'podjetje' | 'racuni';
 type PeriodMode = 'monthly' | 'yearly';
 
 interface MePayload {
@@ -60,6 +60,25 @@ interface FinanceSnapshot {
 
 interface SnapshotListEnvelope {
   items: FinanceSnapshot[];
+}
+
+interface FinanceInvoiceRow {
+  projectId: string;
+  projectTitle: string;
+  customerName: string;
+  invoiceVersionId: string;
+  versionNumber: number | null;
+  invoiceNumber: string;
+  status: 'draft' | 'issued' | 'cancelled' | string;
+  issuedAt?: string | null;
+  createdAt?: string | null;
+  totalWithVat: number;
+  totalWithoutVat: number;
+  hasFinanceSnapshot: boolean;
+}
+
+interface FinanceInvoiceListEnvelope {
+  items: FinanceInvoiceRow[];
 }
 
 interface EmployeeSummary {
@@ -169,6 +188,42 @@ async function patchApi<T>(url: string, body: unknown): Promise<T> {
   return payload.data;
 }
 
+async function postApi<T>(url: string, body?: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
+  const payload = (await response.json()) as ApiEnvelope<T>;
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.error ?? `Napaka API (${response.status})`);
+  }
+  return payload.data;
+}
+
+async function deleteApi<T>(url: string): Promise<T> {
+  const response = await fetch(url, {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+  });
+
+  const payload = (await response.json()) as ApiEnvelope<T>;
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.error ?? `Napaka API (${response.status})`);
+  }
+  return payload.data;
+}
+
 async function fetchAllSnapshots(): Promise<FinanceSnapshot[]> {
   const limit = 200;
   const firstPage = await fetchApi<SnapshotListEnvelope>(`/api/finance/snapshots?limit=${limit}&page=1`);
@@ -221,6 +276,13 @@ function statusLabel(isPaid: boolean) {
   return isPaid ? 'Plačano' : 'Čaka na plačilo';
 }
 
+function invoiceStatusLabel(status: string) {
+  if (status === 'issued') return 'Izdan';
+  if (status === 'draft') return 'Osnutek';
+  if (status === 'cancelled') return 'Odstranjen';
+  return status || '-';
+}
+
 function detailKey(employeeIdValue: string, snapshotId: string) {
   return `${employeeIdValue}:${snapshotId}`;
 }
@@ -254,6 +316,7 @@ export const FinancePage: React.FC = () => {
   const [employeeId, setEmployeeId] = useState<string | null>(null);
 
   const [snapshots, setSnapshots] = useState<FinanceSnapshot[]>([]);
+  const [invoiceRows, setInvoiceRows] = useState<FinanceInvoiceRow[]>([]);
   const [employees, setEmployees] = useState<EmployeeSummary[]>([]);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [coView, setCoView] = useState<'pairs' | 'bundles'>('pairs');
@@ -262,6 +325,7 @@ export const FinancePage: React.FC = () => {
   const [selectedMonths, setSelectedMonths] = useState<string[]>([toMonthKey(new Date().toISOString()) ?? '']);
 
   const [projectSearch, setProjectSearch] = useState('');
+  const [invoiceSearch, setInvoiceSearch] = useState('');
 
   const [expandedProjectRows, setExpandedProjectRows] = useState<Record<string, boolean>>({});
   const [expandedEmployeeRows, setExpandedEmployeeRows] = useState<Record<string, boolean>>({});
@@ -271,6 +335,7 @@ export const FinancePage: React.FC = () => {
   const [employeeProjectDetailsError, setEmployeeProjectDetailsError] = useState<Record<string, string>>({});
   const [paidByEmployeeProject, setPaidByEmployeeProject] = useState<Record<string, boolean>>({});
   const [employeePaymentSaving, setEmployeePaymentSaving] = useState<Record<string, boolean>>({});
+  const [invoiceActionSaving, setInvoiceActionSaving] = useState<Record<string, boolean>>({});
 
   const isExecutionOnly = useMemo(() => {
     const roleSet = new Set(roles);
@@ -289,10 +354,11 @@ export const FinancePage: React.FC = () => {
         const mappedRoles = (me.roles ?? []) as Role[];
         const canSeeCompany = mappedRoles.includes('ADMIN') || mappedRoles.includes('FINANCE');
 
-        const [snapshotData, employeeData, projectsData] = await Promise.all([
+        const [snapshotData, employeeData, projectsData, invoiceData] = await Promise.all([
           fetchAllSnapshots(),
           fetchApi<EmployeeSummary[]>('/api/finance/employees-summary'),
           canSeeCompany ? fetchApi<ProjectListItem[]>('/api/projects?view=all') : Promise.resolve([]),
+          canSeeCompany ? fetchApi<FinanceInvoiceListEnvelope>('/api/finance/invoices') : Promise.resolve({ items: [] }),
         ]);
 
         if (cancelled) return;
@@ -300,6 +366,7 @@ export const FinancePage: React.FC = () => {
         setRoles(mappedRoles);
         setEmployeeId(me.employeeId ?? null);
         setSnapshots(snapshotData);
+        setInvoiceRows(invoiceData.items ?? []);
         setEmployees(employeeData);
         setProjects(projectsData ?? []);
       } catch (loadError) {
@@ -329,8 +396,12 @@ export const FinancePage: React.FC = () => {
       const year = toYear(getProjectDate(project));
       if (year) years.add(year);
     });
+    invoiceRows.forEach((invoice) => {
+      const year = toYear(invoice.issuedAt ?? invoice.createdAt);
+      if (year) years.add(year);
+    });
     return Array.from(years).sort((a, b) => b - a);
-  }, [projects, selectedYears, snapshots]);
+  }, [invoiceRows, projects, selectedYears, snapshots]);
 
   const monthOptions = useMemo(() => {
     const months = new Set<string>(selectedMonths.filter(Boolean));
@@ -344,8 +415,12 @@ export const FinancePage: React.FC = () => {
       const monthKey = toMonthKey(getProjectDate(project));
       if (monthKey) months.add(monthKey);
     });
+    invoiceRows.forEach((invoice) => {
+      const monthKey = toMonthKey(invoice.issuedAt ?? invoice.createdAt);
+      if (monthKey) months.add(monthKey);
+    });
     return Array.from(months).sort((a, b) => b.localeCompare(a));
-  }, [projects, selectedMonths, snapshots]);
+  }, [invoiceRows, projects, selectedMonths, snapshots]);
 
   const matchesSelectedPeriod = (value: string | undefined | null) => {
     if (periodMode === 'monthly') {
@@ -366,6 +441,11 @@ export const FinancePage: React.FC = () => {
   const periodProjects = useMemo(
     () => projects.filter((project) => matchesSelectedPeriod(getProjectDate(project))),
     [periodMode, projects, selectedMonths, selectedYears],
+  );
+
+  const periodInvoices = useMemo(
+    () => invoiceRows.filter((invoice) => matchesSelectedPeriod(invoice.issuedAt ?? invoice.createdAt)),
+    [invoiceRows, periodMode, selectedMonths, selectedYears],
   );
 
   const periodLabel = useMemo(() => {
@@ -402,6 +482,29 @@ export const FinancePage: React.FC = () => {
       );
     });
   }, [periodSnapshots, projectSearch]);
+
+  const filteredInvoices = useMemo(() => {
+    const term = invoiceSearch.trim().toLowerCase();
+    return periodInvoices.filter((invoice) => {
+      if (!term) return true;
+      return (
+        invoice.invoiceNumber.toLowerCase().includes(term) ||
+        invoice.projectId.toLowerCase().includes(term) ||
+        invoice.projectTitle.toLowerCase().includes(term) ||
+        invoice.customerName.toLowerCase().includes(term)
+      );
+    });
+  }, [invoiceSearch, periodInvoices]);
+
+  const invoiceSummary = useMemo(() => {
+    const active = filteredInvoices.filter((invoice) => invoice.status === 'issued');
+    return {
+      issuedCount: active.length,
+      missingSnapshotCount: active.filter((invoice) => !invoice.hasFinanceSnapshot).length,
+      cancelledCount: filteredInvoices.filter((invoice) => invoice.status === 'cancelled').length,
+      totalWithVat: active.reduce((sum, invoice) => sum + (Number(invoice.totalWithVat) || 0), 0),
+    };
+  }, [filteredInvoices]);
 
   const projectSummary = useMemo(() => {
     const totalRevenue = filteredSnapshots.reduce((sum, row) => sum + row.summary.totalSaleWithoutVat, 0);
@@ -522,6 +625,40 @@ export const FinancePage: React.FC = () => {
       }));
     } finally {
       setEmployeeProjectDetailsLoading((current) => ({ ...current, [key]: false }));
+    }
+  };
+
+  const reloadInvoices = async () => {
+    const data = await fetchApi<FinanceInvoiceListEnvelope>('/api/finance/invoices');
+    setInvoiceRows(data.items ?? []);
+  };
+
+  const handleCloneInvoice = async (invoice: FinanceInvoiceRow) => {
+    const key = `${invoice.projectId}:${invoice.invoiceVersionId}:clone`;
+    setInvoiceActionSaving((current) => ({ ...current, [key]: true }));
+    try {
+      await postApi(`/api/projects/${encodeURIComponent(invoice.projectId)}/invoices/${encodeURIComponent(invoice.invoiceVersionId)}/clone-for-edit`);
+      await reloadInvoices();
+      window.location.href = `/projects/${invoice.projectId}`;
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Popravek računa ni uspel.');
+    } finally {
+      setInvoiceActionSaving((current) => ({ ...current, [key]: false }));
+    }
+  };
+
+  const handleCancelInvoice = async (invoice: FinanceInvoiceRow) => {
+    const confirmed = window.confirm(`Odstranim račun ${invoice.invoiceNumber} iz aktivnih računov?`);
+    if (!confirmed) return;
+    const key = `${invoice.projectId}:${invoice.invoiceVersionId}:cancel`;
+    setInvoiceActionSaving((current) => ({ ...current, [key]: true }));
+    try {
+      await deleteApi(`/api/projects/${encodeURIComponent(invoice.projectId)}/invoices/${encodeURIComponent(invoice.invoiceVersionId)}`);
+      await reloadInvoices();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Odstranjevanje računa ni uspelo.');
+    } finally {
+      setInvoiceActionSaving((current) => ({ ...current, [key]: false }));
     }
   };
 
@@ -711,7 +848,12 @@ export const FinancePage: React.FC = () => {
           <button className={tab === 'projekti' ? 'is-active' : ''} onClick={() => setTab('projekti')}>Projekti</button>
           <button className={tab === 'zaposleni' ? 'is-active' : ''} onClick={() => setTab('zaposleni')}>Zaposleni</button>
           {!isExecutionOnly && (
-            <button className={tab === 'podjetje' ? 'is-active' : ''} onClick={() => setTab('podjetje')}>Podjetje</button>
+            <>
+              <button className={tab === 'podjetje' ? 'is-active' : ''} onClick={() => setTab('podjetje')}>Podjetje</button>
+              {isAdminOrFinance && (
+                <button className={tab === 'racuni' ? 'is-active' : ''} onClick={() => setTab('racuni')}>Računi</button>
+              )}
+            </>
           )}
         </div>
       </header>
@@ -1003,6 +1145,104 @@ export const FinancePage: React.FC = () => {
                   </li>
                 ))}
               </ul>
+            )}
+          </section>
+        </>
+      )}
+
+      {tab === 'racuni' && isAdminOrFinance && (
+        <>
+          <section className="finance-cards-grid">
+            <article className="finance-card"><span>Izdani računi</span><strong>{invoiceSummary.issuedCount}</strong></article>
+            <article className="finance-card"><span>Skupaj z DDV</span><strong>{currency.format(invoiceSummary.totalWithVat)}</strong></article>
+            <article className="finance-card"><span>Manjka finance snapshot</span><strong>{invoiceSummary.missingSnapshotCount}</strong></article>
+            <article className="finance-card"><span>Odstranjeni</span><strong>{invoiceSummary.cancelledCount}</strong></article>
+          </section>
+
+          <section className="finance-panel">
+            <div className="finance-section-title">
+              <div>
+                <h2>Pregled računov</h2>
+                <span>{periodLabel}</span>
+              </div>
+            </div>
+            <div className="finance-filter-bar">
+              <input
+                type="search"
+                placeholder="Išči po računu, projektu ali stranki"
+                value={invoiceSearch}
+                onChange={(event) => setInvoiceSearch(event.target.value)}
+              />
+            </div>
+
+            {filteredInvoices.length === 0 ? (
+              <div className="finance-state">Ni računov za izbrane filtre.</div>
+            ) : (
+              <div className="finance-table-wrap">
+                <table className="finance-table">
+                  <thead>
+                    <tr>
+                      <th>Račun</th>
+                      <th>Status</th>
+                      <th>Projekt</th>
+                      <th>Stranka</th>
+                      <th>Datum izdaje</th>
+                      <th>Brez DDV</th>
+                      <th>Z DDV</th>
+                      <th>Finance</th>
+                      <th>Akcije</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredInvoices.map((invoice) => {
+                      const cloneKey = `${invoice.projectId}:${invoice.invoiceVersionId}:clone`;
+                      const cancelKey = `${invoice.projectId}:${invoice.invoiceVersionId}:cancel`;
+                      const isSavingClone = !!invoiceActionSaving[cloneKey];
+                      const isSavingCancel = !!invoiceActionSaving[cancelKey];
+                      const dateValue = invoice.issuedAt ?? invoice.createdAt;
+                      return (
+                        <tr key={`${invoice.projectId}-${invoice.invoiceVersionId}`}>
+                          <td>{invoice.invoiceNumber}</td>
+                          <td><span className={`status-badge ${invoice.status === 'issued' ? 'is-paid' : invoice.status === 'cancelled' ? 'is-cancelled' : 'is-pending'}`}>{invoiceStatusLabel(invoice.status)}</span></td>
+                          <td>{invoice.projectTitle || invoice.projectId}</td>
+                          <td>{invoice.customerName || '-'}</td>
+                          <td>{dateValue ? new Date(dateValue).toLocaleDateString('sl-SI') : '-'}</td>
+                          <td>{currency.format(Number(invoice.totalWithoutVat) || 0)}</td>
+                          <td>{currency.format(Number(invoice.totalWithVat) || 0)}</td>
+                          <td>
+                            <span className={`status-badge ${invoice.hasFinanceSnapshot ? 'is-paid' : 'is-pending'}`}>
+                              {invoice.hasFinanceSnapshot ? 'Viden' : 'Manjka'}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="finance-row-actions finance-row-actions--compact">
+                              <button type="button" className="finance-btn" onClick={() => { window.location.href = `/projects/${invoice.projectId}`; }}>
+                                Odpri
+                              </button>
+                              <button
+                                type="button"
+                                className="finance-btn"
+                                disabled={invoice.status !== 'issued' || isSavingClone || isSavingCancel}
+                                onClick={() => void handleCloneInvoice(invoice)}
+                              >
+                                {isSavingClone ? 'Pripravljam...' : 'Popravi'}
+                              </button>
+                              <button
+                                type="button"
+                                className="finance-btn finance-btn--danger"
+                                disabled={invoice.status === 'cancelled' || isSavingClone || isSavingCancel}
+                                onClick={() => void handleCancelInvoice(invoice)}
+                              >
+                                {isSavingCancel ? 'Odstranjujem...' : 'Odstrani'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </section>
         </>

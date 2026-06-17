@@ -172,10 +172,11 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
   }, [activeVersion?._id, activeVersion?.invoiceNumber, activeVersion?.status, fetchNextInvoiceNumber]);
 
   const canEdit = draftVersion?.status === "draft";
-  const isCorrectionDraft = Boolean(draftVersion?.correctedFromInvoiceVersionId);
   const items = draftVersion?.items ?? [];
   const calculatedSummary = useMemo(() => calculateSummary(items), [items]);
   const summary = draftVersion?.summary ?? calculatedSummary;
+  const invoiceNumberChanged = (invoiceNumberDraft.trim() || "") !== (activeVersion?.invoiceNumber?.trim() || "");
+  const canSaveDraft = dirty || invoiceNumberChanged;
 
   const handleItemChange = (itemId: string, updates: Partial<InvoiceItem>) => {
     if (!draftVersion || !canEdit) return;
@@ -223,7 +224,7 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
 
   const handleIssue = async () => {
     if (!draftVersion || !canEdit) return;
-    if (dirty) {
+    if (canSaveDraft) {
       const saved = await handleSave();
       if (!saved) return;
     }
@@ -348,7 +349,7 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
                 setInvoiceNumberDraft(event.target.value);
                 setDirty(true);
               }}
-              readOnly={!canEdit || isCorrectionDraft}
+              readOnly={!canEdit}
               placeholder="50/6/2026"
             />
             {canEdit ? (
@@ -512,7 +513,7 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
                   <Button
                     variant="outline"
                     onClick={handleSave}
-                    disabled={!dirty || saving}
+                    disabled={!canSaveDraft || saving}
                   >
                     {saving ? (
                       <span className="flex items-center gap-2">
