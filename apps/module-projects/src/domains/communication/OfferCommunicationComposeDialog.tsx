@@ -275,13 +275,14 @@ export function OfferCommunicationComposeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogHeader>
+      <DialogContent className="max-h-[calc(100dvh-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogHeader className="px-4 pb-3 pt-4 pr-12 sm:px-6 sm:pt-6">
           <DialogTitle>Pošlji email stranki</DialogTitle>
           <DialogDescription>
             Sestavi sporočilo, izberi predlogo in pošlji priloge iz backend sistema.
           </DialogDescription>
         </DialogHeader>
+        <div className="min-h-0 overflow-y-auto px-4 py-4 sm:px-6">
         {loading ? (
           <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -452,7 +453,8 @@ export function OfferCommunicationComposeDialog({
             </div>
           </div>
         )}
-        <DialogFooter>
+        </div>
+        <DialogFooter className="border-t px-4 py-3 sm:px-6">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Prekliči
           </Button>
