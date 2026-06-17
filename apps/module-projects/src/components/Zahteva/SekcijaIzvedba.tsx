@@ -194,7 +194,7 @@ export function SekcijaIzvedba({ sistem, settings, productById, onChange }: Prop
   };
 
   return (
-    <Card className="p-4">
+    <Card className="zahteva-execution-card p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold">Izvedba</h3>
@@ -223,15 +223,15 @@ export function SekcijaIzvedba({ sistem, settings, productById, onChange }: Prop
         ))}
       </div>
 
-      <div className="rounded-md border border-border">
-        <div className="grid grid-cols-[1fr_130px_110px] gap-2 border-b border-border bg-muted px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
+      <div className="zahteva-execution-preview rounded-md border border-border">
+        <div className="zahteva-execution-preview__row zahteva-execution-preview__head grid grid-cols-[1fr_130px_110px] gap-2 border-b border-border bg-muted px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
           <span>Storitev</span>
           <span>Količina</span>
           <span className="text-right">Cena</span>
         </div>
         {preview.length ? (
           preview.map((line) => (
-            <div key={line.key} className="grid grid-cols-[1fr_130px_110px] items-center gap-2 border-b border-border px-3 py-2 text-sm last:border-b-0">
+            <div key={line.key} className="zahteva-execution-preview__row grid grid-cols-[1fr_130px_110px] items-center gap-2 border-b border-border px-3 py-2 text-sm last:border-b-0">
               <span>
                 {line.name}
                 <small className="block text-muted-foreground">{line.source}</small>
