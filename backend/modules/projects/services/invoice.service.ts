@@ -405,11 +405,33 @@ export async function createInvoiceFromClosing(projectId: string): Promise<Invoi
   return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id });
 }
 
-export async function updateInvoiceVersion(projectId: string, versionId: string, payload: { items: InvoiceItemPayload[] }): Promise<InvoiceListResponse> {
+export async function updateInvoiceVersion(
+  projectId: string,
+  versionId: string,
+  payload: { items: InvoiceItemPayload[]; invoiceNumber?: unknown },
+): Promise<InvoiceListResponse> {
   const project = await findProjectOrFail(projectId);
   const version = ensureInvoiceVersion(project, versionId);
   if (version.status === 'issued') {
     throw new Error('Izdane verzije ni mogoče urejati.');
+  }
+  const invoiceNumber = typeof payload.invoiceNumber === 'string' ? payload.invoiceNumber.trim() : '';
+  if (version.correctedFromInvoiceVersionId && invoiceNumber && invoiceNumber !== (version.invoiceNumber ?? '').trim()) {
+    throw new Error('Popravek računa mora ohraniti isto številko računa.');
+  }
+  if (!version.correctedFromInvoiceVersionId) {
+    if (invoiceNumber) {
+      const parsed = parseInvoiceSequentialNumber(invoiceNumber);
+      if (!parsed) {
+        throw new Error('Številka računa mora biti v obliki zaporedna/mesec/leto, npr. 50/6/2026.');
+      }
+      await assertInvoiceNumberAvailable(parsed.number, version._id);
+      version.invoiceNumber = parsed.number;
+      version.invoiceSequence = parsed.sequence;
+    } else {
+      version.invoiceNumber = null;
+      version.invoiceSequence = null;
+    }
   }
   const inputItems = Array.isArray(payload?.items) ? payload.items : [];
   const existingItemsById = new Map((version.items ?? []).map((item) => [item.id, item]));

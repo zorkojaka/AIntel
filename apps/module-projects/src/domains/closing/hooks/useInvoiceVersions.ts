@@ -146,7 +146,7 @@ export function useInvoiceVersions(projectId?: string | null) {
   }, [projectId, runAction]);
 
   const saveDraft = useCallback(
-    async (items: InvoiceItem[]): Promise<boolean> => {
+    async (items: InvoiceItem[], invoiceNumber?: string): Promise<boolean> => {
       if (!projectId || !resolveActiveVersion || resolveActiveVersion.status !== "draft") {
         return false;
       }
@@ -154,7 +154,7 @@ export function useInvoiceVersions(projectId?: string | null) {
         () =>
           requestInvoiceApi(projectId, `/invoices/${resolveActiveVersion._id}`, {
             method: "PATCH",
-            body: JSON.stringify({ items }),
+            body: JSON.stringify({ items, invoiceNumber }),
           }),
         "Račun shranjen.",
       );

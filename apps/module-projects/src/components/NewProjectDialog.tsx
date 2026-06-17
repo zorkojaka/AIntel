@@ -146,7 +146,6 @@ export function NewProjectDialog({
   const [search, setSearch] = useState("");
   const [newCustomer, setNewCustomer] = useState<NewCustomerFormState>(emptyCustomerForm);
   const [customerMode, setCustomerMode] = useState<"new" | "existing">("new");
-  const [quickAddress, setQuickAddress] = useState("");
   const [showMoreCustomerFields, setShowMoreCustomerFields] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [customerError, setCustomerError] = useState<string | null>(null);
@@ -158,7 +157,6 @@ export function NewProjectDialog({
     setRequirements(defaultRequirements);
     setSearch("");
     setCustomerMode(initialProject?.client?.id ? "existing" : "new");
-    setQuickAddress("");
     setShowMoreCustomerFields(false);
     setShowDiscardConfirm(false);
     setCustomerError(null);
@@ -222,7 +220,6 @@ export function NewProjectDialog({
 
     return (
       Boolean(selectedClientId) ||
-      Boolean(quickAddress.trim()) ||
       Boolean(newCustomer.name.trim()) ||
       Boolean(newCustomer.street.trim()) ||
       Boolean(newCustomer.postalCode.trim()) ||
@@ -233,7 +230,7 @@ export function NewProjectDialog({
       hasEditedRequirements ||
       selectedProjectCategorySlugs.length > 0
     );
-  }, [newCustomer, normalizedDefaultRequirements, quickAddress, requirements, selectedClientId, selectedProjectCategorySlugs]);
+  }, [newCustomer, normalizedDefaultRequirements, requirements, selectedClientId, selectedProjectCategorySlugs]);
 
   const requestClose = () => {
     if (isDirty) {
@@ -252,24 +249,6 @@ export function NewProjectDialog({
     setCustomerError(null);
     onSelectClient(null);
     setNewCustomer((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleParseQuickAddress = () => {
-    const lines = quickAddress
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-    const postalMatch = lines[2]?.match(/^(\d{4})\s+(.+)$/);
-
-    setCustomerError(null);
-    onSelectClient(null);
-    setNewCustomer((prev) => ({
-      ...prev,
-      name: lines[0] ?? prev.name,
-      street: lines[1] ?? prev.street,
-      postalCode: postalMatch?.[1] ?? prev.postalCode,
-      postalCity: postalMatch?.[2] ?? prev.postalCity,
-    }));
   };
 
   const toggleProjectCategory = (slug: string) => {
@@ -466,25 +445,6 @@ export function NewProjectDialog({
 
                 {customerMode === "new" ? (
                   <div className="mt-4 space-y-4">
-                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-                      <label className="space-y-2 text-sm font-medium text-foreground" htmlFor="quick-address">
-                        <span>Hitri vnos naslova</span>
-                        <Textarea
-                          id="quick-address"
-                          value={quickAddress}
-                          onChange={(event) => setQuickAddress(event.target.value)}
-                          placeholder={"Janez Novak\nGlavna ulica 5\n1230 Domžale"}
-                          rows={3}
-                          className="bg-white"
-                        />
-                      </label>
-                      <div className="mt-3 flex justify-end">
-                        <Button type="button" variant="outline" onClick={handleParseQuickAddress}>
-                          Razčleni v polja
-                        </Button>
-                      </div>
-                    </div>
-
                     <div className="grid gap-3">
                       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
                         <label className="space-y-2 text-sm font-medium text-foreground">

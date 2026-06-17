@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Download, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/button";
 import { Card } from "../../../components/ui/card";
 import {
@@ -45,6 +45,44 @@ const numberFormatter = new Intl.NumberFormat("sl-SI", {
 });
 
 const formatCurrency = (value: number) => `${numberFormatter.format(value)} €`;
+
+function DownloadActionButton({
+  label,
+  disabled,
+  downloading,
+  onClick,
+}: {
+  label: string;
+  disabled: boolean;
+  downloading: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div className="inline-flex h-8 items-center rounded-md border border-border/70 bg-background">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-8 rounded-none border-r border-border/70 px-3"
+        disabled={disabled}
+        onClick={onClick}
+      >
+        {label}
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 rounded-none"
+        disabled={disabled}
+        onClick={onClick}
+        aria-label={label}
+      >
+        {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+      </Button>
+    </div>
+  );
+}
 
 function round(value: number) {
   return Number(value.toFixed(2));
@@ -125,7 +163,7 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
     if (!activeVersion || activeVersion.status !== "draft" || activeVersion.invoiceNumber) return;
     fetchNextInvoiceNumber().then((next) => {
       if (!cancelled && next?.number) {
-        setInvoiceNumberDraft(next.number);
+        setInvoiceNumberDraft((current) => current.trim() ? current : next.number);
       }
     });
     return () => {
@@ -176,7 +214,7 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
 
   const handleSave = async () => {
     if (!draftVersion || !canEdit) return false;
-    const success = await saveDraft(draftVersion.items);
+    const success = await saveDraft(draftVersion.items, invoiceNumberDraft);
     if (success) {
       setDirty(false);
     }
@@ -298,12 +336,6 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
             <div className="text-sm text-muted-foreground">
               Status: <span className="font-medium text-foreground">{STATUS_LABELS[draftVersion.status]}</span>
             </div>
-            {canEdit && (
-              <Button variant="outline" size="sm" onClick={handleAddItem}>
-                <Plus className="h-4 w-4 mr-1" />
-                Dodaj postavko
-              </Button>
-            )}
           </div>
           <div className="grid gap-1 max-w-sm">
             <label className="text-sm font-medium" htmlFor="invoice-number">
@@ -312,7 +344,10 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
             <Input
               id="invoice-number"
               value={invoiceNumberDraft}
-              onChange={(event) => setInvoiceNumberDraft(event.target.value)}
+              onChange={(event) => {
+                setInvoiceNumberDraft(event.target.value);
+                setDirty(true);
+              }}
               readOnly={!canEdit || isCorrectionDraft}
               placeholder="50/6/2026"
             />
@@ -427,6 +462,14 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
               </TableBody>
             </Table>
           </div>
+          {canEdit && (
+            <div className="flex justify-start">
+              <Button variant="outline" size="sm" onClick={handleAddItem}>
+                <Plus className="h-4 w-4 mr-1" />
+                Dodaj postavko
+              </Button>
+            </div>
+          )}
           <div className="mt-6 space-y-1 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Osnova brez DDV</span>
@@ -447,16 +490,18 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
           </div>
           <div className="flex flex-wrap gap-2 justify-between">
             <div className="flex gap-2">
-              <Button variant="outline" disabled={!draftVersion || downloading} onClick={handleDownload}>
-                {downloading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Prenesi PDF
-              </Button>
-              <Button
-                variant="outline"
+              <DownloadActionButton
+                label="Prenesi račun"
+                disabled={!draftVersion || downloading}
+                downloading={downloading}
+                onClick={handleDownload}
+              />
+              <DownloadActionButton
+                label="Prenesi dobropis"
                 disabled={!draftVersion || creditDownloading}
+                downloading={creditDownloading}
                 onClick={handleDownloadCreditNote}
-              >
-                {creditDownloading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Prenesi dobropis
-              </Button>
+              />
               <Button variant="outline" disabled>
                 Pošlji račun stranki
               </Button>
