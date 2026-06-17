@@ -79,7 +79,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
     dueDays,
   };
 
-  const notes = buildInvoiceNotes(documentSettings.defaultTexts, project.customer?.paymentTerms);
+  const notes = buildInvoiceNotes(documentSettings.defaultTexts);
   const paymentInfo = await buildPaymentInfo({
     recipient: company.companyName ?? 'Podjetje',
     iban: company.iban ?? '',
@@ -159,11 +159,8 @@ function formatCustomerAddress(address?: string | null) {
     .join('\n');
 }
 
-function buildInvoiceNotes(
-  defaults: { paymentTerms?: string; disclaimer?: string },
-  customerTerms?: string | null,
-) {
-  return [customerTerms, defaults.paymentTerms, defaults.disclaimer]
+function buildInvoiceNotes(defaults: { paymentTerms?: string; disclaimer?: string }) {
+  return [defaults.disclaimer]
     .filter((text): text is string => typeof text === 'string' && text.trim().length > 0)
     .map((text) => text.trim());
 }

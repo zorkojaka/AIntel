@@ -189,6 +189,7 @@ export function SistemBlok({ projectId, zahtevaId, sistem, executionSettings, pr
         </Button>
       </header>
 
+      <SekcijaKameraNosilec productById={productById} onAddVariant={(camera, bracket) => addVariants(camera, [bracket])} />
       <TabelaAsortima
         projectId={projectId}
         zahtevaId={zahtevaId}
@@ -205,8 +206,6 @@ export function SistemBlok({ projectId, zahtevaId, sistem, executionSettings, pr
         onAddVarianta={() => setDialogOpen(true)}
         onRemoveVarianta={removeVariant}
       />
-
-      <SekcijaKameraNosilec productById={productById} onAddVariant={(camera, bracket) => addVariants(camera, [bracket])} />
       <SekcijaSnemalnik videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
       <SekcijaPoESwitch videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
       <SekcijaDisk videonadzor={videonadzor} productById={productById} onChange={updateVideo} />

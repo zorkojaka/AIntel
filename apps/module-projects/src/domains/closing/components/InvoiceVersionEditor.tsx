@@ -492,13 +492,13 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
           <div className="flex flex-wrap gap-2 justify-between">
             <div className="flex gap-2">
               <DownloadActionButton
-                label="Prenesi račun"
+                label="PDF račun"
                 disabled={!draftVersion || downloading}
                 downloading={downloading}
                 onClick={handleDownload}
               />
               <DownloadActionButton
-                label="Prenesi dobropis"
+                label="PDF dobropis"
                 disabled={!draftVersion || creditDownloading}
                 downloading={creditDownloading}
                 onClick={handleDownloadCreditNote}
