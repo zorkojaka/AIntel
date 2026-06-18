@@ -128,13 +128,18 @@ function findDraftVersion(project: ProjectDocument): InvoiceVersion | null {
   return (project.invoiceVersions ?? []).find((version) => version.status === 'draft') ?? null;
 }
 
-async function assertInvoiceNumberAvailable(invoiceNumber: string, currentVersionId: string, allowedVersionIds: string[] = []) {
+async function assertInvoiceNumberAvailable(
+  invoiceNumber: string,
+  currentVersionId: string,
+  allowedVersionIds: string[] = [],
+  reservedStatuses: InvoiceStatus[] = ['issued'],
+) {
   const allowedIds = Array.from(new Set([currentVersionId, ...allowedVersionIds].filter(Boolean)));
   const existingProject = await ProjectModel.findOne({
     invoiceVersions: {
       $elemMatch: {
         invoiceNumber,
-        status: { $in: ['draft', 'issued'] },
+        status: { $in: reservedStatuses },
         _id: { $nin: allowedIds },
       },
     },
