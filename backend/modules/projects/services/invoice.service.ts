@@ -242,6 +242,23 @@ async function buildConfirmedOfferIndex(project: ProjectDocument) {
   return { offer, itemsById, itemsByProductId };
 }
 
+function buildInvoiceItemsFromConfirmedOffer(offer: { items?: OfferLineItem[]; vatMode?: unknown } | null): InvoiceItemPayload[] {
+  if (!offer) return [];
+  const offerVatMode = toNumber(offer.vatMode, 22);
+  return (offer.items ?? [])
+    .filter((item) => toNumber(item.quantity, 0) > 0)
+    .map((item) => ({
+      id: item.id,
+      name: sanitizeText(item.name, 'Neimenovana postavka'),
+      unit: sanitizeText(item.unit, ''),
+      quantity: toNumber(item.quantity, 0),
+      unitPrice: toNumber(item.unitPrice, 0),
+      discountPercent: toNumber(item.discountPercent, 0),
+      vatPercent: offerVatMode ?? toNumber(item.vatRate, 22),
+      type: 'Osnovno',
+    }));
+}
+
 async function aggregateClosingItems(project: ProjectDocument): Promise<{
   items: InvoiceItemPayload[];
   discountPercent: number;
@@ -326,9 +343,10 @@ async function aggregateClosingItems(project: ProjectDocument): Promise<{
       type,
     });
   });
+  const resolvedItems = invoiceItems.length > 0 ? invoiceItems : buildInvoiceItemsFromConfirmedOffer(offerIndex.offer);
 
   return {
-    items: invoiceItems,
+    items: resolvedItems,
     discountPercent: toNumber(offerIndex.offer?.globalDiscountPercent ?? offerIndex.offer?.discountPercent, 0),
     useGlobalDiscount: Boolean(offerIndex.offer?.useGlobalDiscount ?? true),
     usePerItemDiscount: Boolean(offerIndex.offer?.usePerItemDiscount ?? false),
