@@ -2738,7 +2738,19 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
 
                 <TableCell className="text-right align-middle">
                   <div className="flex items-center justify-end gap-2">
-                    <span className="block text-right tabular-nums">
+                    <Input
+                      className="h-9 w-full min-w-0 text-right"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      value={item.unitPrice}
+                      onChange={(event) =>
+                        updateItem(item.id, {
+                          unitPrice: Number(event.target.value),
+                        })
+                      }
+                    />
+                    <span className="hidden">
                       {Number(item.unitPrice || 0).toLocaleString("sl-SI", {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
@@ -3103,7 +3115,6 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
                                 onChange={(name) => {
                                   updateImportRow(row.rowIndex, { rawName: name });
                                 }}
-                                onCustomSelected={() => undefined}
                                 onProductSelected={(product) => {
                                   updateImportRow(row.rowIndex, {
                                     chosenProductId: product.id,

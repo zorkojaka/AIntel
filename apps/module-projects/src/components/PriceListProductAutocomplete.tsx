@@ -164,6 +164,11 @@ export function PriceListProductAutocomplete({
     setIsOpen(false);
   };
 
+  const handleCustomPick = () => {
+    onCustomSelected?.();
+    setIsOpen(false);
+  };
+
   const portalTarget = typeof document !== "undefined" ? document.body : null;
   const dropdownMetrics =
     anchorRect && typeof window !== "undefined"
@@ -213,6 +218,17 @@ export function PriceListProductAutocomplete({
             >
               <div className="flex max-h-64 flex-col overflow-y-auto">
                 <div>
+                  {onCustomSelected && inputValue.trim() ? (
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-2 border-b px-3 py-2 text-left hover:bg-muted/70"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={handleCustomPick}
+                    >
+                      <span className="truncate">Uporabi kot postavko po meri</span>
+                      <span className="text-xs text-muted-foreground">ročni naziv/cena</span>
+                    </button>
+                  ) : null}
                   {loading && (
                     <div className="flex items-center gap-2 px-3 py-2 text-muted-foreground">
                       <span className="text-xs">Iskanje...</span>
