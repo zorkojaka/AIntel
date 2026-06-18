@@ -81,13 +81,17 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
   const channelOptions = useMemo(() => {
     const fromProducts = manufacturerRecorders
       .map((product) => Number(product.classification?.nvrChannels ?? 0))
-      .filter((channels) => channels > 0);
+      .filter((channels) => channels >= neededChannels);
     return Array.from(new Set([neededChannels, ...fromProducts])).sort((a, b) => a - b);
   }, [manufacturerRecorders, neededChannels]);
 
   useEffect(() => {
+    if (selectedChannels < neededChannels) {
+      setSelectedChannels(neededChannels);
+      return;
+    }
     if (channelOptions.length && !channelOptions.includes(selectedChannels)) setSelectedChannels(channelOptions[0]);
-  }, [channelOptions, selectedChannels]);
+  }, [channelOptions, neededChannels, selectedChannels]);
 
   const alternatives = useMemo(
     () =>
