@@ -144,6 +144,7 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
     fetchNextInvoiceNumber,
     issue,
     cloneForEdit,
+    remove,
   } = useInvoiceVersions(projectId ?? null);
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
   const [draftVersion, setDraftVersion] = useState<InvoiceVersion | null>(null);
@@ -239,6 +240,18 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
 
   const handleClone = async () => {
     await cloneForEdit();
+  };
+
+  const handleRemoveInvoice = async () => {
+    if (!draftVersion) return;
+    const label = draftVersion.invoiceNumber || `verzija ${draftVersion.versionNumber}`;
+    if (!window.confirm(`Odstrani račun ${label}? Številka računa bo sproščena za ponovno uporabo.`)) {
+      return;
+    }
+    const removed = await remove();
+    if (removed) {
+      await refreshAfterMutation();
+    }
   };
 
   const handleDownload = async () => {
@@ -529,9 +542,14 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
                   </Button>
                 </>
               ) : (
-                <Button onClick={handleClone} disabled={saving}>
-                  Popravi račun
-                </Button>
+                <>
+                  <Button variant="outline" onClick={handleRemoveInvoice} disabled={saving}>
+                    Odstrani račun
+                  </Button>
+                  <Button onClick={handleClone} disabled={saving}>
+                    Popravi račun
+                  </Button>
+                </>
               )}
             </div>
           </div>

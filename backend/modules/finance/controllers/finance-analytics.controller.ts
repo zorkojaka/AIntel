@@ -135,10 +135,13 @@ export async function invoicesList(_req: Request, res: Response) {
 
   const rows = projects.flatMap((project: any) =>
     (project.invoiceVersions ?? [])
-      .filter((version: any) => version?.invoiceNumber)
+      .filter((version: any) => version?.invoiceNumber && version?.status !== 'cancelled')
       .map((version: any) => {
         const versionId = String(version._id);
         const snapshot = snapshotByVersionId.get(versionId);
+        if (snapshot?.superseded === true) {
+          return null;
+        }
         return {
           projectId: project.id,
           projectTitle: project.title ?? project.id,
@@ -151,9 +154,10 @@ export async function invoicesList(_req: Request, res: Response) {
           createdAt: version.createdAt ?? null,
           totalWithVat: version.summary?.totalWithVat ?? 0,
           totalWithoutVat: version.summary?.discountedBase ?? version.summary?.baseWithoutVat ?? 0,
-          hasFinanceSnapshot: Boolean(snapshot && snapshot.superseded !== true),
+          hasFinanceSnapshot: Boolean(snapshot),
         };
-      }),
+      })
+      .filter(Boolean),
   );
 
   rows.sort((a, b) => {

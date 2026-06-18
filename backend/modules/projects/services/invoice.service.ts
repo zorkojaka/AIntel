@@ -115,7 +115,9 @@ function selectActiveVersionId(versions: InvoiceVersion[]): string | null {
 
 function serializeResponse(project: Project | ProjectDocument): InvoiceListResponse {
   const plain = 'toObject' in project ? (project as any).toObject() : (project as Project);
-  const versions = [...(plain.invoiceVersions ?? [])].sort((a, b) => a.versionNumber - b.versionNumber);
+  const versions = [...(plain.invoiceVersions ?? [])]
+    .filter((version) => version.status !== 'cancelled')
+    .sort((a, b) => a.versionNumber - b.versionNumber);
   return {
     versions,
     activeVersionId: selectActiveVersionId(versions),
@@ -128,20 +130,17 @@ function findDraftVersion(project: ProjectDocument): InvoiceVersion | null {
 
 async function assertInvoiceNumberAvailable(invoiceNumber: string, currentVersionId: string, allowedVersionIds: string[] = []) {
   const allowedIds = Array.from(new Set([currentVersionId, ...allowedVersionIds].filter(Boolean)));
-  const [existingSnapshot, existingProject] = await Promise.all([
-    FinanceSnapshotModel.findOne({ invoiceNumber, invoiceVersionId: { $nin: allowedIds }, superseded: { $ne: true } }).select({ _id: 1 }).lean(),
-    ProjectModel.findOne({
-      invoiceVersions: {
-        $elemMatch: {
-          invoiceNumber,
-          status: { $in: ['draft', 'issued'] },
-          _id: { $nin: allowedIds },
-        },
+  const existingProject = await ProjectModel.findOne({
+    invoiceVersions: {
+      $elemMatch: {
+        invoiceNumber,
+        status: { $in: ['draft', 'issued'] },
+        _id: { $nin: allowedIds },
       },
-    }).select({ id: 1 }).lean(),
-  ]);
+    },
+  }).select({ id: 1 }).lean();
 
-  if (existingSnapshot || existingProject) {
+  if (existingProject) {
     throw new Error(`Številka računa ${invoiceNumber} je že uporabljena.`);
   }
 }
@@ -603,7 +602,7 @@ export async function cancelInvoiceVersion(projectId: string, versionId: string)
   const project = await findProjectOrFail(projectId);
   const version = ensureInvoiceVersion(project, versionId);
   if (version.status !== 'cancelled') {
-    version.status = 'cancelled';
+    project.invoiceVersions = (project.invoiceVersions ?? []).filter((entry) => String(entry._id) !== String(version._id));
     markInvoiceVersionsModified(project);
     addTimeline(project, {
       type: 'status-change',
@@ -619,7 +618,7 @@ export async function cancelInvoiceVersion(projectId: string, versionId: string)
     );
     await project.save();
   }
-  return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id, includeProjectStatus: true });
+  return buildInvoiceResponse(project, { includeProjectStatus: true });
 }
 interface RecalculateOptions {
   discountPercent?: number;

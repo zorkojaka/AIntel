@@ -203,6 +203,18 @@ export function useInvoiceVersions(projectId?: string | null) {
     );
   }, [projectId, resolveActiveVersion, runAction]);
 
+  const remove = useCallback(async () => {
+    if (!projectId || !resolveActiveVersion) return false;
+    const result = await runAction(
+      () =>
+        requestInvoiceApi(projectId, `/invoices/${resolveActiveVersion._id}`, {
+          method: "DELETE",
+        }),
+      "Račun odstranjen.",
+    );
+    return Boolean(result);
+  }, [projectId, resolveActiveVersion, runAction]);
+
   return {
     versions,
     activeVersion: resolveActiveVersion,
@@ -215,5 +227,6 @@ export function useInvoiceVersions(projectId?: string | null) {
     fetchNextInvoiceNumber,
     issue,
     cloneForEdit,
+    remove,
   };
 }
