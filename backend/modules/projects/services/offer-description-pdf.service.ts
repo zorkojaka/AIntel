@@ -78,6 +78,11 @@ function isCameraProduct(product: any) {
   return product?.classification?.productType === "kamera";
 }
 
+function isDefaultLocationName(value: string) {
+  const normalized = value.trim();
+  return /^Lokacija\s+\d+$/i.test(normalized) || /^loc-\d+$/i.test(normalized);
+}
+
 async function resolveRequirementLocationPhotos(projectObjectId: unknown, item: any) {
   const units = Array.isArray(item?.requirementsLocationUnits) ? item.requirementsLocationUnits : [];
   if (!projectObjectId || units.length === 0) return [];
@@ -109,6 +114,10 @@ async function resolveRequirementLocationPhotos(projectObjectId: unknown, item: 
         mimeType: photo.mimeType,
       })))
     ).filter((value): value is string => Boolean(value));
+
+    if (photoDataUrls.length === 0 && isDefaultLocationName(locationName)) {
+      continue;
+    }
 
     locations.push({ name: locationName, photos: photoDataUrls });
   }
