@@ -92,7 +92,7 @@ export async function sendOfferCommunicationEmail(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  return parseEnvelope<{ message: CommunicationMessage }>(response);
+  return parseEnvelope<{ message?: CommunicationMessage; queued?: boolean }>(response);
 }
 
 export async function sendWorkOrderConfirmationCommunicationEmail(

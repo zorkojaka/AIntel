@@ -2181,11 +2181,11 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     }
   };
 
-  const handleCommunicationSent = async () => {
+  const handleCommunicationSent = async (result?: { queued?: boolean }) => {
     await refreshOffers(selectedOfferId ?? currentOffer?._id ?? null, true);
     setCommunicationRefreshKey((value) => value + 1);
     onCommunicationChanged?.();
-    toast.success("Email je bil uspesno poslan.");
+    toast.success(result?.queued ? "Pošiljanje emaila se je začelo." : "Email je bil uspešno poslan.");
   };
 
 

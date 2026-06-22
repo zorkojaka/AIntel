@@ -38,7 +38,7 @@ interface OfferCommunicationComposeDialogProps {
   offerTotal: number;
   offerVersions: OfferVersionSummary[];
   companyName: string;
-  onSent: () => Promise<void> | void;
+  onSent: (result?: { queued?: boolean }) => Promise<void> | void;
 }
 
 function replacePlaceholders(template: string, context: Record<string, string>) {
@@ -329,7 +329,7 @@ export function OfferCommunicationComposeDialog({
     setSendError(null);
     setSending(true);
     try {
-      await sendOfferCommunicationEmail(projectId, offerId, {
+      const result = await sendOfferCommunicationEmail(projectId, offerId, {
         to,
         cc,
         bcc,
@@ -340,7 +340,7 @@ export function OfferCommunicationComposeDialog({
         selectedAttachments,
         selectedOfferIds,
       });
-      await onSent();
+      await onSent(result);
       onOpenChange(false);
     } catch (error) {
       setSendError(error instanceof Error ? error.message : 'Emaila ni bilo mogoče poslati.');
