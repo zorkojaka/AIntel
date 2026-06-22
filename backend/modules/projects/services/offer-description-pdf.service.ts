@@ -209,6 +209,9 @@ async function resolveProjectExecutionDefinitionLocations(
         : typeof unit?.label === "string" && unit.label.trim()
           ? unit.label.trim()
           : `Lokacija ${unitIndex + 1}`;
+    const note = typeof unit?.instructions === "string" && unit.instructions.trim()
+      ? unit.instructions.trim()
+      : "";
 
     const photos = await PhotoModel.find({
       projectId: projectObjectId,
@@ -232,7 +235,7 @@ async function resolveProjectExecutionDefinitionLocations(
       continue;
     }
 
-    locations.push({ name: locationName, photos: photoDataUrls });
+    locations.push({ name: locationName, note: note || undefined, photos: photoDataUrls });
   }
 
   return locations;
