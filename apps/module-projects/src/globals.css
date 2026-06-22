@@ -1286,7 +1286,11 @@
 }
 
 .zahteva-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, auto) minmax(0, auto) minmax(0, auto) auto;
   max-width: min(940px, calc(100vw - 1rem));
+  max-height: calc(100dvh - 1rem);
+  overflow-y: auto;
 }
 
 .zahteva-dialog-filters {
@@ -1864,6 +1868,29 @@
   .zahteva-product-track {
     grid-auto-columns: minmax(126px, 0.86fr);
     gap: 0.45rem;
+  }
+
+  .zahteva-dialog {
+    width: calc(100vw - 1rem);
+    max-height: calc(100dvh - 1rem);
+    padding-bottom: 0.75rem;
+  }
+
+  .zahteva-dialog .zahteva-camera-list {
+    max-height: 38dvh;
+  }
+
+  .zahteva-dialog .zahteva-bracket-list {
+    max-height: 28dvh;
+  }
+
+  .zahteva-dialog [data-slot="dialog-footer"] {
+    position: sticky;
+    bottom: -0.75rem;
+    margin: 0 -1rem -0.75rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--app-border);
+    background: #fff;
   }
 
   .zahteva-track-card {
