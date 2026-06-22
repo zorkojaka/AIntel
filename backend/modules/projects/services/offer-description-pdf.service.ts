@@ -12,7 +12,6 @@ import { renderProductDescriptionsHtml, type ProductDescriptionEntry } from "./d
 import { getCompanySettings, getPdfDocumentSettings } from "./pdf-settings.service";
 
 const PHOTO_UPLOAD_BASE_DIR = "/var/www/aintel/uploads";
-const MAX_LOCATION_PHOTOS_PER_LOCATION = 2;
 
 function sanitizeDescriptionForHtml(value: string) {
   const withoutControls = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
@@ -169,7 +168,6 @@ async function resolveRequirementLocationPhotos(
           deletedAt: { $exists: false },
         })
           .sort({ uploadedAt: 1 })
-          .limit(MAX_LOCATION_PHOTOS_PER_LOCATION)
           .lean()
       : [];
 
@@ -223,7 +221,6 @@ async function resolveProjectExecutionDefinitionLocations(
       deletedAt: { $exists: false },
     })
       .sort({ uploadedAt: 1 })
-      .limit(MAX_LOCATION_PHOTOS_PER_LOCATION)
       .lean();
 
     const photoDataUrls = (

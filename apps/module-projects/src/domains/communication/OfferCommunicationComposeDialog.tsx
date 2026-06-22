@@ -69,6 +69,7 @@ export function OfferCommunicationComposeDialog({
   const [senderSettings, setSenderSettings] = useState<CommunicationSenderSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [to, setTo] = useState('');
@@ -253,6 +254,7 @@ export function OfferCommunicationComposeDialog({
       return;
     }
 
+    setSendError(null);
     setSending(true);
     try {
       await sendOfferCommunicationEmail(projectId, offerId, {
@@ -268,14 +270,32 @@ export function OfferCommunicationComposeDialog({
       });
       await onSent();
       onOpenChange(false);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : 'Emaila ni bilo mogoče poslati.');
     } finally {
       setSending(false);
     }
   };
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && sending) {
+      return;
+    }
+    onOpenChange(nextOpen);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-3xl">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="max-h-[calc(100dvh-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        hideCloseButton={sending}
+        onEscapeKeyDown={(event) => {
+          if (sending) event.preventDefault();
+        }}
+        onInteractOutside={(event) => {
+          event.preventDefault();
+        }}
+      >
         <DialogHeader className="px-4 pb-3 pt-4 pr-12 sm:px-6 sm:pt-6">
           <DialogTitle>Pošlji email stranki</DialogTitle>
           <DialogDescription>
@@ -306,6 +326,25 @@ export function OfferCommunicationComposeDialog({
             {missingCustomerEmail ? (
               <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 Primarni email stranke ni nastavljen. Polje <strong>To</strong> ostaja prazno, dokler ne vnesete prejemnika.
+              </div>
+            ) : null}
+            {sendError ? (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                {sendError}
+              </div>
+            ) : null}
+            {sending ? (
+              <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                <div className="mb-2 flex items-center gap-2 font-medium">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Pripravljam PDF priponke in pošiljam email ...
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-sky-100">
+                  <div className="h-full w-2/3 animate-pulse rounded-full bg-sky-500" />
+                </div>
+                <div className="mt-2 text-xs text-sky-800">
+                  Pri ponudbah z več slikami lahko traja dlje. Okno med pošiljanjem ostane zaklenjeno, da se vsebina ne izgubi.
+                </div>
               </div>
             ) : null}
             <div className="grid gap-4 md:grid-cols-2">
@@ -455,7 +494,7 @@ export function OfferCommunicationComposeDialog({
         )}
         </div>
         <DialogFooter className="border-t px-4 py-3 sm:px-6">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
             Prekliči
           </Button>
           <Button
