@@ -5,6 +5,7 @@ import path from "node:path";
 import type { OfferVersion } from "../../../../shared/types/offers";
 import { ProductModel } from "../../cenik/product.model";
 import { PhotoModel } from "../../photos/schemas/photo";
+import { ZahtevaModel } from "../../zahteve/zahteva.model";
 import { ProjectModel } from "../schemas/project";
 import { renderHtmlToPdf } from "./html-pdf.service";
 import { renderProductDescriptionsHtml, type ProductDescriptionEntry } from "./document-renderers";
@@ -78,17 +79,54 @@ function isCameraProduct(product: any) {
   return product?.classification?.productType === "kamera";
 }
 
+function buildZahtevaLocationPhotoItemId(zahtevaId: string, sistemId: string, lokacijaId: string) {
+  return `zahteva-location:${zahtevaId}:${sistemId}:${lokacijaId}`;
+}
+
 function isDefaultLocationName(value: string) {
   const normalized = value.trim();
   return /^Lokacija\s+\d+$/i.test(normalized) || /^loc-\d+$/i.test(normalized);
 }
 
-async function resolveRequirementLocationPhotos(projectObjectId: unknown, item: any) {
+function buildRequirementLocationUnitsFromRequest(zahteva: any) {
+  const unitsByCameraProductId = new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }>>();
+  const zahtevaId = String(zahteva?._id ?? "");
+  if (!zahtevaId) return unitsByCameraProductId;
+
+  for (const sistem of zahteva?.sistemi ?? []) {
+    if (sistem?.tip !== "videonadzor" || !sistem?.videonadzor) continue;
+    const variantById = new Map<string, any>((sistem.videonadzor.asortima ?? []).map((variant: any) => [String(variant.id), variant]));
+
+    for (const lokacija of sistem.videonadzor.lokacije ?? []) {
+      const assignedVariant = lokacija?.asortimaIdAssigned ? variantById.get(String(lokacija.asortimaIdAssigned)) : null;
+      const cameraProductId = assignedVariant?.kameraProductId ? String(assignedVariant.kameraProductId) : "";
+      const locationId = typeof lokacija?.id === "string" ? lokacija.id : "";
+      if (!cameraProductId || !locationId) continue;
+
+      const existing = unitsByCameraProductId.get(cameraProductId) ?? [];
+      existing.push({
+        locationId,
+        locationName: typeof lokacija?.ime === "string" && lokacija.ime.trim() ? lokacija.ime.trim() : locationId,
+        sourcePhotoItemId: buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+      });
+      unitsByCameraProductId.set(cameraProductId, existing);
+    }
+  }
+
+  return unitsByCameraProductId;
+}
+
+async function resolveRequirementLocationPhotos(
+  projectObjectId: unknown,
+  item: any,
+  fallbackUnits: Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }> = [],
+) {
   const units = Array.isArray(item?.requirementsLocationUnits) ? item.requirementsLocationUnits : [];
-  if (!projectObjectId || units.length === 0) return [];
+  const resolvedUnits = units.length > 0 ? units : fallbackUnits;
+  if (!projectObjectId || resolvedUnits.length === 0) return [];
 
   const locations: NonNullable<ProductDescriptionEntry["locations"]> = [];
-  for (const unit of units) {
+  for (const unit of resolvedUnits) {
     const sourcePhotoItemId = typeof unit?.sourcePhotoItemId === "string" ? unit.sourcePhotoItemId.trim() : "";
     const locationName = typeof unit?.locationName === "string" && unit.locationName.trim()
       ? unit.locationName.trim()
@@ -115,7 +153,7 @@ async function resolveRequirementLocationPhotos(projectObjectId: unknown, item: 
       })))
     ).filter((value): value is string => Boolean(value));
 
-    if (photoDataUrls.length === 0 && isDefaultLocationName(locationName)) {
+    if (photos.length === 0 && isDefaultLocationName(locationName)) {
       continue;
     }
 
@@ -140,7 +178,11 @@ export async function buildOfferDescriptionEntries(offer: OfferVersion): Promise
     const products = await ProductModel.find({ _id: { $in: uniqueIds } }).lean();
     productMap = new Map(products.map((product) => [product._id.toString(), product]));
   }
-  const project = await ProjectModel.findOne({ id: offer.projectId }).select({ _id: 1 }).lean();
+  const [project, zahteva] = await Promise.all([
+    ProjectModel.findOne({ id: offer.projectId }).select({ _id: 1 }).lean(),
+    offer.requestId ? ZahtevaModel.findById(offer.requestId).lean() : Promise.resolve(null),
+  ]);
+  const fallbackUnitsByProductId = buildRequirementLocationUnitsFromRequest(zahteva);
 
   const entries: ProductDescriptionEntry[] = [];
 
@@ -150,7 +192,8 @@ export async function buildOfferDescriptionEntries(offer: OfferVersion): Promise
     const title = product?.ime || item.name;
     const description = sanitizeDescriptionForHtml(String(product?.dolgOpis ?? ""));
     const imageUrl = typeof product?.povezavaDoSlike === "string" ? product.povezavaDoSlike.trim() : "";
-    const locations = isCameraProduct(product) ? await resolveRequirementLocationPhotos(project?._id, item) : [];
+    const fallbackUnits = productId ? fallbackUnitsByProductId.get(productId) ?? [] : [];
+    const locations = isCameraProduct(product) ? await resolveRequirementLocationPhotos(project?._id, item, fallbackUnits) : [];
     if (!imageUrl && !description && locations.length === 0) {
       continue;
     }
