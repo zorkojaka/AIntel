@@ -200,6 +200,42 @@ async function resolveWorkOrderExecutionLocations(projectObjectId: unknown, item
   return locations;
 }
 
+async function resolveWorkOrderExecutionUnits(projectObjectId: unknown, item: any) {
+  const spec = item?.executionSpec;
+  const units = Array.isArray(spec?.executionUnits) ? spec.executionUnits : [];
+  if (!projectObjectId || units.length === 0) return [];
+
+  const itemId = String(item?.offerItemId ?? item?.id ?? '');
+  if (!itemId) return [];
+
+  return Promise.all(units.map(async (unit: any, unitIndex: number) => {
+    const photos = await PhotoModel.find({
+      projectId: projectObjectId,
+      phase: 'preparation',
+      itemId,
+      unitIndex,
+      deletedAt: { $exists: false },
+    }).sort({ uploadedAt: 1 }).lean();
+
+    const photoDataUrls = (
+      await Promise.all(photos.map((photo) => readPhotoDataUrl({
+        url: photo.url,
+        thumbnailUrl: photo.thumbnailUrl,
+        mimeType: photo.mimeType,
+      })))
+    ).filter((value): value is string => Boolean(value));
+
+    return {
+      label: typeof unit?.label === 'string' && unit.label.trim() ? unit.label.trim() : `Enota ${unitIndex + 1}`,
+      location: typeof unit?.location === 'string' && unit.location.trim() ? unit.location.trim() : null,
+      instructions: typeof unit?.instructions === 'string' && unit.instructions.trim() ? unit.instructions.trim() : null,
+      note: typeof unit?.note === 'string' && unit.note.trim() ? unit.note.trim() : null,
+      isCompleted: Boolean(unit?.isCompleted),
+      photos: photoDataUrls,
+    };
+  }));
+}
+
 function buildConfiguredNotes(
   settings: Awaited<ReturnType<typeof getSettings>>,
   settingsKey: 'workOrder' | 'workOrderConfirmation',
@@ -403,8 +439,13 @@ export async function generateWorkOrderDocumentPdf(
       quantity: docType === 'WORK_ORDER_CONFIRMATION' ? executedQuantity : offeredQuantity,
       plannedQuantity: docType === 'WORK_ORDER_CONFIRMATION' ? offeredQuantity : undefined,
       unit: item.unit ?? '',
+      itemNote: item.itemNote ?? item.note ?? null,
+      locationSummary: item.executionSpec?.locationSummary ?? null,
+      instructions: item.executionSpec?.instructions ?? null,
+      trackingUnitLabel: item.executionSpec?.trackingUnitLabel ?? null,
       statusLabel: docType === 'WORK_ORDER_CONFIRMATION' ? buildWorkOrderItemStatusLabel(item) : null,
       executionLocations: await resolveWorkOrderExecutionLocations(existingProject._id, item),
+      executionUnits: await resolveWorkOrderExecutionUnits(existingProject._id, item),
     };
   }));
 

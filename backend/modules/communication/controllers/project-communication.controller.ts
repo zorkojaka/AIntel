@@ -129,6 +129,16 @@ export async function sendInstallerPreparationCommunicationController(req: Reque
     const payload = await sendInstallerPreparationEmail({
       projectId: req.params.projectId,
       workOrderId: req.params.workOrderId,
+      to: req.body?.to,
+      cc: req.body?.cc,
+      bcc: req.body?.bcc,
+      subject: typeof req.body?.subject === "string" ? req.body.subject : null,
+      body: typeof req.body?.body === "string" ? req.body.body : null,
+      projectLink:
+        typeof req.body?.projectLink === "string" && req.body.projectLink.trim()
+          ? req.body.projectLink.trim()
+          : `${req.protocol}://${req.get("host")}/projects/${encodeURIComponent(req.params.projectId)}`,
+      previewOnly: req.body?.previewOnly === true,
       actorUserId: (req as any)?.context?.actorUserId ?? null,
       actorDisplayName: buildActorDisplayName(req as any),
       actorProfile: resolveActorProfile(req),

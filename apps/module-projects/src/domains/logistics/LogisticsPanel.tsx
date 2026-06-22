@@ -20,6 +20,7 @@ import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { MaterialOrderCard } from "./MaterialOrderCard";
 import { PreparationPhotoThumbnails } from "./ExecutionDefinitionPanel";
 import { normalizeMaterialStatusLabel } from "./materialStatus";
@@ -305,6 +306,36 @@ function getPreparedUnitsSummary(item: LogisticsWorkOrder["items"][number]) {
   return `Enote: ${definedUnits}`;
 }
 
+function formatExecutionDetailsForEmail(items: LogisticsWorkOrder["items"] | undefined) {
+  const lines: string[] = [];
+  for (const item of items ?? []) {
+    const spec = ensureExecutionSpec(item.executionSpec);
+    const itemLines: string[] = [];
+    if (spec.locationSummary?.trim()) {
+      itemLines.push(`Lokacija: ${spec.locationSummary.trim()}`);
+    }
+    if (spec.instructions?.trim()) {
+      itemLines.push(`Navodila: ${spec.instructions.trim()}`);
+    }
+    for (const unit of spec.executionUnits ?? []) {
+      const unitParts = [
+        unit.label?.trim() || "Enota",
+        unit.location?.trim() ? `lokacija: ${unit.location.trim()}` : "",
+        unit.instructions?.trim() ? `navodila: ${unit.instructions.trim()}` : "",
+        unit.note?.trim() ? `opomba: ${unit.note.trim()}` : "",
+        unit.isCompleted ? "izvedeno" : "",
+      ].filter(Boolean);
+      if (unitParts.length > 0) {
+        itemLines.push(`- ${unitParts.join(", ")}`);
+      }
+    }
+    if (itemLines.length > 0) {
+      lines.push(`${item.name || "Postavka"}:`, ...itemLines);
+    }
+  }
+  return lines;
+}
+
 function isMeasurementLikeUnit(unit?: string | null) {
   const normalized = (unit ?? "").trim().toLowerCase();
   return ["km", "h", "ura", "ur", "min", "m", "m2", "m3", "kg", "g", "l"].includes(normalized);
@@ -359,6 +390,8 @@ export function LogisticsPanel({
   const [savingWorkOrder, setSavingWorkOrder] = useState(false);
   const [issuingOrder, setIssuingOrder] = useState(false);
   const [sendingInstallerEmail, setSendingInstallerEmail] = useState(false);
+  const [installerEmailDialogOpen, setInstallerEmailDialogOpen] = useState(false);
+  const [installerEmailDraft, setInstallerEmailDraft] = useState({ to: "", cc: "", bcc: "", subject: "", body: "" });
   const [advancingMaterialOrderId, setAdvancingMaterialOrderId] = useState<string | null>(null);
   const [materialDownloading, setMaterialDownloading] = useState<"PURCHASE_ORDER" | "DELIVERY_NOTE" | null>(null);
   const [workOrderDownloading, setWorkOrderDownloading] = useState<"WORK_ORDER" | "WORK_ORDER_CONFIRMATION" | null>(null);
@@ -1201,9 +1234,66 @@ export function LogisticsPanel({
     }
   };
 
-  const handleSendInstallerPreparationEmail = async () => {
+  const buildInstallerPreparationEmailDraft = (workOrder: LogisticsWorkOrder) => {
+    const installerIds = Array.from(new Set([
+      workOrder.mainInstallerId ?? "",
+      ...(Array.isArray(workOrder.assignedEmployeeIds) ? workOrder.assignedEmployeeIds : []),
+    ].filter(Boolean)));
+    const primaryInstaller = installerIds
+      .map((id) => employees.find((employee) => employee.id === id))
+      .find((employee) => employee?.email?.trim());
+    const teamNames = installerIds
+      .map((id) => employees.find((employee) => employee.id === id)?.name)
+      .filter((name): name is string => Boolean(name?.trim()));
+    const projectLink = `${window.location.origin}/projects/${encodeURIComponent(projectId)}`;
+    const schedule = workOrder.scheduledAt ? new Date(workOrder.scheduledAt).toLocaleString("sl-SI") : "";
+    const itemLines = (workOrder.items ?? []).map((item) => {
+      const quantity = typeof item.quantity === "number" ? item.quantity : item.plannedQuantity ?? "";
+      return `- ${item.name || "Postavka"} (${quantity} ${item.unit || ""})`;
+    });
+    const executionLines = formatExecutionDetailsForEmail(workOrder.items);
+    const body = [
+      `Pozdravljen ${primaryInstaller?.name || "monter"},`,
+      "",
+      `Pošiljamo podatke za pripravo na montažo in potrditev termina za projekt ${projectId}.`,
+      "",
+      "Termin",
+      schedule ? `Termin izvedbe: ${schedule}` : "Termin izvedbe: ni določen",
+      teamNames.length > 0 ? `Ekipa: ${teamNames.join(", ")}` : "",
+      "",
+      "Stranka",
+      resolvedCustomerName,
+      resolvedCustomerAddress,
+      resolvedCustomerEmail ? `Email: ${resolvedCustomerEmail}` : "",
+      resolvedCustomerPhone ? `Telefon: ${resolvedCustomerPhone}` : "",
+      "",
+      "Opombe",
+      workOrder.notes ? `Delovni nalog: ${workOrder.notes}` : "",
+      workOrder.executionNote ? `Izvedba: ${workOrder.executionNote}` : "",
+      "",
+      "Postavke delovnega naloga",
+      ...itemLines,
+      "",
+      ...(executionLines.length > 0 ? ["Definicija izvedbe", ...executionLines, ""] : []),
+      "Povezava",
+      `Projekt/delovni nalog: ${projectLink}`,
+      "",
+      "Delovni nalog je priložen v PDF priponki.",
+      "",
+      "Lep pozdrav",
+    ].filter((line, index, lines) => line || lines[index - 1] !== "").join("\n");
+
+    return {
+      to: primaryInstaller?.email?.trim() ?? "",
+      cc: "",
+      bcc: "",
+      subject: `Priprava montaže: ${projectId}${schedule ? ` - ${schedule}` : ""}`,
+      body,
+    };
+  };
+
+  const openInstallerPreparationEmailDialog = async () => {
     if (!selectedWorkOrder?._id || sendingInstallerEmail) return;
-    setSendingInstallerEmail(true);
     try {
       const currentConfirmedAt =
         typeof workOrderForm.scheduledConfirmedAt === "string"
@@ -1216,9 +1306,39 @@ export function LogisticsPanel({
       }
       const saved = await handleSaveWorkOrder(undefined, confirmationPatch);
       if (!saved) return;
+      const response = await fetch(`/api/projects/${projectId}/work-orders/${saved._id}/send-installer-preparation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          previewOnly: true,
+          projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
+        }),
+      });
+      const payload = await response.json();
+      if (!payload.success) {
+        toast.error(payload.error ?? "Emaila monterju ni bilo mogoče pripraviti.");
+        return;
+      }
+      const draft = payload.data?.draft ?? payload.draft;
+      setInstallerEmailDraft(draft ?? buildInstallerPreparationEmailDraft(saved));
+      setInstallerEmailDialogOpen(true);
+    } catch (error) {
+      console.error(error);
+      toast.error("Emaila monterju ni bilo mogoče pripraviti.");
+    }
+  };
+
+  const handleSendInstallerPreparationEmail = async () => {
+    if (!selectedWorkOrder?._id || sendingInstallerEmail) return;
+    setSendingInstallerEmail(true);
+    try {
       const response = await fetch(`/api/projects/${projectId}/work-orders/${selectedWorkOrder._id}/send-installer-preparation`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...installerEmailDraft,
+          projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
+        }),
       });
       const payload = await response.json();
       if (!payload.success) {
@@ -1226,6 +1346,7 @@ export function LogisticsPanel({
         return;
       }
       toast.success("Email monterju je bil poslan.");
+      setInstallerEmailDialogOpen(false);
     } catch (error) {
       console.error(error);
       toast.error("Emaila monterju ni bilo mogoče poslati.");
@@ -2169,7 +2290,7 @@ export function LogisticsPanel({
                     variant="outline"
                     size="sm"
                     className="h-8 gap-1.5"
-                    onClick={() => void handleSendInstallerPreparationEmail()}
+                    onClick={() => void openInstallerPreparationEmailDialog()}
                     disabled={savingWorkOrder || sendingInstallerEmail}
                   >
                     {sendingInstallerEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -2761,6 +2882,73 @@ export function LogisticsPanel({
         </CardContent>
       </Card>
       {renderExecutionDefinition(selectedWorkOrder)}
+
+      <Dialog open={installerEmailDialogOpen} onOpenChange={(open) => !sendingInstallerEmail && setInstallerEmailDialogOpen(open)}>
+        <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Pošlji email monterju</DialogTitle>
+            <DialogDescription>
+              Preglej podatke za pripravo montaže. Delovni nalog bo dodan kot PDF priponka.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 md:grid-cols-3">
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">To</span>
+              <Input
+                value={installerEmailDraft.to}
+                onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, to: event.target.value }))}
+                disabled={sendingInstallerEmail}
+              />
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Cc</span>
+              <Input
+                value={installerEmailDraft.cc}
+                onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, cc: event.target.value }))}
+                disabled={sendingInstallerEmail}
+              />
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Bcc</span>
+              <Input
+                value={installerEmailDraft.bcc}
+                onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, bcc: event.target.value }))}
+                disabled={sendingInstallerEmail}
+              />
+            </label>
+          </div>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Zadeva</span>
+            <Input
+              value={installerEmailDraft.subject}
+              onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, subject: event.target.value }))}
+              disabled={sendingInstallerEmail}
+            />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Vsebina</span>
+            <Textarea
+              rows={16}
+              value={installerEmailDraft.body}
+              onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, body: event.target.value }))}
+              disabled={sendingInstallerEmail}
+            />
+          </label>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setInstallerEmailDialogOpen(false)} disabled={sendingInstallerEmail}>
+              Prekliči
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSendInstallerPreparationEmail()}
+              disabled={sendingInstallerEmail || !installerEmailDraft.to.trim() || !installerEmailDraft.subject.trim() || !installerEmailDraft.body.trim()}
+            >
+              {sendingInstallerEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              Pošlji
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {photoContext ? (
         <PhotoManager
