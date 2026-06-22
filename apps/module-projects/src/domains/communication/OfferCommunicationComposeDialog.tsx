@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CommunicationAttachmentType,
   CommunicationSenderSettings,
@@ -20,11 +20,14 @@ import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import {
   createCommunicationTemplate,
+  fetchOfferMessages,
   fetchCommunicationSenderSettings,
   fetchCommunicationTemplates,
   sendOfferCommunicationEmail,
 } from './api';
 import type { OfferVersionSummary } from '@aintel/shared/types/offers';
+
+type SendStatus = 'idle' | 'sending' | 'queued' | 'sent' | 'failed';
 
 interface OfferCommunicationComposeDialogProps {
   open: boolean;
@@ -72,6 +75,10 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 const ATTACHMENT_OPTIONS: Array<{ value: CommunicationAttachmentType; label: string }> = [
   { value: 'offer_pdf', label: 'PDF ponudbe' },
   { value: 'project_pdf', label: 'Opisi produktov' },
@@ -97,6 +104,8 @@ export function OfferCommunicationComposeDialog({
   const [initError, setInitError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [sendStatus, setSendStatus] = useState<SendStatus>('idle');
+  const [sendStatusText, setSendStatusText] = useState('');
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [isTemplateNameDialogOpen, setIsTemplateNameDialogOpen] = useState(false);
   const [templateNameDraft, setTemplateNameDraft] = useState('');
@@ -110,6 +119,7 @@ export function OfferCommunicationComposeDialog({
   const [selectedOfferIds, setSelectedOfferIds] = useState<string[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const pollingRunRef = useRef(0);
 
   const normalizedCustomerEmail = useMemo(() => customerEmail.trim(), [customerEmail]);
 
@@ -200,6 +210,9 @@ export function OfferCommunicationComposeDialog({
         setSelectedAttachments(defaultTemplate?.defaultAttachments ?? ['offer_pdf']);
         setSelectedOfferIds(offerId ? [offerId] : []);
         setIsDirty(false);
+        setSendError(null);
+        setSendStatus('idle');
+        setSendStatusText('');
       } catch (error) {
         if (!active) return;
 
@@ -214,6 +227,9 @@ export function OfferCommunicationComposeDialog({
         setSelectedAttachments(['offer_pdf']);
         setSelectedOfferIds(offerId ? [offerId] : []);
         setIsDirty(false);
+        setSendError(null);
+        setSendStatus('idle');
+        setSendStatusText('');
         setInitError(error instanceof Error ? error.message : 'Inicializacija komunikacije ni uspela.');
       } finally {
         if (active) {
@@ -225,6 +241,7 @@ export function OfferCommunicationComposeDialog({
     void load();
     return () => {
       active = false;
+      pollingRunRef.current += 1;
     };
   }, [companyName, customerName, normalizedCustomerEmail, offerId, offerNumber, offerTotal, open, projectName, reloadKey]);
 
@@ -321,12 +338,40 @@ export function OfferCommunicationComposeDialog({
   const missingCustomerEmail = !normalizedCustomerEmail;
   const hasOfferAttachment = selectedAttachments.some((entry) => entry === 'offer_pdf' || entry === 'project_pdf');
 
+  const waitForSendResult = async (targetOfferId: string, startedAtMs: number, subjectAtSend: string, runId: number) => {
+    const minCreatedAt = startedAtMs - 5000;
+    for (let attempt = 0; attempt < 300; attempt += 1) {
+      if (pollingRunRef.current !== runId) return null;
+      const messages = await fetchOfferMessages(projectId, targetOfferId);
+      const matchingMessage = messages.find((message) => {
+        const createdAt = Date.parse(message.createdAt || message.sentAt || '');
+        return (
+          Number.isFinite(createdAt) &&
+          createdAt >= minCreatedAt &&
+          message.subjectFinal === subjectAtSend &&
+          (message.status === 'sent' || message.status === 'failed')
+        );
+      });
+      if (matchingMessage) {
+        return matchingMessage;
+      }
+      await sleep(2000);
+    }
+    throw new Error('Pošiljanje še vedno poteka. Status preveri v poslanih sporočilih.');
+  };
+
   const handleSend = async () => {
     if (!offerId) {
       return;
     }
 
+    const startedAtMs = Date.now();
+    const subjectAtSend = subject.trim();
+    const runId = pollingRunRef.current + 1;
+    pollingRunRef.current = runId;
     setSendError(null);
+    setSendStatus('sending');
+    setSendStatusText('Pripravljam pošiljanje emaila ...');
     setSending(true);
     try {
       const result = await sendOfferCommunicationEmail(projectId, offerId, {
@@ -340,10 +385,33 @@ export function OfferCommunicationComposeDialog({
         selectedAttachments,
         selectedOfferIds,
       });
+      if (result.queued) {
+        setSendStatus('queued');
+        setSendStatusText('Pošiljanje emaila se je začelo. Pripravljam PDF priponke in čakam na zaključek ...');
+        await onSent(result);
+        const message = await waitForSendResult(offerId, startedAtMs, subjectAtSend, runId);
+        if (!message) return;
+        await onSent({ queued: false });
+        if (message.status === 'sent') {
+          setSendStatus('sent');
+          setSendStatusText('Email je bil uspešno poslan.');
+          setIsDirty(false);
+          return;
+        }
+        setSendStatus('failed');
+        setSendStatusText('Pošiljanje emaila ni uspelo.');
+        setSendError(message.errorMessage || 'Pošiljanje emaila ni uspelo.');
+        return;
+      }
+
       await onSent(result);
-      onOpenChange(false);
+      setSendStatus('sent');
+      setSendStatusText('Email je bil uspešno poslan.');
+      setIsDirty(false);
     } catch (error) {
-      setSendError(error instanceof Error ? error.message : 'Emaila ni bilo mogoče poslati.');
+      setSendStatus('failed');
+      setSendStatusText('Pošiljanje emaila ni uspelo.');
+      setSendError(getErrorMessage(error, 'Emaila ni bilo mogoče poslati.'));
     } finally {
       setSending(false);
     }
@@ -406,18 +474,30 @@ export function OfferCommunicationComposeDialog({
                 {sendError}
               </div>
             ) : null}
-            {sending ? (
-              <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            {sendStatus !== 'idle' ? (
+              <div
+                className={`rounded-md border px-4 py-3 text-sm ${
+                  sendStatus === 'sent'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                    : sendStatus === 'failed'
+                      ? 'border-destructive/30 bg-destructive/5 text-destructive'
+                      : 'border-sky-200 bg-sky-50 text-sky-900'
+                }`}
+              >
                 <div className="mb-2 flex items-center gap-2 font-medium">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Pripravljam PDF priponke in pošiljam email ...
+                  {sendStatus === 'sending' || sendStatus === 'queued' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {sendStatusText}
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-sky-100">
-                  <div className="h-full w-2/3 animate-pulse rounded-full bg-sky-500" />
-                </div>
-                <div className="mt-2 text-xs text-sky-800">
-                  Pri ponudbah z več slikami lahko traja dlje. Okno med pošiljanjem ostane zaklenjeno, da se vsebina ne izgubi.
-                </div>
+                {sendStatus === 'sending' || sendStatus === 'queued' ? (
+                  <>
+                    <div className="h-2 overflow-hidden rounded-full bg-sky-100">
+                      <div className="h-full w-2/3 animate-pulse rounded-full bg-sky-500" />
+                    </div>
+                    <div className="mt-2 text-xs text-sky-800">
+                      Pri ponudbah z več slikami lahko traja dlje. Okno med pošiljanjem ostane odprto do zaključka.
+                    </div>
+                  </>
+                ) : null}
               </div>
             ) : null}
             <div className="grid gap-4 md:grid-cols-2">
@@ -588,6 +668,7 @@ export function OfferCommunicationComposeDialog({
             disabled={
               loading ||
               sending ||
+              sendStatus === 'sent' ||
               senderDisabled ||
               !offerId ||
               !to.trim() ||
@@ -597,7 +678,7 @@ export function OfferCommunicationComposeDialog({
             }
           >
             {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Pošlji
+            {sending ? 'Pošiljam' : sendStatus === 'sent' ? 'Poslano' : 'Pošlji'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -2185,7 +2185,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     await refreshOffers(selectedOfferId ?? currentOffer?._id ?? null, true);
     setCommunicationRefreshKey((value) => value + 1);
     onCommunicationChanged?.();
-    toast.success(result?.queued ? "Pošiljanje emaila se je začelo." : "Email je bil uspešno poslan.");
+    if (result?.queued) {
+      toast.success("Pošiljanje emaila se je začelo.");
+    }
   };
 
 
