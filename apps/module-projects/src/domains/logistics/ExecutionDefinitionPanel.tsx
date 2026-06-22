@@ -153,9 +153,9 @@ function UnitPhotoButton({
   }, [refresh, refreshKey]);
 
   return (
-    <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => onOpen(context)}>
+    <Button type="button" variant="outline" size="sm" className="h-9 w-full gap-1.5 px-2" onClick={() => onOpen(context)}>
       <Camera className="h-4 w-4" />
-      <span>Fotografija{count > 0 ? ` (${count})` : ""}</span>
+      <span>Slike{count > 0 ? ` (${count})` : ""}</span>
     </Button>
   );
 }
@@ -393,7 +393,7 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
                       {locationsAllowed ? (
                         units.map((unit, index) => (
                           <div key={unit.id} className="rounded-md border border-border/70 bg-muted/10 p-2">
-                            <div className="grid gap-2 md:grid-cols-[120px_minmax(220px,1.3fr)_minmax(140px,0.8fr)_minmax(180px,1.1fr)_140px]">
+                            <div className="grid gap-2 md:grid-cols-[80px_minmax(160px,1.2fr)_minmax(90px,0.7fr)_minmax(140px,1fr)_96px] lg:grid-cols-[96px_minmax(180px,1.25fr)_minmax(110px,0.75fr)_minmax(160px,1fr)_104px]">
                               <div className="flex items-center text-sm font-medium">{unit.label}</div>
                               <Input
                                 value={unit.location ?? ""}
