@@ -393,32 +393,32 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
                       {locationsAllowed ? (
                         units.map((unit, index) => (
                           <div key={unit.id} className="rounded-md border border-border/70 bg-muted/10 p-2">
-                            <div className="grid gap-2 md:grid-cols-[120px_minmax(220px,1.4fr)_minmax(160px,1fr)_minmax(180px,1.1fr)]">
+                            <div className="grid gap-2 md:grid-cols-[120px_minmax(220px,1.3fr)_minmax(140px,0.8fr)_minmax(180px,1.1fr)_140px]">
                               <div className="flex items-center text-sm font-medium">{unit.label}</div>
                               <Input
                                 value={unit.location ?? ""}
                                 onChange={(event) => updateUnit(item.id, index, { location: event.target.value })}
                                 placeholder="Lokacija"
                               />
-                              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                 <PreparationPhotoThumbnails
                                   projectId={projectId}
                                   itemId={item.offerItemId ?? item.id}
                                   unitIndex={index}
                                   refreshKey={photoRefreshKey}
                                 />
-                                <UnitPhotoButton
-                                  projectId={projectId}
-                                  itemId={item.offerItemId ?? item.id}
-                                  unitIndex={index}
-                                  refreshKey={photoRefreshKey}
-                                  onOpen={setPhotoContext}
-                                />
                               </div>
                               <Input
                                 value={unit.instructions ?? ""}
                                 onChange={(event) => updateUnit(item.id, index, { instructions: event.target.value })}
                                 placeholder="Opomba"
+                              />
+                              <UnitPhotoButton
+                                projectId={projectId}
+                                itemId={item.offerItemId ?? item.id}
+                                unitIndex={index}
+                                refreshKey={photoRefreshKey}
+                                onOpen={setPhotoContext}
                               />
                             </div>
                           </div>

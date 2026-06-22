@@ -2241,7 +2241,7 @@ export function LogisticsPanel({
                             ) : null}
                             {locationUnits.map((unit, index) => (
                               <div key={unit.id} className="rounded-md border border-border/70 bg-muted/10 p-2">
-                                <div className="grid gap-2 md:grid-cols-[120px_minmax(220px,1.4fr)_minmax(160px,1fr)_minmax(180px,1.1fr)]">
+                                <div className="grid gap-2 md:grid-cols-[120px_minmax(220px,1.3fr)_minmax(140px,0.8fr)_minmax(180px,1.1fr)_140px]">
                                   <div className="flex items-center text-sm font-medium">{unit.label}</div>
                                   <Input
                                     value={unit.location ?? ""}
@@ -2250,19 +2250,12 @@ export function LogisticsPanel({
                                     }
                                     placeholder="Lokacija"
                                   />
-                                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                     <PreparationPhotoThumbnails
                                       projectId={projectId}
                                       itemId={getWorkOrderItemPhotoId(item)}
                                       unitIndex={index}
                                       refreshKey={photoCountRefreshKey}
-                                    />
-                                    <PreparationUnitPhotoButton
-                                      projectId={projectId}
-                                      itemId={getWorkOrderItemPhotoId(item)}
-                                      unitIndex={index}
-                                      refreshKey={photoCountRefreshKey}
-                                      onOpen={openPhotoManager}
                                     />
                                   </div>
                                   <Input
@@ -2271,6 +2264,13 @@ export function LogisticsPanel({
                                       updateProductLocationUnit(item, index, { instructions: event.target.value })
                                     }
                                     placeholder="Opomba"
+                                  />
+                                  <PreparationUnitPhotoButton
+                                    projectId={projectId}
+                                    itemId={getWorkOrderItemPhotoId(item)}
+                                    unitIndex={index}
+                                    refreshKey={photoCountRefreshKey}
+                                    onOpen={openPhotoManager}
                                   />
                                 </div>
                               </div>
