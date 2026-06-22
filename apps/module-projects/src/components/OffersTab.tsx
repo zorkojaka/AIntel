@@ -913,31 +913,24 @@ const loadOfferById = useCallback(async (offerId: string) => {
       .replace(/\s+/g, " ")
       .trim();
 
-const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, prefix: string) => {
-    const identifierRaw =
-      (project?.projectNumber != null && `${project.projectNumber}`) ||
-      project?.code ||
-      project?.id ||
-      fallbackId ||
-      "";
-    const customerRaw =
-      project?.customerDetail?.name?.trim() ||
-      project?.customer?.trim() ||
-      "";
-
-    const identifier = sanitizeFilenamePart(identifierRaw);
-    const customer = sanitizeFilenamePart(customerRaw);
-
-  if (identifier && customer) {
-    return `${prefix} ${identifier} - ${customer}.pdf`;
-  }
-  if (identifier) {
-    return `${prefix} ${identifier}.pdf`;
-  }
-  if (fallbackId) {
-    return `${prefix} ${fallbackId}.pdf`;
-  }
-  return `${prefix}.pdf`;
+const buildOfferPdfFilename = (
+  project: ProjectDetails | null,
+  fallbackId: string,
+  prefix: string,
+  offer: Pick<OfferVersion, "baseTitle" | "title" | "documentNumber"> | null
+) => {
+  const identifierRaw = (project?.projectNumber != null ? `${project.projectNumber}` : project?.code || project?.id || fallbackId || "")
+    .trim()
+    .replace(/^PRJ-/i, "");
+  const offerTitleRaw = offer?.baseTitle?.trim() || offer?.title?.trim() || "Ponudba";
+  const customerRaw =
+    project?.customerDetail?.name?.trim() ||
+    project?.customer?.trim() ||
+    offer?.documentNumber?.trim() ||
+    "";
+  const identifier = sanitizeFilenamePart(identifierRaw || fallbackId) || "projekt";
+  const suffix = [offerTitleRaw, customerRaw].map(sanitizeFilenamePart).filter(Boolean).join(" - ");
+  return `${prefix}-${identifier} - ${suffix || sanitizeFilenamePart(fallbackId) || "Ponudba"}.pdf`;
 };
 
   const handleToggleGlobalDiscount = (checked: boolean) => {
@@ -2016,11 +2009,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       if (!saved?._id) return;
       const url = `/api/projects/${projectId}/offers/${saved._id}/pdf?mode=${mode}`;
       const details = await ensureProjectDetails();
-      const labelMap = {
-        offer: "Ponudba",
-        both: "Ponudba+Projekt",
-      } as const;
-      const filename = buildPdfFilename(details, projectId, labelMap[mode]);
+      const filename = buildOfferPdfFilename(details, projectId, mode === "both" ? "Ponudba+Projekt" : "Ponudba", saved);
       await downloadPdf(url, filename);
       toast.success("PDF prenesen");
     } catch (error) {
@@ -2038,7 +2027,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       if (!saved?._id) return;
       const url = `/api/projects/${projectId}/offers/${saved._id}/pdf?variant=descriptions`;
       const details = await ensureProjectDetails();
-      const filename = buildPdfFilename(details, projectId, "Produktni opisi");
+      const filename = buildOfferPdfFilename(details, projectId, "Opis", saved);
       await downloadPdf(url, filename);
       toast.success("PDF prenesen");
     } catch (error) {
@@ -2185,7 +2174,9 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
     await refreshOffers(selectedOfferId ?? currentOffer?._id ?? null, true);
     setCommunicationRefreshKey((value) => value + 1);
     onCommunicationChanged?.();
-    toast.success(result?.queued ? "Pošiljanje emaila se je začelo." : "Email je bil uspešno poslan.");
+    if (result?.queued) {
+      toast.success("Pošiljanje emaila se je začelo.");
+    }
   };
 
 

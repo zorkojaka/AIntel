@@ -315,7 +315,7 @@ export async function generateOfferDescriptionsPdf(offer: OfferVersion) {
   ]);
   const html = renderProductDescriptionsHtml(entries, {
     companyName: companySettings.companyName,
-    projectTitle: project?.title ?? offer.title ?? offer.baseTitle ?? offer.documentNumber ?? offer.projectId,
+    projectTitle: offer.baseTitle ?? offer.title ?? offer.documentNumber ?? project?.title ?? offer.projectId,
     headerText: documentSettings.appearance?.headerText ?? "",
     footerText: documentSettings.appearance?.footerText ?? "",
   });

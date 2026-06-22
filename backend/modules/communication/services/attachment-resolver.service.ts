@@ -25,6 +25,19 @@ function sanitizeFilePart(value: string) {
   return normalized.slice(0, 120);
 }
 
+function buildOfferFileCore(offer: any, project: any, offerId: string) {
+  const projectIdentifier = String(project.projectNumber ?? project.code ?? project.id ?? offer.projectId ?? "")
+    .trim()
+    .replace(/^PRJ-/i, "");
+  const offerTitle = offer.baseTitle?.trim() || offer.title?.trim() || "Ponudba";
+  const customerName = project.customerName?.trim() || project.customer?.name?.trim() || "";
+  const parts = [offerTitle, customerName || offerId].filter(Boolean);
+  return {
+    projectIdentifier: sanitizeFilePart(projectIdentifier || offerId) || "projekt",
+    suffix: sanitizeFilePart(parts.join(" - ")) || sanitizeFilePart(offerId) || "Ponudba",
+  };
+}
+
 export async function resolveCommunicationAttachment(params: {
   type: CommunicationAttachmentType;
   projectId: string;
@@ -112,13 +125,11 @@ export async function resolveCommunicationAttachment(params: {
     throw new Error("Ponudba za priponko ni najdena.");
   }
 
-  const offerIdentifier =
-    offer.documentNumber?.trim() || offer.title?.trim() || offer.baseTitle?.trim() || project.code || project.id || offerId;
-  const projectIdentifier = project.code?.trim() || project.title?.trim() || project.id || offer.projectId || offerId;
+  const offerFileCore = buildOfferFileCore(offer, project, offerId);
 
   if (type === "offer_pdf") {
     const buffer = await generateOfferDocumentPdf(offerId, "OFFER");
-    const offerLabel = sanitizeFilePart(`Ponudba ${offerIdentifier}`) || "Ponudba";
+    const offerLabel = sanitizeFilePart(`Ponudba-${offerFileCore.projectIdentifier} - ${offerFileCore.suffix}`) || "Ponudba";
     return {
       type,
       refId: offerId,
@@ -129,7 +140,7 @@ export async function resolveCommunicationAttachment(params: {
   }
 
   const buffer = await generateOfferDescriptionsPdf(offer as any);
-  const descriptionLabel = sanitizeFilePart(`Opisi ${offerIdentifier} ${projectIdentifier}`) || "Opisi";
+  const descriptionLabel = sanitizeFilePart(`Opis-${offerFileCore.projectIdentifier} - ${offerFileCore.suffix}`) || "Opis";
   return {
     type,
     refId: offerId,

@@ -367,7 +367,7 @@ export async function buildOfferPdfPreviewPayload(
     customer: project
       ? { name: project.customerName, address: project.customerAddress, taxId: project.customerTaxId }
       : undefined,
-    projectTitle: project?.title ?? offerWithTexts.title ?? 'Projekt',
+    projectTitle: offerWithTexts.baseTitle ?? offerWithTexts.title ?? project?.title ?? 'Projekt',
     validUntil: offerWithTexts.validUntil ?? null,
     paymentTerms: offerWithTexts.paymentTerms ?? documentSettings.defaultTexts.paymentTerms ?? null,
     items,
