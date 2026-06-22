@@ -37,6 +37,7 @@ import * as logisticsController from '../controllers/logistics.controller';
 import { cancelOfferConfirmation } from '../controllers/logistics.controller';
 import * as invoiceController from '../controllers/invoice.controller';
 import {
+  sendInstallerPreparationCommunicationController,
   sendOfferCommunicationController,
   sendWorkOrderConfirmationCommunicationController,
 } from '../../communication/controllers/project-communication.controller';
@@ -73,8 +74,11 @@ router.delete('/:projectId/offers/:offerId', requireProjectWrite, deleteOfferVer
 router.get('/:projectId/offers/:offerVersionId/pdf', exportOfferPdf);
 router.post('/:projectId/offers/:offerVersionId/send', requireProjectWrite, sendOfferCommunicationController);
 router.post('/:projectId/work-orders/:workOrderId/send-confirmation', requireWorkOrderWrite, sendWorkOrderConfirmationCommunicationController);
+router.post('/:projectId/work-orders/:workOrderId/send-installer-preparation', requireWorkOrderWrite, sendInstallerPreparationCommunicationController);
 router.get('/:projectId/offer', getActiveOffer);
 router.post('/:projectId/offers/:offerId/confirm', requireProjectWrite, logisticsController.confirmOffer);
+router.get('/:projectId/execution-definition', logisticsController.getProjectExecutionDefinition);
+router.put('/:projectId/execution-definition', requireWorkOrderWrite, logisticsController.updateProjectExecutionDefinition);
 router.post('/:projectId/logistics/cancel-confirmation', requirePreparationAccess, cancelOfferConfirmation);
 router.get('/:projectId/logistics', logisticsController.getProjectLogistics);
 router.get('/:projectId/logistics/installer-availability/:employeeId', requirePreparationAccess, logisticsController.getInstallerAvailability);

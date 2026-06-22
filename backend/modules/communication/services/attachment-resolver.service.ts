@@ -33,6 +33,33 @@ export async function resolveCommunicationAttachment(params: {
 }): Promise<ResolvedAttachment> {
   const { type, projectId, offerId, workOrderId } = params;
 
+  if (type === "work_order_pdf") {
+    if (!workOrderId) {
+      throw new Error("Delovni nalog za priponko ni podan.");
+    }
+
+    const [project, workOrder] = await Promise.all([
+      ProjectModel.findOne({ id: projectId }).lean(),
+      WorkOrderModel.findOne({ _id: workOrderId, projectId }).lean(),
+    ]);
+    if (!project || !workOrder) {
+      throw new Error("Delovni nalog za priponko ni najden.");
+    }
+
+    const projectIdentifier =
+      project.code?.trim() || workOrder.code?.trim() || workOrder.title?.trim() || project.title?.trim() || project.id || workOrderId;
+    const buffer = await generateWorkOrderDocumentPdf(projectId, workOrderId, "WORK_ORDER");
+    const workOrderLabel = sanitizeFilePart(`Delovni nalog ${projectIdentifier}`) || "Delovni-nalog";
+
+    return {
+      type,
+      refId: workOrderId,
+      filename: `${workOrderLabel}.pdf`,
+      content: buffer,
+      contentType: "application/pdf",
+    };
+  }
+
   if (type === "work_order_confirmation_pdf") {
     if (!workOrderId) {
       throw new Error("Delovni nalog za priponko ni podan.");

@@ -21,11 +21,12 @@ import { Textarea } from "../../components/ui/textarea";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { MaterialOrderCard } from "./MaterialOrderCard";
+import { PreparationPhotoThumbnails } from "./ExecutionDefinitionPanel";
 import { normalizeMaterialStatusLabel } from "./materialStatus";
 import { useConfirmOffer } from "../core/useConfirmOffer";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
-import { AlertTriangle, Camera, Check, ChevronDown, ChevronRight, Download, Loader2, Trash2, X } from "lucide-react";
+import { AlertTriangle, Camera, Check, ChevronDown, ChevronRight, Download, Loader2, Send, Trash2, X } from "lucide-react";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
 import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
@@ -103,9 +104,9 @@ function PreparationUnitPhotoButton({
   }, [refresh, refreshKey]);
 
   return (
-    <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => onOpen(context)}>
+    <Button type="button" variant="outline" size="sm" className="h-9 w-full gap-1.5 px-2" onClick={() => onOpen(context)}>
       <Camera className="h-4 w-4" />
-      <span>Fotografija{count > 0 ? ` (${count})` : ""}</span>
+      <span>Slike{count > 0 ? ` (${count})` : ""}</span>
     </Button>
   );
 }
@@ -357,6 +358,7 @@ export function LogisticsPanel({
   const [locationTouched, setLocationTouched] = useState(false);
   const [savingWorkOrder, setSavingWorkOrder] = useState(false);
   const [issuingOrder, setIssuingOrder] = useState(false);
+  const [sendingInstallerEmail, setSendingInstallerEmail] = useState(false);
   const [advancingMaterialOrderId, setAdvancingMaterialOrderId] = useState<string | null>(null);
   const [materialDownloading, setMaterialDownloading] = useState<"PURCHASE_ORDER" | "DELIVERY_NOTE" | null>(null);
   const [workOrderDownloading, setWorkOrderDownloading] = useState<"WORK_ORDER" | "WORK_ORDER_CONFIRMATION" | null>(null);
@@ -1196,6 +1198,39 @@ export function LogisticsPanel({
     const saved = await handleSaveWorkOrder(undefined, { scheduledConfirmedAt: null });
     if (saved) {
       toast.success("Potrditev termina odstranjena.");
+    }
+  };
+
+  const handleSendInstallerPreparationEmail = async () => {
+    if (!selectedWorkOrder?._id || sendingInstallerEmail) return;
+    setSendingInstallerEmail(true);
+    try {
+      const currentConfirmedAt =
+        typeof workOrderForm.scheduledConfirmedAt === "string"
+          ? workOrderForm.scheduledConfirmedAt
+          : selectedWorkOrder.scheduledConfirmedAt ?? null;
+      const confirmationPatch =
+        resolvedSchedule && !currentConfirmedAt ? { scheduledConfirmedAt: new Date().toISOString() } : undefined;
+      if (confirmationPatch) {
+        setWorkOrderForm((prev) => ({ ...prev, scheduledConfirmedAt: confirmationPatch.scheduledConfirmedAt }));
+      }
+      const saved = await handleSaveWorkOrder(undefined, confirmationPatch);
+      if (!saved) return;
+      const response = await fetch(`/api/projects/${projectId}/work-orders/${selectedWorkOrder._id}/send-installer-preparation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const payload = await response.json();
+      if (!payload.success) {
+        toast.error(payload.error ?? "Emaila monterju ni bilo mogoče poslati.");
+        return;
+      }
+      toast.success("Email monterju je bil poslan.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Emaila monterju ni bilo mogoče poslati.");
+    } finally {
+      setSendingInstallerEmail(false);
     }
   };
 
@@ -2128,7 +2163,18 @@ export function LogisticsPanel({
                 </div>
               </div>
               {previewWorkOrder?._id ? (
-                <div className="mt-auto flex justify-end pt-2">
+                <div className="mt-auto flex flex-wrap justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5"
+                    onClick={() => void handleSendInstallerPreparationEmail()}
+                    disabled={savingWorkOrder || sendingInstallerEmail}
+                  >
+                    {sendingInstallerEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    Pošlji email monterju
+                  </Button>
                   {renderPdfActionGroup(
                     "Predogled naloga",
                     () => openWorkOrderPdfPreview("WORK_ORDER"),
@@ -2240,7 +2286,7 @@ export function LogisticsPanel({
                             ) : null}
                             {locationUnits.map((unit, index) => (
                               <div key={unit.id} className="rounded-md border border-border/70 bg-muted/10 p-2">
-                                <div className="grid gap-2 md:grid-cols-[120px_minmax(240px,1.8fr)_minmax(180px,1.2fr)_140px]">
+                                <div className="grid gap-2 md:grid-cols-[80px_minmax(160px,1.2fr)_minmax(90px,0.7fr)_minmax(140px,1fr)_96px] lg:grid-cols-[96px_minmax(180px,1.25fr)_minmax(110px,0.75fr)_minmax(160px,1fr)_104px]">
                                   <div className="flex items-center text-sm font-medium">{unit.label}</div>
                                   <Input
                                     value={unit.location ?? ""}
@@ -2249,6 +2295,14 @@ export function LogisticsPanel({
                                     }
                                     placeholder="Lokacija"
                                   />
+                                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                    <PreparationPhotoThumbnails
+                                      projectId={projectId}
+                                      itemId={getWorkOrderItemPhotoId(item)}
+                                      unitIndex={index}
+                                      refreshKey={photoCountRefreshKey}
+                                    />
+                                  </div>
                                   <Input
                                     value={unit.instructions ?? ""}
                                     onChange={(event) =>

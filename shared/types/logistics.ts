@@ -88,6 +88,18 @@ export interface WorkOrderExecutionSpec {
   executionUnits?: WorkOrderExecutionUnit[];
 }
 
+export interface ProjectExecutionDefinitionItem {
+  id: string;
+  offerVersionId?: string | null;
+  offerItemId?: string | null;
+  productId?: string | null;
+  name: string;
+  quantity: number;
+  unit: string;
+  isService?: boolean;
+  executionSpec?: WorkOrderExecutionSpec | null;
+}
+
 export type WorkOrderTimeTrackingEventType = "play" | "pause";
 
 export interface WorkOrderTimeTrackingEvent {

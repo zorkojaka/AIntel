@@ -809,6 +809,7 @@ export type ProductDescriptionEntry = {
   imageUrl?: string;
   locations?: Array<{
     name: string;
+    note?: string;
     photos: string[];
   }>;
 };
@@ -843,8 +844,13 @@ export function renderProductDescriptionsHtml(
     .locations { margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb; break-inside: avoid; page-break-inside: avoid; }
     .locations-title { margin: 0 0 5px 0; font-size: 11px; font-weight: 700; color: #334155; }
     .locations-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
+    .locations-list { display: block; margin: 0; padding: 0; }
     .location { min-width: 0; break-inside: avoid; page-break-inside: avoid; }
+    .location-row { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; border-bottom: 1px solid #eef2f7; }
     .location-name { margin: 0 0 4px 0; font-size: 10.5px; font-weight: 700; color: #111827; }
+    .location-row .location-name { flex: 0 0 34%; margin: 0; }
+    .location-note { margin: 0; font-size: 10.5px; color: #475569; line-height: 1.25; }
+    .location-row .location-note { flex: 1 1 auto; }
     .location-photos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
     .location-photos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #dbe2ea; border-radius: 3px; }
     .descriptions-footer { margin-top: 12px; padding-top: 8px; border-top: 1px solid #dbe2ea; color: #475569; font-size: 11px; white-space: pre-wrap; break-inside: avoid; page-break-inside: avoid; }
@@ -874,18 +880,27 @@ export function renderProductDescriptionsHtml(
           const description = entry.description ? escapeHtml(entry.description) : '';
           const hasImage = !!entry.imageUrl;
           const hasDesc = !!description;
-          const locations = (entry.locations ?? []).filter((location) => location.name || location.photos.length > 0);
+          const locations = (entry.locations ?? []).filter((location) => location.name || location.note || location.photos.length > 0);
+          const hasLocationPhotos = locations.some((location) => location.photos.length > 0);
           const locationsBlock = locations.length
             ? `<div class="locations">
-                <p class="locations-title">Lokacije kamer</p>
-                <div class="locations-grid">
+                <p class="locations-title">Lokacije</p>
+                <div class="${hasLocationPhotos ? 'locations-grid' : 'locations-list'}">
                   ${locations
                     .map((location) => {
                       const photos = location.photos
                         .map((photo) => `<img src="${photo}" alt="" />`)
                         .join('');
+                      const note = location.note ? `<p class="location-note">${escapeHtml(location.note)}</p>` : '';
+                      if (!photos) {
+                        return `<div class="location-row">
+                          <p class="location-name">${escapeHtml(location.name)}</p>
+                          ${note}
+                        </div>`;
+                      }
                       return `<div class="location">
                         <p class="location-name">${escapeHtml(location.name)}</p>
+                        ${note}
                         ${photos ? `<div class="location-photos">${photos}</div>` : ''}
                       </div>`;
                     })

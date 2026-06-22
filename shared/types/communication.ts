@@ -4,7 +4,7 @@ export type CommunicationDirection = "outbound" | "inbound";
 
 export type CommunicationCategory = "offer_send" | "work_order_confirmation_send";
 
-export type CommunicationAttachmentType = "offer_pdf" | "project_pdf" | "work_order_confirmation_pdf";
+export type CommunicationAttachmentType = "offer_pdf" | "project_pdf" | "work_order_pdf" | "work_order_confirmation_pdf";
 
 export type CommunicationMessageStatus = "sent" | "failed";
 

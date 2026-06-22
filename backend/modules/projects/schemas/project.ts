@@ -146,6 +146,7 @@ export interface Project {
   templates: ProjectTemplate[];
   categories: string[];
   invoiceVersions?: any[];
+  executionDefinitions?: any[];
   routeCoordinates?: any;
   archivedAt?: Date | null;
   archivedBy?: string | null;
@@ -336,6 +337,7 @@ const ProjectSchema = new Schema<ProjectDocument>(
     categories: { type: [String], default: [] },
     offers: { type: [OfferSchema], default: [] },
     invoiceVersions: { type: [Schema.Types.Mixed], default: [] },
+    executionDefinitions: { type: [Schema.Types.Mixed], default: [] },
     routeCoordinates: { type: Schema.Types.Mixed, default: null },
     archivedAt: { type: Date, default: null },
     archivedBy: { type: String, default: null },
