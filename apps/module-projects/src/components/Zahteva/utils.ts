@@ -101,6 +101,19 @@ export function alarmAssignmentCount(alarm: Alarm, senzorId: string) {
   return alarm.lokacije.filter((lokacija) => lokacija.senzorIdAssigned === senzorId).length;
 }
 
+export function isDefaultLocationName(value?: string | null) {
+  const normalized = (value ?? "").trim();
+  return /^Lokacija\s+\d+$/i.test(normalized) || /^loc-\d+$/i.test(normalized);
+}
+
+export function isMeaningfulVideoLocation(lokacija: Lokacija) {
+  return Boolean(lokacija.asortimaIdAssigned) || !isDefaultLocationName(lokacija.ime) || (lokacija.slike?.length ?? 0) > 0;
+}
+
+export function isMeaningfulAlarmLocation(lokacija: AlarmLokacija) {
+  return Boolean(lokacija.senzorIdAssigned) || !isDefaultLocationName(lokacija.ime) || (lokacija.slike?.length ?? 0) > 0;
+}
+
 export function productLabel(product?: CenikProduct | null) {
   return product?.ime ?? "Ni izbrano";
 }

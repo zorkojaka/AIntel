@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { nadaljujZahtevaNaPonudbo, type CenikProduct } from "../../api";
 import type { Zahteva } from "../../types";
 import { Button } from "../ui/button";
-import { alarmTotal, formatPrice, systemTotal } from "./utils";
+import { alarmTotal, formatPrice, isMeaningfulAlarmLocation, isMeaningfulVideoLocation, systemTotal } from "./utils";
 
 type Props = {
   zahteva: Zahteva;
@@ -23,11 +23,13 @@ export function SpodnjiCena({ zahteva, productById, onNavigateOffer }: Props) {
   const canContinue = zahteva.sistemi.some((sistem) => {
     if (sistem.tip === "videonadzor" && sistem.videonadzor) {
       const variantIds = new Set(sistem.videonadzor.asortima.map((variant) => variant.id));
-      return sistem.videonadzor.lokacije.length > 0 && sistem.videonadzor.lokacije.every((lokacija) => lokacija.asortimaIdAssigned && variantIds.has(lokacija.asortimaIdAssigned));
+      const activeLocations = sistem.videonadzor.lokacije.filter(isMeaningfulVideoLocation);
+      return activeLocations.length > 0 && activeLocations.every((lokacija) => lokacija.asortimaIdAssigned && variantIds.has(lokacija.asortimaIdAssigned));
     }
     if (sistem.tip === "alarm" && sistem.alarm) {
       const senzorIds = new Set(sistem.alarm.senzorji.map((senzor) => senzor.id));
-      return Boolean(sistem.alarm.centrala.productId) && sistem.alarm.lokacije.length > 0 && sistem.alarm.lokacije.every((lokacija) => lokacija.senzorIdAssigned && senzorIds.has(lokacija.senzorIdAssigned));
+      const activeLocations = sistem.alarm.lokacije.filter(isMeaningfulAlarmLocation);
+      return Boolean(sistem.alarm.centrala.productId) && activeLocations.length > 0 && activeLocations.every((lokacija) => lokacija.senzorIdAssigned && senzorIds.has(lokacija.senzorIdAssigned));
     }
     return false;
   });
