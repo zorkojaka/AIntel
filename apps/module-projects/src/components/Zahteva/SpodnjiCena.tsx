@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { nadaljujZahtevaNaPonudbo, type CenikProduct } from "../../api";
 import type { Zahteva } from "../../types";
 import { Button } from "../ui/button";
-import { alarmTotal, formatPrice, isMeaningfulAlarmLocation, isMeaningfulVideoLocation, systemTotal } from "./utils";
+import { alarmTotal, formatPrice, systemTotal } from "./utils";
 
 type Props = {
   zahteva: Zahteva;
@@ -19,20 +19,6 @@ export function SpodnjiCena({ zahteva, productById, onNavigateOffer }: Props) {
     if (sistem.tip === "alarm" && sistem.alarm) return sum + alarmTotal(sistem.alarm, productById);
     return sum;
   }, 0);
-
-  const canContinue = zahteva.sistemi.some((sistem) => {
-    if (sistem.tip === "videonadzor" && sistem.videonadzor) {
-      const variantIds = new Set(sistem.videonadzor.asortima.map((variant) => variant.id));
-      const activeLocations = sistem.videonadzor.lokacije.filter(isMeaningfulVideoLocation);
-      return activeLocations.length > 0 && activeLocations.every((lokacija) => lokacija.asortimaIdAssigned && variantIds.has(lokacija.asortimaIdAssigned));
-    }
-    if (sistem.tip === "alarm" && sistem.alarm) {
-      const senzorIds = new Set(sistem.alarm.senzorji.map((senzor) => senzor.id));
-      const activeLocations = sistem.alarm.lokacije.filter(isMeaningfulAlarmLocation);
-      return Boolean(sistem.alarm.centrala.productId) && activeLocations.length > 0 && activeLocations.every((lokacija) => lokacija.senzorIdAssigned && senzorIds.has(lokacija.senzorIdAssigned));
-    }
-    return false;
-  });
 
   const submit = async () => {
     setSubmitting(true);
@@ -53,7 +39,7 @@ export function SpodnjiCena({ zahteva, productById, onNavigateOffer }: Props) {
         <span>Skupaj zahteva</span>
         <strong>{formatPrice(total)}</strong>
       </div>
-      <Button type="button" onClick={() => void submit()} disabled={!canContinue || submitting}>
+      <Button type="button" onClick={() => void submit()} disabled={submitting}>
         {submitting ? "Ustvarjam..." : "Nadaljuj na ponudbo"}
         <ArrowRight className="h-4 w-4" aria-hidden />
       </Button>
