@@ -15,6 +15,7 @@ import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
 import { ProductModel } from '../../cenik/product.model';
 import { PhotoModel } from '../../photos/schemas/photo';
+import { ZahtevaModel } from '../../zahteve/zahteva.model';
 import { resolveActorId, resolveTenantId } from '../../../utils/tenant';
 import { EmployeeModel } from '../../employees/schemas/employee';
 import { ROLE_EXECUTION } from '../../../utils/roles';
@@ -399,6 +400,97 @@ function buildRequirementsExecutionSpec(item: OfferLineItem, fallbackProduct: an
       note: null,
     })),
   };
+}
+
+function buildZahtevaLocationPhotoItemId(zahtevaId: string, sistemId: string, lokacijaId: string) {
+  return `zahteva-location:${zahtevaId}:${sistemId}:${lokacijaId}`;
+}
+
+function buildAlarmLocationPhotoItemId(zahtevaId: string, sistemId: string, lokacijaId: string) {
+  return `zahteva-alarm-location:${zahtevaId}:${sistemId}:${lokacijaId}`;
+}
+
+function normalizeRequirementLocationName(value: unknown, fallback: string) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  return text.length > 0 ? text : fallback;
+}
+
+function buildRequirementLocationUnitsByProductId(zahteva: any) {
+  const unitsByProductId = new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }>>();
+  const zahtevaId = String(zahteva?._id ?? '');
+  if (!zahtevaId) return unitsByProductId;
+
+  const appendUnit = (productId: unknown, unit: { locationId: string; locationName: string; sourcePhotoItemId: string }) => {
+    const key = productId ? String(productId) : '';
+    if (!key || !unit.locationId) return;
+    const current = unitsByProductId.get(key) ?? [];
+    current.push(unit);
+    unitsByProductId.set(key, current);
+  };
+
+  for (const sistem of zahteva?.sistemi ?? []) {
+    if (sistem?.tip === 'videonadzor' && sistem?.videonadzor) {
+      const variants = new Map<string, any>(
+        (sistem.videonadzor.asortima ?? []).map((variant: any) => [String(variant.id), variant])
+      );
+      for (const location of sistem.videonadzor.lokacije ?? []) {
+        const variant = location?.asortimaIdAssigned ? variants.get(String(location.asortimaIdAssigned)) : null;
+        const locationId = typeof location?.id === 'string' ? location.id : '';
+        appendUnit(variant?.kameraProductId, {
+          locationId,
+          locationName: normalizeRequirementLocationName(location?.ime, locationId),
+          sourcePhotoItemId: buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+        });
+      }
+    }
+
+    if (sistem?.tip === 'alarm' && sistem?.alarm) {
+      const sensors = new Map<string, any>(
+        (sistem.alarm.senzorji ?? []).map((sensor: any) => [String(sensor.id), sensor])
+      );
+      for (const location of sistem.alarm.lokacije ?? []) {
+        const sensor = location?.senzorIdAssigned ? sensors.get(String(location.senzorIdAssigned)) : null;
+        const locationId = typeof location?.id === 'string' ? location.id : '';
+        appendUnit(sensor?.senzorProductId, {
+          locationId,
+          locationName: normalizeRequirementLocationName(location?.ime, locationId),
+          sourcePhotoItemId: buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+        });
+      }
+    }
+  }
+
+  return unitsByProductId;
+}
+
+async function buildRequirementLocationUnitFallbacks(project: any, offer: any) {
+  const offerRequestId = offer?.requestId ? String(offer.requestId) : '';
+  if (offerRequestId) {
+    const offerZahteva = await ZahtevaModel.findById(offerRequestId).lean();
+    const offerUnits = buildRequirementLocationUnitsByProductId(offerZahteva);
+    if (offerUnits.size > 0) return offerUnits;
+  }
+
+  const requestIds = [
+    project?.activeRequestId ? String(project.activeRequestId) : '',
+    ...(Array.isArray(project?.requestIds) ? project.requestIds.map((id: any) => String(id)) : []),
+  ].filter((value, index, list) => value && list.indexOf(value) === index);
+  if (requestIds.length === 0) return new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }>>();
+
+  const zahteva = await ZahtevaModel.findOne({ _id: { $in: requestIds } }).sort({ updatedAt: -1 }).lean();
+  return buildRequirementLocationUnitsByProductId(zahteva);
+}
+
+function withRequirementLocationFallbacks(
+  offerItems: OfferLineItem[],
+  fallbacksByProductId: Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }>>
+) {
+  return (offerItems ?? []).map((item) => {
+    const existingUnits = Array.isArray(item.requirementsLocationUnits) ? item.requirementsLocationUnits : [];
+    if (existingUnits.length > 0 || !item.productId) return item;
+    const fallbackUnits = fallbacksByProductId.get(String(item.productId)) ?? [];
+    return fallbackUnits.length > 0 ? { ...item, requirementsLocationUnits: fallbackUnits } : item;
+  });
 }
 
 function mergeExecutionSpec(existing: any, fallbackProduct: any) {
@@ -1369,6 +1461,11 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
   const offerId = requestedOfferId ?? project.confirmedOfferVersionId ?? null;
   const offer = await resolveExecutionDefinitionOffer(projectId, offerId);
   const resolvedOfferId = offer?._id ? String(offer._id) : offerId;
+  const offerItems = Array.isArray((offer as any)?.items) ? ((offer as any).items as OfferLineItem[]) : [];
+  const fallbackUnitsByProductId = offer
+    ? await buildRequirementLocationUnitFallbacks(project, offer)
+    : new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }>>();
+  const offerItemsWithLocationFallbacks = withRequirementLocationFallbacks(offerItems, fallbackUnitsByProductId);
   const currentDefinitions = Array.isArray(project.executionDefinitions) ? project.executionDefinitions : [];
   const hasDefinitionsForOffer = resolvedOfferId
     ? currentDefinitions.some((definition: any) => String(definition?.offerVersionId ?? '') === resolvedOfferId)
@@ -1385,8 +1482,7 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
     if (workOrder) {
       incomingDefinitions = buildExecutionDefinitionsFromWorkOrder(workOrder);
     } else if (offer) {
-      const offerItems = Array.isArray((offer as any).items) ? (offer as any).items : [];
-      const productIds = offerItems
+      const productIds = offerItemsWithLocationFallbacks
         .map((item: any) => (item.productId ? String(item.productId) : null))
         .filter((id: string | null): id is string => Boolean(id));
       const serviceProductIds = new Set<string>();
@@ -1402,7 +1498,7 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
           }
         });
       }
-      incomingDefinitions = mapOfferItemsToWorkOrderItems(offerItems, serviceProductIds, productDefaultsById)
+      incomingDefinitions = mapOfferItemsToWorkOrderItems(offerItemsWithLocationFallbacks, serviceProductIds, productDefaultsById)
         .filter((item) => !item.isExtra)
         .map((item) => buildExecutionDefinitionItem({ item, offerVersionId: resolvedOfferId }));
     }
@@ -1418,12 +1514,22 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
   }
 
   const definitions = Array.isArray(project.executionDefinitions) ? project.executionDefinitions : [];
+  const itemsForOffer = resolvedOfferId
+    ? definitions.filter((definition: any) => String(definition?.offerVersionId ?? '') === resolvedOfferId)
+    : definitions;
+
+  if (offer && offerItemsWithLocationFallbacks.length > 0 && itemsForOffer.length > 0) {
+    await copyRequirementLocationPhotosToPreparation({
+      projectObjectId: String(project._id),
+      offerItems: offerItemsWithLocationFallbacks,
+      workOrderItems: itemsForOffer,
+    });
+  }
+
   return {
     project,
     offerVersionId: resolvedOfferId,
-    items: resolvedOfferId
-      ? definitions.filter((definition: any) => String(definition?.offerVersionId ?? '') === resolvedOfferId)
-      : definitions,
+    items: itemsForOffer,
   };
 }
 
