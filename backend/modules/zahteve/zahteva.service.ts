@@ -49,6 +49,23 @@ function buildAlarmLocationPhotoItemId(zahtevaId: string, sistemId: string, loka
   return `zahteva-alarm-location:${zahtevaId}:${sistemId}:${lokacijaId}`;
 }
 
+function isDefaultLocationName(value: unknown) {
+  const normalized = normalizeText(value);
+  return /^Lokacija\s+\d+$/i.test(normalized) || /^loc-\d+$/i.test(normalized);
+}
+
+function hasInlineLocationPhotos(lokacija: any) {
+  return Array.isArray(lokacija?.slike) && lokacija.slike.length > 0;
+}
+
+function isMeaningfulVideoLocation(lokacija: any) {
+  return Boolean(lokacija?.asortimaIdAssigned) || !isDefaultLocationName(lokacija?.ime) || hasInlineLocationPhotos(lokacija);
+}
+
+function isMeaningfulAlarmLocation(lokacija: any) {
+  return Boolean(lokacija?.senzorIdAssigned) || !isDefaultLocationName(lokacija?.ime) || hasInlineLocationPhotos(lokacija);
+}
+
 function lineFromProduct(
   product: any,
   quantity: number,
@@ -535,7 +552,8 @@ function validateZahtevaForOffer(zahteva: ZahtevaDocument) {
       if (!alarm) {
         throw Object.assign(new Error('Alarm sistem nima podatkov.'), { statusCode: 400 });
       }
-      if (!Array.isArray(alarm.lokacije) || alarm.lokacije.length === 0) {
+      const activeLokacije = Array.isArray(alarm.lokacije) ? alarm.lokacije.filter(isMeaningfulAlarmLocation) : [];
+      if (activeLokacije.length === 0) {
         throw Object.assign(new Error('Alarm mora imeti vsaj eno lokacijo.'), { statusCode: 400 });
       }
       const senzorIds = new Set((alarm.senzorji ?? []).map((senzor: any) => senzor.id));
@@ -545,11 +563,11 @@ function validateZahtevaForOffer(zahteva: ZahtevaDocument) {
       if (!alarm.centrala?.productId) {
         throw Object.assign(new Error('Alarm mora imeti izbrano centralo.'), { statusCode: 400 });
       }
-      const missing = (alarm.lokacije ?? []).filter((lokacija: any) => !lokacija.senzorIdAssigned);
+      const missing = activeLokacije.filter((lokacija: any) => !lokacija.senzorIdAssigned);
       if (missing.length > 0) {
         throw Object.assign(new Error('Vse alarmne lokacije morajo imeti dodeljen senzor.'), { statusCode: 400 });
       }
-      const invalid = (alarm.lokacije ?? []).filter((lokacija: any) => !senzorIds.has(String(lokacija.senzorIdAssigned)));
+      const invalid = activeLokacije.filter((lokacija: any) => !senzorIds.has(String(lokacija.senzorIdAssigned)));
       if (invalid.length > 0) {
         throw Object.assign(new Error('Alarmna lokacija ima dodeljen neobstoječi senzor.'), { statusCode: 400 });
       }
@@ -561,18 +579,19 @@ function validateZahtevaForOffer(zahteva: ZahtevaDocument) {
     if (!videonadzor) {
       throw Object.assign(new Error('Videonadzor sistem nima podatkov.'), { statusCode: 400 });
     }
-    if (!Array.isArray(videonadzor.lokacije) || videonadzor.lokacije.length === 0) {
+    const activeLokacije = Array.isArray(videonadzor.lokacije) ? videonadzor.lokacije.filter(isMeaningfulVideoLocation) : [];
+    if (activeLokacije.length === 0) {
       throw Object.assign(new Error('Videonadzor mora imeti vsaj eno lokacijo.'), { statusCode: 400 });
     }
     const variantIds = new Set((videonadzor.asortima ?? []).map((variant) => variant.id));
     if (variantIds.size === 0) {
       throw Object.assign(new Error('Videonadzor mora imeti vsaj eno varianto asortimana.'), { statusCode: 400 });
     }
-    const missing = (videonadzor.lokacije ?? []).filter((lokacija) => !lokacija.asortimaIdAssigned);
+    const missing = activeLokacije.filter((lokacija) => !lokacija.asortimaIdAssigned);
     if (missing.length > 0) {
       throw Object.assign(new Error('Vse lokacije morajo imeti dodeljeno varianto.'), { statusCode: 400 });
     }
-    const invalid = (videonadzor.lokacije ?? []).filter((lokacija) => !variantIds.has(String(lokacija.asortimaIdAssigned)));
+    const invalid = activeLokacije.filter((lokacija) => !variantIds.has(String(lokacija.asortimaIdAssigned)));
     if (invalid.length > 0) {
       throw Object.assign(new Error('Lokacija ima dodeljeno neobstoje?o varianto.'), { statusCode: 400 });
     }
