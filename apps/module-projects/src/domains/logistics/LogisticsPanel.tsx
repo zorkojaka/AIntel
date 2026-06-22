@@ -26,7 +26,7 @@ import { normalizeMaterialStatusLabel } from "./materialStatus";
 import { useConfirmOffer } from "../core/useConfirmOffer";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
-import { AlertTriangle, Camera, Check, ChevronDown, ChevronRight, Download, Loader2, Trash2, X } from "lucide-react";
+import { AlertTriangle, Camera, Check, ChevronDown, ChevronRight, Download, Loader2, Send, Trash2, X } from "lucide-react";
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
 import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
@@ -358,6 +358,7 @@ export function LogisticsPanel({
   const [locationTouched, setLocationTouched] = useState(false);
   const [savingWorkOrder, setSavingWorkOrder] = useState(false);
   const [issuingOrder, setIssuingOrder] = useState(false);
+  const [sendingInstallerEmail, setSendingInstallerEmail] = useState(false);
   const [advancingMaterialOrderId, setAdvancingMaterialOrderId] = useState<string | null>(null);
   const [materialDownloading, setMaterialDownloading] = useState<"PURCHASE_ORDER" | "DELIVERY_NOTE" | null>(null);
   const [workOrderDownloading, setWorkOrderDownloading] = useState<"WORK_ORDER" | "WORK_ORDER_CONFIRMATION" | null>(null);
@@ -1197,6 +1198,39 @@ export function LogisticsPanel({
     const saved = await handleSaveWorkOrder(undefined, { scheduledConfirmedAt: null });
     if (saved) {
       toast.success("Potrditev termina odstranjena.");
+    }
+  };
+
+  const handleSendInstallerPreparationEmail = async () => {
+    if (!selectedWorkOrder?._id || sendingInstallerEmail) return;
+    setSendingInstallerEmail(true);
+    try {
+      const currentConfirmedAt =
+        typeof workOrderForm.scheduledConfirmedAt === "string"
+          ? workOrderForm.scheduledConfirmedAt
+          : selectedWorkOrder.scheduledConfirmedAt ?? null;
+      const confirmationPatch =
+        resolvedSchedule && !currentConfirmedAt ? { scheduledConfirmedAt: new Date().toISOString() } : undefined;
+      if (confirmationPatch) {
+        setWorkOrderForm((prev) => ({ ...prev, scheduledConfirmedAt: confirmationPatch.scheduledConfirmedAt }));
+      }
+      const saved = await handleSaveWorkOrder(undefined, confirmationPatch);
+      if (!saved) return;
+      const response = await fetch(`/api/projects/${projectId}/work-orders/${selectedWorkOrder._id}/send-installer-preparation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const payload = await response.json();
+      if (!payload.success) {
+        toast.error(payload.error ?? "Emaila monterju ni bilo mogoče poslati.");
+        return;
+      }
+      toast.success("Email monterju je bil poslan.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Emaila monterju ni bilo mogoče poslati.");
+    } finally {
+      setSendingInstallerEmail(false);
     }
   };
 
@@ -2129,7 +2163,18 @@ export function LogisticsPanel({
                 </div>
               </div>
               {previewWorkOrder?._id ? (
-                <div className="mt-auto flex justify-end pt-2">
+                <div className="mt-auto flex flex-wrap justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5"
+                    onClick={() => void handleSendInstallerPreparationEmail()}
+                    disabled={savingWorkOrder || sendingInstallerEmail}
+                  >
+                    {sendingInstallerEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    Pošlji email monterju
+                  </Button>
                   {renderPdfActionGroup(
                     "Predogled naloga",
                     () => openWorkOrderPdfPreview("WORK_ORDER"),

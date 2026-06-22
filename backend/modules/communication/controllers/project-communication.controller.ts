@@ -4,6 +4,7 @@ import {
   getCommunicationMessage,
   listOfferMessages,
   listProjectCommunicationFeed,
+  sendInstallerPreparationEmail,
   sendOfferCommunicationEmail,
   sendWorkOrderConfirmationCommunicationEmail,
 } from "../services/communication.service";
@@ -110,6 +111,22 @@ export async function sendWorkOrderConfirmationCommunicationController(req: Requ
         message,
       });
     }
+    return res.fail(error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.", 400);
+  }
+}
+
+export async function sendInstallerPreparationCommunicationController(req: Request, res: Response) {
+  try {
+    const payload = await sendInstallerPreparationEmail({
+      projectId: req.params.projectId,
+      workOrderId: req.params.workOrderId,
+      actorUserId: (req as any)?.context?.actorUserId ?? null,
+      actorDisplayName: buildActorDisplayName(req as any),
+      actorProfile: resolveActorProfile(req),
+    });
+    return res.success(payload);
+  } catch (error) {
+    console.error("Installer preparation communication send failed", error);
     return res.fail(error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.", 400);
   }
 }
