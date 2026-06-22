@@ -877,7 +877,7 @@ export function renderProductDescriptionsHtml(
           const locations = (entry.locations ?? []).filter((location) => location.name || location.photos.length > 0);
           const locationsBlock = locations.length
             ? `<div class="locations">
-                <p class="locations-title">Lokacije kamer</p>
+                <p class="locations-title">Lokacije</p>
                 <div class="locations-grid">
                   ${locations
                     .map((location) => {
