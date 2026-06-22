@@ -842,10 +842,11 @@ export function renderProductDescriptionsHtml(
     .product.noDesc .col.image { width: 45%; }
     .locations { margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb; break-inside: avoid; page-break-inside: avoid; }
     .locations-title { margin: 0 0 5px 0; font-size: 11px; font-weight: 700; color: #334155; }
-    .location { margin-top: 6px; break-inside: avoid; page-break-inside: avoid; }
+    .locations-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
+    .location { min-width: 0; break-inside: avoid; page-break-inside: avoid; }
     .location-name { margin: 0 0 4px 0; font-size: 10.5px; font-weight: 700; color: #111827; }
-    .location-photos { display: flex; flex-wrap: wrap; gap: 6px; }
-    .location-photos img { width: 92px; height: 68px; object-fit: cover; border: 1px solid #dbe2ea; border-radius: 3px; }
+    .location-photos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+    .location-photos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #dbe2ea; border-radius: 3px; }
     .descriptions-footer { margin-top: 12px; padding-top: 8px; border-top: 1px solid #dbe2ea; color: #475569; font-size: 11px; white-space: pre-wrap; break-inside: avoid; page-break-inside: avoid; }
   `;
 
@@ -877,17 +878,19 @@ export function renderProductDescriptionsHtml(
           const locationsBlock = locations.length
             ? `<div class="locations">
                 <p class="locations-title">Lokacije kamer</p>
-                ${locations
-                  .map((location) => {
-                    const photos = location.photos
-                      .map((photo) => `<img src="${photo}" alt="" />`)
-                      .join('');
-                    return `<div class="location">
-                      <p class="location-name">${escapeHtml(location.name)}</p>
-                      ${photos ? `<div class="location-photos">${photos}</div>` : ''}
-                    </div>`;
-                  })
-                  .join('')}
+                <div class="locations-grid">
+                  ${locations
+                    .map((location) => {
+                      const photos = location.photos
+                        .map((photo) => `<img src="${photo}" alt="" />`)
+                        .join('');
+                      return `<div class="location">
+                        <p class="location-name">${escapeHtml(location.name)}</p>
+                        ${photos ? `<div class="location-photos">${photos}</div>` : ''}
+                      </div>`;
+                    })
+                    .join('')}
+                </div>
               </div>`
             : '';
           const classes = [
