@@ -5,6 +5,7 @@ import mongoose, { Types } from 'mongoose';
 import type {
   MaterialOrder,
   MaterialPickupMethod,
+  ProjectExecutionDefinitionItem,
   ProjectLogisticsSnapshot,
   WorkOrder,
 } from '../../../../shared/types/logistics';
@@ -494,6 +495,156 @@ function mapOfferItemsToWorkOrderItems(
       executionSpec: buildRequirementsExecutionSpec(item, productDefaults),
     };
   });
+}
+
+function resolveExecutionDefinitionItemId(item: any) {
+  const id = item?.offerItemId ?? item?.id;
+  return typeof id === 'string' && id.trim().length > 0 ? id.trim() : new Types.ObjectId().toString();
+}
+
+function buildExecutionDefinitionItem(params: {
+  item: any;
+  offerVersionId?: string | null;
+  fallbackSpec?: any;
+}): ProjectExecutionDefinitionItem {
+  const { item, offerVersionId, fallbackSpec } = params;
+  const quantity = typeof item?.quantity === 'number'
+    ? item.quantity
+    : typeof item?.plannedQuantity === 'number'
+      ? item.plannedQuantity
+      : 0;
+  const id = resolveExecutionDefinitionItemId(item);
+  return {
+    id,
+    offerVersionId: offerVersionId ?? item?.offerVersionId ?? null,
+    offerItemId: typeof item?.offerItemId === 'string' ? item.offerItemId : id,
+    productId: typeof item?.productId === 'string' ? item.productId : null,
+    name: typeof item?.name === 'string' ? item.name : 'Postavka',
+    quantity,
+    unit: typeof item?.unit === 'string' ? item.unit : '',
+    isService: item?.isService === true,
+    executionSpec: sanitizeExecutionSpec(item?.executionSpec ?? fallbackSpec),
+  };
+}
+
+function buildExecutionDefinitionsFromWorkOrder(workOrder: any): ProjectExecutionDefinitionItem[] {
+  const offerVersionId = workOrder?.offerVersionId ? String(workOrder.offerVersionId) : null;
+  return (Array.isArray(workOrder?.items) ? workOrder.items : [])
+    .filter((item: any) => !item?.isExtra)
+    .map((item: any) => buildExecutionDefinitionItem({ item, offerVersionId }));
+}
+
+function mergeProjectExecutionDefinitions(params: {
+  currentDefinitions: any[];
+  incomingDefinitions: ProjectExecutionDefinitionItem[];
+  offerVersionId?: string | null;
+  preferIncomingExecutionSpec?: boolean;
+}) {
+  const { currentDefinitions, incomingDefinitions, offerVersionId, preferIncomingExecutionSpec = false } = params;
+  const incomingKeys = new Set<string>();
+  const currentByKey = new Map<string, any>();
+  for (const definition of currentDefinitions ?? []) {
+    const itemKey = String(definition?.offerItemId ?? definition?.id ?? '');
+    const key = `${String(definition?.offerVersionId ?? '')}:${itemKey}`;
+    if (itemKey) currentByKey.set(key, definition);
+  }
+
+  const mergedIncoming = incomingDefinitions.map((definition) => {
+    const itemKey = String(definition.offerItemId ?? definition.id);
+    const key = `${String(definition.offerVersionId ?? offerVersionId ?? '')}:${itemKey}`;
+    incomingKeys.add(key);
+    const existing = currentByKey.get(key);
+    return {
+      ...definition,
+      executionSpec: preferIncomingExecutionSpec
+        ? sanitizeExecutionSpec(definition.executionSpec) ?? sanitizeExecutionSpec(existing?.executionSpec)
+        : sanitizeExecutionSpec(existing?.executionSpec) ?? sanitizeExecutionSpec(definition.executionSpec),
+    };
+  });
+
+  const retained = (currentDefinitions ?? []).filter((definition) => {
+    const itemKey = String(definition?.offerItemId ?? definition?.id ?? '');
+    const key = `${String(definition?.offerVersionId ?? '')}:${itemKey}`;
+    if (!itemKey || incomingKeys.has(key)) return false;
+    if (offerVersionId && String(definition?.offerVersionId ?? '') === offerVersionId) return false;
+    return true;
+  });
+
+  return [...retained, ...mergedIncoming];
+}
+
+function applyExecutionDefinitionsToWorkOrders(workOrders: any[], definitions: any[]) {
+  if (!Array.isArray(workOrders) || !Array.isArray(definitions) || definitions.length === 0) {
+    return workOrders;
+  }
+  const definitionsByKey = new Map<string, any>();
+  for (const definition of definitions) {
+    const key = String(definition?.offerItemId ?? definition?.id ?? '');
+    const offerKey = String(definition?.offerVersionId ?? '');
+    if (key) definitionsByKey.set(`${offerKey}:${key}`, definition);
+  }
+  return workOrders.map((workOrder) => ({
+    ...workOrder,
+    items: (workOrder.items ?? []).map((item: any) => {
+      const key = String(item?.offerItemId ?? item?.id ?? '');
+      const offerKey = String(workOrder?.offerVersionId ?? '');
+      const definition = key ? definitionsByKey.get(`${offerKey}:${key}`) : null;
+      if (!definition) return item;
+      return {
+        ...item,
+        executionSpec: sanitizeExecutionSpec(definition.executionSpec) ?? sanitizeExecutionSpec(item.executionSpec),
+      };
+    }),
+  }));
+}
+
+async function syncProjectExecutionDefinitionsFromWorkOrder(projectId: string, workOrder: any) {
+  if (!workOrder) return;
+  const project = await ProjectModel.findOne({ id: projectId });
+  if (!project) return;
+  const incomingDefinitions = buildExecutionDefinitionsFromWorkOrder(workOrder);
+  project.executionDefinitions = mergeProjectExecutionDefinitions({
+    currentDefinitions: Array.isArray(project.executionDefinitions) ? project.executionDefinitions : [],
+    incomingDefinitions,
+    offerVersionId: workOrder.offerVersionId ? String(workOrder.offerVersionId) : null,
+    preferIncomingExecutionSpec: true,
+  });
+  await project.save();
+}
+
+async function syncWorkOrdersFromProjectExecutionDefinitions(projectId: string, offerVersionId?: string | null) {
+  const project = await ProjectModel.findOne({ id: projectId }).lean();
+  if (!project || !Array.isArray((project as any).executionDefinitions)) return;
+  const definitionsByKey = new Map<string, any>();
+  for (const definition of (project as any).executionDefinitions) {
+    if (offerVersionId && String(definition?.offerVersionId ?? '') !== offerVersionId) continue;
+    const key = String(definition?.offerItemId ?? definition?.id ?? '');
+    const offerKey = String(definition?.offerVersionId ?? '');
+    if (key) definitionsByKey.set(`${offerKey}:${key}`, definition);
+  }
+  if (definitionsByKey.size === 0) return;
+
+  const query: Record<string, unknown> = { projectId, cancelledAt: null };
+  if (offerVersionId) query.offerVersionId = offerVersionId;
+  const workOrders = await WorkOrderModel.find(query);
+  for (const workOrder of workOrders) {
+    let changed = false;
+    workOrder.items = (workOrder.items ?? []).map((item: any) => {
+      const plain = item?.toObject ? item.toObject() : item;
+      const key = String(plain?.offerItemId ?? plain?.id ?? '');
+      const offerKey = String(workOrder?.offerVersionId ?? '');
+      const definition = key ? definitionsByKey.get(`${offerKey}:${key}`) : null;
+      if (!definition) return item;
+      changed = true;
+      return {
+        ...plain,
+        executionSpec: sanitizeIncomingExecutionSpec(definition.executionSpec, plain.executionSpec, null, false),
+      };
+    });
+    if (changed) {
+      await workOrder.save();
+    }
+  }
 }
 
 const PHOTO_UPLOAD_BASE_DIR = '/var/www/aintel/uploads';
@@ -1153,6 +1304,10 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
     WorkOrderModel.find(workOrderQuery).sort({ sequence: 1, createdAt: 1 }).lean(),
   ]);
   const normalizedWorkOrderDocs = await normalizeAndPersistWorkOrdersServiceFlags(workOrderDocs);
+  const workOrderDocsWithProjectDefinitions = applyExecutionDefinitionsToWorkOrders(
+    normalizedWorkOrderDocs,
+    Array.isArray((project as any).executionDefinitions) ? (project as any).executionDefinitions : [],
+  );
 
   const resolveTotalWithVat = (offer: any) => {
     const sumFromItems =
@@ -1169,7 +1324,7 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
   const serializedMaterialOrders: MaterialOrder[] = materialOrderDocs
     .map(serializeMaterialOrder)
     .filter((order): order is MaterialOrder => order !== null);
-  const serializedWorkOrders: WorkOrder[] = normalizedWorkOrderDocs
+  const serializedWorkOrders: WorkOrder[] = workOrderDocsWithProjectDefinitions
     .map(serializeWorkOrder)
     .filter((order): order is WorkOrder => order !== null);
 
@@ -1196,6 +1351,164 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
         null
       : serializedWorkOrders[0] ?? null,
   };
+}
+
+async function resolveExecutionDefinitionOffer(projectId: string, requestedOfferId?: string | null) {
+  const query = requestedOfferId
+    ? { _id: requestedOfferId, projectId }
+    : { projectId };
+  return requestedOfferId
+    ? OfferVersionModel.findOne(query).lean()
+    : OfferVersionModel.findOne(query).sort({ status: -1, versionNumber: -1, createdAt: -1 }).lean();
+}
+
+async function ensureProjectExecutionDefinitions(projectId: string, requestedOfferId?: string | null) {
+  const project = await ProjectModel.findOne({ id: projectId });
+  if (!project) return null;
+
+  const offerId = requestedOfferId ?? project.confirmedOfferVersionId ?? null;
+  const offer = await resolveExecutionDefinitionOffer(projectId, offerId);
+  const resolvedOfferId = offer?._id ? String(offer._id) : offerId;
+  const currentDefinitions = Array.isArray(project.executionDefinitions) ? project.executionDefinitions : [];
+  const hasDefinitionsForOffer = resolvedOfferId
+    ? currentDefinitions.some((definition: any) => String(definition?.offerVersionId ?? '') === resolvedOfferId)
+    : currentDefinitions.length > 0;
+
+  if (!hasDefinitionsForOffer && resolvedOfferId) {
+    const workOrder = await WorkOrderModel.findOne({
+      projectId,
+      offerVersionId: resolvedOfferId,
+      cancelledAt: null,
+    }).lean();
+    let incomingDefinitions: ProjectExecutionDefinitionItem[] = [];
+
+    if (workOrder) {
+      incomingDefinitions = buildExecutionDefinitionsFromWorkOrder(workOrder);
+    } else if (offer) {
+      const offerItems = Array.isArray((offer as any).items) ? (offer as any).items : [];
+      const productIds = offerItems
+        .map((item: any) => (item.productId ? String(item.productId) : null))
+        .filter((id: string | null): id is string => Boolean(id));
+      const serviceProductIds = new Set<string>();
+      const productDefaultsById = new Map<string, any>();
+      if (productIds.length > 0) {
+        const products = await ProductModel.find({ _id: { $in: productIds } })
+          .select('_id isService defaultExecutionMode defaultInstructionsTemplate')
+          .lean();
+        products.forEach((product) => {
+          productDefaultsById.set(String(product._id), product);
+          if (product.isService) {
+            serviceProductIds.add(String(product._id));
+          }
+        });
+      }
+      incomingDefinitions = mapOfferItemsToWorkOrderItems(offerItems, serviceProductIds, productDefaultsById)
+        .filter((item) => !item.isExtra)
+        .map((item) => buildExecutionDefinitionItem({ item, offerVersionId: resolvedOfferId }));
+    }
+
+    if (incomingDefinitions.length > 0) {
+      project.executionDefinitions = mergeProjectExecutionDefinitions({
+        currentDefinitions,
+        incomingDefinitions,
+        offerVersionId: resolvedOfferId,
+      });
+      await project.save();
+    }
+  }
+
+  const definitions = Array.isArray(project.executionDefinitions) ? project.executionDefinitions : [];
+  return {
+    project,
+    offerVersionId: resolvedOfferId,
+    items: resolvedOfferId
+      ? definitions.filter((definition: any) => String(definition?.offerVersionId ?? '') === resolvedOfferId)
+      : definitions,
+  };
+}
+
+export async function getProjectExecutionDefinition(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { projectId } = req.params;
+    const requestedOfferId =
+      typeof req.query.offerVersionId === 'string'
+        ? req.query.offerVersionId.trim()
+        : typeof req.query.offerId === 'string'
+          ? req.query.offerId.trim()
+          : null;
+    const result = await ensureProjectExecutionDefinitions(projectId, requestedOfferId);
+    if (!result) {
+      return res.fail('Projekt ni najden.', 404);
+    }
+    return res.success({
+      projectId,
+      offerVersionId: result.offerVersionId,
+      items: result.items,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateProjectExecutionDefinition(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { projectId } = req.params;
+    const requestedOfferId =
+      typeof req.body?.offerVersionId === 'string' && req.body.offerVersionId.trim().length > 0
+        ? req.body.offerVersionId.trim()
+        : typeof req.query.offerVersionId === 'string'
+          ? req.query.offerVersionId.trim()
+          : null;
+    const result = await ensureProjectExecutionDefinitions(projectId, requestedOfferId);
+    if (!result) {
+      return res.fail('Projekt ni najden.', 404);
+    }
+    const offerVersionId = requestedOfferId ?? result.offerVersionId ?? null;
+    if (!Array.isArray(req.body?.items)) {
+      return res.fail('Neveljavna definicija izvedbe.', 400);
+    }
+
+    const existingByKey = new Map<string, any>(
+      (Array.isArray(result.project.executionDefinitions) ? result.project.executionDefinitions : [])
+        .map((definition: any) => [
+          `${String(definition?.offerVersionId ?? '')}:${String(definition?.offerItemId ?? definition?.id ?? '')}`,
+          definition,
+        ])
+        .filter(([key]) => key.length > 0)
+    );
+
+    const incomingDefinitions = req.body.items.map((item: any) => {
+      const definition = buildExecutionDefinitionItem({
+        item: {
+          ...item,
+          offerVersionId,
+          offerItemId: item?.offerItemId ?? item?.id,
+        },
+        offerVersionId,
+      });
+      const existing = existingByKey.get(`${String(offerVersionId ?? '')}:${String(definition.offerItemId ?? definition.id)}`);
+      return {
+        ...definition,
+        executionSpec: sanitizeIncomingExecutionSpec(definition.executionSpec, existing?.executionSpec, null, false),
+      };
+    });
+
+    result.project.executionDefinitions = mergeProjectExecutionDefinitions({
+      currentDefinitions: Array.isArray(result.project.executionDefinitions) ? result.project.executionDefinitions : [],
+      incomingDefinitions,
+      offerVersionId,
+      preferIncomingExecutionSpec: true,
+    });
+    await result.project.save();
+    await syncWorkOrdersFromProjectExecutionDefinitions(projectId, offerVersionId);
+
+    const items = offerVersionId
+      ? result.project.executionDefinitions.filter((definition: any) => String(definition?.offerVersionId ?? '') === offerVersionId)
+      : result.project.executionDefinitions;
+    return res.success({ projectId, offerVersionId, items });
+  } catch (err) {
+    next(err);
+  }
 }
 
 export async function confirmOffer(req: Request, res: Response, next: NextFunction) {
@@ -1270,6 +1583,8 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       customerAddress,
       productDefaultsById,
     });
+
+    await syncProjectExecutionDefinitionsFromWorkOrder(projectId, workOrder);
 
     await copyRequirementLocationPhotosToPreparation({
       projectObjectId: String(project._id),
@@ -2018,6 +2333,10 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       });
       await project.save();
     }
+  }
+
+  if (normalizedUpdated && Array.isArray(payload.items)) {
+    await syncProjectExecutionDefinitionsFromWorkOrder(projectId, normalizedUpdated);
   }
 
   const responseOrder = shouldRefreshResponseOrder

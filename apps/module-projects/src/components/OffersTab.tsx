@@ -43,6 +43,7 @@ import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
 import { OfferCommunicationComposeDialog } from "../domains/communication/OfferCommunicationComposeDialog";
 import { OfferSentMessagesTable } from "../domains/communication/OfferSentMessagesTable";
+import { ExecutionDefinitionPanel } from "../domains/logistics/ExecutionDefinitionPanel";
 
 type OffersTabProps = {
   projectId: string;
@@ -3242,6 +3243,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           </Button>
         </div>
       </div>
+      <ExecutionDefinitionPanel projectId={projectId} offerVersionId={currentOffer?._id ?? selectedOfferId} />
       <OfferSentMessagesTable
         projectId={projectId}
         offerId={currentOffer?._id ?? selectedOfferId}
