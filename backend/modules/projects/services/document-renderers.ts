@@ -17,6 +17,11 @@ export interface PreviewItem {
   total?: number;
   vatPercent?: number;
   statusLabel?: string | null;
+  executionLocations?: Array<{
+    name: string;
+    note?: string;
+    photos: string[];
+  }>;
 }
 
 export interface PreviewTotals {
@@ -117,6 +122,15 @@ const baseStyles = `
   .tasks { margin-top: 12px; }
   .task { padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
   .badge { display: inline-flex; padding: 4px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca; font-size: 12px; }
+  .execution-locations { margin-top: 6px; padding-top: 6px; border-top: 1px solid #eef2f7; }
+  .execution-location-row { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; border-bottom: 1px solid #f1f5f9; }
+  .execution-location-name { flex: 0 0 34%; margin: 0; font-size: 10.5px; font-weight: 700; color: #111827; }
+  .execution-location-note { flex: 1 1 auto; margin: 0; font-size: 10.5px; color: #475569; line-height: 1.25; }
+  .execution-location-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
+  .execution-location { min-width: 0; break-inside: avoid; page-break-inside: avoid; }
+  .execution-location .execution-location-name { display: block; margin: 0 0 4px; }
+  .execution-location-photos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .execution-location-photos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #dbe2ea; border-radius: 3px; }
   .offer-preview { display:flex; flex-direction:column; gap:16px; flex:1; min-height:100%; }
   .offer-header { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; break-inside:avoid; page-break-inside:avoid; padding:4px 0 12px; }
   .offer-logo { width:170px; height:68px; display:flex; align-items:center; justify-content:flex-start; overflow:hidden; border:none; background:none; padding:6px 0; }
@@ -613,12 +627,42 @@ export function renderDeliveryNotePdf(context: DocumentPreviewContext) {
 
 export function renderWorkOrderPdf(context: DocumentPreviewContext) {
   const tasks = context.tasks ?? (context.items ?? []).map((item) => ({ label: item.name, status: 'todo' as const }));
-  const rows = tasks.map(
-    (task) => `<tr>
-        <td>${task.label}</td>
+  const rows = (context.items ?? []).map((item, index) => {
+    const task = tasks[index] ?? { label: item.name, status: 'todo' as const };
+    const locations = item.executionLocations ?? [];
+    const hasLocationPhotos = locations.some((location) => location.photos.length > 0);
+    const locationsBlock = locations.length
+      ? `<div class="execution-locations">
+          <strong>Definicija izvedbe</strong>
+          <div class="${hasLocationPhotos ? 'execution-location-grid' : 'execution-location-list'}">
+            ${locations
+              .map((location) => {
+                const photos = location.photos.map((photo) => `<img src="${photo}" alt="" />`).join('');
+                const note = location.note ? `<p class="execution-location-note">${escapeHtml(location.note)}</p>` : '';
+                if (!photos) {
+                  return `<div class="execution-location-row">
+                    <p class="execution-location-name">${escapeHtml(location.name)}</p>
+                    ${note}
+                  </div>`;
+                }
+                return `<div class="execution-location">
+                  <p class="execution-location-name">${escapeHtml(location.name)}</p>
+                  ${note}
+                  <div class="execution-location-photos">${photos}</div>
+                </div>`;
+              })
+              .join('')}
+          </div>
+        </div>`
+      : '';
+    return `<tr>
+        <td>
+          <div>${escapeHtml(item.name || task.label)}</div>
+          ${locationsBlock}
+        </td>
         <td style="text-align:right;">${task.status ?? ''}</td>
       </tr>`
-  );
+  });
   const itemsRows = rows.length
     ? rows.join('')
     : `<tr><td colspan="2" style="text-align:center; color:#94a3b8;">Ni nalog za prikaz.</td></tr>`;

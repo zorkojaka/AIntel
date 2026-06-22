@@ -49,7 +49,7 @@ function resolveActorProfile(req: Request) {
 
 export async function sendOfferCommunicationController(req: Request, res: Response) {
   try {
-    const payload = await sendOfferCommunicationEmail({
+    const input = {
       projectId: req.params.projectId,
       offerId: req.params.offerVersionId,
       to: req.body?.to,
@@ -64,8 +64,17 @@ export async function sendOfferCommunicationController(req: Request, res: Respon
       actorUserId: (req as any)?.context?.actorUserId ?? null,
       actorDisplayName: buildActorDisplayName(req as any),
       actorProfile: resolveActorProfile(req),
+    };
+
+    void sendOfferCommunicationEmail(input).catch((error) => {
+      console.error("Offer communication background send failed", error);
     });
-    return res.success(payload);
+
+    return res.status(202).json({
+      success: true,
+      data: { queued: true },
+      error: null,
+    });
   } catch (error) {
     console.error("Offer communication send failed", error);
     return res.fail(error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.", 400);

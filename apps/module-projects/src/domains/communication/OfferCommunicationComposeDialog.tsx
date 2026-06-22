@@ -5,7 +5,8 @@ import type {
   CommunicationTemplate,
 } from '@aintel/shared/types/communication';
 import { renderCommunicationFooterText } from '../../../../../shared/utils/communication-footer';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Save } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -17,7 +18,12 @@ import {
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
-import { fetchCommunicationSenderSettings, fetchCommunicationTemplates, sendOfferCommunicationEmail } from './api';
+import {
+  createCommunicationTemplate,
+  fetchCommunicationSenderSettings,
+  fetchCommunicationTemplates,
+  sendOfferCommunicationEmail,
+} from './api';
 import type { OfferVersionSummary } from '@aintel/shared/types/offers';
 
 interface OfferCommunicationComposeDialogProps {
@@ -32,7 +38,7 @@ interface OfferCommunicationComposeDialogProps {
   offerTotal: number;
   offerVersions: OfferVersionSummary[];
   companyName: string;
-  onSent: () => Promise<void> | void;
+  onSent: (result?: { queued?: boolean }) => Promise<void> | void;
 }
 
 function replacePlaceholders(template: string, context: Record<string, string>) {
@@ -44,6 +50,26 @@ function formatTotal(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(Number.isFinite(value) ? value : 0);
+}
+
+function templateKeyFromName(name: string) {
+  const slug = name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+  return `offer-send-${slug || 'predloga'}-${Date.now()}`;
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
 }
 
 const ATTACHMENT_OPTIONS: Array<{ value: CommunicationAttachmentType; label: string }> = [
@@ -69,7 +95,11 @@ export function OfferCommunicationComposeDialog({
   const [senderSettings, setSenderSettings] = useState<CommunicationSenderSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [isTemplateNameDialogOpen, setIsTemplateNameDialogOpen] = useState(false);
+  const [templateNameDraft, setTemplateNameDraft] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [to, setTo] = useState('');
   const [cc, setCc] = useState('');
@@ -242,6 +272,49 @@ export function OfferCommunicationComposeDialog({
     setIsDirty(true);
   };
 
+  const openSaveTemplateDialog = () => {
+    if (!subject.trim() || !body.trim()) {
+      toast.error('Zadeva in vsebina sta obvezni za shranjevanje predloge.');
+      return;
+    }
+    setTemplateNameDraft(selectedTemplate?.name ? `${selectedTemplate.name} kopija` : `${offerNumber || 'Ponudba'} email`);
+    setIsTemplateNameDialogOpen(true);
+  };
+
+  const handleSaveTemplate = async () => {
+    const templateName = templateNameDraft.trim();
+    if (!templateName) {
+      toast.error('Ime predloge je obvezno.');
+      return;
+    }
+    if (!subject.trim() || !body.trim()) {
+      toast.error('Zadeva in vsebina sta obvezni za shranjevanje predloge.');
+      return;
+    }
+
+    setSavingTemplate(true);
+    try {
+      const created = await createCommunicationTemplate({
+        key: templateKeyFromName(templateName),
+        name: templateName,
+        category: 'offer_send',
+        subjectTemplate: subject,
+        bodyTemplate: body,
+        defaultAttachments: selectedAttachments,
+        isActive: true,
+      });
+      setTemplates((prev) => [...prev.filter((entry) => entry.id !== created.id), created].sort((a, b) => a.name.localeCompare(b.name, 'sl')));
+      setSelectedTemplateId(created.id);
+      setIsTemplateNameDialogOpen(false);
+      setIsDirty(false);
+      toast.success('Predloga shranjena.');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Predloge ni bilo mogoče shraniti.'));
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
   const attachmentsDisabled = !offerId;
   const offerSelectionDisabled = !offerId;
   const senderDisabled = !senderSettings?.enabled;
@@ -253,9 +326,10 @@ export function OfferCommunicationComposeDialog({
       return;
     }
 
+    setSendError(null);
     setSending(true);
     try {
-      await sendOfferCommunicationEmail(projectId, offerId, {
+      const result = await sendOfferCommunicationEmail(projectId, offerId, {
         to,
         cc,
         bcc,
@@ -266,16 +340,35 @@ export function OfferCommunicationComposeDialog({
         selectedAttachments,
         selectedOfferIds,
       });
-      await onSent();
+      await onSent(result);
       onOpenChange(false);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : 'Emaila ni bilo mogoče poslati.');
     } finally {
       setSending(false);
     }
   };
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && sending) {
+      return;
+    }
+    onOpenChange(nextOpen);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-3xl">
+    <>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="max-h-[calc(100dvh-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        hideCloseButton={sending}
+        onEscapeKeyDown={(event) => {
+          if (sending) event.preventDefault();
+        }}
+        onInteractOutside={(event) => {
+          event.preventDefault();
+        }}
+      >
         <DialogHeader className="px-4 pb-3 pt-4 pr-12 sm:px-6 sm:pt-6">
           <DialogTitle>Pošlji email stranki</DialogTitle>
           <DialogDescription>
@@ -308,32 +401,63 @@ export function OfferCommunicationComposeDialog({
                 Primarni email stranke ni nastavljen. Polje <strong>To</strong> ostaja prazno, dokler ne vnesete prejemnika.
               </div>
             ) : null}
+            {sendError ? (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                {sendError}
+              </div>
+            ) : null}
+            {sending ? (
+              <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                <div className="mb-2 flex items-center gap-2 font-medium">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Pripravljam PDF priponke in pošiljam email ...
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-sky-100">
+                  <div className="h-full w-2/3 animate-pulse rounded-full bg-sky-500" />
+                </div>
+                <div className="mt-2 text-xs text-sky-800">
+                  Pri ponudbah z več slikami lahko traja dlje. Okno med pošiljanjem ostane zaklenjeno, da se vsebina ne izgubi.
+                </div>
+              </div>
+            ) : null}
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="space-y-2 text-sm">
-                <span className="font-medium">Predloga</span>
-                <select
-                  value={selectedTemplateId}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    if (!value) {
-                      setSelectedTemplateId('');
-                      setSubject('');
-                      setBody('');
-                      setSelectedAttachments([]);
-                      return;
-                    }
-                    applyTemplate(templates.find((entry) => entry.id === value) ?? null);
-                  }}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              <div className="space-y-2">
+                <label className="block space-y-2 text-sm">
+                  <span className="font-medium">Predloga</span>
+                  <select
+                    value={selectedTemplateId}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (!value) {
+                        setSelectedTemplateId('');
+                        setSubject('');
+                        setBody('');
+                        setSelectedAttachments([]);
+                        return;
+                      }
+                      applyTemplate(templates.find((entry) => entry.id === value) ?? null);
+                    }}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="">Brez predloge</option>
+                    {templates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={openSaveTemplateDialog}
+                  disabled={loading || sending || savingTemplate || !subject.trim() || !body.trim()}
                 >
-                  <option value="">Brez predloge</option>
-                  {templates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  {savingTemplate ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  Shrani kot predlogo
+                </Button>
+              </div>
               <div className="rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
                 <div>Pošiljatelj: {senderSettings?.senderName || '-'}</div>
                 <div>Email: {senderSettings?.senderEmail || '-'}</div>
@@ -455,7 +579,7 @@ export function OfferCommunicationComposeDialog({
         )}
         </div>
         <DialogFooter className="border-t px-4 py-3 sm:px-6">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
             Prekliči
           </Button>
           <Button
@@ -478,5 +602,54 @@ export function OfferCommunicationComposeDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <Dialog
+      open={isTemplateNameDialogOpen}
+      onOpenChange={(nextOpen) => {
+        if (!savingTemplate) setIsTemplateNameDialogOpen(nextOpen);
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-md"
+        hideCloseButton={savingTemplate}
+        onEscapeKeyDown={(event) => {
+          if (savingTemplate) event.preventDefault();
+        }}
+        onInteractOutside={(event) => {
+          if (savingTemplate) event.preventDefault();
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>Shrani predlogo</DialogTitle>
+          <DialogDescription>
+            Trenutna zadeva, vsebina in izbrane priloge bodo shranjene kot nova predloga za pošiljanje ponudb.
+          </DialogDescription>
+        </DialogHeader>
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">Ime predloge</span>
+          <Input
+            value={templateNameDraft}
+            onChange={(event) => setTemplateNameDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void handleSaveTemplate();
+              }
+            }}
+            disabled={savingTemplate}
+            autoFocus
+          />
+        </label>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setIsTemplateNameDialogOpen(false)} disabled={savingTemplate}>
+            Prekliči
+          </Button>
+          <Button type="button" onClick={() => void handleSaveTemplate()} disabled={savingTemplate || !templateNameDraft.trim()}>
+            {savingTemplate ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Shrani
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

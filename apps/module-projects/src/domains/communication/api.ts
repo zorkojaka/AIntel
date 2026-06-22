@@ -53,6 +53,20 @@ export async function fetchCommunicationTemplates(category: CommunicationCategor
   return parseEnvelope<CommunicationTemplate[]>(response);
 }
 
+export async function createCommunicationTemplate(
+  payload: Pick<
+    CommunicationTemplate,
+    'key' | 'name' | 'category' | 'subjectTemplate' | 'bodyTemplate' | 'defaultAttachments' | 'isActive'
+  >
+) {
+  const response = await fetch('/api/settings/communication/templates', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return parseEnvelope<CommunicationTemplate>(response);
+}
+
 export async function fetchCommunicationSenderSettings() {
   const response = await fetch('/api/settings/communication');
   return parseEnvelope<CommunicationSenderSettings>(response);
@@ -78,7 +92,7 @@ export async function sendOfferCommunicationEmail(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  return parseEnvelope<{ message: CommunicationMessage }>(response);
+  return parseEnvelope<{ message?: CommunicationMessage; queued?: boolean }>(response);
 }
 
 export async function sendWorkOrderConfirmationCommunicationEmail(
