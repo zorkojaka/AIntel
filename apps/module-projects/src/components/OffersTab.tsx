@@ -3243,12 +3243,12 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
           </Button>
         </div>
       </div>
-      <ExecutionDefinitionPanel projectId={projectId} offerVersionId={currentOffer?._id ?? selectedOfferId} />
       <OfferSentMessagesTable
         projectId={projectId}
         offerId={currentOffer?._id ?? selectedOfferId}
         refreshKey={communicationRefreshKey}
       />
+      <ExecutionDefinitionPanel projectId={projectId} offerVersionId={currentOffer?._id ?? selectedOfferId} />
 
     </Card>
   );
