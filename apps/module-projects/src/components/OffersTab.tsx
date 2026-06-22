@@ -913,31 +913,21 @@ const loadOfferById = useCallback(async (offerId: string) => {
       .replace(/\s+/g, " ")
       .trim();
 
-const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, prefix: string) => {
-    const identifierRaw =
-      (project?.projectNumber != null && `${project.projectNumber}`) ||
-      project?.code ||
-      project?.id ||
-      fallbackId ||
-      "";
-    const customerRaw =
-      project?.customerDetail?.name?.trim() ||
-      project?.customer?.trim() ||
-      "";
-
-    const identifier = sanitizeFilenamePart(identifierRaw);
-    const customer = sanitizeFilenamePart(customerRaw);
-
-  if (identifier && customer) {
-    return `${prefix} ${identifier} - ${customer}.pdf`;
-  }
-  if (identifier) {
-    return `${prefix} ${identifier}.pdf`;
-  }
-  if (fallbackId) {
-    return `${prefix} ${fallbackId}.pdf`;
-  }
-  return `${prefix}.pdf`;
+const buildOfferPdfFilename = (
+  project: ProjectDetails | null,
+  fallbackId: string,
+  prefix: string,
+  offer: Pick<OfferVersion, "baseTitle" | "title" | "documentNumber"> | null
+) => {
+  const identifierRaw = project?.code || project?.id || fallbackId || "";
+  const offerTitleRaw = offer?.baseTitle?.trim() || offer?.title?.trim() || "";
+  const customerRaw =
+    project?.customerDetail?.name?.trim() ||
+    project?.customer?.trim() ||
+    offer?.documentNumber?.trim() ||
+    "";
+  const parts = [identifierRaw, offerTitleRaw, customerRaw].map(sanitizeFilenamePart).filter(Boolean);
+  return `${prefix} - ${parts.join(" - ") || sanitizeFilenamePart(fallbackId) || "Ponudba"}.pdf`;
 };
 
   const handleToggleGlobalDiscount = (checked: boolean) => {
@@ -2020,7 +2010,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
         offer: "Ponudba",
         both: "Ponudba+Projekt",
       } as const;
-      const filename = buildPdfFilename(details, projectId, labelMap[mode]);
+      const filename = buildOfferPdfFilename(details, projectId, labelMap[mode], saved);
       await downloadPdf(url, filename);
       toast.success("PDF prenesen");
     } catch (error) {
@@ -2038,7 +2028,7 @@ const buildPdfFilename = (project: ProjectDetails | null, fallbackId: string, pr
       if (!saved?._id) return;
       const url = `/api/projects/${projectId}/offers/${saved._id}/pdf?variant=descriptions`;
       const details = await ensureProjectDetails();
-      const filename = buildPdfFilename(details, projectId, "Produktni opisi");
+      const filename = buildOfferPdfFilename(details, projectId, "Opisi", saved);
       await downloadPdf(url, filename);
       toast.success("PDF prenesen");
     } catch (error) {

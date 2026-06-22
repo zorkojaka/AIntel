@@ -25,6 +25,15 @@ function sanitizeFilePart(value: string) {
   return normalized.slice(0, 120);
 }
 
+function buildOfferFileCore(offer: any, project: any, offerId: string) {
+  const projectIdentifier = project.code?.trim() || project.id || offer.projectId || "";
+  const offerTitle = offer.baseTitle?.trim() || offer.title?.trim() || "";
+  const documentNumber = offer.documentNumber?.trim() || "";
+  const customerName = project.customerName?.trim() || project.customer?.name?.trim() || "";
+  const parts = [projectIdentifier, offerTitle, customerName || documentNumber || offerId].filter(Boolean);
+  return sanitizeFilePart(parts.join(" - ")) || sanitizeFilePart(documentNumber || offerId) || "Ponudba";
+}
+
 export async function resolveCommunicationAttachment(params: {
   type: CommunicationAttachmentType;
   projectId: string;
@@ -112,13 +121,11 @@ export async function resolveCommunicationAttachment(params: {
     throw new Error("Ponudba za priponko ni najdena.");
   }
 
-  const offerIdentifier =
-    offer.documentNumber?.trim() || offer.title?.trim() || offer.baseTitle?.trim() || project.code || project.id || offerId;
-  const projectIdentifier = project.code?.trim() || project.title?.trim() || project.id || offer.projectId || offerId;
+  const offerFileCore = buildOfferFileCore(offer, project, offerId);
 
   if (type === "offer_pdf") {
     const buffer = await generateOfferDocumentPdf(offerId, "OFFER");
-    const offerLabel = sanitizeFilePart(`Ponudba ${offerIdentifier}`) || "Ponudba";
+    const offerLabel = sanitizeFilePart(`Ponudba - ${offerFileCore}`) || "Ponudba";
     return {
       type,
       refId: offerId,
@@ -129,7 +136,7 @@ export async function resolveCommunicationAttachment(params: {
   }
 
   const buffer = await generateOfferDescriptionsPdf(offer as any);
-  const descriptionLabel = sanitizeFilePart(`Opisi ${offerIdentifier} ${projectIdentifier}`) || "Opisi";
+  const descriptionLabel = sanitizeFilePart(`Opisi - ${offerFileCore}`) || "Opisi";
   return {
     type,
     refId: offerId,
