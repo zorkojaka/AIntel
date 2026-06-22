@@ -26,12 +26,16 @@ function sanitizeFilePart(value: string) {
 }
 
 function buildOfferFileCore(offer: any, project: any, offerId: string) {
-  const projectIdentifier = project.code?.trim() || project.id || offer.projectId || "";
-  const offerTitle = offer.baseTitle?.trim() || offer.title?.trim() || "";
-  const documentNumber = offer.documentNumber?.trim() || "";
+  const projectIdentifier = String(project.projectNumber ?? project.code ?? project.id ?? offer.projectId ?? "")
+    .trim()
+    .replace(/^PRJ-/i, "");
+  const offerTitle = offer.baseTitle?.trim() || offer.title?.trim() || "Ponudba";
   const customerName = project.customerName?.trim() || project.customer?.name?.trim() || "";
-  const parts = [projectIdentifier, offerTitle, customerName || documentNumber || offerId].filter(Boolean);
-  return sanitizeFilePart(parts.join(" - ")) || sanitizeFilePart(documentNumber || offerId) || "Ponudba";
+  const parts = [offerTitle, customerName || offerId].filter(Boolean);
+  return {
+    projectIdentifier: sanitizeFilePart(projectIdentifier || offerId) || "projekt",
+    suffix: sanitizeFilePart(parts.join(" - ")) || sanitizeFilePart(offerId) || "Ponudba",
+  };
 }
 
 export async function resolveCommunicationAttachment(params: {
@@ -125,7 +129,7 @@ export async function resolveCommunicationAttachment(params: {
 
   if (type === "offer_pdf") {
     const buffer = await generateOfferDocumentPdf(offerId, "OFFER");
-    const offerLabel = sanitizeFilePart(`Ponudba - ${offerFileCore}`) || "Ponudba";
+    const offerLabel = sanitizeFilePart(`Ponudba-${offerFileCore.projectIdentifier} - ${offerFileCore.suffix}`) || "Ponudba";
     return {
       type,
       refId: offerId,
@@ -136,7 +140,7 @@ export async function resolveCommunicationAttachment(params: {
   }
 
   const buffer = await generateOfferDescriptionsPdf(offer as any);
-  const descriptionLabel = sanitizeFilePart(`Opisi - ${offerFileCore}`) || "Opisi";
+  const descriptionLabel = sanitizeFilePart(`Opis-${offerFileCore.projectIdentifier} - ${offerFileCore.suffix}`) || "Opis";
   return {
     type,
     refId: offerId,
