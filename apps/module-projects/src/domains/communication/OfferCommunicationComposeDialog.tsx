@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   CommunicationAttachmentType,
+  CommunicationMessage,
   CommunicationSenderSettings,
   CommunicationTemplate,
 } from '@aintel/shared/types/communication';
@@ -20,7 +21,6 @@ import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import {
   createCommunicationTemplate,
-  fetchOfferMessages,
   fetchCommunicationSenderSettings,
   fetchCommunicationTemplates,
   sendOfferCommunicationEmail,
@@ -28,6 +28,7 @@ import {
 import type { OfferVersionSummary } from '@aintel/shared/types/offers';
 
 type SendStatus = 'idle' | 'sending' | 'queued' | 'sent' | 'failed';
+type SendProgressContext = { offerId: string; subject: string; startedAtMs: number };
 
 interface OfferCommunicationComposeDialogProps {
   open: boolean;
@@ -41,7 +42,7 @@ interface OfferCommunicationComposeDialogProps {
   offerTotal: number;
   offerVersions: OfferVersionSummary[];
   companyName: string;
-  onSent: (result?: { queued?: boolean }) => Promise<void> | void;
+  onSent: (result?: { queued?: boolean }, context?: SendProgressContext) => Promise<CommunicationMessage | null | void> | CommunicationMessage | null | void;
 }
 
 function replacePlaceholders(template: string, context: Record<string, string>) {
@@ -73,10 +74,6 @@ function getErrorMessage(error: unknown, fallback: string) {
     if (typeof message === 'string' && message.trim()) return message;
   }
   return fallback;
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 const ATTACHMENT_OPTIONS: Array<{ value: CommunicationAttachmentType; label: string }> = [
@@ -119,7 +116,6 @@ export function OfferCommunicationComposeDialog({
   const [selectedOfferIds, setSelectedOfferIds] = useState<string[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const pollingRunRef = useRef(0);
 
   const normalizedCustomerEmail = useMemo(() => customerEmail.trim(), [customerEmail]);
 
@@ -241,7 +237,6 @@ export function OfferCommunicationComposeDialog({
     void load();
     return () => {
       active = false;
-      pollingRunRef.current += 1;
     };
   }, [companyName, customerName, normalizedCustomerEmail, offerId, offerNumber, offerTotal, open, projectName, reloadKey]);
 
@@ -338,28 +333,6 @@ export function OfferCommunicationComposeDialog({
   const missingCustomerEmail = !normalizedCustomerEmail;
   const hasOfferAttachment = selectedAttachments.some((entry) => entry === 'offer_pdf' || entry === 'project_pdf');
 
-  const waitForSendResult = async (targetOfferId: string, startedAtMs: number, subjectAtSend: string, runId: number) => {
-    const minCreatedAt = startedAtMs - 5000;
-    for (let attempt = 0; attempt < 300; attempt += 1) {
-      if (pollingRunRef.current !== runId) return null;
-      const messages = await fetchOfferMessages(projectId, targetOfferId);
-      const matchingMessage = messages.find((message) => {
-        const createdAt = Date.parse(message.createdAt || message.sentAt || '');
-        return (
-          Number.isFinite(createdAt) &&
-          createdAt >= minCreatedAt &&
-          message.subjectFinal === subjectAtSend &&
-          (message.status === 'sent' || message.status === 'failed')
-        );
-      });
-      if (matchingMessage) {
-        return matchingMessage;
-      }
-      await sleep(2000);
-    }
-    throw new Error('Pošiljanje še vedno poteka. Status preveri v poslanih sporočilih.');
-  };
-
   const handleSend = async () => {
     if (!offerId) {
       return;
@@ -367,8 +340,6 @@ export function OfferCommunicationComposeDialog({
 
     const startedAtMs = Date.now();
     const subjectAtSend = subject.trim();
-    const runId = pollingRunRef.current + 1;
-    pollingRunRef.current = runId;
     setSendError(null);
     setSendStatus('sending');
     setSendStatusText('Pripravljam pošiljanje emaila ...');
@@ -388,10 +359,9 @@ export function OfferCommunicationComposeDialog({
       if (result.queued) {
         setSendStatus('queued');
         setSendStatusText('Pošiljanje emaila se je začelo. Pripravljam PDF priponke in čakam na zaključek ...');
-        await onSent(result);
-        const message = await waitForSendResult(offerId, startedAtMs, subjectAtSend, runId);
+        setSending(false);
+        const message = await onSent(result, { offerId, subject: subjectAtSend, startedAtMs });
         if (!message) return;
-        await onSent({ queued: false });
         if (message.status === 'sent') {
           setSendStatus('sent');
           setSendStatusText('Email je bil uspešno poslan.');
@@ -668,6 +638,7 @@ export function OfferCommunicationComposeDialog({
             disabled={
               loading ||
               sending ||
+              sendStatus === 'queued' ||
               sendStatus === 'sent' ||
               senderDisabled ||
               !offerId ||
