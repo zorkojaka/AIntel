@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Camera, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { Camera, ChevronDown, ChevronRight, Image as ImageIcon, Loader2 } from "lucide-react";
 import type {
   ProjectExecutionDefinitionItem,
   WorkOrderExecutionSpec,
@@ -10,12 +10,56 @@ import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader } from "../../components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 
 type ExecutionDefinitionPanelProps = {
   projectId: string;
   offerVersionId?: string | null;
 };
+
+type PreparationPhoto = {
+  _id: string;
+  id?: string;
+  url: string;
+  thumbnailUrl?: string;
+  originalName?: string;
+};
+
+type PhotosResponse = {
+  success: boolean;
+  data?: {
+    photos?: PreparationPhoto[];
+  };
+};
+
+function buildPhotoQuery(context: PhotoContext) {
+  const params = new URLSearchParams();
+  params.set("projectId", context.projectId);
+  params.set("phase", context.phase);
+  if (context.itemId) params.set("itemId", context.itemId);
+  if (typeof context.unitIndex === "number") params.set("unitIndex", String(context.unitIndex));
+  if (context.tag) params.set("tag", context.tag);
+  return params.toString();
+}
+
+function getPhotoKey(photo: PreparationPhoto) {
+  return photo.id || photo._id || photo.url;
+}
+
+function getPhotoSrc(photo: PreparationPhoto, variant: "thumbnail" | "full" = "thumbnail") {
+  return variant === "thumbnail" ? photo.thumbnailUrl || photo.url : photo.url || photo.thumbnailUrl || "";
+}
+
+function dedupePhotos(photos: PreparationPhoto[]) {
+  const seen = new Set<string>();
+  return photos.filter((photo) => {
+    const key = getPhotoKey(photo);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 function normalizeExecutionSpec(spec?: WorkOrderExecutionSpec | null): WorkOrderExecutionSpec {
   return {
@@ -113,6 +157,99 @@ function UnitPhotoButton({
       <Camera className="h-4 w-4" />
       <span>Fotografija{count > 0 ? ` (${count})` : ""}</span>
     </Button>
+  );
+}
+
+export function PreparationPhotoThumbnails({
+  projectId,
+  itemId,
+  unitIndex,
+  refreshKey,
+}: {
+  projectId: string;
+  itemId: string;
+  unitIndex: number;
+  refreshKey: number;
+}) {
+  const [photos, setPhotos] = useState<PreparationPhoto[]>([]);
+  const [previewPhoto, setPreviewPhoto] = useState<PreparationPhoto | null>(null);
+  const context = useMemo<PhotoContext>(
+    () => ({ projectId, phase: "preparation", itemId, unitIndex }),
+    [itemId, projectId, unitIndex],
+  );
+  const queryString = useMemo(() => buildPhotoQuery(context), [context]);
+
+  useEffect(() => {
+    let alive = true;
+    const controller = new AbortController();
+
+    async function loadPhotos() {
+      try {
+        const response = await fetch(`/api/photos?${queryString}`, {
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as PhotosResponse;
+        if (!alive || !response.ok || !payload.success) return;
+        setPhotos(dedupePhotos(payload.data?.photos ?? []));
+      } catch (error: any) {
+        if (!alive || error?.name === "AbortError") return;
+        setPhotos([]);
+      }
+    }
+
+    void loadPhotos();
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [queryString, refreshKey]);
+
+  if (photos.length === 0) return null;
+
+  return (
+    <>
+      <div className="flex min-h-9 flex-wrap items-center gap-1.5">
+        {photos.map((photo) => {
+          const src = getPhotoSrc(photo);
+          return (
+            <button
+              key={getPhotoKey(photo)}
+              type="button"
+              className="h-9 w-9 overflow-hidden rounded-md border border-border/70 bg-muted/30 transition hover:border-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              onClick={() => setPreviewPhoto(photo)}
+              aria-label="Odpri fotografijo definicije izvedbe"
+              title={photo.originalName || "Fotografija definicije izvedbe"}
+            >
+              {src ? (
+                <img src={src} alt={photo.originalName || "Fotografija definicije izvedbe"} className="h-full w-full object-cover" />
+              ) : (
+                <span className="flex h-full w-full items-center justify-center">
+                  <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <Dialog open={Boolean(previewPhoto)} onOpenChange={(open) => !open && setPreviewPhoto(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Fotografija definicije izvedbe</DialogTitle>
+            {previewPhoto?.originalName ? <DialogDescription>{previewPhoto.originalName}</DialogDescription> : null}
+          </DialogHeader>
+          {previewPhoto ? (
+            <div className="flex justify-center rounded-md bg-black/5 p-2">
+              <img
+                src={getPhotoSrc(previewPhoto, "full")}
+                alt={previewPhoto.originalName || "Fotografija definicije izvedbe"}
+                className="max-h-[72vh] max-w-full rounded-md object-contain"
+              />
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -256,24 +393,32 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
                       {locationsAllowed ? (
                         units.map((unit, index) => (
                           <div key={unit.id} className="rounded-md border border-border/70 bg-muted/10 p-2">
-                            <div className="grid gap-2 md:grid-cols-[120px_minmax(240px,1.8fr)_minmax(180px,1.2fr)_140px]">
+                            <div className="grid gap-2 md:grid-cols-[120px_minmax(220px,1.4fr)_minmax(160px,1fr)_minmax(180px,1.1fr)]">
                               <div className="flex items-center text-sm font-medium">{unit.label}</div>
                               <Input
                                 value={unit.location ?? ""}
                                 onChange={(event) => updateUnit(item.id, index, { location: event.target.value })}
                                 placeholder="Lokacija"
                               />
+                              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                <PreparationPhotoThumbnails
+                                  projectId={projectId}
+                                  itemId={item.offerItemId ?? item.id}
+                                  unitIndex={index}
+                                  refreshKey={photoRefreshKey}
+                                />
+                                <UnitPhotoButton
+                                  projectId={projectId}
+                                  itemId={item.offerItemId ?? item.id}
+                                  unitIndex={index}
+                                  refreshKey={photoRefreshKey}
+                                  onOpen={setPhotoContext}
+                                />
+                              </div>
                               <Input
                                 value={unit.instructions ?? ""}
                                 onChange={(event) => updateUnit(item.id, index, { instructions: event.target.value })}
                                 placeholder="Opomba"
-                              />
-                              <UnitPhotoButton
-                                projectId={projectId}
-                                itemId={item.offerItemId ?? item.id}
-                                unitIndex={index}
-                                refreshKey={photoRefreshKey}
-                                onOpen={setPhotoContext}
                               />
                             </div>
                           </div>

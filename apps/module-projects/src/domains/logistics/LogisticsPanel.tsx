@@ -21,6 +21,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { MaterialOrderCard } from "./MaterialOrderCard";
+import { PreparationPhotoThumbnails } from "./ExecutionDefinitionPanel";
 import { normalizeMaterialStatusLabel } from "./materialStatus";
 import { useConfirmOffer } from "../core/useConfirmOffer";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
@@ -2240,7 +2241,7 @@ export function LogisticsPanel({
                             ) : null}
                             {locationUnits.map((unit, index) => (
                               <div key={unit.id} className="rounded-md border border-border/70 bg-muted/10 p-2">
-                                <div className="grid gap-2 md:grid-cols-[120px_minmax(240px,1.8fr)_minmax(180px,1.2fr)_140px]">
+                                <div className="grid gap-2 md:grid-cols-[120px_minmax(220px,1.4fr)_minmax(160px,1fr)_minmax(180px,1.1fr)]">
                                   <div className="flex items-center text-sm font-medium">{unit.label}</div>
                                   <Input
                                     value={unit.location ?? ""}
@@ -2249,19 +2250,27 @@ export function LogisticsPanel({
                                     }
                                     placeholder="Lokacija"
                                   />
+                                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                    <PreparationPhotoThumbnails
+                                      projectId={projectId}
+                                      itemId={getWorkOrderItemPhotoId(item)}
+                                      unitIndex={index}
+                                      refreshKey={photoCountRefreshKey}
+                                    />
+                                    <PreparationUnitPhotoButton
+                                      projectId={projectId}
+                                      itemId={getWorkOrderItemPhotoId(item)}
+                                      unitIndex={index}
+                                      refreshKey={photoCountRefreshKey}
+                                      onOpen={openPhotoManager}
+                                    />
+                                  </div>
                                   <Input
                                     value={unit.instructions ?? ""}
                                     onChange={(event) =>
                                       updateProductLocationUnit(item, index, { instructions: event.target.value })
                                     }
                                     placeholder="Opomba"
-                                  />
-                                  <PreparationUnitPhotoButton
-                                    projectId={projectId}
-                                    itemId={getWorkOrderItemPhotoId(item)}
-                                    unitIndex={index}
-                                    refreshKey={photoCountRefreshKey}
-                                    onOpen={openPhotoManager}
                                   />
                                 </div>
                               </div>
