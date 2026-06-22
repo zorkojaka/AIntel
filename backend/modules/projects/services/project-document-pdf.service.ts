@@ -1,7 +1,10 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { Types } from 'mongoose';
 import { ProjectModel, type ProjectDocument } from '../schemas/project';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
+import { PhotoModel } from '../../photos/schemas/photo';
 import { renderHtmlToPdf } from './html-pdf.service';
 import { renderDocumentHtml, type DocumentPreviewContext, type PreviewTask } from './document-renderers';
 import { getCompanySettings, getPdfDocumentSettings } from './pdf-settings.service';
@@ -12,6 +15,7 @@ import { getActiveSignedConfirmationVersion, getConfirmationVersionById } from '
 
 type MaterialDocType = 'PURCHASE_ORDER' | 'DELIVERY_NOTE';
 type WorkDocType = 'WORK_ORDER' | 'WORK_ORDER_CONFIRMATION';
+const PHOTO_UPLOAD_BASE_DIR = '/var/www/aintel/uploads';
 
 function assertProject(project: ProjectDocument | null) {
   if (!project) {
@@ -124,6 +128,76 @@ function buildNotes(defaultTexts?: { paymentTerms?: string; disclaimer?: string 
     extra.filter((note) => !!note?.trim()).forEach((note) => notes.push(note.trim()));
   }
   return notes;
+}
+
+function absolutePhotoPath(uploadUrl?: string | null) {
+  if (!uploadUrl || !uploadUrl.startsWith('/uploads/')) return null;
+  const resolvedBase = path.resolve(PHOTO_UPLOAD_BASE_DIR);
+  const filePath = path.resolve(resolvedBase, uploadUrl.replace(/^\/uploads\//, ''));
+  const relative = path.relative(resolvedBase, filePath);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null;
+  return filePath;
+}
+
+async function readPhotoDataUrl(photo: { url?: string | null; thumbnailUrl?: string | null; mimeType?: string | null }) {
+  const filePath = absolutePhotoPath(photo.thumbnailUrl ?? photo.url);
+  if (!filePath) return undefined;
+  try {
+    const buffer = await fs.readFile(filePath);
+    return `data:${photo.mimeType || 'image/jpeg'};base64,${buffer.toString('base64')}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function isDefaultExecutionLocationName(value: string) {
+  const normalized = value.trim();
+  return /^Lokacija\s+\d+$/i.test(normalized) || /^loc-\d+$/i.test(normalized);
+}
+
+async function resolveWorkOrderExecutionLocations(projectObjectId: unknown, item: any) {
+  const spec = item?.executionSpec;
+  const units = Array.isArray(spec?.executionUnits) ? spec.executionUnits : [];
+  if (!projectObjectId || units.length === 0) return [];
+
+  const itemId = String(item?.offerItemId ?? item?.id ?? '');
+  if (!itemId) return [];
+
+  const locations: NonNullable<DocumentPreviewContext['items']>[number]['executionLocations'] = [];
+  for (const [unitIndex, unit] of units.entries()) {
+    const name =
+      typeof unit?.location === 'string' && unit.location.trim()
+        ? unit.location.trim()
+        : typeof unit?.label === 'string' && unit.label.trim()
+          ? unit.label.trim()
+          : `Lokacija ${unitIndex + 1}`;
+    const note = typeof unit?.instructions === 'string' && unit.instructions.trim()
+      ? unit.instructions.trim()
+      : '';
+    const photos = await PhotoModel.find({
+      projectId: projectObjectId,
+      phase: 'preparation',
+      itemId,
+      unitIndex,
+      deletedAt: { $exists: false },
+    }).sort({ uploadedAt: 1 }).lean();
+
+    const photoDataUrls = (
+      await Promise.all(photos.map((photo) => readPhotoDataUrl({
+        url: photo.url,
+        thumbnailUrl: photo.thumbnailUrl,
+        mimeType: photo.mimeType,
+      })))
+    ).filter((value): value is string => Boolean(value));
+
+    if (!note && photoDataUrls.length === 0 && isDefaultExecutionLocationName(name)) {
+      continue;
+    }
+
+    locations.push({ name, note: note || undefined, photos: photoDataUrls });
+  }
+
+  return locations;
 }
 
 function buildConfiguredNotes(
@@ -310,7 +384,7 @@ export async function generateWorkOrderDocumentPdf(
 
   const sourceItems = confirmationVersion?.items ?? existingOrder.items ?? [];
   const tasks = mapWorkOrderTasks({ ...existingOrder, items: sourceItems }, docType);
-  const items: DocumentPreviewContext['items'] = sourceItems.map((item) => {
+  const items: DocumentPreviewContext['items'] = await Promise.all(sourceItems.map(async (item) => {
     const offeredQuantity =
       typeof item.offeredQuantity === 'number'
         ? item.offeredQuantity
@@ -330,8 +404,9 @@ export async function generateWorkOrderDocumentPdf(
       plannedQuantity: docType === 'WORK_ORDER_CONFIRMATION' ? offeredQuantity : undefined,
       unit: item.unit ?? '',
       statusLabel: docType === 'WORK_ORDER_CONFIRMATION' ? buildWorkOrderItemStatusLabel(item) : null,
+      executionLocations: await resolveWorkOrderExecutionLocations(existingProject._id, item),
     };
-  });
+  }));
 
   const notes = buildConfiguredNotes(
     globalSettings,
