@@ -645,6 +645,54 @@ function getExecutionUnitProjectLocationKey(unit: any) {
   return '';
 }
 
+function sanitizeProjectExecutionLocations(input: any[]) {
+  return (Array.isArray(input) ? input : [])
+    .map((location: any) => {
+      const id = typeof location?.id === 'string' && location.id.trim() ? location.id.trim() : '';
+      if (!id) return null;
+      return {
+        id,
+        name: typeof location?.name === 'string' ? location.name : '',
+        note: typeof location?.note === 'string' ? location.note : '',
+        sourcePhotoItemId:
+          typeof location?.sourcePhotoItemId === 'string' && location.sourcePhotoItemId.trim()
+            ? location.sourcePhotoItemId.trim()
+            : id.startsWith('zahteva-')
+              ? id
+              : null,
+      };
+    })
+    .filter((location): location is NonNullable<typeof location> => Boolean(location));
+}
+
+function mergeProjectExecutionLocations(existingLocations: any[], definitions: any[]) {
+  const byId = new Map<string, any>();
+  for (const location of sanitizeProjectExecutionLocations(existingLocations)) {
+    byId.set(location.id, location);
+  }
+
+  for (const definition of definitions ?? []) {
+    const units = Array.isArray(definition?.executionSpec?.executionUnits) ? definition.executionSpec.executionUnits : [];
+    for (const unit of units) {
+      const id = getExecutionUnitProjectLocationKey(unit);
+      if (!id || byId.has(id)) continue;
+      byId.set(id, {
+        id,
+        name: typeof unit?.location === 'string' ? unit.location : '',
+        note: typeof unit?.instructions === 'string' ? unit.instructions : '',
+        sourcePhotoItemId:
+          typeof unit?.sourcePhotoItemId === 'string' && unit.sourcePhotoItemId.trim()
+            ? unit.sourcePhotoItemId.trim()
+            : id.startsWith('zahteva-')
+              ? id
+              : null,
+      });
+    }
+  }
+
+  return Array.from(byId.values());
+}
+
 function applyProjectLocationMemoryToDefinitions(
   incomingDefinitions: ProjectExecutionDefinitionItem[],
   currentDefinitions: any[],
@@ -1526,10 +1574,21 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
   const itemsForOffer = resolvedOfferId
     ? definitions.filter((definition: any) => String(definition?.offerVersionId ?? '') === resolvedOfferId)
     : definitions;
+  const mergedLocations = mergeProjectExecutionLocations(project.executionLocations ?? [], [
+    ...definitions,
+    ...itemsForOffer,
+  ]);
+  const currentLocationsJson = JSON.stringify(sanitizeProjectExecutionLocations(project.executionLocations ?? []));
+  const nextLocationsJson = JSON.stringify(mergedLocations);
+  if (currentLocationsJson !== nextLocationsJson) {
+    project.executionLocations = mergedLocations;
+    await project.save();
+  }
 
   return {
     project,
     offerVersionId: resolvedOfferId,
+    locations: mergedLocations,
     items: itemsForOffer,
   };
 }
@@ -1550,6 +1609,7 @@ export async function getProjectExecutionDefinition(req: Request, res: Response,
     return res.success({
       projectId,
       offerVersionId: result.offerVersionId,
+      locations: result.locations,
       items: result.items,
     });
   } catch (err) {
@@ -1606,13 +1666,16 @@ export async function updateProjectExecutionDefinition(req: Request, res: Respon
       offerVersionId,
       preferIncomingExecutionSpec: true,
     });
+    result.project.executionLocations = Array.isArray(req.body?.locations)
+      ? sanitizeProjectExecutionLocations(req.body.locations)
+      : mergeProjectExecutionLocations(result.project.executionLocations ?? [], incomingDefinitions);
     await result.project.save();
     await syncWorkOrdersFromProjectExecutionDefinitions(projectId, offerVersionId);
 
     const items = offerVersionId
       ? result.project.executionDefinitions.filter((definition: any) => String(definition?.offerVersionId ?? '') === offerVersionId)
       : result.project.executionDefinitions;
-    return res.success({ projectId, offerVersionId, items });
+    return res.success({ projectId, offerVersionId, locations: result.project.executionLocations ?? [], items });
   } catch (err) {
     next(err);
   }
