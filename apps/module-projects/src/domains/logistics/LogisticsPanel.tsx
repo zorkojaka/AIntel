@@ -350,8 +350,34 @@ function formatExecutionDetailsForEmail(items: LogisticsWorkOrder["items"] | und
 }
 
 function isMeasurementLikeUnit(unit?: string | null) {
-  const normalized = (unit ?? "").trim().toLowerCase();
-  return ["km", "h", "ura", "ur", "min", "m", "m2", "m3", "kg", "g", "l"].includes(normalized);
+  const normalized = (unit ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\*/g, "")
+    .replace(/\s+/g, "")
+    .replace("²", "2")
+    .replace("³", "3");
+  return [
+    "km",
+    "kilometer",
+    "kilometri",
+    "kilometrov",
+    "h",
+    "ura",
+    "ure",
+    "ur",
+    "min",
+    "m",
+    "meter",
+    "metri",
+    "metrov",
+    "m2",
+    "m3",
+    "kg",
+    "g",
+    "l",
+  ].includes(normalized);
 }
 
 function isServiceWorkOrderItem(item: LogisticsWorkOrder["items"][number]) {
