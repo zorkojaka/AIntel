@@ -9,6 +9,7 @@ export type ZahtevaState = {
   zahteva: Zahteva | null;
   loading: boolean;
   saveState: SaveState;
+  saveNow: () => Promise<void>;
   updateZahtevaState: (updater: (current: Zahteva) => Zahteva) => void;
 };
 
@@ -86,6 +87,14 @@ export function useZahtevaState(project: ProjectDetails, onProjectRequestChanged
     }, 500);
   }, [saveCurrent]);
 
+  const saveNow = useCallback(async () => {
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    await saveCurrent();
+  }, [saveCurrent]);
+
   const updateZahtevaState = useCallback(
     (updater: (current: Zahteva) => Zahteva) => {
       setZahteva((prev) => {
@@ -101,7 +110,7 @@ export function useZahtevaState(project: ProjectDetails, onProjectRequestChanged
   );
 
   return useMemo(
-    () => ({ zahteva, loading, saveState, updateZahtevaState }),
-    [loading, saveState, updateZahtevaState, zahteva],
+    () => ({ zahteva, loading, saveState, saveNow, updateZahtevaState }),
+    [loading, saveNow, saveState, updateZahtevaState, zahteva],
   );
 }

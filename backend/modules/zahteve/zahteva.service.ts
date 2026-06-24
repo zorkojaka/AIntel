@@ -194,13 +194,34 @@ export function createDefaultVideonadzorSystem() {
 
 export async function predlagajSnemalnik(skupajKamer: number, dominantenBrand?: string, potrebujePoE?: boolean) {
   const kanali = nextStandard(skupajKamer, [4, 8, 16, 32, 64]);
+  const channelPattern = new RegExp(`\\b${kanali}\\s*[- ]*(?:kanal(?:ni|ov)?|channel|ch|kamer|cameras)\\b`, 'i');
+  const channelLabelPattern = new RegExp(`\\b(?:number of cameras|kamer(?:e|a)?)\\s*:\\s*${kanali}\\b`, 'i');
   const baseQuery: any = {
     $or: [
       { 'classification.productType': 'snemalnik' },
       { ime: /\b(DRN|NVR)\b/i },
+      { kategorija: /\bsnemalnik\b/i },
+      { categorySlugs: 'snemalnik' },
+      { 'aaData.productCode': /\b(DRN|NVR)\b/i },
+      { dolgOpis: /\b(DRN|NVR)\b/i },
     ],
-    ime: { $not: /\b(DRA|DVR|AHD|analog)\b/i },
-    'classification.nvrChannels': kanali,
+    $and: [
+      {
+        $or: [
+          { 'classification.nvrChannels': kanali },
+          { ime: channelPattern },
+          { kratekOpis: channelPattern },
+          { dolgOpis: channelPattern },
+          { 'aaData.rawDescription': channelPattern },
+          { kratekOpis: channelLabelPattern },
+          { dolgOpis: channelLabelPattern },
+          { 'aaData.rawDescription': channelLabelPattern },
+        ],
+      },
+      { ime: { $not: /\b(DRA|DVR|AHD|analog)\b/i } },
+      { kratekOpis: { $not: /\b(DRA|DVR|AHD|analog)\b/i } },
+      { dolgOpis: { $not: /\b(DRA|DVR|AHD|analog)\b/i } },
+    ],
     isActive: true,
   };
   if (potrebujePoE) baseQuery['classification.nvrHasPoE'] = true;
