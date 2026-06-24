@@ -255,6 +255,8 @@ function sanitizeExecutionUnits(units: WorkOrderExecutionSpec["executionUnits"] 
   return Array.isArray(units)
     ? units.map((unit) => ({
         id: unit.id,
+        projectLocationId: unit.projectLocationId ?? null,
+        sourcePhotoItemId: unit.sourcePhotoItemId ?? null,
         label: unit.label ?? "",
         location: unit.location ?? "",
         instructions: unit.instructions ?? "",
@@ -1482,6 +1484,8 @@ export function LogisticsPanel({
       const existing = spec.executionUnits?.[index];
       return {
         id: existing?.id ?? `draft-${item.id}-${index}`,
+        projectLocationId: existing?.projectLocationId ?? null,
+        sourcePhotoItemId: existing?.sourcePhotoItemId ?? null,
         label: String(index + 1),
         location: existing?.location ?? "",
         instructions: existing?.instructions ?? "",
@@ -1507,6 +1511,8 @@ export function LogisticsPanel({
     updateExecutionSpecForItem(item.id, {
       executionUnits: units.map((unit) => ({
         id: unit.id,
+        projectLocationId: unit.projectLocationId ?? null,
+        sourcePhotoItemId: unit.sourcePhotoItemId ?? null,
         label: unit.label,
         location: unit.location ?? "",
         instructions: unit.instructions ?? "",

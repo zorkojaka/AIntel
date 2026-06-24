@@ -70,6 +70,8 @@ function normalizeExecutionSpec(spec?: WorkOrderExecutionSpec | null): WorkOrder
     executionUnits: Array.isArray(spec?.executionUnits)
       ? spec.executionUnits.map((unit) => ({
           id: unit.id,
+          projectLocationId: unit.projectLocationId ?? null,
+          sourcePhotoItemId: unit.sourcePhotoItemId ?? null,
           label: unit.label ?? "",
           location: unit.location ?? "",
           instructions: unit.instructions ?? "",
@@ -111,6 +113,8 @@ function buildLocationUnits(item: ProjectExecutionDefinitionItem) {
     const existing = spec.executionUnits?.[index];
     return {
       id: existing?.id ?? `draft-${item.id}-${index}`,
+      projectLocationId: existing?.projectLocationId ?? null,
+      sourcePhotoItemId: existing?.sourcePhotoItemId ?? null,
       label: String(index + 1),
       location: existing?.location ?? "",
       instructions: existing?.instructions ?? "",

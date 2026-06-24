@@ -64,6 +64,8 @@ export type WorkOrderExecutionMode = "simple" | "per_unit" | "measured";
 
 export interface WorkOrderExecutionUnit {
   id: string;
+  projectLocationId?: string | null;
+  sourcePhotoItemId?: string | null;
   label: string;
   location?: string;
   instructions?: string;

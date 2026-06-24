@@ -32,6 +32,8 @@ interface WorkOrderItem {
       trackingUnitLabel?: string | null;
     executionUnits?: Array<{
       id: string;
+      projectLocationId?: string | null;
+      sourcePhotoItemId?: string | null;
       label: string;
       location?: string | null;
       instructions?: string | null;
@@ -177,6 +179,8 @@ const workOrderItemSchema = new Schema<WorkOrderItem>(
               new Schema(
                 {
                   id: { type: String, required: true },
+                  projectLocationId: { type: String, default: null },
+                  sourcePhotoItemId: { type: String, default: null },
                   label: { type: String, required: true },
                   location: { type: String, default: null },
                   instructions: { type: String, default: null },

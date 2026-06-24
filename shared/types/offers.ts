@@ -19,6 +19,7 @@ export interface OfferLineItem {
     locationId: string;
     locationName: string;
     sourcePhotoItemId: string;
+    projectLocationId?: string;
   }>;
 }
 

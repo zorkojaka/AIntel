@@ -28,6 +28,7 @@ const OfferLineItemSchema = new Schema<OfferLineItemDocument>(
             locationId: { type: String, required: true },
             locationName: { type: String, required: true },
             sourcePhotoItemId: { type: String, required: true },
+            projectLocationId: { type: String, default: null },
           },
           { _id: false }
         ),

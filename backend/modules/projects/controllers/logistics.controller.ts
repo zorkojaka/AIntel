@@ -255,6 +255,16 @@ function sanitizeExecutionSpec(input: any) {
               ? unit.id
               : new Types.ObjectId().toString(),
           label: typeof unit?.label === 'string' ? unit.label : '',
+          projectLocationId:
+            typeof unit?.projectLocationId === 'string' && unit.projectLocationId.trim().length > 0
+              ? unit.projectLocationId.trim()
+              : typeof unit?.sourcePhotoItemId === 'string' && unit.sourcePhotoItemId.trim().length > 0
+                ? unit.sourcePhotoItemId.trim()
+                : null,
+          sourcePhotoItemId:
+            typeof unit?.sourcePhotoItemId === 'string' && unit.sourcePhotoItemId.trim().length > 0
+              ? unit.sourcePhotoItemId.trim()
+              : null,
           location: typeof unit?.location === 'string' ? unit.location : unit?.location === null ? null : null,
           instructions:
             typeof unit?.instructions === 'string'
@@ -393,6 +403,8 @@ function buildRequirementsExecutionSpec(item: OfferLineItem, fallbackProduct: an
     trackingUnitLabel: 'Kamera',
     executionUnits: locationUnits.map((unit, index) => ({
       id: unit.locationId || `loc-${index + 1}`,
+      projectLocationId: unit.projectLocationId || unit.sourcePhotoItemId || unit.locationId || null,
+      sourcePhotoItemId: unit.sourcePhotoItemId || null,
       label: `Kamera ${index + 1}`,
       location: unit.locationName || `Lokacija ${index + 1}`,
       instructions: '',
@@ -416,11 +428,11 @@ function normalizeRequirementLocationName(value: unknown, fallback: string) {
 }
 
 function buildRequirementLocationUnitsByProductId(zahteva: any) {
-  const unitsByProductId = new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }>>();
+  const unitsByProductId = new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string; projectLocationId: string }>>();
   const zahtevaId = String(zahteva?._id ?? '');
   if (!zahtevaId) return unitsByProductId;
 
-  const appendUnit = (productId: unknown, unit: { locationId: string; locationName: string; sourcePhotoItemId: string }) => {
+  const appendUnit = (productId: unknown, unit: { locationId: string; locationName: string; sourcePhotoItemId: string; projectLocationId: string }) => {
     const key = productId ? String(productId) : '';
     if (!key || !unit.locationId) return;
     const current = unitsByProductId.get(key) ?? [];
@@ -440,6 +452,7 @@ function buildRequirementLocationUnitsByProductId(zahteva: any) {
           locationId,
           locationName: normalizeRequirementLocationName(location?.ime, locationId),
           sourcePhotoItemId: buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          projectLocationId: buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
         });
       }
     }
@@ -455,6 +468,7 @@ function buildRequirementLocationUnitsByProductId(zahteva: any) {
           locationId,
           locationName: normalizeRequirementLocationName(location?.ime, locationId),
           sourcePhotoItemId: buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          projectLocationId: buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
         });
       }
     }
@@ -475,7 +489,7 @@ async function buildRequirementLocationUnitFallbacks(project: any, offer: any) {
     project?.activeRequestId ? String(project.activeRequestId) : '',
     ...(Array.isArray(project?.requestIds) ? project.requestIds.map((id: any) => String(id)) : []),
   ].filter((value, index, list) => value && list.indexOf(value) === index);
-  if (requestIds.length === 0) return new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }>>();
+  if (requestIds.length === 0) return new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string; projectLocationId: string }>>();
 
   const zahteva = await ZahtevaModel.findOne({ _id: { $in: requestIds } }).sort({ updatedAt: -1 }).lean();
   return buildRequirementLocationUnitsByProductId(zahteva);
@@ -483,7 +497,7 @@ async function buildRequirementLocationUnitFallbacks(project: any, offer: any) {
 
 function withRequirementLocationFallbacks(
   offerItems: OfferLineItem[],
-  fallbacksByProductId: Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }>>
+  fallbacksByProductId: Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string; projectLocationId: string }>>
 ) {
   return (offerItems ?? []).map((item) => {
     const existingUnits = Array.isArray(item.requirementsLocationUnits) ? item.requirementsLocationUnits : [];
@@ -626,6 +640,76 @@ function buildExecutionDefinitionsFromWorkOrder(workOrder: any): ProjectExecutio
     .map((item: any) => buildExecutionDefinitionItem({ item, offerVersionId }));
 }
 
+function getExecutionUnitProjectLocationKey(unit: any) {
+  const projectLocationId = typeof unit?.projectLocationId === 'string' ? unit.projectLocationId.trim() : '';
+  if (projectLocationId) return projectLocationId;
+  const sourcePhotoItemId = typeof unit?.sourcePhotoItemId === 'string' ? unit.sourcePhotoItemId.trim() : '';
+  if (sourcePhotoItemId) return sourcePhotoItemId;
+  return '';
+}
+
+function applyProjectLocationMemoryToDefinitions(
+  incomingDefinitions: ProjectExecutionDefinitionItem[],
+  currentDefinitions: any[],
+) {
+  const memoryByLocation = new Map<string, any>();
+  for (const definition of currentDefinitions ?? []) {
+    const units = Array.isArray(definition?.executionSpec?.executionUnits) ? definition.executionSpec.executionUnits : [];
+    for (const unit of units) {
+      const key = getExecutionUnitProjectLocationKey(unit);
+      if (!key) continue;
+      memoryByLocation.set(key, unit);
+    }
+  }
+
+  if (memoryByLocation.size === 0) return incomingDefinitions;
+
+  return incomingDefinitions.map((definition) => {
+    const spec = sanitizeExecutionSpec(definition.executionSpec);
+    if (!spec || !Array.isArray(spec.executionUnits) || spec.executionUnits.length === 0) return definition;
+    const executionUnits = spec.executionUnits.map((unit: any) => {
+      const key = getExecutionUnitProjectLocationKey(unit);
+      const remembered = key ? memoryByLocation.get(key) : null;
+      if (!remembered) return unit;
+      return {
+        ...unit,
+        label: typeof remembered.label === 'string' && remembered.label.trim() ? remembered.label : unit.label,
+        location: typeof remembered.location === 'string' ? remembered.location : unit.location,
+        instructions: typeof remembered.instructions === 'string' ? remembered.instructions : unit.instructions,
+        note: typeof remembered.note === 'string' || remembered.note === null ? remembered.note : unit.note,
+      };
+    });
+    return {
+      ...definition,
+      executionSpec: {
+        ...spec,
+        locationSummary: executionUnits.map((unit: any) => unit.location).filter(Boolean).join(', '),
+        executionUnits,
+      },
+    };
+  });
+}
+
+function applyProjectLocationMemoryToWorkOrderItems(items: any[], currentDefinitions: any[]) {
+  const definitionLikeItems = items.map((item) => buildExecutionDefinitionItem({ item, offerVersionId: item?.offerVersionId ?? null }));
+  const rememberedDefinitions = applyProjectLocationMemoryToDefinitions(definitionLikeItems, currentDefinitions);
+  const rememberedByItemId = new Map<string, any>();
+  rememberedDefinitions.forEach((definition) => {
+    const key = String(definition.offerItemId ?? definition.id ?? '');
+    if (key) rememberedByItemId.set(key, definition);
+  });
+  return items.map((item) => {
+    const key = String(item?.offerItemId ?? item?.id ?? '');
+    const remembered = rememberedByItemId.get(key);
+    return remembered?.executionSpec ? { ...item, executionSpec: remembered.executionSpec } : item;
+  });
+}
+
+function hasProjectLocationUnits(definition: any) {
+  const units = Array.isArray(definition?.executionSpec?.executionUnits) ? definition.executionSpec.executionUnits : [];
+  return units.some((unit: any) => Boolean(getExecutionUnitProjectLocationKey(unit)));
+}
+
 function mergeProjectExecutionDefinitions(params: {
   currentDefinitions: any[];
   incomingDefinitions: ProjectExecutionDefinitionItem[];
@@ -662,7 +746,20 @@ function mergeProjectExecutionDefinitions(params: {
     return true;
   });
 
-  return [...retained, ...mergedIncoming];
+  const locationMemory = (currentDefinitions ?? [])
+    .filter((definition) => {
+      const itemKey = String(definition?.offerItemId ?? definition?.id ?? '');
+      const key = `${String(definition?.offerVersionId ?? '')}:${itemKey}`;
+      return Boolean(itemKey) && !incomingKeys.has(key) && offerVersionId && String(definition?.offerVersionId ?? '') === offerVersionId && hasProjectLocationUnits(definition);
+    })
+    .map((definition) => ({
+      ...definition,
+      id: `project-location-memory:${String(definition?.offerItemId ?? definition?.id ?? new Types.ObjectId().toString())}`,
+      offerVersionId: null,
+      offerItemId: String(definition?.offerItemId ?? definition?.id ?? ''),
+    }));
+
+  return [...retained, ...locationMemory, ...mergedIncoming];
 }
 
 function applyExecutionDefinitionsToWorkOrders(workOrders: any[], definitions: any[]) {
@@ -750,8 +847,9 @@ async function copyRequirementLocationPhotosToPreparation(params: {
   projectObjectId: string;
   offerItems: OfferLineItem[];
   workOrderItems: any[];
+  previousDefinitions?: any[];
 }) {
-  const { projectObjectId, offerItems, workOrderItems } = params;
+  const { projectObjectId, offerItems, workOrderItems, previousDefinitions = [] } = params;
   const destinationDir = path.join(PHOTO_UPLOAD_BASE_DIR, 'projects', projectObjectId, 'preparation');
   await fs.mkdir(destinationDir, { recursive: true });
 
@@ -759,6 +857,72 @@ async function copyRequirementLocationPhotosToPreparation(params: {
   for (const item of workOrderItems ?? []) {
     const id = String(item?.offerItemId ?? item?.id ?? '');
     if (id) workItemByOfferItemId.set(id, item);
+  }
+
+  const previousPreparationSourcesByLocation = new Map<string, Array<{ itemId: string; unitIndex: number }>>();
+  for (const definition of previousDefinitions) {
+    const sourceItemId = String(definition?.offerItemId ?? definition?.id ?? '');
+    const units = Array.isArray(definition?.executionSpec?.executionUnits) ? definition.executionSpec.executionUnits : [];
+    if (!sourceItemId || units.length === 0) continue;
+    units.forEach((unit: any, unitIndex: number) => {
+      const key = getExecutionUnitProjectLocationKey(unit);
+      if (!key) return;
+      const current = previousPreparationSourcesByLocation.get(key) ?? [];
+      current.push({ itemId: sourceItemId, unitIndex });
+      previousPreparationSourcesByLocation.set(key, current);
+    });
+  }
+
+  async function copyPhotoToPreparation(photo: any, targetItemId: string, unitIndex: number, sourceTag: string) {
+    const exists = await PhotoModel.exists({
+      projectId: new Types.ObjectId(projectObjectId),
+      phase: 'preparation',
+      itemId: targetItemId,
+      unitIndex,
+      tag: sourceTag,
+    });
+    if (exists) return;
+
+    const sourceMainPath = absolutePhotoPath(photo.url);
+    const sourceThumbnailPath = absolutePhotoPath(photo.thumbnailUrl);
+    if (!sourceMainPath) return;
+
+    const filename = `${Date.now()}-${String(photo._id)}-${path.basename(photo.filename || photo.url)}`;
+    const thumbnailFilename = photo.thumbnailUrl
+      ? `${Date.now()}-${String(photo._id)}-thumb-${path.basename(photo.thumbnailUrl)}`
+      : null;
+    const targetMainPath = path.join(destinationDir, filename);
+    const targetThumbnailPath = thumbnailFilename ? path.join(destinationDir, thumbnailFilename) : null;
+
+    try {
+      await fs.copyFile(sourceMainPath, targetMainPath);
+      if (sourceThumbnailPath && targetThumbnailPath) {
+        await fs.copyFile(sourceThumbnailPath, targetThumbnailPath);
+      }
+    } catch (error) {
+      console.warn('[photos] Failed to inherit preparation photo', error);
+      await fs.unlink(targetMainPath).catch(() => undefined);
+      if (targetThumbnailPath) await fs.unlink(targetThumbnailPath).catch(() => undefined);
+      return;
+    }
+
+    await PhotoModel.create({
+      projectId: new Types.ObjectId(projectObjectId),
+      phase: 'preparation',
+      itemId: targetItemId,
+      unitIndex,
+      tag: sourceTag,
+      url: `/uploads/projects/${projectObjectId}/preparation/${filename}`,
+      thumbnailUrl: thumbnailFilename ? `/uploads/projects/${projectObjectId}/preparation/${thumbnailFilename}` : undefined,
+      originalName: photo.originalName,
+      filename,
+      size: photo.size,
+      mimeType: photo.mimeType,
+      width: photo.width,
+      height: photo.height,
+      uploadedBy: photo.uploadedBy,
+      uploadedAt: photo.uploadedAt ?? new Date(),
+    });
   }
 
   for (const offerItem of offerItems ?? []) {
@@ -780,56 +944,23 @@ async function copyRequirementLocationPhotosToPreparation(params: {
       }).lean();
 
       for (const photo of sourcePhotos) {
-        const sourceTag = `from-requirements:${String(photo._id)}`;
-        const exists = await PhotoModel.exists({
+        await copyPhotoToPreparation(photo, targetItemId, unitIndex, `from-requirements:${String(photo._id)}`);
+      }
+
+      const projectLocationKey = unit.projectLocationId || unit.sourcePhotoItemId;
+      const previousSources = previousPreparationSourcesByLocation.get(projectLocationKey) ?? [];
+      for (const previousSource of previousSources) {
+        if (previousSource.itemId === targetItemId && previousSource.unitIndex === unitIndex) continue;
+        const previousPhotos = await PhotoModel.find({
           projectId: new Types.ObjectId(projectObjectId),
           phase: 'preparation',
-          itemId: targetItemId,
-          unitIndex,
-          tag: sourceTag,
-        });
-        if (exists) continue;
-
-        const sourceMainPath = absolutePhotoPath(photo.url);
-        const sourceThumbnailPath = absolutePhotoPath(photo.thumbnailUrl);
-        if (!sourceMainPath) continue;
-
-        const filename = `${Date.now()}-${String(photo._id)}-${path.basename(photo.filename || photo.url)}`;
-        const thumbnailFilename = photo.thumbnailUrl
-          ? `${Date.now()}-${String(photo._id)}-thumb-${path.basename(photo.thumbnailUrl)}`
-          : null;
-        const targetMainPath = path.join(destinationDir, filename);
-        const targetThumbnailPath = thumbnailFilename ? path.join(destinationDir, thumbnailFilename) : null;
-
-        try {
-          await fs.copyFile(sourceMainPath, targetMainPath);
-          if (sourceThumbnailPath && targetThumbnailPath) {
-            await fs.copyFile(sourceThumbnailPath, targetThumbnailPath);
-          }
-        } catch (error) {
-          console.warn('[photos] Failed to inherit requirement photo', error);
-          await fs.unlink(targetMainPath).catch(() => undefined);
-          if (targetThumbnailPath) await fs.unlink(targetThumbnailPath).catch(() => undefined);
-          continue;
+          itemId: previousSource.itemId,
+          unitIndex: previousSource.unitIndex,
+          deletedAt: { $exists: false },
+        }).lean();
+        for (const photo of previousPhotos) {
+          await copyPhotoToPreparation(photo, targetItemId, unitIndex, `from-project-location:${String(photo._id)}`);
         }
-
-        await PhotoModel.create({
-          projectId: new Types.ObjectId(projectObjectId),
-          phase: 'preparation',
-          itemId: targetItemId,
-          unitIndex,
-          tag: sourceTag,
-          url: `/uploads/projects/${projectObjectId}/preparation/${filename}`,
-          thumbnailUrl: thumbnailFilename ? `/uploads/projects/${projectObjectId}/preparation/${thumbnailFilename}` : undefined,
-          originalName: photo.originalName,
-          filename,
-          size: photo.size,
-          mimeType: photo.mimeType,
-          width: photo.width,
-          height: photo.height,
-          uploadedBy: photo.uploadedBy,
-          uploadedAt: photo.uploadedAt ?? new Date(),
-        });
       }
     }
   }
@@ -1220,6 +1351,16 @@ function sanitizeIncomingExecutionSpec(
           return {
             id: unitId,
             label,
+            projectLocationId:
+              typeof unit?.projectLocationId === 'string' && unit.projectLocationId.trim().length > 0
+                ? unit.projectLocationId.trim()
+                : typeof unit?.sourcePhotoItemId === 'string' && unit.sourcePhotoItemId.trim().length > 0
+                  ? unit.sourcePhotoItemId.trim()
+                  : null,
+            sourcePhotoItemId:
+              typeof unit?.sourcePhotoItemId === 'string' && unit.sourcePhotoItemId.trim().length > 0
+                ? unit.sourcePhotoItemId.trim()
+                : null,
             location: typeof unit?.location === 'string' ? unit.location : unit?.location === null ? null : null,
             instructions:
               typeof unit?.instructions === 'string'
@@ -1464,7 +1605,7 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
   const offerItems = Array.isArray((offer as any)?.items) ? ((offer as any).items as OfferLineItem[]) : [];
   const fallbackUnitsByProductId = offer
     ? await buildRequirementLocationUnitFallbacks(project, offer)
-    : new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }>>();
+    : new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string; projectLocationId: string }>>();
   const offerItemsWithLocationFallbacks = withRequirementLocationFallbacks(offerItems, fallbackUnitsByProductId);
   const currentDefinitions = Array.isArray(project.executionDefinitions) ? project.executionDefinitions : [];
   const hasDefinitionsForOffer = resolvedOfferId
@@ -1504,6 +1645,7 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
     }
 
     if (incomingDefinitions.length > 0) {
+      incomingDefinitions = applyProjectLocationMemoryToDefinitions(incomingDefinitions, currentDefinitions);
       project.executionDefinitions = mergeProjectExecutionDefinitions({
         currentDefinitions,
         incomingDefinitions,
@@ -1523,6 +1665,7 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
       projectObjectId: String(project._id),
       offerItems: offerItemsWithLocationFallbacks,
       workOrderItems: itemsForOffer,
+      previousDefinitions: currentDefinitions,
     });
   }
 
@@ -1673,7 +1816,11 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       (item) => !item.productId || !serviceProductIds.has(String(item.productId))
     );
     const logisticsItems = mapOfferItemsToLogistics(materialOfferItems);
-    const workOrderItems = mapOfferItemsToWorkOrderItems(offerItems, serviceProductIds, productDefaultsById);
+    const currentExecutionDefinitions = Array.isArray((project as any).executionDefinitions) ? (project as any).executionDefinitions : [];
+    const workOrderItems = applyProjectLocationMemoryToWorkOrderItems(
+      mapOfferItemsToWorkOrderItems(offerItems, serviceProductIds, productDefaultsById),
+      currentExecutionDefinitions,
+    );
     const customerName = project.customer?.name ?? projectClient?.name ?? '';
     const customerEmail = projectClient?.email ?? '';
     const customerPhone = projectClient?.phone ?? '';
@@ -1696,6 +1843,7 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       projectObjectId: String(project._id),
       offerItems,
       workOrderItems: (workOrder as any).items ?? [],
+      previousDefinitions: currentExecutionDefinitions,
     });
 
     await ensureMaterialOrderForOffer({
