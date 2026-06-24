@@ -196,6 +196,8 @@ function parsePoePorts(product: AAProductRaw): number | undefined {
   const explicitPatterns = [
     /PoE\s*Out\s*port\s*:\s*(\d+)\s*x/i,
     /Downlink\s*:\s*(\d+)\s*x[^,;.]*PoE\s*port/i,
+    /(\d+)\s*x\s*vrata\s*RJ\s*45\s*POE\s*port/i,
+    /PoE\s*Injektor[^.]*?(\d+)\s*x\s*RJ45\s*Port/i,
     /(\d+)\s*x[^,;.]*RJ45\s*PoE\s*port/i,
     /(\d+)\s*x\s*802\.3[a-z0-9/.+\s-]*PoE/i,
     /(\d+)\s*[- ]?portno[^,;.]*PoE/i,

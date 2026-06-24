@@ -48,6 +48,8 @@ function parsedPoePortCount(product: CenikProduct | undefined) {
   const patterns = [
     /poe\s*out\s*port\s*:\s*(\d+)\s*x/i,
     /downlink\s*:\s*(\d+)\s*x[^,;.]*poe\s*port/i,
+    /(\d+)\s*x\s*vrata\s*rj\s*45\s*poe\s*port/i,
+    /poe\s*injektor[^.]*?(\d+)\s*x\s*rj45\s*port/i,
     /(\d+)\s*x[^,;.]*rj45\s*poe\s*port/i,
     /(\d+)\s*x\s*802\.3[a-z0-9/.+\s-]*poe/i,
     /(\d+)\s*[- ]?portno[^,;.]*poe/i,
@@ -84,7 +86,6 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
   const selectedPorts = selectedItems.reduce((sum, item) => sum + poePortCount(productById.get(item.productId)) * item.kolicina, 0);
   const [manufacturer, setManufacturer] = useState("");
   const recommendedCardRef = useRef<HTMLDivElement | null>(null);
-  const manualNoneRef = useRef(false);
 
   const allSwitches = useMemo(
     () =>
@@ -126,24 +127,16 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
     recommendedCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
   }, [manufacturer, recommendedId]);
 
-  useEffect(() => {
-    if (manualNoneRef.current || neededPorts <= 0 || !recommendedId || videonadzor.poeSwitch.productId === recommendedId) return;
-    onChange({ ...videonadzor, poeSwitch: syncPrimary([{ productId: recommendedId, kolicina: 1 }]) });
-  }, [neededPorts, onChange, recommendedId, videonadzor]);
-
   const setQuantity = (productId: string, quantity: number) => {
     const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
-    manualNoneRef.current = nextQuantity <= 0;
-    const byId = new Map(selectedItems.map((item) => [item.productId, item.kolicina]));
-    if (nextQuantity > 0) byId.set(productId, nextQuantity);
-    else byId.delete(productId);
-    const items = Array.from(byId.entries()).map(([id, kolicina]) => ({ productId: id, kolicina }));
-    if (items.length > 0) manualNoneRef.current = false;
+    const items =
+      nextQuantity > 0
+        ? [{ productId, kolicina: nextQuantity }]
+        : selectedItems.filter((item) => item.productId !== productId);
     onChange({ ...videonadzor, poeSwitch: syncPrimary(items) });
   };
 
   const clearSwitches = () => {
-    manualNoneRef.current = true;
     onChange({ ...videonadzor, poeSwitch: { productId: null, kolicina: 0, items: [] } });
   };
 
