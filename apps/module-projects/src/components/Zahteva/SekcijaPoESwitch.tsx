@@ -67,6 +67,35 @@ function poePortCount(product: CenikProduct | undefined) {
   return Number(product?.classification?.poePortCount ?? 0);
 }
 
+function uplinkPortCount(product: CenikProduct | undefined) {
+  const text = poeSwitchText(product);
+  const patterns = [
+    /uplink\s*:\s*(\d+)\s*x/i,
+    /uplink[^,;.]*?(\d+)\s*x/i,
+    /(\d+)\s*x[^,;.]*uplink/i,
+    /data\s*in\s*port\s*:\s*(\d+)\s*x/i,
+    /lan\s*port\s*:\s*1g\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1] ? Number(match[1]) : 1;
+  }
+
+  const interfaceMatch = text.match(/interface\s*:\s*(\d+)\s*x/i);
+  const poePorts = poePortCount(product);
+  if (interfaceMatch && poePorts > 0) {
+    return Math.max(0, Number(interfaceMatch[1]) - poePorts);
+  }
+  return 0;
+}
+
+function portSummary(product: CenikProduct | undefined) {
+  const poePorts = poePortCount(product);
+  const uplinkPorts = uplinkPortCount(product);
+  const poeLabel = `${poePorts || "-"} PoE`;
+  return uplinkPorts > 0 ? `${poeLabel} + ${uplinkPorts} uplink` : `${poeLabel} portov`;
+}
+
 function switchFitRank(product: CenikProduct, neededPorts: number) {
   const ports = poePortCount(product);
   if (neededPorts <= 0) return ports;
@@ -170,7 +199,7 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
               <button type="button" className="zahteva-track-main" onClick={() => setQuantity(product._id, quantity > 0 ? quantity : 1)}>
                 {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
                 <strong>{product.ime}</strong>
-                <small>{poePortCount(product) || "-"} PoE portov</small>
+                <small>{portSummary(product)}</small>
                 <b>{formatPrice(product.prodajnaCena)}</b>
               </button>
               <div className="zahteva-qty-control">
