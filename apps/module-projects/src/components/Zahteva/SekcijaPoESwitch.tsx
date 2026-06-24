@@ -46,6 +46,7 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
   const selectedPorts = selectedItems.reduce((sum, item) => sum + (productById.get(item.productId)?.classification?.poePortCount ?? 0) * item.kolicina, 0);
   const [manufacturer, setManufacturer] = useState("");
   const recommendedCardRef = useRef<HTMLDivElement | null>(null);
+  const manualNoneRef = useRef(false);
 
   const allSwitches = useMemo(
     () =>
@@ -88,20 +89,25 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
   }, [manufacturer, recommendedId]);
 
   useEffect(() => {
-    if (neededPorts <= 0 || !recommendedId || videonadzor.poeSwitch.productId === recommendedId) return;
+    if (manualNoneRef.current || neededPorts <= 0 || !recommendedId || videonadzor.poeSwitch.productId === recommendedId) return;
     onChange({ ...videonadzor, poeSwitch: syncPrimary([{ productId: recommendedId, kolicina: 1 }]) });
   }, [neededPorts, onChange, recommendedId, videonadzor]);
 
   const setQuantity = (productId: string, quantity: number) => {
     const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
+    manualNoneRef.current = nextQuantity <= 0;
     const byId = new Map(selectedItems.map((item) => [item.productId, item.kolicina]));
     if (nextQuantity > 0) byId.set(productId, nextQuantity);
     else byId.delete(productId);
     const items = Array.from(byId.entries()).map(([id, kolicina]) => ({ productId: id, kolicina }));
+    if (items.length > 0) manualNoneRef.current = false;
     onChange({ ...videonadzor, poeSwitch: syncPrimary(items) });
   };
 
-  const clearSwitches = () => onChange({ ...videonadzor, poeSwitch: { productId: null, kolicina: 0, items: [] } });
+  const clearSwitches = () => {
+    manualNoneRef.current = true;
+    onChange({ ...videonadzor, poeSwitch: { productId: null, kolicina: 0, items: [] } });
+  };
 
   return (
     <section className="zahteva-subsection">

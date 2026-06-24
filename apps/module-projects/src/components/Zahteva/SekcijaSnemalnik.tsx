@@ -50,6 +50,12 @@ function categoryPriorityRank(product: CenikProduct) {
   return product.categoryPriority ?? 4;
 }
 
+function isIpRecorder(product: CenikProduct) {
+  const text = `${product.ime ?? ""} ${(product.categorySlugs ?? []).join(" ")}`.toLowerCase();
+  if (/\b(dra|dvr|ahd|analog)\b/i.test(text)) return false;
+  return product.classification?.productType === "snemalnik" || /\b(drn|nvr)\b/i.test(text);
+}
+
 export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) {
   const cameraProducts = useMemo(() => assignedCameraProducts(videonadzor, productById), [productById, videonadzor]);
   const cameraCount = Math.max(cameraProducts.length, videonadzor.lokacije.length);
@@ -64,7 +70,7 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
   const recommendedCardRef = useRef<HTMLButtonElement | null>(null);
 
   const allRecorders = useMemo(
-    () => Array.from(productById.values()).filter((product) => product.classification?.productType === "snemalnik"),
+    () => Array.from(productById.values()).filter(isIpRecorder),
     [productById],
   );
   const manufacturers = useMemo(() => Array.from(new Set(allRecorders.map(productBrand))).sort((a, b) => a.localeCompare(b, "sl")), [allRecorders]);

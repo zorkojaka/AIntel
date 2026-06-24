@@ -195,7 +195,11 @@ export function createDefaultVideonadzorSystem() {
 export async function predlagajSnemalnik(skupajKamer: number, dominantenBrand?: string, potrebujePoE?: boolean) {
   const kanali = nextStandard(skupajKamer, [4, 8, 16, 32, 64]);
   const baseQuery: any = {
-    'classification.productType': 'snemalnik',
+    $or: [
+      { 'classification.productType': 'snemalnik' },
+      { ime: /\b(DRN|NVR)\b/i },
+    ],
+    ime: { $not: /\b(DRA|DVR|AHD|analog)\b/i },
     'classification.nvrChannels': kanali,
     isActive: true,
   };
