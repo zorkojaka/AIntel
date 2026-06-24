@@ -43,6 +43,17 @@ function buildPhotoQuery(context: PhotoContext) {
   return params.toString();
 }
 
+function getUnitLocationPhotoItemId(
+  fallbackItemId: string,
+  unit: Pick<WorkOrderExecutionUnit, "projectLocationId" | "sourcePhotoItemId">,
+) {
+  return unit.projectLocationId?.trim() || unit.sourcePhotoItemId?.trim() || fallbackItemId;
+}
+
+function getUnitLocationPhotoIndex(unit: Pick<WorkOrderExecutionUnit, "projectLocationId" | "sourcePhotoItemId">, fallbackIndex: number) {
+  return unit.projectLocationId?.trim() || unit.sourcePhotoItemId?.trim() ? undefined : fallbackIndex;
+}
+
 function getPhotoKey(photo: PreparationPhoto) {
   return photo.id || photo._id || photo.url;
 }
@@ -142,7 +153,7 @@ function UnitPhotoButton({
 }: {
   projectId: string;
   itemId: string;
-  unitIndex: number;
+  unitIndex?: number;
   refreshKey: number;
   onOpen: (context: PhotoContext) => void;
 }) {
@@ -172,7 +183,7 @@ export function PreparationPhotoThumbnails({
 }: {
   projectId: string;
   itemId: string;
-  unitIndex: number;
+  unitIndex?: number;
   refreshKey: number;
 }) {
   const [photos, setPhotos] = useState<PreparationPhoto[]>([]);
@@ -189,13 +200,23 @@ export function PreparationPhotoThumbnails({
 
     async function loadPhotos() {
       try {
-        const response = await fetch(`/api/photos?${queryString}`, {
-          credentials: "same-origin",
-          signal: controller.signal,
-        });
-        const payload = (await response.json()) as PhotosResponse;
-        if (!alive || !response.ok || !payload.success) return;
-        setPhotos(dedupePhotos(payload.data?.photos ?? []));
+        const queries = [queryString];
+        if (itemId.startsWith("zahteva-")) {
+          const requirementContext: PhotoContext = { projectId, phase: "requirements", itemId };
+          queries.push(buildPhotoQuery(requirementContext));
+        }
+        const payloads = await Promise.all(
+          queries.map(async (query) => {
+            const response = await fetch(`/api/photos?${query}`, {
+              credentials: "same-origin",
+              signal: controller.signal,
+            });
+            const payload = (await response.json()) as PhotosResponse;
+            return response.ok && payload.success ? payload.data?.photos ?? [] : [];
+          }),
+        );
+        if (!alive) return;
+        setPhotos(dedupePhotos(payloads.flat()));
       } catch (error: any) {
         if (!alive || error?.name === "AbortError") return;
         setPhotos([]);
@@ -407,8 +428,8 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
                               <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                 <PreparationPhotoThumbnails
                                   projectId={projectId}
-                                  itemId={item.offerItemId ?? item.id}
-                                  unitIndex={index}
+                                  itemId={getUnitLocationPhotoItemId(item.offerItemId ?? item.id, unit)}
+                                  unitIndex={getUnitLocationPhotoIndex(unit, index)}
                                   refreshKey={photoRefreshKey}
                                 />
                               </div>
@@ -419,8 +440,8 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
                               />
                               <UnitPhotoButton
                                 projectId={projectId}
-                                itemId={item.offerItemId ?? item.id}
-                                unitIndex={index}
+                                itemId={getUnitLocationPhotoItemId(item.offerItemId ?? item.id, unit)}
+                                unitIndex={getUnitLocationPhotoIndex(unit, index)}
                                 refreshKey={photoRefreshKey}
                                 onOpen={setPhotoContext}
                               />

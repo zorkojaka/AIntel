@@ -90,7 +90,7 @@ function PreparationUnitPhotoButton({
 }: {
   projectId: string;
   itemId: string;
-  unitIndex: number;
+  unitIndex?: number;
   refreshKey: number;
   onOpen: (context: PhotoContext) => void;
 }) {
@@ -110,6 +110,17 @@ function PreparationUnitPhotoButton({
       <span>Slike{count > 0 ? ` (${count})` : ""}</span>
     </Button>
   );
+}
+
+function getUnitLocationPhotoItemId(
+  fallbackItemId: string,
+  unit: Pick<WorkOrderExecutionUnit, "projectLocationId" | "sourcePhotoItemId">,
+) {
+  return unit.projectLocationId?.trim() || unit.sourcePhotoItemId?.trim() || fallbackItemId;
+}
+
+function getUnitLocationPhotoIndex(unit: Pick<WorkOrderExecutionUnit, "projectLocationId" | "sourcePhotoItemId">, fallbackIndex: number) {
+  return unit.projectLocationId?.trim() || unit.sourcePhotoItemId?.trim() ? undefined : fallbackIndex;
 }
 
 function formatCurrency(value: number) {
@@ -2425,8 +2436,8 @@ export function LogisticsPanel({
                                   <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                     <PreparationPhotoThumbnails
                                       projectId={projectId}
-                                      itemId={getWorkOrderItemPhotoId(item)}
-                                      unitIndex={index}
+                                      itemId={getUnitLocationPhotoItemId(getWorkOrderItemPhotoId(item), unit)}
+                                      unitIndex={getUnitLocationPhotoIndex(unit, index)}
                                       refreshKey={photoCountRefreshKey}
                                     />
                                   </div>
@@ -2439,8 +2450,8 @@ export function LogisticsPanel({
                                   />
                                   <PreparationUnitPhotoButton
                                     projectId={projectId}
-                                    itemId={getWorkOrderItemPhotoId(item)}
-                                    unitIndex={index}
+                                    itemId={getUnitLocationPhotoItemId(getWorkOrderItemPhotoId(item), unit)}
+                                    unitIndex={getUnitLocationPhotoIndex(unit, index)}
                                     refreshKey={photoCountRefreshKey}
                                     onOpen={openPhotoManager}
                                   />

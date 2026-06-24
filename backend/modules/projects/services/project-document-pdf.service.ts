@@ -205,17 +205,26 @@ async function resolveWorkOrderExecutionUnits(projectObjectId: unknown, item: an
   const units = Array.isArray(spec?.executionUnits) ? spec.executionUnits : [];
   if (!projectObjectId || units.length === 0) return [];
 
-  const itemId = String(item?.offerItemId ?? item?.id ?? '');
-  if (!itemId) return [];
+  const fallbackItemId = String(item?.offerItemId ?? item?.id ?? '');
+  if (!fallbackItemId) return [];
 
   return Promise.all(units.map(async (unit: any, unitIndex: number) => {
-    const photos = await PhotoModel.find({
-      projectId: projectObjectId,
-      phase: 'preparation',
-      itemId,
-      unitIndex,
-      deletedAt: { $exists: false },
-    }).sort({ uploadedAt: 1 }).lean();
+    const locationItemId =
+      typeof unit?.projectLocationId === 'string' && unit.projectLocationId.trim()
+        ? unit.projectLocationId.trim()
+        : typeof unit?.sourcePhotoItemId === 'string' && unit.sourcePhotoItemId.trim()
+          ? unit.sourcePhotoItemId.trim()
+          : '';
+    const photoQueries = locationItemId
+      ? [
+          { projectId: projectObjectId, phase: 'preparation', itemId: locationItemId, deletedAt: { $exists: false } },
+          { projectId: projectObjectId, phase: 'requirements', itemId: locationItemId, deletedAt: { $exists: false } },
+        ]
+      : [
+          { projectId: projectObjectId, phase: 'preparation', itemId: fallbackItemId, unitIndex, deletedAt: { $exists: false } },
+        ];
+    const photosNested = await Promise.all(photoQueries.map((query) => PhotoModel.find(query).sort({ uploadedAt: 1 }).lean()));
+    const photos = photosNested.flat();
 
     const photoDataUrls = (
       await Promise.all(photos.map((photo) => readPhotoDataUrl({

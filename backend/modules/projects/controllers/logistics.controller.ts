@@ -1,5 +1,3 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { NextFunction, Request, Response } from 'express';
 import mongoose, { Types } from 'mongoose';
 import type {
@@ -14,7 +12,6 @@ import { ProjectModel, addTimeline } from '../schemas/project';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
 import { ProductModel } from '../../cenik/product.model';
-import { PhotoModel } from '../../photos/schemas/photo';
 import { ZahtevaModel } from '../../zahteve/zahteva.model';
 import { resolveActorId, resolveTenantId } from '../../../utils/tenant';
 import { EmployeeModel } from '../../employees/schemas/employee';
@@ -836,136 +833,6 @@ async function syncWorkOrdersFromProjectExecutionDefinitions(projectId: string, 
   }
 }
 
-const PHOTO_UPLOAD_BASE_DIR = '/var/www/aintel/uploads';
-
-function absolutePhotoPath(uploadUrl?: string | null) {
-  if (!uploadUrl || !uploadUrl.startsWith('/uploads/')) return null;
-  return path.join(PHOTO_UPLOAD_BASE_DIR, uploadUrl.replace(/^\/uploads\//, ''));
-}
-
-async function copyRequirementLocationPhotosToPreparation(params: {
-  projectObjectId: string;
-  offerItems: OfferLineItem[];
-  workOrderItems: any[];
-  previousDefinitions?: any[];
-}) {
-  const { projectObjectId, offerItems, workOrderItems, previousDefinitions = [] } = params;
-  const destinationDir = path.join(PHOTO_UPLOAD_BASE_DIR, 'projects', projectObjectId, 'preparation');
-  await fs.mkdir(destinationDir, { recursive: true });
-
-  const workItemByOfferItemId = new Map<string, any>();
-  for (const item of workOrderItems ?? []) {
-    const id = String(item?.offerItemId ?? item?.id ?? '');
-    if (id) workItemByOfferItemId.set(id, item);
-  }
-
-  const previousPreparationSourcesByLocation = new Map<string, Array<{ itemId: string; unitIndex: number }>>();
-  for (const definition of previousDefinitions) {
-    const sourceItemId = String(definition?.offerItemId ?? definition?.id ?? '');
-    const units = Array.isArray(definition?.executionSpec?.executionUnits) ? definition.executionSpec.executionUnits : [];
-    if (!sourceItemId || units.length === 0) continue;
-    units.forEach((unit: any, unitIndex: number) => {
-      const key = getExecutionUnitProjectLocationKey(unit);
-      if (!key) return;
-      const current = previousPreparationSourcesByLocation.get(key) ?? [];
-      current.push({ itemId: sourceItemId, unitIndex });
-      previousPreparationSourcesByLocation.set(key, current);
-    });
-  }
-
-  async function copyPhotoToPreparation(photo: any, targetItemId: string, unitIndex: number, sourceTag: string) {
-    const exists = await PhotoModel.exists({
-      projectId: new Types.ObjectId(projectObjectId),
-      phase: 'preparation',
-      itemId: targetItemId,
-      unitIndex,
-      tag: sourceTag,
-    });
-    if (exists) return;
-
-    const sourceMainPath = absolutePhotoPath(photo.url);
-    const sourceThumbnailPath = absolutePhotoPath(photo.thumbnailUrl);
-    if (!sourceMainPath) return;
-
-    const filename = `${Date.now()}-${String(photo._id)}-${path.basename(photo.filename || photo.url)}`;
-    const thumbnailFilename = photo.thumbnailUrl
-      ? `${Date.now()}-${String(photo._id)}-thumb-${path.basename(photo.thumbnailUrl)}`
-      : null;
-    const targetMainPath = path.join(destinationDir, filename);
-    const targetThumbnailPath = thumbnailFilename ? path.join(destinationDir, thumbnailFilename) : null;
-
-    try {
-      await fs.copyFile(sourceMainPath, targetMainPath);
-      if (sourceThumbnailPath && targetThumbnailPath) {
-        await fs.copyFile(sourceThumbnailPath, targetThumbnailPath);
-      }
-    } catch (error) {
-      console.warn('[photos] Failed to inherit preparation photo', error);
-      await fs.unlink(targetMainPath).catch(() => undefined);
-      if (targetThumbnailPath) await fs.unlink(targetThumbnailPath).catch(() => undefined);
-      return;
-    }
-
-    await PhotoModel.create({
-      projectId: new Types.ObjectId(projectObjectId),
-      phase: 'preparation',
-      itemId: targetItemId,
-      unitIndex,
-      tag: sourceTag,
-      url: `/uploads/projects/${projectObjectId}/preparation/${filename}`,
-      thumbnailUrl: thumbnailFilename ? `/uploads/projects/${projectObjectId}/preparation/${thumbnailFilename}` : undefined,
-      originalName: photo.originalName,
-      filename,
-      size: photo.size,
-      mimeType: photo.mimeType,
-      width: photo.width,
-      height: photo.height,
-      uploadedBy: photo.uploadedBy,
-      uploadedAt: photo.uploadedAt ?? new Date(),
-    });
-  }
-
-  for (const offerItem of offerItems ?? []) {
-    const units = Array.isArray(offerItem.requirementsLocationUnits) ? offerItem.requirementsLocationUnits : [];
-    if (units.length === 0) continue;
-
-    const targetItem = workItemByOfferItemId.get(String(offerItem.id));
-    const targetItemId = String(targetItem?._id ?? targetItem?.id ?? offerItem.id ?? '');
-    if (!targetItemId) continue;
-
-    for (const [unitIndex, unit] of units.entries()) {
-      if (!unit.sourcePhotoItemId) continue;
-
-      const sourcePhotos = await PhotoModel.find({
-        projectId: new Types.ObjectId(projectObjectId),
-        phase: 'requirements',
-        itemId: unit.sourcePhotoItemId,
-        deletedAt: { $exists: false },
-      }).lean();
-
-      for (const photo of sourcePhotos) {
-        await copyPhotoToPreparation(photo, targetItemId, unitIndex, `from-requirements:${String(photo._id)}`);
-      }
-
-      const projectLocationKey = unit.projectLocationId || unit.sourcePhotoItemId;
-      const previousSources = previousPreparationSourcesByLocation.get(projectLocationKey) ?? [];
-      for (const previousSource of previousSources) {
-        if (previousSource.itemId === targetItemId && previousSource.unitIndex === unitIndex) continue;
-        const previousPhotos = await PhotoModel.find({
-          projectId: new Types.ObjectId(projectObjectId),
-          phase: 'preparation',
-          itemId: previousSource.itemId,
-          unitIndex: previousSource.unitIndex,
-          deletedAt: { $exists: false },
-        }).lean();
-        for (const photo of previousPhotos) {
-          await copyPhotoToPreparation(photo, targetItemId, unitIndex, `from-project-location:${String(photo._id)}`);
-        }
-      }
-    }
-  }
-}
-
 async function ensureWorkOrderForOffer(params: {
   projectId: string;
   offerId: string;
@@ -1660,15 +1527,6 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
     ? definitions.filter((definition: any) => String(definition?.offerVersionId ?? '') === resolvedOfferId)
     : definitions;
 
-  if (offer && offerItemsWithLocationFallbacks.length > 0 && itemsForOffer.length > 0) {
-    await copyRequirementLocationPhotosToPreparation({
-      projectObjectId: String(project._id),
-      offerItems: offerItemsWithLocationFallbacks,
-      workOrderItems: itemsForOffer,
-      previousDefinitions: currentDefinitions,
-    });
-  }
-
   return {
     project,
     offerVersionId: resolvedOfferId,
@@ -1838,13 +1696,6 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
     });
 
     await syncProjectExecutionDefinitionsFromWorkOrder(projectId, workOrder);
-
-    await copyRequirementLocationPhotosToPreparation({
-      projectObjectId: String(project._id),
-      offerItems,
-      workOrderItems: (workOrder as any).items ?? [],
-      previousDefinitions: currentExecutionDefinitions,
-    });
 
     await ensureMaterialOrderForOffer({
       projectId,
