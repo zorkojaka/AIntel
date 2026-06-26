@@ -46,6 +46,8 @@ type UnitAssignment = {
   unitIndex: number;
 };
 
+const PROJECT_PLAN_PHOTO_ITEM_ID = "project-plan";
+
 function buildPhotoQuery(context: PhotoContext) {
   const params = new URLSearchParams();
   params.set("projectId", context.projectId);
@@ -147,7 +149,9 @@ function isMeasurementLikeUnit(unit?: string | null) {
 
 function hasMeasurementLikeName(name?: string | null) {
   const match = (name ?? "").toLowerCase().match(/\[([^\]]+)\]\s*\*?/);
-  return match ? isMeasurementLikeUnit(match[1]) : false;
+  if (!match) return false;
+  const normalized = match[1].replace(",", ".").trim();
+  return isMeasurementLikeUnit(normalized) || isMeasurementLikeUnit(normalized.replace(/^\d+(?:\.\d+)?/, ""));
 }
 
 function canDefineLocations(item: ProjectExecutionDefinitionItem) {
@@ -366,6 +370,112 @@ export function PreparationPhotoThumbnails({
   );
 }
 
+function ProjectPlanPhotoSection({
+  projectId,
+  refreshKey,
+  onOpen,
+}: {
+  projectId: string;
+  refreshKey: number;
+  onOpen: (context: PhotoContext) => void;
+}) {
+  const [photos, setPhotos] = useState<PreparationPhoto[]>([]);
+  const [previewPhoto, setPreviewPhoto] = useState<PreparationPhoto | null>(null);
+  const context = useMemo<PhotoContext>(
+    () => ({ projectId, phase: "preparation", itemId: PROJECT_PLAN_PHOTO_ITEM_ID }),
+    [projectId],
+  );
+  const { count, refresh } = usePhotoCount(context);
+  const queryString = useMemo(() => buildPhotoQuery(context), [context]);
+
+  useEffect(() => {
+    if (refreshKey > 0) refresh();
+  }, [refresh, refreshKey]);
+
+  useEffect(() => {
+    let alive = true;
+    const controller = new AbortController();
+
+    async function loadPhotos() {
+      try {
+        const response = await fetch(`/api/photos?${queryString}`, {
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as PhotosResponse;
+        if (!alive) return;
+        setPhotos(response.ok && payload.success ? dedupePhotos(payload.data?.photos ?? []) : []);
+      } catch (error: any) {
+        if (!alive || error?.name === "AbortError") return;
+        setPhotos([]);
+      }
+    }
+
+    void loadPhotos();
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [queryString, refreshKey]);
+
+  return (
+    <div className="rounded-lg border border-border/70 bg-card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h4 className="text-sm font-semibold">Načrt projekta</h4>
+          <p className="text-xs text-muted-foreground">Slike celotnega načrta ali razporeditve kamer za monterja.</p>
+        </div>
+        <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => onOpen(context)}>
+          <Camera className="h-4 w-4" />
+          Slike{count > 0 ? ` (${count})` : ""}
+        </Button>
+      </div>
+      {photos.length > 0 ? (
+        <div className="mt-4 space-y-3">
+          {photos.map((photo) => {
+            const src = getPhotoSrc(photo, "full");
+            return (
+              <button
+                key={getPhotoKey(photo)}
+                type="button"
+                className="block w-full overflow-hidden rounded-md border border-border/70 bg-muted/20 transition hover:border-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                onClick={() => setPreviewPhoto(photo)}
+                aria-label="Odpri načrt projekta"
+                title={photo.originalName || "Načrt projekta"}
+              >
+                {src ? (
+                  <img src={src} alt={photo.originalName || "Načrt projekta"} className="h-auto w-full object-contain" />
+                ) : (
+                  <span className="flex min-h-40 w-full items-center justify-center">
+                    <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+      <Dialog open={Boolean(previewPhoto)} onOpenChange={(open) => !open && setPreviewPhoto(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Načrt projekta</DialogTitle>
+            {previewPhoto?.originalName ? <DialogDescription>{previewPhoto.originalName}</DialogDescription> : null}
+          </DialogHeader>
+          {previewPhoto ? (
+            <div className="flex justify-center rounded-md bg-black/5 p-2">
+              <img
+                src={getPhotoSrc(previewPhoto, "full")}
+                alt={previewPhoto.originalName || "Načrt projekta"}
+                className="max-h-[72vh] max-w-full rounded-md object-contain"
+              />
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 export function ExecutionDefinitionPanel({ projectId, offerVersionId }: ExecutionDefinitionPanelProps) {
   const [items, setItems] = useState<ProjectExecutionDefinitionItem[]>([]);
   const [locations, setLocations] = useState<ProjectExecutionLocation[]>([]);
@@ -545,12 +655,14 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
             <Loader2 className="h-4 w-4 animate-spin" />
             Nalagam definicijo izvedbe...
           </div>
-        ) : locationRows.length === 0 ? (
-          <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
-            Ni lokacij za definicijo izvedbe.
-          </div>
         ) : (
           <div className="space-y-3">
+            <ProjectPlanPhotoSection projectId={projectId} refreshKey={photoRefreshKey} onOpen={setPhotoContext} />
+            {locationRows.length === 0 ? (
+              <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
+                Ni lokacij za definicijo izvedbe.
+              </div>
+            ) : null}
             {locationRows.map((location) => {
               const linkedAssignments = assignments.filter((assignment) => getLocationKey(assignment.unit) === location.id);
               const isExpanded = expanded[location.id] !== false;

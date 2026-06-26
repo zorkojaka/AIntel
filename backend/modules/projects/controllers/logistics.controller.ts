@@ -253,7 +253,9 @@ function isMeasurementLikeUnit(unit?: string | null) {
 
 function hasMeasurementLikeName(name?: string | null) {
   const match = (name ?? '').toLowerCase().match(/\[([^\]]+)\]\s*\*?/);
-  return match ? isMeasurementLikeUnit(match[1]) : false;
+  if (!match) return false;
+  const normalized = match[1].replace(',', '.').trim();
+  return isMeasurementLikeUnit(normalized) || isMeasurementLikeUnit(normalized.replace(/^\d+(?:\.\d+)?/, ''));
 }
 
 function sanitizeExecutionSpec(input: any) {
