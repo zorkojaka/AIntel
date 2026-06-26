@@ -99,13 +99,13 @@ function isDefaultLocationName(value: string) {
 }
 
 function buildRequirementLocationUnitsFromRequest(zahteva: any) {
-  const unitsByProductId = new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }>>();
+  const unitsByProductId = new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string; note?: string }>>();
   const zahtevaId = String(zahteva?._id ?? "");
   if (!zahtevaId) return unitsByProductId;
 
   const appendUnit = (
     productId: unknown,
-    unit: { locationId: string; locationName: string; sourcePhotoItemId: string },
+    unit: { locationId: string; locationName: string; sourcePhotoItemId: string; note?: string },
   ) => {
     const key = productId ? String(productId) : "";
     if (!key || !unit.locationId) return;
@@ -125,6 +125,7 @@ function buildRequirementLocationUnitsFromRequest(zahteva: any) {
           locationId,
           locationName: typeof lokacija?.ime === "string" && lokacija.ime.trim() ? lokacija.ime.trim() : locationId,
           sourcePhotoItemId: buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          note: typeof lokacija?.opomba === "string" && lokacija.opomba.trim() ? lokacija.opomba.trim() : undefined,
         });
       }
     }
@@ -139,6 +140,7 @@ function buildRequirementLocationUnitsFromRequest(zahteva: any) {
           locationId,
           locationName: typeof lokacija?.ime === "string" && lokacija.ime.trim() ? lokacija.ime.trim() : locationId,
           sourcePhotoItemId: buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          note: typeof lokacija?.opomba === "string" && lokacija.opomba.trim() ? lokacija.opomba.trim() : undefined,
         });
       }
     }
@@ -150,7 +152,7 @@ function buildRequirementLocationUnitsFromRequest(zahteva: any) {
 async function resolveRequirementLocationPhotos(
   projectObjectId: unknown,
   item: any,
-  fallbackUnits: Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }> = [],
+  fallbackUnits: Array<{ locationId: string; locationName: string; sourcePhotoItemId: string; note?: string }> = [],
 ) {
   const units = Array.isArray(item?.requirementsLocationUnits) ? item.requirementsLocationUnits : [];
   const resolvedUnits = units.length > 0 ? units : fallbackUnits;
@@ -188,7 +190,8 @@ async function resolveRequirementLocationPhotos(
       continue;
     }
 
-    locations.push({ name: locationName, photos: photoDataUrls });
+    const note = typeof unit?.note === "string" && unit.note.trim() ? unit.note.trim() : undefined;
+    locations.push({ name: locationName, note, photos: photoDataUrls });
   }
 
   return locations;
@@ -198,6 +201,7 @@ async function resolveProjectExecutionDefinitionLocations(
   projectObjectId: unknown,
   item: any,
   definition: any,
+  projectLocations: any[] = [],
 ) {
   if (!projectObjectId || !definition?.executionSpec || typeof definition.executionSpec !== "object") return [];
   const units = Array.isArray(definition.executionSpec.executionUnits) ? definition.executionSpec.executionUnits : [];
@@ -207,16 +211,39 @@ async function resolveProjectExecutionDefinitionLocations(
   if (!itemId) return [];
 
   const locations: NonNullable<ProductDescriptionEntry["locations"]> = [];
+  const projectLocationByKey = new Map<string, any>();
+  for (const location of projectLocations) {
+    const keys = [
+      typeof location?.id === "string" ? location.id.trim() : "",
+      typeof location?.sourcePhotoItemId === "string" ? location.sourcePhotoItemId.trim() : "",
+    ].filter(Boolean);
+    for (const key of keys) {
+      if (!projectLocationByKey.has(key)) projectLocationByKey.set(key, location);
+    }
+  }
   for (const [unitIndex, unit] of units.entries()) {
+    const locationKey =
+      typeof unit?.projectLocationId === "string" && unit.projectLocationId.trim()
+        ? unit.projectLocationId.trim()
+        : typeof unit?.sourcePhotoItemId === "string" && unit.sourcePhotoItemId.trim()
+          ? unit.sourcePhotoItemId.trim()
+          : "";
+    const projectLocation = locationKey ? projectLocationByKey.get(locationKey) : null;
     const locationName =
-      typeof unit?.location === "string" && unit.location.trim()
-        ? unit.location.trim()
+      typeof projectLocation?.name === "string" && projectLocation.name.trim()
+        ? projectLocation.name.trim()
+        : typeof unit?.location === "string" && unit.location.trim()
+          ? unit.location.trim()
         : typeof unit?.label === "string" && unit.label.trim()
           ? unit.label.trim()
           : `Lokacija ${unitIndex + 1}`;
-    const note = typeof unit?.instructions === "string" && unit.instructions.trim()
-      ? unit.instructions.trim()
-      : "";
+    const note = typeof projectLocation?.note === "string" && projectLocation.note.trim()
+      ? projectLocation.note.trim()
+      : typeof unit?.instructions === "string" && unit.instructions.trim()
+        ? unit.instructions.trim()
+        : typeof unit?.note === "string" && unit.note.trim()
+          ? unit.note.trim()
+          : "";
     const sourcePhotoItemId = typeof unit?.sourcePhotoItemId === "string" && unit.sourcePhotoItemId.trim()
       ? unit.sourcePhotoItemId.trim()
       : "";
@@ -273,7 +300,7 @@ export async function buildOfferDescriptionEntries(offer: OfferVersion): Promise
     productMap = new Map(products.map((product) => [product._id.toString(), product]));
   }
   const [project, zahteva] = await Promise.all([
-    ProjectModel.findOne({ id: offer.projectId }).select({ _id: 1, executionDefinitions: 1 }).lean(),
+    ProjectModel.findOne({ id: offer.projectId }).select({ _id: 1, executionDefinitions: 1, executionLocations: 1 }).lean(),
     offer.requestId ? ZahtevaModel.findById(offer.requestId).lean() : Promise.resolve(null),
   ]);
   const fallbackUnitsByProductId = buildRequirementLocationUnitsFromRequest(zahteva);
@@ -293,7 +320,12 @@ export async function buildOfferDescriptionEntries(offer: OfferVersion): Promise
     const imageUrl = typeof product?.povezavaDoSlike === "string" ? product.povezavaDoSlike.trim() : "";
     const fallbackUnits = productId ? fallbackUnitsByProductId.get(productId) ?? [] : [];
     const definition = executionDefinitionByItemKey.get(String(item.id));
-    const definitionLocations = await resolveProjectExecutionDefinitionLocations(project?._id, item, definition);
+    const definitionLocations = await resolveProjectExecutionDefinitionLocations(
+      project?._id,
+      item,
+      definition,
+      Array.isArray((project as any)?.executionLocations) ? (project as any).executionLocations : [],
+    );
     const title = isCameraInstallationServiceName(item.name) && definitionLocations.length > 0
       ? "Predlog izvedbe"
       : product?.ime || item.name;
