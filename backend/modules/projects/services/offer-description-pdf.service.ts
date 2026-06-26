@@ -212,16 +212,27 @@ async function resolveProjectExecutionDefinitionLocations(
     const note = typeof unit?.instructions === "string" && unit.instructions.trim()
       ? unit.instructions.trim()
       : "";
+    const sourcePhotoItemId = typeof unit?.sourcePhotoItemId === "string" && unit.sourcePhotoItemId.trim()
+      ? unit.sourcePhotoItemId.trim()
+      : "";
 
-    const photos = await PhotoModel.find({
-      projectId: projectObjectId,
-      phase: "preparation",
-      itemId,
-      unitIndex,
-      deletedAt: { $exists: false },
-    })
-      .sort({ uploadedAt: 1 })
-      .lean();
+    const photoFilters = sourcePhotoItemId
+      ? [
+          { projectId: projectObjectId, phase: "requirements", itemId: sourcePhotoItemId, deletedAt: { $exists: false } },
+          { projectId: projectObjectId, phase: "preparation", itemId: sourcePhotoItemId, deletedAt: { $exists: false } },
+        ]
+      : [
+          { projectId: projectObjectId, phase: "preparation", itemId, unitIndex, deletedAt: { $exists: false } },
+        ];
+    const photoGroups = await Promise.all(
+      photoFilters.map((filter) => PhotoModel.find(filter).sort({ uploadedAt: 1 }).lean()),
+    );
+    const photosByUrl = new Map<string, (typeof photoGroups)[number][number]>();
+    for (const photo of photoGroups.flat()) {
+      const key = typeof photo.url === "string" && photo.url ? photo.url : String(photo._id);
+      if (!photosByUrl.has(key)) photosByUrl.set(key, photo);
+    }
+    const photos = Array.from(photosByUrl.values());
 
     const photoDataUrls = (
       await Promise.all(photos.map((photo) => readPhotoDataUrl({
