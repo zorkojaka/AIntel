@@ -9,6 +9,7 @@ type DodajVariantoDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: (camera: CenikProduct, brackets: Array<CenikProduct | null>) => void;
+  cameraMode?: "ip" | "reolink_wifi";
 };
 
 function productBrand(product: CenikProduct) {
@@ -17,6 +18,16 @@ function productBrand(product: CenikProduct) {
 
 function isIpCamera(product: CenikProduct) {
   return product.classification?.productType === "kamera" && product.classification.cameraTechnology === "IP video";
+}
+
+function isReolinkProduct(product: CenikProduct) {
+  const text = `${product.ime ?? ""} ${product.proizvajalec ?? ""} ${product.classification?.manufacturer ?? ""} ${(product.categorySlugs ?? []).join(" ")}`.toLowerCase();
+  return text.includes("reolink");
+}
+
+function isCameraLikeProduct(product: CenikProduct) {
+  const text = `${product.ime ?? ""} ${(product.categorySlugs ?? []).join(" ")}`.toLowerCase();
+  return product.classification?.productType === "kamera" || /\b(kamera|camera)\b/i.test(text);
 }
 
 function cameraMatches(camera: CenikProduct, filters: { brand?: string; housing?: string; resolution?: string }) {
@@ -39,7 +50,7 @@ function defaultResolution(values: string[]) {
   return values.includes("4") ? "4" : values[0] ?? "";
 }
 
-export function DodajVariantoDialog({ open, onOpenChange, onConfirm }: DodajVariantoDialogProps) {
+export function DodajVariantoDialog({ open, onOpenChange, onConfirm, cameraMode = "ip" }: DodajVariantoDialogProps) {
   const [products, setProducts] = useState<CenikProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [brand, setBrand] = useState("");
@@ -58,7 +69,10 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm }: DodajVari
       .finally(() => setLoading(false));
   }, [open, products.length]);
 
-  const cameras = useMemo(() => products.filter(isIpCamera), [products]);
+  const cameras = useMemo(
+    () => products.filter((product) => cameraMode === "reolink_wifi" ? isReolinkProduct(product) && isCameraLikeProduct(product) : isIpCamera(product)),
+    [cameraMode, products],
+  );
   const brands = useMemo(() => Array.from(new Set(cameras.map(productBrand))).sort((a, b) => a.localeCompare(b, "sl")), [cameras]);
   const brandCameras = useMemo(() => cameras.filter((camera) => !brand || productBrand(camera) === brand), [brand, cameras]);
   const housings = useMemo(

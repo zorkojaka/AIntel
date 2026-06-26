@@ -193,12 +193,25 @@ function parsePoePorts(product: AAProductRaw): number | undefined {
     .filter((value): value is string => Boolean(value))
     .join(' ');
   const text = `${attributeText} ${product.description} ${product.name}`;
+  const explicitPatterns = [
+    /PoE\s*Out\s*port\s*:\s*(\d+)\s*x/i,
+    /Downlink\s*:\s*(\d+)\s*x[^,;.]*PoE\s*port/i,
+    /(\d+)\s*x\s*vrata\s*RJ\s*45\s*POE\s*port/i,
+    /PoE\s*Injektor[^.]*?(\d+)\s*x\s*RJ45\s*Port/i,
+    /(\d+)\s*x[^,;.]*RJ45\s*PoE\s*port/i,
+    /(\d+)\s*x\s*802\.3[a-z0-9/.+\s-]*PoE/i,
+    /(\d+)\s*[- ]?portno[^,;.]*PoE/i,
+  ];
+  for (const pattern of explicitPatterns) {
+    const match = text.match(pattern);
+    if (match) return Number.parseInt(match[1], 10);
+  }
   const outMatch = text.match(/(\d+)\s*(?:x|×)\s*(?:10\/100M?\s*)?(?:Mbps\s*)?(?:RJ45\s*)?(?:Hi-)?PoE\s*OUT\b/i);
   if (outMatch) return Number.parseInt(outMatch[1], 10);
   const patterns = [
     /(\d+)\s*(?:x|×)\s*(?:10\/100M?\s*)?(?:Mbps\s*)?(?:RJ45\s*)?(?:Hi-)?PoE\b/i,
     /(\d+)\s*(?:-| )?portn[io]\s*\(?PoE\)?/i,
-    /(\d+)\s*(?:PoE\s*)?port(?:s|ov|i)?/i,
+    /\b(\d+)\s*(?:PoE\s*)?port(?:s|ov|i)?\b/i,
   ];
   for (const pattern of patterns) {
     const match = text.match(pattern);

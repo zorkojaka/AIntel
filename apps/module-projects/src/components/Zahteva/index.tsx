@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchCenikProducts, fetchExecutionRuleSettings, type CenikProduct, type ExecutionRuleSettings } from "../../api";
 import type { ProjectDetails, Zahteva } from "../../types";
+import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { SistemBlok } from "./SistemBlok";
 import { SpodnjiCena } from "./SpodnjiCena";
 import { TipProjektaTrak } from "./TipProjektaTrak";
 import { useZahtevaState } from "./state/useZahtevaState";
-import { createAlarmSystem, createVideonadzorSystem, nextSystemId } from "./utils";
+import { createAlarmSystem, createVideonadzorSystem, createWifiKamereSystem, nextSystemId } from "./utils";
 
 type ZahtevaViewProps = {
   project: ProjectDetails;
@@ -15,7 +16,7 @@ type ZahtevaViewProps = {
 };
 
 export function ZahtevaView({ project, onProjectRequestChanged, onNavigateOffer }: ZahtevaViewProps) {
-  const { zahteva, loading, saveState, updateZahtevaState } = useZahtevaState(project, onProjectRequestChanged);
+  const { zahteva, loading, saveState, saveNow, updateZahtevaState } = useZahtevaState(project, onProjectRequestChanged);
   const [products, setProducts] = useState<CenikProduct[]>([]);
   const [executionSettings, setExecutionSettings] = useState<ExecutionRuleSettings | null>(null);
 
@@ -56,6 +57,13 @@ export function ZahtevaView({ project, onProjectRequestChanged, onNavigateOffer 
     }));
   }, [updateZahtevaState]);
 
+  const addWifiKamere = useCallback(() => {
+    updateZahtevaState((current) => ({
+      ...current,
+      sistemi: [...current.sistemi, createWifiKamereSystem(nextSystemId(current.sistemi))],
+    }));
+  }, [updateZahtevaState]);
+
   const addAlarm = useCallback(() => {
     updateZahtevaState((current) => ({
       ...current,
@@ -79,10 +87,15 @@ export function ZahtevaView({ project, onProjectRequestChanged, onNavigateOffer 
           <h2>Zahteva</h2>
           <p>{project.code ?? project.id}: {project.customer}</p>
         </div>
-        <span className={`zahteva-save-state is-${saveState}`}>{saveLabel}</span>
+        <div className="flex items-center gap-2">
+          <span className={`zahteva-save-state is-${saveState}`}>{saveLabel}</span>
+          <Button type="button" variant="outline" size="sm" onClick={() => void saveNow()} disabled={saveState === "saving"}>
+            Shrani zdaj
+          </Button>
+        </div>
       </div>
 
-      <TipProjektaTrak onAddVideonadzor={addVideonadzor} onAddAlarm={addAlarm} />
+      <TipProjektaTrak onAddVideonadzor={addVideonadzor} onAddWifiKamere={addWifiKamere} onAddAlarm={addAlarm} />
 
       <div className="zahteva-systems">
         {zahteva.sistemi.map((sistem) => (

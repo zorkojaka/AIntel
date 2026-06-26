@@ -21,12 +21,11 @@ function dominantBrand(products: CenikProduct[]) {
 }
 
 function productBrand(product: CenikProduct) {
-  return product.classification?.manufacturer || product.proizvajalec || "Brez proizvajalca";
-}
-
-function defaultManufacturer(values: string[], preferred: string) {
-  if (preferred && values.includes(preferred)) return preferred;
-  return values.includes("DVC") ? "DVC" : values[0] ?? "";
+  const slugs = product.categorySlugs ?? [];
+  if (product.classification?.manufacturer) return product.classification.manufacturer;
+  if (product.proizvajalec) return product.proizvajalec;
+  if (slugs.some((slug) => slug.toLowerCase() === "dvc")) return "DVC";
+  return "Brez proizvajalca";
 }
 
 function hddLabel(slots?: number) {
@@ -50,6 +49,40 @@ function categoryPriorityRank(product: CenikProduct) {
   return product.categoryPriority ?? 4;
 }
 
+function recorderText(product: CenikProduct) {
+  return [
+    product.ime,
+    product.externalId,
+    product.externalKey,
+    product.kratekOpis,
+    product.dolgOpis,
+    product.povezavaDoSlike,
+    product.aaData?.productCode,
+    product.aaData?.rawDescription,
+    ...(product.categorySlugs ?? []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function recorderChannels(product: CenikProduct) {
+  const classified = Number(product.classification?.nvrChannels ?? 0);
+  if (classified > 0) return classified;
+  const text = recorderText(product);
+  const prefixMatch = text.match(/\b(4|8|16|32|64)\s*[- ]*(?:kanal(?:ni|ov)?|channel|ch|kamer|cameras)\b/i);
+  if (prefixMatch) return Number(prefixMatch[1]);
+  const labelMatch = text.match(/\b(?:number of cameras|kamer(?:e|a)?)\s*:\s*(4|8|16|32|64)\b/i);
+  return labelMatch ? Number(labelMatch[1]) : 0;
+}
+
+function isIpRecorder(product: CenikProduct) {
+  const text = recorderText(product);
+  if (/\b(dra|dvr|ahd|analog)\b/i.test(text)) return false;
+  const isRecorderCategory = (product.categorySlugs ?? []).some((slug) => slug.toLowerCase() === "snemalnik");
+  return product.classification?.productType === "snemalnik" || isRecorderCategory || /\b(drn|nvr)\b/i.test(text);
+}
+
 export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) {
   const cameraProducts = useMemo(() => assignedCameraProducts(videonadzor, productById), [productById, videonadzor]);
   const cameraCount = Math.max(cameraProducts.length, videonadzor.lokacije.length);
@@ -64,24 +97,24 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
   const recommendedCardRef = useRef<HTMLButtonElement | null>(null);
 
   const allRecorders = useMemo(
-    () => Array.from(productById.values()).filter((product) => product.classification?.productType === "snemalnik"),
+    () => Array.from(productById.values()).filter(isIpRecorder),
     [productById],
   );
   const manufacturers = useMemo(() => Array.from(new Set(allRecorders.map(productBrand))).sort((a, b) => a.localeCompare(b, "sl")), [allRecorders]);
+  const manufacturerOptions = useMemo(() => ["Vsi", ...manufacturers], [manufacturers]);
   const manufacturerRecorders = useMemo(
     () => allRecorders.filter((product) => !manufacturer || productBrand(product) === manufacturer),
     [allRecorders, manufacturer],
   );
 
   useEffect(() => {
-    if (!manufacturer && manufacturers.length) setManufacturer(defaultManufacturer(manufacturers, cameraBrand));
-    else if (manufacturer && !manufacturers.includes(manufacturer)) setManufacturer(defaultManufacturer(manufacturers, cameraBrand));
-  }, [cameraBrand, manufacturer, manufacturers]);
+    if (manufacturer && !manufacturers.includes(manufacturer)) setManufacturer("");
+  }, [manufacturer, manufacturers]);
 
   const channelOptions = useMemo(() => {
     const fromProducts = manufacturerRecorders
-      .map((product) => Number(product.classification?.nvrChannels ?? 0))
-      .filter((channels) => channels >= neededChannels);
+      .map(recorderChannels)
+      .filter((channels) => channels > 0);
     return Array.from(new Set([neededChannels, ...fromProducts])).sort((a, b) => a - b);
   }, [manufacturerRecorders, neededChannels]);
 
@@ -98,7 +131,7 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
       manufacturerRecorders
         .filter((product) => matchesPoeFilter(product, poeFilter))
         .sort((a, b) => {
-          const channelScore = (a.classification?.nvrChannels ?? 0) - (b.classification?.nvrChannels ?? 0);
+          const channelScore = recorderChannels(a) - recorderChannels(b);
           const visiblePoeScore = poeFilter === "all" ? poeGroup(a) - poeGroup(b) : 0;
           const priorityScore = categoryPriorityRank(a) - categoryPriorityRank(b);
           const brandScore =
@@ -110,10 +143,10 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
   );
 
   const recommendedId = useMemo(() => {
-    const withEnoughChannels = alternatives.filter((product) => (product.classification?.nvrChannels ?? 0) >= selectedChannels);
+    const withEnoughChannels = alternatives.filter((product) => recorderChannels(product) >= selectedChannels);
     const preferred = [...withEnoughChannels].sort((a, b) => {
       const poeScore = poeFilter === "all" && allPoE ? poeGroup(a) - poeGroup(b) : 0;
-      return poeScore || categoryPriorityRank(a) - categoryPriorityRank(b) || (a.classification?.nvrChannels ?? 0) - (b.classification?.nvrChannels ?? 0) || a.prodajnaCena - b.prodajnaCena;
+      return poeScore || categoryPriorityRank(a) - categoryPriorityRank(b) || recorderChannels(a) - recorderChannels(b) || a.prodajnaCena - b.prodajnaCena;
     })[0];
     return preferred?._id ?? alternatives[0]?._id ?? null;
   }, [allPoE, alternatives, poeFilter, selectedChannels]);
@@ -159,11 +192,11 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
       <div className="zahteva-dialog-filters">
         <FilterStrip
           label="Proizvajalec"
-          values={manufacturers}
-          selected={manufacturer}
+          values={manufacturerOptions}
+          selected={manufacturer || "Vsi"}
           onSelect={(value) => {
             manualNoneRef.current = false;
-            setManufacturer(value);
+            setManufacturer(value === "Vsi" ? "" : value);
           }}
         />
         <FilterStrip
@@ -209,7 +242,7 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
             {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
             <strong>{product.ime}</strong>
             <small className="zahteva-nvr-spec">
-              {product.classification?.nvrChannels ?? "-"} kanalov
+              {recorderChannels(product) || "-"} kanalov
               {product.classification?.nvrHasPoE ? " • PoE" : ""} • {hddLabel(product.classification?.nvrHddSlots)}
             </small>
             <b>{formatPrice(product.prodajnaCena)}</b>

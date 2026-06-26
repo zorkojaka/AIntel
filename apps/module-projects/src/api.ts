@@ -220,12 +220,17 @@ export async function updateZahteva(id: string, changes: Partial<Zahteva>): Prom
 
 export type CenikProduct = {
   _id: string;
+  externalId?: string;
+  externalKey?: string;
   ime: string;
   prodajnaCena: number;
   kratekOpis?: string;
+  dolgOpis?: string;
   povezavaDoSlike?: string;
   aaData?: {
+    productCode?: string;
     image?: string;
+    rawDescription?: string;
   };
   proizvajalec?: string;
   categorySlugs?: string[];

@@ -32,7 +32,8 @@ const SCENARIO_LABELS: Record<ExecutionScenario["type"], string> = {
 
 function selectedMaterial(sistem: ZahtevaSistem) {
   const result: Array<{ productId: string; quantity: number }> = [];
-  const v = sistem.tip === "videonadzor" ? sistem.videonadzor : null;
+  const isWifiKamere = sistem.tip === "wifi_kamere";
+  const v = sistem.tip === "videonadzor" || isWifiKamere ? sistem.videonadzor : null;
   if (v) {
     for (const variant of v.asortima ?? []) {
       const quantity = (v.lokacije ?? []).filter((lokacija) => lokacija.asortimaIdAssigned === variant.id).length;
@@ -41,9 +42,11 @@ function selectedMaterial(sistem: ZahtevaSistem) {
         if (variant.nosilecProductId) result.push({ productId: variant.nosilecProductId, quantity });
       }
     }
-    if (v.snemalnik?.productId) result.push({ productId: v.snemalnik.productId, quantity: 1 });
-    for (const item of normalizedSelectedItems(v.poeSwitch)) result.push({ productId: item.productId, quantity: item.kolicina });
-    for (const item of normalizedSelectedItems(v.disk)) result.push({ productId: item.productId, quantity: item.kolicina });
+    if (!isWifiKamere) {
+      if (v.snemalnik?.productId) result.push({ productId: v.snemalnik.productId, quantity: 1 });
+      for (const item of normalizedSelectedItems(v.poeSwitch)) result.push({ productId: item.productId, quantity: item.kolicina });
+      for (const item of normalizedSelectedItems(v.disk)) result.push({ productId: item.productId, quantity: item.kolicina });
+    }
     for (const item of v.dodatnaOprema ?? []) result.push({ productId: item.productId, quantity: item.kolicina });
     return result;
   }
@@ -124,7 +127,8 @@ function buildPreview(
   if (!settings?.isConfigured) return [];
   const lines: PreviewLine[] = [];
   const material = selectedMaterial(sistem);
-  const projectTypes = new Set([sistem.tip]);
+  const projectTypes = new Set<string>([sistem.tip]);
+  if (sistem.tip === "wifi_kamere") projectTypes.add("videonadzor");
 
   for (const rule of settings.productServiceRules.filter((entry) => entry.isActive)) {
     if (rule.triggerType === "project") {

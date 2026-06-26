@@ -12,6 +12,10 @@ export interface PreviewItem {
   quantity: number;
   plannedQuantity?: number | null;
   unit?: string;
+  itemNote?: string | null;
+  locationSummary?: string | null;
+  instructions?: string | null;
+  trackingUnitLabel?: string | null;
   unitPrice?: number;
   discountPercent?: number;
   total?: number;
@@ -20,6 +24,14 @@ export interface PreviewItem {
   executionLocations?: Array<{
     name: string;
     note?: string;
+    photos: string[];
+  }>;
+  executionUnits?: Array<{
+    label: string;
+    location?: string | null;
+    instructions?: string | null;
+    note?: string | null;
+    isCompleted?: boolean;
     photos: string[];
   }>;
 }
@@ -122,6 +134,17 @@ const baseStyles = `
   .tasks { margin-top: 12px; }
   .task { padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
   .badge { display: inline-flex; padding: 4px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca; font-size: 12px; }
+  .workorder-items { display:flex; flex-direction:column; gap:10px; margin-top:10px; }
+  .workorder-item { border:1px solid #dbe2ea; border-radius:10px; padding:10px 12px; break-inside:avoid; page-break-inside:avoid; }
+  .workorder-item-header { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; border-bottom:1px solid #eef2f7; padding-bottom:7px; margin-bottom:8px; }
+  .workorder-item-title { font-size:14px; font-weight:700; color:#0f172a; }
+  .workorder-item-meta { text-align:right; white-space:nowrap; color:#475569; font-size:11px; }
+  .workorder-detail { margin:4px 0; font-size:11.5px; color:#334155; white-space:pre-wrap; }
+  .workorder-detail strong { color:#0f172a; }
+  .workorder-units { margin-top:8px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .workorder-unit { border:1px solid #e2e8f0; border-radius:8px; padding:8px; background:#f8fafc; break-inside:avoid; page-break-inside:avoid; }
+  .workorder-unit-title { font-size:11.5px; font-weight:700; color:#0f172a; margin-bottom:3px; }
+  .workorder-unit-line { font-size:10.5px; color:#475569; margin:2px 0; white-space:pre-wrap; }
   .execution-locations { margin-top: 6px; padding-top: 6px; border-top: 1px solid #eef2f7; }
   .execution-location-row { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; border-bottom: 1px solid #f1f5f9; }
   .execution-location-name { flex: 0 0 34%; margin: 0; font-size: 10.5px; font-weight: 700; color: #111827; }
@@ -359,6 +382,12 @@ function buildStandardDocument(context: DocumentPreviewContext, options: Documen
   const tableFooter = options.tableFooterRows
     ? `<table class="offer-table document-summary document-totals"><tbody>${options.tableFooterRows}</tbody></table>`
     : '';
+  const tableBlock = options.tableHeadRows || options.tableBodyRows
+    ? `<table class="offer-table">
+          <thead>${options.tableHeadRows}</thead>
+          <tbody>${options.tableBodyRows}</tbody>
+        </table>`
+    : '';
   const commentBlock = options.commentBlock ?? '';
   const notesBlock = options.notesBlock ?? '';
   const extraSections = options.extraSections ?? '';
@@ -388,10 +417,7 @@ function buildStandardDocument(context: DocumentPreviewContext, options: Documen
           <h3 style="font-size:18px; font-weight:600; margin-bottom:4px;">${context.projectTitle ?? options.projectTitleFallback}</h3>
         </div>
 
-        <table class="offer-table">
-          <thead>${options.tableHeadRows}</thead>
-          <tbody>${options.tableBodyRows}</tbody>
-        </table>
+        ${tableBlock}
 
         ${tableFooter}
 
@@ -627,7 +653,7 @@ export function renderDeliveryNotePdf(context: DocumentPreviewContext) {
 
 export function renderWorkOrderPdf(context: DocumentPreviewContext) {
   const tasks = context.tasks ?? (context.items ?? []).map((item) => ({ label: item.name, status: 'todo' as const }));
-  const rows = (context.items ?? []).map((item, index) => {
+  const itemCards = (context.items ?? []).map((item, index) => {
     const task = tasks[index] ?? { label: item.name, status: 'todo' as const };
     const locations = item.executionLocations ?? [];
     const hasLocationPhotos = locations.some((location) => location.photos.length > 0);
@@ -655,17 +681,38 @@ export function renderWorkOrderPdf(context: DocumentPreviewContext) {
           </div>
         </div>`
       : '';
-    return `<tr>
-        <td>
-          <div>${escapeHtml(item.name || task.label)}</div>
-          ${locationsBlock}
-        </td>
-        <td style="text-align:right;">${task.status ?? ''}</td>
-      </tr>`
+    const units = item.executionUnits ?? [];
+    const unitsBlock = units.length
+      ? `<div class="workorder-units">
+          ${units
+            .map((unit) => {
+              const photos = unit.photos.map((photo) => `<img src="${photo}" alt="" />`).join('');
+              return `<div class="workorder-unit">
+                <p class="workorder-unit-title">${escapeHtml(unit.label)}</p>
+                ${unit.location ? `<p class="workorder-unit-line"><strong>Lokacija:</strong> ${escapeHtml(unit.location)}</p>` : ''}
+                ${unit.instructions ? `<p class="workorder-unit-line"><strong>Navodilo:</strong> ${escapeHtml(unit.instructions)}</p>` : ''}
+                ${unit.note ? `<p class="workorder-unit-line"><strong>Opomba:</strong> ${escapeHtml(unit.note)}</p>` : ''}
+                ${photos ? `<div class="execution-location-photos">${photos}</div>` : ''}
+              </div>`;
+            })
+            .join('')}
+        </div>`
+      : '';
+    return `<section class="workorder-item">
+        <div class="workorder-item-header">
+          <div class="workorder-item-title">${escapeHtml(item.name || task.label)}</div>
+          <div class="workorder-item-meta">${item.quantity}${item.unit ? ` ${escapeHtml(item.unit)}` : ''}${task.status ? `<br/>${escapeHtml(task.status)}` : ''}</div>
+        </div>
+        ${item.itemNote ? `<p class="workorder-detail"><strong>Opomba postavke:</strong> ${escapeHtml(item.itemNote)}</p>` : ''}
+        ${item.locationSummary ? `<p class="workorder-detail"><strong>Povzetek lokacije:</strong> ${escapeHtml(item.locationSummary)}</p>` : ''}
+        ${item.instructions ? `<p class="workorder-detail"><strong>Navodila izvedbe:</strong> ${escapeHtml(item.instructions)}</p>` : ''}
+        ${item.trackingUnitLabel ? `<p class="workorder-detail"><strong>Enota spremljanja:</strong> ${escapeHtml(item.trackingUnitLabel)}</p>` : ''}
+        ${unitsBlock || locationsBlock}
+      </section>`;
   });
-  const itemsRows = rows.length
-    ? rows.join('')
-    : `<tr><td colspan="2" style="text-align:center; color:#94a3b8;">Ni nalog za prikaz.</td></tr>`;
+  const itemsBlock = itemCards.length
+    ? `<div class="workorder-items">${itemCards.join('')}</div>`
+    : `<div class="offer-comment"><p style="text-align:center; color:#94a3b8;">Ni nalog za prikaz.</p></div>`;
   const notesBlock = buildNotesList(context.notes);
   const commentBlock = context.comment
     ? `<div class="offer-comment">
@@ -679,13 +726,11 @@ export function renderWorkOrderPdf(context: DocumentPreviewContext) {
     pageTitle: 'Delovni nalog',
     projectTitleFallback: 'Delovni nalog',
     customerEmptyText: 'Podatki o stranki se prikažejo ob izdaji naloga.',
-    tableHeadRows: `<tr>
-        <th>Naloga</th>
-        <th style="text-align:right;">Status</th>
-      </tr>`,
-    tableBodyRows: itemsRows,
+    tableHeadRows: '',
+    tableBodyRows: '',
     commentBlock,
     notesBlock,
+    extraSections: itemsBlock,
   });
 }
 
@@ -917,6 +962,50 @@ export function renderProductDescriptionsHtml(
     ? `<footer class="descriptions-footer">${escapeHtml(options.footerText.trim())}</footer>`
     : "";
 
+  const buildLocationsBlock = (locations: NonNullable<ProductDescriptionEntry["locations"]>) => {
+    const filteredLocations = locations.filter((location) => location.name || location.note || location.photos.length > 0);
+    const hasLocationPhotos = filteredLocations.some((location) => location.photos.length > 0);
+    return filteredLocations.length
+      ? `<div class="locations">
+          <p class="locations-title">Lokacije</p>
+          <div class="${hasLocationPhotos ? 'locations-grid' : 'locations-list'}">
+            ${filteredLocations
+              .map((location) => {
+                const photos = location.photos
+                  .map((photo) => `<img src="${photo}" alt="" />`)
+                  .join('');
+                const note = location.note ? `<p class="location-note">${escapeHtml(location.note)}</p>` : '';
+                if (!photos) {
+                  return `<div class="location-row">
+                    <p class="location-name">${escapeHtml(location.name)}</p>
+                    ${note}
+                  </div>`;
+                }
+                return `<div class="location">
+                  <p class="location-name">${escapeHtml(location.name)}</p>
+                  ${note}
+                  ${photos ? `<div class="location-photos">${photos}</div>` : ''}
+                </div>`;
+              })
+              .join('')}
+          </div>
+        </div>`
+      : '';
+  };
+
+  const locationSections = entries
+    .map((entry) => {
+      const locationsBlock = buildLocationsBlock(entry.locations ?? []);
+      return locationsBlock
+        ? `<section class="product location-summary">
+            <h2 class="title">${escapeHtml(entry.title)}</h2>
+            ${locationsBlock}
+          </section>`
+        : '';
+    })
+    .filter(Boolean)
+    .join('');
+
   const content = entries.length
     ? entries
         .map((entry) => {
@@ -924,34 +1013,7 @@ export function renderProductDescriptionsHtml(
           const description = entry.description ? escapeHtml(entry.description) : '';
           const hasImage = !!entry.imageUrl;
           const hasDesc = !!description;
-          const locations = (entry.locations ?? []).filter((location) => location.name || location.note || location.photos.length > 0);
-          const hasLocationPhotos = locations.some((location) => location.photos.length > 0);
-          const locationsBlock = locations.length
-            ? `<div class="locations">
-                <p class="locations-title">Lokacije</p>
-                <div class="${hasLocationPhotos ? 'locations-grid' : 'locations-list'}">
-                  ${locations
-                    .map((location) => {
-                      const photos = location.photos
-                        .map((photo) => `<img src="${photo}" alt="" />`)
-                        .join('');
-                      const note = location.note ? `<p class="location-note">${escapeHtml(location.note)}</p>` : '';
-                      if (!photos) {
-                        return `<div class="location-row">
-                          <p class="location-name">${escapeHtml(location.name)}</p>
-                          ${note}
-                        </div>`;
-                      }
-                      return `<div class="location">
-                        <p class="location-name">${escapeHtml(location.name)}</p>
-                        ${note}
-                        ${photos ? `<div class="location-photos">${photos}</div>` : ''}
-                      </div>`;
-                    })
-                    .join('')}
-                </div>
-              </div>`
-            : '';
+          if (!hasImage && !hasDesc) return '';
           const classes = [
             'product',
             hasImage ? 'hasImage' : 'noImage',
@@ -969,10 +1031,9 @@ export function renderProductDescriptionsHtml(
                 ${imageBlock}
                 ${descBlock}
               </div>
-              ${locationsBlock}
             </section>`;
         })
-        .join('')
+        .join('') + locationSections
     : `<section class="product">
         <h2 class="title">Ni produktnih opisov za izbrane postavke.</h2>
       </section>`;

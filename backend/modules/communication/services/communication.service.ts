@@ -994,6 +994,13 @@ function formatWorkOrderExecutionDefinition(workOrder: any) {
 export async function sendInstallerPreparationEmail(input: {
   projectId: string;
   workOrderId: string;
+  to?: unknown;
+  cc?: unknown;
+  bcc?: unknown;
+  subject?: string | null;
+  body?: string | null;
+  projectLink?: string | null;
+  previewOnly?: boolean;
   actorUserId?: string | null;
   actorDisplayName?: string | null;
   actorProfile?: {
@@ -1035,8 +1042,9 @@ export async function sendInstallerPreparationEmail(input: {
 
   const installers = await EmployeeModel.find({ _id: { $in: installerIds }, deletedAt: null }).lean();
   const installerById = new Map<string, any>(installers.map((installer: any) => [String(installer._id), installer]));
+  const selectedRecipients = sanitizeEmailList(input.to);
   const primaryInstaller = installerIds.map((id) => installerById.get(id)).find((installer) => sanitizeString(installer?.email));
-  if (!primaryInstaller) {
+  if (!primaryInstaller && selectedRecipients.length === 0) {
     throw new Error("Monter nima nastavljenega emaila.");
   }
 
@@ -1059,7 +1067,7 @@ export async function sendInstallerPreparationEmail(input: {
   const workOrderIdentifier = workOrder.code || workOrder.title || String(workOrder._id);
 
   const bodyLines: string[] = [
-    `Pozdravljen ${primaryInstaller.name || "monter"},`,
+    `Pozdravljen ${primaryInstaller?.name || "monter"},`,
     "",
     `Pošiljamo podatke za pripravo na montažo in potrditev termina za projekt ${projectIdentifier}${project.title ? ` - ${project.title}` : ""}.`,
   ];
@@ -1087,6 +1095,9 @@ export async function sendInstallerPreparationEmail(input: {
   });
   appendSection(bodyLines, "Postavke delovnega naloga", itemLines);
   appendSection(bodyLines, "Definicija izvedbe", formatWorkOrderExecutionDefinition(workOrder));
+  appendSection(bodyLines, "Povezava", [
+    input.projectLink ? `Projekt/delovni nalog: ${input.projectLink}` : null,
+  ]);
   bodyLines.push("", "Delovni nalog je priložen v PDF priponki.", "", "Lep pozdrav");
 
   const templateContext = buildTemplateContext({
@@ -1119,8 +1130,22 @@ export async function sendInstallerPreparationEmail(input: {
     logoSrc: inlineCompanyLogo ? `cid:${inlineCompanyLogo.cid}` : toPublicEmailLogoUrl(globalSettings.logoUrl),
   });
 
-  const subjectFinal = `Priprava montaže: ${projectIdentifier}${schedule ? ` - ${schedule}` : ""}`;
-  const bodyWithoutFooter = bodyLines.join("\n");
+  const subjectFinal = sanitizeString(input.subject) || `Priprava montaže: ${projectIdentifier}${schedule ? ` - ${schedule}` : ""}`;
+  const bodyWithoutFooter = input.body?.toString().trim() || bodyLines.join("\n");
+  const resolvedRecipients = selectedRecipients.length > 0 ? selectedRecipients : [String(primaryInstaller.email).toLowerCase()];
+  const cc = sanitizeEmailList(input.cc);
+  const bcc = sanitizeEmailList(input.bcc);
+  if (input.previewOnly) {
+    return {
+      draft: {
+        to: resolvedRecipients.join(", "),
+        cc: cc.join(", "),
+        bcc: bcc.join(", "),
+        subject: subjectFinal,
+        body: bodyWithoutFooter,
+      },
+    };
+  }
   const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
   const escapedMainHtml = bodyWithoutFooter
     .split("\n")
@@ -1145,8 +1170,6 @@ export async function sendInstallerPreparationEmail(input: {
     refId: attachment.refId,
     filename: attachment.filename,
   }];
-  const resolvedRecipients = [String(primaryInstaller.email).toLowerCase()];
-
   const baseMessage = {
     projectId: input.projectId,
     offerId: workOrder.offerVersionId ?? null,
@@ -1154,8 +1177,8 @@ export async function sendInstallerPreparationEmail(input: {
     direction: "outbound" as const,
     channel: "email" as const,
     to: resolvedRecipients,
-    cc: [],
-    bcc: [],
+    cc,
+    bcc,
     subjectFinal,
     bodyFinal,
     templateId: null,
@@ -1168,6 +1191,8 @@ export async function sendInstallerPreparationEmail(input: {
     const info = await sendEmail({
       from: `"${effectiveSender.senderName}" <${effectiveSender.senderEmail}>`,
       to: resolvedRecipients.join(", "),
+      cc: cc.length > 0 ? cc.join(", ") : undefined,
+      bcc: bcc.length > 0 ? bcc.join(", ") : undefined,
       replyTo: senderSettings.replyToEmail || undefined,
       subject: subjectFinal,
       text: bodyFinal,

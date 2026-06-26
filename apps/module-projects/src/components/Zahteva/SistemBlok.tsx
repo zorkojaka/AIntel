@@ -1,4 +1,4 @@
-import { Shield, Trash2, Video } from "lucide-react";
+import { Shield, Trash2, Video, Wifi } from "lucide-react";
 import { useState } from "react";
 import type { CenikProduct, ExecutionRuleSettings } from "../../api";
 import { Button } from "../ui/button";
@@ -126,7 +126,8 @@ export function SistemBlok({ projectId, zahtevaId, sistem, executionSettings, pr
     );
   }
 
-  if (sistem.tip !== "videonadzor" || !videonadzor) return null;
+  const isWifiKamere = sistem.tip === "wifi_kamere";
+  if ((sistem.tip !== "videonadzor" && !isWifiKamere) || !videonadzor) return null;
   const total = systemTotal(videonadzor, productById);
 
   const setCount = (value: number) => {
@@ -179,8 +180,8 @@ export function SistemBlok({ projectId, zahtevaId, sistem, executionSettings, pr
     <section className="zahteva-system-block">
       <header className="zahteva-system-header">
         <div className="zahteva-system-title">
-          <Video className="h-5 w-5" aria-hidden />
-          <h3>Videonadzor</h3>
+          {isWifiKamere ? <Wifi className="h-5 w-5" aria-hidden /> : <Video className="h-5 w-5" aria-hidden />}
+          <h3>{isWifiKamere ? "WiFi kamere" : "Videonadzor"}</h3>
         </div>
         <TrakStevila value={sistem.steviloLokacij} min={1} max={64} onChange={setCount} />
         <strong className="zahteva-system-price">{formatPrice(total)}</strong>
@@ -189,7 +190,11 @@ export function SistemBlok({ projectId, zahtevaId, sistem, executionSettings, pr
         </Button>
       </header>
 
-      <SekcijaKameraNosilec productById={productById} onAddVariant={(camera, bracket) => addVariants(camera, [bracket])} />
+      <SekcijaKameraNosilec
+        productById={productById}
+        cameraMode={isWifiKamere ? "reolink_wifi" : "ip"}
+        onAddVariant={(camera, bracket) => addVariants(camera, [bracket])}
+      />
       <TabelaAsortima
         projectId={projectId}
         zahtevaId={zahtevaId}
@@ -206,9 +211,13 @@ export function SistemBlok({ projectId, zahtevaId, sistem, executionSettings, pr
         onAddVarianta={() => setDialogOpen(true)}
         onRemoveVarianta={removeVariant}
       />
-      <SekcijaSnemalnik videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
-      <SekcijaPoESwitch videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
-      <SekcijaDisk videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
+      {!isWifiKamere ? (
+        <>
+          <SekcijaSnemalnik videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
+          <SekcijaPoESwitch videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
+          <SekcijaDisk videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
+        </>
+      ) : null}
       <SekcijaIzvedba
         sistem={sistem}
         settings={executionSettings}
@@ -216,7 +225,12 @@ export function SistemBlok({ projectId, zahtevaId, sistem, executionSettings, pr
         onChange={(execution) => onChange({ ...sistem, execution })}
       />
 
-      <DodajVariantoDialog open={dialogOpen} onOpenChange={setDialogOpen} onConfirm={addVariants} />
+      <DodajVariantoDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        cameraMode={isWifiKamere ? "reolink_wifi" : "ip"}
+        onConfirm={addVariants}
+      />
     </section>
   );
 }

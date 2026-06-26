@@ -80,6 +80,11 @@ function supportsLocationDescriptions(product: any) {
   return productType === "kamera" || productType === "alarm_komponenta";
 }
 
+function isCameraInstallationServiceName(value: unknown) {
+  const normalized = typeof value === "string" ? value.toLocaleLowerCase("sl-SI") : "";
+  return normalized.includes("monta") && normalized.includes("konfiguracija") && normalized.includes("kamere");
+}
+
 function buildZahtevaLocationPhotoItemId(zahtevaId: string, sistemId: string, lokacijaId: string) {
   return `zahteva-location:${zahtevaId}:${sistemId}:${lokacijaId}`;
 }
@@ -110,7 +115,7 @@ function buildRequirementLocationUnitsFromRequest(zahteva: any) {
   };
 
   for (const sistem of zahteva?.sistemi ?? []) {
-    if (sistem?.tip === "videonadzor" && sistem?.videonadzor) {
+    if ((sistem?.tip === "videonadzor" || sistem?.tip === "wifi_kamere") && sistem?.videonadzor) {
       const variantById = new Map<string, any>((sistem.videonadzor.asortima ?? []).map((variant: any) => [String(variant.id), variant]));
 
       for (const lokacija of sistem.videonadzor.lokacije ?? []) {
@@ -212,16 +217,27 @@ async function resolveProjectExecutionDefinitionLocations(
     const note = typeof unit?.instructions === "string" && unit.instructions.trim()
       ? unit.instructions.trim()
       : "";
+    const sourcePhotoItemId = typeof unit?.sourcePhotoItemId === "string" && unit.sourcePhotoItemId.trim()
+      ? unit.sourcePhotoItemId.trim()
+      : "";
 
-    const photos = await PhotoModel.find({
-      projectId: projectObjectId,
-      phase: "preparation",
-      itemId,
-      unitIndex,
-      deletedAt: { $exists: false },
-    })
-      .sort({ uploadedAt: 1 })
-      .lean();
+    const photoFilters = sourcePhotoItemId
+      ? [
+          { projectId: projectObjectId, phase: "requirements", itemId: sourcePhotoItemId, deletedAt: { $exists: false } },
+          { projectId: projectObjectId, phase: "preparation", itemId: sourcePhotoItemId, deletedAt: { $exists: false } },
+        ]
+      : [
+          { projectId: projectObjectId, phase: "preparation", itemId, unitIndex, deletedAt: { $exists: false } },
+        ];
+    const photoGroups = await Promise.all(
+      photoFilters.map((filter) => PhotoModel.find(filter).sort({ uploadedAt: 1 }).lean()),
+    );
+    const photosByUrl = new Map<string, (typeof photoGroups)[number][number]>();
+    for (const photo of photoGroups.flat()) {
+      const key = typeof photo.url === "string" && photo.url ? photo.url : String(photo._id);
+      if (!photosByUrl.has(key)) photosByUrl.set(key, photo);
+    }
+    const photos = Array.from(photosByUrl.values());
 
     const photoDataUrls = (
       await Promise.all(photos.map((photo) => readPhotoDataUrl({
@@ -273,12 +289,14 @@ export async function buildOfferDescriptionEntries(offer: OfferVersion): Promise
   for (const item of items) {
     const productId = item.productId ? String(item.productId) : null;
     const product = productId ? productMap.get(productId) : null;
-    const title = product?.ime || item.name;
     const description = sanitizeDescriptionForHtml(String(product?.dolgOpis ?? ""));
     const imageUrl = typeof product?.povezavaDoSlike === "string" ? product.povezavaDoSlike.trim() : "";
     const fallbackUnits = productId ? fallbackUnitsByProductId.get(productId) ?? [] : [];
     const definition = executionDefinitionByItemKey.get(String(item.id));
     const definitionLocations = await resolveProjectExecutionDefinitionLocations(project?._id, item, definition);
+    const title = isCameraInstallationServiceName(item.name) && definitionLocations.length > 0
+      ? "Predlog izvedbe"
+      : product?.ime || item.name;
     const shouldResolveRequirementLocations =
       supportsLocationDescriptions(product) || definitionLocations.length > 0 || fallbackUnits.length > 0;
     const locations = definitionLocations.length > 0

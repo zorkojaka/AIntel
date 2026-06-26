@@ -27,8 +27,77 @@ function defaultManufacturer(values: string[]) {
   return values.includes("DVC") ? "DVC" : values[0] ?? "";
 }
 
+function poeSwitchText(product: CenikProduct | undefined) {
+  if (!product) return "";
+  return [
+    product.ime,
+    product.kratekOpis,
+    product.dolgOpis,
+    product.povezavaDoSlike,
+    product.aaData?.productCode,
+    product.aaData?.rawDescription,
+    ...(product.categorySlugs ?? []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function parsedPoePortCount(product: CenikProduct | undefined) {
+  const text = poeSwitchText(product);
+  const patterns = [
+    /poe\s*out\s*port\s*:\s*(\d+)\s*x/i,
+    /downlink\s*:\s*(\d+)\s*x[^,;.]*poe\s*port/i,
+    /(\d+)\s*x\s*vrata\s*rj\s*45\s*poe\s*port/i,
+    /poe\s*injektor[^.]*?(\d+)\s*x\s*rj45\s*port/i,
+    /(\d+)\s*x[^,;.]*rj45\s*poe\s*port/i,
+    /(\d+)\s*x\s*802\.3[a-z0-9/.+\s-]*poe/i,
+    /(\d+)\s*[- ]?portno[^,;.]*poe/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return Number(match[1]);
+  }
+  return 0;
+}
+
+function poePortCount(product: CenikProduct | undefined) {
+  const parsed = parsedPoePortCount(product);
+  if (parsed > 0) return parsed;
+  return Number(product?.classification?.poePortCount ?? 0);
+}
+
+function uplinkPortCount(product: CenikProduct | undefined) {
+  const text = poeSwitchText(product);
+  const patterns = [
+    /uplink\s*:\s*(\d+)\s*x/i,
+    /uplink[^,;.]*?(\d+)\s*x/i,
+    /(\d+)\s*x[^,;.]*uplink/i,
+    /data\s*in\s*port\s*:\s*(\d+)\s*x/i,
+    /lan\s*port\s*:\s*1g\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1] ? Number(match[1]) : 1;
+  }
+
+  const interfaceMatch = text.match(/interface\s*:\s*(\d+)\s*x/i);
+  const poePorts = poePortCount(product);
+  if (interfaceMatch && poePorts > 0) {
+    return Math.max(0, Number(interfaceMatch[1]) - poePorts);
+  }
+  return 0;
+}
+
+function portSummary(product: CenikProduct | undefined) {
+  const poePorts = poePortCount(product);
+  const uplinkPorts = uplinkPortCount(product);
+  const poeLabel = `${poePorts || "-"} PoE`;
+  return uplinkPorts > 0 ? `${poeLabel} + ${uplinkPorts} uplink` : `${poeLabel} portov`;
+}
+
 function switchFitRank(product: CenikProduct, neededPorts: number) {
-  const ports = product.classification?.poePortCount ?? 0;
+  const ports = poePortCount(product);
   if (neededPorts <= 0) return ports;
   const coversNeed = ports >= neededPorts ? 0 : 1;
   const distance = coversNeed === 0 ? ports - neededPorts : neededPorts - ports + 100;
@@ -43,7 +112,7 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
   const neededPorts = allPoE ? Math.max(0, cameras.length - nvrPoePorts) : 0;
   const recommendedPorts = standardPorts(neededPorts);
   const selectedItems = normalizedSelectedItems(videonadzor.poeSwitch);
-  const selectedPorts = selectedItems.reduce((sum, item) => sum + (productById.get(item.productId)?.classification?.poePortCount ?? 0) * item.kolicina, 0);
+  const selectedPorts = selectedItems.reduce((sum, item) => sum + poePortCount(productById.get(item.productId)) * item.kolicina, 0);
   const [manufacturer, setManufacturer] = useState("");
   const recommendedCardRef = useRef<HTMLDivElement | null>(null);
 
@@ -51,7 +120,7 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
     () =>
       Array.from(productById.values())
         .filter((product) => product.classification?.productType === "switch")
-        .filter((product) => (product.classification?.poePortCount ?? 0) > 0),
+        .filter((product) => poePortCount(product) > 0),
     [productById],
   );
   const manufacturers = useMemo(() => Array.from(new Set(allSwitches.map(productBrand))).sort((a, b) => a.localeCompare(b, "sl")), [allSwitches]);
@@ -68,7 +137,7 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
   const alternatives = useMemo(
     () =>
       [...manufacturerSwitches].sort((a, b) => {
-        const portScore = (a.classification?.poePortCount ?? 0) - (b.classification?.poePortCount ?? 0);
+        const portScore = poePortCount(a) - poePortCount(b);
         const priority = categoryPriorityRank(a) - categoryPriorityRank(b);
         if (priority !== 0) return priority;
         const fit = switchFitRank(a, neededPorts) - switchFitRank(b, neededPorts);
@@ -80,28 +149,25 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
 
   const recommendedId =
     alternatives
-      .filter((product) => (product.classification?.poePortCount ?? 0) >= Math.max(neededPorts, recommendedPorts))
-      .sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || (a.classification?.poePortCount ?? 0) - (b.classification?.poePortCount ?? 0) || a.prodajnaCena - b.prodajnaCena)[0]?._id ?? alternatives[0]?._id;
+      .filter((product) => poePortCount(product) >= Math.max(neededPorts, recommendedPorts))
+      .sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || poePortCount(a) - poePortCount(b) || a.prodajnaCena - b.prodajnaCena)[0]?._id ?? alternatives[0]?._id;
 
   useEffect(() => {
     recommendedCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
   }, [manufacturer, recommendedId]);
 
-  useEffect(() => {
-    if (neededPorts <= 0 || !recommendedId || videonadzor.poeSwitch.productId === recommendedId) return;
-    onChange({ ...videonadzor, poeSwitch: syncPrimary([{ productId: recommendedId, kolicina: 1 }]) });
-  }, [neededPorts, onChange, recommendedId, videonadzor]);
-
   const setQuantity = (productId: string, quantity: number) => {
     const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
-    const byId = new Map(selectedItems.map((item) => [item.productId, item.kolicina]));
-    if (nextQuantity > 0) byId.set(productId, nextQuantity);
-    else byId.delete(productId);
-    const items = Array.from(byId.entries()).map(([id, kolicina]) => ({ productId: id, kolicina }));
+    const items =
+      nextQuantity > 0
+        ? [{ productId, kolicina: nextQuantity }]
+        : selectedItems.filter((item) => item.productId !== productId);
     onChange({ ...videonadzor, poeSwitch: syncPrimary(items) });
   };
 
-  const clearSwitches = () => onChange({ ...videonadzor, poeSwitch: { productId: null, kolicina: 0, items: [] } });
+  const clearSwitches = () => {
+    onChange({ ...videonadzor, poeSwitch: { productId: null, kolicina: 0, items: [] } });
+  };
 
   return (
     <section className="zahteva-subsection">
@@ -133,7 +199,7 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
               <button type="button" className="zahteva-track-main" onClick={() => setQuantity(product._id, quantity > 0 ? quantity : 1)}>
                 {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
                 <strong>{product.ime}</strong>
-                <small>{product.classification?.poePortCount ?? "-"} PoE portov</small>
+                <small>{portSummary(product)}</small>
                 <b>{formatPrice(product.prodajnaCena)}</b>
               </button>
               <div className="zahteva-qty-control">

@@ -1,5 +1,3 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { NextFunction, Request, Response } from 'express';
 import mongoose, { Types } from 'mongoose';
 import type {
@@ -14,7 +12,6 @@ import { ProjectModel, addTimeline } from '../schemas/project';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
 import { ProductModel } from '../../cenik/product.model';
-import { PhotoModel } from '../../photos/schemas/photo';
 import { ZahtevaModel } from '../../zahteve/zahteva.model';
 import { resolveActorId, resolveTenantId } from '../../../utils/tenant';
 import { EmployeeModel } from '../../employees/schemas/employee';
@@ -255,6 +252,16 @@ function sanitizeExecutionSpec(input: any) {
               ? unit.id
               : new Types.ObjectId().toString(),
           label: typeof unit?.label === 'string' ? unit.label : '',
+          projectLocationId:
+            typeof unit?.projectLocationId === 'string' && unit.projectLocationId.trim().length > 0
+              ? unit.projectLocationId.trim()
+              : typeof unit?.sourcePhotoItemId === 'string' && unit.sourcePhotoItemId.trim().length > 0
+                ? unit.sourcePhotoItemId.trim()
+                : null,
+          sourcePhotoItemId:
+            typeof unit?.sourcePhotoItemId === 'string' && unit.sourcePhotoItemId.trim().length > 0
+              ? unit.sourcePhotoItemId.trim()
+              : null,
           location: typeof unit?.location === 'string' ? unit.location : unit?.location === null ? null : null,
           instructions:
             typeof unit?.instructions === 'string'
@@ -393,6 +400,8 @@ function buildRequirementsExecutionSpec(item: OfferLineItem, fallbackProduct: an
     trackingUnitLabel: 'Kamera',
     executionUnits: locationUnits.map((unit, index) => ({
       id: unit.locationId || `loc-${index + 1}`,
+      projectLocationId: unit.projectLocationId || unit.sourcePhotoItemId || unit.locationId || null,
+      sourcePhotoItemId: unit.sourcePhotoItemId || null,
       label: `Kamera ${index + 1}`,
       location: unit.locationName || `Lokacija ${index + 1}`,
       instructions: '',
@@ -416,11 +425,11 @@ function normalizeRequirementLocationName(value: unknown, fallback: string) {
 }
 
 function buildRequirementLocationUnitsByProductId(zahteva: any) {
-  const unitsByProductId = new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }>>();
+  const unitsByProductId = new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string; projectLocationId: string }>>();
   const zahtevaId = String(zahteva?._id ?? '');
   if (!zahtevaId) return unitsByProductId;
 
-  const appendUnit = (productId: unknown, unit: { locationId: string; locationName: string; sourcePhotoItemId: string }) => {
+  const appendUnit = (productId: unknown, unit: { locationId: string; locationName: string; sourcePhotoItemId: string; projectLocationId: string }) => {
     const key = productId ? String(productId) : '';
     if (!key || !unit.locationId) return;
     const current = unitsByProductId.get(key) ?? [];
@@ -429,7 +438,7 @@ function buildRequirementLocationUnitsByProductId(zahteva: any) {
   };
 
   for (const sistem of zahteva?.sistemi ?? []) {
-    if (sistem?.tip === 'videonadzor' && sistem?.videonadzor) {
+    if ((sistem?.tip === 'videonadzor' || sistem?.tip === 'wifi_kamere') && sistem?.videonadzor) {
       const variants = new Map<string, any>(
         (sistem.videonadzor.asortima ?? []).map((variant: any) => [String(variant.id), variant])
       );
@@ -440,6 +449,7 @@ function buildRequirementLocationUnitsByProductId(zahteva: any) {
           locationId,
           locationName: normalizeRequirementLocationName(location?.ime, locationId),
           sourcePhotoItemId: buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          projectLocationId: buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
         });
       }
     }
@@ -455,6 +465,7 @@ function buildRequirementLocationUnitsByProductId(zahteva: any) {
           locationId,
           locationName: normalizeRequirementLocationName(location?.ime, locationId),
           sourcePhotoItemId: buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          projectLocationId: buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
         });
       }
     }
@@ -475,7 +486,7 @@ async function buildRequirementLocationUnitFallbacks(project: any, offer: any) {
     project?.activeRequestId ? String(project.activeRequestId) : '',
     ...(Array.isArray(project?.requestIds) ? project.requestIds.map((id: any) => String(id)) : []),
   ].filter((value, index, list) => value && list.indexOf(value) === index);
-  if (requestIds.length === 0) return new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }>>();
+  if (requestIds.length === 0) return new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string; projectLocationId: string }>>();
 
   const zahteva = await ZahtevaModel.findOne({ _id: { $in: requestIds } }).sort({ updatedAt: -1 }).lean();
   return buildRequirementLocationUnitsByProductId(zahteva);
@@ -483,13 +494,39 @@ async function buildRequirementLocationUnitFallbacks(project: any, offer: any) {
 
 function withRequirementLocationFallbacks(
   offerItems: OfferLineItem[],
-  fallbacksByProductId: Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }>>
+  fallbacksByProductId: Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string; projectLocationId: string }>>
 ) {
+  const hasProductLocationFallback = (offerItems ?? []).some((item) => {
+    const existingUnits = Array.isArray(item.requirementsLocationUnits) ? item.requirementsLocationUnits : [];
+    if (existingUnits.length > 0) return true;
+    if (!item.productId) return false;
+    return (fallbacksByProductId.get(String(item.productId)) ?? []).length > 0;
+  });
+  const allFallbackUnits = Array.from(fallbacksByProductId.values()).flat();
+  const allFallbackUnitsByLocation = new Map<string, { locationId: string; locationName: string; sourcePhotoItemId: string; projectLocationId: string }>();
+  for (const unit of allFallbackUnits) {
+    const key = unit.projectLocationId || unit.sourcePhotoItemId || unit.locationId;
+    if (key && !allFallbackUnitsByLocation.has(key)) {
+      allFallbackUnitsByLocation.set(key, unit);
+    }
+  }
+
   return (offerItems ?? []).map((item) => {
     const existingUnits = Array.isArray(item.requirementsLocationUnits) ? item.requirementsLocationUnits : [];
     if (existingUnits.length > 0 || !item.productId) return item;
     const fallbackUnits = fallbacksByProductId.get(String(item.productId)) ?? [];
-    return fallbackUnits.length > 0 ? { ...item, requirementsLocationUnits: fallbackUnits } : item;
+    if (fallbackUnits.length > 0) return { ...item, requirementsLocationUnits: fallbackUnits };
+
+    const itemName = typeof item.name === 'string' ? item.name.toLocaleLowerCase('sl-SI') : '';
+    const isCameraInstallationService =
+      !hasProductLocationFallback &&
+      allFallbackUnitsByLocation.size > 0 &&
+      itemName.includes('monta') &&
+      itemName.includes('konfiguracija') &&
+      itemName.includes('kamere');
+    return isCameraInstallationService
+      ? { ...item, requirementsLocationUnits: Array.from(allFallbackUnitsByLocation.values()) }
+      : item;
   });
 }
 
@@ -626,6 +663,124 @@ function buildExecutionDefinitionsFromWorkOrder(workOrder: any): ProjectExecutio
     .map((item: any) => buildExecutionDefinitionItem({ item, offerVersionId }));
 }
 
+function getExecutionUnitProjectLocationKey(unit: any) {
+  const projectLocationId = typeof unit?.projectLocationId === 'string' ? unit.projectLocationId.trim() : '';
+  if (projectLocationId) return projectLocationId;
+  const sourcePhotoItemId = typeof unit?.sourcePhotoItemId === 'string' ? unit.sourcePhotoItemId.trim() : '';
+  if (sourcePhotoItemId) return sourcePhotoItemId;
+  return '';
+}
+
+function sanitizeProjectExecutionLocations(input: any[]) {
+  return (Array.isArray(input) ? input : [])
+    .map((location: any) => {
+      const id = typeof location?.id === 'string' && location.id.trim() ? location.id.trim() : '';
+      if (!id) return null;
+      return {
+        id,
+        name: typeof location?.name === 'string' ? location.name : '',
+        note: typeof location?.note === 'string' ? location.note : '',
+        sourcePhotoItemId:
+          typeof location?.sourcePhotoItemId === 'string' && location.sourcePhotoItemId.trim()
+            ? location.sourcePhotoItemId.trim()
+            : id.startsWith('zahteva-')
+              ? id
+              : null,
+      };
+    })
+    .filter((location): location is NonNullable<typeof location> => Boolean(location));
+}
+
+function mergeProjectExecutionLocations(existingLocations: any[], definitions: any[]) {
+  const byId = new Map<string, any>();
+  for (const location of sanitizeProjectExecutionLocations(existingLocations)) {
+    byId.set(location.id, location);
+  }
+
+  for (const definition of definitions ?? []) {
+    const units = Array.isArray(definition?.executionSpec?.executionUnits) ? definition.executionSpec.executionUnits : [];
+    for (const unit of units) {
+      const id = getExecutionUnitProjectLocationKey(unit);
+      if (!id || byId.has(id)) continue;
+      byId.set(id, {
+        id,
+        name: typeof unit?.location === 'string' ? unit.location : '',
+        note: typeof unit?.instructions === 'string' ? unit.instructions : '',
+        sourcePhotoItemId:
+          typeof unit?.sourcePhotoItemId === 'string' && unit.sourcePhotoItemId.trim()
+            ? unit.sourcePhotoItemId.trim()
+            : id.startsWith('zahteva-')
+              ? id
+              : null,
+      });
+    }
+  }
+
+  return Array.from(byId.values());
+}
+
+function applyProjectLocationMemoryToDefinitions(
+  incomingDefinitions: ProjectExecutionDefinitionItem[],
+  currentDefinitions: any[],
+) {
+  const memoryByLocation = new Map<string, any>();
+  for (const definition of currentDefinitions ?? []) {
+    const units = Array.isArray(definition?.executionSpec?.executionUnits) ? definition.executionSpec.executionUnits : [];
+    for (const unit of units) {
+      const key = getExecutionUnitProjectLocationKey(unit);
+      if (!key) continue;
+      memoryByLocation.set(key, unit);
+    }
+  }
+
+  if (memoryByLocation.size === 0) return incomingDefinitions;
+
+  return incomingDefinitions.map((definition) => {
+    const spec = sanitizeExecutionSpec(definition.executionSpec);
+    if (!spec || !Array.isArray(spec.executionUnits) || spec.executionUnits.length === 0) return definition;
+    const executionUnits = spec.executionUnits.map((unit: any) => {
+      const key = getExecutionUnitProjectLocationKey(unit);
+      const remembered = key ? memoryByLocation.get(key) : null;
+      if (!remembered) return unit;
+      return {
+        ...unit,
+        label: typeof remembered.label === 'string' && remembered.label.trim() ? remembered.label : unit.label,
+        location: typeof remembered.location === 'string' ? remembered.location : unit.location,
+        instructions: typeof remembered.instructions === 'string' ? remembered.instructions : unit.instructions,
+        note: typeof remembered.note === 'string' || remembered.note === null ? remembered.note : unit.note,
+      };
+    });
+    return {
+      ...definition,
+      executionSpec: {
+        ...spec,
+        locationSummary: executionUnits.map((unit: any) => unit.location).filter(Boolean).join(', '),
+        executionUnits,
+      },
+    };
+  });
+}
+
+function applyProjectLocationMemoryToWorkOrderItems(items: any[], currentDefinitions: any[]) {
+  const definitionLikeItems = items.map((item) => buildExecutionDefinitionItem({ item, offerVersionId: item?.offerVersionId ?? null }));
+  const rememberedDefinitions = applyProjectLocationMemoryToDefinitions(definitionLikeItems, currentDefinitions);
+  const rememberedByItemId = new Map<string, any>();
+  rememberedDefinitions.forEach((definition) => {
+    const key = String(definition.offerItemId ?? definition.id ?? '');
+    if (key) rememberedByItemId.set(key, definition);
+  });
+  return items.map((item) => {
+    const key = String(item?.offerItemId ?? item?.id ?? '');
+    const remembered = rememberedByItemId.get(key);
+    return remembered?.executionSpec ? { ...item, executionSpec: remembered.executionSpec } : item;
+  });
+}
+
+function hasProjectLocationUnits(definition: any) {
+  const units = Array.isArray(definition?.executionSpec?.executionUnits) ? definition.executionSpec.executionUnits : [];
+  return units.some((unit: any) => Boolean(getExecutionUnitProjectLocationKey(unit)));
+}
+
 function mergeProjectExecutionDefinitions(params: {
   currentDefinitions: any[];
   incomingDefinitions: ProjectExecutionDefinitionItem[];
@@ -662,7 +817,20 @@ function mergeProjectExecutionDefinitions(params: {
     return true;
   });
 
-  return [...retained, ...mergedIncoming];
+  const locationMemory = (currentDefinitions ?? [])
+    .filter((definition) => {
+      const itemKey = String(definition?.offerItemId ?? definition?.id ?? '');
+      const key = `${String(definition?.offerVersionId ?? '')}:${itemKey}`;
+      return Boolean(itemKey) && !incomingKeys.has(key) && offerVersionId && String(definition?.offerVersionId ?? '') === offerVersionId && hasProjectLocationUnits(definition);
+    })
+    .map((definition) => ({
+      ...definition,
+      id: `project-location-memory:${String(definition?.offerItemId ?? definition?.id ?? new Types.ObjectId().toString())}`,
+      offerVersionId: null,
+      offerItemId: String(definition?.offerItemId ?? definition?.id ?? ''),
+    }));
+
+  return [...retained, ...locationMemory, ...mergedIncoming];
 }
 
 function applyExecutionDefinitionsToWorkOrders(workOrders: any[], definitions: any[]) {
@@ -735,102 +903,6 @@ async function syncWorkOrdersFromProjectExecutionDefinitions(projectId: string, 
     });
     if (changed) {
       await workOrder.save();
-    }
-  }
-}
-
-const PHOTO_UPLOAD_BASE_DIR = '/var/www/aintel/uploads';
-
-function absolutePhotoPath(uploadUrl?: string | null) {
-  if (!uploadUrl || !uploadUrl.startsWith('/uploads/')) return null;
-  return path.join(PHOTO_UPLOAD_BASE_DIR, uploadUrl.replace(/^\/uploads\//, ''));
-}
-
-async function copyRequirementLocationPhotosToPreparation(params: {
-  projectObjectId: string;
-  offerItems: OfferLineItem[];
-  workOrderItems: any[];
-}) {
-  const { projectObjectId, offerItems, workOrderItems } = params;
-  const destinationDir = path.join(PHOTO_UPLOAD_BASE_DIR, 'projects', projectObjectId, 'preparation');
-  await fs.mkdir(destinationDir, { recursive: true });
-
-  const workItemByOfferItemId = new Map<string, any>();
-  for (const item of workOrderItems ?? []) {
-    const id = String(item?.offerItemId ?? item?.id ?? '');
-    if (id) workItemByOfferItemId.set(id, item);
-  }
-
-  for (const offerItem of offerItems ?? []) {
-    const units = Array.isArray(offerItem.requirementsLocationUnits) ? offerItem.requirementsLocationUnits : [];
-    if (units.length === 0) continue;
-
-    const targetItem = workItemByOfferItemId.get(String(offerItem.id));
-    const targetItemId = String(targetItem?._id ?? targetItem?.id ?? offerItem.id ?? '');
-    if (!targetItemId) continue;
-
-    for (const [unitIndex, unit] of units.entries()) {
-      if (!unit.sourcePhotoItemId) continue;
-
-      const sourcePhotos = await PhotoModel.find({
-        projectId: new Types.ObjectId(projectObjectId),
-        phase: 'requirements',
-        itemId: unit.sourcePhotoItemId,
-        deletedAt: { $exists: false },
-      }).lean();
-
-      for (const photo of sourcePhotos) {
-        const sourceTag = `from-requirements:${String(photo._id)}`;
-        const exists = await PhotoModel.exists({
-          projectId: new Types.ObjectId(projectObjectId),
-          phase: 'preparation',
-          itemId: targetItemId,
-          unitIndex,
-          tag: sourceTag,
-        });
-        if (exists) continue;
-
-        const sourceMainPath = absolutePhotoPath(photo.url);
-        const sourceThumbnailPath = absolutePhotoPath(photo.thumbnailUrl);
-        if (!sourceMainPath) continue;
-
-        const filename = `${Date.now()}-${String(photo._id)}-${path.basename(photo.filename || photo.url)}`;
-        const thumbnailFilename = photo.thumbnailUrl
-          ? `${Date.now()}-${String(photo._id)}-thumb-${path.basename(photo.thumbnailUrl)}`
-          : null;
-        const targetMainPath = path.join(destinationDir, filename);
-        const targetThumbnailPath = thumbnailFilename ? path.join(destinationDir, thumbnailFilename) : null;
-
-        try {
-          await fs.copyFile(sourceMainPath, targetMainPath);
-          if (sourceThumbnailPath && targetThumbnailPath) {
-            await fs.copyFile(sourceThumbnailPath, targetThumbnailPath);
-          }
-        } catch (error) {
-          console.warn('[photos] Failed to inherit requirement photo', error);
-          await fs.unlink(targetMainPath).catch(() => undefined);
-          if (targetThumbnailPath) await fs.unlink(targetThumbnailPath).catch(() => undefined);
-          continue;
-        }
-
-        await PhotoModel.create({
-          projectId: new Types.ObjectId(projectObjectId),
-          phase: 'preparation',
-          itemId: targetItemId,
-          unitIndex,
-          tag: sourceTag,
-          url: `/uploads/projects/${projectObjectId}/preparation/${filename}`,
-          thumbnailUrl: thumbnailFilename ? `/uploads/projects/${projectObjectId}/preparation/${thumbnailFilename}` : undefined,
-          originalName: photo.originalName,
-          filename,
-          size: photo.size,
-          mimeType: photo.mimeType,
-          width: photo.width,
-          height: photo.height,
-          uploadedBy: photo.uploadedBy,
-          uploadedAt: photo.uploadedAt ?? new Date(),
-        });
-      }
     }
   }
 }
@@ -1220,6 +1292,16 @@ function sanitizeIncomingExecutionSpec(
           return {
             id: unitId,
             label,
+            projectLocationId:
+              typeof unit?.projectLocationId === 'string' && unit.projectLocationId.trim().length > 0
+                ? unit.projectLocationId.trim()
+                : typeof unit?.sourcePhotoItemId === 'string' && unit.sourcePhotoItemId.trim().length > 0
+                  ? unit.sourcePhotoItemId.trim()
+                  : null,
+            sourcePhotoItemId:
+              typeof unit?.sourcePhotoItemId === 'string' && unit.sourcePhotoItemId.trim().length > 0
+                ? unit.sourcePhotoItemId.trim()
+                : null,
             location: typeof unit?.location === 'string' ? unit.location : unit?.location === null ? null : null,
             instructions:
               typeof unit?.instructions === 'string'
@@ -1464,7 +1546,7 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
   const offerItems = Array.isArray((offer as any)?.items) ? ((offer as any).items as OfferLineItem[]) : [];
   const fallbackUnitsByProductId = offer
     ? await buildRequirementLocationUnitFallbacks(project, offer)
-    : new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string }>>();
+    : new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string; projectLocationId: string }>>();
   const offerItemsWithLocationFallbacks = withRequirementLocationFallbacks(offerItems, fallbackUnitsByProductId);
   const currentDefinitions = Array.isArray(project.executionDefinitions) ? project.executionDefinitions : [];
   const hasDefinitionsForOffer = resolvedOfferId
@@ -1504,6 +1586,7 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
     }
 
     if (incomingDefinitions.length > 0) {
+      incomingDefinitions = applyProjectLocationMemoryToDefinitions(incomingDefinitions, currentDefinitions);
       project.executionDefinitions = mergeProjectExecutionDefinitions({
         currentDefinitions,
         incomingDefinitions,
@@ -1517,18 +1600,21 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
   const itemsForOffer = resolvedOfferId
     ? definitions.filter((definition: any) => String(definition?.offerVersionId ?? '') === resolvedOfferId)
     : definitions;
-
-  if (offer && offerItemsWithLocationFallbacks.length > 0 && itemsForOffer.length > 0) {
-    await copyRequirementLocationPhotosToPreparation({
-      projectObjectId: String(project._id),
-      offerItems: offerItemsWithLocationFallbacks,
-      workOrderItems: itemsForOffer,
-    });
+  const mergedLocations = mergeProjectExecutionLocations(project.executionLocations ?? [], [
+    ...definitions,
+    ...itemsForOffer,
+  ]);
+  const currentLocationsJson = JSON.stringify(sanitizeProjectExecutionLocations(project.executionLocations ?? []));
+  const nextLocationsJson = JSON.stringify(mergedLocations);
+  if (currentLocationsJson !== nextLocationsJson) {
+    project.executionLocations = mergedLocations;
+    await project.save();
   }
 
   return {
     project,
     offerVersionId: resolvedOfferId,
+    locations: mergedLocations,
     items: itemsForOffer,
   };
 }
@@ -1549,6 +1635,7 @@ export async function getProjectExecutionDefinition(req: Request, res: Response,
     return res.success({
       projectId,
       offerVersionId: result.offerVersionId,
+      locations: result.locations,
       items: result.items,
     });
   } catch (err) {
@@ -1605,13 +1692,16 @@ export async function updateProjectExecutionDefinition(req: Request, res: Respon
       offerVersionId,
       preferIncomingExecutionSpec: true,
     });
+    result.project.executionLocations = Array.isArray(req.body?.locations)
+      ? sanitizeProjectExecutionLocations(req.body.locations)
+      : mergeProjectExecutionLocations(result.project.executionLocations ?? [], incomingDefinitions);
     await result.project.save();
     await syncWorkOrdersFromProjectExecutionDefinitions(projectId, offerVersionId);
 
     const items = offerVersionId
       ? result.project.executionDefinitions.filter((definition: any) => String(definition?.offerVersionId ?? '') === offerVersionId)
       : result.project.executionDefinitions;
-    return res.success({ projectId, offerVersionId, items });
+    return res.success({ projectId, offerVersionId, locations: result.project.executionLocations ?? [], items });
   } catch (err) {
     next(err);
   }
@@ -1673,7 +1763,11 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       (item) => !item.productId || !serviceProductIds.has(String(item.productId))
     );
     const logisticsItems = mapOfferItemsToLogistics(materialOfferItems);
-    const workOrderItems = mapOfferItemsToWorkOrderItems(offerItems, serviceProductIds, productDefaultsById);
+    const currentExecutionDefinitions = Array.isArray((project as any).executionDefinitions) ? (project as any).executionDefinitions : [];
+    const workOrderItems = applyProjectLocationMemoryToWorkOrderItems(
+      mapOfferItemsToWorkOrderItems(offerItems, serviceProductIds, productDefaultsById),
+      currentExecutionDefinitions,
+    );
     const customerName = project.customer?.name ?? projectClient?.name ?? '';
     const customerEmail = projectClient?.email ?? '';
     const customerPhone = projectClient?.phone ?? '';
@@ -1691,12 +1785,6 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
     });
 
     await syncProjectExecutionDefinitionsFromWorkOrder(projectId, workOrder);
-
-    await copyRequirementLocationPhotosToPreparation({
-      projectObjectId: String(project._id),
-      offerItems,
-      workOrderItems: (workOrder as any).items ?? [],
-    });
 
     await ensureMaterialOrderForOffer({
       projectId,

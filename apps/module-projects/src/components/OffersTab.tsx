@@ -21,6 +21,7 @@ import type { ProductServiceLink } from "@aintel/shared/types/product-service-li
 import type { ProjectDetails } from "../types";
 import type { User } from "@aintel/shared/types/user";
 import type { Employee } from "@aintel/shared/types/employee";
+import type { CommunicationMessage } from "@aintel/shared/types/communication";
 
 import { ArrowDown, ArrowLeft, Check, ChevronsUpDown, Download, Loader2, Pencil, RefreshCw, Trash, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
@@ -43,6 +44,7 @@ import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
 import { OfferCommunicationComposeDialog } from "../domains/communication/OfferCommunicationComposeDialog";
 import { OfferSentMessagesTable } from "../domains/communication/OfferSentMessagesTable";
+import { fetchOfferMessages } from "../domains/communication/api";
 import { ExecutionDefinitionPanel } from "../domains/logistics/ExecutionDefinitionPanel";
 
 type OffersTabProps = {
@@ -73,6 +75,12 @@ type KmCalculationState =
   | { status: "calculated"; result: ProjectKmCalculation }
   | { status: "manual" }
   | { status: "error"; message: string };
+
+type OfferEmailSendContext = { offerId: string; subject: string; startedAtMs: number };
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 type OfferImportMatch = {
   productId: string;
@@ -2170,12 +2178,63 @@ const buildOfferPdfFilename = (
     }
   };
 
-  const handleCommunicationSent = async (result?: { queued?: boolean }) => {
+  const waitForOfferEmailSendResult = useCallback(
+    async (context: OfferEmailSendContext) => {
+      const minCreatedAt = context.startedAtMs - 5000;
+      for (let attempt = 0; attempt < 300; attempt += 1) {
+        const messages = await fetchOfferMessages(projectId, context.offerId);
+        const matchingMessage = messages.find((message) => {
+          const createdAt = Date.parse(message.createdAt || message.sentAt || "");
+          return (
+            Number.isFinite(createdAt) &&
+            createdAt >= minCreatedAt &&
+            message.subjectFinal === context.subject &&
+            (message.status === "sent" || message.status === "failed")
+          );
+        });
+        if (matchingMessage) {
+          return matchingMessage;
+        }
+        await sleep(2000);
+      }
+      throw new Error("Pošiljanje še vedno poteka. Status preveri v poslanih sporočilih.");
+    },
+    [projectId]
+  );
+
+  const handleCommunicationSent = async (
+    result?: { queued?: boolean },
+    context?: OfferEmailSendContext
+  ): Promise<CommunicationMessage | null | void> => {
     await refreshOffers(selectedOfferId ?? currentOffer?._id ?? null, true);
     setCommunicationRefreshKey((value) => value + 1);
     onCommunicationChanged?.();
-    if (result?.queued) {
-      toast.success("Pošiljanje emaila se je začelo.");
+
+    if (!result?.queued || !context) {
+      return null;
+    }
+
+    const toastId = toast.loading("Pošiljanje emaila se je začelo. Pripravljam PDF priponke ...", {
+      duration: Infinity,
+    });
+
+    try {
+      const message = await waitForOfferEmailSendResult(context);
+      await refreshOffers(selectedOfferId ?? currentOffer?._id ?? null, true);
+      setCommunicationRefreshKey((value) => value + 1);
+      onCommunicationChanged?.();
+
+      if (message.status === "sent") {
+        toast.success("Email je bil uspešno poslan.", { id: toastId, duration: 8000 });
+      } else {
+        toast.error(message.errorMessage || "Pošiljanje emaila ni uspelo.", { id: toastId, duration: 12000 });
+      }
+
+      return message;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.";
+      toast.error(message, { id: toastId, duration: 12000 });
+      throw error;
     }
   };
 

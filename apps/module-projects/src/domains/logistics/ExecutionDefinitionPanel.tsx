@@ -33,6 +33,19 @@ type PhotosResponse = {
   };
 };
 
+type ProjectExecutionLocation = {
+  id: string;
+  name: string;
+  note?: string | null;
+  sourcePhotoItemId?: string | null;
+};
+
+type UnitAssignment = {
+  item: ProjectExecutionDefinitionItem;
+  unit: WorkOrderExecutionUnit;
+  unitIndex: number;
+};
+
 function buildPhotoQuery(context: PhotoContext) {
   const params = new URLSearchParams();
   params.set("projectId", context.projectId);
@@ -41,6 +54,17 @@ function buildPhotoQuery(context: PhotoContext) {
   if (typeof context.unitIndex === "number") params.set("unitIndex", String(context.unitIndex));
   if (context.tag) params.set("tag", context.tag);
   return params.toString();
+}
+
+function getUnitLocationPhotoItemId(
+  fallbackItemId: string,
+  unit: Pick<WorkOrderExecutionUnit, "projectLocationId" | "sourcePhotoItemId">,
+) {
+  return unit.projectLocationId?.trim() || unit.sourcePhotoItemId?.trim() || fallbackItemId;
+}
+
+function getUnitLocationPhotoIndex(unit: Pick<WorkOrderExecutionUnit, "projectLocationId" | "sourcePhotoItemId">, fallbackIndex: number) {
+  return unit.projectLocationId?.trim() || unit.sourcePhotoItemId?.trim() ? undefined : fallbackIndex;
 }
 
 function getPhotoKey(photo: PreparationPhoto) {
@@ -70,6 +94,8 @@ function normalizeExecutionSpec(spec?: WorkOrderExecutionSpec | null): WorkOrder
     executionUnits: Array.isArray(spec?.executionUnits)
       ? spec.executionUnits.map((unit) => ({
           id: unit.id,
+          projectLocationId: unit.projectLocationId ?? null,
+          sourcePhotoItemId: unit.sourcePhotoItemId ?? null,
           label: unit.label ?? "",
           location: unit.location ?? "",
           instructions: unit.instructions ?? "",
@@ -90,8 +116,34 @@ function normalizeExecutionSpec(spec?: WorkOrderExecutionSpec | null): WorkOrder
 }
 
 function isMeasurementLikeUnit(unit?: string | null) {
-  const normalized = (unit ?? "").trim().toLowerCase();
-  return ["km", "h", "ura", "ur", "min", "m", "m2", "m3", "kg", "g", "l"].includes(normalized);
+  const normalized = (unit ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\*/g, "")
+    .replace(/\s+/g, "")
+    .replace("²", "2")
+    .replace("³", "3");
+  return [
+    "km",
+    "kilometer",
+    "kilometri",
+    "kilometrov",
+    "h",
+    "ura",
+    "ure",
+    "ur",
+    "min",
+    "m",
+    "meter",
+    "metri",
+    "metrov",
+    "m2",
+    "m3",
+    "kg",
+    "g",
+    "l",
+  ].includes(normalized);
 }
 
 function canDefineLocations(item: ProjectExecutionDefinitionItem) {
@@ -111,6 +163,8 @@ function buildLocationUnits(item: ProjectExecutionDefinitionItem) {
     const existing = spec.executionUnits?.[index];
     return {
       id: existing?.id ?? `draft-${item.id}-${index}`,
+      projectLocationId: existing?.projectLocationId ?? null,
+      sourcePhotoItemId: existing?.sourcePhotoItemId ?? null,
       label: String(index + 1),
       location: existing?.location ?? "",
       instructions: existing?.instructions ?? "",
@@ -129,6 +183,51 @@ function buildLocationUnits(item: ProjectExecutionDefinitionItem) {
   });
 }
 
+function getLocationKey(unit: Pick<WorkOrderExecutionUnit, "projectLocationId" | "sourcePhotoItemId">) {
+  return unit.projectLocationId?.trim() || unit.sourcePhotoItemId?.trim() || "";
+}
+
+function buildLocationRows(items: ProjectExecutionDefinitionItem[], savedLocations: ProjectExecutionLocation[]) {
+  const byId = new Map<string, ProjectExecutionLocation>();
+  for (const location of savedLocations) {
+    if (location.id?.trim()) {
+      byId.set(location.id, {
+        id: location.id,
+        name: location.name ?? "",
+        note: location.note ?? "",
+        sourcePhotoItemId: location.sourcePhotoItemId ?? null,
+      });
+    }
+  }
+
+  for (const item of items) {
+    if (!canDefineLocations(item)) continue;
+    for (const unit of buildLocationUnits(item)) {
+      const key = getLocationKey(unit);
+      if (!key || byId.has(key)) continue;
+      byId.set(key, {
+        id: key,
+        name: unit.location ?? "",
+        note: unit.instructions ?? "",
+        sourcePhotoItemId: unit.sourcePhotoItemId ?? (key.startsWith("zahteva-") ? key : null),
+      });
+    }
+  }
+
+  return Array.from(byId.values());
+}
+
+function buildUnitAssignments(items: ProjectExecutionDefinitionItem[]) {
+  const assignments: UnitAssignment[] = [];
+  for (const item of items) {
+    if (!canDefineLocations(item)) continue;
+    buildLocationUnits(item).forEach((unit, unitIndex) => {
+      assignments.push({ item, unit, unitIndex });
+    });
+  }
+  return assignments;
+}
+
 function UnitPhotoButton({
   projectId,
   itemId,
@@ -138,7 +237,7 @@ function UnitPhotoButton({
 }: {
   projectId: string;
   itemId: string;
-  unitIndex: number;
+  unitIndex?: number;
   refreshKey: number;
   onOpen: (context: PhotoContext) => void;
 }) {
@@ -168,7 +267,7 @@ export function PreparationPhotoThumbnails({
 }: {
   projectId: string;
   itemId: string;
-  unitIndex: number;
+  unitIndex?: number;
   refreshKey: number;
 }) {
   const [photos, setPhotos] = useState<PreparationPhoto[]>([]);
@@ -185,13 +284,23 @@ export function PreparationPhotoThumbnails({
 
     async function loadPhotos() {
       try {
-        const response = await fetch(`/api/photos?${queryString}`, {
-          credentials: "same-origin",
-          signal: controller.signal,
-        });
-        const payload = (await response.json()) as PhotosResponse;
-        if (!alive || !response.ok || !payload.success) return;
-        setPhotos(dedupePhotos(payload.data?.photos ?? []));
+        const queries = [queryString];
+        if (itemId.startsWith("zahteva-")) {
+          const requirementContext: PhotoContext = { projectId, phase: "requirements", itemId };
+          queries.push(buildPhotoQuery(requirementContext));
+        }
+        const payloads = await Promise.all(
+          queries.map(async (query) => {
+            const response = await fetch(`/api/photos?${query}`, {
+              credentials: "same-origin",
+              signal: controller.signal,
+            });
+            const payload = (await response.json()) as PhotosResponse;
+            return response.ok && payload.success ? payload.data?.photos ?? [] : [];
+          }),
+        );
+        if (!alive) return;
+        setPhotos(dedupePhotos(payloads.flat()));
       } catch (error: any) {
         if (!alive || error?.name === "AbortError") return;
         setPhotos([]);
@@ -255,6 +364,7 @@ export function PreparationPhotoThumbnails({
 
 export function ExecutionDefinitionPanel({ projectId, offerVersionId }: ExecutionDefinitionPanelProps) {
   const [items, setItems] = useState<ProjectExecutionDefinitionItem[]>([]);
+  const [locations, setLocations] = useState<ProjectExecutionLocation[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -264,6 +374,7 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
   const loadDefinition = useCallback(async () => {
     if (!projectId || !offerVersionId) {
       setItems([]);
+      setLocations([]);
       return;
     }
     setLoading(true);
@@ -275,7 +386,10 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
         toast.error(payload.error ?? "Definicije izvedbe ni bilo mogoče naložiti.");
         return;
       }
-      setItems(Array.isArray(payload.data?.items) ? payload.data.items : []);
+      const nextItems = Array.isArray(payload.data?.items) ? payload.data.items : [];
+      const nextLocations = Array.isArray(payload.data?.locations) ? payload.data.locations : [];
+      setItems(nextItems);
+      setLocations(buildLocationRows(nextItems, nextLocations));
     } catch (error) {
       console.error(error);
       toast.error("Definicije izvedbe ni bilo mogoče naložiti.");
@@ -309,6 +423,70 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
     );
   };
 
+  const updateLocation = (locationId: string, changes: Partial<ProjectExecutionLocation>) => {
+    setLocations((current) =>
+      current.map((location) => (location.id === locationId ? { ...location, ...changes } : location)),
+    );
+    setItems((current) =>
+      current.map((item) => {
+        if (!canDefineLocations(item)) return item;
+        const units = buildLocationUnits(item);
+        let changed = false;
+        const nextUnits = units.map((unit) => {
+          if (getLocationKey(unit) !== locationId) return unit;
+          changed = true;
+          return {
+            ...unit,
+            location: changes.name !== undefined ? changes.name ?? "" : unit.location,
+            instructions: changes.note !== undefined ? changes.note ?? "" : unit.instructions,
+          };
+        });
+        if (!changed) return item;
+        return {
+          ...item,
+          executionSpec: {
+            ...normalizeExecutionSpec(item.executionSpec),
+            mode: "per_unit",
+            trackingUnitLabel: normalizeExecutionSpec(item.executionSpec).trackingUnitLabel || "Kamera",
+            locationSummary: nextUnits.map((unit) => unit.location).filter(Boolean).join(", "),
+            executionUnits: nextUnits,
+          },
+        };
+      }),
+    );
+  };
+
+  const addLocation = () => {
+    const id = `project-location-${Date.now().toString(36)}`;
+    setLocations((current) => [...current, { id, name: "", note: "", sourcePhotoItemId: null }]);
+    setExpanded((current) => ({ ...current, [id]: true }));
+  };
+
+  const assignUnitToLocation = (location: ProjectExecutionLocation, assignment: UnitAssignment) => {
+    updateUnit(assignment.item.id, assignment.unitIndex, {
+      projectLocationId: location.id,
+      sourcePhotoItemId: location.sourcePhotoItemId ?? (location.id.startsWith("zahteva-") ? location.id : null),
+      location: location.name ?? "",
+      instructions: location.note ?? "",
+    });
+  };
+
+  const removeUnitFromLocation = (assignment: UnitAssignment) => {
+    updateUnit(assignment.item.id, assignment.unitIndex, {
+      projectLocationId: null,
+      sourcePhotoItemId: null,
+      location: "",
+      instructions: "",
+    });
+  };
+
+  const removeLocation = (location: ProjectExecutionLocation) => {
+    assignments
+      .filter((assignment) => getLocationKey(assignment.unit) === location.id)
+      .forEach((assignment) => removeUnitFromLocation(assignment));
+    setLocations((current) => current.filter((entry) => entry.id !== location.id));
+  };
+
   const saveDefinition = async () => {
     if (!projectId || !offerVersionId) return;
     setSaving(true);
@@ -316,14 +494,17 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
       const response = await fetch(`/api/projects/${projectId}/execution-definition`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ offerVersionId, items }),
+        body: JSON.stringify({ offerVersionId, locations, items }),
       });
       const payload = await response.json();
       if (!payload.success) {
         toast.error(payload.error ?? "Definicije izvedbe ni bilo mogoče shraniti.");
         return;
       }
-      setItems(Array.isArray(payload.data?.items) ? payload.data.items : items);
+      const nextItems = Array.isArray(payload.data?.items) ? payload.data.items : items;
+      const nextLocations = Array.isArray(payload.data?.locations) ? payload.data.locations : locations;
+      setItems(nextItems);
+      setLocations(buildLocationRows(nextItems, nextLocations));
       toast.success("Definicija izvedbe shranjena.");
     } catch (error) {
       console.error(error);
@@ -333,11 +514,10 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
     }
   };
 
-  const prioritizedItems = [...items].sort((a, b) => {
-    const aService = a.isService ? 1 : 0;
-    const bService = b.isService ? 1 : 0;
-    return aService === bService ? 0 : aService - bService;
-  });
+  const locationRows = buildLocationRows(items, locations);
+  const assignments = buildUnitAssignments(items);
+  const assignedLocationIds = new Set(locationRows.map((location) => location.id));
+  const unassignedAssignments = assignments.filter((assignment) => !assignedLocationIds.has(getLocationKey(assignment.unit)));
 
   return (
     <Card>
@@ -346,7 +526,12 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
           <h3 className="text-base font-semibold">Definicija izvedbe</h3>
           <p className="text-sm text-muted-foreground">Lokacije in fotografije so skupne za ponudbo, pripravo in delovni nalog.</p>
         </div>
-        <Badge variant="outline">{prioritizedItems.length} postavk</Badge>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Badge variant="outline">{locationRows.length} lokacij</Badge>
+          <Button type="button" variant="outline" size="sm" onClick={addLocation} disabled={!offerVersionId || loading}>
+            Dodaj lokacijo
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {!offerVersionId ? (
@@ -356,78 +541,112 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
             <Loader2 className="h-4 w-4 animate-spin" />
             Nalagam definicijo izvedbe...
           </div>
-        ) : prioritizedItems.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Ni postavk za definicijo izvedbe.</p>
+        ) : locationRows.length === 0 ? (
+          <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
+            Ni lokacij za definicijo izvedbe.
+          </div>
         ) : (
           <div className="space-y-3">
-            {prioritizedItems.map((item) => {
-              const locationsAllowed = canDefineLocations(item);
-              const units = locationsAllowed ? buildLocationUnits(item) : [];
-              const isExpanded = item.isService ? !!expanded[item.id] : expanded[item.id] !== false;
+            {locationRows.map((location) => {
+              const linkedAssignments = assignments.filter((assignment) => getLocationKey(assignment.unit) === location.id);
+              const isExpanded = expanded[location.id] !== false;
+              const photoItemId = location.sourcePhotoItemId || location.id;
               return (
-                <div key={item.id} className="rounded-lg border border-border/70 bg-card p-4">
+                <div key={location.id} className="rounded-lg border border-border/70 bg-card p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-1">
+                    <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-semibold">{item.name}</p>
-                        {item.isService ? <Badge variant="outline">Storitev</Badge> : <Badge variant="outline">Produkt</Badge>}
-                        {locationsAllowed ? <Badge variant="outline">Enote: {units.length}/{desiredUnitCount(item)}</Badge> : null}
+                        <p className="text-sm font-semibold">{location.name?.trim() || "Neimenovana lokacija"}</p>
+                        <Badge variant="outline">{linkedAssignments.length} povezav</Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        Količina: {item.quantity ?? 0} {item.unit || ""}
-                      </p>
+                      {location.note?.trim() ? <p className="text-xs text-muted-foreground">{location.note}</p> : null}
                     </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 px-2 text-xs"
-                      onClick={() => setExpanded((current) => ({ ...current, [item.id]: !isExpanded }))}
-                    >
-                      {isExpanded ? <ChevronDown className="mr-1 h-4 w-4" /> : <ChevronRight className="mr-1 h-4 w-4" />}
-                      Detajli izvedbe
-                    </Button>
+                    <div className="flex flex-wrap justify-end gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-xs"
+                        onClick={() => removeLocation(location)}
+                      >
+                        Odstrani
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-xs"
+                        onClick={() => setExpanded((current) => ({ ...current, [location.id]: !isExpanded }))}
+                      >
+                        {isExpanded ? <ChevronDown className="mr-1 h-4 w-4" /> : <ChevronRight className="mr-1 h-4 w-4" />}
+                        Detajli lokacije
+                      </Button>
+                    </div>
                   </div>
                   {isExpanded ? (
-                    <div className="mt-3 space-y-2">
-                      {locationsAllowed ? (
-                        units.map((unit, index) => (
-                          <div key={unit.id} className="rounded-md border border-border/70 bg-muted/10 p-2">
-                            <div className="grid gap-2 md:grid-cols-[80px_minmax(160px,1.2fr)_minmax(90px,0.7fr)_minmax(140px,1fr)_96px] lg:grid-cols-[96px_minmax(180px,1.25fr)_minmax(110px,0.75fr)_minmax(160px,1fr)_104px]">
-                              <div className="flex items-center text-sm font-medium">{unit.label}</div>
-                              <Input
-                                value={unit.location ?? ""}
-                                onChange={(event) => updateUnit(item.id, index, { location: event.target.value })}
-                                placeholder="Lokacija"
-                              />
-                              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                <PreparationPhotoThumbnails
-                                  projectId={projectId}
-                                  itemId={item.offerItemId ?? item.id}
-                                  unitIndex={index}
-                                  refreshKey={photoRefreshKey}
-                                />
-                              </div>
-                              <Input
-                                value={unit.instructions ?? ""}
-                                onChange={(event) => updateUnit(item.id, index, { instructions: event.target.value })}
-                                placeholder="Opomba"
-                              />
-                              <UnitPhotoButton
-                                projectId={projectId}
-                                itemId={item.offerItemId ?? item.id}
-                                unitIndex={index}
-                                refreshKey={photoRefreshKey}
-                                onOpen={setPhotoContext}
-                              />
-                            </div>
+                    <div className="mt-3 space-y-4">
+                      <div className="grid gap-3 md:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_120px]">
+                        <Input
+                          value={location.name ?? ""}
+                          onChange={(event) => updateLocation(location.id, { name: event.target.value })}
+                          placeholder="Ime lokacije"
+                        />
+                        <Input
+                          value={location.note ?? ""}
+                          onChange={(event) => updateLocation(location.id, { note: event.target.value })}
+                          placeholder="Opomba lokacije"
+                        />
+                        <UnitPhotoButton projectId={projectId} itemId={photoItemId} refreshKey={photoRefreshKey} onOpen={setPhotoContext} />
+                      </div>
+                      <PreparationPhotoThumbnails projectId={projectId} itemId={photoItemId} refreshKey={photoRefreshKey} />
+
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground">Povezani produkti</p>
+                        {linkedAssignments.length === 0 ? (
+                          <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                            Ni povezanih produktov.
                           </div>
-                        ))
-                      ) : (
-                        <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-                          Lokacije se definirajo pri povezanih produktih.
+                        ) : (
+                          <div className="space-y-2">
+                            {linkedAssignments.map((assignment) => (
+                              <div
+                                key={`${assignment.item.id}-${assignment.unitIndex}`}
+                                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/70 bg-muted/10 px-3 py-2"
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-medium">{assignment.item.name}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {assignment.unit.label || `Enota ${assignment.unitIndex + 1}`} - {assignment.item.quantity} {assignment.item.unit}
+                                  </p>
+                                </div>
+                                <Button type="button" variant="ghost" size="sm" onClick={() => removeUnitFromLocation(assignment)}>
+                                  Odstrani
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {unassignedAssignments.length > 0 ? (
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium text-muted-foreground">Dodaj produkt na lokacijo</p>
+                          <div className="flex flex-wrap gap-2">
+                            {unassignedAssignments.map((assignment) => (
+                              <Button
+                                key={`${assignment.item.id}-${assignment.unitIndex}`}
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-auto min-h-8 max-w-full justify-start whitespace-normal text-left"
+                                onClick={() => assignUnitToLocation(location, assignment)}
+                              >
+                                {assignment.item.name} - {assignment.unit.label || `Enota ${assignment.unitIndex + 1}`}
+                              </Button>
+                            ))}
+                          </div>
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
