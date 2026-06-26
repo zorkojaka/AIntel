@@ -1187,6 +1187,7 @@ export async function sendInstallerPreparationEmail(input: {
     sentByUserId: input.actorUserId ?? null,
   };
 
+  let providerMessageId: string | null = null;
   try {
     const info = await sendEmail({
       from: `"${effectiveSender.senderName}" <${effectiveSender.senderEmail}>`,
@@ -1215,28 +1216,35 @@ export async function sendInstallerPreparationEmail(input: {
       ],
     });
 
-    const message = await CommunicationMessageModel.create({
-      ...baseMessage,
-      status: "sent",
-      sentAt: new Date(),
-      providerMessageId: typeof info.messageId === "string" ? info.messageId : null,
-    });
-    await createCommunicationEvent({
-      projectId: input.projectId,
-      offerId: workOrder.offerVersionId ?? null,
-      messageId: String(message._id),
-      type: "email_sent",
-      title: "Email monterju poslan",
-      description: `Poslano na ${resolvedRecipients.join(", ")}`,
-      user: input.actorDisplayName ?? null,
-      metadata: {
-        to: resolvedRecipients.join(", "),
-        subject: subjectFinal,
-        workOrderId: input.workOrderId,
-        attachments: selectedAttachmentRecords.map((record) => record.filename).join(", "),
-      },
-    });
-    return { message: serializeMessage(message.toObject()) };
+    providerMessageId = typeof info.messageId === "string" ? info.messageId : null;
+
+    try {
+      const message = await CommunicationMessageModel.create({
+        ...baseMessage,
+        status: "sent",
+        sentAt: new Date(),
+        providerMessageId,
+      });
+      await createCommunicationEvent({
+        projectId: input.projectId,
+        offerId: workOrder.offerVersionId ?? null,
+        messageId: String(message._id),
+        type: "email_sent",
+        title: "Email monterju poslan",
+        description: `Poslano na ${resolvedRecipients.join(", ")}`,
+        user: input.actorDisplayName ?? null,
+        metadata: {
+          to: resolvedRecipients.join(", "),
+          subject: subjectFinal,
+          workOrderId: input.workOrderId,
+          attachments: selectedAttachmentRecords.map((record) => record.filename).join(", "),
+        },
+      });
+      return { message: serializeMessage(message.toObject()), sent: true };
+    } catch (loggingError) {
+      console.error("Installer preparation email was sent, but communication logging failed", loggingError);
+      return { message: null, sent: true, loggingFailed: true };
+    }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.";
     const message = await CommunicationMessageModel.create({
