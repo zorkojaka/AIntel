@@ -221,6 +221,41 @@ function normalizeExecutionMode(value: unknown): 'simple' | 'per_unit' | 'measur
   return value === 'per_unit' || value === 'measured' ? value : 'simple';
 }
 
+function isMeasurementLikeUnit(unit?: string | null) {
+  const normalized = (unit ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\[\]\*]/g, '')
+    .replace(/\s+/g, '')
+    .replace('²', '2')
+    .replace('³', '3');
+  return [
+    'km',
+    'kilometer',
+    'kilometri',
+    'kilometrov',
+    'h',
+    'ura',
+    'ure',
+    'ur',
+    'min',
+    'm',
+    'meter',
+    'metri',
+    'metrov',
+    'm2',
+    'm3',
+    'kg',
+    'g',
+    'l',
+  ].includes(normalized);
+}
+
+function hasMeasurementLikeName(name?: string | null) {
+  const match = (name ?? '').toLowerCase().match(/\[([^\]]+)\]\s*\*?/);
+  return match ? isMeasurementLikeUnit(match[1]) : false;
+}
+
 function sanitizeExecutionSpec(input: any) {
   if (!input || typeof input !== 'object') {
     return null;
@@ -643,7 +678,7 @@ function buildExecutionDefinitionItem(params: {
       ? item.plannedQuantity
       : 0;
   const id = resolveExecutionDefinitionItemId(item);
-  return {
+  return normalizeMeasuredExecutionDefinition({
     id,
     offerVersionId: offerVersionId ?? item?.offerVersionId ?? null,
     offerItemId: typeof item?.offerItemId === 'string' ? item.offerItemId : id,
@@ -653,6 +688,28 @@ function buildExecutionDefinitionItem(params: {
     unit: typeof item?.unit === 'string' ? item.unit : '',
     isService: item?.isService === true,
     executionSpec: sanitizeExecutionSpec(item?.executionSpec ?? fallbackSpec),
+  });
+}
+
+function normalizeMeasuredExecutionDefinition<T extends ProjectExecutionDefinitionItem>(definition: T): T {
+  if (!isMeasurementLikeUnit(definition.unit) && !hasMeasurementLikeName(definition.name)) return definition;
+  const spec = sanitizeExecutionSpec(definition.executionSpec) ?? {
+    mode: 'measured' as const,
+    locationSummary: '',
+    instructions: null,
+    trackingUnitLabel: null,
+    executionUnits: [],
+  };
+  const nextSpec = {
+    ...spec,
+    mode: 'measured' as const,
+    locationSummary: '',
+    trackingUnitLabel: null,
+    executionUnits: [],
+  };
+  return {
+    ...definition,
+    executionSpec: nextSpec,
   };
 }
 
@@ -1596,7 +1653,13 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
     }
   }
 
-  const definitions = Array.isArray(project.executionDefinitions) ? project.executionDefinitions : [];
+  let definitions = Array.isArray(project.executionDefinitions) ? project.executionDefinitions : [];
+  const normalizedDefinitions = definitions.map((definition: any) => normalizeMeasuredExecutionDefinition(definition));
+  if (JSON.stringify(definitions) !== JSON.stringify(normalizedDefinitions)) {
+    project.executionDefinitions = normalizedDefinitions;
+    await project.save();
+    definitions = normalizedDefinitions;
+  }
   const itemsForOffer = resolvedOfferId
     ? definitions.filter((definition: any) => String(definition?.offerVersionId ?? '') === resolvedOfferId)
     : definitions;
@@ -1680,10 +1743,10 @@ export async function updateProjectExecutionDefinition(req: Request, res: Respon
         offerVersionId,
       });
       const existing = existingByKey.get(`${String(offerVersionId ?? '')}:${String(definition.offerItemId ?? definition.id)}`);
-      return {
+      return normalizeMeasuredExecutionDefinition({
         ...definition,
         executionSpec: sanitizeIncomingExecutionSpec(definition.executionSpec, existing?.executionSpec, null, false),
-      };
+      });
     });
 
     result.project.executionDefinitions = mergeProjectExecutionDefinitions({
