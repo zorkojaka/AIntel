@@ -80,6 +80,11 @@ function supportsLocationDescriptions(product: any) {
   return productType === "kamera" || productType === "alarm_komponenta";
 }
 
+function isCameraInstallationServiceName(value: unknown) {
+  const normalized = typeof value === "string" ? value.toLocaleLowerCase("sl-SI") : "";
+  return normalized.includes("monta") && normalized.includes("konfiguracija") && normalized.includes("kamere");
+}
+
 function buildZahtevaLocationPhotoItemId(zahtevaId: string, sistemId: string, lokacijaId: string) {
   return `zahteva-location:${zahtevaId}:${sistemId}:${lokacijaId}`;
 }
@@ -284,12 +289,14 @@ export async function buildOfferDescriptionEntries(offer: OfferVersion): Promise
   for (const item of items) {
     const productId = item.productId ? String(item.productId) : null;
     const product = productId ? productMap.get(productId) : null;
-    const title = product?.ime || item.name;
     const description = sanitizeDescriptionForHtml(String(product?.dolgOpis ?? ""));
     const imageUrl = typeof product?.povezavaDoSlike === "string" ? product.povezavaDoSlike.trim() : "";
     const fallbackUnits = productId ? fallbackUnitsByProductId.get(productId) ?? [] : [];
     const definition = executionDefinitionByItemKey.get(String(item.id));
     const definitionLocations = await resolveProjectExecutionDefinitionLocations(project?._id, item, definition);
+    const title = isCameraInstallationServiceName(item.name) && definitionLocations.length > 0
+      ? "Predlog izvedbe"
+      : product?.ime || item.name;
     const shouldResolveRequirementLocations =
       supportsLocationDescriptions(product) || definitionLocations.length > 0 || fallbackUnits.length > 0;
     const locations = definitionLocations.length > 0

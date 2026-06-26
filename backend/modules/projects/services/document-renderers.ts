@@ -962,6 +962,50 @@ export function renderProductDescriptionsHtml(
     ? `<footer class="descriptions-footer">${escapeHtml(options.footerText.trim())}</footer>`
     : "";
 
+  const buildLocationsBlock = (locations: NonNullable<ProductDescriptionEntry["locations"]>) => {
+    const filteredLocations = locations.filter((location) => location.name || location.note || location.photos.length > 0);
+    const hasLocationPhotos = filteredLocations.some((location) => location.photos.length > 0);
+    return filteredLocations.length
+      ? `<div class="locations">
+          <p class="locations-title">Lokacije</p>
+          <div class="${hasLocationPhotos ? 'locations-grid' : 'locations-list'}">
+            ${filteredLocations
+              .map((location) => {
+                const photos = location.photos
+                  .map((photo) => `<img src="${photo}" alt="" />`)
+                  .join('');
+                const note = location.note ? `<p class="location-note">${escapeHtml(location.note)}</p>` : '';
+                if (!photos) {
+                  return `<div class="location-row">
+                    <p class="location-name">${escapeHtml(location.name)}</p>
+                    ${note}
+                  </div>`;
+                }
+                return `<div class="location">
+                  <p class="location-name">${escapeHtml(location.name)}</p>
+                  ${note}
+                  ${photos ? `<div class="location-photos">${photos}</div>` : ''}
+                </div>`;
+              })
+              .join('')}
+          </div>
+        </div>`
+      : '';
+  };
+
+  const locationSections = entries
+    .map((entry) => {
+      const locationsBlock = buildLocationsBlock(entry.locations ?? []);
+      return locationsBlock
+        ? `<section class="product location-summary">
+            <h2 class="title">${escapeHtml(entry.title)}</h2>
+            ${locationsBlock}
+          </section>`
+        : '';
+    })
+    .filter(Boolean)
+    .join('');
+
   const content = entries.length
     ? entries
         .map((entry) => {
@@ -969,34 +1013,7 @@ export function renderProductDescriptionsHtml(
           const description = entry.description ? escapeHtml(entry.description) : '';
           const hasImage = !!entry.imageUrl;
           const hasDesc = !!description;
-          const locations = (entry.locations ?? []).filter((location) => location.name || location.note || location.photos.length > 0);
-          const hasLocationPhotos = locations.some((location) => location.photos.length > 0);
-          const locationsBlock = locations.length
-            ? `<div class="locations">
-                <p class="locations-title">Lokacije</p>
-                <div class="${hasLocationPhotos ? 'locations-grid' : 'locations-list'}">
-                  ${locations
-                    .map((location) => {
-                      const photos = location.photos
-                        .map((photo) => `<img src="${photo}" alt="" />`)
-                        .join('');
-                      const note = location.note ? `<p class="location-note">${escapeHtml(location.note)}</p>` : '';
-                      if (!photos) {
-                        return `<div class="location-row">
-                          <p class="location-name">${escapeHtml(location.name)}</p>
-                          ${note}
-                        </div>`;
-                      }
-                      return `<div class="location">
-                        <p class="location-name">${escapeHtml(location.name)}</p>
-                        ${note}
-                        ${photos ? `<div class="location-photos">${photos}</div>` : ''}
-                      </div>`;
-                    })
-                    .join('')}
-                </div>
-              </div>`
-            : '';
+          if (!hasImage && !hasDesc) return '';
           const classes = [
             'product',
             hasImage ? 'hasImage' : 'noImage',
@@ -1014,10 +1031,9 @@ export function renderProductDescriptionsHtml(
                 ${imageBlock}
                 ${descBlock}
               </div>
-              ${locationsBlock}
             </section>`;
         })
-        .join('')
+        .join('') + locationSections
     : `<section class="product">
         <h2 class="title">Ni produktnih opisov za izbrane postavke.</h2>
       </section>`;
