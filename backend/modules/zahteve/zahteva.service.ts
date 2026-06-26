@@ -374,6 +374,10 @@ function executionProductMatches(rule: any, product: any, projectTypes: Set<stri
 type ProductRequest = { productId: string; kolicina: number; tip: 'material' | 'storitev'; extra?: Partial<OfferLineItem> };
 type SystemProductRequests = { sistem: ZahtevaDocument['sistemi'][number]; requests: ProductRequest[] };
 
+function isVideoRequirementSystem(sistem: ZahtevaDocument['sistemi'][number]) {
+  return sistem.tip === 'videonadzor' || sistem.tip === 'wifi_kamere';
+}
+
 function mergeProductRequestExtra(
   current?: Partial<OfferLineItem>,
   incoming?: Partial<OfferLineItem>,
@@ -431,12 +435,17 @@ async function addConfiguredExecutionRequests(
   const materialIds = Array.from(new Set(allMaterialRequests.map((entry) => entry.productId)));
   const products = materialIds.length > 0 ? await ProductModel.find({ _id: { $in: materialIds } }).lean() : [];
   const productMap = new Map<string, any>(products.map((product) => [String(product._id), product]));
-  const projectTypes = new Set((zahteva.sistemi ?? []).map((sistem) => sistem.tip));
+  const projectTypes = new Set<string>();
+  for (const sistem of zahteva.sistemi ?? []) {
+    projectTypes.add(sistem.tip);
+    if (sistem.tip === 'wifi_kamere') projectTypes.add('videonadzor');
+  }
   const addedProjectRuleIds = new Set<string>();
 
   for (const systemEntry of systemRequests) {
     const materialRequests = systemEntry.requests.filter((entry) => entry.tip === 'material');
-    const systemTypes = new Set([systemEntry.sistem.tip]);
+    const systemTypes = new Set<string>([systemEntry.sistem.tip]);
+    if (systemEntry.sistem.tip === 'wifi_kamere') systemTypes.add('videonadzor');
 
     for (const rule of settings.productServiceRules ?? []) {
       if (!rule.isActive) continue;
@@ -519,8 +528,9 @@ async function buildOfferItems(zahteva: ZahtevaDocument, tenantId = 'inteligent'
       continue;
     }
 
-    if (sistem.tip !== 'videonadzor' || !sistem.videonadzor) continue;
+    if (!isVideoRequirementSystem(sistem) || !sistem.videonadzor) continue;
     const videonadzor = sistem.videonadzor;
+    const isWifiKamere = sistem.tip === 'wifi_kamere';
     const beforeSystemCount = productRequests.length;
 
     for (const variant of videonadzor.asortima ?? []) {
@@ -536,12 +546,14 @@ async function buildOfferItems(zahteva: ZahtevaDocument, tenantId = 'inteligent'
       addProductRequest(productRequests, variant.nosilecProductId, kolicina, 'material');
     }
 
-    addProductRequest(productRequests, videonadzor.snemalnik?.productId, 1, 'material');
-    for (const item of selectedEquipmentItems(videonadzor.poeSwitch)) {
-      addProductRequest(productRequests, item.productId, item.kolicina, 'material');
-    }
-    for (const item of selectedEquipmentItems(videonadzor.disk)) {
-      addProductRequest(productRequests, item.productId, item.kolicina, 'material');
+    if (!isWifiKamere) {
+      addProductRequest(productRequests, videonadzor.snemalnik?.productId, 1, 'material');
+      for (const item of selectedEquipmentItems(videonadzor.poeSwitch)) {
+        addProductRequest(productRequests, item.productId, item.kolicina, 'material');
+      }
+      for (const item of selectedEquipmentItems(videonadzor.disk)) {
+        addProductRequest(productRequests, item.productId, item.kolicina, 'material');
+      }
     }
 
     for (const dod of videonadzor.dodatnaOprema ?? []) {
@@ -599,18 +611,18 @@ function validateZahtevaForOffer(zahteva: ZahtevaDocument) {
       continue;
     }
 
-    if (sistem.tip !== 'videonadzor') continue;
+    if (!isVideoRequirementSystem(sistem)) continue;
     const videonadzor = sistem.videonadzor;
     if (!videonadzor) {
-      throw Object.assign(new Error('Videonadzor sistem nima podatkov.'), { statusCode: 400 });
+      throw Object.assign(new Error('Sistem kamer nima podatkov.'), { statusCode: 400 });
     }
     const activeLokacije = Array.isArray(videonadzor.lokacije) ? videonadzor.lokacije.filter(isMeaningfulVideoLocation) : [];
     if (activeLokacije.length === 0) {
-      throw Object.assign(new Error('Videonadzor mora imeti vsaj eno lokacijo.'), { statusCode: 400 });
+      throw Object.assign(new Error('Sistem kamer mora imeti vsaj eno lokacijo.'), { statusCode: 400 });
     }
     const variantIds = new Set((videonadzor.asortima ?? []).map((variant) => variant.id));
     if (variantIds.size === 0) {
-      throw Object.assign(new Error('Videonadzor mora imeti vsaj eno varianto asortimana.'), { statusCode: 400 });
+      throw Object.assign(new Error('Sistem kamer mora imeti vsaj eno varianto asortimana.'), { statusCode: 400 });
     }
     const missing = activeLokacije.filter((lokacija) => !lokacija.asortimaIdAssigned);
     if (missing.length > 0) {

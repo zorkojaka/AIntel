@@ -158,7 +158,7 @@ export interface OfferCandidate {
 }
 
 export type ZahtevaStatus = "osnutek" | "koncana";
-export type ZahtevaTipSistema = "videonadzor" | "alarm" | "domofon" | "pametna_hisa";
+export type ZahtevaTipSistema = "videonadzor" | "wifi_kamere" | "alarm" | "domofon" | "pametna_hisa";
 export type ZahtevaExecutionScenarioType = "posiljanje" | "izvedba" | "izvedba_napeljava";
 
 export interface ZahtevaExecution {

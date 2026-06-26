@@ -15,7 +15,7 @@ type Props = {
 export function SpodnjiCena({ zahteva, productById, onNavigateOffer }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const total = zahteva.sistemi.reduce((sum, sistem) => {
-    if (sistem.tip === "videonadzor" && sistem.videonadzor) return sum + systemTotal(sistem.videonadzor, productById);
+    if ((sistem.tip === "videonadzor" || sistem.tip === "wifi_kamere") && sistem.videonadzor) return sum + systemTotal(sistem.videonadzor, productById);
     if (sistem.tip === "alarm" && sistem.alarm) return sum + alarmTotal(sistem.alarm, productById);
     return sum;
   }, 0);

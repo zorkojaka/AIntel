@@ -42,6 +42,21 @@ export function createVideonadzorSystem(id: string): ZahtevaSistem {
   };
 }
 
+export function createWifiKamereSystem(id: string): ZahtevaSistem {
+  return {
+    ...createVideonadzorSystem(id),
+    tip: "wifi_kamere",
+    videonadzor: {
+      asortima: [],
+      lokacije: [{ id: "loc-1", ime: "Lokacija 1", asortimaIdAssigned: null, slike: [] }],
+      snemalnik: { productId: null },
+      poeSwitch: { productId: null, kolicina: 0, items: [] },
+      disk: { productId: null, kolicina: 0, items: [], dniSnemanja: 30, motionRecord: false },
+      dodatnaOprema: [],
+    },
+  };
+}
+
 export function createAlarmSystem(id: string): ZahtevaSistem {
   return {
     id,

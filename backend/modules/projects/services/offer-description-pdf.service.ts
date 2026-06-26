@@ -110,7 +110,7 @@ function buildRequirementLocationUnitsFromRequest(zahteva: any) {
   };
 
   for (const sistem of zahteva?.sistemi ?? []) {
-    if (sistem?.tip === "videonadzor" && sistem?.videonadzor) {
+    if ((sistem?.tip === "videonadzor" || sistem?.tip === "wifi_kamere") && sistem?.videonadzor) {
       const variantById = new Map<string, any>((sistem.videonadzor.asortima ?? []).map((variant: any) => [String(variant.id), variant]));
 
       for (const lokacija of sistem.videonadzor.lokacije ?? []) {

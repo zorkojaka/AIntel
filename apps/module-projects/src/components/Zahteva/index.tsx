@@ -7,7 +7,7 @@ import { SistemBlok } from "./SistemBlok";
 import { SpodnjiCena } from "./SpodnjiCena";
 import { TipProjektaTrak } from "./TipProjektaTrak";
 import { useZahtevaState } from "./state/useZahtevaState";
-import { createAlarmSystem, createVideonadzorSystem, nextSystemId } from "./utils";
+import { createAlarmSystem, createVideonadzorSystem, createWifiKamereSystem, nextSystemId } from "./utils";
 
 type ZahtevaViewProps = {
   project: ProjectDetails;
@@ -57,6 +57,13 @@ export function ZahtevaView({ project, onProjectRequestChanged, onNavigateOffer 
     }));
   }, [updateZahtevaState]);
 
+  const addWifiKamere = useCallback(() => {
+    updateZahtevaState((current) => ({
+      ...current,
+      sistemi: [...current.sistemi, createWifiKamereSystem(nextSystemId(current.sistemi))],
+    }));
+  }, [updateZahtevaState]);
+
   const addAlarm = useCallback(() => {
     updateZahtevaState((current) => ({
       ...current,
@@ -88,7 +95,7 @@ export function ZahtevaView({ project, onProjectRequestChanged, onNavigateOffer 
         </div>
       </div>
 
-      <TipProjektaTrak onAddVideonadzor={addVideonadzor} onAddAlarm={addAlarm} />
+      <TipProjektaTrak onAddVideonadzor={addVideonadzor} onAddWifiKamere={addWifiKamere} onAddAlarm={addAlarm} />
 
       <div className="zahteva-systems">
         {zahteva.sistemi.map((sistem) => (

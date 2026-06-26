@@ -1,7 +1,7 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
 export type ZahtevaStatus = 'osnutek' | 'koncana';
-export type ZahtevaTipSistema = 'videonadzor' | 'alarm' | 'domofon' | 'pametna_hisa';
+export type ZahtevaTipSistema = 'videonadzor' | 'wifi_kamere' | 'alarm' | 'domofon' | 'pametna_hisa';
 export type ZahtevaExecutionScenarioType = 'posiljanje' | 'izvedba' | 'izvedba_napeljava';
 
 export interface ZahtevaDocument extends Document {
@@ -190,7 +190,7 @@ const SistemSchema = new Schema(
     id: { type: String, required: true, trim: true },
     tip: {
       type: String,
-      enum: ['videonadzor', 'alarm', 'domofon', 'pametna_hisa'],
+      enum: ['videonadzor', 'wifi_kamere', 'alarm', 'domofon', 'pametna_hisa'],
       required: true,
     },
     steviloLokacij: { type: Number, required: true, min: 0, default: 0 },
