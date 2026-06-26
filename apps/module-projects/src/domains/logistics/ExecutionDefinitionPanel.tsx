@@ -119,8 +119,7 @@ function isMeasurementLikeUnit(unit?: string | null) {
   const normalized = (unit ?? "")
     .trim()
     .toLowerCase()
-    .replace(/^\[|\]$/g, "")
-    .replace(/\*/g, "")
+    .replace(/[\[\]\*]/g, "")
     .replace(/\s+/g, "")
     .replace("²", "2")
     .replace("³", "3");
@@ -146,8 +145,13 @@ function isMeasurementLikeUnit(unit?: string | null) {
   ].includes(normalized);
 }
 
+function hasMeasurementLikeName(name?: string | null) {
+  const match = (name ?? "").toLowerCase().match(/\[([^\]]+)\]\s*\*?/);
+  return match ? isMeasurementLikeUnit(match[1]) : false;
+}
+
 function canDefineLocations(item: ProjectExecutionDefinitionItem) {
-  return item.isService !== true && !isMeasurementLikeUnit(item.unit);
+  return item.isService !== true && !isMeasurementLikeUnit(item.unit) && !hasMeasurementLikeName(item.name);
 }
 
 function desiredUnitCount(item: ProjectExecutionDefinitionItem) {

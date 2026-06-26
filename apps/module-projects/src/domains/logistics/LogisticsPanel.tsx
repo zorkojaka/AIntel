@@ -353,8 +353,7 @@ function isMeasurementLikeUnit(unit?: string | null) {
   const normalized = (unit ?? "")
     .trim()
     .toLowerCase()
-    .replace(/^\[|\]$/g, "")
-    .replace(/\*/g, "")
+    .replace(/[\[\]\*]/g, "")
     .replace(/\s+/g, "")
     .replace("²", "2")
     .replace("³", "3");
@@ -380,6 +379,11 @@ function isMeasurementLikeUnit(unit?: string | null) {
   ].includes(normalized);
 }
 
+function hasMeasurementLikeName(name?: string | null) {
+  const match = (name ?? "").toLowerCase().match(/\[([^\]]+)\]\s*\*?/);
+  return match ? isMeasurementLikeUnit(match[1]) : false;
+}
+
 function isServiceWorkOrderItem(item: LogisticsWorkOrder["items"][number]) {
   return item.isService === true;
 }
@@ -389,7 +393,7 @@ function isProductWorkOrderItem(item: LogisticsWorkOrder["items"][number]) {
 }
 
 function canRenderLocationDefinition(item: LogisticsWorkOrder["items"][number]) {
-  return isProductWorkOrderItem(item) && !isMeasurementLikeUnit(item.unit);
+  return isProductWorkOrderItem(item) && !isMeasurementLikeUnit(item.unit) && !hasMeasurementLikeName(item.name);
 }
 
 function isLocationDefinitionItem(item: LogisticsWorkOrder["items"][number]) {
