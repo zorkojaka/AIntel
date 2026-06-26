@@ -16,6 +16,7 @@ import { getActiveSignedConfirmationVersion, getConfirmationVersionById } from '
 type MaterialDocType = 'PURCHASE_ORDER' | 'DELIVERY_NOTE';
 type WorkDocType = 'WORK_ORDER' | 'WORK_ORDER_CONFIRMATION';
 const PHOTO_UPLOAD_BASE_DIR = '/var/www/aintel/uploads';
+const PROJECT_PLAN_PHOTO_ITEM_ID = 'project-plan';
 
 function assertProject(project: ProjectDocument | null) {
   if (!project) {
@@ -243,6 +244,25 @@ async function resolveWorkOrderExecutionUnits(projectObjectId: unknown, item: an
       photos: photoDataUrls,
     };
   }));
+}
+
+async function resolveProjectPlanPhotos(projectObjectId: unknown) {
+  if (!projectObjectId) return [];
+
+  const photos = await PhotoModel.find({
+    projectId: projectObjectId,
+    phase: 'preparation',
+    itemId: PROJECT_PLAN_PHOTO_ITEM_ID,
+    deletedAt: { $exists: false },
+  }).sort({ uploadedAt: 1 }).lean();
+
+  return (
+    await Promise.all(photos.map((photo) => readPhotoDataUrl({
+      url: photo.url,
+      thumbnailUrl: null,
+      mimeType: photo.mimeType,
+    })))
+  ).filter((value): value is string => Boolean(value));
 }
 
 function buildConfiguredNotes(
@@ -492,6 +512,7 @@ export async function generateWorkOrderDocumentPdf(
     tasks,
     comment,
     notes,
+    projectPlanPhotos: docType === 'WORK_ORDER' ? await resolveProjectPlanPhotos(existingProject._id) : [],
     signatures:
       docType === 'WORK_ORDER_CONFIRMATION'
         ? {

@@ -90,6 +90,7 @@ export interface DocumentPreviewContext {
     left?: PreviewSignature | null;
     right?: PreviewSignature | null;
   } | null;
+  projectPlanPhotos?: string[];
 }
 
 const baseStyles = `
@@ -154,6 +155,10 @@ const baseStyles = `
   .execution-location .execution-location-name { display: block; margin: 0 0 4px; }
   .execution-location-photos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .execution-location-photos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #dbe2ea; border-radius: 3px; }
+  .project-plan { margin-top: 10px; padding-top: 8px; border-top: 1px solid #e5e7eb; break-inside: avoid; page-break-inside: avoid; }
+  .project-plan-title { margin: 0 0 7px 0; font-size: 13px; font-weight: 700; color: #0f172a; }
+  .project-plan-photos { display: flex; flex-direction: column; gap: 10px; }
+  .project-plan-photos img { width: 100%; height: auto; max-height: 235mm; object-fit: contain; border: 1px solid #dbe2ea; border-radius: 3px; display: block; break-inside: avoid; page-break-inside: avoid; }
   .offer-preview { display:flex; flex-direction:column; gap:16px; flex:1; min-height:100%; }
   .offer-header { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; break-inside:avoid; page-break-inside:avoid; padding:4px 0 12px; }
   .offer-logo { width:170px; height:68px; display:flex; align-items:center; justify-content:flex-start; overflow:hidden; border:none; background:none; padding:6px 0; }
@@ -713,6 +718,14 @@ export function renderWorkOrderPdf(context: DocumentPreviewContext) {
   const itemsBlock = itemCards.length
     ? `<div class="workorder-items">${itemCards.join('')}</div>`
     : `<div class="offer-comment"><p style="text-align:center; color:#94a3b8;">Ni nalog za prikaz.</p></div>`;
+  const projectPlanBlock = context.projectPlanPhotos?.length
+    ? `<section class="project-plan">
+        <p class="project-plan-title">Načrt projekta</p>
+        <div class="project-plan-photos">
+          ${context.projectPlanPhotos.map((photo) => `<img src="${photo}" alt="" />`).join('')}
+        </div>
+      </section>`
+    : '';
   const notesBlock = buildNotesList(context.notes);
   const commentBlock = context.comment
     ? `<div class="offer-comment">
@@ -730,7 +743,7 @@ export function renderWorkOrderPdf(context: DocumentPreviewContext) {
     tableBodyRows: '',
     commentBlock,
     notesBlock,
-    extraSections: itemsBlock,
+    extraSections: `${projectPlanBlock}${itemsBlock}`,
   });
 }
 
@@ -896,6 +909,7 @@ export type ProductDescriptionEntry = {
   title: string;
   description?: string;
   imageUrl?: string;
+  projectPlanPhotos?: string[];
   locations?: Array<{
     name: string;
     note?: string;
@@ -942,6 +956,10 @@ export function renderProductDescriptionsHtml(
     .location-row .location-note { flex: 1 1 auto; }
     .location-photos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
     .location-photos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #dbe2ea; border-radius: 3px; }
+    .project-plan { margin: 10px 0 12px 0; break-inside: avoid; page-break-inside: avoid; }
+    .project-plan-title { margin: 0 0 7px 0; font-size: 13px; font-weight: 700; color: #111827; }
+    .project-plan-photos { display: flex; flex-direction: column; gap: 10px; }
+    .project-plan-photos img { width: 100%; height: auto; max-height: 235mm; object-fit: contain; border: 1px solid #dbe2ea; border-radius: 3px; display: block; break-inside: avoid; page-break-inside: avoid; }
     .descriptions-footer { margin-top: 12px; padding-top: 8px; border-top: 1px solid #dbe2ea; color: #475569; font-size: 11px; white-space: pre-wrap; break-inside: avoid; page-break-inside: avoid; }
   `;
 
@@ -1006,6 +1024,21 @@ export function renderProductDescriptionsHtml(
     .filter(Boolean)
     .join('');
 
+  const projectPlanSections = entries
+    .map((entry) => {
+      const photos = entry.projectPlanPhotos ?? [];
+      return photos.length
+        ? `<section class="project-plan">
+            <p class="project-plan-title">${escapeHtml(entry.title)}</p>
+            <div class="project-plan-photos">
+              ${photos.map((photo) => `<img src="${photo}" alt="" />`).join('')}
+            </div>
+          </section>`
+        : '';
+    })
+    .filter(Boolean)
+    .join('');
+
   const content = entries.length
     ? entries
         .map((entry) => {
@@ -1033,7 +1066,7 @@ export function renderProductDescriptionsHtml(
               </div>
             </section>`;
         })
-        .join('') + locationSections
+        .join('') + projectPlanSections + locationSections
     : `<section class="product">
         <h2 class="title">Ni produktnih opisov za izbrane postavke.</h2>
       </section>`;

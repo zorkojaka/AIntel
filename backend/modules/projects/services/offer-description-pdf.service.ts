@@ -12,6 +12,7 @@ import { renderProductDescriptionsHtml, type ProductDescriptionEntry } from "./d
 import { getCompanySettings, getPdfDocumentSettings } from "./pdf-settings.service";
 
 const PHOTO_UPLOAD_BASE_DIR = "/var/www/aintel/uploads";
+const PROJECT_PLAN_PHOTO_ITEM_ID = "project-plan";
 
 function sanitizeDescriptionForHtml(value: string) {
   const withoutControls = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
@@ -284,6 +285,25 @@ async function resolveProjectExecutionDefinitionLocations(
   return locations;
 }
 
+async function resolveProjectPlanPhotos(projectObjectId: unknown) {
+  if (!projectObjectId) return [];
+
+  const photos = await PhotoModel.find({
+    projectId: projectObjectId,
+    phase: "preparation",
+    itemId: PROJECT_PLAN_PHOTO_ITEM_ID,
+    deletedAt: { $exists: false },
+  }).sort({ uploadedAt: 1 }).lean();
+
+  return (
+    await Promise.all(photos.map((photo) => readPhotoDataUrl({
+      url: photo.url,
+      thumbnailUrl: null,
+      mimeType: photo.mimeType,
+    })))
+  ).filter((value): value is string => Boolean(value));
+}
+
 export async function buildOfferDescriptionEntries(offer: OfferVersion): Promise<ProductDescriptionEntry[]> {
   const items = Array.isArray(offer.items) ? offer.items : [];
   const uniqueIds = Array.from(
@@ -350,6 +370,14 @@ export async function buildOfferDescriptionEntries(offer: OfferVersion): Promise
       description: description || undefined,
       imageUrl: imageDataUrl,
       locations: locations.length > 0 ? locations : undefined,
+    });
+  }
+
+  const projectPlanPhotos = await resolveProjectPlanPhotos(project?._id);
+  if (projectPlanPhotos.length > 0) {
+    entries.push({
+      title: "Načrt projekta",
+      projectPlanPhotos,
     });
   }
 
