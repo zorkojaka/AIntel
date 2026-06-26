@@ -45,8 +45,6 @@ const DOC_TYPE_SLUGS: Partial<Record<DocumentNumberingKind, string>> = {
   WORK_ORDER_CONFIRMATION: 'work-order-confirmation',
   CREDIT_NOTE: 'credit-note',
 };
-const DEFAULT_PAYMENT_TERMS = '50% - avans, 50% - 10 dni po izvedbi';
-
 function parseOfferDocType(value?: string | string[]): DocumentNumberingKind {
   if (Array.isArray(value)) value = value[0];
   const normalized = typeof value === 'string' ? value.toUpperCase() : 'OFFER';
@@ -1199,7 +1197,7 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
     const title = `${baseTitle}_${versionNumber}`;
 
     const normalizedPaymentTerms = normalizeText(body?.paymentTerms);
-    const resolvedPaymentTerms = normalizedPaymentTerms || DEFAULT_PAYMENT_TERMS;
+    const resolvedPaymentTerms = normalizedPaymentTerms || null;
 
     const payload: Omit<OfferVersion, '_id'> = {
       projectId,
@@ -1334,7 +1332,7 @@ export async function saveOfferTemplate(req: Request, res: Response, next: NextF
       buildOfferSnapshotPayload({
         title: templateTitle,
         sourceProjectId: projectId,
-        paymentTerms: normalizedPaymentTerms || DEFAULT_PAYMENT_TERMS,
+        paymentTerms: normalizedPaymentTerms || null,
         comment: normalizeText(body?.comment) || null,
         items: itemsWithNorma,
         applyGlobalDiscount: body?.applyGlobalDiscount ?? true,
