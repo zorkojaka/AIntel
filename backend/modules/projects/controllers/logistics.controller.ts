@@ -496,11 +496,37 @@ function withRequirementLocationFallbacks(
   offerItems: OfferLineItem[],
   fallbacksByProductId: Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string; projectLocationId: string }>>
 ) {
+  const hasProductLocationFallback = (offerItems ?? []).some((item) => {
+    const existingUnits = Array.isArray(item.requirementsLocationUnits) ? item.requirementsLocationUnits : [];
+    if (existingUnits.length > 0) return true;
+    if (!item.productId) return false;
+    return (fallbacksByProductId.get(String(item.productId)) ?? []).length > 0;
+  });
+  const allFallbackUnits = Array.from(fallbacksByProductId.values()).flat();
+  const allFallbackUnitsByLocation = new Map<string, { locationId: string; locationName: string; sourcePhotoItemId: string; projectLocationId: string }>();
+  for (const unit of allFallbackUnits) {
+    const key = unit.projectLocationId || unit.sourcePhotoItemId || unit.locationId;
+    if (key && !allFallbackUnitsByLocation.has(key)) {
+      allFallbackUnitsByLocation.set(key, unit);
+    }
+  }
+
   return (offerItems ?? []).map((item) => {
     const existingUnits = Array.isArray(item.requirementsLocationUnits) ? item.requirementsLocationUnits : [];
     if (existingUnits.length > 0 || !item.productId) return item;
     const fallbackUnits = fallbacksByProductId.get(String(item.productId)) ?? [];
-    return fallbackUnits.length > 0 ? { ...item, requirementsLocationUnits: fallbackUnits } : item;
+    if (fallbackUnits.length > 0) return { ...item, requirementsLocationUnits: fallbackUnits };
+
+    const itemName = typeof item.name === 'string' ? item.name.toLocaleLowerCase('sl-SI') : '';
+    const isCameraInstallationService =
+      !hasProductLocationFallback &&
+      allFallbackUnitsByLocation.size > 0 &&
+      itemName.includes('monta') &&
+      itemName.includes('konfiguracija') &&
+      itemName.includes('kamere');
+    return isCameraInstallationService
+      ? { ...item, requirementsLocationUnits: Array.from(allFallbackUnitsByLocation.values()) }
+      : item;
   });
 }
 
