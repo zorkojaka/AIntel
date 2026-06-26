@@ -10,8 +10,6 @@ import { dvcStorageCalculator } from './dvcStorageCalculator';
 import { ExecutionRuleSettingsModel } from '../execution-rules/execution-rules.model';
 import { DEFAULT_EXECUTION_SCENARIOS, normalizeScenarios } from '../execution-rules/execution-rules.service';
 
-const DEFAULT_PAYMENT_TERMS = '50% - avans, 50% - 10 dni po izvedbi';
-
 function normalizeText(value: unknown, fallback = '') {
   if (typeof value === 'string') return value.normalize('NFC').trim();
   if (value === undefined || value === null) return fallback;
@@ -127,7 +125,7 @@ async function createOfferVersion(input: {
     versionNumber,
     title,
     validUntil: null,
-    paymentTerms: DEFAULT_PAYMENT_TERMS,
+    paymentTerms: null,
     comment: input.comment ?? null,
     items: input.items,
     totalNet: totals.totalNet,

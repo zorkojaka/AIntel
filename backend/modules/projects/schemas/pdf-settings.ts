@@ -160,8 +160,8 @@ export const DEFAULT_DOCUMENT_SETTINGS: PdfDocumentSettings = {
     padding: 3,
   },
   defaultTexts: {
-    paymentTerms: 'Placilo v 15 dneh po izstavitvi racuna.',
-    disclaimer: 'Ponudba je informativne narave. Prosimo, preverite podatke pred potrditvijo.',
+    paymentTerms: '',
+    disclaimer: '',
   },
   appearance: {
     headerText: '',

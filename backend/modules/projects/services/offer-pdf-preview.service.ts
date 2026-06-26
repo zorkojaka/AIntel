@@ -128,8 +128,12 @@ function buildSelectedNotes(
     .map((note) => note.text?.trim() || note.title?.trim() || '')
     .filter((text): text is string => !!text);
 
-  const payments = overrides?.paymentTerms ?? pdfSettings.defaultTexts.paymentTerms;
-  const disclaimer = overrides?.disclaimer ?? pdfSettings.defaultTexts.disclaimer;
+  const payments = docType === 'OFFER'
+    ? overrides?.paymentTerms
+    : overrides?.paymentTerms ?? pdfSettings.defaultTexts.paymentTerms;
+  const disclaimer = docType === 'OFFER'
+    ? overrides?.disclaimer
+    : overrides?.disclaimer ?? pdfSettings.defaultTexts.disclaimer;
   if (payments) {
     selectedNotes.push(payments);
   }
@@ -331,10 +335,13 @@ export async function buildOfferPdfPreviewPayload(
   );
   const generatedNumber =
     overrides?.documentNumberOverride ?? offer.documentNumber ?? fallbackNumber;
+  const resolvedPaymentTerms = docType === 'OFFER'
+    ? overrides?.paymentTerms ?? offer.paymentTerms ?? ''
+    : overrides?.paymentTerms ?? offer.paymentTerms ?? documentSettings.defaultTexts.paymentTerms ?? '';
 
   const offerWithTexts: OfferVersion = {
     ...offer,
-    paymentTerms: overrides?.paymentTerms ?? offer.paymentTerms ?? documentSettings.defaultTexts.paymentTerms ?? '',
+    paymentTerms: resolvedPaymentTerms,
   };
   companyProfile = {
     ...companyProfile,
@@ -369,7 +376,7 @@ export async function buildOfferPdfPreviewPayload(
       : undefined,
     projectTitle: offerWithTexts.baseTitle ?? offerWithTexts.title ?? project?.title ?? 'Projekt',
     validUntil: offerWithTexts.validUntil ?? null,
-    paymentTerms: offerWithTexts.paymentTerms ?? documentSettings.defaultTexts.paymentTerms ?? null,
+    paymentTerms: offerWithTexts.paymentTerms ?? null,
     items,
     totals: {
       ...totals,
