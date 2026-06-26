@@ -12,6 +12,7 @@ import type {
   WorkOrderStatus,
 } from "@aintel/shared/types/logistics";
 import type { Employee } from "@aintel/shared/types/employee";
+import type { CommunicationEvent } from "@aintel/shared/types/communication";
 import { Card, CardContent, CardHeader } from "../../components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Badge } from "../../components/ui/badge";
@@ -31,6 +32,7 @@ import { AlertTriangle, Camera, Check, ChevronDown, ChevronRight, Download, Load
 import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
 import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
+import { fetchCommunicationFeed } from "../communication/api";
 
 interface LogisticsPanelProps {
   projectId: string;
@@ -125,6 +127,31 @@ function getUnitLocationPhotoIndex(unit: Pick<WorkOrderExecutionUnit, "projectLo
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("sl-SI", { style: "currency", currency: "EUR" }).format(value);
+}
+
+function formatCommunicationTimestamp(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return "";
+  return new Intl.DateTimeFormat("sl-SI", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+async function readJsonEnvelope(response: Response) {
+  const rawText = await response.text();
+  if (!rawText.trim()) {
+    return { success: response.ok, data: null, error: response.ok ? null : response.statusText };
+  }
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return { success: response.ok, data: null, error: rawText };
+  }
 }
 
 type LogisticsClient = NonNullable<LogisticsPanelProps["client"]>;
@@ -437,6 +464,8 @@ export function LogisticsPanel({
   const [sendingInstallerEmail, setSendingInstallerEmail] = useState(false);
   const [installerEmailDialogOpen, setInstallerEmailDialogOpen] = useState(false);
   const [installerEmailDraft, setInstallerEmailDraft] = useState({ to: "", cc: "", bcc: "", subject: "", body: "" });
+  const [installerEmailEvents, setInstallerEmailEvents] = useState<CommunicationEvent[]>([]);
+  const [installerEmailStatusLoading, setInstallerEmailStatusLoading] = useState(false);
   const [advancingMaterialOrderId, setAdvancingMaterialOrderId] = useState<string | null>(null);
   const [materialDownloading, setMaterialDownloading] = useState<"PURCHASE_ORDER" | "DELIVERY_NOTE" | null>(null);
   const [workOrderDownloading, setWorkOrderDownloading] = useState<"WORK_ORDER" | "WORK_ORDER_CONFIRMATION" | null>(null);
@@ -485,6 +514,31 @@ export function LogisticsPanel({
     () => filteredWorkOrders.find((w) => w._id === selectedWorkOrderId) ?? filteredWorkOrders[0] ?? null,
     [filteredWorkOrders, selectedWorkOrderId],
   );
+  const refreshInstallerEmailStatus = useCallback(async () => {
+    if (!projectId || !selectedWorkOrder?._id) {
+      setInstallerEmailEvents([]);
+      return;
+    }
+    setInstallerEmailStatusLoading(true);
+    try {
+      const events = await fetchCommunicationFeed(projectId, 40);
+      setInstallerEmailEvents(
+        events.filter((event) =>
+          (event.type === "email_sent" || event.type === "email_failed") &&
+          event.metadata?.workOrderId === selectedWorkOrder._id &&
+          /monterju/i.test(event.title),
+        ),
+      );
+    } catch {
+      setInstallerEmailEvents([]);
+    } finally {
+      setInstallerEmailStatusLoading(false);
+    }
+  }, [projectId, selectedWorkOrder?._id]);
+  useEffect(() => {
+    void refreshInstallerEmailStatus();
+  }, [refreshInstallerEmailStatus]);
+  const latestInstallerEmailEvent = installerEmailEvents[0] ?? null;
   const selectedMaterialOrder = useMemo(
     () =>
       selectedWorkOrder
@@ -1359,13 +1413,14 @@ export function LogisticsPanel({
           projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
         }),
       });
-      const payload = await response.json();
+      const payload = await readJsonEnvelope(response);
       if (!payload.success) {
         toast.error(payload.error ?? "Emaila monterju ni bilo mogoče pripraviti.");
         return;
       }
       const draft = payload.data?.draft ?? payload.draft;
       setInstallerEmailDraft(draft ?? buildInstallerPreparationEmailDraft(saved));
+      await refreshInstallerEmailStatus();
       setInstallerEmailDialogOpen(true);
     } catch (error) {
       console.error(error);
@@ -1385,12 +1440,14 @@ export function LogisticsPanel({
           projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
         }),
       });
-      const payload = await response.json();
+      const payload = await readJsonEnvelope(response);
       if (!payload.success) {
         toast.error(payload.error ?? "Emaila monterju ni bilo mogoče poslati.");
         return;
       }
-      toast.success("Email monterju je bil poslan.");
+      const loggingFailed = payload.data?.loggingFailed || payload.loggingFailed;
+      toast.success(loggingFailed ? "Email monterju je bil poslan, zapis v komunikacijah pa ni uspel." : "Email monterju je bil poslan.");
+      await refreshInstallerEmailStatus();
       setInstallerEmailDialogOpen(false);
     } catch (error) {
       console.error(error);
@@ -2333,7 +2390,32 @@ export function LogisticsPanel({
                 </div>
               </div>
               {previewWorkOrder?._id ? (
-                <div className="mt-auto flex flex-wrap justify-end gap-2 pt-2">
+                <div className="mt-auto space-y-2 pt-2">
+                  <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                    {installerEmailStatusLoading ? (
+                      <span>Preverjam status emaila monterju ...</span>
+                    ) : latestInstallerEmailEvent ? (
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge
+                            className={
+                              latestInstallerEmailEvent.type === "email_sent"
+                                ? "border-green-500/30 bg-green-500/10 text-green-700"
+                                : "border-red-500/30 bg-red-500/10 text-red-700"
+                            }
+                          >
+                            {latestInstallerEmailEvent.type === "email_sent" ? "Email monterju poslan" : "Email monterju ni uspel"}
+                          </Badge>
+                          <span>{formatCommunicationTimestamp(latestInstallerEmailEvent.timestamp)}</span>
+                        </div>
+                        {latestInstallerEmailEvent.metadata?.to ? <div>Prejemnik: {latestInstallerEmailEvent.metadata.to}</div> : null}
+                        {latestInstallerEmailEvent.metadata?.subject ? <div>Zadeva: {latestInstallerEmailEvent.metadata.subject}</div> : null}
+                      </div>
+                    ) : (
+                      <span>Email monterju za ta delovni nalog še ni zabeležen kot poslan.</span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap justify-end gap-2">
                   <Button
                     type="button"
                     variant="outline"
@@ -2353,6 +2435,7 @@ export function LogisticsPanel({
                     },
                     workOrderDownloading === "WORK_ORDER",
                   )}
+                  </div>
                 </div>
               ) : null}
             </CardContent>
@@ -2940,6 +3023,13 @@ export function LogisticsPanel({
               Preglej podatke za pripravo montaže. Delovni nalog bo dodan kot PDF priponka.
             </DialogDescription>
           </DialogHeader>
+          {latestInstallerEmailEvent ? (
+            <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              Zadnji status: {latestInstallerEmailEvent.type === "email_sent" ? "poslano" : "neuspešno"}{" "}
+              {formatCommunicationTimestamp(latestInstallerEmailEvent.timestamp)}
+              {latestInstallerEmailEvent.metadata?.to ? `, prejemnik: ${latestInstallerEmailEvent.metadata.to}` : ""}
+            </div>
+          ) : null}
           <div className="grid gap-4 md:grid-cols-3">
             <label className="space-y-2 text-sm">
               <span className="font-medium">To</span>
@@ -2983,6 +3073,9 @@ export function LogisticsPanel({
               disabled={sendingInstallerEmail}
             />
           </label>
+          <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+            Priloga: delovni nalog PDF
+          </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setInstallerEmailDialogOpen(false)} disabled={sendingInstallerEmail}>
               Prekliči
