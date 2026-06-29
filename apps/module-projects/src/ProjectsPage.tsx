@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { ProjectList } from "./components/ProjectList";
 import { ProjectFilters } from "./components/ProjectFilters";
 import { ProjectKanban } from "./components/ProjectKanban";
+import { ProjectCalendar } from "./components/ProjectCalendar";
 import { ProjectWorkspace } from "./components/ProjectWorkspace";
 import { Toaster } from "./components/ui/sonner";
 import { Button } from "./components/ui/button";
@@ -21,6 +22,7 @@ const VIEW_STORAGE_KEY = "projects:view-mode";
 const VALID_TABS = ["zahteva", "offers", "logistics", "execution", "closing"] as const;
 type WorkspaceTab = (typeof VALID_TABS)[number];
 type ProjectLifecycleView = "active" | "closed" | "archived" | "all";
+type ProjectsViewMode = "list" | "kanban" | "calendar";
 const shownForbiddenProjectToasts = new Set<string>();
 
 function parseProjectRoute(pathname: string) {
@@ -61,6 +63,7 @@ function toSummary(project: ProjectDetails): ProjectSummary {
     categories: project.categories ?? [],
     requirementsTemplateVariantSlug: project.requirementsTemplateVariantSlug,
     phaseSignals: project.phaseSignals,
+    calendarEntries: project.calendarEntries ?? [],
   };
 }
 
@@ -115,7 +118,7 @@ export function ProjectsPage() {
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
-  const [projectsViewMode, setProjectsViewMode] = useState<"list" | "kanban">("list");
+  const [projectsViewMode, setProjectsViewMode] = useState<ProjectsViewMode>("list");
   const [searchQuery, setSearchQuery] = useState("");
   const [projectLifecycleView, setProjectLifecycleView] = useState<ProjectLifecycleView>("active");
   const [phaseFilter, setPhaseFilter] = useState("all");
@@ -152,7 +155,7 @@ export function ProjectsPage() {
 
   useEffect(() => {
     const persisted = window.localStorage.getItem(VIEW_STORAGE_KEY);
-    if (persisted === "list" || persisted === "kanban") {
+    if (persisted === "list" || persisted === "kanban" || persisted === "calendar") {
       setProjectsViewMode(persisted);
     }
   }, []);
@@ -723,7 +726,7 @@ export function ProjectsPage() {
     });
   }, [projects, searchQuery, phaseFilter, categoryFilter]);
 
-  const handleViewModeChange = (mode: "list" | "kanban") => {
+  const handleViewModeChange = (mode: ProjectsViewMode) => {
     setProjectsViewMode(mode);
     window.localStorage.setItem(VIEW_STORAGE_KEY, mode);
   };
@@ -784,6 +787,14 @@ export function ProjectsPage() {
                   >
                     ⊞ Kanban
                   </button>
+                  <button
+                    className={`vt-btn ${projectsViewMode === "calendar" ? "active" : ""}`}
+                    id="vt-calendar"
+                    type="button"
+                    onClick={() => handleViewModeChange("calendar")}
+                  >
+                    ◷ Koledar
+                  </button>
                 </div>
                 {!isExecutionOnlyViewer ? (
                   <>
@@ -828,13 +839,19 @@ export function ProjectsPage() {
                 readOnly={isExecutionOnlyViewer}
                 hideFinancials={isExecutionOnlyViewer}
               />
-            ) : (
+            ) : projectsViewMode === "kanban" ? (
               <ProjectKanban
                 projects={filteredProjects}
                 categoryLookup={categoryLookup}
                 onSelectProject={handleSelectProject}
                 onProjectDrop={handleProjectDrop}
                 hideFinancials={isExecutionOnlyViewer}
+              />
+            ) : (
+              <ProjectCalendar
+                projects={filteredProjects}
+                categoryLookup={categoryLookup}
+                onSelectProject={handleSelectProject}
               />
             )}
           </div>
