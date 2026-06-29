@@ -46,6 +46,7 @@ const router = Router();
 const requireProjectWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]);
 const requirePreparationAccess = requireRoles([ROLE_ORGANIZER]);
 const requireWorkOrderWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_EXECUTION, ROLE_ORGANIZER]);
+const requireOfferConfirmationWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_ORGANIZER]);
 
 router.get('/', listProjects);
 router.get('/offer-templates', listOfferTemplates);
@@ -79,7 +80,7 @@ router.get('/:projectId/offer', getActiveOffer);
 router.post('/:projectId/offers/:offerId/confirm', requireProjectWrite, logisticsController.confirmOffer);
 router.get('/:projectId/execution-definition', logisticsController.getProjectExecutionDefinition);
 router.put('/:projectId/execution-definition', requireWorkOrderWrite, logisticsController.updateProjectExecutionDefinition);
-router.post('/:projectId/logistics/cancel-confirmation', requirePreparationAccess, cancelOfferConfirmation);
+router.post('/:projectId/logistics/cancel-confirmation', requireOfferConfirmationWrite, cancelOfferConfirmation);
 router.get('/:projectId/logistics', logisticsController.getProjectLogistics);
 router.get('/:projectId/logistics/installer-availability/:employeeId', requirePreparationAccess, logisticsController.getInstallerAvailability);
 router.put('/:projectId/work-orders/:workOrderId', requireWorkOrderWrite, logisticsController.updateWorkOrder);

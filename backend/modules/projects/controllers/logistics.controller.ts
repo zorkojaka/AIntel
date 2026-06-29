@@ -1915,7 +1915,7 @@ export async function cancelOfferConfirmation(req: Request, res: Response, next:
     const projectClient = await resolveProjectClient(project);
     const now = new Date();
 
-    offer.status = 'cancelled';
+    offer.status = offer.sentAt ? 'sent' : 'draft';
     await offer.save();
 
     const replacementConfirmedOffer = await OfferVersionModel.findOne({
