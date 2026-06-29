@@ -13,7 +13,15 @@ type DodajVariantoDialogProps = {
 };
 
 function productBrand(product: CenikProduct) {
-  return product.classification?.manufacturer || product.proizvajalec || "Brez proizvajalca";
+  const value = product.classification?.manufacturer || product.proizvajalec || "Brez proizvajalca";
+  const trimmed = value.trim();
+  if (!trimmed) return "Brez proizvajalca";
+  if (trimmed.toLocaleLowerCase("sl-SI") === "reolink") return "Reolink";
+  return trimmed;
+}
+
+function brandKey(value: string) {
+  return value.trim().toLocaleLowerCase("sl-SI");
 }
 
 function isIpCamera(product: CenikProduct) {
@@ -32,22 +40,10 @@ function isCameraLikeProduct(product: CenikProduct) {
 
 function cameraMatches(camera: CenikProduct, filters: { brand?: string; housing?: string; resolution?: string }) {
   return (
-    (!filters.brand || productBrand(camera) === filters.brand) &&
+    (!filters.brand || brandKey(productBrand(camera)) === brandKey(filters.brand)) &&
     (!filters.housing || camera.classification?.cameraHousing === filters.housing) &&
     (!filters.resolution || String(camera.classification?.maxResolutionMP) === filters.resolution)
   );
-}
-
-function defaultBrand(values: string[]) {
-  return values.includes("DVC") ? "DVC" : values[0] ?? "";
-}
-
-function defaultHousing(values: string[]) {
-  return values.includes("Bullet") ? "Bullet" : values[0] ?? "";
-}
-
-function defaultResolution(values: string[]) {
-  return values.includes("4") ? "4" : values[0] ?? "";
 }
 
 export function DodajVariantoDialog({ open, onOpenChange, onConfirm, cameraMode = "ip" }: DodajVariantoDialogProps) {
@@ -73,8 +69,16 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm, cameraMode 
     () => products.filter((product) => cameraMode === "reolink_wifi" ? isReolinkProduct(product) && isCameraLikeProduct(product) : isIpCamera(product)),
     [cameraMode, products],
   );
-  const brands = useMemo(() => Array.from(new Set(cameras.map(productBrand))).sort((a, b) => a.localeCompare(b, "sl")), [cameras]);
-  const brandCameras = useMemo(() => cameras.filter((camera) => !brand || productBrand(camera) === brand), [brand, cameras]);
+  const brands = useMemo(() => {
+    const byKey = new Map<string, string>();
+    for (const camera of cameras) {
+      const display = productBrand(camera);
+      const key = brandKey(display);
+      if (!byKey.has(key)) byKey.set(key, display);
+    }
+    return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b, "sl"));
+  }, [cameras]);
+  const brandCameras = useMemo(() => cameras.filter((camera) => !brand || brandKey(productBrand(camera)) === brandKey(brand)), [brand, cameras]);
   const housings = useMemo(
     () =>
       Array.from(
@@ -93,12 +97,9 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm, cameraMode 
   );
 
   useEffect(() => {
-    if (!brand && brands.length) setBrand(defaultBrand(brands));
-    else if (brand && !brands.includes(brand)) setBrand(defaultBrand(brands));
-    if (!housing && housings.length) setHousing(defaultHousing(housings));
-    else if (housing && !housings.includes(housing)) setHousing(defaultHousing(housings));
-    if (!resolution && resolutions.length) setResolution(defaultResolution(resolutions));
-    else if (resolution && !resolutions.includes(resolution)) setResolution(defaultResolution(resolutions));
+    if (brand && !brands.some((entry) => brandKey(entry) === brandKey(brand))) setBrand("");
+    if (housing && !housings.includes(housing)) setHousing("");
+    if (resolution && !resolutions.includes(resolution)) setResolution("");
   }, [brand, brands, housing, housings, resolution, resolutions]);
 
   const filtered = useMemo(
@@ -203,12 +204,18 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm, cameraMode 
 }
 
 function FilterStrip({ label, values, selected, onSelect }: { label: string; values: string[]; selected: string; onSelect: (value: string) => void }) {
+  const options = ["Vse", ...values];
   return (
     <div className="zahteva-filter-row">
       <span>{label}</span>
       <div>
-        {values.map((value) => (
-          <button key={value} type="button" className={selected === value ? "is-active" : ""} onClick={() => onSelect(value)}>
+        {options.map((value) => (
+          <button
+            key={value}
+            type="button"
+            className={value === "Vse" ? (!selected ? "is-active" : "") : selected === value ? "is-active" : ""}
+            onClick={() => onSelect(value === "Vse" ? "" : value)}
+          >
             {value}
           </button>
         ))}

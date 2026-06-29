@@ -95,8 +95,6 @@ export function ZahtevaView({ project, onProjectRequestChanged, onNavigateOffer 
         </div>
       </div>
 
-      <TipProjektaTrak onAddVideonadzor={addVideonadzor} onAddWifiKamere={addWifiKamere} onAddAlarm={addAlarm} />
-
       <div className="zahteva-systems">
         {zahteva.sistemi.map((sistem) => (
           <SistemBlok
@@ -122,6 +120,8 @@ export function ZahtevaView({ project, onProjectRequestChanged, onNavigateOffer 
         ))}
         {zahteva.sistemi.length === 0 ? <Card className="p-4 text-sm text-muted-foreground">Izberi tip projekta za prvo zahtevo.</Card> : null}
       </div>
+
+      <TipProjektaTrak onAddVideonadzor={addVideonadzor} onAddWifiKamere={addWifiKamere} onAddAlarm={addAlarm} />
 
       <SpodnjiCena zahteva={zahteva} productById={productById} onNavigateOffer={onNavigateOffer} />
     </div>
