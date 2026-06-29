@@ -275,6 +275,17 @@ export function ProjectWorkspace({
     executionSaveHandlerRef.current = handler;
   }, []);
 
+  useEffect(() => {
+    setIsOfferEditorDirty(false);
+    setIsUnsavedOfferDialogOpen(false);
+    pendingOfferNavigationRef.current = null;
+    setIsClientEditing(false);
+    setIsRequirementsSummaryEditing(false);
+    setIsUnsavedPanelDialogOpen(false);
+    pendingPanelCloseRef.current = null;
+    panelDirtyRef.current = false;
+  }, [project?.id]);
+
   const closeUnsavedOfferDialog = useCallback(() => {
     setIsUnsavedOfferDialogOpen(false);
     pendingOfferNavigationRef.current = null;
@@ -636,7 +647,7 @@ export function ProjectWorkspace({
     action();
   };
 
-  const saveClientPanel = useCallback(async () => {
+  const saveClientPanelCore = useCallback(async () => {
     if (!project || clientSaving) return false;
     setClientSaving(true);
     try {
@@ -729,6 +740,17 @@ export function ProjectWorkspace({
     setProject,
     templates,
   ]);
+
+  const saveClientPanel = useCallback(async () => {
+    if (activeTab === "offers" && isOfferEditorDirty) {
+      pendingOfferNavigationRef.current = async () => {
+        await saveClientPanelCore();
+      };
+      setIsUnsavedOfferDialogOpen(true);
+      return false;
+    }
+    return saveClientPanelCore();
+  }, [activeTab, isOfferEditorDirty, saveClientPanelCore]);
 
   const saveRequirementsSummary = useCallback(async () => {
     if (!project || isSavingRequirements) return false;

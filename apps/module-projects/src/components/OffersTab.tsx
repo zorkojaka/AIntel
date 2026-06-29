@@ -454,7 +454,7 @@ export function OffersTab({
   const resetToEmptyOffer = useCallback(() => {
     setSelectedOfferId(null);
     setTitle("Ponudba");
-    setPaymentTerms("");
+    setPaymentTerms(defaultPaymentTerms);
     setComment("");
     setItems(ensureTrailingBlank([]));
     setGlobalDiscountPercent(0);
@@ -469,11 +469,22 @@ export function OffersTab({
     setTotalNetAfterDiscount(0);
     setTotalGrossAfterDiscount(0);
     setDiscountAmount(0);
-    setLastSavedSnapshot(EMPTY_OFFER_SNAPSHOT);
+    setLastSavedSnapshot(
+      createOfferEditorSnapshot({
+        title: "Ponudba",
+        paymentTerms: defaultPaymentTerms,
+        comment: "",
+        items: [],
+        useGlobalDiscount: false,
+        usePerItemDiscount: false,
+        vatMode: 22,
+        globalDiscountPercent: 0,
+      })
+    );
     setLinkedServiceSuggestions({});
     setLoadingLinkedServiceSuggestions({});
     setManualKmQuantities({});
-  }, []);
+  }, [defaultPaymentTerms]);
 
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
 
@@ -518,9 +529,10 @@ const loadOfferById = useCallback(async (offerId: string) => {
       const offerKey = (offer as any)?._id ?? (offer as any)?.id ?? offerId;
       const normalizedTerms = (offer.paymentTerms ?? "").trim();
       const shouldUseDefaultTerms = normalizedTerms.length === 0;
+      const effectivePaymentTerms = shouldUseDefaultTerms ? defaultPaymentTerms : offer.paymentTerms ?? "";
       const alreadyInitialized = paymentTermsInitRef.current[offerKey] === true;
       if (!alreadyInitialized) {
-        setPaymentTerms(shouldUseDefaultTerms ? defaultPaymentTerms : offer.paymentTerms ?? "");
+        setPaymentTerms(effectivePaymentTerms);
         paymentTermsInitRef.current[offerKey] = true;
       } else if (!shouldUseDefaultTerms) {
         setPaymentTerms(offer.paymentTerms ?? "");
@@ -566,7 +578,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
       setLastSavedSnapshot(
         createOfferEditorSnapshot({
           title: offer.baseTitle || "Ponudba",
-          paymentTerms: offer.paymentTerms ?? "",
+          paymentTerms: effectivePaymentTerms,
           comment: offer.comment ?? "",
           items: mapped,
           useGlobalDiscount: offer.useGlobalDiscount ?? false,
