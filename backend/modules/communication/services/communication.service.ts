@@ -7,6 +7,7 @@ import type {
   CommunicationSenderSettings,
   CommunicationTemplate,
 } from "../../../../shared/types/communication";
+import { isValidObjectId } from "mongoose";
 import { stripAppendedFooter } from "../../../../shared/utils/communication-footer";
 import { CommunicationSenderSettingsModel } from "../schemas/sender-settings";
 import { CommunicationTemplateModel } from "../schemas/template";
@@ -1010,6 +1011,10 @@ export async function sendInstallerPreparationEmail(input: {
     role?: string | null;
   } | null;
 }) {
+  if (!isValidObjectId(input.workOrderId)) {
+    throw new Error("Delovni nalog ni pravilno določen.");
+  }
+
   const senderSettings = await getCommunicationSenderSettings();
   if (!senderSettings.enabled) {
     throw new Error("Komunikacija po emailu ni omogočena.");
