@@ -29,6 +29,17 @@ import type { OfferVersionSummary } from '@aintel/shared/types/offers';
 
 type SendStatus = 'idle' | 'sending' | 'queued' | 'sent' | 'failed';
 type SendProgressContext = { offerId: string; subject: string; startedAtMs: number };
+type SavedOfferEmailDraft = {
+  templateId?: string;
+  to: string;
+  cc: string;
+  bcc: string;
+  subject: string;
+  body: string;
+  selectedAttachments: CommunicationAttachmentType[];
+  selectedOfferIds: string[];
+  savedAt: string;
+};
 
 interface OfferCommunicationComposeDialogProps {
   open: boolean;
@@ -76,6 +87,49 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function buildSavedDraftKey(projectId: string, offerId: string | null) {
+  return `aintel:offer-email-draft:${projectId}:${offerId || 'unsaved'}`;
+}
+
+function readSavedOfferEmailDraft(key: string): SavedOfferEmailDraft | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<SavedOfferEmailDraft>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      templateId: typeof parsed.templateId === 'string' ? parsed.templateId : '',
+      to: typeof parsed.to === 'string' ? parsed.to : '',
+      cc: typeof parsed.cc === 'string' ? parsed.cc : '',
+      bcc: typeof parsed.bcc === 'string' ? parsed.bcc : '',
+      subject: typeof parsed.subject === 'string' ? parsed.subject : '',
+      body: typeof parsed.body === 'string' ? parsed.body : '',
+      selectedAttachments: Array.isArray(parsed.selectedAttachments)
+        ? parsed.selectedAttachments.filter((entry): entry is CommunicationAttachmentType => entry === 'offer_pdf' || entry === 'project_pdf')
+        : [],
+      selectedOfferIds: Array.isArray(parsed.selectedOfferIds)
+        ? parsed.selectedOfferIds.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+        : [],
+      savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function formatSavedDraftTime(value?: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return '';
+  return new Intl.DateTimeFormat('sl-SI', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
 const ATTACHMENT_OPTIONS: Array<{ value: CommunicationAttachmentType; label: string }> = [
   { value: 'offer_pdf', label: 'PDF ponudbe' },
   { value: 'project_pdf', label: 'Opisi produktov' },
@@ -115,9 +169,11 @@ export function OfferCommunicationComposeDialog({
   const [selectedAttachments, setSelectedAttachments] = useState<CommunicationAttachmentType[]>([]);
   const [selectedOfferIds, setSelectedOfferIds] = useState<string[]>([]);
   const [isDirty, setIsDirty] = useState(false);
+  const [savedDraftAt, setSavedDraftAt] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const normalizedCustomerEmail = useMemo(() => customerEmail.trim(), [customerEmail]);
+  const savedDraftKey = useMemo(() => buildSavedDraftKey(projectId, offerId), [offerId, projectId]);
 
   const placeholderContext = useMemo(
     () => ({
@@ -182,6 +238,7 @@ export function OfferCommunicationComposeDialog({
 
         const activeTemplates = nextTemplates.filter((entry) => entry.isActive);
         const defaultTemplate = activeTemplates[0] ?? null;
+        const savedDraft = readSavedOfferEmailDraft(savedDraftKey);
         const initialContext = {
           'customer.name': customerName || '',
           'customer.email': normalizedCustomerEmail,
@@ -197,15 +254,16 @@ export function OfferCommunicationComposeDialog({
 
         setTemplates(activeTemplates);
         setSenderSettings(nextSender);
-        setSelectedTemplateId(defaultTemplate?.id ?? '');
-        setTo(normalizedCustomerEmail);
-        setCc(nextSender?.defaultCc ?? '');
-        setBcc(nextSender?.defaultBcc ?? '');
-        setSubject(defaultTemplate ? replacePlaceholders(defaultTemplate.subjectTemplate, initialContext) : '');
-        setBody(defaultTemplate ? replacePlaceholders(defaultTemplate.bodyTemplate, initialContext) : '');
-        setSelectedAttachments(defaultTemplate?.defaultAttachments ?? ['offer_pdf']);
-        setSelectedOfferIds(offerId ? [offerId] : []);
-        setIsDirty(false);
+        setSelectedTemplateId(savedDraft?.templateId ?? defaultTemplate?.id ?? '');
+        setTo(savedDraft?.to ?? normalizedCustomerEmail);
+        setCc(savedDraft?.cc ?? nextSender?.defaultCc ?? '');
+        setBcc(savedDraft?.bcc ?? nextSender?.defaultBcc ?? '');
+        setSubject(savedDraft?.subject ?? (defaultTemplate ? replacePlaceholders(defaultTemplate.subjectTemplate, initialContext) : ''));
+        setBody(savedDraft?.body ?? (defaultTemplate ? replacePlaceholders(defaultTemplate.bodyTemplate, initialContext) : ''));
+        setSelectedAttachments(savedDraft?.selectedAttachments ?? defaultTemplate?.defaultAttachments ?? ['offer_pdf']);
+        setSelectedOfferIds(savedDraft?.selectedOfferIds.length ? savedDraft.selectedOfferIds : offerId ? [offerId] : []);
+        setSavedDraftAt(savedDraft?.savedAt || null);
+        setIsDirty(Boolean(savedDraft));
         setSendError(null);
         setSendStatus('idle');
         setSendStatusText('');
@@ -222,6 +280,7 @@ export function OfferCommunicationComposeDialog({
         setBody('');
         setSelectedAttachments(['offer_pdf']);
         setSelectedOfferIds(offerId ? [offerId] : []);
+        setSavedDraftAt(null);
         setIsDirty(false);
         setSendError(null);
         setSendStatus('idle');
@@ -238,7 +297,7 @@ export function OfferCommunicationComposeDialog({
     return () => {
       active = false;
     };
-  }, [companyName, customerName, normalizedCustomerEmail, offerId, offerNumber, offerTotal, open, projectName, reloadKey]);
+  }, [companyName, customerName, normalizedCustomerEmail, offerId, offerNumber, offerTotal, open, projectName, reloadKey, savedDraftKey]);
 
   const selectedTemplate = useMemo(
     () => templates.find((entry) => entry.id === selectedTemplateId) ?? null,
@@ -327,6 +386,42 @@ export function OfferCommunicationComposeDialog({
     }
   };
 
+  const handleSaveDraft = () => {
+    if (!offerId) {
+      toast.error('Osnutek lahko shraniš po shranjevanju ponudbe.');
+      return;
+    }
+    const savedAt = new Date().toISOString();
+    const draft: SavedOfferEmailDraft = {
+      templateId: selectedTemplateId,
+      to,
+      cc,
+      bcc,
+      subject,
+      body,
+      selectedAttachments,
+      selectedOfferIds,
+      savedAt,
+    };
+    try {
+      window.localStorage.setItem(savedDraftKey, JSON.stringify(draft));
+      setSavedDraftAt(savedAt);
+      setIsDirty(false);
+      toast.success('Osnutek emaila shranjen.');
+    } catch {
+      toast.error('Osnutka emaila ni bilo mogoče shraniti.');
+    }
+  };
+
+  const clearSavedDraft = () => {
+    try {
+      window.localStorage.removeItem(savedDraftKey);
+    } catch {
+      // Local draft cleanup is best-effort only.
+    }
+    setSavedDraftAt(null);
+  };
+
   const attachmentsDisabled = !offerId;
   const offerSelectionDisabled = !offerId;
   const senderDisabled = !senderSettings?.enabled;
@@ -365,6 +460,7 @@ export function OfferCommunicationComposeDialog({
         if (message.status === 'sent') {
           setSendStatus('sent');
           setSendStatusText('Email je bil uspešno poslan.');
+          clearSavedDraft();
           setIsDirty(false);
           return;
         }
@@ -377,6 +473,7 @@ export function OfferCommunicationComposeDialog({
       await onSent(result);
       setSendStatus('sent');
       setSendStatusText('Email je bil uspešno poslan.');
+      clearSavedDraft();
       setIsDirty(false);
     } catch (error) {
       setSendStatus('failed');
@@ -468,6 +565,11 @@ export function OfferCommunicationComposeDialog({
                     </div>
                   </>
                 ) : null}
+              </div>
+            ) : null}
+            {savedDraftAt ? (
+              <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                Shranjen osnutek: {formatSavedDraftTime(savedDraftAt)}
               </div>
             ) : null}
             <div className="grid gap-4 md:grid-cols-2">
@@ -629,6 +731,10 @@ export function OfferCommunicationComposeDialog({
         )}
         </div>
         <DialogFooter className="border-t px-4 py-3 sm:px-6">
+          <Button type="button" variant="outline" onClick={handleSaveDraft} disabled={loading || sending || !offerId}>
+            <Save className="mr-2 h-4 w-4" />
+            Shrani osnutek
+          </Button>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
             Prekliči
           </Button>
