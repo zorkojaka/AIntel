@@ -48,6 +48,9 @@ interface ExecutionPanelProps {
 type WorkOrderDraft = {
   status: WorkOrderStatus;
   executionNote: string;
+  scheduledAt: string | null;
+  scheduledConfirmedAt: string | null;
+  scheduledConfirmedBy: string | null;
   items: WorkOrder["items"];
 };
 
@@ -620,6 +623,10 @@ export function ExecutionPanel({
   const [photoContext, setPhotoContext] = useState<PhotoContext | null>(null);
   const [photoCountRefreshKey, setPhotoCountRefreshKey] = useState(0);
   const [newExtraItems, setNewExtraItems] = useState<NewExtraItemsState>({});
+  const [installerEmailOrderId, setInstallerEmailOrderId] = useState<string | null>(null);
+  const [installerEmailDraft, setInstallerEmailDraft] = useState({ to: "", cc: "", bcc: "", subject: "", body: "" });
+  const [preparingInstallerEmailId, setPreparingInstallerEmailId] = useState<string | null>(null);
+  const [sendingInstallerEmail, setSendingInstallerEmail] = useState(false);
 
   const workOrders = useMemo(() => rawWorkOrders, [rawWorkOrders]);
 
@@ -778,6 +785,9 @@ export function ExecutionPanel({
   const getInitialDraftValues = (order: WorkOrder) => ({
     status: order.status,
     executionNote: order.executionNote ?? "",
+    scheduledAt: order.scheduledAt ?? null,
+    scheduledConfirmedAt: order.scheduledConfirmedAt ?? null,
+    scheduledConfirmedBy: order.scheduledConfirmedBy ?? null,
     items: (order.items ?? []).map((item: WorkOrderItemDraft) => {
       const normalizedItem: WorkOrderItemDraft = {
         ...item,
@@ -839,6 +849,9 @@ export function ExecutionPanel({
       ...order,
       status: nextDraft.status,
       executionNote: nextDraft.executionNote,
+      scheduledAt: nextDraft.scheduledAt,
+      scheduledConfirmedAt: nextDraft.scheduledConfirmedAt,
+      scheduledConfirmedBy: nextDraft.scheduledConfirmedBy,
       items: nextDraft.items,
     });
   };
@@ -872,6 +885,9 @@ export function ExecutionPanel({
       ...order,
       status: current.status,
       executionNote: current.executionNote,
+      scheduledAt: current.scheduledAt,
+      scheduledConfirmedAt: current.scheduledConfirmedAt,
+      scheduledConfirmedBy: current.scheduledConfirmedBy,
       items: nextItems,
     });
   };
@@ -1103,6 +1119,8 @@ export function ExecutionPanel({
         : {
             workOrderId: orderId,
             status: overrides?.status ?? (draft.status === "issued" ? "in-progress" : draft.status ?? order.status),
+            scheduledAt: draft.scheduledAt ?? null,
+            scheduledConfirmedAt: draft.scheduledConfirmedAt ?? null,
             executionNote: draft.executionNote?.trim() ? draft.executionNote : null,
             items: buildItemPayload(draft.items ?? []),
           };
@@ -1130,6 +1148,9 @@ export function ExecutionPanel({
           [orderId]: {
             status: updatedDraft.status,
             executionNote: updatedDraft.executionNote,
+            scheduledAt: updatedDraft.scheduledAt,
+            scheduledConfirmedAt: updatedDraft.scheduledConfirmedAt,
+            scheduledConfirmedBy: updatedDraft.scheduledConfirmedBy,
             items: mergedItems,
           },
         }));
@@ -1168,6 +1189,132 @@ export function ExecutionPanel({
     },
     [workOrders, projectId, onWorkOrderUpdated, getDraftValues, refreshAfterMutation],
   );
+
+  const applyScheduleChange = (order: WorkOrder, value: string) => {
+    if (getOrderConfirmationState(order) === "signed_active") {
+      return;
+    }
+    updateDraft(order, {
+      scheduledAt: value || null,
+      scheduledConfirmedAt: null,
+      scheduledConfirmedBy: null,
+    });
+    setUnsavedChanges((prev) => ({ ...prev, [order._id]: true }));
+  };
+
+  const confirmSchedule = async (order: WorkOrder) => {
+    const draft = getDraftValues(order);
+    if (!draft.scheduledAt) {
+      toast.error("Najprej določi termin izvedbe.");
+      return;
+    }
+    const confirmedAt = new Date().toISOString();
+    const nextDraft = {
+      ...draft,
+      scheduledConfirmedAt: confirmedAt,
+      scheduledConfirmedBy: null,
+    };
+    updateDraft(order, nextDraft);
+    const saved = await saveWorkOrder(order._id, undefined, { draftOverride: nextDraft });
+    if (saved) {
+      toast.success("Termin potrjen.");
+    }
+  };
+
+  const unconfirmSchedule = async (order: WorkOrder) => {
+    const draft = getDraftValues(order);
+    const nextDraft = {
+      ...draft,
+      scheduledConfirmedAt: null,
+      scheduledConfirmedBy: null,
+    };
+    updateDraft(order, nextDraft);
+    const saved = await saveWorkOrder(order._id, undefined, { draftOverride: nextDraft });
+    if (saved) {
+      toast.success("Potrditev termina odstranjena.");
+    }
+  };
+
+  const openInstallerPreparationEmailDialog = async (order: WorkOrder) => {
+    const draft = getDraftValues(order);
+    if (!draft.scheduledAt) {
+      toast.error("Najprej določi termin izvedbe.");
+      return;
+    }
+    setPreparingInstallerEmailId(order._id);
+    try {
+      const nextDraft = draft.scheduledConfirmedAt
+        ? draft
+        : {
+            ...draft,
+            scheduledConfirmedAt: new Date().toISOString(),
+            scheduledConfirmedBy: null,
+          };
+      if (!draft.scheduledConfirmedAt) {
+        updateDraft(order, nextDraft);
+      }
+      const saved = await saveWorkOrder(order._id, undefined, { draftOverride: nextDraft });
+      if (!saved) return;
+      const response = await fetch(`/api/projects/${projectId}/work-orders/${order._id}/send-installer-preparation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          previewOnly: true,
+          projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
+        }),
+      });
+      const payload = await response.json();
+      if (!payload.success) {
+        toast.error(payload.error ?? "Emaila monterju ni bilo mogoče pripraviti.");
+        return;
+      }
+      const preparedDraft = payload.data?.draft ?? payload.draft;
+      if (!preparedDraft) {
+        toast.error("Emaila monterju ni bilo mogoče pripraviti.");
+        return;
+      }
+      setInstallerEmailDraft({
+        to: preparedDraft.to ?? "",
+        cc: preparedDraft.cc ?? "",
+        bcc: preparedDraft.bcc ?? "",
+        subject: preparedDraft.subject ?? "",
+        body: preparedDraft.body ?? "",
+      });
+      setInstallerEmailOrderId(order._id);
+    } catch (error) {
+      console.error(error);
+      toast.error("Emaila monterju ni bilo mogoče pripraviti.");
+    } finally {
+      setPreparingInstallerEmailId(null);
+    }
+  };
+
+  const sendInstallerPreparationEmail = async () => {
+    if (!installerEmailOrderId || sendingInstallerEmail) return;
+    setSendingInstallerEmail(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/work-orders/${installerEmailOrderId}/send-installer-preparation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...installerEmailDraft,
+          projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
+        }),
+      });
+      const payload = await response.json();
+      if (!payload.success) {
+        toast.error(payload.error ?? "Emaila monterju ni bilo mogoče poslati.");
+        return;
+      }
+      toast.success(payload.data?.loggingFailed || payload.loggingFailed ? "Email monterju je bil poslan, zapis v komunikacijah pa ni uspel." : "Email monterju je bil poslan.");
+      setInstallerEmailOrderId(null);
+    } catch (error) {
+      console.error(error);
+      toast.error("Emaila monterju ni bilo mogoče poslati.");
+    } finally {
+      setSendingInstallerEmail(false);
+    }
+  };
 
   const saveNewExtraItem = useCallback(
     async (order: WorkOrder, item: WorkOrderItemDraft) => {
@@ -2130,7 +2277,12 @@ export function ExecutionPanel({
                   const savingState = savingStates[order._id];
                   const isSavingOrder = savingState === "saving";
                   const orderHasUnsavedChanges = !!unsavedChanges[order._id];
-                  const executionDateLabel = formatExecutionDateTime(order.scheduledAt ?? null);
+                  const executionDateLabel = formatExecutionDateTime(draft.scheduledAt ?? null);
+                  const scheduleConfirmedLabel = draft.scheduledConfirmedAt
+                    ? `Termin potrjen ${formatExecutionDateTime(draft.scheduledConfirmedAt)}${draft.scheduledConfirmedBy ? ` (${draft.scheduledConfirmedBy})` : ""}`
+                    : draft.scheduledAt
+                      ? "Termin še ni potrjen"
+                      : "Termin ni določen";
                   const executionDurationLabel = formatExecutionDuration(items);
                   const executionTeamLabel = (order.assignedEmployeeIds ?? [])
                     .map((employeeId) => employeeNameById.get(employeeId) ?? null)
@@ -2145,17 +2297,21 @@ export function ExecutionPanel({
                           collapsible={collapsibleMaterialOrders}
                           projectId={projectId}
                           technicianNote={order.notes ?? ""}
-                          executionDate={order.scheduledAt ?? null}
-                          executionDateConfirmedAt={order.scheduledConfirmedAt ?? null}
-                          executionDateConfirmedBy={order.scheduledConfirmedBy ?? null}
+                          executionDate={draft.scheduledAt ?? null}
+                          executionDateConfirmedAt={draft.scheduledConfirmedAt ?? null}
+                          executionDateConfirmedBy={draft.scheduledConfirmedBy ?? null}
                           executionDurationLabel={null}
                           mainInstallerId={order.mainInstallerId ?? null}
                           executionTeamIds={order.assignedEmployeeIds ?? []}
                           installerAvailability={[]}
                           employees={employees}
-                          onExecutionDateChange={() => {}}
-                          onConfirmExecutionDate={() => {}}
-                          onUnconfirmExecutionDate={() => {}}
+                          onExecutionDateChange={(value) => applyScheduleChange(order, value)}
+                          onConfirmExecutionDate={() => {
+                            void confirmSchedule(order);
+                          }}
+                          onUnconfirmExecutionDate={() => {
+                            void unconfirmSchedule(order);
+                          }}
                           onMainInstallerChange={() => {}}
                           onToggleExecutionTeam={() => {}}
                           onPickupMethodChange={(value) => updateMaterialDraft(materialOrder, { pickupMethod: value })}
@@ -2228,6 +2384,57 @@ export function ExecutionPanel({
                           </Badge>
                         </CardHeader>
                         <CardContent className="space-y-4">
+                        {!isWorkOrderStatusCompleted ? (
+                        <div className="rounded-md border border-border/70 bg-muted/20 p-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                            <div className="grid flex-1 gap-2">
+                              <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                Dodaten termin
+                              </label>
+                              <Input
+                                type="datetime-local"
+                                value={draft.scheduledAt ?? ""}
+                                onChange={(event) => applyScheduleChange(order, event.target.value)}
+                                disabled={isConfirmationLocked || isSavingOrder}
+                                className="max-w-sm"
+                              />
+                              <p className="text-xs text-muted-foreground">{scheduleConfirmedLabel}</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {draft.scheduledConfirmedAt ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => void unconfirmSchedule(order)}
+                                  disabled={isConfirmationLocked || isSavingOrder}
+                                >
+                                  Prekliči termin
+                                </Button>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => void confirmSchedule(order)}
+                                  disabled={isConfirmationLocked || isSavingOrder || !draft.scheduledAt}
+                                >
+                                  Potrdi termin
+                                </Button>
+                              )}
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => void openInstallerPreparationEmailDialog(order)}
+                                disabled={isConfirmationLocked || isSavingOrder || !draft.scheduledAt || preparingInstallerEmailId === order._id}
+                              >
+                                {preparingInstallerEmailId === order._id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                                Pošlji email monterju
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                        ) : null}
                         {isConfirmationLocked ? (
                           <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-900">
                             Potrdilo delovnega naloga je podpisano. Potrjene izvedbene vrednosti so zaklenjene.
@@ -3063,6 +3270,79 @@ export function ExecutionPanel({
                 "Nadaljuj"
               )}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(installerEmailOrderId)} onOpenChange={(open) => {
+        if (!open && !sendingInstallerEmail) {
+          setInstallerEmailOrderId(null);
+        }
+      }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Pošlji email monterju</DialogTitle>
+            <DialogDescription>
+              Preglej podatke za dodaten termin in jih po potrebi dopolni pred pošiljanjem.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1 sm:col-span-3">
+                <label className="text-sm font-medium">Za</label>
+                <Input
+                  value={installerEmailDraft.to}
+                  onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, to: event.target.value }))}
+                  disabled={sendingInstallerEmail}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Cc</label>
+                <Input
+                  value={installerEmailDraft.cc}
+                  onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, cc: event.target.value }))}
+                  disabled={sendingInstallerEmail}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Bcc</label>
+                <Input
+                  value={installerEmailDraft.bcc}
+                  onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, bcc: event.target.value }))}
+                  disabled={sendingInstallerEmail}
+                />
+              </div>
+              <div className="space-y-1 sm:col-span-3">
+                <label className="text-sm font-medium">Zadeva</label>
+                <Input
+                  value={installerEmailDraft.subject}
+                  onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, subject: event.target.value }))}
+                  disabled={sendingInstallerEmail}
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Sporočilo</label>
+              <Textarea
+                rows={14}
+                value={installerEmailDraft.body}
+                onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setInstallerEmailDraft((prev) => ({ ...prev, body: event.target.value }))}
+                disabled={sendingInstallerEmail}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setInstallerEmailOrderId(null)} disabled={sendingInstallerEmail}>
+                Prekliči
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void sendInstallerPreparationEmail()}
+                disabled={sendingInstallerEmail || !installerEmailDraft.to.trim() || !installerEmailDraft.subject.trim() || !installerEmailDraft.body.trim()}
+              >
+                {sendingInstallerEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                Pošlji email
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
