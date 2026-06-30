@@ -50,12 +50,14 @@ function DownloadActionButton({
   label,
   disabled,
   downloading,
-  onClick,
+  onPreview,
+  onDownload,
 }: {
   label: string;
   disabled: boolean;
   downloading: boolean;
-  onClick: () => void;
+  onPreview: () => void;
+  onDownload: () => void;
 }) {
   return (
     <div className="inline-flex h-8 items-center rounded-md border border-border/70 bg-background">
@@ -65,7 +67,7 @@ function DownloadActionButton({
         size="sm"
         className="h-8 rounded-none border-r border-border/70 px-3"
         disabled={disabled}
-        onClick={onClick}
+        onClick={onPreview}
       >
         {label}
       </Button>
@@ -75,7 +77,7 @@ function DownloadActionButton({
         size="icon"
         className="h-8 w-8 rounded-none"
         disabled={disabled}
-        onClick={onClick}
+        onClick={onDownload}
         aria-label={label}
       >
         {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
@@ -270,6 +272,11 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
     }
   };
 
+  const handlePreview = () => {
+    if (!draftVersion || !projectId) return;
+    window.open(`/api/projects/${projectId}/invoices/${draftVersion._id}/pdf?mode=inline`, "_blank", "noopener,noreferrer");
+  };
+
   const handleDownloadCreditNote = async () => {
     if (!draftVersion || !projectId) return;
     try {
@@ -284,6 +291,11 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
     } finally {
       setCreditDownloading(false);
     }
+  };
+
+  const handlePreviewCreditNote = () => {
+    if (!draftVersion || !projectId) return;
+    window.open(`/api/projects/${projectId}/invoices/${draftVersion._id}/pdf?docType=CREDIT_NOTE&mode=inline`, "_blank", "noopener,noreferrer");
   };
 
   if (!projectId) {
@@ -505,16 +517,18 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
           <div className="flex flex-wrap gap-2 justify-between">
             <div className="flex gap-2">
               <DownloadActionButton
-                label="PDF račun"
+                label="Poglej račun"
                 disabled={!draftVersion || downloading}
                 downloading={downloading}
-                onClick={handleDownload}
+                onPreview={handlePreview}
+                onDownload={handleDownload}
               />
               <DownloadActionButton
-                label="PDF dobropis"
+                label="Poglej dobropis"
                 disabled={!draftVersion || creditDownloading}
                 downloading={creditDownloading}
-                onClick={handleDownloadCreditNote}
+                onPreview={handlePreviewCreditNote}
+                onDownload={handleDownloadCreditNote}
               />
               <Button variant="outline" disabled>
                 Pošlji račun stranki

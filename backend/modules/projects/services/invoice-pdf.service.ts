@@ -6,6 +6,7 @@ import { renderDocumentHtml, type DocumentPreviewContext } from './document-rend
 import { getCompanySettings, getPdfDocumentSettings } from './pdf-settings.service';
 import { getSettings } from '../../settings/settings.service';
 import type { DocumentNumberingKind } from './document-numbering.service';
+import { formatClientAddress, resolveProjectClient } from './project.service';
 
 export interface InvoiceVersion {
   _id: string;
@@ -51,6 +52,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
     getPdfDocumentSettings(docType),
     getSettings(),
   ]);
+  const projectClient = await resolveProjectClient(project);
 
   const documentNumber = invoice.invoiceNumber ?? `${project.id}-${invoice.versionNumber}`;
   const issueDate = invoice.issuedAt ? new Date(invoice.issuedAt) : new Date(invoice.createdAt ?? Date.now());
@@ -90,9 +92,9 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
 
   const customer = project.customer
     ? {
-        name: project.customer.name ?? '',
-        address: formatCustomerAddress(project.customer.address),
-        taxId: project.customer.taxId ?? '',
+        name: projectClient?.name ?? project.customer.name ?? '',
+        address: formatCustomerAddress(projectClient ? formatClientAddress(projectClient, project.customer.address) : project.customer.address),
+        taxId: project.customer.taxId ?? projectClient?.vatNumber ?? '',
       }
     : undefined;
 
