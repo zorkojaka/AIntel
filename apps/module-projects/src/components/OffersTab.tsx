@@ -454,7 +454,7 @@ export function OffersTab({
   const resetToEmptyOffer = useCallback(() => {
     setSelectedOfferId(null);
     setTitle("Ponudba");
-    setPaymentTerms("");
+    setPaymentTerms(defaultPaymentTerms);
     setComment("");
     setItems(ensureTrailingBlank([]));
     setGlobalDiscountPercent(0);
@@ -469,11 +469,22 @@ export function OffersTab({
     setTotalNetAfterDiscount(0);
     setTotalGrossAfterDiscount(0);
     setDiscountAmount(0);
-    setLastSavedSnapshot(EMPTY_OFFER_SNAPSHOT);
+    setLastSavedSnapshot(
+      createOfferEditorSnapshot({
+        title: "Ponudba",
+        paymentTerms: defaultPaymentTerms,
+        comment: "",
+        items: [],
+        useGlobalDiscount: false,
+        usePerItemDiscount: false,
+        vatMode: 22,
+        globalDiscountPercent: 0,
+      })
+    );
     setLinkedServiceSuggestions({});
     setLoadingLinkedServiceSuggestions({});
     setManualKmQuantities({});
-  }, []);
+  }, [defaultPaymentTerms]);
 
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
 
@@ -518,9 +529,10 @@ const loadOfferById = useCallback(async (offerId: string) => {
       const offerKey = (offer as any)?._id ?? (offer as any)?.id ?? offerId;
       const normalizedTerms = (offer.paymentTerms ?? "").trim();
       const shouldUseDefaultTerms = normalizedTerms.length === 0;
+      const effectivePaymentTerms = shouldUseDefaultTerms ? defaultPaymentTerms : offer.paymentTerms ?? "";
       const alreadyInitialized = paymentTermsInitRef.current[offerKey] === true;
       if (!alreadyInitialized) {
-        setPaymentTerms(shouldUseDefaultTerms ? defaultPaymentTerms : offer.paymentTerms ?? "");
+        setPaymentTerms(effectivePaymentTerms);
         paymentTermsInitRef.current[offerKey] = true;
       } else if (!shouldUseDefaultTerms) {
         setPaymentTerms(offer.paymentTerms ?? "");
@@ -566,7 +578,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
       setLastSavedSnapshot(
         createOfferEditorSnapshot({
           title: offer.baseTitle || "Ponudba",
-          paymentTerms: offer.paymentTerms ?? "",
+          paymentTerms: effectivePaymentTerms,
           comment: offer.comment ?? "",
           items: mapped,
           useGlobalDiscount: offer.useGlobalDiscount ?? false,
@@ -2245,11 +2257,42 @@ const buildOfferPdfFilename = (
     await confirmOffer(saved._id);
   }, [ensureSavedOffer, confirmOffer]);
 
+  const handleCancelCurrentOfferConfirmation = useCallback(async () => {
+    const offerId = currentOffer?._id ?? selectedOfferId;
+    if (!offerId) return;
+    if (!window.confirm("Res želiš preklicati potrditev ponudbe? Ponudbo bo mogoče popraviti in znova potrditi.")) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/logistics/cancel-confirmation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ offerVersionId: offerId }),
+      });
+      const payload = await response.json();
+      if (!payload.success) {
+        toast.error(payload.error ?? "Potrditve ponudbe ni mogoče preklicati.");
+        return;
+      }
+      toast.success("Potrditev ponudbe je bila preklicana.");
+      await refreshAfterMutation(
+        () => refreshOffers(offerId, true),
+        async () => {
+          await fetchProjectDetails();
+        },
+      );
+    } catch (error) {
+      toast.error("Potrditve ponudbe ni mogoče preklicati.");
+    } finally {
+      setSaving(false);
+    }
+  }, [currentOffer?._id, fetchProjectDetails, projectId, refreshAfterMutation, refreshOffers, selectedOfferId]);
+
   const currentStatus = (currentOffer?.status ?? "").toUpperCase();
   const isCurrentAccepted = currentStatus === "ACCEPTED";
-  const isCurrentCancelled = currentStatus === "CANCELLED";
   const canConfirmCurrentOffer =
-    !!currentOffer?._id && !isCurrentAccepted && !isCurrentCancelled;
+    !!currentOffer?._id && !isCurrentAccepted;
   const isConfirmingCurrentOffer = confirmingId !== null;
   const importMatchedCount = importRows.filter((row) => row.status === "matched").length;
   const importNeedsReviewCount = importRows.filter((row) => row.status === "needs_review").length;
@@ -3275,18 +3318,25 @@ const buildOfferPdfFilename = (
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            onClick={handleConfirmCurrentOffer}
-            disabled={!canConfirmCurrentOffer || isConfirmingCurrentOffer}
-            className={
-              isCurrentAccepted
-                ? "bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-100"
-                : "bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-100"
-            }
-          >
-            {isConfirmingCurrentOffer && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isCurrentAccepted ? "Ponudba potrjena" : "Potrdi ponudbo"}
-          </Button>
+          {isCurrentAccepted ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCancelCurrentOfferConfirmation}
+              disabled={saving || isConfirmingCurrentOffer}
+            >
+              Prekliči potrditev
+            </Button>
+          ) : (
+            <Button
+              onClick={handleConfirmCurrentOffer}
+              disabled={!canConfirmCurrentOffer || isConfirmingCurrentOffer}
+              className="bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-100"
+            >
+              {isConfirmingCurrentOffer && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Potrdi ponudbo
+            </Button>
+          )}
           <Button onClick={handleSave} disabled={saving}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Shrani ponudbo

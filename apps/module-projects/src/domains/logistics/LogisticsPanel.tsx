@@ -1242,7 +1242,7 @@ export function LogisticsPanel({
       }
       await refreshAfterMutation(fetchSnapshot);
       toast.success("Delovni nalog posodobljen.");
-      return true;
+      return mergedWorkOrder;
     } catch (error) {
       toast.error("Delovnega naloga ni mogoce shraniti.");
       return false;
@@ -1405,7 +1405,12 @@ export function LogisticsPanel({
       }
       const saved = await handleSaveWorkOrder(undefined, confirmationPatch);
       if (!saved) return;
-      const response = await fetch(`/api/projects/${projectId}/work-orders/${saved._id}/send-installer-preparation`, {
+      const workOrderId = typeof saved === "object" && saved._id ? saved._id : selectedWorkOrder._id;
+      if (!workOrderId) {
+        toast.error("Delovni nalog ni pripravljen za pošiljanje emaila.");
+        return;
+      }
+      const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrderId}/send-installer-preparation`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1419,7 +1424,7 @@ export function LogisticsPanel({
         return;
       }
       const draft = payload.data?.draft ?? payload.draft;
-      setInstallerEmailDraft(draft ?? buildInstallerPreparationEmailDraft(saved));
+      setInstallerEmailDraft(draft ?? buildInstallerPreparationEmailDraft(typeof saved === "object" ? saved : selectedWorkOrder));
       await refreshInstallerEmailStatus();
       setInstallerEmailDialogOpen(true);
     } catch (error) {
@@ -1429,10 +1434,11 @@ export function LogisticsPanel({
   };
 
   const handleSendInstallerPreparationEmail = async () => {
-    if (!selectedWorkOrder?._id || sendingInstallerEmail) return;
+    const workOrderId = workOrderForm._id ?? selectedWorkOrder?._id;
+    if (!workOrderId || sendingInstallerEmail) return;
     setSendingInstallerEmail(true);
     try {
-      const response = await fetch(`/api/projects/${projectId}/work-orders/${selectedWorkOrder._id}/send-installer-preparation`, {
+      const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrderId}/send-installer-preparation`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

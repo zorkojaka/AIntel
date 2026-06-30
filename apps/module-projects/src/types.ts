@@ -90,6 +90,14 @@ export interface ProjectSummary {
     hasSignedDelivery?: boolean;
     hasIssuedInvoice?: boolean;
   };
+  calendarEntries?: Array<{
+    workOrderId: string;
+    title?: string | null;
+    status?: string | null;
+    scheduledAt: string | null;
+    scheduledConfirmedAt?: string | null;
+    scheduledConfirmedBy?: string | null;
+  }>;
 }
 
 export interface PurchaseOrder {

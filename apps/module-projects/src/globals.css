@@ -357,6 +357,191 @@
   display: none;
 }
 
+.project-calendar-view {
+  display: grid;
+  gap: 1rem;
+}
+
+.project-calendar-panel,
+.project-calendar-pending {
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow-card);
+  overflow: hidden;
+}
+
+.project-calendar-header,
+.project-calendar-pending header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--app-border);
+  padding: 1rem;
+}
+
+.project-calendar-header h2,
+.project-calendar-pending h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 750;
+  text-transform: capitalize;
+}
+
+.project-calendar-header p,
+.project-calendar-pending p {
+  margin: 0.15rem 0 0;
+  color: var(--app-muted);
+  font-size: 0.84rem;
+}
+
+.project-calendar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.project-calendar-weekdays,
+.project-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.project-calendar-weekdays {
+  border-bottom: 1px solid var(--app-border);
+  background: #f6faff;
+}
+
+.project-calendar-weekdays span {
+  padding: 0.55rem 0.65rem;
+  color: var(--app-muted);
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.project-calendar-day {
+  min-height: 132px;
+  border-right: 1px solid var(--app-border);
+  border-bottom: 1px solid var(--app-border);
+  background: #fff;
+  padding: 0.45rem;
+}
+
+.project-calendar-day:nth-child(7n) {
+  border-right: 0;
+}
+
+.project-calendar-day.is-muted {
+  background: var(--app-surface-soft);
+  color: var(--app-muted);
+}
+
+.project-calendar-day.is-today {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--app-brand) 62%, transparent);
+}
+
+.project-calendar-day-number {
+  margin-bottom: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.project-calendar-events {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.project-calendar-event {
+  display: grid;
+  gap: 0.05rem;
+  width: 100%;
+  border: 1px solid #b9d7f2;
+  border-radius: 7px;
+  background: #e7f2ff;
+  color: #0d5fab;
+  padding: 0.35rem 0.4rem;
+  text-align: left;
+}
+
+.project-calendar-event span {
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.project-calendar-event strong,
+.project-calendar-event small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-calendar-event strong {
+  font-size: 0.74rem;
+}
+
+.project-calendar-event small {
+  color: #315f8a;
+  font-size: 0.68rem;
+}
+
+.project-calendar-pending-list {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+}
+
+.project-calendar-pending-item {
+  display: grid;
+  gap: 0.35rem;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  background: #fff;
+  padding: 0.75rem;
+  text-align: left;
+}
+
+.project-calendar-pending-item:hover {
+  border-color: color-mix(in srgb, var(--app-border) 30%, var(--app-brand) 70%);
+}
+
+.project-calendar-pending-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--app-muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.project-calendar-pending-item strong {
+  font-size: 0.92rem;
+}
+
+.project-calendar-pending-item > span:not(.project-calendar-pending-date) {
+  color: var(--app-muted);
+  font-size: 0.84rem;
+}
+
+.project-calendar-pending-item div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.project-calendar-empty {
+  margin: 1rem;
+  border: 1px dashed var(--app-border);
+  border-radius: var(--app-radius-md);
+  background: var(--app-surface-soft);
+  color: var(--app-muted);
+  padding: 1rem;
+  text-align: center;
+}
+
 .request-option {
   display: flex;
   min-height: 96px;
@@ -2023,5 +2208,28 @@
 
   .projects-workspace-shell [data-slot="card"] {
     border-radius: 12px;
+  }
+
+  .project-calendar-header,
+  .project-calendar-pending header {
+    flex-direction: column;
+  }
+
+  .project-calendar-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .project-calendar-weekdays,
+  .project-calendar-grid {
+    min-width: 720px;
+  }
+
+  .project-calendar-panel {
+    overflow-x: auto;
+  }
+
+  .project-calendar-day {
+    min-height: 118px;
   }
 }
