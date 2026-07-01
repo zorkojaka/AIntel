@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, CartesianGrid, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import './FinancePage.css';
 
 type Role = 'ADMIN' | 'FINANCE' | 'EXECUTION' | 'SALES' | 'ORGANIZER';
@@ -305,6 +305,35 @@ function getSnapshotLaborCost(snapshot: FinanceSnapshot) {
 
 function formatMonthLabel(month: number) {
   return new Date(Date.UTC(new Date().getFullYear(), month - 1, 1)).toLocaleString('sl-SI', { month: 'long' });
+}
+
+function FinanceRevenueTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload?: Record<string, unknown> }>;
+  label?: string;
+}) {
+  if (!active) return null;
+  const row = payload?.[0]?.payload;
+  if (!row) return null;
+
+  const totalSaleWithoutVat = Number(row.totalSaleWithoutVat) || 0;
+  const totalPurchase = Number(row.totalPurchase) || 0;
+  const totalMargin = Number(row.totalMargin) || 0;
+  const marginPct = Number(row.marginPct) || 0;
+
+  return (
+    <div className="finance-chart-tooltip">
+      <strong>{label}</strong>
+      <span>Prodajna cena: {currency.format(totalSaleWithoutVat)}</span>
+      <span>Nabavna cena: {currency.format(totalPurchase)}</span>
+      <span>Profit: {currency.format(totalMargin)}</span>
+      <span>Marža: {marginPct.toFixed(2)}%</span>
+    </div>
+  );
 }
 
 export const FinancePage: React.FC = () => {
@@ -1273,7 +1302,7 @@ export const FinancePage: React.FC = () => {
             <article className="finance-card"><span>Število projektov</span><strong>{projectRows.length}</strong></article>
             <article className="finance-card"><span>Število izdanih računov</span><strong>{invoiceCount}</strong></article>
           </section>
-          <article className="finance-panel"><h2>Mesečni prihodki</h2>{monthlyChart.length===0?<div className="finance-state">Ni podatkov za izbrano leto.</div>:<div className="h-72"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={monthlyChart}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis yAxisId="left"/><YAxis yAxisId="right" orientation="right"/><Tooltip/><Bar yAxisId="left" dataKey="totalSaleWithoutVat" name="Prodajna cena" fill="#2563eb"/><Bar yAxisId="left" dataKey="totalPurchase" name="Nabavna cena" fill="#f97316"/><Line yAxisId="right" type="monotone" dataKey="marginPct" name="Marža %" stroke="#16a34a"/></ComposedChart></ResponsiveContainer></div>}</article>
+          <article className="finance-panel"><h2>Mesečni prihodki</h2>{monthlyChart.length===0?<div className="finance-state">Ni podatkov za izbrano leto.</div>:<div className="h-72"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={monthlyChart}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis yAxisId="left"/><Tooltip content={<FinanceRevenueTooltip />}/><Bar yAxisId="left" dataKey="totalPurchase" name="Nabavna cena" stackId="sale" fill="#f97316"/><Bar yAxisId="left" dataKey="totalMargin" name="Profit" stackId="sale" fill="#16a34a"/></ComposedChart></ResponsiveContainer></div>}</article>
           <article className="finance-panel"><h2>Top 10 produktov</h2>{productRows?.length ? <div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Naziv</th><th>Količina</th><th>Prihodek</th><th>Marža</th></tr></thead><tbody>{productRows?.map((p)=><tr key={`${p?.productId ?? 'x'}-${p?.name ?? 'izdelek'}`}><td>{p?.name ?? '-'}</td><td>{p?.totalQuantity ?? 0}</td><td>{currency.format(p?.totalRevenue ?? 0)}</td><td>{currency.format(p?.totalMargin ?? 0)}</td></tr>) ?? []}</tbody></table></div> : <div className="finance-state">Ni produktnih podatkov.</div>}</article>
           <article className="finance-panel"><h2>Pipeline funnel</h2><div className="pipeline-cards"><div className="pipeline-card"><span>Osnutki</span><strong>{draftCount}</strong></div><div className="pipeline-card"><span>Poslane ponudbe</span><strong>{sentCount}</strong></div><div className="pipeline-card"><span>Sprejeto</span><strong>{confirmedCount}</strong></div><div className="pipeline-card"><span>Zavrnjeno</span><strong>{rejectedCount}</strong></div></div><div className="pipeline-highlight">Win rate: {winRate.toFixed(2)}%</div></article>
           <article className="finance-panel"><h2>Pregled projektov</h2>{projectRows?.length ? <div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Projekt</th><th>Stranka</th><th>Status</th><th>Vrednost ponudbe</th><th>Datum</th></tr></thead><tbody>{projectRows?.map((r)=><tr key={r?.id ?? `${r?.title ?? 'projekt'}-${r?.updatedAt ?? ''}`} className="is-clickable" onClick={()=> r?.id && (window.location.href=`/projects/${r.id}`)}><td>{r?.title ?? '-'}</td><td>{getProjectCustomerName(r)}</td><td>{r?.status ?? '-'}</td><td>{currency.format(Number(r?.quotedTotalWithVat ?? r?.offerAmount ?? 0))}</td><td>{new Date(r?.updatedAt ?? r?.createdAt ?? '').toLocaleDateString('sl-SI')}</td></tr>) ?? []}</tbody></table></div> : <div className="finance-state">Ni projektov za izbrano obdobje.</div>}</article>
