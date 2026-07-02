@@ -12,6 +12,14 @@ type DodajVariantoDialogProps = {
   cameraMode?: "ip" | "reolink_wifi";
 };
 
+type ReolinkCameraKind = "wifi" | "wired" | "sim_solar";
+
+const REOLINK_CAMERA_KIND_LABELS: Record<ReolinkCameraKind, string> = {
+  wifi: "WiFi",
+  wired: "Žične",
+  sim_solar: "SIM / solar",
+};
+
 function productBrand(product: CenikProduct) {
   const value = product.classification?.manufacturer || product.proizvajalec || "Brez proizvajalca";
   const trimmed = value.trim();
@@ -38,11 +46,19 @@ function isCameraLikeProduct(product: CenikProduct) {
   return product.classification?.productType === "kamera" || /\b(kamera|camera)\b/i.test(text);
 }
 
-function cameraMatches(camera: CenikProduct, filters: { brand?: string; housing?: string; resolution?: string }) {
+function reolinkCameraKind(product: CenikProduct): ReolinkCameraKind {
+  const text = `${product.ime ?? ""} ${product.kratekOpis ?? ""} ${product.dolgOpis ?? ""} ${product.aaData?.rawDescription ?? ""} ${(product.categorySlugs ?? []).join(" ")}`.toLocaleLowerCase("sl-SI");
+  if (product.classification?.hasSim || product.classification?.supportsSolarPanel || /\b(sim|lte|4g)\b/.test(text) || /solar|sonč|sonc/.test(text)) return "sim_solar";
+  if (product.classification?.cameraConnectivity === "poe" || product.classification?.powerMode === "poe" || product.classification?.hasPoE || /\bpoe\b|utp|ethernet|lan/.test(text)) return "wired";
+  return "wifi";
+}
+
+function cameraMatches(camera: CenikProduct, filters: { brand?: string; housing?: string; resolution?: string; reolinkKind?: ReolinkCameraKind }) {
   return (
     (!filters.brand || brandKey(productBrand(camera)) === brandKey(filters.brand)) &&
     (!filters.housing || camera.classification?.cameraHousing === filters.housing) &&
-    (!filters.resolution || String(camera.classification?.maxResolutionMP) === filters.resolution)
+    (!filters.resolution || String(camera.classification?.maxResolutionMP) === filters.resolution) &&
+    (!filters.reolinkKind || reolinkCameraKind(camera) === filters.reolinkKind)
   );
 }
 
@@ -50,6 +66,7 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm, cameraMode 
   const [products, setProducts] = useState<CenikProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [brand, setBrand] = useState("");
+  const [reolinkKind, setReolinkKind] = useState<ReolinkCameraKind>("wifi");
   const [housing, setHousing] = useState("");
   const [resolution, setResolution] = useState("");
   const [selectedCamera, setSelectedCamera] = useState<CenikProduct | null>(null);
@@ -78,7 +95,19 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm, cameraMode 
     }
     return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b, "sl"));
   }, [cameras]);
-  const brandCameras = useMemo(() => cameras.filter((camera) => !brand || brandKey(productBrand(camera)) === brandKey(brand)), [brand, cameras]);
+  const reolinkKinds = useMemo(() => {
+    if (cameraMode !== "reolink_wifi") return [];
+    return (["wifi", "wired", "sim_solar"] as const).filter((kind) => cameras.some((camera) => reolinkCameraKind(camera) === kind));
+  }, [cameraMode, cameras]);
+  const brandCameras = useMemo(
+    () =>
+      cameras.filter(
+        (camera) =>
+          (!brand || brandKey(productBrand(camera)) === brandKey(brand)) &&
+          (cameraMode !== "reolink_wifi" || !reolinkKind || reolinkCameraKind(camera) === reolinkKind),
+      ),
+    [brand, cameraMode, cameras, reolinkKind],
+  );
   const housings = useMemo(
     () =>
       Array.from(
@@ -98,16 +127,17 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm, cameraMode 
 
   useEffect(() => {
     if (brand && !brands.some((entry) => brandKey(entry) === brandKey(brand))) setBrand("");
+    if (cameraMode === "reolink_wifi" && reolinkKinds.length && !reolinkKinds.includes(reolinkKind)) setReolinkKind(reolinkKinds[0]);
     if (housing && !housings.includes(housing)) setHousing("");
     if (resolution && !resolutions.includes(resolution)) setResolution("");
-  }, [brand, brands, housing, housings, resolution, resolutions]);
+  }, [brand, brands, cameraMode, housing, housings, reolinkKind, reolinkKinds, resolution, resolutions]);
 
   const filtered = useMemo(
     () =>
       cameras
-        .filter((camera) => cameraMatches(camera, { brand, housing, resolution }))
+        .filter((camera) => cameraMatches(camera, { brand, housing, resolution, reolinkKind: cameraMode === "reolink_wifi" ? reolinkKind : undefined }))
         .slice(0, 24),
-    [brand, cameras, housing, resolution],
+    [brand, cameraMode, cameras, housing, reolinkKind, resolution],
   );
 
   const selectCamera = (camera: CenikProduct) => {
@@ -140,6 +170,17 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm, cameraMode 
 
         <div className="zahteva-dialog-filters">
           <FilterStrip label="Proizvajalec" values={brands} selected={brand} onSelect={setBrand} />
+          {cameraMode === "reolink_wifi" ? (
+            <FilterStrip
+              label="Tip"
+              values={reolinkKinds.map((kind) => REOLINK_CAMERA_KIND_LABELS[kind])}
+              selected={REOLINK_CAMERA_KIND_LABELS[reolinkKind]}
+              onSelect={(value) => {
+                const nextKind = (Object.keys(REOLINK_CAMERA_KIND_LABELS) as ReolinkCameraKind[]).find((kind) => REOLINK_CAMERA_KIND_LABELS[kind] === value);
+                if (nextKind) setReolinkKind(nextKind);
+              }}
+            />
+          ) : null}
           <FilterStrip label="Ohišje" values={housings} selected={housing} onSelect={setHousing} />
           <FilterStrip label="MP" values={resolutions} selected={resolution} onSelect={setResolution} />
         </div>

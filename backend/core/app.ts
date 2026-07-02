@@ -3,6 +3,7 @@ import cookieParser from 'cookie-parser';
 import express from 'express';
 import routes from '../routes';
 import authRoutes from '../modules/auth/routes/auth.routes';
+import webInquiryPublicRoutes from '../modules/web-inquiries/public.routes';
 import { requireAuth } from '../middlewares/auth';
 import { responseHelpers } from './response';
 import { normalizePayload } from './middleware/normalizePayload';
@@ -35,6 +36,10 @@ function createCorsOptions() {
 
 export function createApp() {
   const app = express();
+
+  // Public intake for the inteligent.si website (before the global CORS allowlist
+  // and cookie auth: it is protected by an X-API-Key header and rate limiting).
+  app.use('/api/public', express.json(), webInquiryPublicRoutes);
 
   app.use(cors(createCorsOptions()));
   app.use(express.json());

@@ -155,7 +155,8 @@ export function systemTotal(videonadzor: Videonadzor, productById: Map<string, C
   const diskItems = normalizedSelectedItems(videonadzor.disk);
   const switchTotal = switchItems.reduce((sum, item) => sum + Number(productById.get(item.productId)?.prodajnaCena ?? 0) * item.kolicina, 0);
   const diskTotal = diskItems.reduce((sum, item) => sum + Number(productById.get(item.productId)?.prodajnaCena ?? 0) * item.kolicina, 0);
-  return asortimaTotal + Number(snemalnik?.prodajnaCena ?? 0) + switchTotal + diskTotal;
+  const dodatnaOpremaTotal = (videonadzor.dodatnaOprema ?? []).reduce((sum, item) => sum + Number(productById.get(item.productId)?.prodajnaCena ?? 0) * item.kolicina, 0);
+  return asortimaTotal + Number(snemalnik?.prodajnaCena ?? 0) + switchTotal + diskTotal + dodatnaOpremaTotal;
 }
 
 export function alarmTotal(alarm: Alarm, productById: Map<string, CenikProduct>) {

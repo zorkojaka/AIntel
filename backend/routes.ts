@@ -22,6 +22,7 @@ import filesRoutes from './modules/files/routes';
 import photosRoutes from './modules/photos/routes';
 import zahteveRoutes from './modules/zahteve/zahteva.routes';
 import executionRulesRoutes from './modules/execution-rules/execution-rules.routes';
+import webInquiriesAdminRoutes from './modules/web-inquiries/admin.routes';
 import { requireRoles } from './middlewares/auth';
 import { ROLE_ADMIN, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from './utils/roles';
 
@@ -50,6 +51,7 @@ router.use('/files', filesRoutes);
 router.use('/photos', photosRoutes);
 router.use('/zahteve', zahteveRoutes);
 router.use('/execution-rules', executionRulesRoutes);
+router.use('/web-inquiries', requireRoles([ROLE_ADMIN, ROLE_SALES]), webInquiriesAdminRoutes);
 
 router.get('/', (_req, res) => {
   res.success({ status: 'AIntel CORE backend pripravljen' });

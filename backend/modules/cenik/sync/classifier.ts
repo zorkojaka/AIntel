@@ -17,6 +17,10 @@ export function classifyProduct(product: AAProductRaw): Classification {
   };
 
   if (productType === 'kamera') {
+    classification.cameraConnectivity = parseCameraConnectivity(product);
+    classification.powerMode = parsePowerMode(product);
+    classification.hasSim = parseHasSim(product);
+    classification.supportsSolarPanel = parseSupportsSolarPanel(product);
     classification.cameraHousing = normalizeHousing(getAttribute(product.attributes, 'Housing'));
     classification.cameraTechnology = normalizeTechnology(getAttribute(product.attributes, 'Technology'));
     classification.maxResolutionMP = parseResolution(
@@ -90,6 +94,42 @@ function parseResolution(value: string | undefined): number | undefined {
 
 function parseHasPoE(value: string | undefined) {
   return Boolean(value && /poe/i.test(value));
+}
+
+function parseCameraConnectivity(product: AAProductRaw): Classification['cameraConnectivity'] {
+  const text = [
+    getAttribute(product.attributes, 'Connection mode'),
+    getAttribute(product.attributes, 'Communication method'),
+    getAttribute(product.attributes, 'Interface'),
+    getAttribute(product.attributes, 'Network'),
+    product.name,
+    product.description,
+  ].filter(Boolean).join(' ');
+  if (/\b(sim|lte|4g)\b/i.test(text)) return 'lte';
+  if (/\bpoe\b|ethernet|utp|rj-?45|lan/i.test(text)) return 'poe';
+  if (/wi-?fi|wifi/i.test(text)) return 'wifi';
+  return undefined;
+}
+
+function parsePowerMode(product: AAProductRaw): Classification['powerMode'] {
+  const text = [
+    getAttribute(product.attributes, 'Power supply'),
+    getAttribute(product.attributes, 'Power'),
+    product.name,
+    product.description,
+  ].filter(Boolean).join(' ');
+  if (/\bpoe\b/i.test(text)) return 'poe';
+  if (/battery|baterij|akumulator/i.test(text)) return 'battery';
+  if (/\b(12|24|48)\s*v|vdc|vac|adapter|napajal/i.test(text)) return 'dc';
+  return undefined;
+}
+
+function parseHasSim(product: AAProductRaw) {
+  return /\b(sim|lte|4g)\b/i.test(`${product.name} ${product.description}`);
+}
+
+function parseSupportsSolarPanel(product: AAProductRaw) {
+  return /solar|sonč|sonc/i.test(`${product.name} ${product.description}`);
 }
 
 function normalizeHousing(value: string | undefined): Classification['cameraHousing'] {

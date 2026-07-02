@@ -8,6 +8,7 @@ import { SekcijaAlarmOprema } from "./SekcijaAlarmOprema";
 import { SekcijaIzvedba } from "./SekcijaIzvedba";
 import { SekcijaKameraNosilec } from "./SekcijaKameraNosilec";
 import { SekcijaPoESwitch } from "./SekcijaPoESwitch";
+import { SekcijaReolinkDodatnaOprema } from "./SekcijaReolinkDodatnaOprema";
 import { SekcijaSnemalnik } from "./SekcijaSnemalnik";
 import { TabelaAlarm } from "./TabelaAlarm";
 import { TabelaAsortima } from "./TabelaAsortima";
@@ -181,7 +182,7 @@ export function SistemBlok({ projectId, zahtevaId, sistem, executionSettings, pr
       <header className="zahteva-system-header">
         <div className="zahteva-system-title">
           {isWifiKamere ? <Wifi className="h-5 w-5" aria-hidden /> : <Video className="h-5 w-5" aria-hidden />}
-          <h3>{isWifiKamere ? "WiFi kamere" : "Videonadzor"}</h3>
+          <h3>{isWifiKamere ? "Reolink kamere" : "Videonadzor"}</h3>
         </div>
         <TrakStevila value={sistem.steviloLokacij} min={1} max={64} onChange={setCount} />
         <strong className="zahteva-system-price">{formatPrice(total)}</strong>
@@ -217,7 +218,9 @@ export function SistemBlok({ projectId, zahtevaId, sistem, executionSettings, pr
           <SekcijaPoESwitch videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
           <SekcijaDisk videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
         </>
-      ) : null}
+      ) : (
+        <SekcijaReolinkDodatnaOprema videonadzor={videonadzor} productById={productById} onChange={updateVideo} />
+      )}
       <SekcijaIzvedba
         sistem={sistem}
         settings={executionSettings}
