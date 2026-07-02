@@ -2071,7 +2071,8 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     const payload = req.body ?? {};
     const contextRoles = getContextRoles(req);
     const isExecutionOnlyMutation = isExecutionRoleWithoutPreparationAccess(contextRoles);
-    const allowCompletionAssigneeOverride = canEditPreparation(contextRoles);
+    const roleCanEditPreparation = canEditPreparation(contextRoles);
+    let assignedInstallerCanEditProjectPreparation = false;
     if (isExecutionOnlyMutation) {
       if (!actorEmployeeId) {
         return res.fail('Uporabnik ni povezan z monterjem.', 403);
@@ -2087,7 +2088,11 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       if (!projectAssigned && !workOrderAssigned && !materialOrderAssigned) {
         return res.fail('Ni dostopa do faze Izvedba za ta delovni nalog.', 403);
       }
+      assignedInstallerCanEditProjectPreparation = true;
     }
+    const canEditProjectPreparation = roleCanEditPreparation || assignedInstallerCanEditProjectPreparation;
+    const isExecutionRestrictedMutation = isExecutionOnlyMutation && !canEditProjectPreparation;
+    const allowCompletionAssigneeOverride = roleCanEditPreparation;
     ensureConfirmationVersionHistory(existing);
     const confirmationLocked = isConfirmationLocked(existing);
     const isCompletionStatusRequest = payload.status === 'completed' && previousWorkOrderStatus !== 'completed';
@@ -2109,7 +2114,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       return res.fail('Potrdilo delovnega naloga je že podpisano. Potrjenih izvedbenih vrednosti ni več mogoče spreminjati.', 409);
     }
     if (
-      isExecutionOnlyMutation &&
+      isExecutionRestrictedMutation &&
       'status' in payload &&
       payload.status !== 'in-progress' &&
       payload.status !== 'confirmed' &&
@@ -2117,10 +2122,10 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     ) {
       return res.fail('Ni dostopa do spremembe statusa izven faze Izvedba.', 403);
     }
-    if (isExecutionOnlyMutation && (hasPreparationOnlyWorkOrderPayload(payload) || hasPreparationOnlyMaterialPayload(payload))) {
+    if (isExecutionRestrictedMutation && (hasPreparationOnlyWorkOrderPayload(payload) || hasPreparationOnlyMaterialPayload(payload))) {
       return res.fail('Ni dostopa do urejanja priprave. Monter lahko v fazi Izvedba shrani izvedbo in prevzem materiala.', 403);
     }
-    if (hasPreparationPayload(payload) && !canEditPreparation(contextRoles) && !isExecutionOnlyMutation) {
+    if (hasPreparationPayload(payload) && !canEditProjectPreparation) {
       return res.fail('Ni dostopa do faze Priprava.', 403);
     }
     const resolveAssignedEmployeeIds = async (value: unknown) => {
@@ -2199,21 +2204,21 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         if (targetId) {
           const target = nextItems.find((item) => String(item.id) === targetId);
           if (target) {
-            if (!isExecutionOnlyMutation && typeof incoming.name === 'string') target.name = incoming.name;
-            if (!isExecutionOnlyMutation && typeof incoming.unit === 'string') target.unit = incoming.unit;
-            if (!isExecutionOnlyMutation && typeof incoming.isService === 'boolean') target.isService = incoming.isService;
-            if (!isExecutionOnlyMutation && (typeof incoming.note === 'string' || incoming.note === null)) target.note = incoming.note ?? '';
+            if (!isExecutionRestrictedMutation && typeof incoming.name === 'string') target.name = incoming.name;
+            if (!isExecutionRestrictedMutation && typeof incoming.unit === 'string') target.unit = incoming.unit;
+            if (!isExecutionRestrictedMutation && typeof incoming.isService === 'boolean') target.isService = incoming.isService;
+            if (!isExecutionRestrictedMutation && (typeof incoming.note === 'string' || incoming.note === null)) target.note = incoming.note ?? '';
             if (typeof incoming.itemNote === 'string' || incoming.itemNote === null) {
               target.itemNote = incoming.itemNote ?? null;
             }
-            if (!isExecutionOnlyMutation && typeof incoming.plannedQuantity === 'number') {
+            if (!isExecutionRestrictedMutation && typeof incoming.plannedQuantity === 'number') {
               target.plannedQuantity = incoming.plannedQuantity;
               target.quantity = incoming.plannedQuantity;
             }
             if (typeof incoming.executedQuantity === 'number') {
               target.executedQuantity = incoming.executedQuantity;
             }
-            if (!isExecutionOnlyMutation && typeof incoming.isExtra === 'boolean') {
+            if (!isExecutionRestrictedMutation && typeof incoming.isExtra === 'boolean') {
               target.isExtra = incoming.isExtra;
             }
             if (typeof incoming.isCompleted === 'boolean') {
@@ -2236,10 +2241,10 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
                 target.completedAt = null;
               }
             }
-            if (!isExecutionOnlyMutation && typeof incoming.casovnaNorma === 'number' && Number.isFinite(incoming.casovnaNorma)) {
+            if (!isExecutionRestrictedMutation && typeof incoming.casovnaNorma === 'number' && Number.isFinite(incoming.casovnaNorma)) {
               target.casovnaNorma = incoming.casovnaNorma;
             }
-            if (!isExecutionOnlyMutation && (typeof incoming.offerItemId === 'string' || incoming.offerItemId === null)) {
+            if (!isExecutionRestrictedMutation && (typeof incoming.offerItemId === 'string' || incoming.offerItemId === null)) {
               target.offerItemId = incoming.offerItemId ?? null;
             }
             if ('timeTracking' in incoming) {
@@ -2259,7 +2264,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         const planned = typeof incoming.plannedQuantity === 'number' ? incoming.plannedQuantity : 0;
         const executed = typeof incoming.executedQuantity === 'number' ? incoming.executedQuantity : planned;
         const offered = typeof incoming.offeredQuantity === 'number' ? incoming.offeredQuantity : 0;
-        if (isExecutionOnlyMutation && incoming.isExtra === false) {
+        if (isExecutionRestrictedMutation && incoming.isExtra === false) {
           return;
         }
         const newItemId =
@@ -2343,7 +2348,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     if (
       typeof payload.materialStatus === 'string' &&
       MATERIAL_STATUS_VALUES.includes(payload.materialStatus) &&
-      (!isExecutionOnlyMutation || isExecutionMaterialStatus(payload.materialStatus))
+      (!isExecutionRestrictedMutation || isExecutionMaterialStatus(payload.materialStatus))
     ) {
       materialUpdates.materialStatus = payload.materialStatus;
     }
@@ -2425,37 +2430,37 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         if (targetId) {
           const target = nextItems.find((item) => String(item.id) === targetId);
           if (target) {
-            if (!isExecutionOnlyMutation && typeof incoming.name === 'string' && target.name !== incoming.name) {
+            if (!isExecutionRestrictedMutation && typeof incoming.name === 'string' && target.name !== incoming.name) {
               target.name = incoming.name;
               hasItemMutations = true;
             }
-            if (!isExecutionOnlyMutation && typeof incoming.unit === 'string' && target.unit !== incoming.unit) {
+            if (!isExecutionRestrictedMutation && typeof incoming.unit === 'string' && target.unit !== incoming.unit) {
               target.unit = incoming.unit;
               hasItemMutations = true;
             }
-            if (!isExecutionOnlyMutation && (typeof incoming.note === 'string' || incoming.note === null)) {
+            if (!isExecutionRestrictedMutation && (typeof incoming.note === 'string' || incoming.note === null)) {
               const nextNote = incoming.note ?? '';
               if (target.note !== nextNote) {
                 target.note = nextNote;
                 hasItemMutations = true;
               }
             }
-            if (!isExecutionOnlyMutation && (typeof incoming.productId === 'string' || incoming.productId === null)) {
+            if (!isExecutionRestrictedMutation && (typeof incoming.productId === 'string' || incoming.productId === null)) {
               const nextProductId = incoming.productId ?? null;
               if (target.productId !== nextProductId) {
                 target.productId = nextProductId;
                 hasItemMutations = true;
               }
             }
-            if (!isExecutionOnlyMutation && typeof incoming.quantity === 'number' && Number.isFinite(incoming.quantity) && target.quantity !== incoming.quantity) {
+            if (!isExecutionRestrictedMutation && typeof incoming.quantity === 'number' && Number.isFinite(incoming.quantity) && target.quantity !== incoming.quantity) {
               target.quantity = incoming.quantity;
               hasItemMutations = true;
             }
-            if (!isExecutionOnlyMutation && typeof incoming.isOrdered === 'boolean' && target.isOrdered !== incoming.isOrdered) {
+            if (!isExecutionRestrictedMutation && typeof incoming.isOrdered === 'boolean' && target.isOrdered !== incoming.isOrdered) {
               target.isOrdered = incoming.isOrdered;
               hasItemMutations = true;
             }
-            if (!isExecutionOnlyMutation && typeof incoming.orderedQty === 'number' && Number.isFinite(incoming.orderedQty)) {
+            if (!isExecutionRestrictedMutation && typeof incoming.orderedQty === 'number' && Number.isFinite(incoming.orderedQty)) {
               const nextOrderedQty = Math.max(0, incoming.orderedQty);
               if (target.orderedQty !== nextOrderedQty) {
                 target.orderedQty = nextOrderedQty;
@@ -2472,28 +2477,28 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
             }
             if (
               typeof incoming.materialStep === 'string' &&
-              (!isExecutionOnlyMutation || isExecutionMaterialStep(incoming.materialStep)) &&
+              (!isExecutionRestrictedMutation || isExecutionMaterialStep(incoming.materialStep)) &&
               target.materialStep !== incoming.materialStep
             ) {
               target.materialStep = incoming.materialStep;
               hasItemMutations = true;
             }
-            if (!isExecutionOnlyMutation && typeof incoming.dobavitelj === 'string' && target.dobavitelj !== incoming.dobavitelj) {
+            if (!isExecutionRestrictedMutation && typeof incoming.dobavitelj === 'string' && target.dobavitelj !== incoming.dobavitelj) {
               target.dobavitelj = incoming.dobavitelj;
               hasItemMutations = true;
             }
-            if (!isExecutionOnlyMutation && typeof incoming.naslovDobavitelja === 'string' && target.naslovDobavitelja !== incoming.naslovDobavitelja) {
+            if (!isExecutionRestrictedMutation && typeof incoming.naslovDobavitelja === 'string' && target.naslovDobavitelja !== incoming.naslovDobavitelja) {
               target.naslovDobavitelja = incoming.naslovDobavitelja;
               hasItemMutations = true;
             }
-            if (!isExecutionOnlyMutation && typeof incoming.isExtra === 'boolean' && target.isExtra !== incoming.isExtra) {
+            if (!isExecutionRestrictedMutation && typeof incoming.isExtra === 'boolean' && target.isExtra !== incoming.isExtra) {
               target.isExtra = incoming.isExtra;
               hasItemMutations = true;
             }
             return;
           }
         }
-        if (isExecutionOnlyMutation) {
+        if (isExecutionRestrictedMutation) {
           return;
         }
 

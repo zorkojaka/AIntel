@@ -139,7 +139,7 @@ export function ProjectsPage() {
   const canAccessPreparationPhase = useMemo(() => canAccessPreparation(viewerRoles), [viewerRoles]);
   const allowedWorkspaceTabs = useMemo<WorkspaceTab[] | undefined>(() => {
     if (isExecutionOnlyViewer) {
-      return ["execution"];
+      return ["logistics", "execution"];
     }
     if (!canAccessPreparationPhase) {
       return ["zahteva", "offers", "execution", "closing"];
@@ -309,7 +309,7 @@ export function ProjectsPage() {
     }
     const tab = route?.tab ?? parseWorkspaceTab(params.get("tab"));
     if (tab) {
-      if (tab === "logistics" && !canAccessPreparationPhase) {
+      if (tab === "logistics" && !canAccessPreparationPhase && !isExecutionOnlyViewer) {
         toast.error("Nimaš dostopa do faze Priprava.");
       } else {
         setInitialWorkspaceTab(tab);
