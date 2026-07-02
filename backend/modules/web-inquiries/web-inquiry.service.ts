@@ -48,6 +48,23 @@ export interface WebInquiryPayload {
     wiringType: 'wifi' | 'wired';
     wiringReady: boolean;
   };
+  alarm?: {
+    sensorChoice: 'A' | 'B' | 'C';
+    sensorCount: number;
+    wiredAlarm: boolean;
+    addSirensAndKeypad: boolean;
+    addFireSensors: boolean;
+    addCO: boolean;
+  };
+  domofon?: {
+    indoorUnits: number;
+    outdoorUnits: number;
+    wiringReady: boolean;
+  };
+  pametniDom?: {
+    lightsCount: number;
+    shadesCount: number;
+  };
   note?: string;
   source?: string;
   meta?: Record<string, string>;
@@ -137,21 +154,58 @@ export function validateWebInquiryPayload(body: unknown): WebInquiryPayload {
     meta,
   };
 
+  function celoStevilo(value: unknown, min: number, max: number, polje: string) {
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < min || n > max) {
+      throw new WebInquiryError('VALIDATION_ERROR', `Polje ${polje} mora biti celo število med ${min} in ${max}.`, 400);
+    }
+    return n;
+  }
+  const bool = (value: unknown) => value === true || value === 'true';
+
   if (pillar === 'videonadzor') {
     const video = (source.videonadzor ?? {}) as Record<string, unknown>;
-    const cameraCount = Number(video.cameraCount);
-    if (!Number.isInteger(cameraCount) || cameraCount < 1 || cameraCount > 64) {
-      throw new WebInquiryError('VALIDATION_ERROR', 'Število kamer (videonadzor.cameraCount) mora biti celo število med 1 in 64.', 400);
-    }
+    const cameraCount = celoStevilo(video.cameraCount, 1, 64, 'videonadzor.cameraCount');
     const wiringType = cleanString(video.wiringType, 10);
     if (wiringType !== 'wifi' && wiringType !== 'wired') {
       throw new WebInquiryError('VALIDATION_ERROR', 'Tip ožičenja (videonadzor.wiringType) mora biti "wifi" ali "wired".', 400);
     }
-    payload.videonadzor = {
-      cameraCount,
-      wiringType,
-      wiringReady: video.wiringReady === true || video.wiringReady === 'true',
+    payload.videonadzor = { cameraCount, wiringType, wiringReady: bool(video.wiringReady) };
+  }
+
+  if (pillar === 'alarm') {
+    const alarm = (source.alarm ?? {}) as Record<string, unknown>;
+    const sensorChoice = cleanString(alarm.sensorChoice, 1).toUpperCase();
+    if (!['A', 'B', 'C'].includes(sensorChoice)) {
+      throw new WebInquiryError('VALIDATION_ERROR', 'Izbira senzorja (alarm.sensorChoice) mora biti A, B ali C.', 400);
+    }
+    payload.alarm = {
+      sensorChoice: sensorChoice as 'A' | 'B' | 'C',
+      sensorCount: celoStevilo(alarm.sensorCount, 1, 30, 'alarm.sensorCount'),
+      wiredAlarm: bool(alarm.wiredAlarm),
+      addSirensAndKeypad: bool(alarm.addSirensAndKeypad),
+      addFireSensors: bool(alarm.addFireSensors),
+      addCO: bool(alarm.addCO),
     };
+  }
+
+  if (pillar === 'domofon') {
+    const domofon = (source.domofon ?? {}) as Record<string, unknown>;
+    payload.domofon = {
+      indoorUnits: celoStevilo(domofon.indoorUnits, 1, 30, 'domofon.indoorUnits'),
+      outdoorUnits: celoStevilo(domofon.outdoorUnits, 1, 10, 'domofon.outdoorUnits'),
+      wiringReady: bool(domofon.wiringReady),
+    };
+  }
+
+  if (pillar === 'pametni_dom') {
+    const dom = (source.pametniDom ?? {}) as Record<string, unknown>;
+    const lightsCount = celoStevilo(dom.lightsCount ?? 0, 0, 60, 'pametniDom.lightsCount');
+    const shadesCount = celoStevilo(dom.shadesCount ?? 0, 0, 60, 'pametniDom.shadesCount');
+    if (lightsCount + shadesCount < 1) {
+      throw new WebInquiryError('VALIDATION_ERROR', 'Izberite vsaj eno napravo (luči ali senčila).', 400);
+    }
+    payload.pametniDom = { lightsCount, shadesCount };
   }
 
   return payload;
@@ -247,6 +301,117 @@ async function createProjectForInquiry(input: {
 
   await ProjectModel.create(project);
   return ProjectModel.findOne({ id });
+}
+
+async function izracunajKilometrino(projectId: string, defaultsApplied: string[]) {
+  try {
+    const route = await calculateProjectRouteDistance(projectId);
+    defaultsApplied.push(`Kilometrina: ${route.razdaljaSkupaj} km (samodejni izračun, zanesljivost ${route.zanesljivost}).`);
+    return route.razdaljaSkupaj;
+  } catch (error) {
+    defaultsApplied.push(`Kilometrina ni bila izračunana samodejno (${error instanceof Error ? error.message : 'napaka'}) – preveri ročno.`);
+    return 0;
+  }
+}
+
+async function ustvariZahtevo(projectMongoId: Types.ObjectId, sistem: Record<string, unknown>) {
+  const zahteva = await ZahtevaModel.create({ projectId: projectMongoId, status: 'osnutek', sistemi: [sistem], createdBy: null });
+  await ProjectModel.updateOne(
+    { _id: projectMongoId },
+    { $addToSet: { requestIds: zahteva._id }, $set: { activeRequestId: zahteva._id } }
+  );
+  return zahteva;
+}
+
+async function productNameOrThrow(productId: Types.ObjectId | null, oznaka: string) {
+  if (!productId) {
+    throw new WebInquiryError('NOT_CONFIGURED', `V nastavitvah spletnih povpraševanj ni izbran produkt: ${oznaka}.`, 503);
+  }
+  const product = await ProductModel.findById(productId).lean();
+  if (!product) {
+    throw new WebInquiryError('NOT_CONFIGURED', `Produkt za "${oznaka}" v ceniku ne obstaja več.`, 503);
+  }
+  return product;
+}
+
+async function buildAlarmZahteva(input: {
+  projectMongoId: Types.ObjectId;
+  projectId: string;
+  data: NonNullable<WebInquiryPayload['alarm']>;
+  settings: WebInquirySettingsDocument;
+  defaultsApplied: string[];
+}) {
+  const { settings, defaultsApplied, data } = input;
+  const cfg = settings.alarm;
+  const sensorId = { A: cfg.sensorAProductId, B: cfg.sensorBProductId, C: cfg.sensorCProductId }[data.sensorChoice];
+  const centrala = await productNameOrThrow(cfg.centralaProductId, 'alarmna centrala');
+  const senzor = await productNameOrThrow(sensorId, `senzor ${data.sensorChoice}`);
+  defaultsApplied.push(`Centrala: ${centrala.ime} (fiksna izbira).`, `Senzor ${data.sensorChoice}: ${senzor.ime} × ${data.sensorCount}.`);
+
+  const sirene: Array<{ productId: string; kolicina: number }> = [];
+  const upravljanje: Array<{ productId: string; kolicina: number }> = [];
+  const pozarPoplava: Array<{ productId: string; kolicina: number }> = [];
+  const dodatnaOprema: Array<{ productId: string; kolicina: number }> = [];
+  if (data.addSirensAndKeypad) {
+    if (cfg.sirenaZunanjaProductId) sirene.push({ productId: String(cfg.sirenaZunanjaProductId), kolicina: 1 });
+    if (cfg.sirenaNotranjaProductId) sirene.push({ productId: String(cfg.sirenaNotranjaProductId), kolicina: 1 });
+    if (cfg.tipkovnicaProductId) upravljanje.push({ productId: String(cfg.tipkovnicaProductId), kolicina: 1 });
+    defaultsApplied.push('Dodano: zunanja in notranja sirena ter tipkovnica (fiksne izbire).');
+  }
+  if (data.addFireSensors && cfg.pozarProductId) {
+    pozarPoplava.push({ productId: String(cfg.pozarProductId), kolicina: 1 });
+    defaultsApplied.push('Dodan: 1 požarni senzor (količino po potrebi prilagodi Jaka).');
+  }
+  if (data.addCO && cfg.coProductId) {
+    dodatnaOprema.push({ productId: String(cfg.coProductId), kolicina: 1 });
+    defaultsApplied.push('Dodan: 1 CO senzor.');
+  }
+
+  const kilometrinaKm = await izracunajKilometrino(input.projectId, defaultsApplied);
+  return ustvariZahtevo(input.projectMongoId, {
+    id: 'sys-1',
+    tip: 'alarm',
+    steviloLokacij: data.sensorCount,
+    alarm: {
+      centrala: { productId: String(centrala._id) },
+      senzorji: [{ id: 'sen-1', senzorProductId: String(senzor._id) }],
+      lokacije: Array.from({ length: data.sensorCount }, (_, i) => ({ id: `loc-${i + 1}`, ime: `Prostor ${i + 1}`, senzorIdAssigned: 'sen-1' })),
+      sirene,
+      upravljanje,
+      pozarPoplava,
+      dodatnaOprema,
+    },
+    execution: { scenarioType: cfg.scenario, estimates: { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0, kilometrinaKm } },
+  });
+}
+
+async function buildPostavkeZahteva(input: {
+  projectMongoId: Types.ObjectId;
+  projectId: string;
+  tip: 'domofon' | 'pametna_hisa';
+  postavke: Array<{ productId: Types.ObjectId | null; kolicina: number; oznaka: string }>;
+  scenario: string;
+  defaultsApplied: string[];
+}) {
+  const postavke: Array<{ productId: string; kolicina: number }> = [];
+  for (const vnos of input.postavke) {
+    if (vnos.kolicina <= 0) continue;
+    const product = await productNameOrThrow(vnos.productId, vnos.oznaka);
+    postavke.push({ productId: String(product._id), kolicina: vnos.kolicina });
+    input.defaultsApplied.push(`${vnos.oznaka}: ${product.ime} × ${vnos.kolicina} (fiksna izbira).`);
+  }
+  if (postavke.length === 0) {
+    throw new WebInquiryError('VALIDATION_ERROR', 'Ni izbranih naprav.', 400);
+  }
+  const kilometrinaKm = await izracunajKilometrino(input.projectId, input.defaultsApplied);
+  const kolicinaSkupaj = postavke.reduce((sum, p) => sum + p.kolicina, 0);
+  return ustvariZahtevo(input.projectMongoId, {
+    id: 'sys-1',
+    tip: input.tip,
+    steviloLokacij: kolicinaSkupaj,
+    [input.tip === 'domofon' ? 'domofon' : 'pametnaHisa']: { postavke },
+    execution: { scenarioType: input.scenario, estimates: { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0, kilometrinaKm } },
+  });
 }
 
 async function buildVideonadzorZahteva(input: {
@@ -464,8 +629,17 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
     const client = await findOrCreateClient(payload.contact, payload.note, defaultsApplied);
     inquiry.clientId = client._id as Types.ObjectId;
 
-    if (payload.pillar !== 'videonadzor' || !payload.videonadzor) {
-      // Other pillars: record + CRM entry only; the offer engine path is enabled per pillar.
+    // Ali steber podpira samodejno ponudbo?
+    const avtomatski =
+      (payload.pillar === 'videonadzor' && !!payload.videonadzor) ||
+      (payload.pillar === 'alarm' && !!payload.alarm && !payload.alarm.wiredAlarm) ||
+      (payload.pillar === 'domofon' && !!payload.domofon) ||
+      (payload.pillar === 'pametni_dom' && !!payload.pametniDom);
+
+    if (!avtomatski) {
+      if (payload.pillar === 'alarm' && payload.alarm?.wiredAlarm) {
+        defaultsApplied.push('Žični alarm — ponudbo pripravi Jaka ročno (spletna avtomatika pokriva brezžični sistem).');
+      }
       inquiry.defaultsApplied = defaultsApplied;
       await inquiry.save();
       return {
@@ -480,11 +654,14 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
     const metaNoteParts = [payload.note];
     if (payload.meta?.objectType) metaNoteParts.push(`Vrsta objekta: ${payload.meta.objectType}`);
     if (payload.meta?.qualityLevel) metaNoteParts.push(`Želena raven kakovosti: ${payload.meta.qualityLevel}`);
+    const kategorija = { videonadzor: 'videonadzor', alarm: 'alarm', domofon: 'domofon', pametni_dom: 'pametna-hisa' }[
+      payload.pillar as 'videonadzor' | 'alarm' | 'domofon' | 'pametni_dom'
+    ];
     const project = await createProjectForInquiry({
       clientName: client.name,
       siteAddressFull: payload.contact.siteAddress.full,
       pillar: payload.pillar,
-      category: 'videonadzor',
+      category: kategorija,
       note: metaNoteParts.filter(Boolean).join(' | '),
     });
     if (!project) {
@@ -492,15 +669,51 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
     }
     inquiry.projectId = project.id;
 
-    const zahteva = await buildVideonadzorZahteva({
-      projectMongoId: project._id as Types.ObjectId,
-      projectId: project.id,
-      cameraCount: payload.videonadzor.cameraCount,
-      wiringType: payload.videonadzor.wiringType,
-      wiringReady: payload.videonadzor.wiringReady,
-      settings,
-      defaultsApplied,
-    });
+    let zahteva;
+    if (payload.pillar === 'videonadzor' && payload.videonadzor) {
+      zahteva = await buildVideonadzorZahteva({
+        projectMongoId: project._id as Types.ObjectId,
+        projectId: project.id,
+        cameraCount: payload.videonadzor.cameraCount,
+        wiringType: payload.videonadzor.wiringType,
+        wiringReady: payload.videonadzor.wiringReady,
+        settings,
+        defaultsApplied,
+      });
+    } else if (payload.pillar === 'alarm' && payload.alarm) {
+      zahteva = await buildAlarmZahteva({
+        projectMongoId: project._id as Types.ObjectId,
+        projectId: project.id,
+        data: payload.alarm,
+        settings,
+        defaultsApplied,
+      });
+    } else if (payload.pillar === 'domofon' && payload.domofon) {
+      if (!payload.domofon.wiringReady) defaultsApplied.push('Napeljava za domofon še ni pripravljena — preveri obseg napeljave.');
+      zahteva = await buildPostavkeZahteva({
+        projectMongoId: project._id as Types.ObjectId,
+        projectId: project.id,
+        tip: 'domofon',
+        postavke: [
+          { productId: settings.domofon.notranjaEnotaProductId, kolicina: payload.domofon.indoorUnits, oznaka: 'notranja enota domofona' },
+          { productId: settings.domofon.zunanjaEnotaProductId, kolicina: payload.domofon.outdoorUnits, oznaka: 'zunanja enota domofona' },
+        ],
+        scenario: settings.domofon.scenario,
+        defaultsApplied,
+      });
+    } else {
+      zahteva = await buildPostavkeZahteva({
+        projectMongoId: project._id as Types.ObjectId,
+        projectId: project.id,
+        tip: 'pametna_hisa',
+        postavke: [
+          { productId: settings.pametniDom.modulLuciProductId, kolicina: payload.pametniDom!.lightsCount, oznaka: 'modul za luči' },
+          { productId: settings.pametniDom.modulSencilProductId, kolicina: payload.pametniDom!.shadesCount, oznaka: 'modul za senčila' },
+        ],
+        scenario: settings.pametniDom.scenario,
+        defaultsApplied,
+      });
+    }
     inquiry.zahtevaId = zahteva._id as Types.ObjectId;
 
     let offer;
@@ -555,11 +768,16 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
 export async function getWebInquiryOptions(tenantId = 'inteligent') {
   const settings = await getWebInquirySettings(tenantId);
   const video = settings.videonadzor;
-  const productIds = [video.wifiCameraProductId, video.wiredCameraProductId].filter(Boolean);
+  const productIds = [
+    video.wifiCameraProductId, video.wiredCameraProductId,
+    settings.alarm.centralaProductId, settings.alarm.sensorAProductId, settings.alarm.sensorBProductId, settings.alarm.sensorCProductId,
+    settings.domofon.notranjaEnotaProductId, settings.domofon.zunanjaEnotaProductId,
+    settings.pametniDom.modulLuciProductId, settings.pametniDom.modulSencilProductId,
+  ].filter(Boolean);
   const products = productIds.length > 0 ? await ProductModel.find({ _id: { $in: productIds } }).lean() : [];
   const productById = new Map<string, any>(products.map((product) => [String(product._id), product]));
 
-  function cameraOption(key: 'wifi' | 'wired', productId: Types.ObjectId | null) {
+  function option(key: string, productId: Types.ObjectId | null) {
     const product = productId ? productById.get(String(productId)) : null;
     if (!product) return null;
     const vat = Number((product as any)?.aaData?.vat);
@@ -579,14 +797,64 @@ export async function getWebInquiryOptions(tenantId = 'inteligent') {
         enabled: Boolean(video.wifiCameraProductId || video.wiredCameraProductId),
         cameraCount: { min: 1, max: 64 },
         wiringRule: 'Do 3 kamere praviloma WiFi, 4 ali več priporočamo žično izvedbo.',
-        cameras: [cameraOption('wifi', video.wifiCameraProductId), cameraOption('wired', video.wiredCameraProductId)].filter(
-          Boolean
-        ),
+        cameras: [option('wifi', video.wifiCameraProductId), option('wired', video.wiredCameraProductId)].filter(Boolean),
         dniSnemanja: video.dniSnemanja,
       },
-      alarm: { enabled: false },
-      domofon: { enabled: false },
-      pametni_dom: { enabled: false },
+      alarm: {
+        enabled: Boolean(settings.alarm.centralaProductId && (settings.alarm.sensorAProductId || settings.alarm.sensorBProductId)),
+        sensors: [
+          option('A', settings.alarm.sensorAProductId),
+          option('B', settings.alarm.sensorBProductId),
+          option('C', settings.alarm.sensorCProductId),
+        ].filter(Boolean),
+        centrala: option('centrala', settings.alarm.centralaProductId),
+      },
+      domofon: {
+        enabled: Boolean(settings.domofon.notranjaEnotaProductId && settings.domofon.zunanjaEnotaProductId),
+        notranjaEnota: option('notranja', settings.domofon.notranjaEnotaProductId),
+        zunanjaEnota: option('zunanja', settings.domofon.zunanjaEnotaProductId),
+      },
+      pametni_dom: {
+        enabled: Boolean(settings.pametniDom.modulLuciProductId || settings.pametniDom.modulSencilProductId),
+        modulLuci: option('luci', settings.pametniDom.modulLuciProductId),
+        modulSencil: option('sencila', settings.pametniDom.modulSencilProductId),
+      },
     },
   };
+}
+
+const IZDELKI_SKUPINE: Array<{ key: string; label: string; query: Record<string, unknown> }> = [
+  { key: 'kamere', label: 'Kamere in videonadzor', query: { 'classification.productType': 'kamera' } },
+  { key: 'ajax', label: 'Ajax alarm', query: { categorySlugs: 'ajax' } },
+  { key: 'blebox', label: 'Blebox pametni dom', query: { categorySlugs: 'blebox' } },
+];
+
+export async function getWebIzdelki(limit = 8) {
+  const skupine = [];
+  for (const skupina of IZDELKI_SKUPINE) {
+    const products = await ProductModel.find({
+      ...skupina.query,
+      isActive: true,
+      prodajnaCena: { $gt: 0 },
+      $or: [{ povezavaDoSlike: { $nin: [null, ''] } }, { 'aaData.image': { $nin: [null, ''] } }],
+    })
+      .sort({ prodajnaCena: -1 })
+      .limit(limit)
+      .lean();
+    skupine.push({
+      key: skupina.key,
+      label: skupina.label,
+      products: products.map((product: any) => {
+        const vat = Number(product?.aaData?.vat);
+        const vatRate = Number.isFinite(vat) && vat >= 0 ? vat : 22;
+        return {
+          name: product.ime,
+          shortDescription: (product.kratekOpis ?? '').slice(0, 140),
+          priceWithVat: Number((Number(product.prodajnaCena ?? 0) * (1 + vatRate / 100)).toFixed(2)),
+          image: product.povezavaDoSlike || product?.aaData?.image || '',
+        };
+      }),
+    });
+  }
+  return skupine;
 }

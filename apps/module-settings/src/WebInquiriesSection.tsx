@@ -25,7 +25,44 @@ type WebInquirySettings = {
     kanalMetrovPerCamera: number;
   };
   apiKeyConfigured: boolean;
+  alarm: Record<string, any>;
+  domofon: Record<string, any>;
+  pametniDom: Record<string, any>;
 };
+
+const PILLAR_PICKERJI: Array<{ kljuc: 'alarm' | 'domofon' | 'pametniDom'; naslov: string; polja: Array<[string, string]> }> = [
+  {
+    kljuc: 'alarm',
+    naslov: 'Alarm (brezžični) – fiksne izbire',
+    polja: [
+      ['centralaProductId', 'Centrala (Ajax Hub)'],
+      ['sensorAProductId', 'Senzor A (osnovni)'],
+      ['sensorBProductId', 'Senzor B (srednji)'],
+      ['sensorCProductId', 'Senzor C (napredni)'],
+      ['sirenaZunanjaProductId', 'Zunanja sirena'],
+      ['sirenaNotranjaProductId', 'Notranja sirena'],
+      ['tipkovnicaProductId', 'Tipkovnica'],
+      ['pozarProductId', 'Požarni senzor'],
+      ['coProductId', 'CO senzor'],
+    ],
+  },
+  {
+    kljuc: 'domofon',
+    naslov: 'Domofon – fiksne izbire',
+    polja: [
+      ['notranjaEnotaProductId', 'Notranja enota'],
+      ['zunanjaEnotaProductId', 'Zunanja enota'],
+    ],
+  },
+  {
+    kljuc: 'pametniDom',
+    naslov: 'Pametni dom – fiksne izbire (cena po napravi)',
+    polja: [
+      ['modulLuciProductId', 'Modul za luči'],
+      ['modulSencilProductId', 'Modul za senčila'],
+    ],
+  },
+];
 
 type WebInquiryRow = {
   id: string;
@@ -213,6 +250,9 @@ export function WebInquiriesSection() {
             utpKabelMetrovPerCamera: settings.videonadzor.utpKabelMetrovPerCamera,
             kanalMetrovPerCamera: settings.videonadzor.kanalMetrovPerCamera,
           },
+          alarm: settings.alarm,
+          domofon: settings.domofon,
+          pametniDom: settings.pametniDom,
         }),
       });
       const payload = await response.json();
@@ -366,6 +406,37 @@ export function WebInquiriesSection() {
                   </div>
                 ))}
               </div>
+
+              {PILLAR_PICKERJI.map((sklop) => (
+                <div key={sklop.kljuc} className="space-y-4 border-t border-border pt-4">
+                  <h4 className="text-sm font-semibold text-foreground">{sklop.naslov}</h4>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {sklop.polja.map(([polje, oznaka]) => (
+                      <ProductPicker
+                        key={polje}
+                        label={oznaka}
+                        product={settings[sklop.kljuc]?.[polje.replace('ProductId', 'Product')] ?? null}
+                        onSelect={(item) => {
+                          setSettings((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  [sklop.kljuc]: {
+                                    ...current[sklop.kljuc],
+                                    [polje]: item ? item.id : null,
+                                    [polje.replace('ProductId', 'Product')]: item
+                                      ? { id: item.id, name: item.name, price: item.unitPrice }
+                                      : null,
+                                  },
+                                }
+                              : current
+                          );
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
 
               <div className="flex justify-end">
                 <Button onClick={() => void save()} disabled={saving}>

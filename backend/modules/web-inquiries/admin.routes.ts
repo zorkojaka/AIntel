@@ -5,10 +5,19 @@ import { WebInquiryModel } from './web-inquiry.model';
 
 const router = Router();
 
+const ALARM_POLJA = ['centralaProductId', 'sensorAProductId', 'sensorBProductId', 'sensorCProductId', 'sirenaZunanjaProductId', 'sirenaNotranjaProductId', 'tipkovnicaProductId', 'pozarProductId', 'coProductId'] as const;
+const DOMOFON_POLJA = ['notranjaEnotaProductId', 'zunanjaEnotaProductId'] as const;
+const DOM_POLJA = ['modulLuciProductId', 'modulSencilProductId'] as const;
+
 async function serializeSettings() {
   const settings = await getWebInquirySettings();
   const video = settings.videonadzor;
-  const productIds = [video.wifiCameraProductId, video.wiredCameraProductId].filter(Boolean);
+  const productIds = [
+    video.wifiCameraProductId, video.wiredCameraProductId,
+    ...ALARM_POLJA.map((polje) => (settings.alarm as any)[polje]),
+    ...DOMOFON_POLJA.map((polje) => (settings.domofon as any)[polje]),
+    ...DOM_POLJA.map((polje) => (settings.pametniDom as any)[polje]),
+  ].filter(Boolean);
   const products = productIds.length > 0 ? await ProductModel.find({ _id: { $in: productIds } }).lean() : [];
   const productById = new Map<string, any>(products.map((product) => [String(product._id), product]));
 
@@ -18,7 +27,19 @@ async function serializeSettings() {
     return product ? { id: String(product._id), name: product.ime, price: product.prodajnaCena } : null;
   }
 
+  function sklop(source: any, polja: readonly string[]) {
+    const out: Record<string, unknown> = { scenario: source.scenario };
+    for (const polje of polja) {
+      out[polje] = source[polje] ? String(source[polje]) : null;
+      out[polje.replace('ProductId', 'Product')] = productInfo(source[polje]);
+    }
+    return out;
+  }
+
   return {
+    alarm: sklop(settings.alarm, ALARM_POLJA),
+    domofon: sklop(settings.domofon, DOMOFON_POLJA),
+    pametniDom: sklop(settings.pametniDom, DOM_POLJA),
     enabled: settings.enabled,
     autoSendEmail: settings.autoSendEmail,
     emailTemplateKey: settings.emailTemplateKey,
@@ -74,6 +95,15 @@ router.put('/settings', async (req: Request, res: Response) => {
     }
     for (const field of ['scenarioWifi', 'scenarioWiringReady', 'scenarioWiringNotReady'] as const) {
       if (['posiljanje', 'izvedba', 'izvedba_napeljava'].includes(video[field])) target[field] = video[field];
+    }
+
+    for (const [kljuc, polja] of [['alarm', ALARM_POLJA], ['domofon', DOMOFON_POLJA], ['pametniDom', DOM_POLJA]] as const) {
+      const vhod = body[kljuc] ?? {};
+      const cilj = (settings as any)[kljuc];
+      for (const polje of polja) {
+        if (vhod[polje] !== undefined) cilj[polje] = vhod[polje] || null;
+      }
+      if (['posiljanje', 'izvedba', 'izvedba_napeljava'].includes(vhod.scenario)) cilj.scenario = vhod.scenario;
     }
 
     await settings.save();

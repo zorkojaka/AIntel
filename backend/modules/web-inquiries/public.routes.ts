@@ -4,7 +4,7 @@ import path from 'path';
 import multer from 'multer';
 import mongoose from 'mongoose';
 import { Router, type NextFunction, type Request, type Response } from 'express';
-import { getWebInquiryOptions, processWebInquiry, validateWebInquiryPayload, WebInquiryError } from './web-inquiry.service';
+import { getWebInquiryOptions, getWebIzdelki, processWebInquiry, validateWebInquiryPayload, WebInquiryError } from './web-inquiry.service';
 import { WebInquiryModel } from './web-inquiry.model';
 
 const UPLOAD_BASE_DIR = '/var/www/aintel/uploads/web-inquiries';
@@ -87,6 +87,19 @@ router.get('/options', async (_req: Request, res: Response) => {
   try {
     const options = await getWebInquiryOptions();
     return res.json({ ok: true, ...options });
+  } catch (error) {
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: error instanceof Error ? error.message : 'Napaka strežnika.' });
+  }
+});
+
+const izdelkiCache: { data: unknown; cas: number } = { data: null, cas: 0 };
+router.get('/products', async (_req: Request, res: Response) => {
+  try {
+    if (!izdelkiCache.data || Date.now() - izdelkiCache.cas > 10 * 60 * 1000) {
+      izdelkiCache.data = await getWebIzdelki();
+      izdelkiCache.cas = Date.now();
+    }
+    return res.json({ ok: true, groups: izdelkiCache.data });
   } catch (error) {
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: error instanceof Error ? error.message : 'Napaka strežnika.' });
   }
