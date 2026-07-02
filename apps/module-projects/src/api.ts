@@ -237,6 +237,10 @@ export type CenikProduct = {
   classification?: {
     productType?: "kamera" | "snemalnik" | "switch" | "disk" | "nosilec" | "kabel" | "pribor" | "storitev" | "alarm_komponenta" | "drugo";
     manufacturer?: string;
+    cameraConnectivity?: "wifi" | "poe" | "lte";
+    powerMode?: "dc" | "poe" | "battery";
+    hasSim?: boolean;
+    supportsSolarPanel?: boolean;
     cameraTechnology?: "IP video" | "AHD" | "Analog";
     cameraHousing?: "Bullet" | "Turret" | "Dome" | "PTZ" | "Panoramic" | "Fisheye" | "Thermal";
     maxResolutionMP?: number;

@@ -372,6 +372,22 @@
   color: var(--finance-muted, #607289);
 }
 
+.finance-chart-tooltip {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--finance-border, #dbe4f0);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--color-text-primary, #0f172a);
+  font-size: 12px;
+  box-shadow: var(--finance-shadow, 0 8px 22px rgba(16, 44, 84, 0.08));
+}
+
+.finance-chart-tooltip strong {
+  font-size: 13px;
+}
+
 .finance-state {
   border: 1px dashed var(--finance-border, #dbe4f0);
   border-radius: 10px;

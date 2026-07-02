@@ -20,6 +20,10 @@ export type AAProductRaw = {
 export type Classification = {
   productType?: 'kamera' | 'snemalnik' | 'switch' | 'disk' | 'nosilec' | 'kabel' | 'pribor' | 'storitev' | 'alarm_komponenta' | 'drugo';
   manufacturer?: string;
+  cameraConnectivity?: 'wifi' | 'poe' | 'lte';
+  powerMode?: 'dc' | 'poe' | 'battery';
+  hasSim?: boolean;
+  supportsSolarPanel?: boolean;
   cameraHousing?: 'Bullet' | 'Turret' | 'Dome' | 'PTZ' | 'Panoramic' | 'Fisheye' | 'Thermal';
   cameraTechnology?: 'IP video' | 'AHD' | 'Analog';
   maxResolutionMP?: number;
