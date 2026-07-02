@@ -27,9 +27,13 @@ import {
 import { downloadPdf } from "../../../api";
 import { toast } from "sonner";
 import { useProjectMutationRefresh } from "../../core/useProjectMutationRefresh";
+import { InvoiceCommunicationComposeDialog } from "../../communication/InvoiceCommunicationComposeDialog";
 
 interface InvoiceVersionEditorProps {
   projectId?: string | null;
+  customerName?: string;
+  customerEmail?: string;
+  projectName?: string;
 }
 
 const TYPE_OPTIONS: InvoiceItem["type"][] = ["Osnovno", "Dodatno", "Manj"];
@@ -134,13 +138,14 @@ function filenameSafe(value: string) {
   return value.trim().replace(/[^\w.-]+/g, "-").replace(/-+/g, "-");
 }
 
-export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
+export function InvoiceVersionEditor({ projectId, customerName = "", customerEmail = "", projectName = "" }: InvoiceVersionEditorProps) {
   const {
     versions,
     activeVersion,
     setActiveVersionId,
     loading,
     saving,
+    refresh,
     createFromClosing,
     saveDraft,
     fetchNextInvoiceNumber,
@@ -154,6 +159,7 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
   const [invoiceNumberDraft, setInvoiceNumberDraft] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [creditDownloading, setCreditDownloading] = useState(false);
+  const [sendDialogOpen, setSendDialogOpen] = useState(false);
 
   useEffect(() => {
     setDraftVersion(cloneVersion(activeVersion));
@@ -530,7 +536,11 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
                 onPreview={handlePreviewCreditNote}
                 onDownload={handleDownloadCreditNote}
               />
-              <Button variant="outline" disabled>
+              <Button
+                variant="outline"
+                disabled={!draftVersion || draftVersion.status !== "issued"}
+                onClick={() => setSendDialogOpen(true)}
+              >
                 Pošlji račun stranki
               </Button>
             </div>
@@ -569,6 +579,22 @@ export function InvoiceVersionEditor({ projectId }: InvoiceVersionEditorProps) {
           </div>
         </div>
       )}
+      <InvoiceCommunicationComposeDialog
+        open={sendDialogOpen}
+        onOpenChange={setSendDialogOpen}
+        projectId={projectId ?? ""}
+        invoiceVersionId={draftVersion?._id ?? null}
+        customerName={customerName}
+        customerEmail={customerEmail}
+        projectName={projectName || projectId || ""}
+        invoiceNumber={draftVersion?.invoiceNumber || invoiceNumberDraft || `verzija ${draftVersion?.versionNumber ?? ""}`}
+        invoiceTotal={Number(draftVersion?.summary?.totalWithVat ?? 0)}
+        companyName=""
+        onSent={async () => {
+          await refresh();
+          await refreshAfterMutation();
+        }}
+      />
     </Card>
   );
 }

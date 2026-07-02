@@ -6,6 +6,7 @@ import { generateOfferDocumentPdf } from "../../projects/services/offer-pdf-prev
 import { generateOfferDescriptionsPdf } from "../../projects/services/offer-description-pdf.service";
 import { generateWorkOrderDocumentPdf } from "../../projects/services/project-document-pdf.service";
 import { getActiveSignedConfirmationVersion } from "../../projects/services/work-order-confirmation.service";
+import { generateInvoicePdf } from "../../projects/services/invoice-pdf.service";
 
 export interface ResolvedAttachment {
   type: CommunicationAttachmentType;
@@ -43,8 +44,34 @@ export async function resolveCommunicationAttachment(params: {
   projectId: string;
   offerId?: string | null;
   workOrderId?: string | null;
+  invoiceVersionId?: string | null;
 }): Promise<ResolvedAttachment> {
-  const { type, projectId, offerId, workOrderId } = params;
+  const { type, projectId, offerId, workOrderId, invoiceVersionId } = params;
+
+  if (type === "invoice_pdf") {
+    if (!invoiceVersionId) {
+      throw new Error("Račun za priponko ni podan.");
+    }
+
+    const project = await ProjectModel.findOne({ id: projectId }).lean();
+    const invoice = (project?.invoiceVersions ?? []).find((entry: any) => String(entry?._id) === invoiceVersionId);
+    if (!project || !invoice) {
+      throw new Error("Račun za priponko ni najden.");
+    }
+
+    const invoiceIdentifier = invoice.invoiceNumber || `verzija ${invoice.versionNumber ?? invoiceVersionId}`;
+    const customerName = project.customerName?.trim() || project.customer?.name?.trim() || "";
+    const label = sanitizeFilePart(`Račun ${invoiceIdentifier}${customerName ? ` - ${customerName}` : ""}`) || "Racun";
+    const buffer = await generateInvoicePdf(projectId, invoiceVersionId, { docType: "INVOICE" });
+
+    return {
+      type,
+      refId: invoiceVersionId,
+      filename: `${label}.pdf`,
+      content: buffer,
+      contentType: "application/pdf",
+    };
+  }
 
   if (type === "work_order_pdf") {
     if (!workOrderId) {

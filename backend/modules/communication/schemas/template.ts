@@ -21,7 +21,7 @@ const CommunicationTemplateSchema = new Schema<CommunicationTemplateDocument>(
     subjectTemplate: { type: String, required: true, trim: true },
     bodyTemplate: { type: String, required: true },
     defaultAttachments: {
-      type: [{ type: String, enum: ["offer_pdf", "project_pdf", "work_order_confirmation_pdf"] }],
+      type: [{ type: String, enum: ["offer_pdf", "project_pdf", "work_order_pdf", "work_order_confirmation_pdf", "invoice_pdf"] }],
       default: [],
     },
     isActive: { type: Boolean, required: true, default: true },
