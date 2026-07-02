@@ -13,8 +13,8 @@ type Props = {
 function dominantBrand(products: CenikProduct[]) {
   const counts = new Map<string, number>();
   products.forEach((product) => {
-    const brand = product.classification?.manufacturer || product.proizvajalec || "";
-    if (!brand) return;
+    const brand = productBrand(product);
+    if (brand === "Brez proizvajalca") return;
     counts.set(brand, (counts.get(brand) ?? 0) + 1);
   });
   return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
@@ -24,6 +24,7 @@ function productBrand(product: CenikProduct) {
   const slugs = product.categorySlugs ?? [];
   if (product.classification?.manufacturer) return product.classification.manufacturer;
   if (product.proizvajalec) return product.proizvajalec;
+  if (/\bdrn[-\s]/i.test(`${product.ime ?? ""} ${product.aaData?.productCode ?? ""}`)) return "DVC";
   if (slugs.some((slug) => slug.toLowerCase() === "dvc")) return "DVC";
   return "Brez proizvajalca";
 }

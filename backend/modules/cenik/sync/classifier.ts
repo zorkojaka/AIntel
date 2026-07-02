@@ -7,8 +7,8 @@ export function getAttribute(attrs: AAAttribute[] | undefined, key: string): str
 }
 
 export function classifyProduct(product: AAProductRaw): Classification {
-  const manufacturer = getAttribute(product.attributes, 'Manufacturer');
   const productType = detectProductType(product);
+  const manufacturer = inferManufacturer(product, productType);
   const classification: Classification = {
     productType,
     manufacturer,
@@ -58,6 +58,13 @@ export function classifyProduct(product: AAProductRaw): Classification {
 
 function fullText(product: AAProductRaw) {
   return `${product.category ?? ''} ${product.name ?? ''} ${product.description ?? ''}`.toLowerCase();
+}
+
+function inferManufacturer(product: AAProductRaw, productType: Classification['productType']) {
+  const manufacturer = getAttribute(product.attributes, 'Manufacturer');
+  if (manufacturer) return manufacturer;
+  if (productType === 'snemalnik' && /\bDRN[-\s]/i.test(`${product.name} ${product.id}`)) return 'DVC';
+  return undefined;
 }
 
 function detectProductType(product: AAProductRaw): Classification['productType'] {
