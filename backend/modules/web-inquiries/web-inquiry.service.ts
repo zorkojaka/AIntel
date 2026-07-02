@@ -9,6 +9,7 @@ import {
 } from '../projects/schemas/project';
 import { calculateProjectRouteDistance } from '../projects/services/route-distance.service';
 import { sendOfferCommunicationEmail } from '../communication/services/communication.service';
+import { CommunicationTemplateModel } from '../communication/schemas/template';
 import { ZahtevaModel } from '../zahteve/zahteva.model';
 import {
   izracunajInPredlagajDisk,
@@ -380,6 +381,44 @@ async function buildVideonadzorZahteva(input: {
   return zahteva;
 }
 
+async function sendInquiryOfferEmail(input: {
+  inquiryId: string;
+  projectId: string;
+  offerId: string;
+  to: string;
+  templateKey: string | null;
+}) {
+  try {
+    // sendOfferCommunicationEmail requires a template (no built-in default),
+    // so fall back to the first active offer_send template when none is configured.
+    let templateKey = input.templateKey;
+    if (!templateKey) {
+      const fallback = await CommunicationTemplateModel.findOne({ category: 'offer_send', isActive: true })
+        .sort({ createdAt: 1 })
+        .lean();
+      templateKey = (fallback as any)?.key ?? null;
+    }
+    await sendOfferCommunicationEmail({
+      projectId: input.projectId,
+      offerId: input.offerId,
+      to: [input.to],
+      templateKey,
+      actorDisplayName: 'Spletna stran',
+    });
+    await WebInquiryModel.updateOne(
+      { _id: input.inquiryId },
+      { $set: { emailSent: true, status: 'ponudba_poslana', errorMessage: null } }
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Napaka pri pošiljanju emaila.';
+    console.error('[web-inquiries] Pošiljanje ponudbe po emailu ni uspelo:', message);
+    await WebInquiryModel.updateOne(
+      { _id: input.inquiryId },
+      { $set: { emailSent: false, status: 'ponudba_ni_poslana', errorMessage: message } }
+    ).catch(() => undefined);
+  }
+}
+
 export interface ProcessInquiryResult {
   inquiry: WebInquiryDocument;
   offerNumber: string | null;
@@ -461,39 +500,31 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
     inquiry.offerNumber = offer.documentNumber ?? offer.title ?? null;
     inquiry.offerTotalWithVat = offer.totalWithVat ?? offer.totalGrossAfterDiscount ?? offer.totalGross ?? null;
 
-    let emailSent = false;
-    let emailError: string | null = null;
-    if (settings.autoSendEmail) {
-      try {
-        await sendOfferCommunicationEmail({
-          projectId: project.id,
-          offerId: String(offer._id),
-          to: [payload.contact.email],
-          templateKey: settings.emailTemplateKey ?? null,
-          actorDisplayName: 'Spletna stran',
-        });
-        emailSent = true;
-      } catch (error) {
-        emailError = error instanceof Error ? error.message : 'Napaka pri pošiljanju emaila.';
-      }
-    } else {
+    if (!settings.autoSendEmail) {
       defaultsApplied.push('Samodejno pošiljanje emaila je izklopljeno v nastavitvah.');
     }
-
-    inquiry.emailSent = emailSent;
-    inquiry.status = emailSent ? 'ponudba_poslana' : 'ponudba_ni_poslana';
-    inquiry.errorMessage = emailError;
+    inquiry.status = 'ponudba_ni_poslana';
     inquiry.defaultsApplied = defaultsApplied;
     await inquiry.save();
+
+    if (settings.autoSendEmail) {
+      // Email (PDF + SMTP) can take longer than the website's request timeout,
+      // so it runs after the response; the inquiry record tracks the outcome.
+      void sendInquiryOfferEmail({
+        inquiryId: String(inquiry._id),
+        projectId: project.id,
+        offerId: String(offer._id),
+        to: payload.contact.email,
+        templateKey: settings.emailTemplateKey ?? null,
+      });
+    }
 
     return {
       inquiry,
       offerNumber: inquiry.offerNumber,
       offerTotalWithVat: inquiry.offerTotalWithVat,
-      emailSent,
-      message: emailSent
-        ? 'Informativna ponudba je bila poslana na vaš e-naslov.'
-        : 'Povpraševanje smo prejeli. Informativno ponudbo vam pošljemo v najkrajšem času.',
+      emailSent: false,
+      message: 'Povpraševanje smo prejeli. Informativno ponudbo vam pošiljamo na vaš e-naslov.',
     };
   } catch (error) {
     inquiry.status = 'napaka';
