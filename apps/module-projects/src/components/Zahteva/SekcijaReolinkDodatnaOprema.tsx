@@ -1,4 +1,5 @@
-import { MemoryStick } from "lucide-react";
+import { MemoryStick, Package } from "lucide-react";
+import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
 import type { Videonadzor } from "./utils";
@@ -14,10 +15,17 @@ function categoryPriorityRank(product: CenikProduct) {
   return product.categoryPriority ?? 4;
 }
 
-function isReolinkMicroSd(product: CenikProduct) {
+function isMicroSdCard(product: CenikProduct) {
   const name = (product.ime ?? "").toLocaleLowerCase("sl-SI");
-  const manufacturer = `${product.proizvajalec ?? ""} ${product.classification?.manufacturer ?? ""}`.toLocaleLowerCase("sl-SI");
-  return /\b(micro\s*sd|microsd)\b/.test(name) && manufacturer.includes("reolink");
+  return /\b(micro\s*sd|microsd)\b/.test(name) && /\b(128|256|512)\s*gb\b/.test(name);
+}
+
+function isReolinkJunctionBox(product: CenikProduct) {
+  const text = `${product.ime ?? ""} ${product.proizvajalec ?? ""} ${product.classification?.manufacturer ?? ""} ${(product.categorySlugs ?? []).join(" ")}`.toLocaleLowerCase("sl-SI");
+  const isReolink = /\b(reolink|reo)\b/.test(text);
+  const isJunctionBox = /junction\s*box|junctionbox|\bd20\b|doza|podnož|podnoz|nosilec/.test(text);
+  const isCamera = product.classification?.productType === "kamera" || /\bkamera|camera\b/.test(text);
+  return isReolink && isJunctionBox && !isCamera;
 }
 
 function selectedQuantity(items: Array<{ productId: string; kolicina: number }>, productId: string) {
@@ -33,7 +41,14 @@ export function SekcijaReolinkDodatnaOprema({ videonadzor, productById, onChange
   const microSdCards = useMemo(
     () =>
       Array.from(productById.values())
-        .filter(isReolinkMicroSd)
+        .filter(isMicroSdCard)
+        .sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || a.prodajnaCena - b.prodajnaCena || a.ime.localeCompare(b.ime, "sl")),
+    [productById],
+  );
+  const junctionBoxes = useMemo(
+    () =>
+      Array.from(productById.values())
+        .filter(isReolinkJunctionBox)
         .sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || a.prodajnaCena - b.prodajnaCena || a.ime.localeCompare(b.ime, "sl")),
     [productById],
   );
@@ -50,32 +65,72 @@ export function SekcijaReolinkDodatnaOprema({ videonadzor, productById, onChange
   };
 
   return (
+    <>
+      <AccessorySection
+        icon={<MemoryStick className="h-4 w-4" aria-hidden />}
+        title="MicroSD pomnilniška kartica"
+        products={microSdCards}
+        emptyText="V ceniku ni MicroSD kartic 128GB, 256GB ali 512GB."
+        items={videonadzor.dodatnaOprema ?? []}
+        suggestedQuantity={Math.max(1, assignedCameraCount(videonadzor))}
+        onSetQuantity={setQuantity}
+      />
+      <AccessorySection
+        icon={<Package className="h-4 w-4" aria-hidden />}
+        title="Reolink nosilec / junction box"
+        products={junctionBoxes}
+        emptyText="V ceniku ni Reolink D20/JunctionBox nosilca."
+        items={videonadzor.dodatnaOprema ?? []}
+        suggestedQuantity={Math.max(1, assignedCameraCount(videonadzor))}
+        onSetQuantity={setQuantity}
+      />
+    </>
+  );
+}
+
+function AccessorySection({
+  icon,
+  title,
+  products,
+  emptyText,
+  items,
+  suggestedQuantity,
+  onSetQuantity,
+}: {
+  icon: ReactNode;
+  title: string;
+  products: CenikProduct[];
+  emptyText: string;
+  items: Array<{ productId: string; kolicina: number }>;
+  suggestedQuantity: number;
+  onSetQuantity: (productId: string, quantity: number) => void;
+}) {
+  return (
     <section className="zahteva-subsection">
       <div className="zahteva-subsection-title">
-        <MemoryStick className="h-4 w-4" aria-hidden />
-        <h4>MicroSD pomnilniška kartica</h4>
+        {icon}
+        <h4>{title}</h4>
       </div>
       <div className="zahteva-product-track zahteva-alarm-track">
-        {microSdCards.map((product) => {
-          const quantity = selectedQuantity(videonadzor.dodatnaOprema ?? [], product._id);
-          const suggestedQuantity = Math.max(1, assignedCameraCount(videonadzor));
+        {products.map((product) => {
+          const quantity = selectedQuantity(items, product._id);
           return (
             <div key={product._id} className={`zahteva-track-card zahteva-alarm-card ${quantity > 0 ? "is-active" : ""}`} title={product.ime}>
-              <button type="button" className="zahteva-track-main" onClick={() => setQuantity(product._id, quantity > 0 ? quantity : suggestedQuantity)}>
+              <button type="button" className="zahteva-track-main" onClick={() => onSetQuantity(product._id, quantity > 0 ? quantity : suggestedQuantity)}>
                 {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
                 <strong>{product.ime}</strong>
-                <small>Reolink MicroSD</small>
+                <small>{title}</small>
                 <b>{formatPrice(product.prodajnaCena)}</b>
               </button>
               <div className="zahteva-qty-control">
-                <button type="button" onClick={() => setQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>-</button>
+                <button type="button" onClick={() => onSetQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>-</button>
                 <span>{quantity}</span>
-                <button type="button" onClick={() => setQuantity(product._id, quantity + 1)} aria-label={`Povečaj ${product.ime}`}>+</button>
+                <button type="button" onClick={() => onSetQuantity(product._id, quantity + 1)} aria-label={`Povečaj ${product.ime}`}>+</button>
               </div>
             </div>
           );
         })}
-        {microSdCards.length === 0 ? <div className="zahteva-empty">V ceniku ni Reolink MicroSD kartic.</div> : null}
+        {products.length === 0 ? <div className="zahteva-empty">{emptyText}</div> : null}
       </div>
     </section>
   );
