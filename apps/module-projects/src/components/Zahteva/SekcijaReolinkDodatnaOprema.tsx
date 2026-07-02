@@ -15,8 +15,9 @@ function categoryPriorityRank(product: CenikProduct) {
 }
 
 function isReolinkMicroSd(product: CenikProduct) {
-  const text = `${product.ime ?? ""} ${product.proizvajalec ?? ""} ${product.classification?.manufacturer ?? ""} ${product.kratekOpis ?? ""} ${product.dolgOpis ?? ""} ${(product.categorySlugs ?? []).join(" ")}`.toLocaleLowerCase("sl-SI");
-  return text.includes("reolink") && /\b(micro\s*sd|microsd)\b/.test(text);
+  const name = (product.ime ?? "").toLocaleLowerCase("sl-SI");
+  const manufacturer = `${product.proizvajalec ?? ""} ${product.classification?.manufacturer ?? ""}`.toLocaleLowerCase("sl-SI");
+  return /\b(micro\s*sd|microsd)\b/.test(name) && manufacturer.includes("reolink");
 }
 
 function selectedQuantity(items: Array<{ productId: string; kolicina: number }>, productId: string) {
