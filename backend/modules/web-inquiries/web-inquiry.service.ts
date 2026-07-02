@@ -50,14 +50,17 @@ export interface WebInquiryPayload {
   };
   note?: string;
   source?: string;
+  meta?: Record<string, string>;
 }
 
-const PILLARS: WebInquiryPillar[] = ['videonadzor', 'alarm', 'domofon', 'pametni_dom'];
+const PILLARS: WebInquiryPillar[] = ['videonadzor', 'alarm', 'domofon', 'pametni_dom', 'pametna_kljucavnica', 'servis'];
 const PILLAR_LABELS: Record<WebInquiryPillar, string> = {
   videonadzor: 'Videonadzor',
   alarm: 'Alarm',
   domofon: 'Domofon',
   pametni_dom: 'Pametni dom',
+  pametna_kljucavnica: 'Pametna ključavnica',
+  servis: 'Servis',
 };
 
 function cleanString(value: unknown, maxLength = 200): string {
@@ -117,11 +120,21 @@ export function validateWebInquiryPayload(body: unknown): WebInquiryPayload {
     throw new WebInquiryError('VALIDATION_ERROR', 'Manjka naslov objekta (contact.siteAddress).', 400);
   }
 
+  // meta: flat string map for context (objectType, qualityLevel, utm_*, gclid, landingPage ...)
+  const meta: Record<string, string> = {};
+  const metaSource = (source.meta ?? {}) as Record<string, unknown>;
+  for (const key of Object.keys(metaSource).slice(0, 20)) {
+    const cleanKey = cleanString(key, 40).replace(/[^a-zA-Z0-9_.-]/g, '');
+    const value = cleanString(metaSource[key], 300);
+    if (cleanKey && value) meta[cleanKey] = value;
+  }
+
   const payload: WebInquiryPayload = {
     pillar,
     contact,
     note: cleanString(source.note, 1000),
     source: cleanString(source.source, 120) || 'web',
+    meta,
   };
 
   if (pillar === 'videonadzor') {
@@ -441,6 +454,7 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
     status: 'novo',
     contact: payload.contact,
     payload: payload.videonadzor ? { videonadzor: payload.videonadzor } : {},
+    meta: payload.meta ?? {},
     note: payload.note,
     source: payload.source,
     defaultsApplied: [],
@@ -463,12 +477,15 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
       };
     }
 
+    const metaNoteParts = [payload.note];
+    if (payload.meta?.objectType) metaNoteParts.push(`Vrsta objekta: ${payload.meta.objectType}`);
+    if (payload.meta?.qualityLevel) metaNoteParts.push(`Želena raven kakovosti: ${payload.meta.qualityLevel}`);
     const project = await createProjectForInquiry({
       clientName: client.name,
       siteAddressFull: payload.contact.siteAddress.full,
       pillar: payload.pillar,
       category: 'videonadzor',
-      note: payload.note,
+      note: metaNoteParts.filter(Boolean).join(' | '),
     });
     if (!project) {
       throw new WebInquiryError('ENGINE_ERROR', 'Projekta ni bilo mogoče ustvariti.', 502);

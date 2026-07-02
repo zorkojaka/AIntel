@@ -101,6 +101,9 @@ router.get('/', async (req: Request, res: Response) => {
         emailSent: inquiry.emailSent,
         defaultsApplied: inquiry.defaultsApplied,
         errorMessage: inquiry.errorMessage,
+        meta: inquiry.meta ?? {},
+        nextStep: inquiry.nextStep ?? null,
+        photos: inquiry.photos ?? [],
       }))
     );
   } catch (error) {

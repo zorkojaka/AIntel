@@ -1,7 +1,39 @@
 import cors from 'cors';
+import fs from 'fs';
+import path from 'path';
+import multer from 'multer';
+import mongoose from 'mongoose';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { getWebInquiryOptions, processWebInquiry, validateWebInquiryPayload, WebInquiryError } from './web-inquiry.service';
 import { WebInquiryModel } from './web-inquiry.model';
+
+const UPLOAD_BASE_DIR = '/var/www/aintel/uploads/web-inquiries';
+const PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+const photoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, _file, cb) => {
+      const inquiryId = String(req.params.id ?? '');
+      if (!mongoose.isValidObjectId(inquiryId)) return cb(new Error('Neveljaven ID povpraševanja.'), '');
+      const dir = path.join(UPLOAD_BASE_DIR, inquiryId);
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+      } catch (error) {
+        cb(error as Error, dir);
+      }
+    },
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase().replace(/[^.a-z0-9]/g, '') || '.jpg';
+      cb(null, `foto-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024, files: 6 },
+  fileFilter: (_req, file, cb) => {
+    if (!PHOTO_MIME_TYPES.includes(file.mimetype)) return cb(new Error('Dovoljene so samo slike (JPG, PNG, WebP).'));
+    cb(null, true);
+  },
+});
 
 const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 10;
@@ -104,6 +136,70 @@ router.post('/inquiries', async (req: Request, res: Response) => {
     }
     console.error('[web-inquiries] Nepričakovana napaka', error);
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Napaka strežnika. Poskusite znova ali nas pokličite.' });
+  }
+});
+
+router.post('/inquiries/:id/photos', (req: Request, res: Response) => {
+  if (!mongoose.isValidObjectId(String(req.params.id))) {
+    return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: 'Neveljaven ID povpraševanja.' });
+  }
+  photoUpload.array('photos', 6)(req, res, async (uploadError: unknown) => {
+    if (uploadError) {
+      const message = uploadError instanceof Error ? uploadError.message : 'Nalaganje slik ni uspelo.';
+      return res.status(400).json({ ok: false, code: 'UPLOAD_ERROR', message });
+    }
+    try {
+      const inquiry = await WebInquiryModel.findById(req.params.id);
+      if (!inquiry) {
+        return res.status(404).json({ ok: false, code: 'NOT_FOUND', message: 'Povpraševanje ni najdeno.' });
+      }
+      const files = (req.files as Express.Multer.File[]) ?? [];
+      if ((inquiry.photos?.length ?? 0) + files.length > 12) {
+        return res.status(400).json({ ok: false, code: 'UPLOAD_ERROR', message: 'Preveč slik za eno povpraševanje.' });
+      }
+      const now = new Date();
+      const records = files.map((file) => ({
+        filename: file.filename,
+        url: `/uploads/web-inquiries/${req.params.id}/${file.filename}`,
+        uploadedAt: now,
+      }));
+      inquiry.photos = [...(inquiry.photos ?? []), ...records];
+      await inquiry.save();
+      return res.json({ ok: true, uploaded: records.length, totalPhotos: inquiry.photos.length });
+    } catch (error) {
+      console.error('[web-inquiries] Napaka pri shranjevanju slik', error);
+      return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Slik ni bilo mogoče shraniti.' });
+    }
+  });
+});
+
+const NEXT_STEP_MESSAGES: Record<string, string> = {
+  avans: 'Hvala za potrditev. Kontaktirali vas bomo s podatki za plačilo avansa in dogovorom o terminu montaže.',
+  posvet: 'Zabeleženo — poklicali vas bomo za kratek telefonski posvet.',
+  ogled: 'Zabeleženo — kontaktirali vas bomo za termin strokovnega ogleda (50 € z DDV + potni stroški; ob izvedbi se 50 € prizna kot popust).',
+  shrani: 'Ponudba je shranjena. Na e-naslovu jo imate na voljo, kadarkoli se lahko oglasite.',
+};
+
+router.post('/inquiries/:id/next-step', async (req: Request, res: Response) => {
+  try {
+    if (!mongoose.isValidObjectId(String(req.params.id))) {
+      return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: 'Neveljaven ID povpraševanja.' });
+    }
+    const choice = String(req.body?.choice ?? '').trim();
+    if (!Object.keys(NEXT_STEP_MESSAGES).includes(choice)) {
+      return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: 'Neveljavna izbira (avans | posvet | ogled | shrani).' });
+    }
+    const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 500) : '';
+    const inquiry = await WebInquiryModel.findById(req.params.id);
+    if (!inquiry) {
+      return res.status(404).json({ ok: false, code: 'NOT_FOUND', message: 'Povpraševanje ni najdeno.' });
+    }
+    inquiry.nextStep = { choice: choice as any, note, chosenAt: new Date() };
+    await inquiry.save();
+    return res.json({ ok: true, message: NEXT_STEP_MESSAGES[choice] });
+  } catch (error) {
+    console.error('[web-inquiries] Napaka pri naslednjem koraku', error);
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Izbire ni bilo mogoče shraniti.' });
   }
 });
 
