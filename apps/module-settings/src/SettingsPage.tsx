@@ -15,6 +15,7 @@ import {
 import { OfferRulesSection } from './OfferRulesSection';
 import { ExecutionRulesSection } from './ExecutionRulesSection';
 import { RequirementTemplatesSection } from './RequirementTemplatesSection';
+import { WebInquiriesSection } from './WebInquiriesSection';
 import { CommunicationSenderSection } from './components/CommunicationSenderSection';
 import { CommunicationTemplatesSection } from './components/CommunicationTemplatesSection';
 import { DocumentPreview } from './components/DocumentPreview';
@@ -592,6 +593,7 @@ export const SettingsPage: React.FC = () => {
               saving={savingScope === 'sales'}
               loading={loading}
             />
+            <WebInquiriesSection />
             <ExecutionRulesSection />
             <OfferRulesSection />
             <RequirementTemplatesSection />
