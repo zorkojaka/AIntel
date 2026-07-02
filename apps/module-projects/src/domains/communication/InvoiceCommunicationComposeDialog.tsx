@@ -87,6 +87,7 @@ export function InvoiceCommunicationComposeDialog({
   const [body, setBody] = useState("");
   const [isDirty, setIsDirty] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [reviewLink, setReviewLink] = useState("");
 
   const normalizedCustomerEmail = useMemo(() => customerEmail.trim(), [customerEmail]);
   const invoiceTotalLabel = `${formatTotal(invoiceTotal)} EUR`;
@@ -103,8 +104,9 @@ export function InvoiceCommunicationComposeDialog({
       "sender.email": senderSettings?.senderEmail ?? "",
       "sender.phone": senderSettings?.senderPhone ?? "",
       "sender.role": senderSettings?.senderRole ?? "",
+      "review.link": reviewLink,
     }),
-    [companyName, customerName, invoiceNumber, invoiceTotalLabel, normalizedCustomerEmail, projectName, senderSettings]
+    [companyName, customerName, invoiceNumber, invoiceTotalLabel, normalizedCustomerEmail, projectName, senderSettings, reviewLink]
   );
 
   const renderedFooter = useMemo(
@@ -143,7 +145,16 @@ export function InvoiceCommunicationComposeDialog({
           fetchCommunicationTemplates("invoice_send"),
           fetchCommunicationSenderSettings(),
         ]);
+        let nextReviewLink = "";
+        try {
+          const reviewResponse = await fetch(`/api/projects/${projectId}/review-link`, { credentials: "include" });
+          const reviewPayload = await reviewResponse.json();
+          nextReviewLink = reviewPayload?.data?.url ?? "";
+        } catch {
+          nextReviewLink = "";
+        }
         if (!active) return;
+        setReviewLink(nextReviewLink);
 
         const activeTemplates = nextTemplates.filter((entry) => entry.isActive);
         const defaultTemplate = activeTemplates[0] ?? null;
@@ -158,6 +169,7 @@ export function InvoiceCommunicationComposeDialog({
           "sender.email": nextSender?.senderEmail ?? "",
           "sender.phone": nextSender?.senderPhone ?? "",
           "sender.role": nextSender?.senderRole ?? "",
+          "review.link": nextReviewLink,
         };
 
         setTemplates(activeTemplates);

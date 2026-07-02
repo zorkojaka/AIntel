@@ -13,11 +13,37 @@ function javnoIme(fullName: string) {
 }
 
 /**
- * Ob zaključku projekta pošlje stranki prošnjo za oceno z unikatnim linkom.
- * Kliče se fire-and-forget iz project.controller (status -> completed).
+ * Poišče ali ustvari zapis ocene za projekt in vrne unikatni link.
+ * Uporablja se v mailu za račun ({{review.link}}) - nič se ne pošlje samodejno.
+ */
+export async function ensureReviewLinkForProject(project: ProjectDocument | any): Promise<string> {
+  const projectId = project.id as string;
+  let review = await ReviewModel.findOne({ projectId });
+  if (!review) {
+    const client = await resolveProjectClient(project).catch(() => null);
+    review = await ReviewModel.create({
+      projectId,
+      clientId: (client as any)?.id ?? null,
+      name: javnoIme(client?.name ?? project.customer?.name ?? ''),
+      pillar: (project.categories ?? [])[0] ?? '',
+      token: crypto.randomBytes(20).toString('hex'),
+      status: 'poslano',
+    });
+  }
+  const settings = await getWebInquirySettings();
+  return `${(settings as any).reviewPageUrl || 'https://inteligent.si/ocena'}?token=${review.token}`;
+}
+
+/**
+ * Samodejna prošnja za oceno ob zaključku projekta.
+ * IZKLOPLJENO, dokler v nastavitvah ni vklopljen reviewAutoRequest (Jaka testira rocno prek maila za racun).
  */
 export async function requestReviewForProject(project: ProjectDocument | any) {
   try {
+    const settingsCheck = await getWebInquirySettings();
+    if (!(settingsCheck as any).reviewAutoRequest) {
+      return;
+    }
     const projectId = project.id as string;
     const existing = await ReviewModel.findOne({ projectId });
     if (existing) return;

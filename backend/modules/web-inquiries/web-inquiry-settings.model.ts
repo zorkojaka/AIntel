@@ -9,6 +9,7 @@ export interface WebInquirySettingsDocument extends Document {
   emailTemplateKey: string | null;
   reviewPageUrl: string;
   googleReviewUrl: string;
+  reviewAutoRequest: boolean;
   videonadzor: {
     wifiCameraProductId: Types.ObjectId | null;
     wiredCameraProductId: Types.ObjectId | null;
@@ -58,6 +59,7 @@ const WebInquirySettingsSchema = new Schema<WebInquirySettingsDocument>(
     emailTemplateKey: { type: String, default: null, trim: true },
     reviewPageUrl: { type: String, trim: true, default: 'https://dev.inteligent.si/predogled/ocena' },
     googleReviewUrl: { type: String, trim: true, default: 'https://g.page/r/CWxhGIx4AaUWEBM/review' },
+    reviewAutoRequest: { type: Boolean, default: false },
     videonadzor: {
       wifiCameraProductId: { type: Schema.Types.ObjectId, ref: 'Product', default: null },
       wiredCameraProductId: { type: Schema.Types.ObjectId, ref: 'Product', default: null },
