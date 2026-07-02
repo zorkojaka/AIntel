@@ -4,6 +4,10 @@ import { getProductImageUrl, type CenikProduct } from "../../api";
 import type { Videonadzor } from "./utils";
 import { assignedCameraProducts, formatPrice, normalizedSelectedItems, standardPorts } from "./utils";
 
+function optionKey(value?: string | number | null) {
+  return String(value ?? "").trim().toLocaleLowerCase("sl-SI");
+}
+
 type Props = {
   videonadzor: Videonadzor;
   productById: Map<string, CenikProduct>;
@@ -24,7 +28,16 @@ function productBrand(product: CenikProduct) {
 }
 
 function defaultManufacturer(values: string[]) {
-  return values.includes("DVC") ? "DVC" : values[0] ?? "";
+  return values.some((value) => optionKey(value) === "dvc") ? values.find((value) => optionKey(value) === "dvc") ?? "DVC" : values[0] ?? "";
+}
+
+function uniqueOptions(values: string[]) {
+  const byKey = new Map<string, string>();
+  for (const value of values) {
+    const key = optionKey(value);
+    if (key && !byKey.has(key)) byKey.set(key, value);
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b, "sl"));
 }
 
 function poeSwitchText(product: CenikProduct | undefined) {
@@ -119,19 +132,19 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
   const allSwitches = useMemo(
     () =>
       Array.from(productById.values())
-        .filter((product) => product.classification?.productType === "switch")
+        .filter((product) => optionKey(product.classification?.productType) === "switch")
         .filter((product) => poePortCount(product) > 0),
     [productById],
   );
-  const manufacturers = useMemo(() => Array.from(new Set(allSwitches.map(productBrand))).sort((a, b) => a.localeCompare(b, "sl")), [allSwitches]);
+  const manufacturers = useMemo(() => uniqueOptions(allSwitches.map(productBrand)), [allSwitches]);
   const manufacturerSwitches = useMemo(
-    () => allSwitches.filter((product) => !manufacturer || productBrand(product) === manufacturer),
+    () => allSwitches.filter((product) => !manufacturer || optionKey(productBrand(product)) === optionKey(manufacturer)),
     [allSwitches, manufacturer],
   );
 
   useEffect(() => {
     if (!manufacturer && manufacturers.length) setManufacturer(defaultManufacturer(manufacturers));
-    else if (manufacturer && !manufacturers.includes(manufacturer)) setManufacturer(defaultManufacturer(manufacturers));
+    else if (manufacturer && !manufacturers.some((entry) => optionKey(entry) === optionKey(manufacturer))) setManufacturer(defaultManufacturer(manufacturers));
   }, [manufacturer, manufacturers]);
 
   const alternatives = useMemo(
@@ -221,7 +234,7 @@ function FilterStrip({ label, values, selected, onSelect }: { label: string; val
       <span>{label}</span>
       <div>
         {values.map((value) => (
-          <button key={value} type="button" className={selected === value ? "is-active" : ""} onClick={() => onSelect(value)}>
+          <button key={value} type="button" className={optionKey(selected) === optionKey(value) ? "is-active" : ""} onClick={() => onSelect(value)}>
             {value}
           </button>
         ))}
