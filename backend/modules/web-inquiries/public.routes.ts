@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { getWebInquiryOptions, getWebIzdelki, processWebInquiry, validateWebInquiryPayload, WebInquiryError } from './web-inquiry.service';
 import { WebInquiryModel } from './web-inquiry.model';
+import { getReviewByToken, listApprovedReviews, submitReview } from '../reviews/review.service';
 
 const UPLOAD_BASE_DIR = '/var/www/aintel/uploads/web-inquiries';
 const PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -184,6 +185,37 @@ router.post('/inquiries/:id/photos', (req: Request, res: Response) => {
       return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Slik ni bilo mogoče shraniti.' });
     }
   });
+});
+
+router.get('/reviews', async (_req: Request, res: Response) => {
+  try {
+    return res.json({ ok: true, ...(await listApprovedReviews()) });
+  } catch (error) {
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Ocen ni mogoče naložiti.' });
+  }
+});
+
+router.get('/reviews/by-token/:token', async (req: Request, res: Response) => {
+  const review = await getReviewByToken(String(req.params.token));
+  if (!review) return res.status(404).json({ ok: false, code: 'NOT_FOUND', message: 'Povezava ni veljavna.' });
+  return res.json({ ok: true, name: review.name, submitted: Boolean(review.submittedAt) });
+});
+
+router.post('/reviews/by-token/:token', async (req: Request, res: Response) => {
+  try {
+    const result = await submitReview(String(req.params.token), Number(req.body?.rating), String(req.body?.comment ?? ''));
+    if (!result.ok) {
+      const sporocila: Record<string, string> = {
+        NOT_FOUND: 'Povezava ni veljavna.',
+        ALREADY_SUBMITTED: 'Ocena je bila že oddana. Hvala!',
+        VALIDATION_ERROR: 'Izberite oceno od 1 do 5 zvezdic.',
+      };
+      return res.status(400).json({ ok: false, code: result.code, message: sporocila[result.code] });
+    }
+    return res.json({ ok: true, rating: result.rating, googleReviewUrl: result.googleReviewUrl });
+  } catch (error) {
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Ocene ni bilo mogoče shraniti.' });
+  }
 });
 
 const NEXT_STEP_MESSAGES: Record<string, string> = {
