@@ -70,6 +70,7 @@
     var el = document.createElement(tag);
     if (attrs) {
       Object.keys(attrs).forEach(function (key) {
+        if (attrs[key] === null || attrs[key] === undefined) return;
         if (key === 'class') el.className = attrs[key];
         else if (key === 'html') el.innerHTML = attrs[key];
         else if (key.indexOf('on') === 0) el.addEventListener(key.slice(2), attrs[key]);
