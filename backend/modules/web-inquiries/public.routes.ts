@@ -188,8 +188,8 @@ router.post('/inquiries/:id/photos', (req: Request, res: Response) => {
 
 const NEXT_STEP_MESSAGES: Record<string, string> = {
   avans: 'Hvala za potrditev. Kontaktirali vas bomo s podatki za plačilo avansa in dogovorom o terminu montaže.',
-  posvet: 'Zabeleženo — poklicali vas bomo za kratek telefonski posvet.',
-  ogled: 'Zabeleženo — kontaktirali vas bomo za termin strokovnega ogleda (50 € z DDV + potni stroški; ob izvedbi se 50 € prizna kot popust).',
+  posvet: 'Zabeleženo - poklicali vas bomo za kratek telefonski posvet.',
+  ogled: 'Zabeleženo - kontaktirali vas bomo za termin strokovnega ogleda (50 € z DDV + potni stroški; ob izvedbi se 50 € prizna kot popust).',
   shrani: 'Ponudba je shranjena. Na e-naslovu jo imate na voljo, kadarkoli se lahko oglasite.',
 };
 

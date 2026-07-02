@@ -527,7 +527,7 @@ async function buildOfferItems(zahteva: ZahtevaDocument, tenantId = 'inteligent'
     }
 
     // Generic material list for systems without a dedicated builder (domofon, pametna hiša):
-    // { postavke: [{ productId, kolicina }] } — prices come from cenik, execution rules apply as usual.
+    // { postavke: [{ productId, kolicina }] } - prices come from cenik, execution rules apply as usual.
     if (sistem.tip === 'domofon' || sistem.tip === 'pametna_hisa') {
       const data = (sistem.tip === 'domofon' ? sistem.domofon : sistem.pametnaHisa) as any;
       if (data && Array.isArray(data.postavke)) {
