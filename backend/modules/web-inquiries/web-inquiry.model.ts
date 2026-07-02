@@ -1,6 +1,7 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
-export type WebInquiryPillar = 'videonadzor' | 'alarm' | 'domofon' | 'pametni_dom';
+export type WebInquiryPillar = 'videonadzor' | 'alarm' | 'domofon' | 'pametni_dom' | 'pametna_kljucavnica' | 'servis';
+export type WebInquiryNextStepChoice = 'avans' | 'posvet' | 'ogled' | 'shrani';
 export type WebInquiryStatus = 'novo' | 'ponudba_poslana' | 'ponudba_ni_poslana' | 'napaka';
 
 export interface WebInquiryDocument extends Document {
@@ -20,6 +21,9 @@ export interface WebInquiryDocument extends Document {
     };
   };
   payload: Record<string, unknown>;
+  meta?: Record<string, unknown>;
+  nextStep?: { choice: WebInquiryNextStepChoice; note?: string; chosenAt: Date } | null;
+  photos: Array<{ filename: string; url: string; uploadedAt: Date }>;
   note?: string;
   source?: string;
   clientId?: Types.ObjectId | null;
@@ -40,7 +44,7 @@ const WebInquirySchema = new Schema<WebInquiryDocument>(
     tenantId: { type: String, required: true, default: 'inteligent', index: true },
     pillar: {
       type: String,
-      enum: ['videonadzor', 'alarm', 'domofon', 'pametni_dom'],
+      enum: ['videonadzor', 'alarm', 'domofon', 'pametni_dom', 'pametna_kljucavnica', 'servis'],
       required: true,
     },
     status: {
@@ -62,6 +66,31 @@ const WebInquirySchema = new Schema<WebInquiryDocument>(
       },
     },
     payload: { type: Schema.Types.Mixed, default: {} },
+    meta: { type: Schema.Types.Mixed, default: {} },
+    nextStep: {
+      type: new Schema(
+        {
+          choice: { type: String, enum: ['avans', 'posvet', 'ogled', 'shrani'], required: true },
+          note: { type: String, trim: true, default: '' },
+          chosenAt: { type: Date, required: true },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
+    photos: {
+      type: [
+        new Schema(
+          {
+            filename: { type: String, required: true },
+            url: { type: String, required: true },
+            uploadedAt: { type: Date, required: true },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
     note: { type: String, trim: true, default: '' },
     source: { type: String, trim: true, default: 'web' },
     clientId: { type: Schema.Types.ObjectId, ref: 'CrmClient', default: null },

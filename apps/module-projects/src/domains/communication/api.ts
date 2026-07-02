@@ -116,3 +116,25 @@ export async function sendWorkOrderConfirmationCommunicationEmail(
   });
   return parseEnvelope<{ message: CommunicationMessage }>(response);
 }
+
+export async function sendInvoiceCommunicationEmail(
+  projectId: string,
+  invoiceVersionId: string,
+  payload: {
+    to: string;
+    cc?: string;
+    bcc?: string;
+    templateId?: string | null;
+    templateKey?: string | null;
+    subject: string;
+    body: string;
+    selectedAttachments: Array<"invoice_pdf">;
+  }
+) {
+  const response = await fetch(`/api/projects/${projectId}/invoices/${invoiceVersionId}/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return parseEnvelope<{ message: CommunicationMessage }>(response);
+}

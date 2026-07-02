@@ -526,6 +526,20 @@ async function buildOfferItems(zahteva: ZahtevaDocument, tenantId = 'inteligent'
       continue;
     }
 
+    // Generic material list for systems without a dedicated builder (domofon, pametna hiša):
+    // { postavke: [{ productId, kolicina }] } — prices come from cenik, execution rules apply as usual.
+    if (sistem.tip === 'domofon' || sistem.tip === 'pametna_hisa') {
+      const data = (sistem.tip === 'domofon' ? sistem.domofon : sistem.pametnaHisa) as any;
+      if (data && Array.isArray(data.postavke)) {
+        const beforeSystemCount = productRequests.length;
+        for (const postavka of data.postavke) {
+          addProductRequest(productRequests, postavka.productId, postavka.kolicina, 'material');
+        }
+        systemRequests.push({ sistem, requests: productRequests.slice(beforeSystemCount) });
+      }
+      continue;
+    }
+
     if (!isVideoRequirementSystem(sistem) || !sistem.videonadzor) continue;
     const videonadzor = sistem.videonadzor;
     const isWifiKamere = sistem.tip === 'wifi_kamere';
@@ -605,6 +619,14 @@ function validateZahtevaForOffer(zahteva: ZahtevaDocument) {
       const invalid = activeLokacije.filter((lokacija: any) => !senzorIds.has(String(lokacija.senzorIdAssigned)));
       if (invalid.length > 0) {
         throw Object.assign(new Error('Alarmna lokacija ima dodeljen neobstoječi senzor.'), { statusCode: 400 });
+      }
+      continue;
+    }
+
+    if (sistem.tip === 'domofon' || sistem.tip === 'pametna_hisa') {
+      const data = (sistem.tip === 'domofon' ? sistem.domofon : sistem.pametnaHisa) as any;
+      if (!data || !Array.isArray(data.postavke) || data.postavke.length === 0) {
+        throw Object.assign(new Error('Sistem nima dodanih postavk.'), { statusCode: 400 });
       }
       continue;
     }

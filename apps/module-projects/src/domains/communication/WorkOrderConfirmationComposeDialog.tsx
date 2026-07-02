@@ -59,6 +59,8 @@ export function WorkOrderConfirmationComposeDialog({
   const [senderSettings, setSenderSettings] = useState<CommunicationSenderSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [to, setTo] = useState('');
@@ -156,6 +158,8 @@ export function WorkOrderConfirmationComposeDialog({
         setBcc(nextSender?.defaultBcc ?? '');
         setSubject(defaultTemplate ? replacePlaceholders(defaultTemplate.subjectTemplate, initialContext) : '');
         setBody(defaultTemplate ? replacePlaceholders(defaultTemplate.bodyTemplate, initialContext) : '');
+        setSendError(null);
+        setSent(false);
         setIsDirty(false);
       } catch (error) {
         if (!active) return;
@@ -168,6 +172,8 @@ export function WorkOrderConfirmationComposeDialog({
         setBcc('');
         setSubject('');
         setBody('');
+        setSendError(null);
+        setSent(false);
         setIsDirty(false);
         setInitError(error instanceof Error ? error.message : 'Inicializacija komunikacije ni uspela.');
       } finally {
@@ -220,6 +226,8 @@ export function WorkOrderConfirmationComposeDialog({
     }
 
     setSending(true);
+    setSendError(null);
+    setSent(false);
     try {
       await sendWorkOrderConfirmationCommunicationEmail(projectId, workOrderId, {
         to,
@@ -231,9 +239,9 @@ export function WorkOrderConfirmationComposeDialog({
         body,
         selectedAttachments: ['work_order_confirmation_pdf'],
       });
-      toast.success('Email successfully sent');
+      setSent(true);
+      toast.success('Email s potrdilom je bil uspešno poslan.');
       await onSent();
-      onOpenChange(false);
     } catch (err: any) {
       if (err?.code === 'WORK_ORDER_NOT_SIGNED') {
         toast.error('Delovni nalog še ni podpisan');
@@ -278,6 +286,16 @@ export function WorkOrderConfirmationComposeDialog({
             {missingCustomerEmail ? (
               <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 Primarni email stranke ni nastavljen. Polje <strong>To</strong> ostaja prazno, dokler ne vnesete prejemnika.
+              </div>
+            ) : null}
+            {sendError ? (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                {sendError}
+              </div>
+            ) : null}
+            {sent ? (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                Email s potrdilom je bil uspešno poslan.
               </div>
             ) : null}
             {!isSigned ? (
@@ -381,7 +399,7 @@ export function WorkOrderConfirmationComposeDialog({
           <Button
             type="button"
             onClick={() => void handleSend()}
-            disabled={loading || sending || senderDisabled || !to.trim() || !subject.trim() || !body.trim() || !workOrderId || !isSigned}
+            disabled={loading || sending || sent || senderDisabled || !to.trim() || !subject.trim() || !body.trim() || !workOrderId || !isSigned}
           >
             {sending ? (
               <>

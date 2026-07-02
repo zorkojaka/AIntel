@@ -139,6 +139,7 @@ export function ClosingPanel({ logistics }: ClosingPanelProps) {
     logistics?.materialOrders?.[0]?.projectId ??
     logistics?.workOrder?.projectId ??
     null;
+  const primaryWorkOrder = workOrders[0] ?? logistics?.workOrder ?? null;
 
   if (summary.totalWorkOrders === 0 || summary.totalItems === 0) {
     return (
@@ -188,7 +189,12 @@ export function ClosingPanel({ logistics }: ClosingPanelProps) {
           </Table>
         </div>
       </Card>
-      <InvoiceVersionEditor projectId={derivedProjectId} />
+      <InvoiceVersionEditor
+        projectId={derivedProjectId}
+        customerName={primaryWorkOrder?.customerName ?? ""}
+        customerEmail={primaryWorkOrder?.customerEmail ?? ""}
+        projectName={derivedProjectId ?? ""}
+      />
     </div>
   );
 }

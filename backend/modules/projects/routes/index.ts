@@ -38,6 +38,7 @@ import { cancelOfferConfirmation } from '../controllers/logistics.controller';
 import * as invoiceController from '../controllers/invoice.controller';
 import {
   sendInstallerPreparationCommunicationController,
+  sendInvoiceCommunicationController,
   sendOfferCommunicationController,
   sendWorkOrderConfirmationCommunicationController,
 } from '../../communication/controllers/project-communication.controller';
@@ -93,6 +94,7 @@ router.post('/:projectId/invoices/from-closing', requireProjectWrite, invoiceCon
 router.get('/:projectId/invoices/next-number', requireProjectWrite, invoiceController.nextInvoiceNumber);
 router.patch('/:projectId/invoices/:versionId', requireProjectWrite, invoiceController.updateInvoice);
 router.post('/:projectId/invoices/:versionId/issue', requireProjectWrite, invoiceController.issueInvoice);
+router.post('/:projectId/invoices/:versionId/send', requireProjectWrite, sendInvoiceCommunicationController);
 router.post('/:projectId/invoices/:versionId/clone-for-edit', requireProjectWrite, invoiceController.cloneInvoiceForEdit);
 router.delete('/:projectId/invoices/:versionId', requireProjectWrite, invoiceController.cancelInvoice);
 router.get('/:projectId/invoices/:versionId/pdf', invoiceController.exportInvoicePdf);
