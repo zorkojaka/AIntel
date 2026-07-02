@@ -69,17 +69,9 @@ function defaultBrand(values: string[]) {
   return values.includes("DVC") ? "DVC" : values[0] ?? "";
 }
 
-function defaultHousing(values: string[]) {
-  return values.includes("Bullet") ? "Bullet" : values[0] ?? "";
-}
-
-function defaultResolution(values: string[]) {
-  return values.includes("4") ? "4" : values[0] ?? "";
-}
-
 export function SekcijaKameraNosilec({ productById, onAddVariant, cameraMode = "ip" }: Props) {
   const [brand, setBrand] = useState("");
-  const [reolinkKind, setReolinkKind] = useState<ReolinkCameraKind>("wifi");
+  const [reolinkKind, setReolinkKind] = useState<ReolinkCameraKind | "">("");
   const [housing, setHousing] = useState("");
   const [resolution, setResolution] = useState("");
   const [selectedCamera, setSelectedCamera] = useState<CenikProduct | null>(null);
@@ -106,7 +98,7 @@ export function SekcijaKameraNosilec({ productById, onAddVariant, cameraMode = "
     if (cameraMode !== "reolink_wifi") return [];
     return (["wifi", "wired", "sim_solar"] as const).filter((kind) => cameras.some((camera) => reolinkCameraKind(camera) === kind));
   }, [cameraMode, cameras]);
-  const brandCameras = useMemo(
+  const brandAndTypeCameras = useMemo(
     () =>
       cameras.filter(
         (camera) =>
@@ -118,34 +110,36 @@ export function SekcijaKameraNosilec({ productById, onAddVariant, cameraMode = "
   const housings = useMemo(
     () =>
       Array.from(
-        new Set(brandCameras.map((camera) => camera.classification?.cameraHousing).filter(Boolean)),
+        new Set(brandAndTypeCameras.map((camera) => camera.classification?.cameraHousing).filter(Boolean)),
       ) as string[],
-    [brandCameras],
+    [brandAndTypeCameras],
+  );
+  const housingCameras = useMemo(
+    () => brandAndTypeCameras.filter((camera) => !housing || camera.classification?.cameraHousing === housing),
+    [brandAndTypeCameras, housing],
   );
   const resolutions = useMemo(
     () =>
       Array.from(
-        new Set(brandCameras.map((camera) => camera.classification?.maxResolutionMP).filter(Boolean)),
+        new Set(housingCameras.map((camera) => camera.classification?.maxResolutionMP).filter(Boolean)),
       )
         .map(String)
         .sort((a, b) => Number(a) - Number(b)),
-    [brandCameras],
+    [housingCameras],
   );
 
   useEffect(() => {
     if (!brand && brands.length) setBrand(cameraMode === "reolink_wifi" && brands.some((entry) => brandKey(entry) === "reolink") ? "Reolink" : defaultBrand(brands));
     else if (brand && !brands.some((entry) => brandKey(entry) === brandKey(brand))) setBrand(defaultBrand(brands));
-    if (cameraMode === "reolink_wifi" && reolinkKinds.length && !reolinkKinds.includes(reolinkKind)) setReolinkKind(reolinkKinds[0]);
-    if (!housing && housings.length) setHousing(defaultHousing(housings));
-    else if (housing && !housings.includes(housing)) setHousing(defaultHousing(housings));
-    if (!resolution && resolutions.length) setResolution(defaultResolution(resolutions));
-    else if (resolution && !resolutions.includes(resolution)) setResolution(defaultResolution(resolutions));
+    if (reolinkKind && !reolinkKinds.includes(reolinkKind)) setReolinkKind("");
+    if (housing && !housings.includes(housing)) setHousing("");
+    if (resolution && !resolutions.includes(resolution)) setResolution("");
   }, [brand, brands, cameraMode, housing, housings, reolinkKind, reolinkKinds, resolution, resolutions]);
 
   const filteredCameras = useMemo(
     () =>
       cameras
-        .filter((camera) => cameraMatches(camera, { brand, housing, resolution, reolinkKind: cameraMode === "reolink_wifi" ? reolinkKind : undefined })),
+        .filter((camera) => cameraMatches(camera, { brand, housing, resolution, reolinkKind: cameraMode === "reolink_wifi" && reolinkKind ? reolinkKind : undefined })),
     [brand, cameraMode, cameras, housing, reolinkKind, resolution],
   );
 
@@ -174,10 +168,10 @@ export function SekcijaKameraNosilec({ productById, onAddVariant, cameraMode = "
           <FilterStrip
             label="Tip"
             values={reolinkKinds.map((kind) => REOLINK_CAMERA_KIND_LABELS[kind])}
-            selected={REOLINK_CAMERA_KIND_LABELS[reolinkKind]}
+            selected={reolinkKind ? REOLINK_CAMERA_KIND_LABELS[reolinkKind] : ""}
             onSelect={(value) => {
               const nextKind = (Object.keys(REOLINK_CAMERA_KIND_LABELS) as ReolinkCameraKind[]).find((kind) => REOLINK_CAMERA_KIND_LABELS[kind] === value);
-              if (nextKind) setReolinkKind(nextKind);
+              setReolinkKind(nextKind ?? "");
             }}
           />
         ) : null}
@@ -245,12 +239,18 @@ export function SekcijaKameraNosilec({ productById, onAddVariant, cameraMode = "
 }
 
 function FilterStrip({ label, values, selected, onSelect }: { label: string; values: string[]; selected: string; onSelect: (value: string) => void }) {
+  const options = ["Vse", ...values];
   return (
     <div className="zahteva-filter-row">
       <span>{label}</span>
       <div>
-        {values.map((value) => (
-          <button key={value} type="button" className={selected === value ? "is-active" : ""} onClick={() => onSelect(value)}>
+        {options.map((value) => (
+          <button
+            key={value}
+            type="button"
+            className={value === "Vse" ? (!selected ? "is-active" : "") : selected === value ? "is-active" : ""}
+            onClick={() => onSelect(value === "Vse" ? "" : value)}
+          >
             {value}
           </button>
         ))}
