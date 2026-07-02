@@ -9,6 +9,7 @@ import {
 } from '../projects/schemas/project';
 import { calculateProjectRouteDistance } from '../projects/services/route-distance.service';
 import { sendOfferCommunicationEmail } from '../communication/services/communication.service';
+import { CommunicationTemplateModel } from '../communication/schemas/template';
 import { ZahtevaModel } from '../zahteve/zahteva.model';
 import {
   izracunajInPredlagajDisk,
@@ -465,11 +466,20 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
     let emailError: string | null = null;
     if (settings.autoSendEmail) {
       try {
+        // sendOfferCommunicationEmail requires a template (no built-in default),
+        // so fall back to the default/first offer_send template when none is configured.
+        let templateKey = settings.emailTemplateKey ?? null;
+        if (!templateKey) {
+          const fallback =
+            (await CommunicationTemplateModel.findOne({ category: 'offer_send', isDefault: true }).lean()) ??
+            (await CommunicationTemplateModel.findOne({ category: 'offer_send' }).sort({ createdAt: 1 }).lean());
+          templateKey = (fallback as any)?.key ?? null;
+        }
         await sendOfferCommunicationEmail({
           projectId: project.id,
           offerId: String(offer._id),
           to: [payload.contact.email],
-          templateKey: settings.emailTemplateKey ?? null,
+          templateKey,
           actorDisplayName: 'Spletna stran',
         });
         emailSent = true;
