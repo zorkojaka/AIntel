@@ -37,6 +37,10 @@ export interface ProductDocument extends Document {
   classification?: {
     productType?: 'kamera' | 'snemalnik' | 'switch' | 'disk' | 'nosilec' | 'kabel' | 'pribor' | 'storitev' | 'alarm_komponenta' | 'drugo';
     manufacturer?: string;
+    cameraConnectivity?: 'wifi' | 'poe' | 'lte';
+    powerMode?: 'dc' | 'poe' | 'battery';
+    hasSim?: boolean;
+    supportsSolarPanel?: boolean;
     cameraHousing?: 'Bullet' | 'Turret' | 'Dome' | 'PTZ' | 'Panoramic' | 'Fisheye' | 'Thermal';
     cameraTechnology?: 'IP video' | 'AHD' | 'Analog';
     maxResolutionMP?: number;
@@ -118,6 +122,10 @@ const ProductSchema = new Schema<ProductDocument>(
           enum: ['kamera', 'snemalnik', 'switch', 'disk', 'nosilec', 'kabel', 'pribor', 'storitev', 'alarm_komponenta', 'drugo'],
         },
         manufacturer: { type: String, trim: true, default: '' },
+        cameraConnectivity: { type: String, enum: ['wifi', 'poe', 'lte'], default: undefined },
+        powerMode: { type: String, enum: ['dc', 'poe', 'battery'], default: undefined },
+        hasSim: { type: Boolean, default: undefined },
+        supportsSolarPanel: { type: Boolean, default: undefined },
         cameraHousing: {
           type: String,
           enum: ['Bullet', 'Turret', 'Dome', 'PTZ', 'Panoramic', 'Fisheye', 'Thermal'],
