@@ -76,6 +76,8 @@ function serializeMessage(doc: any): CommunicationMessage {
     id: String(doc?._id ?? doc?.id),
     projectId: doc?.projectId ?? "",
     offerId: doc?.offerId ?? null,
+    invoiceVersionId: doc?.invoiceVersionId ?? null,
+    workOrderId: doc?.workOrderId ?? null,
     customerId: doc?.customerId ?? null,
     direction: doc?.direction ?? "outbound",
     channel: doc?.channel ?? "email",
@@ -451,6 +453,237 @@ function resolveSenderIdentity(
     senderPhone: senderSettings.senderPhone || "",
     senderRole: senderSettings.senderRole || "",
   };
+}
+
+export async function sendInvoiceCommunicationEmail(input: {
+  projectId: string;
+  invoiceVersionId: string;
+  to: unknown;
+  cc?: unknown;
+  bcc?: unknown;
+  templateId?: string | null;
+  templateKey?: string | null;
+  subject?: string | null;
+  body?: string | null;
+  selectedAttachments?: CommunicationAttachmentType[];
+  actorUserId?: string | null;
+  actorDisplayName?: string | null;
+  actorProfile?: {
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    role?: string | null;
+  } | null;
+}) {
+  const senderSettings = await getCommunicationSenderSettings();
+  if (!senderSettings.enabled) {
+    throw new Error("Komunikacija po emailu ni omogočena.");
+  }
+  if (!senderSettings.senderName || !senderSettings.senderEmail) {
+    throw new Error("Pošiljatelj ni pravilno nastavljen.");
+  }
+
+  const [project, globalSettings] = await Promise.all([
+    ProjectModel.findOne({ id: input.projectId }),
+    getSettings(),
+  ]);
+  const invoice = (project?.invoiceVersions ?? []).find((entry: any) => String(entry?._id) === input.invoiceVersionId);
+
+  if (!project || !invoice) {
+    throw new Error("Projekt ali račun nista najdena.");
+  }
+
+  const effectiveSender = resolveSenderIdentity(senderSettings, input.actorProfile);
+  const projectClient = await resolveProjectClient(project);
+  const customerEmail = projectClient?.email?.trim() || "";
+  const to = sanitizeEmailList(input.to);
+  const cc = sanitizeEmailList(input.cc);
+  const bcc = sanitizeEmailList(input.bcc);
+  const resolvedRecipients = to.length > 0 ? to : customerEmail ? [customerEmail.toLowerCase()] : [];
+  if (resolvedRecipients.length === 0) {
+    throw new Error("Prejemnik emaila ni določen.");
+  }
+
+  const invoiceIdentifier = invoice.invoiceNumber || `verzija ${invoice.versionNumber ?? input.invoiceVersionId}`;
+  const invoiceTotal = `${formatCurrency(Number(invoice.summary?.totalWithVat ?? 0))} EUR`;
+  const templateContext = buildTemplateContext({
+    customerName: project.customer?.name ?? projectClient?.name ?? "",
+    customerEmail: projectClient?.email ?? "",
+    projectName: project.title ?? "",
+    offerNumber: "",
+    offerTotal: "",
+    invoiceNumber: invoiceIdentifier,
+    invoiceTotal,
+    companyName: globalSettings.companyName ?? "",
+    companyWebsite: globalSettings.website ?? "",
+    companyAddress: globalSettings.address ?? "",
+    companyEmail: globalSettings.email ?? "",
+    companyPhone: globalSettings.phone ?? "",
+    companyLogoUrl: toPublicLogoUrl(globalSettings.logoUrl),
+    sender: {
+      ...senderSettings,
+      senderName: effectiveSender.senderName,
+      senderEmail: effectiveSender.senderEmail,
+      senderPhone: effectiveSender.senderPhone,
+      senderRole: formatRoleLabel(effectiveSender.senderRole),
+    },
+  });
+
+  const template = await resolveTemplateByIdOrKey({
+    templateId: input.templateId ?? null,
+    templateKey: input.templateKey ?? null,
+  });
+  ensureTemplateCategory(template, "invoice_send");
+
+  const renderedTemplate = template ? renderCommunicationTemplate(template, templateContext) : { subject: "", body: "" };
+  const renderedFooter = renderCommunicationText(senderSettings.emailFooterTemplate, templateContext);
+  const footerUsesLogo = (senderSettings.emailFooterTemplate ?? "").includes("{{company.logo}}");
+  const inlineCompanyLogo = footerUsesLogo ? await resolveInlineCompanyLogo(globalSettings.logoUrl) : null;
+  const renderedFooterHtml = renderCommunicationFooterHtmlForEmail(senderSettings.emailFooterTemplate, templateContext, {
+    logoSrc: inlineCompanyLogo ? `cid:${inlineCompanyLogo.cid}` : toPublicEmailLogoUrl(globalSettings.logoUrl),
+  });
+
+  const subjectFinal = sanitizeString(input.subject) || renderedTemplate.subject || `Račun ${invoiceIdentifier}`;
+  const bodyWithoutFooter =
+    input.body?.toString().trim() ||
+    renderedTemplate.body ||
+    [
+      `Spoštovani,`,
+      "",
+      `v priponki vam pošiljamo račun ${invoiceIdentifier}.`,
+      "",
+      "Lep pozdrav",
+    ].join("\n");
+  const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
+
+  const bodyMainText = stripAppendedFooter(bodyWithoutFooter, renderedFooter);
+  const escapedMainHtml = bodyMainText
+    .split("\n")
+    .map((line) =>
+      line.trim()
+        ? `<div style="margin:0 0 8px 0;">${escapeHtml(line)}</div>`
+        : '<div style="height:8px;"></div>'
+    )
+    .join("");
+  const htmlFinal = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111827;">${escapedMainHtml}${
+    renderedFooterHtml ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;">${renderedFooterHtml}</div>` : ""
+  }</div>`;
+
+  const selectedAttachments = Array.from(
+    new Set(
+      (Array.isArray(input.selectedAttachments) && input.selectedAttachments.length > 0
+        ? input.selectedAttachments
+        : template?.defaultAttachments ?? ["invoice_pdf"]
+      ).concat("invoice_pdf")
+    )
+  );
+  const attachments = await Promise.all(
+    selectedAttachments.map((type) =>
+      resolveCommunicationAttachment({
+        type,
+        projectId: input.projectId,
+        invoiceVersionId: input.invoiceVersionId,
+      })
+    )
+  );
+  const selectedAttachmentRecords: CommunicationAttachmentRecord[] = attachments.map((attachment) => ({
+    type: attachment.type,
+    refId: attachment.refId,
+    filename: attachment.filename,
+  }));
+
+  const baseMessage = {
+    projectId: input.projectId,
+    offerId: null,
+    invoiceVersionId: input.invoiceVersionId,
+    customerId: projectClient?.id ?? null,
+    direction: "outbound" as const,
+    channel: "email" as const,
+    to: resolvedRecipients,
+    cc,
+    bcc,
+    subjectFinal,
+    bodyFinal,
+    templateId: template?.id ?? null,
+    templateKey: template?.key ?? null,
+    selectedAttachments: selectedAttachmentRecords,
+    sentByUserId: input.actorUserId ?? null,
+  };
+
+  try {
+    const info = await sendEmail({
+      from: `"${effectiveSender.senderName}" <${effectiveSender.senderEmail}>`,
+      to: resolvedRecipients.join(", "),
+      cc: cc.length > 0 ? cc.join(", ") : undefined,
+      bcc: bcc.length > 0 ? bcc.join(", ") : undefined,
+      replyTo: senderSettings.replyToEmail || undefined,
+      subject: subjectFinal,
+      text: bodyFinal,
+      html: htmlFinal,
+      attachments: [
+        ...attachments.map((attachment) => ({
+          filename: attachment.filename,
+          content: attachment.content,
+          contentType: attachment.contentType,
+        })),
+        ...(inlineCompanyLogo
+          ? [{
+              filename: inlineCompanyLogo.filename,
+              content: inlineCompanyLogo.content,
+              contentType: inlineCompanyLogo.contentType,
+              cid: inlineCompanyLogo.cid,
+              contentDisposition: "inline" as const,
+            }]
+          : []),
+      ],
+    });
+
+    const message = await CommunicationMessageModel.create({
+      ...baseMessage,
+      status: "sent",
+      sentAt: new Date(),
+      providerMessageId: typeof info.messageId === "string" ? info.messageId : null,
+    });
+
+    await createCommunicationEvent({
+      projectId: input.projectId,
+      messageId: String(message._id),
+      type: "email_sent",
+      title: "Email z računom poslan",
+      description: `Poslano na ${resolvedRecipients.join(", ")}`,
+      user: input.actorDisplayName ?? null,
+      metadata: {
+        to: resolvedRecipients.join(", "),
+        subject: subjectFinal,
+        invoiceVersionId: input.invoiceVersionId,
+        attachments: selectedAttachmentRecords.map((attachment) => attachment.filename).join(", "),
+      },
+    });
+
+    return { message: serializeMessage(message.toObject()) };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.";
+    const message = await CommunicationMessageModel.create({
+      ...baseMessage,
+      status: "failed",
+      sentAt: null,
+      errorMessage,
+    });
+    await createCommunicationEvent({
+      projectId: input.projectId,
+      messageId: String(message._id),
+      type: "email_failed",
+      title: "Pošiljanje emaila z računom ni uspelo",
+      description: errorMessage,
+      user: input.actorDisplayName ?? null,
+      metadata: {
+        to: resolvedRecipients.join(", "),
+        subject: subjectFinal,
+        invoiceVersionId: input.invoiceVersionId,
+      },
+    });
+    throw error;
+  }
 }
 
 export async function sendOfferCommunicationEmail(input: {
@@ -852,6 +1085,7 @@ export async function sendWorkOrderConfirmationCommunicationEmail(input: {
   const baseMessage = {
     projectId: input.projectId,
     offerId: workOrder.offerVersionId ?? null,
+    workOrderId: input.workOrderId,
     customerId: projectClient?.id ?? null,
     direction: "outbound" as const,
     channel: "email" as const,
@@ -1178,6 +1412,7 @@ export async function sendInstallerPreparationEmail(input: {
   const baseMessage = {
     projectId: input.projectId,
     offerId: workOrder.offerVersionId ?? null,
+    workOrderId: input.workOrderId,
     customerId: projectClient?.id ?? null,
     direction: "outbound" as const,
     channel: "email" as const,

@@ -4,6 +4,10 @@ import { getProductImageUrl, type CenikProduct } from "../../api";
 import type { Videonadzor } from "./utils";
 import { assignedCameraProducts, formatPrice, standardChannels } from "./utils";
 
+function optionKey(value?: string | number | null) {
+  return String(value ?? "").trim().toLocaleLowerCase("sl-SI");
+}
+
 type Props = {
   videonadzor: Videonadzor;
   productById: Map<string, CenikProduct>;
@@ -27,6 +31,15 @@ function productBrand(product: CenikProduct) {
   if (/\bdrn[-\s]/i.test(`${product.ime ?? ""} ${product.aaData?.productCode ?? ""}`)) return "DVC";
   if (slugs.some((slug) => slug.toLowerCase() === "dvc")) return "DVC";
   return "Brez proizvajalca";
+}
+
+function uniqueOptions(values: string[]) {
+  const byKey = new Map<string, string>();
+  for (const value of values) {
+    const key = optionKey(value);
+    if (key && !byKey.has(key)) byKey.set(key, value);
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b, "sl"));
 }
 
 function hddLabel(slots?: number) {
@@ -81,7 +94,7 @@ function isIpRecorder(product: CenikProduct) {
   const text = recorderText(product);
   if (/\b(dra|dvr|ahd|analog)\b/i.test(text)) return false;
   const isRecorderCategory = (product.categorySlugs ?? []).some((slug) => slug.toLowerCase() === "snemalnik");
-  return product.classification?.productType === "snemalnik" || isRecorderCategory || /\b(drn|nvr)\b/i.test(text);
+  return optionKey(product.classification?.productType) === "snemalnik" || isRecorderCategory || /\b(drn|nvr)\b/i.test(text);
 }
 
 export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) {
@@ -101,15 +114,15 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
     () => Array.from(productById.values()).filter(isIpRecorder),
     [productById],
   );
-  const manufacturers = useMemo(() => Array.from(new Set(allRecorders.map(productBrand))).sort((a, b) => a.localeCompare(b, "sl")), [allRecorders]);
+  const manufacturers = useMemo(() => uniqueOptions(allRecorders.map(productBrand)), [allRecorders]);
   const manufacturerOptions = useMemo(() => ["Vsi", ...manufacturers], [manufacturers]);
   const manufacturerRecorders = useMemo(
-    () => allRecorders.filter((product) => !manufacturer || productBrand(product) === manufacturer),
+    () => allRecorders.filter((product) => !manufacturer || optionKey(productBrand(product)) === optionKey(manufacturer)),
     [allRecorders, manufacturer],
   );
 
   useEffect(() => {
-    if (manufacturer && !manufacturers.includes(manufacturer)) setManufacturer("");
+    if (manufacturer && !manufacturers.some((entry) => optionKey(entry) === optionKey(manufacturer))) setManufacturer("");
   }, [manufacturer, manufacturers]);
 
   const channelOptions = useMemo(() => {
@@ -136,7 +149,7 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
           const visiblePoeScore = poeFilter === "all" ? poeGroup(a) - poeGroup(b) : 0;
           const priorityScore = categoryPriorityRank(a) - categoryPriorityRank(b);
           const brandScore =
-            Number(productBrand(b) === cameraBrand) - Number(productBrand(a) === cameraBrand);
+            Number(optionKey(productBrand(b)) === optionKey(cameraBrand)) - Number(optionKey(productBrand(a)) === optionKey(cameraBrand));
           const poeScore = Number(Boolean(b.classification?.nvrHasPoE) === allPoE) - Number(Boolean(a.classification?.nvrHasPoE) === allPoE);
           return channelScore || visiblePoeScore || priorityScore || brandScore || poeScore || a.prodajnaCena - b.prodajnaCena;
         }),
@@ -261,7 +274,7 @@ function FilterStrip({ label, values, selected, onSelect }: { label: string; val
       <span>{label}</span>
       <div>
         {values.map((value) => (
-          <button key={value} type="button" className={selected === value ? "is-active" : ""} onClick={() => onSelect(value)}>
+          <button key={value} type="button" className={optionKey(selected) === optionKey(value) ? "is-active" : ""} onClick={() => onSelect(value)}>
             {value}
           </button>
         ))}

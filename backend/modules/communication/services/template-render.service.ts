@@ -11,6 +11,7 @@ interface TemplateContext {
   customer: { name: string; email: string };
   project: { name: string };
   offer: { number: string; total: string };
+  invoice: { number: string; total: string };
   workOrder: { identifier: string; confirmationDate: string };
   company: {
     name: string;
@@ -29,6 +30,8 @@ const TOKEN_MAP: Record<string, (context: TemplateContext) => string> = {
   "{{project.name}}": (context) => context.project.name,
   "{{offer.number}}": (context) => context.offer.number,
   "{{offer.total}}": (context) => context.offer.total,
+  "{{invoice.number}}": (context) => context.invoice.number,
+  "{{invoice.total}}": (context) => context.invoice.total,
   "{{workOrder.identifier}}": (context) => context.workOrder.identifier,
   "{{confirmation.date}}": (context) => context.workOrder.confirmationDate,
   "{{company.name}}": (context) => context.company.name,
@@ -98,6 +101,8 @@ export function buildTemplateContext(input: {
   projectName: string;
   offerNumber: string;
   offerTotal: string;
+  invoiceNumber?: string;
+  invoiceTotal?: string;
   workOrderIdentifier?: string;
   confirmationDate?: string;
   companyName: string;
@@ -112,6 +117,7 @@ export function buildTemplateContext(input: {
     customer: { name: input.customerName || "", email: input.customerEmail || "" },
     project: { name: input.projectName || "" },
     offer: { number: input.offerNumber || "", total: input.offerTotal || "" },
+    invoice: { number: input.invoiceNumber || "", total: input.invoiceTotal || "" },
     workOrder: {
       identifier: input.workOrderIdentifier || "",
       confirmationDate: input.confirmationDate || "",

@@ -32,8 +32,12 @@ function brandKey(value: string) {
   return value.trim().toLocaleLowerCase("sl-SI");
 }
 
+function optionKey(value?: string | number | null) {
+  return String(value ?? "").trim().toLocaleLowerCase("sl-SI");
+}
+
 function isIpCamera(product: CenikProduct) {
-  return product.classification?.productType === "kamera" && product.classification.cameraTechnology === "IP video";
+  return optionKey(product.classification?.productType) === "kamera" && optionKey(product.classification?.cameraTechnology) === "ip video";
 }
 
 function isReolinkProduct(product: CenikProduct) {
@@ -43,7 +47,7 @@ function isReolinkProduct(product: CenikProduct) {
 
 function isCameraLikeProduct(product: CenikProduct) {
   const text = `${product.ime ?? ""} ${(product.categorySlugs ?? []).join(" ")}`.toLowerCase();
-  return product.classification?.productType === "kamera" || /\b(kamera|camera)\b/i.test(text);
+  return optionKey(product.classification?.productType) === "kamera" || /\b(kamera|camera)\b/i.test(text);
 }
 
 function reolinkCameraKind(product: CenikProduct): ReolinkCameraKind {
@@ -56,8 +60,8 @@ function reolinkCameraKind(product: CenikProduct): ReolinkCameraKind {
 function cameraMatches(camera: CenikProduct, filters: { brand?: string; housing?: string; resolution?: string; reolinkKind?: ReolinkCameraKind }) {
   return (
     (!filters.brand || brandKey(productBrand(camera)) === brandKey(filters.brand)) &&
-    (!filters.housing || camera.classification?.cameraHousing === filters.housing) &&
-    (!filters.resolution || String(camera.classification?.maxResolutionMP) === filters.resolution) &&
+    (!filters.housing || optionKey(camera.classification?.cameraHousing) === optionKey(filters.housing)) &&
+    (!filters.resolution || Number(camera.classification?.maxResolutionMP) === Number(filters.resolution)) &&
     (!filters.reolinkKind || reolinkCameraKind(camera) === filters.reolinkKind)
   );
 }
@@ -109,14 +113,11 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm, cameraMode 
     [brand, cameraMode, cameras, reolinkKind],
   );
   const housings = useMemo(
-    () =>
-      Array.from(
-        new Set(brandAndTypeCameras.map((camera) => camera.classification?.cameraHousing).filter(Boolean)),
-      ) as string[],
+    () => uniqueOptions(brandAndTypeCameras.map((camera) => camera.classification?.cameraHousing).filter(Boolean) as string[]),
     [brandAndTypeCameras],
   );
   const housingCameras = useMemo(
-    () => brandAndTypeCameras.filter((camera) => !housing || camera.classification?.cameraHousing === housing),
+    () => brandAndTypeCameras.filter((camera) => !housing || optionKey(camera.classification?.cameraHousing) === optionKey(housing)),
     [brandAndTypeCameras, housing],
   );
   const resolutions = useMemo(
@@ -132,8 +133,8 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm, cameraMode 
   useEffect(() => {
     if (brand && !brands.some((entry) => brandKey(entry) === brandKey(brand))) setBrand("");
     if (reolinkKind && !reolinkKinds.includes(reolinkKind)) setReolinkKind("");
-    if (housing && !housings.includes(housing)) setHousing("");
-    if (resolution && !resolutions.includes(resolution)) setResolution("");
+    if (housing && !housings.some((entry) => optionKey(entry) === optionKey(housing))) setHousing("");
+    if (resolution && !resolutions.some((entry) => Number(entry) === Number(resolution))) setResolution("");
   }, [brand, brands, cameraMode, housing, housings, reolinkKind, reolinkKinds, resolution, resolutions]);
 
   const filtered = useMemo(
@@ -248,6 +249,15 @@ export function DodajVariantoDialog({ open, onOpenChange, onConfirm, cameraMode 
   );
 }
 
+function uniqueOptions(values: string[]) {
+  const byKey = new Map<string, string>();
+  for (const value of values) {
+    const key = optionKey(value);
+    if (key && !byKey.has(key)) byKey.set(key, value);
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b, "sl"));
+}
+
 function FilterStrip({ label, values, selected, onSelect }: { label: string; values: string[]; selected: string; onSelect: (value: string) => void }) {
   const options = ["Vse", ...values];
   return (
@@ -258,8 +268,8 @@ function FilterStrip({ label, values, selected, onSelect }: { label: string; val
           <button
             key={value}
             type="button"
-            className={value === "Vse" ? (!selected ? "is-active" : "") : selected === value ? "is-active" : ""}
-            onClick={() => onSelect(value === "Vse" ? "" : value)}
+            className={optionKey(value) === optionKey("Vse") ? (!selected ? "is-active" : "") : optionKey(selected) === optionKey(value) ? "is-active" : ""}
+            onClick={() => onSelect(optionKey(value) === optionKey("Vse") ? "" : value)}
           >
             {value}
           </button>

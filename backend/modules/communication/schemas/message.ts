@@ -15,6 +15,8 @@ interface CommunicationAttachmentRecord {
 export interface CommunicationMessageDocument extends Document {
   projectId: string;
   offerId?: string | null;
+  invoiceVersionId?: string | null;
+  workOrderId?: string | null;
   customerId?: string | null;
   direction: CommunicationDirection;
   channel: CommunicationChannel;
@@ -37,7 +39,7 @@ export interface CommunicationMessageDocument extends Document {
 
 const CommunicationAttachmentSchema = new Schema<CommunicationAttachmentRecord>(
   {
-    type: { type: String, required: true, enum: ["offer_pdf", "project_pdf", "work_order_confirmation_pdf"] },
+    type: { type: String, required: true, enum: ["offer_pdf", "project_pdf", "work_order_pdf", "work_order_confirmation_pdf", "invoice_pdf"] },
     refId: { type: String, required: true, trim: true },
     filename: { type: String, required: true, trim: true },
   },
@@ -48,6 +50,8 @@ const CommunicationMessageSchema = new Schema<CommunicationMessageDocument>(
   {
     projectId: { type: String, required: true, index: true },
     offerId: { type: String, default: null, index: true },
+    invoiceVersionId: { type: String, default: null, index: true },
+    workOrderId: { type: String, default: null, index: true },
     customerId: { type: String, default: null, index: true },
     direction: { type: String, required: true, enum: ["outbound", "inbound"], default: "outbound" },
     channel: { type: String, required: true, enum: ["email"], default: "email" },
@@ -70,6 +74,8 @@ const CommunicationMessageSchema = new Schema<CommunicationMessageDocument>(
 
 CommunicationMessageSchema.index({ projectId: 1, createdAt: -1 });
 CommunicationMessageSchema.index({ offerId: 1, createdAt: -1 });
+CommunicationMessageSchema.index({ invoiceVersionId: 1, createdAt: -1 });
+CommunicationMessageSchema.index({ workOrderId: 1, createdAt: -1 });
 
 export const CommunicationMessageModel: Model<CommunicationMessageDocument> =
   (mongoose.models.CommunicationMessage as Model<CommunicationMessageDocument>) ||
