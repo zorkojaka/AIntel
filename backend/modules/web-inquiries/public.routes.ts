@@ -141,7 +141,13 @@ router.post('/inquiries', async (req: Request, res: Response) => {
       inquiryId: String(result.inquiry._id),
       message: result.message,
       offerSummary: result.offerNumber
-        ? { offerNumber: result.offerNumber, totalWithVat: result.offerTotalWithVat, currency: 'EUR', emailSent: result.emailSent }
+        ? {
+            offerNumber: result.offerNumber,
+            totalWithVat: result.offerTotalWithVat,
+            currency: 'EUR',
+            emailSent: result.emailSent,
+            discountPercent: Number((result.inquiry as any).meta?.discountPercent) || 0,
+          }
         : undefined,
     });
   } catch (error) {

@@ -10,6 +10,7 @@ export interface WebInquirySettingsDocument extends Document {
   reviewPageUrl: string;
   googleReviewUrl: string;
   reviewAutoRequest: boolean;
+  popusti: Array<{ nad: number; odstotek: number }>;
   videonadzor: {
     wifiCameraProductId: Types.ObjectId | null;
     wiredCameraProductId: Types.ObjectId | null;
@@ -60,6 +61,15 @@ const WebInquirySettingsSchema = new Schema<WebInquirySettingsDocument>(
     reviewPageUrl: { type: String, trim: true, default: 'https://dev.inteligent.si/predogled/ocena' },
     googleReviewUrl: { type: String, trim: true, default: 'https://g.page/r/CWxhGIx4AaUWEBM/review' },
     reviewAutoRequest: { type: Boolean, default: false },
+    popusti: {
+      type: [new Schema({ nad: { type: Number, min: 0 }, odstotek: { type: Number, min: 0, max: 50 } }, { _id: false })],
+      default: [
+        { nad: 750, odstotek: 3 },
+        { nad: 1000, odstotek: 5 },
+        { nad: 1500, odstotek: 8 },
+        { nad: 2500, odstotek: 10 },
+      ],
+    },
     videonadzor: {
       wifiCameraProductId: { type: Schema.Types.ObjectId, ref: 'Product', default: null },
       wiredCameraProductId: { type: Schema.Types.ObjectId, ref: 'Product', default: null },
