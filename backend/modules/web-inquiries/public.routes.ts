@@ -187,6 +187,48 @@ router.post('/inquiries/:id/photos', (req: Request, res: Response) => {
   });
 });
 
+// Oprema stranke (za portal "Moja oprema") - samo branje, server-to-server.
+router.get('/clients/equipment', async (req: Request, res: Response) => {
+  try {
+    const email = String(req.query.email ?? '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: 'Neveljaven e-naslov.' });
+    }
+    const { CrmClientModel } = await import('../crm/schemas/client');
+    const { ProjectModel } = await import('../projects/schemas/project');
+    const { OfferVersionModel } = await import('../projects/schemas/offer-version');
+
+    const client = await CrmClientModel.findOne({ email, isActive: true }).lean();
+    if (!client) return res.json({ ok: true, projects: [] });
+
+    const projects = await ProjectModel.find({ 'customer.name': client.name })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
+
+    const rezultat = [];
+    for (const project of projects) {
+      if (!project.confirmedOfferVersionId) continue;
+      const offer = await OfferVersionModel.findOne({ _id: project.confirmedOfferVersionId, projectId: project.id }).lean();
+      if (!offer) continue;
+      rezultat.push({
+        projectId: project.id,
+        title: project.title,
+        status: project.status,
+        date: project.createdAt,
+        categories: project.categories ?? [],
+        items: (offer.items ?? [])
+          .filter((item: any) => item.unit !== 'storitev')
+          .map((item: any) => ({ name: item.name, quantity: item.quantity })),
+      });
+    }
+    return res.json({ ok: true, projects: rezultat });
+  } catch (error) {
+    console.error('[web-inquiries] equipment', error);
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Opreme ni mogoče prebrati.' });
+  }
+});
+
 router.get('/reviews', async (_req: Request, res: Response) => {
   try {
     return res.json({ ok: true, ...(await listApprovedReviews()) });
