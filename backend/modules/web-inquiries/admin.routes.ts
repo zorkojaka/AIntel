@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { ProductModel } from '../cenik/product.model';
 import { getWebInquirySettings, WebInquirySettingsModel } from './web-inquiry-settings.model';
 import { WebInquiryModel } from './web-inquiry.model';
+import { ReviewModel } from '../reviews/review.model';
 
 const router = Router();
 
@@ -138,6 +139,38 @@ router.get('/', async (req: Request, res: Response) => {
     );
   } catch (error) {
     return res.fail(error instanceof Error ? error.message : 'Napaka pri branju povpraševanj.', 500);
+  }
+});
+
+router.get('/reviews', async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const reviews = await ReviewModel.find({}).sort({ createdAt: -1 }).limit(limit).lean();
+    return res.success(reviews.map((review) => ({
+      id: String(review._id),
+      projectId: review.projectId,
+      name: review.name,
+      pillar: review.pillar,
+      status: review.status,
+      rating: review.rating,
+      comment: review.comment,
+      emailSentAt: review.emailSentAt,
+      submittedAt: review.submittedAt,
+    })));
+  } catch (error) {
+    return res.fail(error instanceof Error ? error.message : 'Napaka pri branju ocen.', 500);
+  }
+});
+
+router.put('/reviews/:id/status', async (req: Request, res: Response) => {
+  try {
+    const status = String(req.body?.status ?? '');
+    if (!['odobreno', 'skrito'].includes(status)) return res.fail('Dovoljena statusa: odobreno, skrito.', 400);
+    const review = await ReviewModel.findByIdAndUpdate(req.params.id, { $set: { status } }, { new: true });
+    if (!review) return res.fail('Ocena ni najdena.', 404);
+    return res.success({ id: String(review._id), status: review.status });
+  } catch (error) {
+    return res.fail(error instanceof Error ? error.message : 'Napaka pri posodobitvi ocene.', 500);
   }
 });
 

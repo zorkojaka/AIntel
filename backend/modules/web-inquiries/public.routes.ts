@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { getWebInquiryOptions, getWebIzdelki, processWebInquiry, validateWebInquiryPayload, WebInquiryError } from './web-inquiry.service';
 import { WebInquiryModel } from './web-inquiry.model';
+import { getReviewByToken, listApprovedReviews, submitReview } from '../reviews/review.service';
 
 const UPLOAD_BASE_DIR = '/var/www/aintel/uploads/web-inquiries';
 const PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -186,10 +187,83 @@ router.post('/inquiries/:id/photos', (req: Request, res: Response) => {
   });
 });
 
+// Oprema stranke (za portal "Moja oprema") - samo branje, server-to-server.
+router.get('/clients/equipment', async (req: Request, res: Response) => {
+  try {
+    const email = String(req.query.email ?? '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: 'Neveljaven e-naslov.' });
+    }
+    const { CrmClientModel } = await import('../crm/schemas/client');
+    const { ProjectModel } = await import('../projects/schemas/project');
+    const { OfferVersionModel } = await import('../projects/schemas/offer-version');
+
+    const client = await CrmClientModel.findOne({ email, isActive: true }).lean();
+    if (!client) return res.json({ ok: true, projects: [] });
+
+    const projects = await ProjectModel.find({ 'customer.name': client.name })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
+
+    const rezultat = [];
+    for (const project of projects) {
+      if (!project.confirmedOfferVersionId) continue;
+      const offer = await OfferVersionModel.findOne({ _id: project.confirmedOfferVersionId, projectId: project.id }).lean();
+      if (!offer) continue;
+      rezultat.push({
+        projectId: project.id,
+        title: project.title,
+        status: project.status,
+        date: project.createdAt,
+        categories: project.categories ?? [],
+        items: (offer.items ?? [])
+          .filter((item: any) => item.unit !== 'storitev')
+          .map((item: any) => ({ name: item.name, quantity: item.quantity })),
+      });
+    }
+    return res.json({ ok: true, projects: rezultat });
+  } catch (error) {
+    console.error('[web-inquiries] equipment', error);
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Opreme ni mogoče prebrati.' });
+  }
+});
+
+router.get('/reviews', async (_req: Request, res: Response) => {
+  try {
+    return res.json({ ok: true, ...(await listApprovedReviews()) });
+  } catch (error) {
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Ocen ni mogoče naložiti.' });
+  }
+});
+
+router.get('/reviews/by-token/:token', async (req: Request, res: Response) => {
+  const review = await getReviewByToken(String(req.params.token));
+  if (!review) return res.status(404).json({ ok: false, code: 'NOT_FOUND', message: 'Povezava ni veljavna.' });
+  return res.json({ ok: true, name: review.name, submitted: Boolean(review.submittedAt) });
+});
+
+router.post('/reviews/by-token/:token', async (req: Request, res: Response) => {
+  try {
+    const result = await submitReview(String(req.params.token), Number(req.body?.rating), String(req.body?.comment ?? ''));
+    if (!result.ok) {
+      const sporocila: Record<string, string> = {
+        NOT_FOUND: 'Povezava ni veljavna.',
+        ALREADY_SUBMITTED: 'Ocena je bila že oddana. Hvala!',
+        VALIDATION_ERROR: 'Izberite oceno od 1 do 5 zvezdic.',
+      };
+      return res.status(400).json({ ok: false, code: result.code, message: sporocila[result.code] });
+    }
+    return res.json({ ok: true, rating: result.rating, googleReviewUrl: result.googleReviewUrl });
+  } catch (error) {
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Ocene ni bilo mogoče shraniti.' });
+  }
+});
+
 const NEXT_STEP_MESSAGES: Record<string, string> = {
   avans: 'Hvala za potrditev. Kontaktirali vas bomo s podatki za plačilo avansa in dogovorom o terminu montaže.',
-  posvet: 'Zabeleženo — poklicali vas bomo za kratek telefonski posvet.',
-  ogled: 'Zabeleženo — kontaktirali vas bomo za termin strokovnega ogleda (50 € z DDV + potni stroški; ob izvedbi se 50 € prizna kot popust).',
+  posvet: 'Zabeleženo - poklicali vas bomo za kratek telefonski posvet.',
+  ogled: 'Zabeleženo - kontaktirali vas bomo za termin strokovnega ogleda (50 € z DDV + potni stroški; ob izvedbi se 50 € prizna kot popust).',
   shrani: 'Ponudba je shranjena. Na e-naslovu jo imate na voljo, kadarkoli se lahko oglasite.',
 };
 

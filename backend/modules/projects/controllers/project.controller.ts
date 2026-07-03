@@ -36,6 +36,7 @@ import {
   getActiveSignedConfirmationVersion,
 } from '../services/work-order-confirmation.service';
 import { calculateProjectRouteDistance } from '../services/route-distance.service';
+import { requestReviewForProject } from '../../reviews/review.service';
 
 function normalizeSlug(value: string) {
   return value
@@ -847,6 +848,7 @@ export async function updateStatus(req: Request, res: Response) {
     return res.fail('Neznan status projekta.', 400);
   }
 
+  const prejsnjiStatus = project.status;
   project.status = nextStatus;
   addTimeline(project, {
     type: 'status-change',
@@ -857,6 +859,10 @@ export async function updateStatus(req: Request, res: Response) {
   });
 
   await project.save();
+
+  if (nextStatus === 'completed' && prejsnjiStatus !== 'completed') {
+    void requestReviewForProject(project);
+  }
 
   return res.success(await responseProject(project.toObject()));
 }

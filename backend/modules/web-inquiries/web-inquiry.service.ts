@@ -638,7 +638,7 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
 
     if (!avtomatski) {
       if (payload.pillar === 'alarm' && payload.alarm?.wiredAlarm) {
-        defaultsApplied.push('Žični alarm — ponudbo pripravi Jaka ročno (spletna avtomatika pokriva brezžični sistem).');
+        defaultsApplied.push('Žični alarm - ponudbo pripravi Jaka ročno (spletna avtomatika pokriva brezžični sistem).');
       }
       inquiry.defaultsApplied = defaultsApplied;
       await inquiry.save();
@@ -689,7 +689,7 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
         defaultsApplied,
       });
     } else if (payload.pillar === 'domofon' && payload.domofon) {
-      if (!payload.domofon.wiringReady) defaultsApplied.push('Napeljava za domofon še ni pripravljena — preveri obseg napeljave.');
+      if (!payload.domofon.wiringReady) defaultsApplied.push('Napeljava za domofon še ni pripravljena - preveri obseg napeljave.');
       zahteva = await buildPostavkeZahteva({
         projectMongoId: project._id as Types.ObjectId,
         projectId: project.id,
