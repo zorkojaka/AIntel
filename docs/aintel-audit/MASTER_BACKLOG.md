@@ -4,6 +4,11 @@ Prioritized P0–P3. Effort: S <1d, M days, L 1–2wk, XL multi-week. Each item 
 self-contained for handoff to a coding agent. Always read AGENT_HANDOFF.md first;
 never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 
+> **Authority note (final review 2026-07-05):** for P0 items,
+> `specs/P0_IMPLEMENTATION_SPECS.md` is authoritative over the summaries below.
+> Execution order and wave checkpoints: `IMPLEMENTATION_SEQUENCE.md`. Wheel items
+> (P1-09/10/11/12): design per `AINTEL_WHEEL_SPEC.md`.
+
 ---
 
 ## P0 — Security / active exposure
@@ -27,18 +32,23 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 - **Files**: public.routes.ts, core/app.ts (optional split mount), portal server.js
   (env only), inteligent-si pillar pages (inline config), docs: SECURITY, INTEGRATION_MAP.
 
-### AIN-P0-02 — Role-gate finance and settings
-- **Problem**: `/api/finance/*` (employee earnings + payment PATCH) and
-  `PUT /api/settings` open to every authenticated user.
-- **Evidence**: `backend/routes.ts:39-40` (no gates); finance/routes/index.ts;
-  settings.routes.ts; USER_ROLES §Findings 1–2.
-- **Scope**: `requireRoles([ADMIN, FINANCE])` on finance mount (decide: read summaries
-  maybe +SALES — ask owner, default strict); `requireRoles([ADMIN])` on settings PUT
-  (GET stays open — frontend shows company data broadly). Sweep remaining mounts and
-  document intended access per mount in USER_ROLES doc.
-- **Acceptance**: EXECUTION user gets 403 on /api/finance and settings PUT; existing
-  FINANCE/ADMIN flows work. Effort S. Risk: hidden UI dependencies (e.g. dashboards
-  fetching finance as non-finance user) — grep frontend fetches first.
+### AIN-P0-02 — Fix finance authorization (server-side leak) + settings write gates
+> **Corrected (spec pass + final review) — this is NOT a one-line role gate.**
+> Full design: `specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-02 (authoritative).
+- **Problem**: finance endpoints return **all** employees' earnings to any
+  authenticated user (server-side; the frontend role filter is cosmetic); the payment
+  PATCH is ungated; settings has **three** ungated write mounts (settings,
+  pdf-settings, communication settings).
+- **Evidence**: `backend/routes.ts:36-39` (no gates);
+  `finance-analytics.controller.ts` (no scoping/role checks); FinancePage.tsx
+  `isExecutionOnly` self-view (369-372) — a blanket gate breaks installer self-service.
+- **Scope**: split finance router into company (ADMIN+FINANCE) vs self sub-router with
+  **server-side** employee scoping (`/finance/my/earnings`); gate payment PATCH
+  [ADMIN, FINANCE]; gate the three settings write mounts [ADMIN]; phased rollout so
+  installers keep their earnings view (backend → SPA switch → final `/snapshots` gate).
+- **Acceptance**: per spec (EXECUTION curl: company endpoints 403, own earnings only;
+  settings writes 403 for non-ADMIN; FINANCE/ADMIN unchanged). Effort **M** (was
+  mis-scoped as S). Owner decision D-012 (SALES read access — default strict).
 
 ### AIN-P0-03 — Authenticate `/uploads`
 - **Problem**: All uploaded photos/files publicly served without auth.
@@ -51,12 +61,18 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   switch to attachments where needed. Effort M. Risk: broken email images — audit
   templates first.
 
-### AIN-P0-04 — Explain 58k PM2 restarts on production
-- **Problem**: `pm2 describe aintel` shows 58,165 restarts; cause unknown.
-- **Scope** (read-only investigation): pm2 logs history, deploy workflow frequency,
-  memory limits, crash signatures; write findings to AUDIT_PROGRESS + fix ticket if
-  crash-loop found.
-- **Acceptance**: documented root cause + follow-up item. Effort S.
+### AIN-P0-04 — PM2 restart guardrails (root cause RESOLVED)
+> **Corrected (spec pass): no longer an open investigation.** Root cause confirmed:
+> a **historical boot crash-loop** — an older build hard-required
+> `AINTEL_ALLOWED_ORIGINS` while prod `.env` lacked it; current source falls back to
+> defaults (`core/app.ts:13-35`, no throw). Loop stopped; the 58,165 counter is
+> cumulative. Full evidence: `specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-04.
+- **Remaining scope** (owner-owned, no app code): verify prod dist has no
+  `required in production` throw; set `AINTEL_ALLOWED_ORIGINS` in prod env explicitly;
+  `pm2 reset aintel`; add `max_restarts`/`min_uptime`/`restart_delay` to PM2 config.
+- **Follow-ups spun out**: triage `32× Maximum call stack size exceeded` +
+  FinanceSnapshot/BSON signatures once error tracking (AIN-P1-02) lands.
+- **Acceptance**: per spec. Effort S.
 
 ---
 
@@ -97,11 +113,16 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 - Scope: guard workOrderId presence/validity in controller + service; return 400.
 - Acceptance: repro request returns clean error; no BSONError in logs. Effort S.
 
-### AIN-P1-07 — clientId on Project + WebInquiry
-- Add `clientId: ObjectId` (nullable) + backfill script matching customer.name →
-  CrmClient (report ambiguities, don't guess); new projects always set it (project
-  creation + web-inquiry engine already touch CrmClient); equipment endpoint switches
-  to clientId with name fallback.
+### AIN-P1-07 — clientId on Project (WebInquiry already has it)
+> **Scope corrected (final review)**: `WebInquiry.clientId` already exists and is set
+> by the intake engine (`web-inquiry.model.ts:96`, `web-inquiry.service.ts:673`).
+> Only **Project** lacks the FK (`projects/schemas/project.ts` — embedded
+> `customer.name` only).
+- Add `clientId: ObjectId` (nullable) to Project + backfill script matching
+  customer.name → CrmClient (report ambiguities, don't guess); new projects always set
+  it (project creation + web-inquiry engine already touch CrmClient); equipment
+  endpoint (`public.routes.ts:210`, joins by `'customer.name'`) switches to clientId
+  with name fallback.
 - Acceptance: new projects linked; backfill report reviewed by owner before run
   (dry-run mode mandatory). Effort M. Deps: P1-01 preferred first.
 
@@ -112,8 +133,8 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   P1-04 smoke tests exist.
 
 ### AIN-P1-09 — Task entity + inbox (the wheel's hub)
-- New `tasks` module (platform-core style): schema per TARGET_OPERATING_MODEL
-  §mechanism, CRUD + my-tasks/role-tasks endpoints, core-shell inbox page + badge.
+- New `tasks` module (platform-core style): schema + API + inbox per
+  **`AINTEL_WHEEL_SPEC.md` §2** (authoritative design; senior schema review first).
   Manual tasks first; no automation yet. Effort L.
 
 ### AIN-P1-10 — Scheduler worker
@@ -121,11 +142,12 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   job registry, per-job lock (mongo lock doc), run log. Effort M. Deps: P1-03 logging.
 
 ### AIN-P1-11 — First automation rules
-- offer sent+3d → follow-up task; validUntil passed → expired + task; signature saved
-  → FINANCE invoice task (2d due); web inquiry nextStep → matching task; inquiry
-  new>1 business day uncontacted → escalation task.
-- Acceptance: each rule covered by a unit test; tasks visible in inbox. Effort M.
-  Deps: P1-09, P1-10.
+- Rule set + idempotency (dedupeKey) + config kill-switches per
+  **`AINTEL_WHEEL_SPEC.md` §3/§9**: offer sent+3d → follow-up task; validUntil passed
+  → expired + task; signature saved → FINANCE invoice task (2d due); web inquiry
+  nextStep → matching task; inquiry new>1 business day uncontacted → escalation task.
+- Acceptance: each rule covered by a unit test; tasks visible in inbox; every rule
+  individually disableable via config (ships disabled). Effort M. Deps: P1-09, P1-10.
 
 ### AIN-P1-12 — Invoice payment tracking
 - dueDate + paidAt + status on (new) invoice collection; mark-paid endpoint

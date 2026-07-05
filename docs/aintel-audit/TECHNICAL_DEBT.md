@@ -64,7 +64,7 @@ Each item: evidence → business consequence → technical consequence → sever
 
 | ID | Item | Evidence | Consequence | Sev | Effort |
 |---|---|---|---|---|---|
-| TD-R1 | 58,165 PM2 restarts on `aintel`, cause unknown | `pm2 describe aintel` | Possible request drops; masks crashes | Medium (until explained) | S (investigate) |
+| TD-R1 | 58,165 PM2 restarts on `aintel` | `pm2 describe aintel`; error-log analysis in `specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-04 | **RESOLVED (cause, spec pass 2026-07-05)**: historical boot crash-loop — older build hard-required `AINTEL_ALLOWED_ORIGINS`; current source falls back to defaults. Follow-up debt: no PM2 backoff guardrails (`max_restarts`/`min_uptime`) → a future boot misconfig could loop again | Low (guardrails pending) | S (owner config) |
 | TD-R2 | No health-based restart/alerting; /health exists but nothing consumes it | repo, VPS | Outages noticed by humans | Medium | S–M |
 | TD-R3 | Playwright as prod dependency for PDF (heavy, browser download on install) | backend/package.json | Slow deploys, larger attack surface | Low | M (consolidate on one PDF path) |
 

@@ -15,15 +15,25 @@ Concise instructions for future Claude Code / Codex / human developers.
 5. Follow root `CLAUDE.md` and `AGENTS.md` (task-completion format, no drive-by
    refactors, `npm run build` after backend changes).
 
-## Reading order
+## Reading order — minimum set (do NOT re-scan the repository)
+
+The foundational audit is **complete and finally reviewed** (`FABLE_FINAL_REVIEW.md`).
+Minimum reading before any implementation task:
 
 1. This file.
-2. `README.md` (index) → `SYSTEM_CONTEXT.md` (where things run).
-3. `AUDIT_PROGRESS.md` — what's verified, what's open; check "last reviewed commit"
-   vs current `git log` — **if many commits landed since `c0afad8`, verify claims
-   against code before relying on them.**
-4. For your task: `MASTER_BACKLOG.md` item → linked `modules/*.md` → linked
-   architecture/data/security docs.
+2. `SYSTEM_CONTEXT.md` — where things run (shared prod DB!).
+3. `FABLE_FINAL_REVIEW.md` — verified state, corrections, what's authoritative.
+4. `IMPLEMENTATION_SEQUENCE.md` — pick up work in wave order.
+5. Your item in `MASTER_BACKLOG.md`; for P0 items the design in
+   `specs/P0_IMPLEMENTATION_SPECS.md` is **authoritative**; for wheel items (tasks/
+   scheduler/automation) `AINTEL_WHEEL_SPEC.md` is authoritative.
+6. Only then, as needed: the linked `modules/*.md`, `DATA_MODEL.md`,
+   `USER_ROLES_AND_PERMISSIONS.md`, `SECURITY_AND_PRIVACY.md`, `INTEGRATION_MAP.md`.
+
+Drift check: `AUDIT_PROGRESS.md` "last reviewed commit" vs `git log` — if commits
+landed since `c0afad8` in your area, spot-verify the specific files you'll change
+(`git log --oneline c0afad8..HEAD -- backend/ apps/`). Everything under `docs/` outside
+`aintel-audit/` is historical — do not trust it without verifying.
 
 ## Locating knowledge
 

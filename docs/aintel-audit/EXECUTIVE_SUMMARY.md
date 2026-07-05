@@ -29,8 +29,10 @@ that pace.
    "records system" and the intended "operating system".
 2. **Fragile data foundations**: customer↔project linked by name string; invoices
    stored as schema-less blobs; legacy duplicate structures still writable.
-3. **Blind operations**: console-only logging, no error tracking, unexplained 58k
-   process restarts, zero backend tests — on a **shared production/staging database**.
+3. **Blind operations**: console-only logging, no error tracking, zero backend tests —
+   on a **shared production/staging database**. (The 58k process restarts were
+   explained during the spec pass: a historical, already-fixed boot crash-loop —
+   see `specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-04.)
 4. **Security exposures** (fixable in days): a public API key printed in website HTML
    that also unlocks customer equipment lookups; unauthenticated photo/file serving;
    finance and settings endpoints open to any employee.
@@ -64,8 +66,10 @@ friendly same-vertical pilot (Phase 7).
 
 ## Recommended next steps
 
-1. This week: four P0 security items (API key split/rotation, finance/settings role
-   gates, uploads auth, restart investigation).
+1. This week: four P0 security items (API key split/rotation, finance authorization
+   fix, uploads auth, PM2 restart guardrails + counter reset).
 2. Next: staging DB separation, error tracking, smoke tests for the five money flows.
-3. Then: clientId + real invoice collection, followed by the task/scheduler layer.
-4. Full order: `ROADMAP.md`; agent-ready items: `MASTER_BACKLOG.md`.
+3. Then: clientId + real invoice collection, followed by the task/scheduler layer
+   (design: `AINTEL_WHEEL_SPEC.md`).
+4. Authoritative order: `IMPLEMENTATION_SEQUENCE.md`; agent-ready items:
+   `MASTER_BACKLOG.md` (P0 design detail in `specs/P0_IMPLEMENTATION_SPECS.md`).

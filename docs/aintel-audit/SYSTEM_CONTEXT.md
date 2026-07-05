@@ -31,9 +31,11 @@ Additional worktree: `/home/jaka/apps/aintel-staging/AIntel-web-intake`
 - Tech: Node.js + TypeScript + Express 4 + Mongoose 7; frontend React 18 + Vite +
   Tailwind, pnpm monorepo.
 - PM2 observation (2026-07-05): `aintel` shows **58,165 restarts** (uptime 45h,
-  "unstable restarts 0"). Cause not established during audit — Needs verification
-  (deploy-driven restarts accumulate here, but the count is extreme; check
-  `~/.pm2/logs/aintel-error.log` history and deploy workflow frequency).
+  "unstable restarts 0"). **Cause RESOLVED (spec pass)**: historical boot crash-loop —
+  an older compiled build hard-required `AINTEL_ALLOWED_ORIGINS`; current source falls
+  back to defaults. Counter is cumulative; loop stopped. Remaining owner actions
+  (verify prod dist, reset counter, PM2 backoff guardrails):
+  `specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-04.
 
 ### 2. inteligent-si (public company website)
 

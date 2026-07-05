@@ -21,7 +21,7 @@ foundational system audit of AIntel (July 2026). It exists so that:
 | Branch reviewed | `codex/web-inquiries-intake` |
 | Commit reviewed | `c0afad8f92320ba48eddfcaec7a5b52d859c7b2e` (2026-07-03) |
 | Audit mode | Strictly read-only (shared production DB — no writes of any kind) |
-| Status | In progress — see `AUDIT_PROGRESS.md` |
+| Status | **Complete** — incl. final review (`FABLE_FINAL_REVIEW.md`); see `AUDIT_PROGRESS.md` |
 
 ## Document index and recommended reading order
 
@@ -53,16 +53,28 @@ foundational system audit of AIntel (July 2026). It exists so that:
 19. `MASTER_BACKLOG.md` — prioritized, agent-ready work items.
 20. `DECISIONS.md` — ADR-style decision log.
 
+**Implementation handoff (final review, 2026-07-05 — read before coding):**
+21. `FABLE_FINAL_REVIEW.md` — final verdict, verified claims, corrections, what is
+    authoritative.
+22. `IMPLEMENTATION_SEQUENCE.md` — **authoritative execution order** (waves,
+    dependencies, parallelism, checkpoints, agent vs. owner vs. senior review).
+23. `specs/P0_IMPLEMENTATION_SPECS.md` — authoritative P0 designs (override backlog
+    summaries).
+24. `AINTEL_WHEEL_SPEC.md` — authoritative design for the task/scheduler/automation hub.
+
 **Process:**
-21. `DOCUMENTATION_MAINTENANCE.md` — how to keep all of this current.
-22. `PROPOSED_CLAUDE_MD_CHANGES.md` — suggested durable additions to root `CLAUDE.md`.
+25. `DOCUMENTATION_MAINTENANCE.md` — how to keep all of this current.
+26. `PROPOSED_CLAUDE_MD_CHANGES.md` — suggested durable additions to root `CLAUDE.md`.
 
 ## Facts vs. recommendations
 
-Documents 1–14 describe the system **as it is** at the reviewed commit. Documents 15–20
+Documents 1–14 describe the system **as it is** at the reviewed commit. Documents 15–24
 describe **where it should go**; nothing in them is implemented unless the backlog item is
 marked done. Every important claim carries a confidence label:
 `Confirmed` / `High confidence` / `Probable` / `Needs verification`.
+Where documents disagree, the authority order is: `FABLE_FINAL_REVIEW.md` corrections →
+`specs/P0_IMPLEMENTATION_SPECS.md` (P0 scope/design) and `AINTEL_WHEEL_SPEC.md` (wheel
+design) → `IMPLEMENTATION_SEQUENCE.md` (ordering) → the topic documents.
 
 ## How future agents should update this documentation
 

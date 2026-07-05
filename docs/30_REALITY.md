@@ -1,3 +1,6 @@
+> ⚠️ Zastarelo / arhivsko — glej `docs/aintel-audit/` (2026-07). Avtomatsko poročilo
+> brez aktualne vrednosti (TD-X2); hraniti kot zgodovino.
+
 # AOS Reality Report
 
 ## 1. Scope

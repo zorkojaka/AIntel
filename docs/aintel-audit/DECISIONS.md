@@ -67,3 +67,15 @@ or explicit "manual accounting" statement. Affects invoice module roadmap.
 ## D-017 [Open] CRM people/companies vs clients consolidation
 D6/P10: keep clients as master? Fold people/companies into contacts-on-client?
 Blocks CRM expansion work.
+
+## D-018 [Existing-confirmed] Documentation authority order (final review, 2026-07-05)
+Where audit documents disagree: `FABLE_FINAL_REVIEW.md` corrections →
+`specs/P0_IMPLEMENTATION_SPECS.md` (P0 scope/design) and `AINTEL_WHEEL_SPEC.md`
+(task/scheduler hub design) → `IMPLEMENTATION_SEQUENCE.md` (execution order) → topic
+docs. Rule: when a spec corrects a finding, the summary docs must be updated in the
+same commit (the P0-02/P0-04 drift that motivated this is fixed).
+
+## D-019 [Open] Wheel hub design sign-off
+`AINTEL_WHEEL_SPEC.md` is the proposed design for tasks/scheduler/automation
+(AIN-P1-09..12). Owner + senior review must sign off on §2 (Task schema) and §3 (rule
+engine) before implementation starts; interacts with D-014 (scheduler dependency).

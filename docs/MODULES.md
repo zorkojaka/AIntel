@@ -1,3 +1,6 @@
+> ⚠️ Delno zastarelo — glej `docs/aintel-audit/` (2026-07). Aktualni katalog modulov:
+> `docs/aintel-audit/MODULE_CATALOG.md`.
+
 # AIntel: Modules Directory
 
 Ta mapa vsebuje posamezne funkcionalne module, ki se priklapljajo na core.

@@ -108,8 +108,9 @@ Confidence: Confirmed / High confidence / Probable / Needs verification.
   weak rate limiting → spam can create projects/clients en masse and burn SMTP
   reputation. Duplicate window (10 min per email+pillar) helps only for identical
   senders. Remediation: captcha/turnstile on widget, server-side quotas, queue.
-- 58k PM2 restarts unexplained (see AUDIT_PROGRESS) — availability risk until
-  understood.
+- 58k PM2 restarts: **explained** — historical boot crash-loop, already fixed in
+  source (`specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-04). Residual availability risk:
+  no PM2 backoff guardrails against a future boot misconfig.
 
 ## Unresolved checks (follow-ups)
 
