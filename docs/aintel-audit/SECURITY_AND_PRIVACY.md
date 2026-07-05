@@ -21,16 +21,18 @@ Confidence: Confirmed / High confidence / Probable / Needs verification.
 - Note: rate limiting is in-memory, per-process, keyed by spoofable `x-forwarded-for`
   (Confirmed) — no real brute-force protection for email enumeration.
 
-## S2 — Unauthenticated static `/uploads` — **High, Confirmed**
+## S2 — Unauthenticated static `/uploads` — **High, RESOLVED (AIN-P0-03)**
 
-- `core/app.ts`: `app.use('/uploads', express.static('/var/www/aintel/uploads'))` with
-  no auth. Contains project/execution photos (customers' homes, installed security
-  equipment), web-inquiry photos, documents.
-- URLs are semi-guessable (`/uploads/web-inquiries/<mongoId>/foto-<timestamp>-<rand>`),
-  and are shared in emails/UI, so they leak.
-- Remediation: authenticated file endpoint (files module already exists) or signed
-  URLs; at minimum disable directory-style enumeration and move behind auth for
-  entity types with PII.
+- Previously `core/app.ts` served `/uploads` via anonymous `express.static`, exposing
+  project/execution photos (customers' homes, installed security equipment),
+  web-inquiry photos, and documents to anyone with a URL.
+- AIN-P0-03 replaced the static mount with `GET /uploads/*` behind `requireAuth`
+  (`backend/core/app.ts`, `backend/modules/files/upload-stream.ts`). Existing stored
+  `/uploads/...` URLs remain valid for authenticated same-origin SPA image loads.
+- The handler resolves every requested path below `/var/www/aintel/uploads` and rejects
+  `..`, absolute escapes, Windows-style traversal, and null bytes before file access.
+- Residual risk: phase 1 allows any authenticated user to read upload URLs they know;
+  per-entity ownership checks remain a later hardening item.
 
 ## S3 — `x-tenant-id` / `x-user-id` header trust — **High now (audit-trail spoofing), Critical for multi-tenant, Confirmed**
 
@@ -88,8 +90,8 @@ Confidence: Confirmed / High confidence / Probable / Needs verification.
   `Mixed` fields (`invoiceVersions`, `executionDefinitions`) accept arbitrary
   structures; no sanitization layer (no zod, no mongo-sanitize).
 - File uploads filter by MIME (client-declared) only; no content sniffing; filenames
-  sanitized. Static serving means an uploaded polyglot is served back as-is
-  (images only allowed — residual risk Low/Medium).
+  sanitized. Uploaded files are now read behind authentication, but an authenticated
+  user could still retrieve a known upload URL until per-entity checks exist.
 - Template rendering (`template-render.service.ts`) interpolates `{{…}}` into email
   HTML — check escaping of customer-controlled values (Needs verification).
 

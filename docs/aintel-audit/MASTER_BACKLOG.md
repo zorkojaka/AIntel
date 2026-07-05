@@ -50,17 +50,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   settings writes 403 for non-ADMIN; FINANCE/ADMIN unchanged). Effort **M** (was
   mis-scoped as S). Owner decision D-012 (SALES read access — default strict).
 
-### AIN-P0-03 — Authenticate `/uploads`
-- **Problem**: All uploaded photos/files publicly served without auth.
-- **Evidence**: `core/app.ts` express.static; S2.
-- **Scope**: Replace static mount with an authenticated streaming route (reuse files
-  module); exception list for genuinely public assets (e.g. review-related images if
-  any); keep public web-inquiry photo upload but not public read.
-- **Acceptance**: unauthenticated GET /uploads/... → 401; UI images still render
-  (same-origin cookie). Check emails that embed upload URLs (attachment-resolver) —
-  switch to attachments where needed. Effort M. Risk: broken email images — audit
-  templates first.
-
 ### AIN-P0-04 — PM2 restart guardrails (root cause RESOLVED)
 > **Corrected (spec pass): no longer an open investigation.** Root cause confirmed:
 > a **historical boot crash-loop** — an older build hard-required
@@ -200,3 +189,14 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 ## Documentation updates per item
 Every item lists its docs in-line; at minimum update MODULE_CATALOG review status,
 relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
+
+## Done
+
+### AIN-P0-03 — Authenticate `/uploads`
+- **Landed**: AIN-P0-03 implementation commit.
+- **Summary**: Replaced anonymous `/uploads` static serving with `GET /uploads/*`
+  behind `requireAuth`, preserving existing upload URLs for authenticated SPA image
+  loads. Added path-traversal/null-byte protection and backend tests.
+- **Acceptance**: unauthenticated `/uploads/...` returns 401; traversal resolver
+  rejects escape attempts; source grep found no embedded `/uploads` email/template
+  `<img>` references in checked communication paths.

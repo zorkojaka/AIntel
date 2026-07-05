@@ -27,7 +27,7 @@ Status as of commit `c0afad8` (2026-07-05). Sizes are TS/TSX line counts (orient
 | dashboard | 0.2k | `/api/dashboard` | Metrics/widgets (early stage) | Medium | High (core) | survey | [modules/small-modules.md](modules/small-modules.md) |
 | reviews | 0.2k | — (service only; called from projects/communication) | Customer review requests, public token submission, Google review redirect | Medium | High | survey | [modules/small-modules.md](modules/small-modules.md) |
 | categories | 0.1k | `/api/categories` | Project/product categories | Medium | High (core) | survey | [modules/small-modules.md](modules/small-modules.md) |
-| files | 0.1k | `/api/files` | Generic file upload/download | Medium | High (core) | survey | [modules/storage-group.md](modules/storage-group.md) |
+| files | 0.2k | `/api/files`, `/uploads/*` (auth) | Generic file upload + authenticated legacy upload reads | Medium | High (core) | survey | [modules/storage-group.md](modules/storage-group.md) |
 | shared | <0.1k | — | Shared helpers between modules | — | — | survey | [modules/small-modules.md](modules/small-modules.md) |
 
 ## Frontend apps (`apps/`)
@@ -58,7 +58,8 @@ Status as of commit `c0afad8` (2026-07-05). Sizes are TS/TSX line counts (orient
 ## Notes
 
 - Module mounting: all under `/api` behind `requireAuth` (`backend/core/app.ts`), except
-  `/api/auth` (public) and `/api/public` (X-API-Key web intake). Role gates per mount in
+  `/api/auth` (public) and `/api/public` (X-API-Key web intake). `/uploads/*` is also
+  behind `requireAuth` as a legacy upload read route. Role gates per mount in
   `backend/routes.ts`.
 - Frontend modules are compile-time imports into `core-shell` (static registry in
   `App.tsx`), not runtime micro-frontends.

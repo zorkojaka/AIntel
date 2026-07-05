@@ -1,6 +1,6 @@
 # Audit Progress
 
-Last updated: 2026-07-05 (final review pass)
+Last updated: 2026-07-05 (AIN-P0-03 implementation)
 Last reviewed commit: `c0afad8f92320ba48eddfcaec7a5b52d859c7b2e` (branch `codex/web-inquiries-intake`)
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
@@ -53,7 +53,8 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
 - Finance & settings mounts have no role gate (verified in route files) — S4.
 - `x-tenant-id`/`x-user-id` trusted from client; frontend actively sends x-tenant-id
   via buildTenantHeaders — S3 (Confirmed).
-- No scheduler/cron (crontab empty); no backend tests; console-only logging.
+- No scheduler/cron (crontab empty); baseline had no backend tests. AIN-P0-03 added
+  focused backend `node:test` coverage for `/uploads` auth/path resolution.
 - Prod `aintel` PM2 restarts = 58,165 — **RESOLVED**: historical boot crash-loop
   (`AINTEL_ALLOWED_ORIGINS` hard-required by an older build), already fixed in current
   source; see `specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-04.
@@ -63,11 +64,19 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
 - Final review re-verified all load-bearing P0/architecture claims against source —
   all confirmed; evidence table in `FABLE_FINAL_REVIEW.md` §1.
 
+## Implementation updates after the foundational audit
+
+- **AIN-P0-03**: `/uploads/*` serving changed from anonymous static files to an
+  authenticated streaming route with path-traversal protection. Source grep found no
+  embedded `<img ... /uploads ...>` communication/template references in the checked
+  source paths. S2 is marked resolved; per-entity upload ownership remains future
+  hardening.
+
 ## Genuine unresolved checks (curated in the final review)
 
 Resolved/folded since the original list: PM2 restarts (#old-1 → resolved, above);
-storage path traversal (#old-8 → folded into the AIN-P0-03 design, which includes the
-traversal guard). Remaining — most need the **owner** (ops access or a decision):
+storage read path traversal (#old-8 → resolved by AIN-P0-03 authenticated upload
+handler). Remaining — most need the **owner** (ops access or a decision):
 
 1. **Atlas actual indexes** vs schema declarations — owner runs read-only
    `listIndexes` (feeds AIN-P1-05).

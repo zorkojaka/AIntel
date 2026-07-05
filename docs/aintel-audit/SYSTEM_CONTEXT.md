@@ -26,8 +26,9 @@ Additional worktree: `/home/jaka/apps/aintel-staging/AIntel-web-intake`
 - GitHub: `github.com/zorkojaka/AIntel` (SSH key `~/.ssh/github`).
 - Deploys: GitHub workflow deploys staging over SSH (commit `7870d02` mentions keepalive
   + concurrency queue). Deployment scripts are out of audit scope (`_stage/` untouched).
-- Uploads: `/var/www/aintel/uploads`, served by the backend at `/uploads` (static,
-  unauthenticated — see `SECURITY_AND_PRIVACY.md`).
+- Uploads: `/var/www/aintel/uploads`, served by the backend at `/uploads` through an
+  authenticated streaming route with path-traversal protection (AIN-P0-03; see
+  `SECURITY_AND_PRIVACY.md` S2).
 - Tech: Node.js + TypeScript + Express 4 + Mongoose 7; frontend React 18 + Vite +
   Tailwind, pnpm monorepo.
 - PM2 observation (2026-07-05): `aintel` shows **58,165 restarts** (uptime 45h,

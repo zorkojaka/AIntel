@@ -36,7 +36,9 @@ settings (which cenik products the engine uses per pillar), review moderation.
    joins client→projects by `customer.name` (TD-D1).
 4. Pillar logic is Inteligent-specific by design — fine, but should live behind an
    "intake engine" interface for productization (CORE_VS_CUSTOM).
-5. Photos: MIME-only filter; stored under publicly served `/uploads` (S2).
+5. Photos: MIME-only filter; public upload remains allowed for inquiry intake, but
+   stored `/uploads` reads now require an authenticated AIntel session (S2 resolved by
+   AIN-P0-03).
 
 ## Reuse potential
 The intake pattern (form → validated payload → configured engine → offer) is highly

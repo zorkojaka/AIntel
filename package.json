@@ -2,6 +2,7 @@
   "name": "aintel-monorepo",
   "private": true,
   "scripts": {
+    "test": "pnpm --filter aintel-backend test",
     "dev": "pnpm --parallel --filter aintel-backend dev --filter @aintel/core-shell dev --filter @aintel/module-crm dev --filter @aintel/module-cenik dev --filter @aintel/module-settings dev --filter @aintel/module-dashboard dev",
     "dev:core": "pnpm --filter @aintel/core-shell dev",
     "dev:crm": "pnpm --filter @aintel/module-crm dev",
