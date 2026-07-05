@@ -1,0 +1,40 @@
+# Frontend: core-shell and remaining modules
+
+Reviewed at `c0afad8` — depth: core-shell deep, others survey.
+
+## core-shell (827)
+Auth pages (Login, ResetRequest, ResetPassword), `AuthContext`, `CoreLayout` sidebar,
+static module registry: manifests imported at compile time, `moduleRoleMap` filters
+nav by role (UI-only enforcement — backend gates remain authoritative). Path-prefix
+routing, no react-router (TD-F3). Adding a module = editing App.tsx (no dynamic
+loading) — acceptable now, relevant to productization (module activation concept in
+MODULARIZATION_PLAN).
+
+## module-settings (4,661)
+Company settings, logo/color, document prefixes, PDF settings preview, communication
+settings/templates UI. Second-largest frontend package — settings UI outweighs several
+backend modules; check for dead panels when config consolidates.
+
+## module-cenik (3,744)
+Price list table, filters, product form, import UI, category settings.
+
+## module-dashboard (1,533)
+Dashboard UI richer than its backend (D7) — trace data sources before extending.
+
+## module-finance (1,347) / module-employees (1,329) / module-crm (749) / module-profil (560)
+Tables/charts for finance; employees+users admin; CRM (people/companies/clients +
+exported ClientForm); own profile.
+
+## packages/ui + packages/theme
+Button, Card, DataTable, Input, Textarea, FileUpload, PhotoCapture, PhotoManager,
+CategoryMultiSelect, ColorPicker, TableRowActions; the only tested code in the repo
+(4 component tests). Theme tokens + applyTheme().
+
+## shared/types + shared/utils
+De-facto API contract (offers, logistics, communication, project, roles, …) imported
+by backend and frontend — keep this discipline; it is the future module-boundary
+contract layer. Note stray compiled `project.js` (D8) and `tenant.ts` util in shared
+(header-based — related to S3; verify frontend never sends x-tenant-id/x-user-id —
+Needs verification).
+
+Confidence: High for shell; others Probable (purpose clear, internals unread).
