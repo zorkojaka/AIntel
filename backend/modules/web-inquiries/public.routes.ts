@@ -4,7 +4,7 @@ import path from 'path';
 import multer from 'multer';
 import mongoose from 'mongoose';
 import { Router, type NextFunction, type Request, type Response } from 'express';
-import { getWebInquiryOptions, getWebIzdelki, processWebInquiry, validateWebInquiryPayload, WebInquiryError } from './web-inquiry.service';
+import { getWebInquiryOptions, getWebIzdelki, PILLAR_LABELS, processWebInquiry, validateWebInquiryPayload, WebInquiryError } from './web-inquiry.service';
 import { WebInquiryModel } from './web-inquiry.model';
 import { getReviewByToken, listApprovedReviews, submitReview } from '../reviews/review.service';
 
@@ -77,7 +77,31 @@ function requireApiKey(req: Request, res: Response, next: NextFunction) {
   return next();
 }
 
+// AIN-P0-01: server-to-server routes (/clients/*) live behind a SEPARATE key that is
+// never shipped to a browser. During the rollout window the legacy browser key is still
+// accepted (dual-accept); remove that acceptance once both keys are rotated (spec step 3).
+function requireServerApiKey(req: Request, res: Response, next: NextFunction) {
+  const internalKey = process.env.AINTEL_INTERNAL_API_KEY?.trim();
+  const legacyKey = process.env.AINTEL_WEB_INQUIRY_API_KEY?.trim();
+  if (!internalKey && !legacyKey) {
+    return res.status(503).json({ ok: false, code: 'NOT_CONFIGURED', message: 'Interni API ni omogočen (manjka AINTEL_INTERNAL_API_KEY).' });
+  }
+  const providedKey = (req.headers['x-api-key'] as string | undefined)?.trim();
+  const acceptedKeys = [internalKey, legacyKey].filter(Boolean);
+  if (!providedKey || !acceptedKeys.includes(providedKey)) {
+    return res.status(401).json({ ok: false, code: 'UNAUTHORIZED', message: 'Neveljaven API ključ.' });
+  }
+  return next();
+}
+
+const internalRouter = Router();
+internalRouter.use(cors({ origin: false }));
+internalRouter.use(requireServerApiKey);
+
 const router = Router();
+// Mounted before the browser-wide CORS + key guard so /clients/* never falls through
+// to the permissive browser configuration.
+router.use('/clients', internalRouter);
 
 // The website widget calls these endpoints directly from the browser, so they
 // need their own permissive CORS (the global allowlist covers only aintel origins).
@@ -194,7 +218,7 @@ router.post('/inquiries/:id/photos', (req: Request, res: Response) => {
 });
 
 // Oprema stranke (za portal "Moja oprema") - samo branje, server-to-server.
-router.get('/clients/equipment', async (req: Request, res: Response) => {
+internalRouter.get('/equipment', async (req: Request, res: Response) => {
   try {
     const email = String(req.query.email ?? '').trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
@@ -232,6 +256,38 @@ router.get('/clients/equipment', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[web-inquiries] equipment', error);
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Opreme ni mogoče prebrati.' });
+  }
+});
+
+// Povpraševanja in ponudbe stranke (za portal "Moje ponudbe") - samo branje,
+// server-to-server. Povzetek brez postavk in brez internih opomb (defaultsApplied).
+internalRouter.get('/inquiries', async (req: Request, res: Response) => {
+  try {
+    const email = String(req.query.email ?? '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: 'Neveljaven e-naslov.' });
+    }
+    const inquiries = await WebInquiryModel.find({ 'contact.email': email })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
+    return res.json({
+      ok: true,
+      inquiries: inquiries.map((inquiry) => ({
+        id: String(inquiry._id),
+        createdAt: inquiry.createdAt,
+        pillar: inquiry.pillar,
+        pillarLabel: PILLAR_LABELS[inquiry.pillar] ?? inquiry.pillar,
+        status: inquiry.status,
+        offerNumber: inquiry.offerNumber ?? null,
+        offerTotalWithVat: inquiry.offerTotalWithVat ?? null,
+        nextStep: inquiry.nextStep ? { choice: inquiry.nextStep.choice, chosenAt: inquiry.nextStep.chosenAt } : null,
+        projectId: inquiry.projectId ?? null,
+      })),
+    });
+  } catch (error) {
+    console.error('[web-inquiries] inquiries', error);
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Povpraševanj ni mogoče prebrati.' });
   }
 });
 

@@ -74,7 +74,7 @@ export interface WebInquiryPayload {
 }
 
 const PILLARS: WebInquiryPillar[] = ['videonadzor', 'alarm', 'domofon', 'pametni_dom', 'pametna_kljucavnica', 'servis'];
-const PILLAR_LABELS: Record<WebInquiryPillar, string> = {
+export const PILLAR_LABELS: Record<WebInquiryPillar, string> = {
   videonadzor: 'Videonadzor',
   alarm: 'Alarm',
   domofon: 'Domofon',
