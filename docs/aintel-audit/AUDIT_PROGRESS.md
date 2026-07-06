@@ -1,0 +1,104 @@
+# Audit Progress
+
+Last updated: 2026-07-05 (AIN-P0-03 implementation)
+Last reviewed commit: `c0afad8f92320ba48eddfcaec7a5b52d859c7b2e` (branch `codex/web-inquiries-intake`)
+
+**THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
+(`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
+(`FABLE_FINAL_REVIEW.md`) verified the load-bearing findings against source and
+corrected the stale points. **Do not re-audit** — implement per
+`IMPLEMENTATION_SEQUENCE.md`. Update this file only when an area is re-reviewed after
+code changes.
+
+## Phase status
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | Orientation and inventory | ✅ Complete |
+| 2 | Architecture and shared foundations | ✅ Complete |
+| 3 | Backend modules | ✅ Complete (core deep, small modules grouped) |
+| 4 | Frontend modules and user flows | ✅ Complete (module-projects deep, others surveyed) |
+| 5 | Related applications and integrations | ✅ Complete (boundary depth) |
+| 6 | Product and modularization analysis | ✅ Complete |
+| 7 | Prioritization and handoff | ✅ Complete |
+| 8 | P0 implementation specs (verified against code) | ✅ Complete |
+| 9 | Final senior review + corrections | ✅ Complete (FABLE_FINAL_REVIEW.md) |
+
+Full audit documentation set produced in `docs/aintel-audit/`. All required documents
+exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
+
+## Depth of review by area
+
+- **Deep (read schemas + routes + controller/service structure)**: core framework
+  (app/server/mongo/auth/roles/tenant/response/error), projects (schemas, routes,
+  controller function inventory, offer/work-order/material schemas), cenik (product
+  model + routes + sync layout), communication (service surface + routes),
+  web-inquiries (public + admin + service), finance (routes + snapshot dependency),
+  zahteve (model + routes), settings, crm (schemas + routes), auth module.
+- **Survey (purpose + routes + sizes, internals sampled)**: admin, dashboard,
+  categories, requirement-templates, execution-rules, reviews, photos, files, users,
+  employees, employee-profiles, profile; frontend module-projects (structure + file
+  sizes, key components identified), core-shell (deep), other frontend modules,
+  packages/ui+theme, shared/types+utils.
+- **Boundary depth**: inteligent-si (widget config, public key exposure, deploy
+  relationship), inteligent-portal (server.js, equipment API consumption, separate DB).
+
+## Confirmed key facts (evidence in the topic docs)
+
+- 22 backend modules, 10 frontend apps, 35 schema/model files.
+- Modular monolith; compile-time module registry in core-shell App.tsx.
+- Auth: JWT cookie, roles on Employee (User fallback), ADMIN bypasses requireRoles.
+- `/api/public` mounted pre-CORS/auth, single shared X-API-Key (published in website
+  HTML) — Critical exposure S1.
+- Finance & settings mounts have no role gate (verified in route files) — S4.
+- `x-tenant-id`/`x-user-id` trusted from client; frontend actively sends x-tenant-id
+  via buildTenantHeaders — S3 (Confirmed).
+- No scheduler/cron (crontab empty); baseline had no backend tests. AIN-P0-03 added
+  focused backend `node:test` coverage for `/uploads` auth/path resolution.
+- Prod `aintel` PM2 restarts = 58,165 — **RESOLVED**: historical boot crash-loop
+  (`AINTEL_ALLOWED_ORIGINS` hard-required by an older build), already fixed in current
+  source; see `specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-04.
+- Live prod error confirmed in logs: installer-prep ObjectId('undefined') cast (TD-B7).
+- autoIndex:false in db/mongo.ts.
+- Prod/staging share db `inteligent`.
+- Final review re-verified all load-bearing P0/architecture claims against source —
+  all confirmed; evidence table in `FABLE_FINAL_REVIEW.md` §1.
+
+## Implementation updates after the foundational audit
+
+- **AIN-P0-03**: `/uploads/*` serving changed from anonymous static files to an
+  authenticated streaming route with path-traversal protection. Source grep found no
+  embedded `<img ... /uploads ...>` communication/template references in the checked
+  source paths. S2 is marked resolved; per-entity upload ownership remains future
+  hardening.
+
+## Genuine unresolved checks (curated in the final review)
+
+Resolved/folded since the original list: PM2 restarts (#old-1 → resolved, above);
+storage read path traversal (#old-8 → resolved by AIN-P0-03 authenticated upload
+handler). Remaining — most need the **owner** (ops access or a decision):
+
+1. **Atlas actual indexes** vs schema declarations — owner runs read-only
+   `listIndexes` (feeds AIN-P1-05).
+2. **Accounting/fiscalization handoff** (D-016) — how invoices reach accounting;
+   shapes the AIN-P1-08 schema.
+3. **Backup/restore procedure** for Atlas + `/var/www/aintel/uploads` — existence
+   unknown; highest-severity ops unknown.
+4. **Repo secret scan** (S9) — run gitleaks/trufflehog read-only.
+5. **Email template escaping** of customer-controlled values (S8) — check with
+   AIN-P2-04.
+6. **Header-trust blast radius** (S3) — pattern confirmed; per-endpoint enumeration
+   happens naturally in AIN-P2-09.
+7. **Finance addFromInvoice vs automatic snapshot** — which write path the UI uses.
+8. **CRM people/companies vs clients** actual usage (D-017); dashboard data sources;
+   components/ui vs packages/ui overlap.
+9. **nginx `dev.inteligent.si/aintel-api` proxy config** — affects AIN-P0-01
+   IP-allowlist option.
+10. **zahteve v6 migration** version-tracking mechanism.
+11. **Secondary prod-log signatures** (32× max-call-stack, FinanceSnapshot/BSON) —
+    triage after AIN-P1-02.
+
+## Next steps
+
+Implementation, not audit. Order: `IMPLEMENTATION_SEQUENCE.md` (Wave 0 = P0 security
+items). Keep this file + the DOCUMENTATION_MAINTENANCE matrix current as code changes.

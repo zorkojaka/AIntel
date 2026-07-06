@@ -28,6 +28,7 @@ type WebInquirySettings = {
   alarm: Record<string, any>;
   domofon: Record<string, any>;
   pametniDom: Record<string, any>;
+  popusti: Array<{ nad: number; odstotek: number }>;
 };
 
 const PILLAR_PICKERJI: Array<{ kljuc: 'alarm' | 'domofon' | 'pametniDom'; naslov: string; polja: Array<[string, string]> }> = [
@@ -253,6 +254,7 @@ export function WebInquiriesSection() {
           alarm: settings.alarm,
           domofon: settings.domofon,
           pametniDom: settings.pametniDom,
+          popusti: settings.popusti,
         }),
       });
       const payload = await response.json();
@@ -405,6 +407,42 @@ export function WebInquiriesSection() {
                     </select>
                   </div>
                 ))}
+              </div>
+
+              <div className="space-y-3 border-t border-border pt-4">
+                <h4 className="text-sm font-semibold text-foreground">Količinski popusti (po vrednosti ponudbe z DDV)</h4>
+                <p className="text-xs text-muted-foreground">Uporabi se najvišji doseženi prag. Prazna lestvica = brez popustov.</p>
+                {(settings.popusti ?? []).map((prag, i) => (
+                  <div key={i} className="flex items-center gap-3 text-sm">
+                    <span>nad</span>
+                    <Input
+                      type="number"
+                      value={String(prag.nad)}
+                      onChange={(e) => {
+                        const popusti = [...settings.popusti];
+                        popusti[i] = { ...popusti[i], nad: Number(e.target.value) || 0 };
+                        setSettings({ ...settings, popusti });
+                      }}
+                    />
+                    <span>€ →</span>
+                    <Input
+                      type="number"
+                      value={String(prag.odstotek)}
+                      onChange={(e) => {
+                        const popusti = [...settings.popusti];
+                        popusti[i] = { ...popusti[i], odstotek: Number(e.target.value) || 0 };
+                        setSettings({ ...settings, popusti });
+                      }}
+                    />
+                    <span>%</span>
+                    <Button variant="ghost" onClick={() => setSettings({ ...settings, popusti: settings.popusti.filter((_, j) => j !== i) })}>
+                      Odstrani
+                    </Button>
+                  </div>
+                ))}
+                <Button variant="ghost" onClick={() => setSettings({ ...settings, popusti: [...(settings.popusti ?? []), { nad: 0, odstotek: 0 }] })}>
+                  + Dodaj prag
+                </Button>
               </div>
 
               {PILLAR_PICKERJI.map((sklop) => (

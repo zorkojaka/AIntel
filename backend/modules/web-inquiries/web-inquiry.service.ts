@@ -8,6 +8,8 @@ import {
   generateProjectIdentifiers,
 } from '../projects/schemas/project';
 import { calculateProjectRouteDistance } from '../projects/services/route-distance.service';
+import { calculateOfferTotals } from '../projects/services/offer-totals.service';
+import { OfferVersionModel } from '../projects/schemas/offer-version';
 import { sendOfferCommunicationEmail } from '../communication/services/communication.service';
 import { CommunicationTemplateModel } from '../communication/schemas/template';
 import { ZahtevaModel } from '../zahteve/zahteva.model';
@@ -38,6 +40,7 @@ export interface WebInquiryContact {
   email: string;
   phone: string;
   siteAddress: { street: string; postalCode: string; city: string; full: string };
+  company: { name: string; taxId: string } | null;
 }
 
 export interface WebInquiryPayload {
@@ -71,7 +74,7 @@ export interface WebInquiryPayload {
 }
 
 const PILLARS: WebInquiryPillar[] = ['videonadzor', 'alarm', 'domofon', 'pametni_dom', 'pametna_kljucavnica', 'servis'];
-const PILLAR_LABELS: Record<WebInquiryPillar, string> = {
+export const PILLAR_LABELS: Record<WebInquiryPillar, string> = {
   videonadzor: 'Videonadzor',
   alarm: 'Alarm',
   domofon: 'Domofon',
@@ -122,7 +125,18 @@ export function validateWebInquiryPayload(body: unknown): WebInquiryPayload {
     email: cleanString(contactSource.email, 160).toLowerCase(),
     phone: cleanString(contactSource.phone, 40),
     siteAddress: parseSiteAddress(contactSource.siteAddress),
+    company: null,
   };
+
+  const companySource = (contactSource.company ?? null) as Record<string, unknown> | null;
+  if (companySource && typeof companySource === 'object') {
+    const companyName = cleanString(companySource.name, 160);
+    const taxId = cleanString(companySource.taxId, 20).toUpperCase().replace(/\s/g, '');
+    if (!companyName || !taxId) {
+      throw new WebInquiryError('VALIDATION_ERROR', 'Za podjetje sta obvezna naziv in davčna številka.', 400);
+    }
+    contact.company = { name: companyName, taxId };
+  }
 
   if (!contact.firstName || !contact.lastName) {
     throw new WebInquiryError('VALIDATION_ERROR', 'Manjkata ime in priimek (contact.firstName, contact.lastName).', 400);
@@ -212,6 +226,33 @@ export function validateWebInquiryPayload(body: unknown): WebInquiryPayload {
 }
 
 async function findOrCreateClient(contact: WebInquiryContact, note: string | undefined, defaultsApplied: string[]) {
+  if (contact.company) {
+    // Podjetje: poisci po davcni ali imenu, sicer ustvari nov zapis tipa company.
+    const obstojece =
+      (await CrmClientModel.findOne({ vat_number: contact.company.taxId, isActive: true })) ||
+      (await CrmClientModel.findOne({ name: contact.company.name, type: 'company', isActive: true }));
+    if (obstojece) {
+      defaultsApplied.push(`Podjetje najdeno v CRM: ${obstojece.name}.`);
+      return obstojece;
+    }
+    defaultsApplied.push(`Novo podjetje v CRM: ${contact.company.name} (${contact.company.taxId}).`);
+    return CrmClientModel.create({
+      name: contact.company.name,
+      type: 'company',
+      vat_number: contact.company.taxId,
+      email: contact.email,
+      phone: contact.phone,
+      contact_person: `${contact.firstName} ${contact.lastName}`.trim(),
+      street: contact.siteAddress.street,
+      postalCode: contact.siteAddress.postalCode,
+      postalCity: contact.siteAddress.city,
+      address: contact.siteAddress.full,
+      tags: ['spletno-povprasevanje'],
+      notes: note || undefined,
+      isActive: true,
+    });
+  }
+
   const existingByEmail = await CrmClientModel.findOne({ email: contact.email, isActive: true });
   if (existingByEmail) {
     const update: Record<string, unknown> = {};
@@ -260,6 +301,7 @@ async function createProjectForInquiry(input: {
   pillar: WebInquiryPillar;
   category: string;
   note?: string;
+  taxId?: string;
 }) {
   const { id, code, projectNumber } = await generateProjectIdentifiers();
   const project: Project = {
@@ -269,6 +311,7 @@ async function createProjectForInquiry(input: {
     title: `${PILLAR_LABELS[input.pillar]} – ${input.clientName}`,
     customer: {
       name: input.clientName,
+      taxId: input.taxId,
       address: input.siteAddressFull,
       paymentTerms: '30 dni',
     },
@@ -663,6 +706,7 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
       pillar: payload.pillar,
       category: kategorija,
       note: metaNoteParts.filter(Boolean).join(' | '),
+      taxId: payload.contact.company?.taxId,
     });
     if (!project) {
       throw new WebInquiryError('ENGINE_ERROR', 'Projekta ni bilo mogoče ustvariti.', 502);
@@ -726,9 +770,48 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
         502
       );
     }
+    // Kolicinski popust po vrednosti ponudbe (lestvica iz nastavitev vticnika).
+    let discountPercent = 0;
+    const osnovaZDdv = Number(offer.totalGross ?? 0);
+    const lestvica = ((settings as any).popusti ?? [])
+      .filter((prag: any) => Number(prag?.nad) > 0 && Number(prag?.odstotek) > 0)
+      .sort((a: any, b: any) => Number(a.nad) - Number(b.nad));
+    for (const prag of lestvica) {
+      if (osnovaZDdv >= Number(prag.nad)) discountPercent = Number(prag.odstotek);
+    }
+    if (discountPercent > 0) {
+      const totals = calculateOfferTotals({
+        items: offer.items as any,
+        usePerItemDiscount: false,
+        useGlobalDiscount: true,
+        globalDiscountPercent: discountPercent,
+        vatMode: 22,
+      });
+      await OfferVersionModel.updateOne({ _id: offer._id }, {
+        $set: {
+          discountPercent: totals.discountPercent,
+          globalDiscountPercent: discountPercent,
+          discountAmount: totals.discountAmount,
+          totalNetAfterDiscount: totals.totalNetAfterDiscount,
+          totalGrossAfterDiscount: totals.totalGrossAfterDiscount,
+          perItemDiscountAmount: totals.perItemDiscountAmount ?? 0,
+          globalDiscountAmount: totals.globalDiscountAmount ?? 0,
+          baseAfterDiscount: totals.baseAfterDiscount ?? totals.totalNetAfterDiscount ?? 0,
+          vatAmount: totals.vatAmount ?? totals.totalVat ?? 0,
+          totalWithVat: totals.totalWithVat ?? totals.totalGrossAfterDiscount ?? 0,
+          totalVat: totals.totalVat,
+          totalVat22: totals.totalVat22,
+          totalVat95: totals.totalVat95,
+        },
+      });
+      (offer as any).totalWithVat = totals.totalWithVat ?? totals.totalGrossAfterDiscount;
+      defaultsApplied.push(`Količinski popust: ${discountPercent} % (vrednost ponudbe nad ${lestvica.filter((prag: any) => osnovaZDdv >= Number(prag.nad)).pop()?.nad} €).`);
+    }
+
     inquiry.offerId = offer._id as Types.ObjectId;
     inquiry.offerNumber = offer.documentNumber ?? offer.title ?? null;
     inquiry.offerTotalWithVat = offer.totalWithVat ?? offer.totalGrossAfterDiscount ?? offer.totalGross ?? null;
+    (inquiry as any).meta = { ...(inquiry.meta ?? {}), discountPercent: discountPercent ? String(discountPercent) : undefined };
 
     if (!settings.autoSendEmail) {
       defaultsApplied.push('Samodejno pošiljanje emaila je izklopljeno v nastavitvah.');

@@ -4,6 +4,7 @@ import express from 'express';
 import routes from '../routes';
 import authRoutes from '../modules/auth/routes/auth.routes';
 import webInquiryPublicRoutes from '../modules/web-inquiries/public.routes';
+import { streamUpload } from '../modules/files/upload-stream';
 import { requireAuth } from '../middlewares/auth';
 import { responseHelpers } from './response';
 import { normalizePayload } from './middleware/normalizePayload';
@@ -55,8 +56,8 @@ export function createApp() {
     res.success({ connected: isMongoConnected() });
   });
 
-  app.use('/uploads', express.static('/var/www/aintel/uploads'));
   app.use('/api/auth', authRoutes);
+  app.get('/uploads/*', requireAuth, streamUpload);
   app.use('/api', requireAuth, routes);
   app.use(errorHandler);
 

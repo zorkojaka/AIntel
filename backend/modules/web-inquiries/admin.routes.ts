@@ -38,6 +38,7 @@ async function serializeSettings() {
   }
 
   return {
+    popusti: (settings as any).popusti ?? [],
     alarm: sklop(settings.alarm, ALARM_POLJA),
     domofon: sklop(settings.domofon, DOMOFON_POLJA),
     pametniDom: sklop(settings.pametniDom, DOM_POLJA),
@@ -105,6 +106,13 @@ router.put('/settings', async (req: Request, res: Response) => {
         if (vhod[polje] !== undefined) cilj[polje] = vhod[polje] || null;
       }
       if (['posiljanje', 'izvedba', 'izvedba_napeljava'].includes(vhod.scenario)) cilj.scenario = vhod.scenario;
+    }
+
+    if (Array.isArray(body.popusti)) {
+      (settings as any).popusti = body.popusti
+        .map((prag: any) => ({ nad: Number(prag?.nad) || 0, odstotek: Number(prag?.odstotek) || 0 }))
+        .filter((prag: any) => prag.nad > 0 && prag.odstotek > 0 && prag.odstotek <= 50)
+        .slice(0, 10);
     }
 
     await settings.save();

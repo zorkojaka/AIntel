@@ -1,3 +1,6 @@
+> ⚠️ Delno zastarelo — glej `docs/aintel-audit/` (2026-07). Ta dokument je pred-avdit
+> zgodovina; aktualna arhitektura: `docs/aintel-audit/CURRENT_ARCHITECTURE.md`.
+
 # dY"? Arhitektura aplikacije AIntel
 
 ## Modularna zasnova
