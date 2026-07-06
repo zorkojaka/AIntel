@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { requireRoles } from '../../../middlewares/auth';
+import { ROLE_ADMIN, ROLE_FINANCE } from '../../../utils/roles';
 import {
   addFromInvoice,
   getClientFinance,
@@ -12,6 +14,7 @@ import {
   employeesSummary,
   invoicesList,
   monthlySummary,
+  myEarnings,
   pipelineSummary,
   productBundles,
   productCooccurrence,
@@ -22,24 +25,27 @@ import {
 } from '../controllers/finance-analytics.controller';
 
 const router = Router();
+const companyFinance = requireRoles([ROLE_ADMIN, ROLE_FINANCE]);
 
-router.get('/', listFinanceEntries);
-router.post('/addFromInvoice', addFromInvoice);
-router.get('/yearly-summary', getYearlySummary);
-router.get('/project/:id', getProjectFinance);
-router.get('/client/:id', getClientFinance);
+router.get('/my/earnings', myEarnings);
 
-router.get('/snapshots', snapshotsList);
-router.get('/invoices', invoicesList);
-router.get('/snapshots/:projectId', snapshotByProject);
-router.get('/monthly-summary', monthlySummary);
-router.get('/product-frequency', productFrequency);
-router.get('/basket-analysis', basketAnalysis);
-router.get('/employees-summary', employeesSummary);
+router.get('/', companyFinance, listFinanceEntries);
+router.post('/addFromInvoice', companyFinance, addFromInvoice);
+router.get('/yearly-summary', companyFinance, getYearlySummary);
+router.get('/project/:id', companyFinance, getProjectFinance);
+router.get('/client/:id', companyFinance, getClientFinance);
+
+router.get('/snapshots', companyFinance, snapshotsList);
+router.get('/invoices', companyFinance, invoicesList);
+router.get('/snapshots/:projectId', companyFinance, snapshotByProject);
+router.get('/monthly-summary', companyFinance, monthlySummary);
+router.get('/product-frequency', companyFinance, productFrequency);
+router.get('/basket-analysis', companyFinance, basketAnalysis);
+router.get('/employees-summary', companyFinance, employeesSummary);
 router.get('/employees/:employeeId/snapshots/:snapshotId/earnings', employeeProjectEarningDetail);
-router.patch('/employees/:employeeId/snapshots/:snapshotId/payment', updateEmployeeProjectEarningPayment);
-router.get('/pipeline', pipelineSummary);
-router.get('/analytics/product-cooccurrence', productCooccurrence);
-router.get('/analytics/product-bundles', productBundles);
+router.patch('/employees/:employeeId/snapshots/:snapshotId/payment', companyFinance, updateEmployeeProjectEarningPayment);
+router.get('/pipeline', companyFinance, pipelineSummary);
+router.get('/analytics/product-cooccurrence', companyFinance, productCooccurrence);
+router.get('/analytics/product-bundles', companyFinance, productBundles);
 
 export default router;

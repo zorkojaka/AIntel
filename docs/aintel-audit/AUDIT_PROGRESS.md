@@ -1,6 +1,6 @@
 # Audit Progress
 
-Last updated: 2026-07-06 (AIN-P1-04 implementation)
+Last updated: 2026-07-06 (AIN-P0-02 implementation)
 Last reviewed commit: `c0afad8f92320ba48eddfcaec7a5b52d859c7b2e` (branch `codex/web-inquiries-intake`)
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
@@ -50,13 +50,14 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
 - Auth: JWT cookie, roles on Employee (User fallback), ADMIN bypasses requireRoles.
 - `/api/public` mounted pre-CORS/auth, single shared X-API-Key (published in website
   HTML) — Critical exposure S1.
-- Finance & settings mounts have no role gate (verified in route files) — S4.
+- Finance company routes and settings writes are role-gated by AIN-P0-02; installers
+  keep a server-scoped `/finance/my/earnings` self view.
 - `x-tenant-id`/`x-user-id` trusted from client; frontend actively sends x-tenant-id
   via buildTenantHeaders — S3 (Confirmed).
 - No scheduler/cron (crontab empty); baseline had no backend tests. AIN-P0-03,
-  AIN-P1-06, and AIN-P1-04 added focused backend `node:test` coverage for upload
-  auth/path resolution, installer-prep ObjectId guards, and the five money-flow smoke
-  path on `mongodb-memory-server`.
+  AIN-P1-06, AIN-P1-04, and AIN-P0-02 added focused backend `node:test` coverage for
+  upload auth/path resolution, installer-prep ObjectId guards, the five money-flow
+  smoke path, and finance/settings authorization on `mongodb-memory-server`.
 - Prod `aintel` PM2 restarts = 58,165 — **RESOLVED**: historical boot crash-loop
   (`AINTEL_ALLOWED_ORIGINS` hard-required by an older build), already fixed in current
   source; see `specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-04.
@@ -82,6 +83,10 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   offer confirmation→WO+MO, preparation advance, execution signature, and invoice
   issue→finance snapshot. Uses the existing `node:test` harness; SMTP is not exercised
   because inquiry auto-email is disabled in the test fixture.
+- **AIN-P0-02**: finance company endpoints are ADMIN/FINANCE, payment PATCH is
+  ADMIN/FINANCE, settings/pdf-settings/communication settings writes are ADMIN, and
+  installers use `/finance/my/earnings` with server-side employee scoping. D-012 was
+  resolved with the spec default: SALES does not get company finance read access.
 
 ## Genuine unresolved checks (curated in the final review)
 

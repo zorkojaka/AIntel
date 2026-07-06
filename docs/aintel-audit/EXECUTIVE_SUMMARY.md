@@ -33,9 +33,9 @@ that pace.
    on a **shared production/staging database**. (The 58k process restarts were
    explained during the spec pass: a historical, already-fixed boot crash-loop —
    see `specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-04.)
-4. **Security exposures** (fixable in days): a public API key printed in website HTML
-   that also unlocks customer equipment lookups; unauthenticated photo/file serving;
-   finance and settings endpoints open to any employee.
+4. **Security exposures** (partly resolved): a public API key printed in website HTML
+   that also unlocks customer equipment lookups remains in rollout; photo/file serving
+   is authenticated (AIN-P0-03); finance/settings authorization is fixed (AIN-P0-02).
 
 ## Major business risks
 
@@ -66,9 +66,9 @@ friendly same-vertical pilot (Phase 7).
 
 ## Recommended next steps
 
-1. This week: four P0 security items (API key split/rotation, finance authorization
-   fix, uploads auth, PM2 restart guardrails + counter reset).
-2. Next: staging DB separation, error tracking, smoke tests for the five money flows.
+1. This week: finish remaining P0 owner rollout items (API key rotation, PM2
+   guardrails + counter reset).
+2. Next: staging DB separation, error tracking, structured logging, index audit.
 3. Then: clientId + real invoice collection, followed by the task/scheduler layer
    (design: `AINTEL_WHEEL_SPEC.md`).
 4. Authoritative order: `IMPLEMENTATION_SEQUENCE.md`; agent-ready items:

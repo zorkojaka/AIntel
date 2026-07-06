@@ -45,9 +45,11 @@ tenant strictly from session.
 auto-request behind default-off flag
 Commits 896f1ae, 59b1d55.
 
-## D-012 [Open] Finance read access for SALES?
-AIN-P0-02 defaults to ADMIN+FINANCE only. Owner must decide whether SALES keeps
-pipeline/summary reads.
+## D-012 [Existing-confirmed] Finance company read access is ADMIN+FINANCE only
+AIN-P0-02 shipped the strict default from the P0 spec: SALES does not get company
+finance reads. EXECUTION keeps a scoped self-service earnings view through
+`/api/finance/my/earnings`; company finance endpoints and payment PATCH are
+ADMIN+FINANCE.
 
 ## D-013 [Open] PDF engine consolidation: pdfkit vs playwright-HTML
 Two pipelines maintained (P6). Decide one (playwright-HTML is more maintainable;

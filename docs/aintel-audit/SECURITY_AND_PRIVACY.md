@@ -47,13 +47,16 @@ Confidence: Confirmed / High confidence / Probable / Needs verification.
 - Remediation: derive tenant/actor exclusively from `req.context` (session); remove
   `buildTenantHeaders` usage frontend-side in the same change.
 
-## S4 — Role-gate gaps on sensitive modules — **High, Confirmed**
+## S4 — Role-gate gaps on sensitive modules — **High, RESOLVED (AIN-P0-02)**
 
-- `/api/finance/*` (incl. employee earnings detail and payment PATCH) and
-  `/api/settings` PUT have no role restrictions — any ACTIVE user, including
-  EXECUTION installers, can access. Details in `USER_ROLES_AND_PERMISSIONS.md`.
-- Remediation: mount-level `requireRoles([ADMIN, FINANCE])` for finance,
-  `[ADMIN]` (or ADMIN+FINANCE) for settings PUT; sweep all mounts for default-open.
+- Previously `/api/finance/*` (incl. employee earnings detail and payment PATCH) and
+  settings writes had no role restrictions.
+- AIN-P0-02 gates company finance endpoints and payment PATCH to ADMIN/FINANCE, adds a
+  server-scoped `/api/finance/my/earnings` endpoint for installers, switches the
+  execution-only finance UI to that endpoint, and gates settings/pdf-settings/
+  communication settings writes to ADMIN.
+- Residual risk: other authenticated modules remain intentionally broad for the small
+  company model; see `USER_ROLES_AND_PERMISSIONS.md` findings 3–5.
 
 ## S5 — Shared prod/staging database — **High (operational), Confirmed by environment**
 

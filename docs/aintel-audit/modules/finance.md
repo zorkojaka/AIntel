@@ -8,10 +8,12 @@ invoice issue (incl. per-employee earnings), summaries, product analytics
 (frequency, co-occurrence, bundles, basket), pipeline.
 
 ## Surface
-`/api/finance` — **no role gate (S4, High)**: list entries, addFromInvoice,
-yearly/monthly summary, project/client finance, snapshots (list/by project),
-invoices list, product analytics, employees summary, employee earning detail +
-**PATCH payment status** (`routes/index.ts:40`), pipeline.
+`/api/finance` — company finance endpoints are ADMIN+FINANCE (AIN-P0-02): list
+entries, addFromInvoice, yearly/monthly summary, project/client finance, snapshots
+(list/by project), invoices list, product analytics, employees summary, payment PATCH,
+pipeline. Installer self-service uses server-scoped `/api/finance/my/earnings` plus
+own employee earning detail; other employee detail returns 403 for non-privileged
+users.
 
 ## Data
 - `financeentries` — per-invoice records.
@@ -32,15 +34,16 @@ invoices list, product analytics, employees summary, employee earning detail +
 - No tenantId; snapshots embed employee ids.
 
 ## Frontend
-module-finance (1.3k lines): tables, charts, stat cards. Not deeply reviewed.
+module-finance (1.3k lines): tables, charts, stat cards. AIN-P0-02 switched the
+EXECUTION-only view to `/api/finance/my/earnings` so it no longer calls company
+snapshot/employee-summary endpoints.
 
 ## Reuse potential
 Medium — snapshot/read-model idea is generic; analytics are somewhat
 retail-specific but configurable.
 
 ## Priority fixes
-1. Role gate ADMIN+FINANCE (P0-level, one line in routes.ts).
-2. Clarify addFromInvoice vs automatic snapshot (then retire one).
-3. Invoice **payment** tracking (customer side) is absent — see CURRENT_USER_FLOWS §11.
+1. Clarify addFromInvoice vs automatic snapshot (then retire one).
+2. Invoice **payment** tracking (customer side) is absent — see CURRENT_USER_FLOWS §11.
 
 Confidence: High for routes/schemas; Probable for analytics internals.

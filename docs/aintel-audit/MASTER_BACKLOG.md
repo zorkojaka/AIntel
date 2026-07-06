@@ -32,24 +32,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 - **Files**: public.routes.ts, core/app.ts (optional split mount), portal server.js
   (env only), inteligent-si pillar pages (inline config), docs: SECURITY, INTEGRATION_MAP.
 
-### AIN-P0-02 — Fix finance authorization (server-side leak) + settings write gates
-> **Corrected (spec pass + final review) — this is NOT a one-line role gate.**
-> Full design: `specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-02 (authoritative).
-- **Problem**: finance endpoints return **all** employees' earnings to any
-  authenticated user (server-side; the frontend role filter is cosmetic); the payment
-  PATCH is ungated; settings has **three** ungated write mounts (settings,
-  pdf-settings, communication settings).
-- **Evidence**: `backend/routes.ts:36-39` (no gates);
-  `finance-analytics.controller.ts` (no scoping/role checks); FinancePage.tsx
-  `isExecutionOnly` self-view (369-372) — a blanket gate breaks installer self-service.
-- **Scope**: split finance router into company (ADMIN+FINANCE) vs self sub-router with
-  **server-side** employee scoping (`/finance/my/earnings`); gate payment PATCH
-  [ADMIN, FINANCE]; gate the three settings write mounts [ADMIN]; phased rollout so
-  installers keep their earnings view (backend → SPA switch → final `/snapshots` gate).
-- **Acceptance**: per spec (EXECUTION curl: company endpoints 403, own earnings only;
-  settings writes 403 for non-ADMIN; FINANCE/ADMIN unchanged). Effort **M** (was
-  mis-scoped as S). Owner decision D-012 (SALES read access — default strict).
-
 ### AIN-P0-04 — PM2 restart guardrails (root cause RESOLVED)
 > **Corrected (spec pass): no longer an open investigation.** Root cause confirmed:
 > a **historical boot crash-loop** — an older build hard-required
@@ -205,3 +187,13 @@ relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
   snapshot.
 - **Acceptance**: `pnpm test` is green locally without touching Atlas; the test uses an
   in-memory MongoDB and keeps inquiry auto-email disabled rather than sending SMTP.
+
+### AIN-P0-02 — Fix finance authorization (server-side leak) + settings write gates
+- **Landed**: AIN-P0-02 implementation commit.
+- **Summary**: Split finance into company routes gated to ADMIN/FINANCE and a scoped
+  `/finance/my/earnings` endpoint for installers. Switched the finance frontend
+  execution-only view to the scoped endpoint, gated payment PATCH to ADMIN/FINANCE, and
+  gated settings/pdf-settings/communication settings writes to ADMIN.
+- **Acceptance**: EXECUTION gets 403 on company finance endpoints, payment PATCH, and
+  non-ADMIN settings writes; `/finance/my/earnings` returns only the caller's
+  employee earnings; FINANCE company finance and payment PATCH remain available.

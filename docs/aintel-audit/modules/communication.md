@@ -8,8 +8,8 @@ confirmations, installer preparation, review links; templates; sender settings;
 health/diagnostics.
 
 ## Surface
-- `/api/settings/communication` (+`/health`, `/templates` CRUD) — no role gate beyond
-  auth (finding S4-adjacent; sender settings editable by any user — Medium).
+- `/api/settings/communication` (+`/health`, `/templates` CRUD) — GET/health/list are
+  auth-only; sender settings and template writes are ADMIN only (AIN-P0-02).
 - `/api/projects/:projectId/communication/feed`, `/offers/:offerVersionId/messages`,
   `/messages/:messageId`, `/review-link` (mounted into projects space).
 - Send controllers are invoked from **projects routes** (send offer/invoice/wo-confirm/

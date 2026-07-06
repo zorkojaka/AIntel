@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { requireRoles } from '../../../middlewares/auth';
+import { ROLE_ADMIN } from '../../../utils/roles';
 import {
   getPdfCompanySettingsController,
   getPdfDocumentSettingsController,
@@ -9,8 +11,8 @@ import {
 const router = Router();
 
 router.get('/company', getPdfCompanySettingsController);
-router.put('/company', updatePdfCompanySettingsController);
+router.put('/company', requireRoles([ROLE_ADMIN]), updatePdfCompanySettingsController);
 router.get('/pdf-documents', getPdfDocumentSettingsController);
-router.put('/pdf-documents', updatePdfDocumentSettingsController);
+router.put('/pdf-documents', requireRoles([ROLE_ADMIN]), updatePdfDocumentSettingsController);
 
 export default router;
