@@ -1,6 +1,6 @@
 # Audit Progress
 
-Last updated: 2026-07-05 (AIN-P0-03 implementation)
+Last updated: 2026-07-06 (AIN-P1-04 implementation)
 Last reviewed commit: `c0afad8f92320ba48eddfcaec7a5b52d859c7b2e` (branch `codex/web-inquiries-intake`)
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
@@ -53,9 +53,10 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
 - Finance & settings mounts have no role gate (verified in route files) — S4.
 - `x-tenant-id`/`x-user-id` trusted from client; frontend actively sends x-tenant-id
   via buildTenantHeaders — S3 (Confirmed).
-- No scheduler/cron (crontab empty); baseline had no backend tests. AIN-P0-03 and
-  AIN-P1-06 added focused backend `node:test` coverage for upload auth/path resolution
-  and installer-prep ObjectId guards.
+- No scheduler/cron (crontab empty); baseline had no backend tests. AIN-P0-03,
+  AIN-P1-06, and AIN-P1-04 added focused backend `node:test` coverage for upload
+  auth/path resolution, installer-prep ObjectId guards, and the five money-flow smoke
+  path on `mongodb-memory-server`.
 - Prod `aintel` PM2 restarts = 58,165 — **RESOLVED**: historical boot crash-loop
   (`AINTEL_ALLOWED_ORIGINS` hard-required by an older build), already fixed in current
   source; see `specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-04.
@@ -77,6 +78,10 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   controller and service before WorkOrder lookup. Minimal acceptance derived from the
   backlog text: `workOrderId=undefined` returns clean 400 and invalid service input
   cannot reach the Mongo ObjectId cast path.
+- **AIN-P1-04**: added an in-memory MongoDB backend smoke test for inquiry→offer,
+  offer confirmation→WO+MO, preparation advance, execution signature, and invoice
+  issue→finance snapshot. Uses the existing `node:test` harness; SMTP is not exercised
+  because inquiry auto-email is disabled in the test fixture.
 
 ## Genuine unresolved checks (curated in the final review)
 

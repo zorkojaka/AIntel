@@ -22,6 +22,8 @@ invoices list, product analytics, employees summary, employee earning detail +
 ## Notes
 - Direction of dependency is projects → finance (snapshot creation), finance module
   itself is mostly read-side. Reasonable CQRS-ish split.
+- AIN-P1-04 added in-memory smoke coverage for invoice issue creating a
+  `FinanceSnapshot` from the projects invoice service.
 - `addFromInvoice` POST suggests a manual/second write path parallel to the automatic
   snapshot — duplication of intent (Needs verification which one the UI uses).
 - Employee earnings + payment status here overlap conceptually with

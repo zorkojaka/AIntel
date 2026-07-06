@@ -84,12 +84,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   console.\* incrementally (start: core, communication sends, public intake).
 - Acceptance: one JSON line per request in prod logs. Effort M.
 
-### AIN-P1-04 — Smoke tests for the five money flows
-- Inquiry→offer (mock SMTP), offer confirm→WO+MO, preparation advance, execution→
-  signature, invoice issue→snapshot. Vitest + mongodb-memory-server (no shared DB).
-- Acceptance: `pnpm test` green locally/CI without touching Atlas. Effort L.
-  Deps: AIN-P1-01 not strictly required (memory server), but P1-02 helps.
-
 ### AIN-P1-05 — Index audit + ensure-indexes script
 - Compare schema-declared indexes vs Atlas actuals (owner runs read-only listIndexes);
   add explicit `scripts/ensure-indexes.ts` run consciously at deploy; add missing
@@ -202,3 +196,12 @@ relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 - **Acceptance**: a repro request with `workOrderId=undefined` returns a clean 400
   error (`Delovni nalog ni pravilno določen.`), and service-level invalid input fails
   before Mongo query code can trigger a BSON/ObjectId cast error.
+
+### AIN-P1-04 — Smoke tests for the five money flows
+- **Landed**: AIN-P1-04 implementation commit.
+- **Summary**: Added a backend `node:test` smoke scenario using
+  `mongodb-memory-server` for inquiry→offer, offer confirmation→work order/material
+  order, preparation advance, execution signature, and invoice issue→finance
+  snapshot.
+- **Acceptance**: `pnpm test` is green locally without touching Atlas; the test uses an
+  in-memory MongoDB and keeps inquiry auto-email disabled rather than sending SMTP.

@@ -26,6 +26,8 @@ settings (which cenik products the engine uses per pillar), review moderation.
 - End-to-end automation is the strongest expression of the "wheel" vision to date.
 - Settings-driven product selection (not hardcoded product ids) with clear
   NOT_CONFIGURED errors.
+- AIN-P1-04 covers the configured domofon inquiry→offer path in an in-memory MongoDB
+  smoke test, with auto-email disabled.
 
 ## Problems
 1. **S1 (Critical)**: same shared API key gates browser widget and the

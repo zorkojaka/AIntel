@@ -56,8 +56,11 @@ reviews, employees (assignments/availability).
 7. km calculation & PDF engines duplicated (P6).
 
 ## Testing
-None. Highest-priority target for characterization tests (offer totals, invoice
-issue, confirmOffer side effects) once logic is extracted from controllers.
+AIN-P1-04 added a backend `node:test` smoke path on `mongodb-memory-server` covering
+inquiry-generated offer confirmation, work order/material order creation, material
+preparation advance, execution signature, and invoice issue→finance snapshot. Deeper
+characterization tests for offer totals, invoice calculations, and controller edge
+cases remain needed.
 
 ## Reuse potential
 High — this *is* the product core (project execution engine), but only after: single
