@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-06 (AIN-P1-05 implementation)
-Last reviewed commit: `c0afad8f92320ba48eddfcaec7a5b52d859c7b2e` (branch `codex/web-inquiries-intake`)
+Last updated: 2026-07-06 (AIN-P1-07 implementation)
+Last reviewed commit: AIN-P1-07 landing on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -66,6 +66,10 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
 - autoIndex:false in db/mongo.ts; AIN-P1-05 added an explicit dry-run/apply
   ensure-indexes script and hot-path schema declarations, but owner still controls any
   Atlas run.
+- AIN-P1-07 added nullable `Project.clientId`; new manual and web-inquiry projects set
+  it, the portal equipment endpoint uses `clientId` with a legacy `customer.name`
+  fallback, and the included backfill report is read-only/owner-reviewed before any
+  future DB-writing backfill.
 - Prod/staging share db `inteligent`.
 - Final review re-verified all load-bearing P0/architecture claims against source —
   all confirmed; evidence table in `FABLE_FINAL_REVIEW.md` §1.
@@ -96,6 +100,11 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   planning and guarded apply mode, plus hot-path schema indexes for `projects`,
   `workorders`, and `materialorders`. No Atlas `listIndexes`/createIndex run was done
   by the agent; owner must run it consciously.
+- **AIN-P1-07**: added nullable `clientId` to Project and linked both manual project
+  creation and web-inquiry project creation to active `CrmClient` records. The portal
+  equipment endpoint now joins by `clientId` first with legacy `customer.name`
+  fallback. Added a read-only backfill report helper; no shared-DB report or write was
+  run by the agent.
 
 ## Genuine unresolved checks (curated in the final review)
 

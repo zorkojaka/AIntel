@@ -65,7 +65,8 @@ Split staging DB from prod; error tracking; smoke tests for the five money flows
 (inquiry→offer, offer→confirm, preparation, execution→signature, invoice issue).
 
 **Stage 1 — Data contracts**
-`clientId` on Project/WebInquiry (backfill by name + manual review report);
+`clientId` on Project/WebInquiry (new Project rows linked; legacy backfill still
+requires owner review of the dry-run report);
 `invoiceVersions` → real collection with schema (read-through during transition);
 freeze writes to legacy embedded offers/POs/deliveries (log-then-remove per D4/D5);
 expectedAt on material orders.

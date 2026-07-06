@@ -20,11 +20,13 @@ can read/edit all customer PII — Medium finding, USER_ROLES §3).
 CRM is the thinnest critical module (587 lines) for a system whose vision starts at
 "lead acquisition": no lead status, no activities/interactions on clients (notes are
 entity-generic but unused in flows — Probable), no owner/salesperson, no consent/GDPR
-fields, no dedupe (email not unique), **no clientId link from Project** (TD-D1).
+fields, no dedupe (email not unique). AIN-P1-07 added nullable `Project.clientId` for
+new rows; legacy rows still require an owner-reviewed backfill report/run (TD-D1).
 
 ## Recommendation direction
 Make CrmClient the identity anchor: unique-ish email index (sparse) + merge tooling,
-`clientId` on Project/WebInquiry/portal link, interaction log (calls/emails/visits) —
+complete the Project `clientId` legacy backfill, portal identity link, interaction log
+(calls/emails/visits) —
 prerequisite for the follow-up/task engine in TARGET_OPERATING_MODEL.
 
 Reuse potential: High (core module by definition) after the above.

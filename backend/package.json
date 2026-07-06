@@ -18,6 +18,7 @@
     "db:fix-legacy-products": "ts-node scripts/fix-legacy-products.ts",
     "db:audit-products": "ts-node scripts/audit-products.ts",
     "db:ensure-indexes": "ts-node scripts/ensure-indexes.ts",
+    "db:project-clientid-report": "ts-node scripts/project-clientid-backfill-report.ts",
     "db:reconcile-cenik": "ts-node scripts/reconcile-cenik.ts",
     "db:sync-aa": "ts-node scripts/sync-products.ts --source aa_api --input data/cenik/aa_api_produkti.json",
     "db:migrate-aa-attributes": "ts-node scripts/migrate-cenik-aa-attributes.ts",

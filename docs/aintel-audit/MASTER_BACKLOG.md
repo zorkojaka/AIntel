@@ -66,19 +66,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   console.\* incrementally (start: core, communication sends, public intake).
 - Acceptance: one JSON line per request in prod logs. Effort M.
 
-### AIN-P1-07 — clientId on Project (WebInquiry already has it)
-> **Scope corrected (final review)**: `WebInquiry.clientId` already exists and is set
-> by the intake engine (`web-inquiry.model.ts:96`, `web-inquiry.service.ts:673`).
-> Only **Project** lacks the FK (`projects/schemas/project.ts` — embedded
-> `customer.name` only).
-- Add `clientId: ObjectId` (nullable) to Project + backfill script matching
-  customer.name → CrmClient (report ambiguities, don't guess); new projects always set
-  it (project creation + web-inquiry engine already touch CrmClient); equipment
-  endpoint (`public.routes.ts:210`, joins by `'customer.name'`) switches to clientId
-  with name fallback.
-- Acceptance: new projects linked; backfill report reviewed by owner before run
-  (dry-run mode mandatory). Effort M. Deps: P1-01 preferred first.
-
 ### AIN-P1-08 — Promote invoiceVersions to a collection
 - Schema from current shapes (inspect existing docs via dry-run analysis script with
   owner); dual-read (collection first, embedded fallback), write new only to
@@ -201,3 +188,14 @@ relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
   requires `--apply --i-understand-this-writes-indexes` and additionally
   `--allow-shared-db` for db `inteligent`. Agent did not run against Atlas or create
   indexes; owner must run the dry-run/apply consciously during deploy.
+
+### AIN-P1-07 — clientId on Project (WebInquiry already has it)
+- **Landed**: AIN-P1-07 implementation commit.
+- **Summary**: Added nullable `Project.clientId`, linked manual and web-inquiry
+  project creation to `CrmClient`, switched the portal equipment lookup to `clientId`
+  with a legacy `customer.name` fallback, and added a read-only
+  `project-clientid-backfill-report` script.
+- **Acceptance**: new projects are linked to active CRM clients; the equipment endpoint
+  prefers `clientId` and still supports legacy rows by name; the backfill report is
+  dry-run/report-only and must be reviewed by the owner before any future DB-writing
+  backfill. Agent did not run the report against Atlas/shared `inteligent`.

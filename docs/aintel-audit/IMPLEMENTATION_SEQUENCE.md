@@ -54,7 +54,7 @@ separate DB. **This checkpoint is the safety gate for everything below.**
 
 | Order | Item | Assignee | Depends on |
 |---|---|---|---|
-| 2.1 | **AIN-P1-07** clientId on **Project** (corrected scope — WebInquiry already has it) | [agent] code + dry-run backfill report, [owner] reviews report and runs backfill | 1.1 (real-DB backfill), 1.5 (index for clientId) |
+| 2.1 | **AIN-P1-07** clientId on **Project** (corrected scope — WebInquiry already has it) | [agent] DONE: code + read-only backfill report; [owner] still reviews report and runs any future backfill | 1.1 (real-DB backfill), 1.5 (index for clientId) |
 | 2.2 | **AIN-P1-08** invoiceVersions → real collection | [agent] [senior] schema + migration review | 1.4 (smoke tests exist), 2.1 preferred, D-016 answered (accounting handoff shapes the schema) |
 | 2.3 | **AIN-P2-01** freeze legacy embedded offers/POs/deliveries (usage counters → remove writes → archive) | [agent] | 1.3 (counters need logs) |
 

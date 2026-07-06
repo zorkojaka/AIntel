@@ -231,7 +231,9 @@ internalRouter.get('/equipment', async (req: Request, res: Response) => {
     const client = await CrmClientModel.findOne({ email, isActive: true }).lean();
     if (!client) return res.json({ ok: true, projects: [] });
 
-    const projects = await ProjectModel.find({ 'customer.name': client.name })
+    const projects = await ProjectModel.find({
+      $or: [{ clientId: client._id }, { clientId: null, 'customer.name': client.name }],
+    })
       .sort({ createdAt: -1 })
       .limit(20)
       .lean();

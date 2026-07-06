@@ -43,7 +43,7 @@ Portal (`inteligent_portal` db, separate app): `Uporabnik`, `PrijavniZeton`, `Na
 
 ```mermaid
 erDiagram
-  CRMCLIENT ||..o{ PROJECT : "by customer.name STRING match"
+  CRMCLIENT ||--o{ PROJECT : "clientId (new) / name fallback legacy"
   PROJECT ||--o{ ZAHTEVA : "requestIds (ObjectId)"
   PROJECT ||--o{ OFFERVERSION : "projectId (string id)"
   OFFERVERSION ||--o{ WORKORDER : "offerVersionId"
@@ -59,10 +59,12 @@ erDiagram
 
 ## Cross-cutting problems
 
-1. **String-matching joins (High severity)**
-   - Project has **no clientId**; the link client↔project is `customer.name` equality
-     (used e.g. in `web-inquiries/public.routes.ts` equipment endpoint). Renaming a
-     client silently orphans projects; two clients with the same name mix data.
+1. **String-matching joins (High severity, partially resolved by AIN-P1-07)**
+   - Project now has nullable `clientId`; new project creation paths set it and the
+     `web-inquiries/public.routes.ts` equipment endpoint prefers it. Legacy projects
+     without `clientId` still fall back to `customer.name` equality until an
+     owner-reviewed backfill is run. Renaming a legacy-only client can still orphan
+     projects; duplicate legacy names can still mix data.
    - Portal↔AIntel identity is client **email** (CrmClient.email is not unique).
 2. **Duplicated concepts**
    - Offers exist twice (Project.offers embedded legacy vs `offerversions`).
@@ -99,7 +101,8 @@ erDiagram
 
 ## Migration concerns for productization
 
-- Introduce `clientId` on Project + backfill by name-match (needs manual review pass).
+- Run and review the AIN-P1-07 Project `clientId` backfill report, then apply a
+  separate owner-approved backfill for unambiguous legacy rows.
 - Promote `invoiceVersions` from Mixed to a real collection before anything else
   touches invoicing.
 - Collapse product category fields to one; keep aliases during transition.

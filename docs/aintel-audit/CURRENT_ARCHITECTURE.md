@@ -179,7 +179,9 @@ closing (`invoice.controller`) → issue (finance snapshot) → send invoice ema
 3. No tests (backend zero; frontend 4 UI-kit component tests), no CI quality gate found.
 4. No observability beyond console logs; 58k PM2 restarts unexplained.
 5. No scheduler → the "wheel" cannot turn by itself for anything time-based.
-6. Identity joins by string (client email, customer name) instead of references.
+6. Identity joins by string remain in places: portal identity still uses client email,
+   and legacy Projects still need name fallback until the AIN-P1-07 clientId backfill
+   is owner-reviewed and applied.
 7. Shared prod/staging DB; index application is a conscious deploy step because
    `autoIndex` stays false.
 8. Tenancy only partial (identity modules), absent on business data.

@@ -33,6 +33,9 @@ Route-level gates in `routes/index.ts`; payload-shape restrictions for EXECUTION
 AIN-P1-05 added declared hot-path indexes for project status/assignment and
 workorder/material-order project+offer lookups; `autoIndex` remains off, so owner must
 run the explicit ensure-indexes procedure before Atlas has them.
+AIN-P1-07 added nullable `clientId` on Project. New manual and web-inquiry projects
+link to active `CrmClient` records; legacy rows remain supported by name fallback until
+the owner reviews a dry-run backfill report and approves any DB-writing backfill.
 
 ## Dependencies
 cenik (product truth incl. `casovnaNorma`, supplier fields), finance (snapshot on

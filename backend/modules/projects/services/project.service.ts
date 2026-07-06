@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import type { Project, ProjectDocument } from '../schemas/project';
 import { ProjectModel } from '../schemas/project';
 import { CrmClientModel, type CrmClient } from '../../crm/schemas/client';
@@ -40,6 +41,14 @@ function mapCrmClientToDto(client: CrmClient): ProjectClientDto {
 }
 
 async function findCrmClient(project: Project): Promise<ProjectClientDto | null> {
+  const clientId = normalize(String(project.clientId ?? ''));
+  if (clientId && mongoose.isValidObjectId(clientId)) {
+    const byId = await CrmClientModel.findOne({ _id: clientId, isActive: { $ne: false } }).lean();
+    if (byId) {
+      return mapCrmClientToDto(byId);
+    }
+  }
+
   const vatNumber = normalize(project.customer?.taxId);
   const customerName = normalize(project.customer?.name);
 

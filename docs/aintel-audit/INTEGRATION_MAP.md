@@ -20,7 +20,7 @@ Commit `c0afad8`.
 |---|---|
 | Direction | Portal → AIntel (server-to-server) |
 | Mechanism | `GET /api/public/clients/equipment?email=…` with `X-API-Key` (`inteligent-portal/server.js:172`) |
-| Data | Confirmed-offer equipment per project for the client matched by email; client→project join is `customer.name` string match (see DATA_MODEL) |
+| Data | Confirmed-offer equipment per project for the client matched by email; client→project join now prefers `Project.clientId` and keeps a `customer.name` fallback for legacy rows (see DATA_MODEL) |
 | Identity | Portal user email ↔ CrmClient.email (not unique, lowercase). No shared user store. |
 | DBs | Fully separate (`inteligent` vs `inteligent_portal`) |
 | Duplication | Portal keeps own customer records (Uporabnik) — second copy of customer identity; own SMTP sending |

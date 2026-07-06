@@ -28,14 +28,17 @@ settings (which cenik products the engine uses per pillar), review moderation.
   NOT_CONFIGURED errors.
 - AIN-P1-04 covers the configured domofon inquiry→offer path in an in-memory MongoDB
   smoke test, with auto-email disabled.
+- AIN-P1-07 links web-inquiry-created Projects to the `CrmClient` that the intake
+  engine already finds or creates.
 
 ## Problems
 1. **S1 (Critical)**: same shared API key gates browser widget and the
    customer-equipment endpoint; key published in website HTML. Split + rotate.
 2. Rate limit in-memory/per-process, keyed by spoofable XFF; no captcha → spam can
    mass-create clients/projects/emails (S10).
-3. Reaches into 6 modules incl. dynamic model imports (TD-C2); equipment endpoint
-   joins client→projects by `customer.name` (TD-D1).
+3. Reaches into 6 modules incl. dynamic model imports (TD-C2); equipment endpoint now
+   joins client→projects by `clientId` first, with `customer.name` fallback for legacy
+   Projects until owner-reviewed backfill completes (TD-D1 partial).
 4. Pillar logic is Inteligent-specific by design — fine, but should live behind an
    "intake engine" interface for productization (CORE_VS_CUSTOM).
 5. Photos: MIME-only filter; public upload remains allowed for inquiry intake, but
