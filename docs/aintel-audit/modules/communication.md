@@ -24,6 +24,8 @@ health/diagnostics.
 `communicationmessages` (full outbound record incl. body), `communicationevents`
 (project feed), `communicationtemplates` (per category, active flag, fallback to first
 active offer_send template — commit `465aec9`), `sendersettings` (singleton).
+The message/event schemas already declare project feed indexes; AIN-P1-05's
+ensure-indexes script is the explicit deployment path because `autoIndex` is off.
 
 ## Strengths
 Every business email is logged and browsable per project — a real audit trail for

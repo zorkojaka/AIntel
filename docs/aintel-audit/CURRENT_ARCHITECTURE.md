@@ -129,8 +129,9 @@ directly. Consequence: no module is independently deployable today.
   `web-inquiry-settings` model, `pdf-settings`, `communication` sender settings,
   `category-settings`, `execution-rules` — no single configuration story.
 - `db/mongo.ts` sets `autoIndex: false` — schema-declared indexes are **not** created
-  automatically in any environment; index creation procedure is undocumented
-  (Needs verification against Atlas).
+  automatically in any environment. AIN-P1-05 added an explicit
+  `backend/scripts/ensure-indexes.ts` dry-run/apply procedure; Atlas verification and
+  apply remain owner-controlled deploy steps.
 
 ## Frontend
 
@@ -179,5 +180,6 @@ closing (`invoice.controller`) → issue (finance snapshot) → send invoice ema
 4. No observability beyond console logs; 58k PM2 restarts unexplained.
 5. No scheduler → the "wheel" cannot turn by itself for anything time-based.
 6. Identity joins by string (client email, customer name) instead of references.
-7. Shared prod/staging DB; `autoIndex: false` without an indexing procedure.
+7. Shared prod/staging DB; index application is a conscious deploy step because
+   `autoIndex` stays false.
 8. Tenancy only partial (identity modules), absent on business data.

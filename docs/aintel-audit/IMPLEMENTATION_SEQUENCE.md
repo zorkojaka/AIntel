@@ -43,7 +43,7 @@ regression, not data loss.
 | 1.3 | **AIN-P1-02** error tracking | [agent] after [owner] picks Sentry vs GlitchTip | — |
 | 1.4 | **AIN-P1-03** structured logging (pino + request IDs) | [agent] | [owner] approves dependency |
 | 1.5 | **AIN-P1-04** smoke tests, five money flows | [agent] | Uses memory-server → does NOT wait on 1.1 |
-| 1.6 | **AIN-P1-05** index audit + ensure-indexes script | [agent] script, [owner] runs listIndexes read-only | — |
+| 1.6 | **AIN-P1-05** index audit + ensure-indexes script | [agent] script DONE, [owner] runs dry-run/apply | Script landed; owner still runs read-only `db:ensure-indexes -- --json` and guarded apply if needed |
 
 Parallelism: 1.2–1.6 can all run concurrently; 1.1 is owner-paced.
 **Checkpoint W1**: `pnpm test` green without touching Atlas; one JSON log line per

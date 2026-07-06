@@ -48,7 +48,7 @@ Each item: evidence → business consequence → technical consequence → sever
 | ID | Item | Evidence | Consequence | Sev | Effort |
 |---|---|---|---|---|---|
 | TD-D1 | client↔project by name string; portal by email | DATA_MODEL §problems | Wrong-customer data mixing; orphaning on rename | High | M (add clientId + backfill) |
-| TD-D2 | `autoIndex:false` with no index procedure | `db/mongo.ts` | Slow queries as data grows; unique constraints possibly absent → duplicates | Medium (Needs Atlas verification) | S (documented ensure-indexes script, run consciously) |
+| TD-D2 | RESOLVED (AIN-P1-05): `autoIndex:false` now has an explicit ensure-indexes procedure | `db/mongo.ts`, `backend/scripts/ensure-indexes.ts` | Owner still must run dry-run/apply consciously; no automatic boot-time index creation | Medium (Atlas run remains owner-owned) | S (script landed) |
 | TD-D3 | No transactions on multi-doc flows (confirmOffer, invoice issue) | logistics/invoice services | Partial writes on failure → stuck projects | Medium | M |
 | TD-D4 | Shared prod/staging DB | env layout | Test data pollution; accidental prod damage | High | M (org decision + data copy) |
 

@@ -30,6 +30,9 @@ Route-level gates in `routes/index.ts`; payload-shape restrictions for EXECUTION
 ## Data entities
 `projects`, `offerversions`, `workorders`, `materialorders`, `offertemplates`,
 `pdfsettings` + `document_number_counters` (settings module).
+AIN-P1-05 added declared hot-path indexes for project status/assignment and
+workorder/material-order project+offer lookups; `autoIndex` remains off, so owner must
+run the explicit ensure-indexes procedure before Atlas has them.
 
 ## Dependencies
 cenik (product truth incl. `casovnaNorma`, supplier fields), finance (snapshot on

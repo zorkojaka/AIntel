@@ -351,6 +351,9 @@ const ProjectSchema = new Schema<ProjectDocument>(
 
 ProjectSchema.index({ projectNumber: 1 }, { unique: true });
 ProjectSchema.index({ code: 1 }, { unique: true });
+ProjectSchema.index({ status: 1 });
+ProjectSchema.index({ archivedAt: 1, status: 1 });
+ProjectSchema.index({ assignedEmployeeIds: 1 });
 
 export const ProjectModel =
   (mongoose.models.Project as mongoose.Model<ProjectDocument>) ||

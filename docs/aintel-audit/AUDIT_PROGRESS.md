@@ -1,6 +1,6 @@
 # Audit Progress
 
-Last updated: 2026-07-06 (AIN-P0-02 implementation; D-012 owner-confirmed, task DONE)
+Last updated: 2026-07-06 (AIN-P1-05 implementation)
 Last reviewed commit: `c0afad8f92320ba48eddfcaec7a5b52d859c7b2e` (branch `codex/web-inquiries-intake`)
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
@@ -63,7 +63,9 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   source; see `specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-04.
 - Live prod error TD-B7 (installer-prep ObjectId('undefined') cast) is resolved by
   AIN-P1-06 guards; no live log check was run after code change.
-- autoIndex:false in db/mongo.ts.
+- autoIndex:false in db/mongo.ts; AIN-P1-05 added an explicit dry-run/apply
+  ensure-indexes script and hot-path schema declarations, but owner still controls any
+  Atlas run.
 - Prod/staging share db `inteligent`.
 - Final review re-verified all load-bearing P0/architecture claims against source —
   all confirmed; evidence table in `FABLE_FINAL_REVIEW.md` §1.
@@ -90,6 +92,10 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   owner-confirmed 2026-07-06 (review sign-off); task DONE. Rollout note: backend and
   SPA must deploy together (the SPA switch to `/my/earnings` and the `/snapshots` gate
   landed in one commit).
+- **AIN-P1-05**: added `backend/scripts/ensure-indexes.ts` with read-only dry-run
+  planning and guarded apply mode, plus hot-path schema indexes for `projects`,
+  `workorders`, and `materialorders`. No Atlas `listIndexes`/createIndex run was done
+  by the agent; owner must run it consciously.
 
 ## Genuine unresolved checks (curated in the final review)
 
@@ -97,8 +103,9 @@ Resolved/folded since the original list: PM2 restarts (#old-1 → resolved, abov
 storage read path traversal (#old-8 → resolved by AIN-P0-03 authenticated upload
 handler). Remaining — most need the **owner** (ops access or a decision):
 
-1. **Atlas actual indexes** vs schema declarations — owner runs read-only
-   `listIndexes` (feeds AIN-P1-05).
+1. **Atlas actual indexes** vs schema declarations — owner runs
+   `pnpm --filter aintel-backend db:ensure-indexes -- --json` read-only, then a
+   conscious guarded apply if needed.
 2. **Accounting/fiscalization handoff** (D-016) — how invoices reach accounting;
    shapes the AIN-P1-08 schema.
 3. **Backup/restore procedure** for Atlas + `/var/www/aintel/uploads` — existence

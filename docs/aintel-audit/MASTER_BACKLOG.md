@@ -66,12 +66,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   console.\* incrementally (start: core, communication sends, public intake).
 - Acceptance: one JSON line per request in prod logs. Effort M.
 
-### AIN-P1-05 — Index audit + ensure-indexes script
-- Compare schema-declared indexes vs Atlas actuals (owner runs read-only listIndexes);
-  add explicit `scripts/ensure-indexes.ts` run consciously at deploy; add missing
-  hot-path indexes (projects.status, communicationmessages.projectId, workorders
-  projectId+offerVersionId…). Effort M. Evidence: db/mongo.ts autoIndex:false.
-
 ### AIN-P1-07 — clientId on Project (WebInquiry already has it)
 > **Scope corrected (final review)**: `WebInquiry.clientId` already exists and is set
 > by the intake engine (`web-inquiry.model.ts:96`, `web-inquiry.service.ts:673`).
@@ -197,3 +191,13 @@ relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 - **Acceptance**: EXECUTION gets 403 on company finance endpoints, payment PATCH, and
   non-ADMIN settings writes; `/finance/my/earnings` returns only the caller's
   employee earnings; FINANCE company finance and payment PATCH remain available.
+
+### AIN-P1-05 — Index audit + ensure-indexes script
+- **Landed**: AIN-P1-05 implementation commit.
+- **Summary**: Added hot-path schema indexes for project status/assignment and
+  workorder/material-order project+offer lookups, plus
+  `backend/scripts/ensure-indexes.ts` and `pnpm --filter aintel-backend db:ensure-indexes`.
+- **Acceptance**: script defaults to read-only dry-run/listIndexes planning; apply mode
+  requires `--apply --i-understand-this-writes-indexes` and additionally
+  `--allow-shared-db` for db `inteligent`. Agent did not run against Atlas or create
+  indexes; owner must run the dry-run/apply consciously during deploy.
