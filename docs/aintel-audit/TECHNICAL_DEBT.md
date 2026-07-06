@@ -32,7 +32,7 @@ Each item: evidence → business consequence → technical consequence → sever
 | TD-B4 | Max+1 ID generation | `generateProjectIdentifiers` (project.ts:393) | Duplicate-key 500s under concurrent creates | Low (single user base) | S (use DocumentCounter) |
 | TD-B5 | Dates as strings (project createdAt, scheduledAt, …) | project/work-order schemas | Wrong sorting/range queries; timezone bugs | Medium | M |
 | TD-B6 | auth.routes.ts uses DOM `Request`/`Response` types accidentally | `auth.routes.ts` blockNonPost (no express type import) | Type safety illusion | Low | S |
-| TD-B7 | Live prod error: `'undefined'` → ObjectId cast in installer-prep email | pm2 error log; `communication.service` WorkOrder lookup | Feature intermittently fails for users | Medium | S (guard + fix caller) |
+| TD-B7 | RESOLVED (AIN-P1-06): Live prod error: `'undefined'` → ObjectId cast in installer-prep email | pm2 error log; `communication.service` WorkOrder lookup; fixed with controller + service workOrderId guards | Repro now returns 400 instead of reaching Mongo cast path | Medium | Done |
 
 ## Frontend
 

@@ -5,6 +5,7 @@ import {
   listOfferMessages,
   sendInvoiceCommunicationEmail,
   listProjectCommunicationFeed,
+  normalizeWorkOrderObjectId,
   sendInstallerPreparationEmail,
   sendOfferCommunicationEmail,
   sendWorkOrderConfirmationCommunicationEmail,
@@ -155,9 +156,14 @@ export async function sendWorkOrderConfirmationCommunicationController(req: Requ
 
 export async function sendInstallerPreparationCommunicationController(req: Request, res: Response) {
   try {
+    const workOrderId = normalizeWorkOrderObjectId(req.params.workOrderId);
+    if (!workOrderId) {
+      return res.fail("Delovni nalog ni pravilno določen.", 400);
+    }
+
     const payload = await sendInstallerPreparationEmail({
       projectId: req.params.projectId,
-      workOrderId: req.params.workOrderId,
+      workOrderId,
       to: req.body?.to,
       cc: req.body?.cc,
       bcc: req.body?.bcc,

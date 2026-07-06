@@ -1226,6 +1226,11 @@ function formatWorkOrderExecutionDefinition(workOrder: any) {
   return lines;
 }
 
+export function normalizeWorkOrderObjectId(value: unknown) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized && isValidObjectId(normalized) ? normalized : null;
+}
+
 export async function sendInstallerPreparationEmail(input: {
   projectId: string;
   workOrderId: string;
@@ -1245,7 +1250,8 @@ export async function sendInstallerPreparationEmail(input: {
     role?: string | null;
   } | null;
 }) {
-  if (!isValidObjectId(input.workOrderId)) {
+  const workOrderId = normalizeWorkOrderObjectId(input.workOrderId);
+  if (!workOrderId) {
     throw new Error("Delovni nalog ni pravilno določen.");
   }
 
@@ -1259,7 +1265,7 @@ export async function sendInstallerPreparationEmail(input: {
 
   const [project, workOrder, globalSettings] = await Promise.all([
     ProjectModel.findOne({ id: input.projectId }),
-    WorkOrderModel.findOne({ _id: input.workOrderId, projectId: input.projectId }),
+    WorkOrderModel.findOne({ _id: workOrderId, projectId: input.projectId }),
     getSettings(),
   ]);
 
@@ -1402,7 +1408,7 @@ export async function sendInstallerPreparationEmail(input: {
     type: "work_order_pdf",
     projectId: input.projectId,
     offerId: workOrder.offerVersionId ?? null,
-    workOrderId: input.workOrderId,
+    workOrderId,
   });
   const selectedAttachmentRecords: CommunicationAttachmentRecord[] = [{
     type: attachment.type,
@@ -1412,7 +1418,7 @@ export async function sendInstallerPreparationEmail(input: {
   const baseMessage = {
     projectId: input.projectId,
     offerId: workOrder.offerVersionId ?? null,
-    workOrderId: input.workOrderId,
+    workOrderId,
     customerId: projectClient?.id ?? null,
     direction: "outbound" as const,
     channel: "email" as const,
@@ -1476,7 +1482,7 @@ export async function sendInstallerPreparationEmail(input: {
         metadata: {
           to: resolvedRecipients.join(", "),
           subject: subjectFinal,
-          workOrderId: input.workOrderId,
+          workOrderId,
           attachments: selectedAttachmentRecords.map((record) => record.filename).join(", "),
         },
       });
@@ -1504,7 +1510,7 @@ export async function sendInstallerPreparationEmail(input: {
       metadata: {
         to: resolvedRecipients.join(", "),
         subject: subjectFinal,
-        workOrderId: input.workOrderId,
+        workOrderId,
       },
     });
     throw error;

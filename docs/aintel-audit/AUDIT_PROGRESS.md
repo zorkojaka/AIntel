@@ -53,12 +53,14 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
 - Finance & settings mounts have no role gate (verified in route files) — S4.
 - `x-tenant-id`/`x-user-id` trusted from client; frontend actively sends x-tenant-id
   via buildTenantHeaders — S3 (Confirmed).
-- No scheduler/cron (crontab empty); baseline had no backend tests. AIN-P0-03 added
-  focused backend `node:test` coverage for `/uploads` auth/path resolution.
+- No scheduler/cron (crontab empty); baseline had no backend tests. AIN-P0-03 and
+  AIN-P1-06 added focused backend `node:test` coverage for upload auth/path resolution
+  and installer-prep ObjectId guards.
 - Prod `aintel` PM2 restarts = 58,165 — **RESOLVED**: historical boot crash-loop
   (`AINTEL_ALLOWED_ORIGINS` hard-required by an older build), already fixed in current
   source; see `specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-04.
-- Live prod error confirmed in logs: installer-prep ObjectId('undefined') cast (TD-B7).
+- Live prod error TD-B7 (installer-prep ObjectId('undefined') cast) is resolved by
+  AIN-P1-06 guards; no live log check was run after code change.
 - autoIndex:false in db/mongo.ts.
 - Prod/staging share db `inteligent`.
 - Final review re-verified all load-bearing P0/architecture claims against source —
@@ -71,6 +73,10 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   embedded `<img ... /uploads ...>` communication/template references in the checked
   source paths. S2 is marked resolved; per-entity upload ownership remains future
   hardening.
+- **AIN-P1-06**: installer-prep email now rejects missing/invalid `workOrderId` in both
+  controller and service before WorkOrder lookup. Minimal acceptance derived from the
+  backlog text: `workOrderId=undefined` returns clean 400 and invalid service input
+  cannot reach the Mongo ObjectId cast path.
 
 ## Genuine unresolved checks (curated in the final review)
 

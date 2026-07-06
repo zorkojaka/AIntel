@@ -32,8 +32,9 @@ customer-facing communication; template fallbacks; SMTP diagnostics at startup.
 ## Problems
 1. Four near-identical 200–300-line send functions (offer/invoice/wo/installer) —
    copy-paste divergence risk; unify into one pipeline with per-category config.
-2. Live prod bug: installer-prep flow casts `'undefined'` to ObjectId (TD-B7,
-   pm2 error log) — input guard missing.
+2. RESOLVED (AIN-P1-06): installer-prep flow now validates `workOrderId` in the
+   controller and service before the WorkOrder lookup; the old TD-B7 cast path returns
+   a clean 400.
 3. Sending is synchronous in-request (except inquiry offer email, made async in
    `465aec9`); SMTP latency blocks API responses; no retry/queue — a failed send is
    only a log entry (message status field exists — verify retry semantics: Needs

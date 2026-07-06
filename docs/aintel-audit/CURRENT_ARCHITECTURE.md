@@ -101,9 +101,10 @@ directly. Consequence: no module is independently deployable today.
 
 - **Console logging only**; no structured logger, no request logging middleware, no
   correlation IDs, no error tracker (Sentry etc.). PM2 captures stdout/stderr.
-- Observed live production error in logs: `sendInstallerPreparationEmail` casts the
-  string `'undefined'` to ObjectId on a WorkOrder query
-  (`communication.service.ts` ~line 854 in dist) — evidence for backlog item AIN-P1-06.
+- RESOLVED (AIN-P1-06): observed live production error in logs where
+  `sendInstallerPreparationEmail` cast the string `'undefined'` to ObjectId on a
+  WorkOrder query. The installer-prep controller and service now guard invalid
+  `workOrderId` before the WorkOrder lookup.
 - Audit trail: Project embeds a `timeline` array (event id = `evt-<Date.now36>`, whole
   events written by controllers). Communication module stores `CommunicationEvent` /
   `CommunicationMessage` records. There is **no generic audit log** (who changed what

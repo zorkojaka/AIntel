@@ -96,12 +96,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   hot-path indexes (projects.status, communicationmessages.projectId, workorders
   projectId+offerVersionId…). Effort M. Evidence: db/mongo.ts autoIndex:false.
 
-### AIN-P1-06 — Fix installer-prep ObjectId cast bug
-- **Evidence**: pm2 error log — `'undefined'` string cast at WorkOrder query in
-  `sendInstallerPreparationEmail` (communication.service.ts ~:854 dist).
-- Scope: guard workOrderId presence/validity in controller + service; return 400.
-- Acceptance: repro request returns clean error; no BSONError in logs. Effort S.
-
 ### AIN-P1-07 — clientId on Project (WebInquiry already has it)
 > **Scope corrected (final review)**: `WebInquiry.clientId` already exists and is set
 > by the intake engine (`web-inquiry.model.ts:96`, `web-inquiry.service.ts:673`).
@@ -200,3 +194,11 @@ relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 - **Acceptance**: unauthenticated `/uploads/...` returns 401; traversal resolver
   rejects escape attempts; source grep found no embedded `/uploads` email/template
   `<img>` references in checked communication paths.
+
+### AIN-P1-06 — Fix installer-prep ObjectId cast bug
+- **Landed**: AIN-P1-06 implementation commit.
+- **Summary**: Added shared workOrderId normalization for installer-prep email and
+  guard checks in both controller and service before any WorkOrder lookup.
+- **Acceptance**: a repro request with `workOrderId=undefined` returns a clean 400
+  error (`Delovni nalog ni pravilno določen.`), and service-level invalid input fails
+  before Mongo query code can trigger a BSON/ObjectId cast error.
