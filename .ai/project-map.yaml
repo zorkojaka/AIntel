@@ -1,0 +1,70 @@
+# AIntel execution roadmap — derived from docs/aintel-audit/IMPLEMENTATION_SEQUENCE.md
+# (final review 2026-07-05). Node statuses are computed by the AI Workbench from
+# task evidence; do not hand-set IMPLEMENTED/VERIFIED here.
+project: aintel
+kind: roadmap
+updated: 2026-07-05
+nodes:
+  - id: wave-0
+    label: "Wave 0 — Security"
+    type: phase
+    description: Active-exposure fixes; parallel-safe, disjoint files.
+    source: docs/aintel-audit/IMPLEMENTATION_SEQUENCE.md#wave-0
+    tasks: [AIN-P0-01, AIN-P0-02, AIN-P0-03, AIN-P0-04]
+    deps: []
+  - id: wave-1
+    label: "Wave 1 — Stabilization"
+    type: phase
+    description: Staging DB split, error tracking, logging, smoke tests, indexes. Safety gate for everything below.
+    source: docs/aintel-audit/IMPLEMENTATION_SEQUENCE.md#wave-1
+    tasks: [AIN-P1-01, AIN-P1-06, AIN-P1-02, AIN-P1-03, AIN-P1-04, AIN-P1-05]
+    deps: [wave-0]
+  - id: wave-2
+    label: "Wave 2 — Data foundations"
+    type: phase
+    description: clientId on Project, invoiceVersions collection, freeze legacy embedded docs.
+    source: docs/aintel-audit/IMPLEMENTATION_SEQUENCE.md#wave-2
+    tasks: [AIN-P1-07, AIN-P1-08, AIN-P2-01]
+    deps: [wave-1]
+  - id: wave-3
+    label: "Wave 3 — The wheel"
+    type: phase
+    description: Task entity + inbox, scheduler, first automation rules, invoice payment tracking. The product step.
+    source: docs/aintel-audit/IMPLEMENTATION_SEQUENCE.md#wave-3
+    tasks: [AIN-P1-09, AIN-P1-10, AIN-P1-11, AIN-P1-12, AIN-P2-02]
+    deps: [wave-2]
+  - id: wave-4
+    label: "Wave 4 — Structure & quality"
+    type: phase
+    description: Extract logistics services, unify communication sends, split panels, shared API client, audit log, supplier normalization.
+    source: docs/aintel-audit/IMPLEMENTATION_SEQUENCE.md#wave-4
+    tasks: [AIN-P2-03, AIN-P2-04, AIN-P2-06, AIN-P3-02, AIN-P2-07, AIN-P2-05]
+    deps: [wave-3]
+  - id: wave-5
+    label: "Wave 5 — Service & repeat sales"
+    type: phase
+    description: Service module, repeat-sale rules, portal integration.
+    source: docs/aintel-audit/IMPLEMENTATION_SEQUENCE.md#wave-5
+    tasks: [AIN-P2-08, AIN-P3-03, AIN-P3-04]
+    deps: [wave-4]
+  - id: wave-6
+    label: "Wave 6 — Multi-company foundations"
+    type: phase
+    description: Kill header trust, tenantId backfill, config store, vertical extraction, enum neutralization.
+    source: docs/aintel-audit/IMPLEMENTATION_SEQUENCE.md#wave-6
+    tasks: [AIN-P2-09, AIN-P2-10, AIN-P2-11, AIN-P3-05, AIN-P3-06]
+    deps: [wave-5]
+  - id: wave-7
+    label: "Wave 7 — Pilot"
+    type: phase
+    description: External pilot tenant; docs cleanup can happen any time.
+    source: docs/aintel-audit/IMPLEMENTATION_SEQUENCE.md#wave-7
+    tasks: [AIN-P3-07, AIN-P3-08]
+    deps: [wave-6]
+  - id: auth-polish
+    label: "Auth polish (login rate limiting, optional 2FA)"
+    type: capability
+    description: P3 hardening not assigned to a wave in the sequence.
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    tasks: [AIN-P3-01]
+    deps: [wave-0]
