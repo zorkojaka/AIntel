@@ -1,6 +1,6 @@
 # Audit Progress
 
-Last updated: 2026-07-06 (AIN-P0-02 implementation)
+Last updated: 2026-07-06 (AIN-P0-02 implementation; D-012 owner-confirmed, task DONE)
 Last reviewed commit: `c0afad8f92320ba48eddfcaec7a5b52d859c7b2e` (branch `codex/web-inquiries-intake`)
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
@@ -86,7 +86,10 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
 - **AIN-P0-02**: finance company endpoints are ADMIN/FINANCE, payment PATCH is
   ADMIN/FINANCE, settings/pdf-settings/communication settings writes are ADMIN, and
   installers use `/finance/my/earnings` with server-side employee scoping. D-012 was
-  resolved with the spec default: SALES does not get company finance read access.
+  resolved with the spec default: SALES does not get company finance read access —
+  owner-confirmed 2026-07-06 (review sign-off); task DONE. Rollout note: backend and
+  SPA must deploy together (the SPA switch to `/my/earnings` and the `/snapshots` gate
+  landed in one commit).
 
 ## Genuine unresolved checks (curated in the final review)
 

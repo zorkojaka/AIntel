@@ -49,7 +49,8 @@ Commits 896f1ae, 59b1d55.
 AIN-P0-02 shipped the strict default from the P0 spec: SALES does not get company
 finance reads. EXECUTION keeps a scoped self-service earnings view through
 `/api/finance/my/earnings`; company finance endpoints and payment PATCH are
-ADMIN+FINANCE.
+ADMIN+FINANCE. **Owner (Jaka) explicitly confirmed the strict default on 2026-07-06**
+(review sign-off); granting SALES read access later would be a purely additive change.
 
 ## D-013 [Open] PDF engine consolidation: pdfkit vs playwright-HTML
 Two pipelines maintained (P6). Decide one (playwright-HTML is more maintainable;
