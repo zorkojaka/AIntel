@@ -11,8 +11,9 @@ required before merge/rollout.
 
 ## Ground rules
 
-1. Until AIN-P1-01 lands, **no work item may write to the database** from staging or
-   scripts — prod and staging share db `inteligent`. Tests use mongodb-memory-server.
+1. AIN-P1-01 now blocks a marked staging runtime from using the production database.
+   Owner rollout must still set the staging environment and Atlas copy correctly;
+   tests continue to use mongodb-memory-server.
 2. Every wave ends with a checkpoint: verify acceptance criteria, update docs per
    `DOCUMENTATION_MAINTENANCE.md`, bump `AUDIT_PROGRESS.md` last-reviewed commit.
 3. Each item's rollback path is noted in its spec/backlog entry; do not start an item
@@ -38,7 +39,7 @@ regression, not data loss.
 
 | Order | Item | Assignee | Depends on |
 |---|---|---|---|
-| 1.1 | **AIN-P1-01** staging DB split + email trap | [owner] infra remains, [agent] email-trap support + runbook DONE | — (unblocks all DB-writing work; schedule first) |
+| 1.1 | **AIN-P1-01** staging DB split + email trap | [agent] code/tests/docs DONE; [owner] live env + Atlas copy verification remains | Repository guard and email trap landed |
 | 1.2 | **AIN-P1-06** installer-prep ObjectId guard | [agent] | — (S effort; can even ride along with W0) |
 | 1.3 | **AIN-P1-02** error tracking | [agent] DONE: Sentry EU, optional via SENTRY_DSN, scrubbed context; [owner] creates EU project + sets env | owner chose Sentry EU 2026-07-08 |
 | 1.4 | **AIN-P1-03** structured logging (pino + request IDs) | [agent] DONE: pino + pino-http, request-id/tenant/user/route/latency, named console.* migrated | [owner] approved `pino` dependency 2026-07-08 |

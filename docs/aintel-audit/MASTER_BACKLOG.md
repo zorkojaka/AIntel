@@ -2,7 +2,8 @@
 
 Prioritized P0–P3. Effort: S <1d, M days, L 1–2wk, XL multi-week. Each item is
 self-contained for handoff to a coding agent. Always read AGENT_HANDOFF.md first;
-never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
+never run DB-writing scripts against shared/prod data; AIN-P1-01 guards marked staging
+runtimes, while owner-controlled environment and Atlas rollout remain authoritative.
 
 > **Authority note (final review 2026-07-05):** for P0 items,
 > `specs/P0_IMPLEMENTATION_SPECS.md` is authoritative over the summaries below.
@@ -35,9 +36,10 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 - **Scope**: new `MONGO_DB` for staging + documented data-copy procedure (owner runs);
   staging SMTP override to a trap/prefix mode; README warnings updated.
 - **Acceptance**: staging writes never touch prod db; staging emails clearly marked.
-- **Agent support landed**: shared email trap support and owner runbook
-  `runbooks/AIN-P1-01_STAGING_DB_EMAIL_TRAP.md`; owner env/ops verification still
-  required before marking done.
+- **Repository implementation landed**: staging startup rejects the production
+  database name; shared email transport traps recipients and prefixes staging mail.
+  Tests, `.env.example`, and `STAGING_ISOLATION_RUNBOOK.md` are included. Owner
+  environment/Atlas rollout verification remains.
 - Effort M (mostly ops coordination). **Blocks all test-writing items.**
 
 ### AIN-P1-08 — Promote invoiceVersions to a collection

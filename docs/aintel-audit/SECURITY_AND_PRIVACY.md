@@ -63,14 +63,12 @@ Confidence: Confirmed / High confidence / Probable / Needs verification.
 
 ## S5 — Shared prod/staging database — **High (operational), Confirmed by environment**
 
-- Staging code (including experimental branches) runs against production data with
-  production credentials. A staging bug can corrupt production records; test actions
-  send real emails. Remediation is organizational: separate `MONGO_DB` for staging +
-  data-sync procedure; gate email sending in staging.
-- AIN-P1-01 agent support added an env-driven shared email trap
-  (`AINTEL_EMAIL_TRAP_TO`, `AINTEL_EMAIL_SUBJECT_PREFIX`) and a rollout runbook at
-  `runbooks/AIN-P1-01_STAGING_DB_EMAIL_TRAP.md`. S5 remains open until owner changes
-  staging `MONGO_DB` and verifies trap behavior in the runtime environment.
+- AIN-P1-01 adds a startup guard: a marked staging runtime cannot connect when
+  `MONGO_DB=inteligent`. Shared email transport redirects recipients through
+  `AINTEL_EMAIL_TRAP_TO` and applies `AINTEL_EMAIL_SUBJECT_PREFIX`.
+- Owner rollout remains required: configure the live staging environment, copy data
+  into the staging database, and verify the trap mailbox per
+  `STAGING_ISOLATION_RUNBOOK.md`.
 
 ## S6 — PII handling / GDPR — **Medium, High confidence**
 

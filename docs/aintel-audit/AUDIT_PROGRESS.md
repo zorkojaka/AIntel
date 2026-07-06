@@ -134,9 +134,11 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   Zahteva documents or frontend types. v6 is shape-inferred by `sistemi[]` and absence
   of legacy top-level fields; migration scripts are manual DB writers and were not run
   from staging.
-- **AIN-P1-01 agent support**: shared email transport now supports env-driven staging
-  trap (`AINTEL_EMAIL_TRAP_TO`, `AINTEL_EMAIL_SUBJECT_PREFIX`) with tests and an owner
-  rollout runbook. Staging DB split remains owner-owned and not yet verified.
+- **AIN-P1-01 code support**: a staging runtime now fails fast before connecting when
+  it targets the production `inteligent` database. Shared email transport redirects
+  recipients through `AINTEL_EMAIL_TRAP_TO` and visibly prefixes staging subjects.
+  Tests, `.env.example`, and `STAGING_ISOLATION_RUNBOOK.md` cover the repository-side
+  behavior; the Atlas copy and live staging environment remain owner-operated.
 - **AIN-P1-09 follow-up**: by-subject task strips now render on project detail pages
   and expanded web-inquiry rows, backed by the existing `/api/tasks/by-subject/:kind/:id`
   API. Owner visual review remains.

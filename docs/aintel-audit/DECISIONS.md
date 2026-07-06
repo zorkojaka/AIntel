@@ -54,7 +54,8 @@ AIN-P0-02 shipped the strict default from the P0 spec: SALES does not get compan
 finance reads. EXECUTION keeps a scoped self-service earnings view through
 `/api/finance/my/earnings`; company finance endpoints and payment PATCH are
 ADMIN+FINANCE. **Owner (Jaka) explicitly confirmed the strict default on 2026-07-06**
-(review sign-off); granting SALES read access later would be a purely additive change.
+(review sign-off; owner request `OWNER-D-012`); granting SALES read access later would
+be a purely additive change.
 
 ## D-013 [Open] PDF engine consolidation: pdfkit vs playwright-HTML
 Two pipelines maintained (P6). Decide one (playwright-HTML is more maintainable;
@@ -90,3 +91,10 @@ same commit (the P0-02/P0-04 drift that motivated this is fixed).
 `AINTEL_WHEEL_SPEC.md` is the proposed design for tasks/scheduler/automation
 (AIN-P1-09..12). Owner + senior review must sign off on §2 (Task schema) and §3 (rule
 engine) before implementation starts; interacts with D-014 (scheduler dependency).
+
+## D-020 [Existing-confirmed] Staging must be isolated from production writes
+AIN-P1-01 makes staging use a separate Mongo database (`MONGO_DB`, expected
+`inteligent_staging`) and a staging email trap/prefix. Source now refuses to boot when
+a runtime explicitly marked staging (`AINTEL_ENV`, `AINTEL_DEPLOY_ENV`, or `APP_ENV`)
+uses production database `inteligent`; owner remains responsible for the actual Atlas
+copy and staging `.env` values per `STAGING_ISOLATION_RUNBOOK.md`.

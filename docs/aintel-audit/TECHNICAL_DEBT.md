@@ -50,7 +50,7 @@ Each item: evidence → business consequence → technical consequence → sever
 | TD-D1 | PARTIAL (AIN-P1-07): new Project rows carry `clientId`; legacy rows still use name fallback and portal identity remains email-based | DATA_MODEL §problems | Legacy wrong-customer data mixing/orphaning remains until owner-reviewed backfill; portal duplicate-email risk remains | High | S/M (review report + backfill, then portal identity) |
 | TD-D2 | RESOLVED (AIN-P1-05): `autoIndex:false` now has an explicit ensure-indexes procedure | `db/mongo.ts`, `backend/scripts/ensure-indexes.ts` | Owner still must run dry-run/apply consciously; no automatic boot-time index creation | Medium (Atlas run remains owner-owned) | S (script landed) |
 | TD-D3 | No transactions on multi-doc flows (confirmOffer, invoice issue) | logistics/invoice services | Partial writes on failure → stuck projects | Medium | M |
-| TD-D4 | Shared prod/staging DB | env layout | Test data pollution; accidental prod damage | High | M (org decision + data copy) |
+| TD-D4 | RESOLVED IN CODE (AIN-P1-01; owner rollout required): Shared prod/staging DB | env layout; `backend/db/mongo.ts`; `STAGING_ISOLATION_RUNBOOK.md` | Startup now fails if a staging runtime points at `MONGO_DB=inteligent`; owner still must set staging `.env` and copy data to `inteligent_staging` | Medium until rollout verified | Owner ops |
 
 ## Testing
 
