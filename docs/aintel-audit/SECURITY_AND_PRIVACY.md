@@ -3,21 +3,25 @@
 Commit `c0afad8`. No secret values reproduced here. Severity: Critical/High/Medium/Low.
 Confidence: Confirmed / High confidence / Probable / Needs verification.
 
-## S1 — Public API key exposes customer equipment data — **Critical, Confirmed**
+## S1 — Public API key exposes customer equipment data — **Critical, RESOLVED in code (AIN-P0-01)**
 
-- The `/api/public` router protects everything with one shared `X-API-Key`
-  (`web-inquiries/public.routes.ts`, `requireApiKey`).
+- Previously, the `/api/public` router protected everything with one shared
+  `X-API-Key` (`web-inquiries/public.routes.ts`, `requireApiKey`).
 - That key is embedded in public website HTML (`inteligent-si/videonadzor.html:12`,
   `window.AINTEL.apiKey`) — anyone viewing page source has it.
-- The same router exposes `GET /clients/equipment?email=…` which returns the customer's
-  projects and installed equipment for any email address.
-- **Consequence: any internet user can enumerate customer emails and retrieve what
+- The same browser-key group exposed `GET /clients/equipment?email=…`, which returns
+  the customer's projects and installed equipment for any email address.
+- **Consequence was: any internet user could enumerate customer emails and retrieve what
   security equipment (cameras, alarms) is installed at which customer.** For a security
   company this is also a physical-security issue.
-- Remediation (P0): split the public router into (a) widget endpoints that keep the
-  browser key, and (b) server-to-server endpoints (equipment) behind a **separate,
-  never-published key** (or move portal integration to an authenticated internal API);
-  rotate the current key; consider per-consumer keys + IP allowlist for the portal.
+- AIN-P0-01 split `/api/public/clients/*` onto an internal sub-router guarded only by
+  `AINTEL_INTERNAL_API_KEY` and non-browser CORS. Widget/review endpoints remain on
+  `AINTEL_WEB_INQUIRY_API_KEY`. Tests verify that the browser key gets 401 for
+  `/clients/equipment`, the internal key gets 200, and `/options` still accepts the
+  browser key.
+- Rollout requirement: owner must set `AINTEL_INTERNAL_API_KEY` in AIntel/portal env
+  and rotate the browser key on the website/widget. The agent did not edit env files or
+  deploy-time secrets.
 - Note: rate limiting is in-memory, per-process, keyed by spoofable `x-forwarded-for`
   (Confirmed) — no real brute-force protection for email enumeration.
 

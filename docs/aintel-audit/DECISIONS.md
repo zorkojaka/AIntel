@@ -30,8 +30,11 @@ collections; migration left unfinished
 Both representations exist (P1/P2 duplication). Decision to finish (freeze embedded)
 is AIN-P2-01 — treat as accepted direction, pending owner confirmation.
 
-## D-008 [Existing-inferred] Public intake protected by shared static API key
-Made for simplicity; consequences in S1. Superseding decision needed: AIN-P0-01.
+## D-008 [Superseded by AIN-P0-01] Public intake protected by shared static API key
+Original decision was made for simplicity; consequences in S1. AIN-P0-01 supersedes it:
+browser widget/review endpoints keep `AINTEL_WEB_INQUIRY_API_KEY`, while
+`/api/public/clients/*` server-to-server endpoints require `AINTEL_INTERNAL_API_KEY`.
+Owner still controls env rollout and browser-key rotation.
 
 ## D-009 [Existing-confirmed] Prod and staging share one Mongo database
 Operational reality (audit brief). Risk accepted historically; recommendation to

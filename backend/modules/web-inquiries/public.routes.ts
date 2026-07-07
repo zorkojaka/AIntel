@@ -77,18 +77,15 @@ function requireApiKey(req: Request, res: Response, next: NextFunction) {
   return next();
 }
 
-// AIN-P0-01: server-to-server routes (/clients/*) live behind a SEPARATE key that is
-// never shipped to a browser. During the rollout window the legacy browser key is still
-// accepted (dual-accept); remove that acceptance once both keys are rotated (spec step 3).
+// AIN-P0-01: server-to-server routes (/clients/*) live behind a separate key that is
+// never shipped to a browser.
 function requireServerApiKey(req: Request, res: Response, next: NextFunction) {
   const internalKey = process.env.AINTEL_INTERNAL_API_KEY?.trim();
-  const legacyKey = process.env.AINTEL_WEB_INQUIRY_API_KEY?.trim();
-  if (!internalKey && !legacyKey) {
+  if (!internalKey) {
     return res.status(503).json({ ok: false, code: 'NOT_CONFIGURED', message: 'Interni API ni omogočen (manjka AINTEL_INTERNAL_API_KEY).' });
   }
   const providedKey = (req.headers['x-api-key'] as string | undefined)?.trim();
-  const acceptedKeys = [internalKey, legacyKey].filter(Boolean);
-  if (!providedKey || !acceptedKeys.includes(providedKey)) {
+  if (providedKey !== internalKey) {
     return res.status(401).json({ ok: false, code: 'UNAUTHORIZED', message: 'Neveljaven API ključ.' });
   }
   return next();

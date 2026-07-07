@@ -19,7 +19,7 @@ Commit `c0afad8`.
 | Aspect | Detail |
 |---|---|
 | Direction | Portal → AIntel (server-to-server) |
-| Mechanism | `GET /api/public/clients/equipment?email=…` with `X-API-Key` (`inteligent-portal/server.js:172`) |
+| Mechanism | `GET /api/public/clients/equipment?email=…` with internal `X-API-Key` (`AINTEL_INTERNAL_API_KEY`; owner must roll the portal env) |
 | Data | Confirmed-offer equipment per project for the client matched by email; client→project join now prefers `Project.clientId` and keeps a `customer.name` fallback for legacy rows (see DATA_MODEL) |
 | Identity | Portal user email ↔ CrmClient.email (not unique, lowercase). No shared user store. |
 | DBs | Fully separate (`inteligent` vs `inteligent_portal`) |
@@ -66,8 +66,8 @@ Commit `c0afad8`.
 
 ```mermaid
 flowchart TD
-  SI[inteligent-si<br/>static site] -- widget + public API key --> PUB[/AIntel /api/public/]
-  PORTAL[inteligent-portal :4100] -- equipment by email --> PUB
+  SI[inteligent-si<br/>static site] -- widget + browser API key --> PUB[/AIntel /api/public/]
+  PORTAL[inteligent-portal :4100] -- equipment by email + internal key --> PUB
   PUB --> AINTEL[AIntel backend]
   SHELL[core-shell SPA] -- cookie /api --> AINTEL
   AINTEL --> ATLAS[(Atlas: inteligent)]
@@ -84,7 +84,8 @@ flowchart TD
 1. One customer identity: CRM client as master; portal consumes AIntel API instead of
    its own Uporabnik store (or at least a stable `clientId` link instead of email).
 2. One outbound-email service (AIntel communication module) used by portal too.
-3. Replace shared public API key with per-consumer keys + scoped endpoints
-   (widget: inquiries only; portal: equipment only).
+3. AIN-P0-01 split browser and portal keys in AIntel; owner still needs coordinated
+   env/website rotation. Longer term: per-consumer keys and portal identity beyond
+   email.
 4. Widget delivery: serve `videonadzor-widget.js` from AIntel host so website always
    loads the current version.

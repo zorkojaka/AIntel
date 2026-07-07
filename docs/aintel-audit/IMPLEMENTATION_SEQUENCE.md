@@ -22,7 +22,7 @@ required before merge/rollout.
 
 | Order | Item | Assignee | Notes |
 |---|---|---|---|
-| 0.1 | **AIN-P0-01** key split + rotation | [agent] code, [owner] env+rollout, [senior] rollout sequencing | Follow the spec's dual-accept rollout exactly; two separate rotations (internal key first, browser key second) |
+| 0.1 | **AIN-P0-01** key split + rotation | [agent] DONE: code + tests; [owner] env+rollout remains | Internal key is now required for `/clients/*`; owner must set AIntel/portal env and rotate browser key on website/widget |
 | 0.2 | **AIN-P0-02** finance auth (phased) | [agent] backend phase 1, then frontend phase 2 | DONE. D-012 strict default owner-confirmed 2026-07-06: company finance ADMIN/FINANCE only, installer self view scoped server-side. Deploy backend + SPA together |
 | 0.3 | **AIN-P0-03** authenticate `/uploads` | [agent] | Includes the path-traversal guard; pre-ship grep of communication templates for embedded `/uploads` `<img>` |
 | 0.4 | **AIN-P0-04** restart guardrails | [owner] only | Verify prod dist has no `required in production` throw; set `AINTEL_ALLOWED_ORIGINS`; `pm2 reset aintel`; add `max_restarts`/`min_uptime`/`restart_delay`. No app code |

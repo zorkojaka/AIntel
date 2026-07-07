@@ -9,9 +9,10 @@ customer next-step choice, and public reviews endpoints. Admin side: inquiry lis
 settings (which cenik products the engine uses per pillar), review moderation.
 
 ## Surface
-- Public `/api/public/*` (mounted pre-CORS/auth in `core/app.ts`, X-API-Key +
-  in-memory rate limit): options, products (cached 10 min), inquiries (+photos,
-  next-step), clients/equipment (portal), reviews (list/by-token GET+POST).
+- Public `/api/public/*` (mounted pre-CORS/auth in `core/app.ts`): browser-key
+  endpoints for options, products (cached 10 min), inquiries (+photos, next-step), and
+  reviews (list/by-token GET+POST); internal-key `/clients/*` endpoints for portal
+  equipment/inquiry reads.
 - Admin `/api/web-inquiries` (ADMIN, SALES): list, settings GET/PUT, reviews list +
   status PUT.
 - Service `web-inquiry.service.ts` (943): payload validation per pillar
@@ -32,8 +33,9 @@ settings (which cenik products the engine uses per pillar), review moderation.
   engine already finds or creates.
 
 ## Problems
-1. **S1 (Critical)**: same shared API key gates browser widget and the
-   customer-equipment endpoint; key published in website HTML. Split + rotate.
+1. **S1 resolved in code by AIN-P0-01**: browser widget/review endpoints and portal
+   `/clients/*` endpoints now use separate keys. Owner still must complete env and
+   website/portal key rollout.
 2. Rate limit in-memory/per-process, keyed by spoofable XFF; no captcha → spam can
    mass-create clients/projects/emails (S10).
 3. Reaches into 6 modules incl. dynamic model imports (TD-C2); equipment endpoint now

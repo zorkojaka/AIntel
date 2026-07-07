@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-06 (AIN-P1-07 implementation)
-Last reviewed commit: AIN-P1-07 landing on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-07 (AIN-P0-01 implementation)
+Last reviewed commit: AIN-P0-01 landing on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -48,8 +48,9 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
 - 22 backend modules, 10 frontend apps, 35 schema/model files.
 - Modular monolith; compile-time module registry in core-shell App.tsx.
 - Auth: JWT cookie, roles on Employee (User fallback), ADMIN bypasses requireRoles.
-- `/api/public` mounted pre-CORS/auth, single shared X-API-Key (published in website
-  HTML) — Critical exposure S1.
+- `/api/public` mounted pre-CORS/auth. AIN-P0-01 split browser endpoints from
+  server-to-server `/clients/*` routes: the latter now require
+  `AINTEL_INTERNAL_API_KEY`; owner still must roll env/website secrets.
 - Finance company routes and settings writes are role-gated by AIN-P0-02; installers
   keep a server-scoped `/finance/my/earnings` self view.
 - `x-tenant-id`/`x-user-id` trusted from client; frontend actively sends x-tenant-id
@@ -81,6 +82,11 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   embedded `<img ... /uploads ...>` communication/template references in the checked
   source paths. S2 is marked resolved; per-entity upload ownership remains future
   hardening.
+- **AIN-P0-01**: `/api/public/clients/*` now lives on an internal sub-router with
+  non-browser CORS and `AINTEL_INTERNAL_API_KEY` only. Browser widget/review endpoints
+  remain on `AINTEL_WEB_INQUIRY_API_KEY`. Tests cover browser-key rejection on
+  `/clients/equipment`, internal-key success, and browser-key success on `/options`.
+  Owner still needs to set env secrets and rotate website/portal keys.
 - **AIN-P1-06**: installer-prep email now rejects missing/invalid `workOrderId` in both
   controller and service before WorkOrder lookup. Minimal acceptance derived from the
   backlog text: `workOrderId=undefined` returns clean 400 and invalid service input

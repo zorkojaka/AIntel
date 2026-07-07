@@ -13,25 +13,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 
 ## P0 — Security / active exposure
 
-### AIN-P0-01 — Split public API surface; rotate web-inquiry API key
-- **Problem**: One shared X-API-Key gates all `/api/public/*`; it is published in
-  website HTML (inteligent-si/videonadzor.html:12); `GET /api/public/clients/equipment`
-  returns any customer's installed security equipment by email.
-- **Evidence**: `backend/modules/web-inquiries/public.routes.ts` (requireApiKey,
-  equipment route); SECURITY_AND_PRIVACY.md S1.
-- **Value**: Closes public exposure of customer PII/physical-security data.
-- **Scope**: New env var for a second server-only key; move `/clients/equipment`
-  (and any future server-to-server route) behind it; keep widget endpoints on the
-  browser key; rotate both keys (coordinate website + portal env updates); add IP
-  allowlist option for the server key.
-- **Acceptance**: equipment endpoint rejects the browser key; widget flows unchanged
-  (manual test via staging widget); old key invalid.
-- **Deps**: coordinated deploy of AIntel + portal env + website HTML. Effort M. Risk:
-  brief widget downtime if keys mismatched — sequence: add new keys, switch consumers,
-  revoke old.
-- **Files**: public.routes.ts, core/app.ts (optional split mount), portal server.js
-  (env only), inteligent-si pillar pages (inline config), docs: SECURITY, INTEGRATION_MAP.
-
 ### AIN-P0-04 — PM2 restart guardrails (root cause RESOLVED)
 > **Corrected (spec pass): no longer an open investigation.** Root cause confirmed:
 > a **historical boot crash-loop** — an older build hard-required
@@ -142,6 +123,18 @@ Every item lists its docs in-line; at minimum update MODULE_CATALOG review statu
 relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 
 ## Done
+
+### AIN-P0-01 — Split public API surface; rotate web-inquiry API key
+- **Landed**: AIN-P0-01 implementation commit.
+- **Summary**: `/api/public/clients/*` now mounts before the browser-key public router,
+  uses non-browser CORS, and requires `AINTEL_INTERNAL_API_KEY`. Browser-facing
+  options/products/inquiries/reviews remain on `AINTEL_WEB_INQUIRY_API_KEY`.
+- **Acceptance**: backend tests verify `/clients/equipment` rejects the browser key
+  with 401, accepts the internal key with 200 and correct equipment data, and keeps the
+  widget `/options` route working with the browser key while rejecting the internal key.
+- **Owner rollout**: agent did not edit `.env`, portal env, website HTML, or secret
+  values. Owner must set `AINTEL_INTERNAL_API_KEY` in AIntel/portal and rotate the
+  published browser key on the website/widget before production rollout.
 
 ### AIN-P0-03 — Authenticate `/uploads`
 - **Landed**: AIN-P0-03 implementation commit.
