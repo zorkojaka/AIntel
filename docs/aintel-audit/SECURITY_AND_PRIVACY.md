@@ -89,7 +89,7 @@ Confidence: Confirmed / High confidence / Probable / Needs verification.
   no 2FA; 7-day JWT with no revocation; `sameSite=lax` mitigates CSRF for POST but
   state-changing GETs would be exposed (none observed — Probable OK).
 
-## S8 — Injection / input surface — **Medium, Probable**
+## S8 — Injection / input surface — **Medium, Partially resolved**
 
 - Mongoose with `express.json` — classic NoSQL-injection via object payloads is
   partially mitigated by explicit field handling, but hand-rolled validation and
@@ -98,8 +98,11 @@ Confidence: Confirmed / High confidence / Probable / Needs verification.
 - File uploads filter by MIME (client-declared) only; no content sniffing; filenames
   sanitized. Uploaded files are now read behind authentication, but an authenticated
   user could still retrieve a known upload URL until per-entity checks exist.
-- Template rendering (`template-render.service.ts`) interpolates `{{…}}` into email
-  HTML — check escaping of customer-controlled values (Needs verification).
+- Communication template HTML escaping is verified/tested: interpolated token values
+  remain plain text for the email text body, and HTML output is escaped centrally via
+  `renderCommunicationBodyHtml` before sending. Footer HTML token rendering already
+  escapes values. Residual S8 scope remains the broader input surface above (`Mixed`
+  fields, upload MIME/content validation, and any future raw-HTML email features).
 
 ## S9 — Secrets hygiene — **Medium, RESOLVED by read-only scan (2026-07-07)**
 
@@ -131,5 +134,4 @@ Confidence: Confirmed / High confidence / Probable / Needs verification.
 
 1. Nginx config for `dev.inteligent.si/aintel-api` proxy (headers, TLS, IP forwarding).
 2. Atlas network allowlist / user privileges (least privilege?).
-3. Email template escaping (S8).
-4. Backup/restore procedure for Atlas and `/var/www/aintel/uploads`.
+3. Backup/restore procedure for Atlas and `/var/www/aintel/uploads`.

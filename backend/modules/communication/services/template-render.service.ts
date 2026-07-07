@@ -58,6 +58,15 @@ function normalizeMultiline(value: string) {
   return value.replace(/\r\n/g, "\n").trim();
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function toFooterContext(context: TemplateContext): CommunicationFooterRenderContext {
   return {
     sender: context.sender,
@@ -93,6 +102,21 @@ export function renderCommunicationFooterHtmlForEmail(
 
 export function appendCommunicationFooter(body: string, renderedFooter: string) {
   return appendSharedCommunicationFooter(body, renderedFooter);
+}
+
+export function renderCommunicationBodyHtml(body: string, renderedFooterHtml?: string | null) {
+  const escapedMainHtml = normalizeMultiline(body ?? "")
+    .split("\n")
+    .map((line) =>
+      line.trim()
+        ? `<div style="margin:0 0 8px 0;">${escapeHtml(line)}</div>`
+        : '<div style="height:8px;"></div>'
+    )
+    .join("");
+  const footerHtml = normalizeMultiline(renderedFooterHtml ?? "");
+  return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111827;">${escapedMainHtml}${
+    footerHtml ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;">${footerHtml}</div>` : ""
+  }</div>`;
 }
 
 export function buildTemplateContext(input: {

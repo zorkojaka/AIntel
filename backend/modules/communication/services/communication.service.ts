@@ -15,6 +15,7 @@ import { CommunicationMessageModel } from "../schemas/message";
 import { CommunicationEventModel } from "../schemas/event";
 import {
   appendCommunicationFooter,
+  renderCommunicationBodyHtml,
   renderCommunicationFooterHtmlForEmail,
   buildTemplateContext,
   renderCommunicationTemplate,
@@ -164,15 +165,6 @@ function formatDate(value: Date | string | null | undefined) {
     month: "2-digit",
     year: "numeric",
   }).format(date);
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function toPublicLogoUrl(value: unknown) {
@@ -557,17 +549,7 @@ export async function sendInvoiceCommunicationEmail(input: {
   const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
 
   const bodyMainText = stripAppendedFooter(bodyWithoutFooter, renderedFooter);
-  const escapedMainHtml = bodyMainText
-    .split("\n")
-    .map((line) =>
-      line.trim()
-        ? `<div style="margin:0 0 8px 0;">${escapeHtml(line)}</div>`
-        : '<div style="height:8px;"></div>'
-    )
-    .join("");
-  const htmlFinal = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111827;">${escapedMainHtml}${
-    renderedFooterHtml ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;">${renderedFooterHtml}</div>` : ""
-  }</div>`;
+  const htmlFinal = renderCommunicationBodyHtml(bodyMainText, renderedFooterHtml);
 
   const selectedAttachments = Array.from(
     new Set(
@@ -789,17 +771,7 @@ export async function sendOfferCommunicationEmail(input: {
   }
 
   const bodyMainText = stripAppendedFooter(bodyWithoutFooter, renderedFooter);
-  const escapedMainHtml = bodyMainText
-    .split("\n")
-    .map((line) =>
-      line.trim()
-        ? `<div style="margin:0 0 8px 0;">${escapeHtml(line)}</div>`
-        : '<div style="height:8px;"></div>'
-    )
-    .join("");
-  const htmlFinal = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111827;">${escapedMainHtml}${
-    renderedFooterHtml ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;">${renderedFooterHtml}</div>` : ""
-  }</div>`;
+  const htmlFinal = renderCommunicationBodyHtml(bodyMainText, renderedFooterHtml);
 
   const selectedAttachments =
     Array.isArray(input.selectedAttachments) && input.selectedAttachments.length > 0
@@ -1044,17 +1016,7 @@ export async function sendWorkOrderConfirmationCommunicationEmail(input: {
   }
 
   const bodyMainText = stripAppendedFooter(bodyWithoutFooter, renderedFooter);
-  const escapedMainHtml = bodyMainText
-    .split("\n")
-    .map((line) =>
-      line.trim()
-        ? `<div style="margin:0 0 8px 0;">${escapeHtml(line)}</div>`
-        : '<div style="height:8px;"></div>'
-    )
-    .join("");
-  const htmlFinal = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111827;">${escapedMainHtml}${
-    renderedFooterHtml ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;">${renderedFooterHtml}</div>` : ""
-  }</div>`;
+  const htmlFinal = renderCommunicationBodyHtml(bodyMainText, renderedFooterHtml);
 
   const selectedAttachments = Array.from(
     new Set(
@@ -1392,17 +1354,7 @@ export async function sendInstallerPreparationEmail(input: {
     };
   }
   const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
-  const escapedMainHtml = bodyWithoutFooter
-    .split("\n")
-    .map((line) =>
-      line.trim()
-        ? `<div style="margin:0 0 8px 0;">${escapeHtml(line)}</div>`
-        : '<div style="height:8px;"></div>'
-    )
-    .join("");
-  const htmlFinal = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111827;">${escapedMainHtml}${
-    renderedFooterHtml ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;">${renderedFooterHtml}</div>` : ""
-  }</div>`;
+  const htmlFinal = renderCommunicationBodyHtml(bodyWithoutFooter, renderedFooterHtml);
 
   const attachment = await resolveCommunicationAttachment({
     type: "work_order_pdf",

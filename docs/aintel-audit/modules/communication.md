@@ -41,7 +41,10 @@ customer-facing communication; template fallbacks; SMTP diagnostics at startup.
    `465aec9`); SMTP latency blocks API responses; no retry/queue — a failed send is
    only a log entry (message status field exists — verify retry semantics: Needs
    verification).
-4. Template variables interpolated into HTML — escaping unverified (S8).
+4. RESOLVED for current email sends: template variables are rendered into the text
+   body as plain text and escaped when the HTML body is built via
+   `renderCommunicationBodyHtml`; test coverage added for customer-controlled token
+   values (S8 partial).
 5. No inbound email; replies invisible to system.
 
 ## Reuse potential
