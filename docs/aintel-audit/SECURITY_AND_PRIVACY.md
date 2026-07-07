@@ -101,14 +101,21 @@ Confidence: Confirmed / High confidence / Probable / Needs verification.
 - Template rendering (`template-render.service.ts`) interpolates `{{…}}` into email
   HTML — check escaping of customer-controlled values (Needs verification).
 
-## S9 — Secrets hygiene — **Medium, Needs verification**
+## S9 — Secrets hygiene — **Medium, RESOLVED by read-only scan (2026-07-07)**
 
 - `.env` files not inspected (per rules). Bootstrap admin password comes from env and
   is only used when the users collection is empty (Confirmed) — fine.
 - The web-inquiry API key already leaked into public HTML (S1) → treat as compromised
   and rotate regardless of other fixes.
-- Recommend: secret rotation runbook; ensure repo history contains no secrets
-  (not scanned in this audit — follow-up: `git log -p` scan or trufflehog run).
+- Read-only repo scan performed without printing secret values. `gitleaks`/`trufflehog`
+  were not installed, so the scan used high-signal regexes for common cloud tokens,
+  private keys, OpenAI/GitHub/Slack tokens, and credentialed MongoDB URIs.
+- Current tracked tree: no high-signal matches.
+- Git history: only `backend/.env.example` matched the credentialed Mongo URI pattern;
+  redacted review showed an example placeholder file, not a currently tracked secret.
+- Limitation: this is not a certified full secret scan. Run gitleaks/trufflehog in CI or
+  on a maintainer machine before external sharing; still rotate the already-public
+  browser key per AIN-P0-01.
 
 ## S10 — Availability / DoS — **Low–Medium**
 
@@ -125,5 +132,4 @@ Confidence: Confirmed / High confidence / Probable / Needs verification.
 1. Nginx config for `dev.inteligent.si/aintel-api` proxy (headers, TLS, IP forwarding).
 2. Atlas network allowlist / user privileges (least privilege?).
 3. Email template escaping (S8).
-4. Repo secret scan (S9).
-5. Backup/restore procedure for Atlas and `/var/www/aintel/uploads`.
+4. Backup/restore procedure for Atlas and `/var/www/aintel/uploads`.

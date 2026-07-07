@@ -130,16 +130,15 @@ handler). Remaining — most need the **owner** (ops access or a decision):
    shapes the AIN-P1-08 schema.
 3. **Backup/restore procedure** for Atlas + `/var/www/aintel/uploads` — existence
    unknown; highest-severity ops unknown.
-4. **Repo secret scan** (S9) — run gitleaks/trufflehog read-only.
-5. **Email template escaping** of customer-controlled values (S8) — check with
+4. **Email template escaping** of customer-controlled values (S8) — check with
    AIN-P2-04.
-6. **Finance addFromInvoice vs automatic snapshot** — which write path the UI uses.
-7. **CRM people/companies vs clients** actual usage (D-017); dashboard data sources;
+5. **Finance addFromInvoice vs automatic snapshot** — which write path the UI uses.
+6. **CRM people/companies vs clients** actual usage (D-017); dashboard data sources;
    components/ui vs packages/ui overlap.
-8. **nginx `dev.inteligent.si/aintel-api` proxy config** — affects AIN-P0-01
+7. **nginx `dev.inteligent.si/aintel-api` proxy config** — affects AIN-P0-01
    IP-allowlist option.
-10. **zahteve v6 migration** version-tracking mechanism.
-11. **Secondary prod-log signatures** (32× max-call-stack, FinanceSnapshot/BSON) —
+8. **zahteve v6 migration** version-tracking mechanism.
+9. **Secondary prod-log signatures** (32× max-call-stack, FinanceSnapshot/BSON) —
     triage after AIN-P1-02.
 
 ## Next steps
