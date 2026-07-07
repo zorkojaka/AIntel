@@ -113,8 +113,8 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 - **AIN-P3-06** Enum value neutralization (SL→neutral codes + display mapping).
   Effort L. Deps: P3-05 planning.
 - **AIN-P3-07** External pilot tenant. Deps: P2-10, P2-11, P3-05 partially.
-- **AIN-P3-08** Docs debt: mark stale docs superseded (TD-X1/X2), route reference
-  generation (TD-X3), archive dead files (D1–D3, D8, D10 after owner OK).
+- **AIN-P3-08** Docs debt: TD-X1/X2 stale-doc banners and TD-X3 route reference are
+  done. Remaining scope: archive dead files (D1–D3, D8, D10) after owner OK.
 
 ## Documentation updates per item
 Every item lists its docs in-line; at minimum update MODULE_CATALOG review status,

@@ -116,6 +116,9 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   headers and derive from session context/user fallbacks; module-projects no longer
   sends `buildTenantHeaders`. Tests cover spoofed header rejection and the
   single-tenant unauthenticated fallback.
+- **AIN-P3-08 partial**: stale legacy docs already carry superseded/archival banners,
+  and `API_ROUTE_REFERENCE.md` now documents current Express mounts and route groups.
+  Dead-file archiving remains owner-approved only.
 
 ## Genuine unresolved checks (curated in the final review)
 

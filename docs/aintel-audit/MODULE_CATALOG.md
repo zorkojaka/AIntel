@@ -61,6 +61,7 @@ Status as of commit `c0afad8` (2026-07-05). Sizes are TS/TSX line counts (orient
   `/api/auth` (public) and `/api/public` (X-API-Key web intake). `/uploads/*` is also
   behind `requireAuth` as a legacy upload read route. Role gates per mount in
   `backend/routes.ts`.
+- Route reference: [API_ROUTE_REFERENCE.md](API_ROUTE_REFERENCE.md).
 - Frontend modules are compile-time imports into `core-shell` (static registry in
   `App.tsx`), not runtime micro-frontends.
 - Review statuses updated as audit proceeds; see `AUDIT_PROGRESS.md`.

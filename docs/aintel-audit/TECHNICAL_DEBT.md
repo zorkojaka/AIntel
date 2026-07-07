@@ -80,6 +80,6 @@ Each item: evidence → business consequence → technical consequence → sever
 
 | ID | Item | Evidence | Consequence | Sev | Effort |
 |---|---|---|---|---|---|
-| TD-X1 | Stale docs describe in-memory modules | `docs/ARHITEKTURA.md`, `docs/MODULES.md` | Agents/humans misled | Medium | S (mark superseded, point here) |
-| TD-X2 | `docs/30_REALITY.md` auto-report with no signal | file | Noise | Low | S (archive) |
-| TD-X3 | No API reference; routes discoverable only by reading routes.ts | repo | Onboarding cost; integration mistakes | Medium | M (generate route table) |
+| TD-X1 | RESOLVED (AIN-P3-08 partial): stale docs now carry superseded banners | `docs/ARHITEKTURA.md`, `docs/MODULES.md` | Residual risk only if readers ignore the banner | Low | done |
+| TD-X2 | RESOLVED (AIN-P3-08 partial): `docs/30_REALITY.md` marked archival/stale | file | Residual noise only | Low | done |
+| TD-X3 | RESOLVED (AIN-P3-08 partial): route reference added | `docs/aintel-audit/API_ROUTE_REFERENCE.md` | Must be kept updated with route changes | Low | same-PR docs updates |
