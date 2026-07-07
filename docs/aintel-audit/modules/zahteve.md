@@ -18,8 +18,12 @@ products from cenik `classification` (channels, PoE, disk capacity, brackets).
 Project.requestIds[] / activeRequestId → Zahteva (real ObjectId refs). Consumed by
 offer-from-requirements (projects) and web-inquiries (auto-built zahteve).
 Migration scripts `migrate-zahteve-v6.ts`, `migrate-zahteve-execution-cleanup.ts`
-indicate active schema evolution (no version field on schema — Needs verification of
-how v6 is tracked).
+indicate active schema evolution. There is no explicit `schemaVersion` /
+`migrationVersion` field on the Zahteva schema or frontend type; v6 is inferred by
+document shape (`sistemi[]` present and legacy top-level `videonadzor`/`alarm`/
+`domofon`/`pametnaHisa` fields absent). `migrate-zahteve-v6.ts` is not exposed in
+`backend/package.json`; `migrate-zahteve-execution-cleanup.ts` is exposed as a manual
+write script and must not be run from staging while prod/staging share the database.
 
 ## Strengths
 The predlogi engine (classification-driven recorder/switch/disk/bracket selection) is

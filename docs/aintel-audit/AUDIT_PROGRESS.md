@@ -130,6 +130,10 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   uses live `/api/dashboard/installer` data while `/stats` remains static defaults;
   module-projects has a local shadcn-style `components/ui` set alongside shared
   `@aintel/ui`.
+- **Zahteve v6 tracking check**: no explicit schema/migration version marker exists on
+  Zahteva documents or frontend types. v6 is shape-inferred by `sistemi[]` and absence
+  of legacy top-level fields; migration scripts are manual DB writers and were not run
+  from staging.
 
 ## Genuine unresolved checks (curated in the final review)
 
@@ -146,8 +150,7 @@ handler). Remaining — most need the **owner** (ops access or a decision):
    unknown; highest-severity ops unknown.
 4. **nginx `dev.inteligent.si/aintel-api` proxy config** — affects AIN-P0-01
    IP-allowlist option.
-5. **zahteve v6 migration** version-tracking mechanism.
-6. **Secondary prod-log signatures** (32× max-call-stack, FinanceSnapshot/BSON) —
+5. **Secondary prod-log signatures** (32× max-call-stack, FinanceSnapshot/BSON) —
     triage after AIN-P1-02.
 
 ## Next steps
