@@ -101,7 +101,7 @@ AIN-P3-04 portal integration (needs 2.1 clientId).
 
 ## Wave 6 — Multi-company foundations
 
-AIN-P2-09 kill header trust (small, may be pulled earlier — it is also security S3) →
+AIN-P2-09 kill header trust DONE (S3 resolved in code) →
 AIN-P2-10 tenantId backfill ([owner] runs) → AIN-P2-11 config store ([senior]) →
 AIN-P3-05/06 vertical extraction + enum neutralization ([senior], data migration).
 

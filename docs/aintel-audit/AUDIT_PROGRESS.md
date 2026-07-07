@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-07 (AIN-P0-01 implementation)
-Last reviewed commit: AIN-P0-01 landing on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-07 (AIN-P2-09 implementation)
+Last reviewed commit: AIN-P2-09 landing on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -53,8 +53,9 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   `AINTEL_INTERNAL_API_KEY`; owner still must roll env/website secrets.
 - Finance company routes and settings writes are role-gated by AIN-P0-02; installers
   keep a server-scoped `/finance/my/earnings` self view.
-- `x-tenant-id`/`x-user-id` trusted from client; frontend actively sends x-tenant-id
-  via buildTenantHeaders — S3 (Confirmed).
+- AIN-P2-09 removed client-controlled `x-tenant-id`/`x-user-id` trust from tenant/actor
+  helpers and removed frontend `buildTenantHeaders` sends. Multi-tenant data scoping
+  still requires AIN-P2-10.
 - No scheduler/cron (crontab empty); baseline had no backend tests. AIN-P0-03,
   AIN-P1-06, AIN-P1-04, and AIN-P0-02 added focused backend `node:test` coverage for
   upload auth/path resolution, installer-prep ObjectId guards, the five money-flow
@@ -111,6 +112,10 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   equipment endpoint now joins by `clientId` first with legacy `customer.name`
   fallback. Added a read-only backfill report helper; no shared-DB report or write was
   run by the agent.
+- **AIN-P2-09**: `resolveTenantId`/`resolveActorId` ignore spoofable tenant/user
+  headers and derive from session context/user fallbacks; module-projects no longer
+  sends `buildTenantHeaders`. Tests cover spoofed header rejection and the
+  single-tenant unauthenticated fallback.
 
 ## Genuine unresolved checks (curated in the final review)
 
@@ -128,12 +133,10 @@ handler). Remaining — most need the **owner** (ops access or a decision):
 4. **Repo secret scan** (S9) — run gitleaks/trufflehog read-only.
 5. **Email template escaping** of customer-controlled values (S8) — check with
    AIN-P2-04.
-6. **Header-trust blast radius** (S3) — pattern confirmed; per-endpoint enumeration
-   happens naturally in AIN-P2-09.
-7. **Finance addFromInvoice vs automatic snapshot** — which write path the UI uses.
-8. **CRM people/companies vs clients** actual usage (D-017); dashboard data sources;
+6. **Finance addFromInvoice vs automatic snapshot** — which write path the UI uses.
+7. **CRM people/companies vs clients** actual usage (D-017); dashboard data sources;
    components/ui vs packages/ui overlap.
-9. **nginx `dev.inteligent.si/aintel-api` proxy config** — affects AIN-P0-01
+8. **nginx `dev.inteligent.si/aintel-api` proxy config** — affects AIN-P0-01
    IP-allowlist option.
 10. **zahteve v6 migration** version-tracking mechanism.
 11. **Secondary prod-log signatures** (32× max-call-stack, FinanceSnapshot/BSON) —

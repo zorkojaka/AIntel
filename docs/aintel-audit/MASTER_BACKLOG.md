@@ -95,8 +95,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   diff summary). Effort M.
 - **AIN-P2-08** Service module: tickets + maintenance plans + portal intake
   (TARGET §8). Effort XL.
-- **AIN-P2-09** Kill header tenant/actor trust (S3): server-side only; remove
-  buildTenantHeaders from frontend. Effort S–M (verify no legit use).
 - **AIN-P2-10** tenantId backfill on business collections + compound indexes +
   query-layer plugin. Effort L. Deps: P2-09, P1-05.
 - **AIN-P2-11** Config store (namespaced, tenant-scoped, zod-validated) absorbing
@@ -192,3 +190,13 @@ relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
   prefers `clientId` and still supports legacy rows by name; the backfill report is
   dry-run/report-only and must be reviewed by the owner before any future DB-writing
   backfill. Agent did not run the report against Atlas/shared `inteligent`.
+
+### AIN-P2-09 — Kill header tenant/actor trust (S3)
+- **Landed**: AIN-P2-09 implementation commit.
+- **Summary**: `resolveTenantId` and `resolveActorId` now ignore spoofable
+  `x-tenant-id`/`x-user-id` headers and derive identity from server-side session
+  context/user fallbacks. Frontend project panels no longer import or send
+  `buildTenantHeaders`; the helper export was removed.
+- **Acceptance**: backend tests verify spoofed tenant/actor headers do not override
+  session context and unauthenticated single-tenant fallback still returns
+  `inteligent` for tenant and `null` for actor.

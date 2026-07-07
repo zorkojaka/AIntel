@@ -38,18 +38,17 @@ Confidence: Confirmed / High confidence / Probable / Needs verification.
 - Residual risk: phase 1 allows any authenticated user to read upload URLs they know;
   per-entity ownership checks remain a later hardening item.
 
-## S3 — `x-tenant-id` / `x-user-id` header trust — **High now (audit-trail spoofing), Critical for multi-tenant, Confirmed**
+## S3 — `x-tenant-id` / `x-user-id` header trust — **High, RESOLVED (AIN-P2-09)**
 
-- `utils/tenant.ts` prefers client-supplied headers over the authenticated session for
-  both tenant and actor resolution. Any logged-in user can attribute actions to another
-  user or (future) another tenant wherever these helpers are used
-  (logistics controller uses tenant for employee resolution; actor helpers feed audit
-  attribution).
-- Update (Confirmed): the pattern is deliberate — the frontend sends `x-tenant-id`
-  from build-time `VITE_TENANT_ID` via `shared/utils/tenant.ts` `buildTenantHeaders`,
-  used in ExecutionPanel, LogisticsPanel, OffersTab. The client asserts its own tenant.
-- Remediation: derive tenant/actor exclusively from `req.context` (session); remove
-  `buildTenantHeaders` usage frontend-side in the same change.
+- Previously, `utils/tenant.ts` preferred client-supplied headers over the authenticated
+  session for both tenant and actor resolution. Any logged-in user could attribute
+  actions to another user or (future) another tenant wherever these helpers were used.
+- AIN-P2-09 changed `resolveTenantId` and `resolveActorId` to ignore
+  `x-tenant-id`/`x-user-id` and use server-side session context/user fallbacks. The
+  frontend no longer imports or sends `buildTenantHeaders`, and the helper export was
+  removed from `shared/utils/tenant.ts`.
+- Residual multi-tenant work remains in AIN-P2-10: backfill tenant IDs on business
+  collections and add compound indexes/query scoping.
 
 ## S4 — Role-gate gaps on sensitive modules — **High, RESOLVED (AIN-P0-02)**
 

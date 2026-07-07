@@ -29,7 +29,6 @@ import { useConfirmOffer } from "../core/useConfirmOffer";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
 import { AlertTriangle, Camera, Check, ChevronDown, ChevronRight, Download, Loader2, Send, Trash2, X } from "lucide-react";
-import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
 import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
 import { fetchCommunicationFeed } from "../communication/api";
@@ -639,9 +638,7 @@ export function LogisticsPanel({
     let alive = true;
     const fetchEmployees = async () => {
       try {
-        const response = await fetch("/api/employees", {
-          headers: buildTenantHeaders(),
-        });
+        const response = await fetch("/api/employees");
         const payload = await response.json();
         if (!alive) return;
         setEmployees(Array.isArray(payload?.data) ? payload.data : []);

@@ -33,8 +33,8 @@ CategoryMultiSelect, ColorPicker, TableRowActions; the only tested code in the r
 ## shared/types + shared/utils
 De-facto API contract (offers, logistics, communication, project, roles, …) imported
 by backend and frontend — keep this discipline; it is the future module-boundary
-contract layer. Note stray compiled `project.js` (D8) and `tenant.ts` util in shared
-(header-based — related to S3; verify frontend never sends x-tenant-id/x-user-id —
-Needs verification).
+contract layer. Note stray compiled `project.js` (D8). AIN-P2-09 removed the shared
+`buildTenantHeaders` export and module-projects no longer sends client-supplied
+tenant/actor headers.
 
 Confidence: High for shell; others Probable (purpose clear, internals unread).

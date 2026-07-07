@@ -51,13 +51,10 @@ may modify — fine-grained but hand-rolled and easy to drift.
 3. **`/crm`, `/categories`, `/zahteve`, `/photos`, `/files`, `/execution-rules`
    unrestricted for any authenticated role** — mostly acceptable for a small company,
    but customer PII (CRM) readable by all roles. Medium.
-4. **Header-trust in `utils/tenant.ts`** (Confirmed code, exploitability depends on
-   call site): `resolveTenantId` prefers `x-tenant-id` header over the session tenant;
-   `resolveActorId` prefers `x-user-id` header over the session user. Any authenticated
-   user can spoof tenant/actor on endpoints using these helpers (used in logistics and
-   others via `resolveEmployeeIdForTenant`, actor attribution). Today single-tenant so
-   tenant spoofing is moot, but **actor spoofing corrupts the audit trail** and the
-   pattern is a critical blocker for multi-tenant. Severity: High (future Critical).
+4. **RESOLVED (AIN-P2-09): header-trust in `utils/tenant.ts`**. `resolveTenantId` and
+   `resolveActorId` now ignore `x-tenant-id`/`x-user-id` and use server-side session
+   context/user fallbacks. Frontend project panels no longer send `buildTenantHeaders`.
+   Remaining multi-tenant hardening is AIN-P2-10 tenantId backfill/query scoping.
 5. **No permission granularity below role** — no per-project assignment enforcement on
    reads: any SALES/EXECUTION user sees all projects (`listProjects` has no
    assignment filter; installer-scoped filtering exists only in specific preparation

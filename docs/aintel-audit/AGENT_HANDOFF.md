@@ -75,8 +75,9 @@ depth, record it in AUDIT_PROGRESS (area, files, commit) so the next agent inher
 
 - `requireRoles`: ADMIN bypasses everything; several mounts intentionally(?) ungated —
   don't "fix" silently, see AIN-P0-02.
-- `x-tenant-id`/`x-user-id` headers are trusted (S3) — do not build new features on
-  this pattern; use `req.context`.
+- AIN-P2-09 removed `x-tenant-id`/`x-user-id` trust from tenant helpers; keep new
+  features on server-side session context and do not reintroduce client-supplied
+  tenant/actor headers.
 - `autoIndex:false` — adding a schema index does nothing until an ensure-indexes run.
 - Legacy embedded arrays on Project still have live write paths (D5) — don't extend
   them; new work targets OfferVersion/WorkOrder/MaterialOrder collections.

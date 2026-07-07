@@ -40,9 +40,10 @@ Owner still controls env rollout and browser-key rotation.
 Operational reality (audit brief). Risk accepted historically; recommendation to
 supersede via AIN-P1-01.
 
-## D-010 [Existing-inferred] Tenant passed as client header with server fallback
-`shared/utils/tenant.ts` + `backend/utils/tenant.ts`. Recommend superseding (AIN-P2-09):
-tenant strictly from session.
+## D-010 [Superseded by AIN-P2-09] Tenant passed as client header with server fallback
+AIN-P2-09 removed `buildTenantHeaders` and changed backend tenant/actor helpers to
+ignore `x-tenant-id`/`x-user-id`. Tenant/actor identity now comes from server-side
+session context/user fallbacks; AIN-P2-10 remains for business-data tenant scoping.
 
 ## D-011 [Existing-confirmed] Reviews: auto-publish 4–5★, Google redirect,
 auto-request behind default-off flag

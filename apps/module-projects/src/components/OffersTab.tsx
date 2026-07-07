@@ -40,7 +40,6 @@ import {
   type RouteCalculationSettings,
 } from "../api";
 import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
-import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
 import { OfferCommunicationComposeDialog } from "../domains/communication/OfferCommunicationComposeDialog";
 import { OfferSentMessagesTable } from "../domains/communication/OfferSentMessagesTable";
@@ -493,10 +492,9 @@ export function OffersTab({
     let alive = true;
     const fetchAssignmentsData = async () => {
       try {
-        const headers = buildTenantHeaders();
         const [usersRes, employeesRes] = await Promise.all([
-          fetch("/api/users", { headers }),
-          fetch("/api/employees", { headers }),
+          fetch("/api/users"),
+          fetch("/api/employees"),
         ]);
         const usersPayload = await usersRes.json();
         const employeesPayload = await employeesRes.json();
@@ -1969,10 +1967,9 @@ const buildOfferPdfFilename = (
     if (!projectId) return;
     setAssignmentsSaving(true);
     try {
-      const headers = { "Content-Type": "application/json", ...buildTenantHeaders() };
       const response = await fetch(`/api/projects/${projectId}/assignments`, {
         method: "PATCH",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           salesUserId: nextSalesUserId,
           assignedEmployeeIds: nextEmployeeIds,
@@ -3353,6 +3350,5 @@ const buildOfferPdfFilename = (
     </Card>
   );
 }
-
 
 
