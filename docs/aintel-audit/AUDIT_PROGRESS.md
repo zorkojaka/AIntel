@@ -125,6 +125,11 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
 - **Finance write-path check**: `addFromInvoice` is a disabled 410 legacy route and the
   frontend does not call it; invoice issue remains the authoritative
   `createFinanceSnapshot` write path.
+- **CRM/dashboard/UI usage check**: module-crm uses `/api/crm/clients` only while
+  people/companies/notes remain backend-routed legacy entities; active dashboard UI
+  uses live `/api/dashboard/installer` data while `/stats` remains static defaults;
+  module-projects has a local shadcn-style `components/ui` set alongside shared
+  `@aintel/ui`.
 
 ## Genuine unresolved checks (curated in the final review)
 
@@ -139,12 +144,10 @@ handler). Remaining — most need the **owner** (ops access or a decision):
    shapes the AIN-P1-08 schema.
 3. **Backup/restore procedure** for Atlas + `/var/www/aintel/uploads` — existence
    unknown; highest-severity ops unknown.
-4. **CRM people/companies vs clients** actual usage (D-017); dashboard data sources;
-   components/ui vs packages/ui overlap.
-5. **nginx `dev.inteligent.si/aintel-api` proxy config** — affects AIN-P0-01
+4. **nginx `dev.inteligent.si/aintel-api` proxy config** — affects AIN-P0-01
    IP-allowlist option.
-6. **zahteve v6 migration** version-tracking mechanism.
-7. **Secondary prod-log signatures** (32× max-call-stack, FinanceSnapshot/BSON) —
+5. **zahteve v6 migration** version-tracking mechanism.
+6. **Secondary prod-log signatures** (32× max-call-stack, FinanceSnapshot/BSON) —
     triage after AIN-P1-02.
 
 ## Next steps

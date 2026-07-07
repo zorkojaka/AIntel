@@ -7,8 +7,9 @@ Customer master data. Two generations coexist:
 - **clients** (`crmclients`) — the one actually used by flows (projects, web-inquiries,
   equipment endpoint): name, type company/individual, vat_number, address fields,
   email (lowercase, **not unique**), phone, tags, isActive.
-- **people / companies / notes** — earlier CRM entities, still routed and rendered in
-  module-crm; relationship to clients undefined (D6 in DEAD_AND_DUPLICATED_CODE).
+- **people / companies / notes** — earlier CRM entities, still routed backend-side;
+  current module-crm UI uses clients only. Relationship to clients remains undefined
+  (D6/P10 in DEAD_AND_DUPLICATED_CODE; D-017).
 
 ## Surface
 `/api/crm/{people,companies,notes,clients}` — auth only, **no role gate** (any employee

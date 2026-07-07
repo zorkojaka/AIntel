@@ -41,7 +41,7 @@ Status as of commit `c0afad8` (2026-07-05). Sizes are TS/TSX line counts (orient
 | module-finance | 1.3k | Finance tables/charts | finance | survey | [modules/frontend-others.md](modules/frontend-others.md) |
 | module-employees | 1.3k | Employees admin UI | employees, users, employee-profiles | survey | [modules/frontend-others.md](modules/frontend-others.md) |
 | core-shell | 0.8k | Shell: auth pages, layout, static module registry, role-based nav | auth | deep | [modules/frontend-others.md](modules/frontend-others.md) |
-| module-crm | 0.7k | CRM UI (people/companies/clients) | crm | survey | [modules/frontend-others.md](modules/frontend-others.md) |
+| module-crm | 0.7k | CRM clients UI | crm | survey | [modules/frontend-others.md](modules/frontend-others.md) |
 | module-profil | 0.6k | Own profile UI | profile | survey | [modules/frontend-others.md](modules/frontend-others.md) |
 | web-widget | 1 file (JS) | Embeddable inquiry widget for inteligent.si (`videonadzor-widget.js`) | web-inquiries public API | survey | [modules/web-inquiries.md](modules/web-inquiries.md) |
 

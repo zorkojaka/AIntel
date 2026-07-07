@@ -19,16 +19,21 @@ backend modules; check for dead panels when config consolidates.
 Price list table, filters, product form, import UI, category settings.
 
 ## module-dashboard (1,533)
-Dashboard UI richer than its backend (D7) — trace data sources before extending.
+Installer dashboard UI backed by `/api/dashboard/installer` live Project,
+MaterialOrder, and WorkOrder queries. Legacy `/api/dashboard/stats` remains static
+default metrics and is not the active SPA data source.
 
 ## module-finance (1,347) / module-employees (1,329) / module-crm (749) / module-profil (560)
-Tables/charts for finance; employees+users admin; CRM (people/companies/clients +
-exported ClientForm); own profile.
+Tables/charts for finance; employees+users admin; CRM client list/form only
+(`people`/`companies`/`notes` are backend-routed legacy entities, not rendered by
+current module-crm); own profile.
 
 ## packages/ui + packages/theme
-Button, Card, DataTable, Input, Textarea, FileUpload, PhotoCapture, PhotoManager,
+Button, Card, DataTable, Input, Textarea, FileUpload, PhotoManager,
 CategoryMultiSelect, ColorPicker, TableRowActions; the only tested code in the repo
-(4 component tests). Theme tokens + applyTheme().
+(4 component tests). Theme tokens + applyTheme(). `apps/module-projects` also has a
+local shadcn-style `src/components/ui` set used by the project workspace, while other
+modules import the shared `@aintel/ui` package.
 
 ## shared/types + shared/utils
 De-facto API contract (offers, logistics, communication, project, roles, …) imported
