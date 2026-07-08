@@ -143,6 +143,9 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   `NextFunction` types instead of accidental DOM globals.
 - **Docs drift cleanup**: `CURRENT_ARCHITECTURE.md` and `INTEGRATION_MAP.md` now reflect
   the authenticated `/uploads/*` route introduced by AIN-P0-03.
+- **AIN-P3-02 foundation**: added shared frontend API envelope parser/helper and moved
+  module-settings API parsing to it. Broader raw-fetch migration and toast/retry policy
+  remain open.
 
 ## Genuine unresolved checks (curated in the final review)
 

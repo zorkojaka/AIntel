@@ -13,7 +13,8 @@ MODULARIZATION_PLAN).
 ## module-settings (4,661)
 Company settings, logo/color, document prefixes, PDF settings preview, communication
 settings/templates UI. Second-largest frontend package — settings UI outweighs several
-backend modules; check for dead panels when config consolidates.
+backend modules; check for dead panels when config consolidates. Its central API file
+now uses the shared `parseApiEnvelope` helper (AIN-P3-02 foundation).
 
 ## module-cenik (3,744)
 Price list table, filters, product form, import UI, category settings.

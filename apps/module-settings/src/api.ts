@@ -1,5 +1,4 @@
 import {
-  ApiEnvelope,
   CommunicationCategory,
   CommunicationSenderSettings,
   CommunicationTemplate,
@@ -13,6 +12,7 @@ import {
   SettingsDto,
 } from './types';
 import type { RequirementTemplateGroup, RequirementTemplateVariant, OfferGenerationRule } from '@aintel/shared/types/project';
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 
 const DEFAULT_NUMBER_PATTERN = 'PONUDBA-{YYYY}-{SEQ:000}';
 const DEFAULT_PATTERNS: Record<DocumentTypeKey, string> = {
@@ -227,13 +227,7 @@ function mergeWithDefaults(partial?: Partial<SettingsDto>): SettingsDto {
   };
 }
 
-async function parseEnvelope<T>(response: Response): Promise<T> {
-  const payload: ApiEnvelope<T> = await response.json();
-  if (!payload.success) {
-    throw new Error(payload.error ?? 'Neznana napaka pri komunikaciji s strežnikom.');
-  }
-  return payload.data;
-}
+const parseEnvelope = parseApiEnvelope;
 
 export async function fetchSettings(): Promise<SettingsDto> {
   const response = await fetch('/api/settings');
