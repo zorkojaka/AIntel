@@ -31,7 +31,7 @@ Each item: evidence → business consequence → technical consequence → sever
 | TD-B3 | 4 category fields on Product; 2 status fields on MaterialOrder | `product.model.ts`, `material-order.ts` | Filtering bugs, import confusion | Medium | M |
 | TD-B4 | Max+1 ID generation | `generateProjectIdentifiers` (project.ts:393) | Duplicate-key 500s under concurrent creates | Low (single user base) | S (use DocumentCounter) |
 | TD-B5 | Dates as strings (project createdAt, scheduledAt, …) | project/work-order schemas | Wrong sorting/range queries; timezone bugs | Medium | M |
-| TD-B6 | auth.routes.ts uses DOM `Request`/`Response` types accidentally | `auth.routes.ts` blockNonPost (no express type import) | Type safety illusion | Low | S |
+| TD-B6 | RESOLVED (TD-B6 auth route typing fix): auth.routes.ts used DOM `Request`/`Response` types accidentally | `auth.routes.ts` blockNonPost now imports Express `Request`/`Response`/`NextFunction` and calls typed `res.fail` | Type safety illusion removed | Low | Done |
 | TD-B7 | RESOLVED (AIN-P1-06): Live prod error: `'undefined'` → ObjectId cast in installer-prep email | pm2 error log; `communication.service` WorkOrder lookup; fixed with controller + service workOrderId guards | Repro now returns 400 instead of reaching Mongo cast path | Medium | Done |
 
 ## Frontend

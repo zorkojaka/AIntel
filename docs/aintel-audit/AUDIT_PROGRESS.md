@@ -139,6 +139,8 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   rollout runbook. Staging DB split remains owner-owned and not yet verified.
 - **AIN-P3-01**: auth login now has a tested in-memory/per-process failed-attempt
   limiter. Optional 2FA and distributed/session revocation remain future scope.
+- **TD-B6**: auth route `blockNonPost` now uses Express `Request`/`Response`/
+  `NextFunction` types instead of accidental DOM globals.
 
 ## Genuine unresolved checks (curated in the final review)
 

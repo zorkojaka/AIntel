@@ -8,8 +8,8 @@ Login/logout (JWT cookie `aintel_session`), `me`, ADMIN invite + accept-invite,
 password reset request/reset. Tokens: random 32B, SHA-256-hashed at rest, expiry.
 `bootstrapAdminUser` on startup only when users collection empty (env-driven).
 AIN-P3-01 added per-process login rate limiting for failed attempts. Remaining gaps:
-no distributed lockout, no 2FA, no session revocation (S7).
-Quirk: `blockNonPost` typed against DOM Request/Response (TD-B6).
+no distributed lockout, no 2FA, no session revocation (S7). TD-B6 fixed
+`blockNonPost` to use Express route types.
 
 ## users (384) — `/api/users` (ADMIN)
 Login identities: tenantId, email, passwordHash, status ACTIVE/DISABLED (+legacy

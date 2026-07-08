@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { NextFunction, Request, Response, Router } from 'express';
 import {
   acceptInvite,
   invite,
@@ -13,11 +13,11 @@ import { ROLE_ADMIN } from '../../../utils/roles';
 
 const router = Router();
 
-function blockNonPost(req: Request, res: Response, next: () => void) {
+function blockNonPost(req: Request, res: Response, next: NextFunction) {
   if (req.method === 'POST') {
     return next();
   }
-  return (res as any).fail('Metoda ni dovoljena.', 405);
+  return res.fail('Metoda ni dovoljena.', 405);
 }
 
 router.use('/login', blockNonPost);
