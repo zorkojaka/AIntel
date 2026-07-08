@@ -111,8 +111,9 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     `shared/utils/api-client.ts`; core-shell auth, module-settings,
     module-projects, module-employees, module-profil, module-finance,
     module-crm, module-dashboard, and module-cenik API helpers now consume it;
-    module-employees form/service-rate helper also uses it. Remaining scope:
-    migrate more modules and add standardized toast/retry policy.
+    module-employees form/service-rate helper and module-settings secondary
+    sections also use it. Remaining scope: migrate more modules and add
+    standardized toast/retry policy.
 - **AIN-P3-03** Repeat-sale rules on installed equipment age. Effort M. Deps: P2-08.
 - **AIN-P3-04** Portal: offer acceptance + service tickets on shared client identity.
   Effort L. Deps: P1-07, P2-08.

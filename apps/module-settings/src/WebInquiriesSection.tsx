@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Card, Input } from '@aintel/ui';
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 
 type ProductInfo = { id: string; name: string; price: number } | null;
 
@@ -128,8 +129,8 @@ function ProductPicker({
         const response = await fetch(`/api/price-list/items/search?q=${encodeURIComponent(trimmed)}`, {
           signal: controller.signal,
         });
-        const payload = await response.json();
-        const data = Array.isArray(payload?.data) ? (payload.data as SearchItem[]) : [];
+        const payload = await parseApiEnvelope<SearchItem[]>(response, 'Iskanje po ceniku ni uspelo.');
+        const data = Array.isArray(payload) ? payload : [];
         setResults(data.slice(0, 10));
       } catch {
         /* aborted or failed – ignore */
@@ -209,11 +210,10 @@ export function WebInquiriesSection() {
         fetch('/api/web-inquiries/settings'),
         fetch('/api/web-inquiries?limit=30'),
       ]);
-      const settingsPayload = await settingsResponse.json();
-      const inquiriesPayload = await inquiriesResponse.json();
-      if (!settingsPayload?.success) throw new Error(settingsPayload?.error ?? 'Napaka pri branju nastavitev.');
-      setSettings(settingsPayload.data as WebInquirySettings);
-      setInquiries(Array.isArray(inquiriesPayload?.data) ? (inquiriesPayload.data as WebInquiryRow[]) : []);
+      const loadedSettings = await parseApiEnvelope<WebInquirySettings>(settingsResponse, 'Napaka pri branju nastavitev.');
+      const loadedInquiries = await parseApiEnvelope<WebInquiryRow[]>(inquiriesResponse, 'Napaka pri branju povpraševanj.');
+      setSettings(loadedSettings);
+      setInquiries(Array.isArray(loadedInquiries) ? loadedInquiries : []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Napaka pri nalaganju.');
     } finally {
@@ -257,9 +257,8 @@ export function WebInquiriesSection() {
           popusti: settings.popusti,
         }),
       });
-      const payload = await response.json();
-      if (!payload?.success) throw new Error(payload?.error ?? 'Shranjevanje ni uspelo.');
-      setSettings(payload.data as WebInquirySettings);
+      const data = await parseApiEnvelope<WebInquirySettings>(response, 'Shranjevanje ni uspelo.');
+      setSettings(data);
       setStatus('Nastavitve so shranjene.');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Shranjevanje ni uspelo.');
