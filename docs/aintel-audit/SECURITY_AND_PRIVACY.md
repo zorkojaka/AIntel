@@ -67,6 +67,10 @@ Confidence: Confirmed / High confidence / Probable / Needs verification.
   production credentials. A staging bug can corrupt production records; test actions
   send real emails. Remediation is organizational: separate `MONGO_DB` for staging +
   data-sync procedure; gate email sending in staging.
+- AIN-P1-01 agent support added an env-driven shared email trap
+  (`AINTEL_EMAIL_TRAP_TO`, `AINTEL_EMAIL_SUBJECT_PREFIX`) and a rollout runbook at
+  `runbooks/AIN-P1-01_STAGING_DB_EMAIL_TRAP.md`. S5 remains open until owner changes
+  staging `MONGO_DB` and verifies trap behavior in the runtime environment.
 
 ## S6 — PII handling / GDPR — **Medium, High confidence**
 

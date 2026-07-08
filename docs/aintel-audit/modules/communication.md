@@ -17,7 +17,8 @@ health/diagnostics.
 - Services: `communication.service.ts` (1,554 — one send function per document type,
   each building context, rendering template, resolving attachment PDF, sending,
   logging message+event), `email-transport.service.ts` (nodemailer, cached transport,
-  startup diagnostics), `template-render.service.ts` ({{placeholders}}, footer),
+  startup diagnostics, env-driven staging email trap), `template-render.service.ts`
+  ({{placeholders}}, footer),
   `attachment-resolver.service.ts` (renders the right PDF per category).
 
 ## Data
@@ -45,7 +46,10 @@ customer-facing communication; template fallbacks; SMTP diagnostics at startup.
    body as plain text and escaped when the HTML body is built via
    `renderCommunicationBodyHtml`; test coverage added for customer-controlled token
    values (S8 partial).
-5. No inbound email; replies invisible to system.
+5. AIN-P1-01 added an env-driven email trap in the shared transport:
+   `AINTEL_EMAIL_TRAP_TO` redirects outgoing mail, strips cc/bcc, prefixes the subject,
+   and records original recipients in headers. Owner must still enable it in staging.
+6. No inbound email; replies invisible to system.
 
 ## Reuse potential
 High — generic "communication hub" is core-product material once decoupled from

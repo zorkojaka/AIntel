@@ -35,6 +35,9 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 - **Scope**: new `MONGO_DB` for staging + documented data-copy procedure (owner runs);
   staging SMTP override to a trap/prefix mode; README warnings updated.
 - **Acceptance**: staging writes never touch prod db; staging emails clearly marked.
+- **Agent support landed**: shared email trap support and owner runbook
+  `runbooks/AIN-P1-01_STAGING_DB_EMAIL_TRAP.md`; owner env/ops verification still
+  required before marking done.
 - Effort M (mostly ops coordination). **Blocks all test-writing items.**
 
 ### AIN-P1-02 — Error tracking (Sentry or self-hosted GlitchTip)

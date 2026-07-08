@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-07 (AIN-P2-09 implementation)
-Last reviewed commit: AIN-P2-09 landing on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-08 (AIN-P1-01 agent support)
+Last reviewed commit: AIN-P1-01 email trap support on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -134,6 +134,9 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   Zahteva documents or frontend types. v6 is shape-inferred by `sistemi[]` and absence
   of legacy top-level fields; migration scripts are manual DB writers and were not run
   from staging.
+- **AIN-P1-01 agent support**: shared email transport now supports env-driven staging
+  trap (`AINTEL_EMAIL_TRAP_TO`, `AINTEL_EMAIL_SUBJECT_PREFIX`) with tests and an owner
+  rollout runbook. Staging DB split remains owner-owned and not yet verified.
 
 ## Genuine unresolved checks (curated in the final review)
 

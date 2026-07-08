@@ -83,5 +83,7 @@ Not audited; noted only to explain the process list.
 
 Outbound email is sent by AIntel via SMTP (nodemailer,
 `backend/modules/communication/services/email-transport.service.ts`; diagnostics logged
-at startup). The portal sends its own login/notification emails
+at startup). The AIntel transport supports a staging trap via
+`AINTEL_EMAIL_TRAP_TO` and `AINTEL_EMAIL_SUBJECT_PREFIX`; owner must enable those only
+in staging. The portal sends its own login/notification emails
 (`src/pomozno.js`). Two independent SMTP configurations — consolidation candidate.
