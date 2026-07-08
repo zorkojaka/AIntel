@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import type { ProjectStatus } from "../../../types";
 
 export type InvoiceStatus = "draft" | "issued" | "cancelled";
@@ -58,12 +59,7 @@ async function requestInvoiceApi(projectId: string, path: string, options?: Requ
     },
     ...options,
   });
-  const payload = await response.json();
-  if (!payload.success) {
-    const errorMessage = payload.error ?? "Dejanje nad računi ni uspelo.";
-    throw new Error(errorMessage);
-  }
-  return payload.data as InvoiceApiResponse;
+  return parseApiEnvelope<InvoiceApiResponse>(response, "Dejanje nad računi ni uspelo.");
 }
 
 export function useInvoiceVersions(projectId?: string | null) {
@@ -167,11 +163,7 @@ export function useInvoiceVersions(projectId?: string | null) {
     if (!projectId) return null;
     try {
       const response = await fetch(`/api/projects/${projectId}/invoices/next-number`);
-      const payload = await response.json();
-      if (!payload.success) {
-        throw new Error(payload.error ?? "Naslednje številke računa ni mogoče pridobiti.");
-      }
-      return payload.data as NextInvoiceNumberResponse;
+      return parseApiEnvelope<NextInvoiceNumberResponse>(response, "Naslednje številke računa ni mogoče pridobiti.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Naslednje številke računa ni mogoče pridobiti.";
       toast.error(message);
