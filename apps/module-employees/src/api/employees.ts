@@ -1,4 +1,5 @@
 import type { Employee, EmployeePayload } from '../types';
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 
 const API_PREFIX = '/api/employees';
 
@@ -9,13 +10,7 @@ function buildHeaders(extra?: Record<string, string>) {
   };
 }
 
-async function handleResponse<T>(response: Response): Promise<T> {
-  const parsed = await response.json();
-  if (!parsed?.success) {
-    throw new Error(parsed?.error || 'Zahteva ni uspela.');
-  }
-  return parsed.data as T;
-}
+const handleResponse = <T>(response: Response) => parseApiEnvelope<T>(response, 'Zahteva ni uspela.');
 
 export async function fetchEmployees(includeDeleted = false): Promise<Employee[]> {
   const query = includeDeleted ? '?includeDeleted=1' : '';
@@ -50,4 +45,3 @@ export async function deleteEmployee(id: string): Promise<void> {
   });
   await handleResponse(response);
 }
-

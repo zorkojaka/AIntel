@@ -108,9 +108,9 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 - **AIN-P3-02** Shared frontend API client (fetch wrapper + error toasts + retry).
   Effort M.
   - **Foundation landed**: shared `parseApiEnvelope`/`fetchApi` helper in
-    `shared/utils/api-client.ts`; module-settings and module-projects central API
-    files now consume it. Remaining scope: migrate more modules and add standardized
-    toast/retry policy.
+    `shared/utils/api-client.ts`; module-settings, module-projects, and
+    module-employees central API files now consume it. Remaining scope: migrate more
+    modules and add standardized toast/retry policy.
 - **AIN-P3-03** Repeat-sale rules on installed equipment age. Effort M. Deps: P2-08.
 - **AIN-P3-04** Portal: offer acceptance + service tickets on shared client identity.
   Effort L. Deps: P1-07, P2-08.
