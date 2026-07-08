@@ -33,8 +33,8 @@ shared `parseApiEnvelope` (AIN-P3-02 foundation).
 Tables/charts for finance; employees+users admin; CRM client list/form only
 (`people`/`companies`/`notes` are backend-routed legacy entities, not rendered by
 current module-crm); own profile. Module-finance, module-employees, module-crm,
-and module-profil API helpers use shared `parseApiEnvelope` (AIN-P3-02
-foundation).
+and module-profil API helpers use shared `parseApiEnvelope`; employees form
+service-rate API parsing is also on the shared helper (AIN-P3-02 foundation).
 
 ## packages/ui + packages/theme
 Button, Card, DataTable, Input, Textarea, FileUpload, PhotoManager,

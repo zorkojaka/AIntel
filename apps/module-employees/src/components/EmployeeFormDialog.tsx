@@ -1,6 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 import type { Employee, EmployeePayload } from '../types';
 
 interface EmployeeFormDialogProps {
@@ -9,12 +10,6 @@ interface EmployeeFormDialogProps {
   onSubmit: (payload: EmployeePayload) => Promise<void>;
   initialData?: Employee | null;
   submitting?: boolean;
-}
-
-interface ApiEnvelope<T> {
-  success: boolean;
-  data: T;
-  error?: string;
 }
 
 interface AuthMePayload {
@@ -55,11 +50,7 @@ const roleOptions = ['ADMIN', 'SALES', 'EXECUTION', 'FINANCE', 'ORGANIZER'] as c
 type FormTab = 'osnovno' | 'cenik';
 
 async function parseEnvelope<T>(response: Response): Promise<T> {
-  const payload = (await response.json()) as ApiEnvelope<T>;
-  if (!response.ok || !payload.success) {
-    throw new Error(payload.error ?? 'Zahteva ni uspela.');
-  }
-  return payload.data;
+  return parseApiEnvelope<T>(response, 'Zahteva ni uspela.');
 }
 
 export function EmployeeFormDialog({

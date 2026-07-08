@@ -146,8 +146,8 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
 - **AIN-P3-02 foundation**: added shared frontend API envelope parser/helper and moved
   core-shell auth, module-settings, module-projects, module-employees,
   module-profil, module-finance, module-crm, module-dashboard, and module-cenik
-  API parsing to it. Broader raw-fetch migration and toast/retry policy remain
-  open.
+  API parsing to it; module-employees form/service-rate helper also uses it.
+  Broader raw-fetch migration and toast/retry policy remain open.
 
 ## Genuine unresolved checks (curated in the final review)
 
