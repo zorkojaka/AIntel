@@ -18,7 +18,10 @@ backend modules; check for dead panels when config consolidates. Its central API
 now uses the shared `parseApiEnvelope` helper (AIN-P3-02 foundation).
 
 ## module-cenik (3,744)
-Price list table, filters, product form, import UI, category settings.
+Price list table, filters, product form, import UI, category settings. Standard
+cenik API helpers use shared `parseApiEnvelope`; the manual duplicate precheck keeps
+its explicit 409 envelope read because it needs conflict `data` (AIN-P3-02
+foundation).
 
 ## module-dashboard (1,533)
 Installer dashboard UI backed by `/api/dashboard/installer` live Project,

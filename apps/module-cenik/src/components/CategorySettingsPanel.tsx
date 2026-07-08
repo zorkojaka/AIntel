@@ -1,12 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '@aintel/ui';
 import { ChevronDown, ChevronRight, Save, UploadCloud } from 'lucide-react';
-
-type ApiEnvelope<T> = {
-  success: boolean;
-  data: T;
-  error: string | null;
-};
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 
 type CategoryPriority = 1 | 2 | 3 | null;
 
@@ -78,11 +73,7 @@ const syncSteps = [
 ];
 
 async function parseEnvelope<T>(response: Response) {
-  const payload: ApiEnvelope<T> = await response.json();
-  if (!response.ok || !payload.success) {
-    throw new Error(payload.error ?? 'Napaka pri komunikaciji s strežnikom.');
-  }
-  return payload.data;
+  return parseApiEnvelope<T>(response, 'Napaka pri komunikaciji s strežnikom.');
 }
 
 function priorityValue(priority: CategoryPriority) {

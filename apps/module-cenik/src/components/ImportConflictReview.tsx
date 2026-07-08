@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Input } from '@aintel/ui';
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 import type { PriceListSearchItem } from '@aintel/shared/types/price-list';
 
 type CandidateMatch = {
@@ -85,12 +86,12 @@ function SearchExistingProduct({
         const response = await fetch(`/api/price-list/items/search?q=${encodeURIComponent(trimmed)}`, {
           signal: controller.signal,
         });
-        const payload = await response.json();
-        if (!payload.success || !Array.isArray(payload.data)) {
+        const data = await parseApiEnvelope<PriceListSearchItem[]>(response, 'Iskanje produktov ni uspelo.');
+        if (!Array.isArray(data)) {
           setResults([]);
           return;
         }
-        setResults(payload.data.slice(0, 5));
+        setResults(data.slice(0, 5));
       } catch (error) {
         if ((error as DOMException)?.name !== 'AbortError') {
           setResults([]);

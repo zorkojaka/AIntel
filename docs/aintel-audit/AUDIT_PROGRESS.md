@@ -145,8 +145,9 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   the authenticated `/uploads/*` route introduced by AIN-P0-03.
 - **AIN-P3-02 foundation**: added shared frontend API envelope parser/helper and moved
   core-shell auth, module-settings, module-projects, module-employees,
-  module-profil, module-finance, module-crm, and module-dashboard API parsing to
-  it. Broader raw-fetch migration and toast/retry policy remain open.
+  module-profil, module-finance, module-crm, module-dashboard, and module-cenik
+  API parsing to it. Broader raw-fetch migration and toast/retry policy remain
+  open.
 
 ## Genuine unresolved checks (curated in the final review)
 

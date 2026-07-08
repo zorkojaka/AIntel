@@ -1,6 +1,7 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, DataTable, Input, CategoryMultiSelect, TableRowActions } from '@aintel/ui';
 import { ExternalLink, FileDown, FileUp, Pencil, Save, Trash2, X } from 'lucide-react';
+import { parseApiEnvelope, type ApiEnvelope } from '@aintel/shared/utils/api-client';
 import { clearMobileTopbar, setMobileTopbar } from '@aintel/shared/utils/mobileTopbar';
 import type { ProductServiceLink, ProductServiceLinkQuantityMode } from '@aintel/shared/types/product-service-link';
 import FilterBar from './components/FilterBar';
@@ -43,12 +44,6 @@ type ProductServiceLinkDraft = ProductServiceLink;
 type StatusBanner = {
   variant: 'success' | 'error';
   text: string;
-};
-
-type ApiEnvelope<T> = {
-  success: boolean;
-  data: T;
-  error: string | null;
 };
 
 type ImportSource = 'aa_api' | 'services_sheet' | 'dodatki' | 'excel';
@@ -490,11 +485,7 @@ function CategoryChipRow({ slugs, lookup }: CategoryChipRowProps) {
 }
 
 async function parseEnvelope<T>(response: Response) {
-  const payload: ApiEnvelope<T> = await response.json();
-  if (!payload.success) {
-    throw new Error(payload.error ?? 'Napaka pri komunikaciji s strežnikom.');
-  }
-  return payload.data;
+  return parseApiEnvelope<T>(response, 'Napaka pri komunikaciji s strežnikom.');
 }
 
 export const CenikPage: React.FC = () => {
@@ -1313,12 +1304,8 @@ export const CenikPage: React.FC = () => {
     setAuditError(null);
     try {
       const response = await fetch('/api/admin/cenik/audit');
-      const payload: ApiEnvelope<AuditReport> = await response.json();
-      if (!payload.success) {
-        setAuditError(payload.error ?? 'Audit ni uspel.');
-        return;
-      }
-      setAuditResult(payload.data);
+      const data = await parseApiEnvelope<AuditReport>(response, 'Audit ni uspel.');
+      setAuditResult(data);
     } catch (error) {
       setAuditError('Audit ni uspel. Poskusi znova.');
     } finally {
