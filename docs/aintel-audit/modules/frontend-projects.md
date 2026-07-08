@@ -37,5 +37,7 @@ communication feed. It is the operational cockpit of the company.
 ## Strengths
 Domain folder structure is the right direction; shared/types keeps payloads typed;
 mobile-aware pieces (OfferItemsMobile, mobileTopbar util, mobile smoke-test doc).
+The central `api.ts` uses shared `parseApiEnvelope` for envelope parsing
+(AIN-P3-02 foundation).
 
 Confidence: High on structure; component internals Probable.
