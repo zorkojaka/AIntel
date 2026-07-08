@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -40,6 +40,7 @@ type OfferItemsMobileProps = {
   onRevealBlankItem: () => void;
   onUpdateItem: (id: string, changes: Partial<OfferItemsMobileItem>) => void;
   onDeleteItem: (id: string) => void;
+  onMoveItem: (id: string, direction: -1 | 1) => void;
   onSelectProduct: (rowId: string, product: PriceListSearchItem, rowIndex: number) => void;
   onSelectCustomItem: (rowId: string) => void;
   renderItemActions?: (item: OfferItemsMobileItem, rowIndex: number) => ReactNode;
@@ -57,6 +58,7 @@ export function OfferItemsMobile({
   onRevealBlankItem,
   onUpdateItem,
   onDeleteItem,
+  onMoveItem,
   onSelectProduct,
   onSelectCustomItem,
   renderItemActions,
@@ -76,6 +78,17 @@ export function OfferItemsMobile({
     [items, visibleBlankItemId],
   );
 
+  const movableItems = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          item.productId ||
+          (item.name && item.name.trim() !== "") ||
+          (item.quantity && item.quantity !== 0),
+      ),
+    [items],
+  );
+
   useEffect(() => {
     if (!visibleBlankItemId) return;
     blankItemRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -86,6 +99,9 @@ export function OfferItemsMobile({
       <div className="space-y-3 pb-28">
         {visibleItems.map((item, index) => {
           const isVisibleBlank = item.id === visibleBlankItemId;
+          const itemOrderIndex = movableItems.findIndex((entry) => entry.id === item.id);
+          const canMoveUp = itemOrderIndex > 0;
+          const canMoveDown = itemOrderIndex >= 0 && itemOrderIndex < movableItems.length - 1;
           return (
             <div
               key={item.id}
@@ -93,6 +109,30 @@ export function OfferItemsMobile({
               className="rounded-none border bg-card p-4 shadow-sm"
             >
               <div className="mb-3 flex items-start justify-between gap-3">
+                <div className="mt-5 flex shrink-0 flex-col">
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-8 rounded-none"
+                    disabled={!canMoveUp}
+                    onClick={() => onMoveItem(item.id, -1)}
+                    aria-label={`Premakni postavko ${item.name || index + 1} gor`}
+                  >
+                    <ArrowUp className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-8 rounded-none"
+                    disabled={!canMoveDown}
+                    onClick={() => onMoveItem(item.id, 1)}
+                    aria-label={`Premakni postavko ${item.name || index + 1} dol`}
+                  >
+                    <ArrowDown className="h-4 w-4" />
+                  </Button>
+                </div>
                 <div className="min-w-0 flex-1">
                   <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Naziv
