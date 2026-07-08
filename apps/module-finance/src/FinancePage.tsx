@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 import { Bar, CartesianGrid, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import './FinancePage.css';
 
@@ -13,12 +14,6 @@ interface MePayload {
     id?: string;
     roles?: string[];
   } | null;
-}
-
-interface ApiEnvelope<T> {
-  success: boolean;
-  data: T;
-  error?: string;
 }
 
 interface FinanceSnapshotItem {
@@ -162,11 +157,7 @@ async function fetchApi<T>(url: string): Promise<T> {
     },
   });
 
-  const payload = (await response.json()) as ApiEnvelope<T>;
-  if (!response.ok || !payload.success) {
-    throw new Error(payload.error ?? `Napaka API (${response.status})`);
-  }
-  return payload.data;
+  return parseApiEnvelope<T>(response, `Napaka API (${response.status})`);
 }
 
 async function patchApi<T>(url: string, body: unknown): Promise<T> {
@@ -181,11 +172,7 @@ async function patchApi<T>(url: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
 
-  const payload = (await response.json()) as ApiEnvelope<T>;
-  if (!response.ok || !payload.success) {
-    throw new Error(payload.error ?? `Napaka API (${response.status})`);
-  }
-  return payload.data;
+  return parseApiEnvelope<T>(response, `Napaka API (${response.status})`);
 }
 
 async function postApi<T>(url: string, body?: unknown): Promise<T> {
@@ -200,11 +187,7 @@ async function postApi<T>(url: string, body?: unknown): Promise<T> {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
-  const payload = (await response.json()) as ApiEnvelope<T>;
-  if (!response.ok || !payload.success) {
-    throw new Error(payload.error ?? `Napaka API (${response.status})`);
-  }
-  return payload.data;
+  return parseApiEnvelope<T>(response, `Napaka API (${response.status})`);
 }
 
 async function deleteApi<T>(url: string): Promise<T> {
@@ -217,11 +200,7 @@ async function deleteApi<T>(url: string): Promise<T> {
     },
   });
 
-  const payload = (await response.json()) as ApiEnvelope<T>;
-  if (!response.ok || !payload.success) {
-    throw new Error(payload.error ?? `Napaka API (${response.status})`);
-  }
-  return payload.data;
+  return parseApiEnvelope<T>(response, `Napaka API (${response.status})`);
 }
 
 async function fetchAllSnapshots(): Promise<FinanceSnapshot[]> {
