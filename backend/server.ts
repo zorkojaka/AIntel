@@ -1,3 +1,4 @@
+import './instrument'; // must be first: initialises Sentry before app modules load
 import { loadEnvironment } from './loadEnv';
 import { createApp } from './core/app';
 import { connectToMongo } from './db/mongo';

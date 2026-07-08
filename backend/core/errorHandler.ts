@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 
+import { captureRequestException } from './sentry';
+
 export function errorHandler(err: unknown, req: Request, res: Response, next: NextFunction) {
   if (res.headersSent) {
     return next(err);
@@ -12,9 +14,11 @@ export function errorHandler(err: unknown, req: Request, res: Response, next: Ne
   const code = typeof statusCode === 'number' ? statusCode : 500;
 
   // Log unexpected failures with the per-request logger so the stack trace is
-  // correlated with the request id/tenant/user (and picked up by AIN-P1-02).
+  // correlated with the request id/tenant/user, and forward them to Sentry
+  // (AIN-P1-02) with minimal, scrubbed request context.
   if (code >= 500) {
     (req as any).log?.error({ err }, 'Unhandled request error');
+    captureRequestException(err, req, code);
   }
 
   const message = typeof err === 'object' && err !== null && 'message' in err

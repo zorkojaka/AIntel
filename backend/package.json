@@ -26,6 +26,7 @@
     "db:sync-all": "ts-node scripts/sync-products.ts --source aa_api --input data/cenik/aa_api_produkti.json && ts-node scripts/sync-products.ts --source services_sheet --input data/cenik/custom_storitve.json"
   },
   "dependencies": {
+    "@sentry/node": "^10.64.0",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
