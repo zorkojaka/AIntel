@@ -143,6 +143,14 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   `NextFunction` types instead of accidental DOM globals.
 - **Docs drift cleanup**: `CURRENT_ARCHITECTURE.md` and `INTEGRATION_MAP.md` now reflect
   the authenticated `/uploads/*` route introduced by AIN-P0-03.
+- **AIN-P1-03 structured logging**: added `pino` + a `pino-http` middleware mounted
+  first in `createApp`, so every request (incl. `/api/public`) emits one JSON line with
+  a request id (echoed on `x-request-id`), method/url, tenant/user/route from
+  `req.context`, status, and latency. `errorHandler` logs 500s with full stack via
+  `req.log`. Named `console.*` in core/communication-sends/public-intake migrated to the
+  structured logger. Prod/test = JSON; dev = `pino-pretty` on a TTY; tests silent.
+  Verified via smoke + `npm run build` + 29 backend tests green. Owner approved the
+  `pino` dependency 2026-07-08.
 
 ## Genuine unresolved checks (curated in the final review)
 

@@ -175,7 +175,7 @@ router.post('/inquiries', async (req: Request, res: Response) => {
     if (error instanceof WebInquiryError) {
       return res.status(error.statusCode).json({ ok: false, code: error.code, message: error.message });
     }
-    console.error('[web-inquiries] Nepričakovana napaka', error);
+    (req as any).log?.error({ err: error }, '[web-inquiries] Nepričakovana napaka');
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Napaka strežnika. Poskusite znova ali nas pokličite.' });
   }
 });
@@ -208,7 +208,7 @@ router.post('/inquiries/:id/photos', (req: Request, res: Response) => {
       await inquiry.save();
       return res.json({ ok: true, uploaded: records.length, totalPhotos: inquiry.photos.length });
     } catch (error) {
-      console.error('[web-inquiries] Napaka pri shranjevanju slik', error);
+      (req as any).log?.error({ err: error }, '[web-inquiries] Napaka pri shranjevanju slik');
       return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Slik ni bilo mogoče shraniti.' });
     }
   });
@@ -268,7 +268,7 @@ internalRouter.get('/equipment', async (req: Request, res: Response) => {
     }
     return res.json({ ok: true, clientId: String(client._id), projects: rezultat });
   } catch (error) {
-    console.error('[web-inquiries] equipment', error);
+    (req as any).log?.error({ err: error }, '[web-inquiries] equipment');
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Opreme ni mogoče prebrati.' });
   }
 });
@@ -309,7 +309,7 @@ internalRouter.get('/inquiries', async (req: Request, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error('[web-inquiries] inquiries', error);
+    (req as any).log?.error({ err: error }, '[web-inquiries] inquiries');
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Povpraševanj ni mogoče prebrati.' });
   }
 });
@@ -370,7 +370,7 @@ router.post('/inquiries/:id/next-step', async (req: Request, res: Response) => {
     await inquiry.save();
     return res.json({ ok: true, message: NEXT_STEP_MESSAGES[choice] });
   } catch (error) {
-    console.error('[web-inquiries] Napaka pri naslednjem koraku', error);
+    (req as any).log?.error({ err: error }, '[web-inquiries] Napaka pri naslednjem koraku');
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Izbire ni bilo mogoče shraniti.' });
   }
 });

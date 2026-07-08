@@ -1,4 +1,5 @@
 import { Types } from 'mongoose';
+import { logger } from '../../core/logger';
 import { CrmClientModel } from '../crm/schemas/client';
 import { ProductModel } from '../cenik/product.model';
 import {
@@ -634,7 +635,7 @@ async function sendInquiryOfferEmail(input: {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Napaka pri pošiljanju emaila.';
-    console.error('[web-inquiries] Pošiljanje ponudbe po emailu ni uspelo:', message);
+    logger.error({ err: error, scope: 'web-inquiries' }, '[web-inquiries] Pošiljanje ponudbe po emailu ni uspelo');
     await WebInquiryModel.updateOne(
       { _id: input.inquiryId },
       { $set: { emailSent: false, status: 'ponudba_ni_poslana', errorMessage: message } }
