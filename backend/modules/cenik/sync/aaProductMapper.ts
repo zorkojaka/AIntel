@@ -1,6 +1,7 @@
 import { IMPORT_DEFAULTS } from './importDefaults';
 import { classifyProduct, getAttribute } from './classifier';
 import type { AAProductRaw } from './types';
+import { applyAjaxContentOverride } from '../services/ajax-content-overrides';
 import { applyReolinkImageOverride } from '../services/reolink-image-overrides';
 
 const AA_PRODUCT_FIELDS = [
@@ -95,7 +96,7 @@ export function mapAAProductToImportItem(product: AAProductRaw) {
   const description = product.description ?? '';
   const defaults = IMPORT_DEFAULTS.aa_api;
 
-  return applyReolinkImageOverride({
+  return applyAjaxContentOverride(applyReolinkImageOverride({
     externalSource: 'aa_api',
     externalId: product.id,
     externalKey: `aa_api:${product.id}`,
@@ -125,7 +126,7 @@ export function mapAAProductToImportItem(product: AAProductRaw) {
     },
     classification,
     __providedFields: AA_PRODUCT_FIELDS,
-  });
+  }));
 }
 
 export function mapAAProductsToImportItems(products: AAProductRaw[]) {

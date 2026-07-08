@@ -26,7 +26,8 @@
     "db:sync-all": "ts-node scripts/sync-products.ts --source aa_api --input data/cenik/aa_api_produkti.json && ts-node scripts/sync-products.ts --source services_sheet --input data/cenik/custom_storitve.json",
     "blebox:scrape": "ts-node --transpile-only scripts/scrape-blebox.ts",
     "blebox:build-items": "ts-node --transpile-only scripts/build-blebox-items.ts",
-    "blebox:import": "ts-node --transpile-only scripts/import-blebox.ts"
+    "blebox:import": "ts-node --transpile-only scripts/import-blebox.ts",
+    "ajax:apply-content": "ts-node --transpile-only scripts/apply-ajax-content.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
