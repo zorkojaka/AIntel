@@ -43,6 +43,8 @@ type ProductResponse = ProductPayload & {
   pricingRule?: CategoryMarginPricingInfo | null;
   status?: string;
   mergedIntoProductId?: string;
+  merchandising?: ProductDocument['merchandising'];
+  salesStats?: ProductDocument['salesStats'];
   createdAt: Date;
   updatedAt: Date;
 };
@@ -159,6 +161,8 @@ function sanitizeProduct(
     pricingRule,
     status: product.status ?? (product.isActive === false ? 'merged' : 'active'),
     mergedIntoProductId: product.mergedIntoProductId ? String(product.mergedIntoProductId) : '',
+    merchandising: product.merchandising,
+    salesStats: product.salesStats,
     createdAt: product.createdAt,
     updatedAt: product.updatedAt
   });

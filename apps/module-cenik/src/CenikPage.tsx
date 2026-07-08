@@ -7,6 +7,7 @@ import type { ProductServiceLink, ProductServiceLinkQuantityMode } from '@aintel
 import FilterBar from './components/FilterBar';
 import { ImportConflictReview } from './components/ImportConflictReview';
 import { CategorySettingsPanel } from './components/CategorySettingsPanel';
+import { IzlozbaPanel } from './components/IzlozbaPanel';
 
 type Product = {
   _id?: string;
@@ -192,7 +193,7 @@ type DuplicateCandidateGroup = {
   products: DuplicateCandidateProduct[];
 };
 
-type CatalogView = 'cenik' | 'produkti' | 'storitve' | 'category-settings';
+type CatalogView = 'cenik' | 'produkti' | 'storitve' | 'category-settings' | 'izlozba';
 type CenikQuickFilter = 'all' | 'products' | 'services';
 
 type AuditReport = {
@@ -718,6 +719,15 @@ export const CenikPage: React.FC = () => {
         listTitle: 'Seznam storitev za urejanje',
         addLabel: '+ Dodaj storitev',
         emptyLabel: 'Ni najdenih storitev.',
+      };
+    }
+    if (catalogView === 'izlozba') {
+      return {
+        title: 'Spletna izložba',
+        description: 'Kaj kaže spletna stran in v kakšnem vrstnem redu: objava, izpostavljenost, ročni vrstni red in oznake. Privzeto razvršča po dejanski prodaji.',
+        listTitle: 'Spletne skupine',
+        addLabel: '+ Dodaj postavko',
+        emptyLabel: 'Ni kandidatov za izložbo.',
       };
     }
     if (catalogView === 'category-settings') {
@@ -1445,7 +1455,8 @@ export const CenikPage: React.FC = () => {
               { id: 'cenik', label: 'Cenik' },
               { id: 'produkti', label: 'Urejanje produktov' },
               { id: 'storitve', label: 'Urejanje storitev' },
-              { id: 'category-settings', label: 'Nastavitve kategorij' }
+              { id: 'category-settings', label: 'Nastavitve kategorij' },
+              { id: 'izlozba', label: 'Spletna izložba' }
             ] as Array<{ id: CatalogView; label: string }>).map((view) => (
               <Button
                 key={view.id}
@@ -1465,7 +1476,9 @@ export const CenikPage: React.FC = () => {
       </Card>
 
 
-      {catalogView === 'category-settings' ? (
+      {catalogView === 'izlozba' ? (
+        <IzlozbaPanel />
+      ) : catalogView === 'category-settings' ? (
         <CategorySettingsPanel />
       ) : (
         <>
