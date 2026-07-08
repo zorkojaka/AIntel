@@ -89,9 +89,13 @@ Confidence: Confirmed / High confidence / Probable / Needs verification.
 - Good: bcrypt cost 12; reset/invite tokens random 32B, stored as SHA-256 hashes;
   cookie httpOnly + secure(prod) + sameSite=lax; JWT secret mandatory in prod;
   status re-checked per request.
-- Gaps: no login rate limiting / lockout (Confirmed — auth controller has none);
-  no 2FA; 7-day JWT with no revocation; `sameSite=lax` mitigates CSRF for POST but
-  state-changing GETs would be exposed (none observed — Probable OK).
+- AIN-P3-01 added an in-memory/per-process login rate limiter keyed by tenant, email,
+  and request IP; successful login clears the counter. Defaults: 5 attempts / 15
+  minutes, tunable by `AINTEL_LOGIN_RATE_LIMIT_MAX` and
+  `AINTEL_LOGIN_RATE_LIMIT_WINDOW_SECONDS`.
+- Remaining gaps: no distributed lockout across processes, no 2FA, 7-day JWT with no
+  revocation; `sameSite=lax` mitigates CSRF for POST but state-changing GETs would be
+  exposed (none observed — Probable OK).
 
 ## S8 — Injection / input surface — **Medium, Partially resolved**
 

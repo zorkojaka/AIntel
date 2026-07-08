@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-08 (AIN-P1-01 agent support)
-Last reviewed commit: AIN-P1-01 email trap support on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-08 (AIN-P3-01 login rate limiting)
+Last reviewed commit: AIN-P3-01 login rate limiting on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -137,6 +137,8 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
 - **AIN-P1-01 agent support**: shared email transport now supports env-driven staging
   trap (`AINTEL_EMAIL_TRAP_TO`, `AINTEL_EMAIL_SUBJECT_PREFIX`) with tests and an owner
   rollout runbook. Staging DB split remains owner-owned and not yet verified.
+- **AIN-P3-01**: auth login now has a tested in-memory/per-process failed-attempt
+  limiter. Optional 2FA and distributed/session revocation remain future scope.
 
 ## Genuine unresolved checks (curated in the final review)
 

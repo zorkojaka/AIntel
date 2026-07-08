@@ -105,7 +105,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 
 ## P3 — Product & polish
 
-- **AIN-P3-01** Login rate limiting + optional 2FA. Effort M.
 - **AIN-P3-02** Shared frontend API client (fetch wrapper + error toasts + retry).
   Effort M.
 - **AIN-P3-03** Repeat-sale rules on installed equipment age. Effort M. Deps: P2-08.
@@ -203,3 +202,11 @@ relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 - **Acceptance**: backend tests verify spoofed tenant/actor headers do not override
   session context and unauthenticated single-tenant fallback still returns
   `inteligent` for tenant and `null` for actor.
+
+### AIN-P3-01 — Login rate limiting
+- **Landed**: AIN-P3-01 implementation commit.
+- **Summary**: Added an in-memory/per-process failed-login limiter keyed by tenant,
+  normalized email, and request IP. Successful login resets the counter; blocked
+  attempts return 429 with `Retry-After`.
+- **Acceptance**: unit tests verify threshold blocking, reset/window expiry, and env
+  tuning. Optional 2FA remains future scope and was not implemented.
