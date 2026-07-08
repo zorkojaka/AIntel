@@ -27,8 +27,8 @@ default metrics and is not the active SPA data source.
 ## module-finance (1,347) / module-employees (1,329) / module-crm (749) / module-profil (560)
 Tables/charts for finance; employees+users admin; CRM client list/form only
 (`people`/`companies`/`notes` are backend-routed legacy entities, not rendered by
-current module-crm); own profile. Module-employees central API file uses shared
-`parseApiEnvelope` (AIN-P3-02 foundation).
+current module-crm); own profile. Module-employees and module-profil central API
+files use shared `parseApiEnvelope` (AIN-P3-02 foundation).
 
 ## packages/ui + packages/theme
 Button, Card, DataTable, Input, Textarea, FileUpload, PhotoManager,

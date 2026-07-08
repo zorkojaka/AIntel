@@ -1,8 +1,4 @@
-export interface ApiEnvelope<T> {
-  success: boolean;
-  data: T;
-  error?: string | null;
-}
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 
 export interface ProfileOverview {
   name: string;
@@ -78,11 +74,7 @@ async function request<T>(url: string): Promise<T> {
       'X-Requested-With': 'XMLHttpRequest',
     },
   });
-  const payload = (await response.json()) as ApiEnvelope<T>;
-  if (!response.ok || !payload.success) {
-    throw new Error(payload.error || 'Zahteva ni uspela.');
-  }
-  return payload.data;
+  return parseApiEnvelope<T>(response, 'Zahteva ni uspela.');
 }
 
 export function fetchProfileOverview() {
