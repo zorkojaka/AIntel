@@ -23,7 +23,8 @@ Price list table, filters, product form, import UI, category settings.
 ## module-dashboard (1,533)
 Installer dashboard UI backed by `/api/dashboard/installer` live Project,
 MaterialOrder, and WorkOrder queries. Legacy `/api/dashboard/stats` remains static
-default metrics and is not the active SPA data source.
+default metrics and is not the active SPA data source. Dashboard API parsing uses
+shared `parseApiEnvelope` (AIN-P3-02 foundation).
 
 ## module-finance (1,347) / module-employees (1,329) / module-crm (749) / module-profil (560)
 Tables/charts for finance; employees+users admin; CRM client list/form only

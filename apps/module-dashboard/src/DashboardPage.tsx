@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { Button, Card } from '@aintel/ui';
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useDashboardLayout } from './hooks/useDashboardLayout';
 import { useInstallerDashboardData } from './hooks/useInstallerDashboardData';
@@ -9,6 +10,11 @@ import type { DashboardWidgetId } from './types';
 const DEFAULT_AUTH = {
   userId: null as string | null,
   employeeId: null as string | null,
+};
+
+type DashboardAuthPayload = {
+  user?: { id?: string | null } | null;
+  employee?: { id?: string | null } | null;
 };
 
 export function DashboardPage() {
@@ -24,16 +30,13 @@ export function DashboardPage() {
     const loadAuth = async () => {
       try {
         const response = await fetch('/api/auth/me', { credentials: 'include' });
-        const result = await response.json();
-        if (!result?.success) {
-          return;
-        }
+        const data = await parseApiEnvelope<DashboardAuthPayload>(response, 'Prijave ni mogoče preveriti.');
         if (!active) {
           return;
         }
         setAuth({
-          userId: result?.data?.user?.id ?? null,
-          employeeId: result?.data?.employee?.id ?? null,
+          userId: data?.user?.id ?? null,
+          employeeId: data?.employee?.id ?? null,
         });
       } catch {
         if (!active) {
