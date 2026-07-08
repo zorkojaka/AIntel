@@ -56,9 +56,11 @@ Middleware order in `core/app.ts` (Confirmed):
 2. Global CORS (allowlist in production: aintel domains + `AINTEL_ALLOWED_ORIGINS`).
 3. `express.json`, `cookieParser`, response helpers, normalizePayload.
 4. `/health`, `/api/health` (Mongo readyState).
-5. `/uploads` — `express.static('/var/www/aintel/uploads')` **without auth**.
-6. `/api/auth` (public), then `/api` behind `requireAuth` → `routes.ts`.
-7. `errorHandler`.
+5. `/api/auth` (public).
+6. `/uploads/*` — authenticated legacy upload streaming route with path-traversal
+   protection (AIN-P0-03).
+7. `/api` behind `requireAuth` → `routes.ts`.
+8. `errorHandler`.
 
 ### Module anatomy and quality gradient
 

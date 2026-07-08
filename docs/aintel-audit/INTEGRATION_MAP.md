@@ -59,8 +59,9 @@ Commit `c0afad8`.
 ## File storage
 
 - Local disk `/var/www/aintel/uploads/{entityType}/{entityId}` (files, photos,
-  web-inquiry photos). Served statically at `/uploads` without auth. No object
-  storage, no backup policy visible from the repo (Needs verification).
+  web-inquiry photos). Served through authenticated `GET /uploads/*` streaming with
+  path-traversal protection (AIN-P0-03). No object storage, no backup policy visible
+  from the repo (Needs verification).
 
 ## Summary diagram
 

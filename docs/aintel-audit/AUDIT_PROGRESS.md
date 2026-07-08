@@ -141,6 +141,8 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   limiter. Optional 2FA and distributed/session revocation remain future scope.
 - **TD-B6**: auth route `blockNonPost` now uses Express `Request`/`Response`/
   `NextFunction` types instead of accidental DOM globals.
+- **Docs drift cleanup**: `CURRENT_ARCHITECTURE.md` and `INTEGRATION_MAP.md` now reflect
+  the authenticated `/uploads/*` route introduced by AIN-P0-03.
 
 ## Genuine unresolved checks (curated in the final review)
 
