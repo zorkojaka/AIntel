@@ -915,18 +915,45 @@ const IZDELKI_SKUPINE: Array<{ key: string; label: string; query: Record<string,
   { key: 'blebox', label: 'Blebox pametni dom', query: { categorySlugs: 'blebox' } },
 ];
 
+// ECO-33/35 ordering: owner curation first (vrstniRed, featured), then real
+// sales volume from accepted offers (salesStats), price only as tiebreaker.
+function compareForDisplay(a: any, b: any) {
+  const aOrder = a?.merchandising?.vrstniRed;
+  const bOrder = b?.merchandising?.vrstniRed;
+  if (typeof aOrder === 'number' || typeof bOrder === 'number') {
+    if (typeof aOrder !== 'number') return 1;
+    if (typeof bOrder !== 'number') return -1;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+  }
+  const featured = Number(Boolean(b?.merchandising?.featured)) - Number(Boolean(a?.merchandising?.featured));
+  if (featured !== 0) return featured;
+  const sold = (b?.salesStats?.soldQty ?? 0) - (a?.salesStats?.soldQty ?? 0);
+  if (sold !== 0) return sold;
+  return (b?.prodajnaCena ?? 0) - (a?.prodajnaCena ?? 0);
+}
+
 export async function getWebIzdelki(limit = 8) {
   const skupine = [];
   for (const skupina of IZDELKI_SKUPINE) {
-    const products = await ProductModel.find({
+    const candidates = await ProductModel.find({
       ...skupina.query,
       isActive: true,
       prodajnaCena: { $gt: 0 },
+      'merchandising.published': { $ne: false },
       $or: [{ povezavaDoSlike: { $nin: [null, ''] } }, { 'aaData.image': { $nin: [null, ''] } }],
     })
-      .sort({ prodajnaCena: -1 })
-      .limit(limit)
+      .select({
+        ime: 1,
+        kratekOpis: 1,
+        prodajnaCena: 1,
+        'aaData.image': 1,
+        'aaData.vat': 1,
+        povezavaDoSlike: 1,
+        merchandising: 1,
+        'salesStats.soldQty': 1,
+      })
       .lean();
+    const products = candidates.sort(compareForDisplay).slice(0, limit);
     skupine.push({
       key: skupina.key,
       label: skupina.label,
@@ -938,6 +965,7 @@ export async function getWebIzdelki(limit = 8) {
           shortDescription: (product.kratekOpis ?? '').slice(0, 140),
           priceWithVat: Number((Number(product.prodajnaCena ?? 0) * (1 + vatRate / 100)).toFixed(2)),
           image: product.povezavaDoSlike || product?.aaData?.image || '',
+          badge: product?.merchandising?.oznaka || '',
         };
       }),
     });

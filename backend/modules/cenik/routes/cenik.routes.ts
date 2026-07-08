@@ -5,7 +5,8 @@ import {
   getAllProducts,
   getProductById,
   precheckCreateProduct,
-  updateProduct
+  updateProduct,
+  updateProductMerchandising
 } from '../controllers/cenik.controller';
 import {
   createProductServiceLink,
@@ -21,6 +22,7 @@ router.get('/products/:id', getProductById);
 router.post('/products/precheck', precheckCreateProduct);
 router.post('/products', createProduct);
 router.put('/products/:id', updateProduct);
+router.patch('/products/:id/merchandising', updateProductMerchandising);
 router.delete('/products/:id', deleteProduct);
 router.get('/product-service-links', getProductServiceLinks);
 router.post('/product-service-links', createProductServiceLink);

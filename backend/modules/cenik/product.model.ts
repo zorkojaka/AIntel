@@ -63,6 +63,23 @@ export interface ProductDocument extends Document {
   };
   mergedIntoProductId?: mongoose.Types.ObjectId;
   status?: 'active' | 'merged';
+  // ECO-33: owner-managed display curation. Never written by import syncs.
+  merchandising?: {
+    published?: boolean;
+    featured?: boolean;
+    vrstniRed?: number;
+    oznaka?: string;
+  };
+  // ECO-35: derived sales statistics from accepted offer versions.
+  // Recomputed by scripts/compute-sales-stats.ts; never synced from imports.
+  salesStats?: {
+    soldQty?: number;
+    soldQty365?: number;
+    offersCount?: number;
+    salesRank?: number;
+    boughtWith?: Array<{ productId: string; ime: string; count: number }>;
+    computedAt?: Date;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -153,7 +170,41 @@ const ProductSchema = new Schema<ProductDocument>(
       default: undefined,
     },
     mergedIntoProductId: { type: Schema.Types.ObjectId, ref: 'Product', default: undefined },
-    status: { type: String, enum: ['active', 'merged'], default: 'active' }
+    status: { type: String, enum: ['active', 'merged'], default: 'active' },
+    merchandising: {
+      type: {
+        published: { type: Boolean, default: true },
+        featured: { type: Boolean, default: false },
+        vrstniRed: { type: Number, default: undefined },
+        oznaka: { type: String, trim: true, default: '' }
+      },
+      required: false,
+      default: undefined,
+      _id: false
+    },
+    salesStats: {
+      type: {
+        soldQty: { type: Number, default: 0 },
+        soldQty365: { type: Number, default: 0 },
+        offersCount: { type: Number, default: 0 },
+        salesRank: { type: Number, default: undefined },
+        boughtWith: {
+          type: [
+            {
+              productId: { type: String, required: true },
+              ime: { type: String, trim: true, default: '' },
+              count: { type: Number, default: 0 },
+              _id: false
+            }
+          ],
+          default: []
+        },
+        computedAt: { type: Date, default: undefined }
+      },
+      required: false,
+      default: undefined,
+      _id: false
+    }
   },
   {
     timestamps: true

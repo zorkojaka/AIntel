@@ -27,7 +27,8 @@
     "blebox:scrape": "ts-node --transpile-only scripts/scrape-blebox.ts",
     "blebox:build-items": "ts-node --transpile-only scripts/build-blebox-items.ts",
     "blebox:import": "ts-node --transpile-only scripts/import-blebox.ts",
-    "ajax:apply-content": "ts-node --transpile-only scripts/apply-ajax-content.ts"
+    "ajax:apply-content": "ts-node --transpile-only scripts/apply-ajax-content.ts",
+    "stats:products": "ts-node --transpile-only scripts/compute-sales-stats.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
