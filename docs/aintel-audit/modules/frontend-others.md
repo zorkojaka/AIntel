@@ -8,7 +8,8 @@ static module registry: manifests imported at compile time, `moduleRoleMap` filt
 nav by role (UI-only enforcement — backend gates remain authoritative). Path-prefix
 routing, no react-router (TD-F3). Adding a module = editing App.tsx (no dynamic
 loading) — acceptable now, relevant to productization (module activation concept in
-MODULARIZATION_PLAN).
+MODULARIZATION_PLAN). Auth API parsing uses shared `parseApiEnvelope` while
+preserving the non-JSON backend proxy guard (AIN-P3-02 foundation).
 
 ## module-settings (4,661)
 Company settings, logo/color, document prefixes, PDF settings preview, communication
