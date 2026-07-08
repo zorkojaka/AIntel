@@ -144,9 +144,9 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
 - **Docs drift cleanup**: `CURRENT_ARCHITECTURE.md` and `INTEGRATION_MAP.md` now reflect
   the authenticated `/uploads/*` route introduced by AIN-P0-03.
 - **AIN-P3-02 foundation**: added shared frontend API envelope parser/helper and moved
-  module-settings, module-projects, module-employees, module-profil, and
-  module-finance central API parsing to it. Broader raw-fetch migration and
-  toast/retry policy remain open.
+  module-settings, module-projects, module-employees, module-profil,
+  module-finance, and module-crm API parsing to it. Broader raw-fetch migration
+  and toast/retry policy remain open.
 
 ## Genuine unresolved checks (curated in the final review)
 

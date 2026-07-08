@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, TableRowActions } from '@aintel/ui';
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 import { ClientForm } from './components/ClientForm';
 import { ClientsCardsMobile } from './components/ClientsCardsMobile';
 import { ClientsTableDesktop } from './components/ClientsTableDesktop';
@@ -22,17 +23,17 @@ export const CRMPage: React.FC = () => {
     setClientsLoading(true);
     try {
       const response = await fetch('/api/crm/clients');
-      const payload = await response.json();
-      if (!payload.success) {
-        setClientsError(payload.error ?? 'Neznana napaka pri nalaganju strank.');
-        return;
-      }
-      if (Array.isArray(payload.data)) {
-        setClients(payload.data);
+      const data = await parseApiEnvelope<unknown>(response, 'Neznana napaka pri nalaganju strank.');
+      if (Array.isArray(data)) {
+        setClients(data);
       } else {
         setClientsError('Neveljaven odgovor streznika.');
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message !== 'Neznana napaka pri nalaganju strank.') {
+        setClientsError(error.message);
+        return;
+      }
       setClientsError('Ne morem naloziti strank.');
     } finally {
       setClientsLoading(false);
@@ -86,27 +87,20 @@ export const CRMPage: React.FC = () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const result = await response.json();
-    if (!result.success) {
-      throw new Error(result.error ?? 'Prislo je do napake.');
-    }
+    await parseApiEnvelope<unknown>(response, 'Prislo je do napake.');
   };
 
   const softDeleteClient = useCallback(async (client: Client) => {
     setClientsError('');
     try {
       const response = await fetch(`/api/crm/clients/${client.id}`, { method: 'DELETE' });
-      const result = await response.json();
-      if (!result.success) {
-        setClientsError(result.error ?? 'Stranke ni bilo mogoče odstraniti.');
-        return;
-      }
+      await parseApiEnvelope<unknown>(response, 'Stranke ni bilo mogoče odstraniti.');
       setClients((current) => current.filter((entry) => entry.id !== client.id));
       if (selectedClient?.id === client.id) {
         closeClientModal();
       }
-    } catch {
-      setClientsError('Stranke ni bilo mogoče odstraniti.');
+    } catch (error) {
+      setClientsError(error instanceof Error ? error.message : 'Stranke ni bilo mogoče odstraniti.');
     }
   }, [selectedClient]);
 
