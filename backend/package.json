@@ -23,7 +23,10 @@
     "db:sync-aa": "ts-node scripts/sync-products.ts --source aa_api --input data/cenik/aa_api_produkti.json",
     "db:migrate-aa-attributes": "ts-node scripts/migrate-cenik-aa-attributes.ts",
     "db:sync-services": "ts-node scripts/sync-products.ts --source services_sheet --input data/cenik/custom_storitve.json",
-    "db:sync-all": "ts-node scripts/sync-products.ts --source aa_api --input data/cenik/aa_api_produkti.json && ts-node scripts/sync-products.ts --source services_sheet --input data/cenik/custom_storitve.json"
+    "db:sync-all": "ts-node scripts/sync-products.ts --source aa_api --input data/cenik/aa_api_produkti.json && ts-node scripts/sync-products.ts --source services_sheet --input data/cenik/custom_storitve.json",
+    "blebox:scrape": "ts-node --transpile-only scripts/scrape-blebox.ts",
+    "blebox:build-items": "ts-node --transpile-only scripts/build-blebox-items.ts",
+    "blebox:import": "ts-node --transpile-only scripts/import-blebox.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

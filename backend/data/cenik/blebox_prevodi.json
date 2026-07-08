@@ -1,0 +1,238 @@
+{
+  "meta": {
+    "source": "blebox",
+    "language": "sl",
+    "note": "Slovenski prodajni opisi BleBox produktov (ECO-31). kratekOpis <= 200 znakov; dolgOpis = daljša predstavitev za stran in ponudbe. Vir: blebox.eu (pooblaščeni zastopnik), priredba AI + pregled Jaka.",
+    "updatedAt": "2026-07-08"
+  },
+  "translations": {
+    "rollergate": {
+      "kratekOpis": "WiFi krmilnik za rolo vrata z varnostnimi sistemi (IR zavesa, varnostna letev). Odstotno odpiranje s telefonom ali osvetljeno čelno ploščo na dotik.",
+      "dolgOpis": "rollerGate je namenski WiFi krmilnik za rolo vrata z motornim pogonom. Podpira varnostne sisteme, kot sta IR svetlobna zavesa in varnostna letev, vrata pa lahko odprete do poljubnega odstotka – s telefonom v aplikaciji wBox ali z osvetljeno čelno ploščo na dotik. Dodatno lahko priključite tudi klasične daljince ter nastavite samodejne akcije in obvestila."
+    },
+    "gatebox": {
+      "kratekOpis": "WiFi modul za krmilnice dvoriščnih in garažnih vrat. Odpiranje, zapiranje in preverjanje stanja vrat s telefonom, obvestila in deljenje dostopa.",
+      "dolgOpis": "gateBox se poveže na obstoječo krmilnico dvoriščnih ali garažnih vrat in vam omogoči odpiranje, zapiranje in preverjanje stanja vrat od koderkoli. V aplikaciji wBox lahko dostop varno delite z družino ali najemniki, prejemate obvestila ob odprtju in nastavite samodejne akcije. Deluje z veliko večino krmilnic na trgu, brez menjave obstoječega pogona."
+    },
+    "doorbox": {
+      "kratekOpis": "WiFi krmilnik za odpiranje vrat, ključavnic in električnih zapahov. Upravljanje na daljavo in spremljanje stanja zaprtosti v realnem času.",
+      "dolgOpis": "doorBox odpira vrata, vratca, električne zapahe in ključavnice kar s telefonom – od blizu ali od koderkoli po svetu. V realnem času spremlja, ali so vrata odprta ali zaprta, in vas o dogodkih obvesti na telefon. Dostop lahko prek brezplačnega BleBox oblaka delite z drugimi uporabniki ali ustvarite lokalne račune brez povezave v oblak – idealno za dom, pisarno ali oddajanje."
+    },
+    "shutterbox": {
+      "kratekOpis": "WiFi krmilnik za senčila, rolete, žaluzije, tende in okna na 230 V. Urniki z astronomsko uro – želeni položaj ob sončnem vzhodu in zahodu.",
+      "dolgOpis": "shutterBox pametno krmili rolete, žaluzije, senčila, tende, zavese ali okna s pogonom na 230 V. Senčilo lahko postavite v točno določen položaj, urnik z astronomsko uro pa poskrbi, da se ob sončnem vzhodu in zahodu premakne samodejno. Upravljate ga s telefonom, stenskim tipkalom ali daljincem, podpira pa tudi skupinsko krmiljenje več senčil hkrati."
+    },
+    "shutterboxdc": {
+      "kratekOpis": "WiFi krmilnik za rolete, žaluzije, tende in okna z 12–24 V DC pogoni. Premik v izbrani položaj ob sončnem vzhodu in zahodu.",
+      "dolgOpis": "shutterBoxDC krmili senčila in okenske pogone na enosmerno napetost 12–24 V DC. Omogoča odstotno pozicioniranje, urnike z astronomsko uro (samodejni premik ob sončnem vzhodu in zahodu), upravljanje s telefonom, tipkalom ali daljincem ter povezovanje z BleBox senzorji – na primer samodejni dvig tende ob močnem vetru."
+    },
+    "switchbox": {
+      "kratekOpis": "WiFi vklopno/izklopno rele stikalo velike moči (230 V, 16 A, do 3500 W) ali vklop za določen čas. Urniki, tipkalo, akcije, obvestila.",
+      "dolgOpis": "switchBox je univerzalno WiFi rele stikalo velike moči (16 A / 3500 W), s katerim s telefonom vklapljate praktično katerokoli električno napravo – luči, grelnike, črpalke, likalnik ali božične lučke. Podpira urnike z astronomsko uro, funkcijo »vklopi za določen čas«, klasično stensko tipkalo ter akcije in obvestila v povezavi z drugimi BleBox napravami. Zaradi miniaturnih dimenzij se skrije v podometno dozo."
+    },
+    "switchbox-light": {
+      "kratekOpis": "Miniaturno WiFi stikalo za 230 V – vklop/izklop ali vklop za določen čas. Urniki, tipkalo, akcije, obvestila. Idealno za luči.",
+      "dolgOpis": "switchBox LIGHT je kompaktna različica priljubljenega WiFi stikala, namenjena predvsem razsvetljavi na 230 V. Luč vklopite s telefonom, urnikom ali obstoječim stenskim tipkalom, na voljo pa so tudi funkcija vklopa za določen čas, samodejne akcije in obvestila. Zaradi majhnosti se enostavno skrije za obstoječe stikalo v dozi."
+    },
+    "switchboxd": {
+      "kratekOpis": "Dvojno WiFi stikalo za 230 V – dva neodvisna izhoda, vklop/izklop ali vklop za določen čas. Urniki, tipkala, akcije, obvestila.",
+      "dolgOpis": "switchBoxD v enem miniaturnem ohišju združuje dve neodvisni WiFi stikali za 230 V – popoln za dvojno stikalo luči ali dve ločeni napravi. Vsak kanal upravljate posebej, s telefonom, urnikom ali obstoječima tipkaloma. Podpira funkcijo vklopa za določen čas, samodejne akcije in obvestila na telefon."
+    },
+    "switchboxdc": {
+      "kratekOpis": "WiFi breznapetostno (potencialno prosto) stikalo, napajanje 12–24 V DC. Vklop/izklop ali vklop za določen čas, urniki, akcije, obvestila.",
+      "dolgOpis": "switchBoxDC je WiFi stikalo z breznapetostnim (potencialno prostim) izhodom in napajanjem 12–24 V DC. Uporablja se za krmiljenje nizkonapetostnih naprav, krmilnic in avtomatike, kjer potrebujete suh kontakt. Upravljanje s telefonom, urniki, tipkalom, samodejne akcije in obvestila – vse prek aplikacije wBox."
+    },
+    "dimmerbox": {
+      "kratekOpis": "WiFi zatemnilnik za 230 V halogenske in zatemnilne LED sijalke. Svetlost nastavljate s telefonom, urnikom ali stenskim tipkalom.",
+      "dolgOpis": "dimmerBox omogoča mehko zatemnjevanje razsvetljave na 230 V – halogenskih in zatemnilnih LED sijalk. Svetlost nastavite s telefonom, prek urnika ali z obstoječim stenskim tipkalom, svetloba pa se vklaplja postopno in prijetno. V povezavi z drugimi BleBox napravami lahko ustvarite svetlobne scene za večerno vzdušje ali samodejno nočno osvetlitev."
+    },
+    "dacboxd-dc": {
+      "kratekOpis": "Dvokanalni WiFi krmilnik z 0–10 V / 1–10 V / 0–5 V izhodom, napajanje 5–24 V DC. Zatemnilnik, regulator hitrosti in moči.",
+      "dolgOpis": "dacBoxD DC je dvokanalni WiFi krmilnik z analognimi izhodi 0–10 V, 1–10 V ali 0–5 V. Uporablja se za zatemnjevanje industrijskih LED napajalnikov, regulacijo hitrosti ventilatorjev in rekuperacij ali moči drugih naprav z analognim krmilnim vhodom. Oba kanala upravljate neodvisno – s telefonom, urniki in samodejnimi akcijami."
+    },
+    "wlightbox": {
+      "kratekOpis": "WiFi krmilnik za 12–24 V LED trakove: enobarvne, RGB, RGBW, CT, 2× CCT (do 4 kanali). Svetlost, barve in svetlobni efekti s telefonom.",
+      "dolgOpis": "wLightBox je najbolj vsestranski BleBox krmilnik LED razsvetljave: podpira enobarvne, RGB, RGBW, CT in 2× CCT LED trakove na 12–24 V (do 4 kanale). S telefonom izbirate barvo in svetlost, ustvarjate lastne svetlobne efekte in scene ter nastavite urnike – na primer toplo belo zvečer in hladno belo podnevi. Odličen za ambientno osvetlitev dnevne sobe, kuhinje ali fasade."
+    },
+    "wlightboxs": {
+      "kratekOpis": "Enokanalni WiFi zatemnilnik za 12–24 V LED trak. Svetlost s telefonom, urnikom, tipkalom ali daljincem. Mehak vklop.",
+      "dolgOpis": "wLightBoxS je miniaturni enokanalni zatemnilnik za 12–24 V LED razsvetljavo, na primer LED trak v kuhinji ali spalnici. Svetlost nastavljate s telefonom, urnikom, stenskim tipkalom ali BleBox daljincem, svetloba pa se prižiga mehko in postopoma. Enostavna vgradnja neposredno med napajalnik in LED trak."
+    },
+    "pixelbox": {
+      "kratekOpis": "WiFi krmilnik za digitalne (naslovljive) LED trakove, npr. WS2811, WS2815. Animirani svetlobni efekti, ki jih RGBW trakovi ne zmorejo.",
+      "dolgOpis": "pixelBox krmili digitalne (naslovljive) LED trakove, kot sta WS2811 in WS2815, kjer je vsaka dioda krmiljena posebej. Ustvarite lahko animirane svetlobne efekte – tekoče luči, prelive, učinke, ki jih klasični RGBW trakovi ne zmorejo. Upravljanje s telefonom v aplikaciji wBox, s podporo urnikom in akcijam."
+    },
+    "saunabox": {
+      "kratekOpis": "WiFi krmilnik za finske savne do 11 kW s temperaturnim tipalom do +125 °C. Savno prižgete na poti domov, s telefonom ali urnikom.",
+      "dolgOpis": "saunaBox je pametni krmilnik za suhe (finske) savne s pečmi do 11 kW. Vključuje temperaturno tipalo do +125 °C, savno pa prižgete in nastavite s telefonom – tudi na poti domov, da vas pričaka ogreta. Podpira urnike, daljinec in osvetljeno čelno ploščo ter varnostne omejitve delovanja."
+    },
+    "thermobox": {
+      "kratekOpis": "WiFi termostat za električno ali vodno talno gretje (s termoelektričnim pogonom) – 2 temperaturni tipali, urniki in statistika.",
+      "dolgOpis": "thermoBox skrbi za regulacijo talnega gretja – električnega ali vodnega s termoelektričnim pogonom. Z dvema temperaturnima tipaloma (tla + prostor) vzdržuje želeno temperaturo, prek aplikacije wBox pa nastavite urnike ogrevanja, spremljate grafe in prejemate obvestila. Prihranek energije brez žrtvovanja udobja."
+    },
+    "switchboxt-pro": {
+      "kratekOpis": "Trojno breznapetostno WiFi stikalo z astronomskim urnikom + trije vhodi za poljubna tipkala/signale 12–230 V. PRO zanesljivost.",
+      "dolgOpis": "switchBoxT PRO je profesionalni trikanalni krmilnik z breznapetostnimi (potencialno prostimi) izhodi in tremi vhodi, na katere priključite poljubne signale ali tipkala od 12 do 230 V. Podpira urnike z astronomsko uro, brezžične krmilne ukaze, akcije in obvestila. Namenjen zahtevnejšim instalacijam, kjer šteje zanesljivost."
+    },
+    "gatebox-pro": {
+      "kratekOpis": "Vodotesni WiFi modul z zunanjo anteno za odpiranje, zapiranje in preverjanje stanja vrat. Za zunanje krmilnice in večje dosege.",
+      "dolgOpis": "gateBox PRO je profesionalna različica priljubljenega modula za dvoriščna in garažna vrata: vodotesno ohišje in zunanja antena omogočata vgradnjo neposredno v krmilnico na prostem ter zanesljivo povezavo tudi pri večjih razdaljah. Odpiranje, zapiranje in stanje vrat s telefonom, obvestila ter deljenje dostopa prek aplikacije wBox."
+    },
+    "doorbox-pro": {
+      "kratekOpis": "WiFi krmilnik za vrata, ključavnice in električne zapahe z zunanjo WiFi anteno za zanesljiv doseg. Nadzor stanja zaprtosti.",
+      "dolgOpis": "doorBox PRO odpira vrata, električne zapahe in ključavnice na daljavo ter spremlja stanje zaprtosti v realnem času. Zunanja WiFi antena zagotavlja zanesljivo povezavo tudi v garažah, kleteh in kovinskih omaricah. Dostop delite prek BleBox oblaka ali lokalnih računov – primerno za poslovne objekte in večstanovanjske stavbe."
+    },
+    "wlightbox-pro": {
+      "kratekOpis": "Vodotesni WiFi krmilnik LED 12–24 V DC (MONO/RGB/RGBW/CCT, do 4 kanali) z anteno za večji doseg. Za zunanjo ambientno osvetlitev.",
+      "dolgOpis": "wLightBox PRO prinaša vso vsestranskost krmilnika wLightBox v vodotesnem ohišju z zunanjo anteno. Krmili enobarvne, RGB, RGBW in CCT LED trakove na 12–24 V DC (do 4 kanale) – idealno za osvetlitev fasade, terase ali vrta, kjer potrebujete zaščito pred vlago in večji WiFi doseg. Barve, svetlost in efekti s telefonom, urniki in scene v aplikaciji wBox."
+    },
+    "wlightboxs-pro": {
+      "kratekOpis": "Vodotesni enokanalni WiFi zatemnilnik za 12–24 V DC LED z anteno za povečan doseg. Za zunanje in zahtevnejše vgradnje.",
+      "dolgOpis": "wLightBoxS PRO je profesionalna izvedba enokanalnega LED zatemnilnika: vodotesno ohišje in zunanja antena omogočata zanesljivo delovanje na prostem in v zahtevnih vgradnjah. Svetlost 12–24 V DC LED razsvetljave nastavljate s telefonom, urnikom ali tipkalom, z mehkim vklopom in samodejnimi akcijami."
+    },
+    "switchbox-din": {
+      "kratekOpis": "WiFi stikalo velike moči za DIN letev (230 V AC). Vklop/izklop ali vklop za določen čas, urniki, tipkala, akcije, obvestila.",
+      "dolgOpis": "switchBox DIN prinaša funkcionalnost WiFi stikala velike moči v ohišje za DIN letev v električni omarici. Krmili močnejše porabnike na 230 V – grelnike, bojlerje, črpalke – s telefonom, urniki z astronomsko uro ali obstoječimi tipkali. Podpira akcije v povezavi z drugimi BleBox napravami in obvestila na telefon. Za čisto in pregledno elektro instalacijo."
+    },
+    "switchboxd-din": {
+      "kratekOpis": "Dvojno WiFi stikalo za DIN letev (230 V AC) – dva neodvisna izhoda. Urniki, tipkala, akcije, obvestila.",
+      "dolgOpis": "switchBoxD DIN v enem DIN modulu združuje dve neodvisni WiFi stikali za 230 V. Vsak kanal upravljate posebej – s telefonom, urnikom ali stenskimi tipkali – in tako iz elektro omarice pametno krmilite dva tokokroga, na primer razsvetljavo in grelnik. Akcije, obvestila in astronomska ura so vključeni."
+    },
+    "switchboxd-dc-din": {
+      "kratekOpis": "Dvojno breznapetostno WiFi stikalo za DIN letev, 12–24 V DC. Suha kontakta za krmilnice in avtomatiko. Urniki, akcije, obvestila.",
+      "dolgOpis": "switchBoxD DC DIN ponuja dva breznapetostna (potencialno prosta) izhoda v ohišju za DIN letev, z napajanjem 12–24 V DC. Namenjen je krmiljenju krmilnic, avtomatike in nizkonapetostnih sistemov, kjer potrebujete suh kontakt. Upravljanje s telefonom, urniki, akcije in obvestila prek aplikacije wBox."
+    },
+    "shutterbox-din": {
+      "kratekOpis": "WiFi krmilnik senčil za DIN letev (230 V). Odstotno pozicioniranje, astronomska ura, WiFi tipkala in senzorji.",
+      "dolgOpis": "shutterBox DIN krmili rolete, žaluzije in tende na 230 V iz elektro omarice – primeren za novogradnje in prenove s centralizirano instalacijo. Senčilo postavite v poljuben položaj, astronomska ura poskrbi za samodejni premik ob sončnem vzhodu in zahodu, povezuje pa se tudi z WiFi tipkali in BleBox senzorji (npr. dvig tende ob vetru)."
+    },
+    "tempsensor-din": {
+      "kratekOpis": "Pametni WiFi termometer za DIN letev (230 V AC) z merjenjem temperature na do 4 točkah. Grafi, obvestila, avtomatizacija.",
+      "dolgOpis": "tempSensor DIN iz elektro omarice spremlja temperaturo na do štirih merilnih točkah hkrati – na primer kotlovnica, bojler, dovod in prostor. V aplikaciji wBox pregledujete grafe, prejemate obvestila ob prekoračitvah in z izmerjenimi vrednostmi prožite druge BleBox naprave (vklop črpalke, gretja, prezračevanja)."
+    },
+    "energymeter-din": {
+      "kratekOpis": "Pametni dvosmerni WiFi števec električne energije za DIN letev. Meri porabo, proizvodnjo (sončna elektrarna) in omrežne parametre.",
+      "dolgOpis": "energyMeter DIN je dvosmerni pametni števec električne energije: meri porabo in proizvodnjo (idealno ob sončni elektrarni) ter omrežne parametre, vključno z jalovo močjo. V aplikaciji wBox spremljate grafe porabe v realnem času in po obdobjih, nastavite obvestila ter na podlagi porabe prožite samodejne akcije drugih BleBox naprav."
+    },
+    "airsensor": {
+      "kratekOpis": "Natančen WiFi senzor kakovosti zraka – prašni delci PM10, PM2.5 in PM1. Obvestila na telefon in krmiljenje drugih BleBox naprav.",
+      "dolgOpis": "airSensor natančno meri prašne delce PM10, PM2.5 in PM1 ter vam na telefon pošlje obvestilo, ko kakovost zraka pade. V povezavi z drugimi BleBox napravami lahko ob slabem zraku samodejno vklopi prezračevanje ali čistilnik zraka. Grafi zgodovine meritev so vedno na voljo v aplikaciji wBox."
+    },
+    "humiditysensor": {
+      "kratekOpis": "WiFi senzor vlažnosti in temperature zraka z izračunom rosišča in toplotnega indeksa. Grafi, obvestila, samodejne akcije.",
+      "dolgOpis": "humiditySensor meri relativno vlažnost in temperaturo zraka ter izračuna rosišče in toplotni indeks. Ob previsoki vlagi vas obvesti na telefon ali samodejno vklopi razvlaževalnik oziroma prezračevanje prek drugih BleBox naprav. Zgodovina meritev z grafi je na voljo v aplikaciji wBox – koristno proti plesni v kopalnicah, kleteh in vikendih."
+    },
+    "tempsensor": {
+      "kratekOpis": "WiFi temperaturni senzor od –55 do +125 °C z vodotesno sondo. Grafi, obvestila in krmiljenje drugih BleBox naprav.",
+      "dolgOpis": "tempSensor z vodotesno digitalno sondo meri temperaturo v razponu od –55 do +125 °C – v prostoru, zunaj, v bazenu ali kotlovnici. V aplikaciji wBox spremljate graf temperature, prejemate obvestila ob prekoračitvah in z meritvami prožite druge BleBox naprave, na primer vklop gretja ali hlajenja."
+    },
+    "tempsensorac": {
+      "kratekOpis": "WiFi temperaturni senzor z do 4 tipali (–55 do +125 °C), napajanje 230 V AC. Grafi, obvestila, samodejne akcije.",
+      "dolgOpis": "tempSensorAC na napajanju 230 V AC podpira do štiri temperaturna tipala hkrati in meri od –55 do +125 °C. Primeren za nadzor kotlovnice, bojlerja, hladilnice ali več prostorov z eno napravo. Grafi, obvestila in samodejne akcije prek aplikacije wBox."
+    },
+    "rainsensor": {
+      "kratekOpis": "WiFi senzor dežja – zazna začetek in konec padavin. Zgodovina padavin, obvestila in samodejni umik tend ali zapiranje oken.",
+      "dolgOpis": "rainSensor zazna začetek in konec padavin ter vas takoj obvesti na telefon. V povezavi z BleBox krmilniki samodejno umakne tendo, zapre strešna okna ali izklopi zalivanje. Zgodovina padavin z grafi je na voljo v aplikaciji wBox."
+    },
+    "floodsensor": {
+      "kratekOpis": "WiFi senzor izliva vode s telefonskim in zvočnim alarmom. Zgodovina, grafi in samodejne akcije ob zaznanem puščanju.",
+      "dolgOpis": "floodSensor bdi nad pralnim strojem, bojlerjem, kopalnico ali kletjo in ob zaznani vodi sproži zvočni alarm ter obvestilo na telefon. V povezavi z BleBox stikali lahko samodejno izklopi črpalko ali zapre elektromagnetni ventil. Majhna naprava, ki prepreči veliko škodo."
+    },
+    "luxsensor": {
+      "kratekOpis": "WiFi senzor osvetljenosti (luksmeter). Grafi, obvestila in samodejno krmiljenje razsvetljave ali senčil glede na svetlobo.",
+      "dolgOpis": "luxSensor natančno meri osvetljenost v luksih in te podatke uporabi za pametno avtomatizacijo: samodejni vklop luči ob mraku, spust žaluzij ob močnem soncu ali obvestilo, ko v rastlinjaku zmanjka svetlobe. Grafi in zgodovina meritev v aplikaciji wBox."
+    },
+    "inputsensord": {
+      "kratekOpis": "2-kanalni WiFi vhodni modul 5–24 V za integracijo alarma, senzorja gibanja, dima ali okenskega kontakta. Akcije, obvestila, grafi.",
+      "dolgOpis": "inputSensorD prebere dva poljubna signala 5–24 V – iz alarmne centrale, senzorja gibanja, javljalnika dima ali okenskega kontakta – in ju pripelje v svet BleBox avtomatizacije. Ob signalu sproži akcije (vklop luči, sirene, obvestilo na telefon) in beleži zgodovino dogodkov z grafi."
+    },
+    "inputsensorq": {
+      "kratekOpis": "4-kanalni WiFi vhodni modul 5–24 V za integracijo alarmnih in drugih signalov v BleBox avtomatizacijo. Akcije, obvestila, grafi.",
+      "dolgOpis": "inputSensorQ je štirikanalna različica vhodnega modula: štiri poljubne signale 5–24 V (alarm, gibanje, dim, okna) poveže z BleBox avtomatizacijo. Vsak vhod lahko proži svoje akcije in obvestila, zgodovina dogodkov pa je pregledno zbrana v aplikaciji wBox."
+    },
+    "opensensor": {
+      "kratekOpis": "WiFi senzor odprtosti oken, vrat in vratc – zazna odprto, priprto (na kip) in zaprto. Zgodovina, obvestila, avtomatizacija.",
+      "dolgOpis": "openSensor zazna tri stanja okna ali vrat: odprto, priprto (na kip) in zaprto. Na telefon vas opozori, če je ob odhodu od doma kaj ostalo odprto, v povezavi z drugimi BleBox napravami pa lahko ob odprtem oknu samodejno izklopi gretje. Zgodovina dogodkov v aplikaciji wBox."
+    },
+    "tempsensor-pro": {
+      "kratekOpis": "Profesionalni WiFi temperaturni senzor z do 4 vodotesnimi sondami (–55 do +125 °C), vodotesnim ohišjem in anteno za večji doseg.",
+      "dolgOpis": "tempSensor PRO je profesionalna izvedba temperaturnega senzorja: do štiri vodotesne sonde (–55 do +125 °C), vodotesno ohišje in zunanja antena za zanesljivo povezavo tudi na prostem ali v kovinskih omaricah. Grafi, obvestila in samodejne akcije prek aplikacije wBox – za kotlovnice, hladilnice in industrijo."
+    },
+    "windsensor-pro": {
+      "kratekOpis": "WiFi senzor vetra (0,5–30 m/s) z grafi hitrosti, obvestili in samodejnim umikom tend ali senčil ob močnem vetru.",
+      "dolgOpis": "windSensor PRO meri hitrost vetra od 0,5 do 30 m/s in ob nastavljeni meji samodejno umakne tende, žaluzije ali pergolo prek BleBox krmilnikov – preden veter povzroči škodo. Grafi hitrosti vetra in obvestila na telefon so vključeni."
+    },
+    "uremote": {
+      "kratekOpis": "Polnilni µWiFi daljinec s 3 tipkami in 4 kanali – deluje brez WiFi omrežja, neposredno z BleBox napravami.",
+      "dolgOpis": "uRemote je eleganten polnilni daljinec, ki prek tehnologije µWiFi neposredno (brez routerja) upravlja BleBox naprave. Tri tipke na štirih kanalih pomenijo do 12 funkcij – luči, senčila, vrata. Idealen za goste, otroke in vse, ki jim je telefon odveč."
+    },
+    "sremote": {
+      "kratekOpis": "Baterijski µWiFi daljinec s 3 programabilnimi tipkami – brez potrebe po WiFi omrežju, upravlja več naprav hkrati.",
+      "dolgOpis": "sRemote je preprost baterijski daljinec s tremi programabilnimi tipkami, ki prek µWiFi tehnologije neposredno krmili BleBox naprave – tudi brez domačega WiFi omrežja. Ena tipka lahko sproži več naprav hkrati (scena »odhod«: ugasni luči, spusti senčila)."
+    },
+    "inbox": {
+      "kratekOpis": "Baterijski µWiFi modul za do 4 tipke – obstoječa stikala spremeni v pametna. Kratki/dolgi pritiski, brez WiFi omrežja.",
+      "dolgOpis": "inBox se skrije za obstoječe stensko stikalo in ga spremeni v pametno: do štiri tipke, z ločenimi funkcijami za kratek in dolg pritisk, neposredno krmilijo BleBox naprave prek µWiFi – tudi brez domačega omrežja. Baterijsko napajanje pomeni vgradnjo brez elektrike na mestu stikala."
+    },
+    "proxibox": {
+      "kratekOpis": "Brezstični µWiFi senzor bližine za proženje BleBox akcij – skrit pod pultom ali v omari, aktivira se z gibom roke.",
+      "dolgOpis": "proxiBox zazna bližino roke in brez dotika sproži poljubno BleBox akcijo – vklop luči pod kuhinjskim pultom, osvetlitev omare ali odpiranje. Skrijete ga pod delovno površino ali v pohištvo; deluje prek µWiFi in ne potrebuje stikal."
+    },
+    "actionbox": {
+      "kratekOpis": "WiFi vhodni modul 230 V za do 4 tipke ali senzorje gibanja – centralno proženje akcij na drugih BleBox napravah.",
+      "dolgOpis": "actionBox poveže do štiri obstoječa 230 V tipkala ali senzorje gibanja z BleBox avtomatizacijo: pritisk na tipko ali zaznano gibanje sproži akcije na katerikoli BleBox napravi v hiši – luči, senčila, vrata. Obstoječa instalacija tako postane pametna brez menjave stikal."
+    },
+    "actionboxs": {
+      "kratekOpis": "Mini WiFi prožilec akcij na 230 V – nanj priključite senzor gibanja ali tipko za krmiljenje drugih naprav in obvestila.",
+      "dolgOpis": "actionBoxS je miniaturni enokanalni prožilec: nanj priključite senzor gibanja ali tipko na 230 V, ob signalu pa sproži akcijo na drugi BleBox napravi ali pošlje obvestilo na telefon. Preprost način, da obstoječi senzor gibanja prižge luči kjerkoli v hiši."
+    },
+    "ampbox": {
+      "kratekOpis": "Štirikanalni ojačevalnik za zmogljive RGBW LED trakove z možnostjo priklopa drugega napajalnika. Podaljša in ojača LED instalacije.",
+      "dolgOpis": "ampBox je štirikanalni ojačevalnik signala za RGBW LED trakove velikih moči. Omogoča podaljšanje LED instalacij prek zmogljivosti osnovnega krmilnika in priklop dodatnega napajalnika za enakomerno svetlost po celotni dolžini. Nepogrešljiv pri daljših LED linijah v dnevnih prostorih in lokalih."
+    },
+    "parkingsensor": {
+      "kratekOpis": "Parkirni senzor z barvnim prikazom razdalje do stene ali zasedenosti parkirnega mesta. Za domače garaže in poslovne parkirne prostore.",
+      "dolgOpis": "parkingSensor z barvno svetlobo prikazuje razdaljo do stene med parkiranjem v garaži ali zasedenost parkirnega mesta. Zelena, rumena, rdeča – parkiranje brez praske, tudi v tesnih garažah. Preprosta vgradnja brez aplikacij."
+    },
+    "proxiswitch": {
+      "kratekOpis": "Brezstično stikalo vklop/izklop 12–24 V DC – upravljanje z dotikom ali gibom roke. Za pohištvo in kopalnice.",
+      "dolgOpis": "proxiSwitch je brezstično stikalo za 12–24 V DC: napravo vklopite z dotikom ali samo z gibom roke. Idealno za LED osvetlitev v pohištvu, kopalnicah in kuhinjah, kjer so mokre ali umazane roke vsakdanjost. Vgradi se nevidno za površino."
+    },
+    "reflectiveswitch": {
+      "kratekOpis": "Odbojno LED stikalo/driver 12–24 V s 3 načini delovanja – samodejni mehki vklop luči ob odprtju predala ali omare.",
+      "dolgOpis": "reflectiveSwitch zazna odprtje predala ali omare in samodejno, mehko prižge LED osvetlitev – brez stikal in brez dotika. Trije načini delovanja pokrijejo predale, omare in niše. Nizkonapetostna izvedba 12–24 V za pohištveno LED razsvetljavo."
+    },
+    "proxidimmer": {
+      "kratekOpis": "Brezstični zatemnilnik za LED trakove 12–24 V DC – svetlost nastavite z dotikom ali gibom roke nad senzorjem.",
+      "dolgOpis": "proxiDimmer omogoča brezstično zatemnjevanje LED trakov na 12–24 V DC: kratek gib roke prižge ali ugasne, zadržan gib mehko nastavi svetlost. Odličen za kuhinjske pulte in delovne površine, kjer stikala niso praktična. Vgradi se skrito za površino."
+    },
+    "twilightswitch": {
+      "kratekOpis": "Mrakovno stikalo za LED 12–24 V z mehkim prižiganjem in ugašanjem. Miniaturne dimenzije – skrije se v aluminijast LED profil.",
+      "dolgOpis": "twilightSwitch ob mraku samodejno in mehko prižge LED razsvetljavo, ob svetlobi pa jo ugasne. Miniaturne dimenzije omogočajo vgradnjo kar v aluminijast LED profil. Popoln za nočno orientacijsko osvetlitev hodnikov, stopnišč in spalnic."
+    },
+    "twilightcompact": {
+      "kratekOpis": "Mrakovno stikalo za LED 12–24 V z mehkim prižiganjem, miniaturne dimenzije s konektorjem za hitro vgradnjo.",
+      "dolgOpis": "twilightCompact je kompaktna izvedba mrakovnega stikala za LED 12–24 V: ob mraku mehko prižge in ob svetlobi ugasne razsvetljavo, priložen konektor pa omogoča vgradnjo brez orodja. Za nočno osvetlitev, ki se prižge sama."
+    },
+    "blebox_reedswitch": {
+      "kratekOpis": "Magnetni (reed) kontakt za zaznavanje položaja vrat, oken in vratc. Dodatek za BleBox krmilnike (gateBox, doorBox, openSensor).",
+      "dolgOpis": "BleBox reedSwitch je magnetni kontakt za zaznavanje odprtosti vrat, oken in vratc. V paru z BleBox krmilniki (gateBox, doorBox) omogoča prikaz dejanskega stanja – ali so vrata res zaprta – in obvestila ob odprtju."
+    },
+    "blebox_tempprobe": {
+      "kratekOpis": "Vodotesna digitalna temperaturna sonda od –55 do +125 °C za BleBox naprave (tempSensor, saunaBox, thermoBox).",
+      "dolgOpis": "BleBox tempProbe je vodotesna digitalna temperaturna sonda z merilnim območjem od –55 do +125 °C. Uporablja se kot dodatna ali nadomestna sonda pri BleBox napravah tempSensor, tempSensorAC, saunaBox in thermoBox."
+    },
+    "cable-outlet-with-frame": {
+      "kratekOpis": "Stenska kabelska rozeta z okvirjem za lično montažo BleBox temperaturne sonde na steno oziroma v instalacijsko dozo.",
+      "dolgOpis": "Kabelska rozeta z okvirjem omogoča ličen stenski izvod BleBox temperaturne sonde: sonda je pritrjena na steno v standardno instalacijsko dozo, kabel pa skrit. Estetska pika na i temperaturnemu nadzoru prostorov."
+    },
+    "blebox-twinmagnet": {
+      "kratekOpis": "Magnetni vodotesni dodatek za openSensor – zaznavanje treh stanj okna: odprto, priprto (na kip), zaprto.",
+      "dolgOpis": "twinMagnet je vodotesni magnetni dodatek za senzor openSensor, ki omogoča zaznavanje treh stanj okna ali vrat: odprto, priprto (na kip) in zaprto. Natančnejši nadzor pomeni pametnejšo avtomatizacijo gretja in varnosti."
+    },
+    "lightbox": {
+      "kratekOpis": "Bluetooth krmilnik za 12–24 V LED RGBW razsvetljavo. Upravljanje s telefonom in vnaprej pripravljeni svetlobni efekti.",
+      "dolgOpis": "lightBox je Bluetooth krmilnik RGBW LED razsvetljave na 12–24 V: barvo, svetlost in vnaprej pripravljene svetlobne efekte nastavljate neposredno s telefonom, brez WiFi omrežja. Preprosta rešitev za ambientno osvetlitev posamezne sobe ali vitrine."
+    }
+  }
+}
