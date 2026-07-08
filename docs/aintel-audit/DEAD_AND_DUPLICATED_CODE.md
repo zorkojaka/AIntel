@@ -30,7 +30,7 @@ Commit `c0afad8`. Nothing here should be deleted without the listed validation s
 | P6 | PDF generation: pdfkit renderers + playwright HTML pipeline | `document-renderers.ts`, `html-pdf.service.ts`, `invoice-pdf.service.ts`, `offer-*-pdf.service.ts` | Two engines maintained in parallel. |
 | P7 | Template rendering: `projects/services/template-render.service.ts` and `communication/services/template-render.service.ts` | both exist | Same name, likely overlapping features — merge candidate (Needs verification of divergence). |
 | P8 | Email sending: AIntel communication vs portal `pomozno.js` | two mailers | Consolidation opportunity (INTEGRATION_MAP). |
-| P9 | Rate limiting/API-key middleware exists only in web-inquiries; auth module lacks login rate limit | public.routes.ts | Should be shared middleware. |
+| P9 | Rate limiting/API-key middleware is duplicated by surface | public routes + auth login limiter | AIN-P3-01 added auth login rate limiting; web-inquiries still has its own public API-key/rate-limit path. Consider shared middleware only if another public surface appears. |
 | P10 | CRM people/companies vs clients | crm module | See D6. |
 
 ## Explicitly NOT dead (checked, keep)
