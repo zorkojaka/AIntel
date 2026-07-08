@@ -4,7 +4,7 @@ import path from 'path';
 import multer from 'multer';
 import mongoose from 'mongoose';
 import { Router, type NextFunction, type Request, type Response } from 'express';
-import { getWebInquiryOptions, getWebIzdelki, PILLAR_LABELS, processWebInquiry, validateWebInquiryPayload, WebInquiryError } from './web-inquiry.service';
+import { getWebInquiryOptions, getWebIzdelki, getWebKatalog, PILLAR_LABELS, processWebInquiry, validateWebInquiryPayload, WebInquiryError } from './web-inquiry.service';
 import { WebInquiryModel } from './web-inquiry.model';
 import { getReviewByToken, listApprovedReviews, submitReview } from '../reviews/review.service';
 
@@ -122,6 +122,22 @@ router.get('/products', async (_req: Request, res: Response) => {
       izdelkiCache.cas = Date.now();
     }
     return res.json({ ok: true, groups: izdelkiCache.data });
+  } catch (error) {
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: error instanceof Error ? error.message : 'Napaka strežnika.' });
+  }
+});
+
+// ECO-34: full catalogue for the static website build (same auth as /products).
+const katalogCache: { data: unknown; cas: number; limit: number } = { data: null, cas: 0, limit: 0 };
+router.get('/catalog', async (req: Request, res: Response) => {
+  try {
+    const limit = Math.max(1, Math.min(500, Number(req.query?.limit) || 100));
+    if (!katalogCache.data || katalogCache.limit !== limit || Date.now() - katalogCache.cas > 10 * 60 * 1000) {
+      katalogCache.data = await getWebKatalog(limit);
+      katalogCache.cas = Date.now();
+      katalogCache.limit = limit;
+    }
+    return res.json({ ok: true, groups: katalogCache.data });
   } catch (error) {
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: error instanceof Error ? error.message : 'Napaka strežnika.' });
   }

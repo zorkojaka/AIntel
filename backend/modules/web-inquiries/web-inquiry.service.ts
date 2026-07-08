@@ -932,6 +932,102 @@ function compareForDisplay(a: any, b: any) {
   return (b?.prodajnaCena ?? 0) - (a?.prodajnaCena ?? 0);
 }
 
+function katalogSlug(value: string) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+// ECO-34: full published catalogue for the static website build (SEO pages).
+// Same groups, eligibility and ordering as getWebIzdelki, but with the rich
+// content fields (dolgOpis, specifications, boughtWith) and no 8-item cap.
+export async function getWebKatalog(limitPerGroup = 100) {
+  const limit = Math.max(1, Math.min(500, Number(limitPerGroup) || 100));
+  const skupine = [] as Array<Record<string, unknown>>;
+  const slugsSeen = new Set<string>();
+
+  for (const skupina of IZDELKI_SKUPINE) {
+    const candidates = await ProductModel.find({
+      ...skupina.query,
+      isActive: true,
+      prodajnaCena: { $gt: 0 },
+      'merchandising.published': { $ne: false },
+      $or: [{ povezavaDoSlike: { $nin: [null, ''] } }, { 'aaData.image': { $nin: [null, ''] } }],
+    })
+      .select({
+        ime: 1,
+        kratekOpis: 1,
+        dolgOpis: 1,
+        prodajnaCena: 1,
+        povezavaDoSlike: 1,
+        povezavaDoProdukta: 1,
+        proizvajalec: 1,
+        'aaData.image': 1,
+        'aaData.vat': 1,
+        'aaData.attributes': 1,
+        merchandising: 1,
+        'salesStats.soldQty': 1,
+        'salesStats.boughtWith': 1,
+      })
+      .lean();
+
+    const products = candidates
+      .sort(compareForDisplay)
+      .slice(0, limit)
+      .map((product: any) => {
+        const vat = Number(product?.aaData?.vat);
+        const vatRate = Number.isFinite(vat) && vat >= 0 ? vat : 22;
+        let slug = katalogSlug(product.ime) || String(product._id);
+        while (slugsSeen.has(slug)) slug = `${slug}-2`;
+        slugsSeen.add(slug);
+        return {
+          id: String(product._id),
+          slug,
+          name: product.ime,
+          manufacturer: product.proizvajalec || '',
+          shortDescription: (product.kratekOpis ?? '').slice(0, 200),
+          longDescription: product.dolgOpis ?? '',
+          priceWithVat: Number((Number(product.prodajnaCena ?? 0) * (1 + vatRate / 100)).toFixed(2)),
+          image: product.povezavaDoSlike || product?.aaData?.image || '',
+          badge: product?.merchandising?.oznaka || '',
+          featured: Boolean(product?.merchandising?.featured),
+          officialUrl: product.povezavaDoProdukta || '',
+          specs: (product?.aaData?.attributes ?? [])
+            .slice(0, 24)
+            .map((attr: any) => ({ attribute: attr.attribute, term: attr.term })),
+          soldQty: product?.salesStats?.soldQty ?? 0,
+          boughtWith: (product?.salesStats?.boughtWith ?? [])
+            .slice(0, 3)
+            .map((pair: any) => ({ productId: pair.productId, name: pair.ime })),
+        };
+      });
+
+    skupine.push({ key: skupina.key, label: skupina.label, products });
+  }
+
+  // boughtWith entries are linkable only when the partner product is itself in
+  // the catalogue: annotate with its slug so the site can render links.
+  const slugById = new Map<string, string>();
+  for (const skupina of skupine) {
+    for (const product of skupina.products as Array<{ id: string; slug: string }>) {
+      slugById.set(product.id, product.slug);
+    }
+  }
+  for (const skupina of skupine) {
+    for (const product of skupina.products as Array<{ boughtWith: Array<{ productId: string; slug?: string }> }>) {
+      for (const pair of product.boughtWith) {
+        const slug = slugById.get(pair.productId);
+        if (slug) pair.slug = slug;
+      }
+    }
+  }
+
+  return skupine;
+}
+
 export async function getWebIzdelki(limit = 8) {
   const skupine = [];
   for (const skupina of IZDELKI_SKUPINE) {
