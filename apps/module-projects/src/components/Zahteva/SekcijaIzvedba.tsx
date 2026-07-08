@@ -129,8 +129,11 @@ function buildPreview(
   const material = selectedMaterial(sistem);
   const projectTypes = new Set<string>([sistem.tip]);
   if (sistem.tip === "wifi_kamere") projectTypes.add("videonadzor");
+  const scenario = settings.scenarios.find((entry) => entry.type === execution.scenarioType);
+  const scenarioServiceProductIds = new Set((scenario?.storitve ?? []).map((serviceRule) => serviceRule.serviceProductId));
 
   for (const rule of settings.productServiceRules.filter((entry) => entry.isActive)) {
+    if (scenarioServiceProductIds.has(rule.serviceProductId)) continue;
     if (rule.triggerType === "project") {
       if (!ruleMatches(rule, undefined, projectTypes)) continue;
       const service = productById.get(rule.serviceProductId);
@@ -151,7 +154,6 @@ function buildPreview(
     }
   }
 
-  const scenario = settings.scenarios.find((entry) => entry.type === execution.scenarioType);
   const estimates = execution.estimates ?? { napeljavaUr: 0, utpKabelMetrov: 0, kanalMetrov: 0 };
   const cameras = Math.max(1, cameraCount(sistem, productById));
   for (const serviceRule of scenario?.storitve ?? []) {
