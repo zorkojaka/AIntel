@@ -478,7 +478,11 @@ async function addConfiguredExecutionRequests(
     const estimates = systemEntry.sistem.execution?.estimates ?? {};
 
     for (const service of scenario?.storitve ?? []) {
-      let quantity = quantityFromRule(service, Math.max(1, totalCameraCount), undefined, estimates);
+      // per_unit scenario services scale with the CAMERA count: systems without
+      // cameras (alarm, domofon, pametni dom) must not get a phantom camera
+      // installation line (2026-07-09). fixed/per_classification_field rules
+      // are unaffected (the latter clamps its multiplier to >= 1 itself).
+      let quantity = quantityFromRule(service, totalCameraCount, undefined, estimates);
       if (service.quantityRule?.type === 'per_classification_field') {
         quantity = Number(getByPath(estimates, service.quantityRule.field)) || 0;
       }
