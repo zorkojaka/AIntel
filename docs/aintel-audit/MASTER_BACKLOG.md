@@ -129,15 +129,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   recompute with the stats cron. Applies to: new-project/offer forms in AIntel
   and the web configurator (web side tracked as ECO-36). Effort M. Deps: ECO-35.
 
-### AIN-P1-17 — Motivational progress bar in multi-step flows
-- Owner direction (2026-07-09): progress must be obvious and psychologically
-  encouraging. Rules: (1) the bar starts at a non-zero value the moment the flow
-  opens (endowed-progress effect), never at 0 %; (2) near the end — e.g. the data
-  entry before generating the offer — it must clearly show how much work is
-  already invested and that the finish is close ("še zadnji korak"); (3) applies
-  to the internal offer flow AND especially the public web configurator so
-  customers do not abandon it (web side = ECO-36). Effort S–M per flow.
-
 ### AIN-P1-19 — Configurator result: "kaj dobite" value payload (not just a price)
 - Owner direction (2026-07-09): when the customer finishes the configurator and the
   offer goes to their mail, the result page (which already shows the price) must sell
@@ -215,6 +206,20 @@ Every item lists its docs in-line; at minimum update MODULE_CATALOG review statu
 relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 
 ## Done
+
+### AIN-P1-17 — Motivational progress bar in multi-step flows
+- **Landed**: AIN-P1-17 implementation commit.
+- **Summary**: Added a visible motivational progress bar to the internal
+  `module-projects` project workspace flow. It derives progress from the existing
+  timeline steps (`Zahteve → Ponudbe → Priprava → Izvedba → Račun`), starts above
+  0 % via an endowed-progress baseline, shows completed/total step count, highlights
+  the active step, and switches to a near-finish message (`Še zadnji korak`) when the
+  workflow reaches the final step. The change is presentational only and does not
+  mutate project status, offer, logistics, execution, or invoice business logic.
+- **Acceptance used**: derived from the task text because no separate acceptance block
+  existed: progress is obvious in the internal multi-step flow, never starts at 0 %,
+  clearly signals near-completion, and keeps the public configurator/web-side work
+  scoped to ECO-36 outside this repository.
 
 ### AIN-P1-18 — Task templates + Nastavitve → Opravila section
 - **Landed 2026-07-09**: owner request — company configures its task processes in

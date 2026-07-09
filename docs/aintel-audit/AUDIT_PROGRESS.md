@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-09 (AIN-P1-13 follow-up email from task)
-Last reviewed commit: AIN-P1-13 follow-up email from task on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-09 (AIN-P1-17 motivational project progress)
+Last reviewed commit: AIN-P1-17 motivational project progress on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -186,6 +186,11 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   communication module with PDF offer attachment, and complete the task only after a
   successful send. Failed sends leave the task open. Covered by
   `test/task-follow-up-email.test.ts`; no automatic sending was added.
+- **AIN-P1-17 motivational project progress**: module-projects now shows a
+  motivational progress bar in the internal project workspace, derived from the
+  existing timeline steps. It starts above 0 %, displays active step and completed
+  count, and shows a near-finish message on the final step. This is presentational
+  only; public configurator/web-side progress remains ECO-36 outside this repo.
 
 ## Genuine unresolved checks (curated in the final review)
 

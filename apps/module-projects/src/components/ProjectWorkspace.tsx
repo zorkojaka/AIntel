@@ -118,6 +118,75 @@ function getProjectStatusLabel(status: ProjectStatus) {
   return "Zaračunano";
 }
 
+type WorkspaceProgressInfo = {
+  percent: number;
+  completedCount: number;
+  totalCount: number;
+  activeLabel: string;
+  message: string;
+};
+
+function buildWorkspaceProgressInfo(steps: TimelineStep[], activeStepKey: StepKey): WorkspaceProgressInfo {
+  const visibleSteps = steps.length > 0 ? steps : [];
+  const totalCount = visibleSteps.length || 1;
+  const completedCount = visibleSteps.filter((step) => step.status === "done").length;
+  const activeIndex = Math.max(0, visibleSteps.findIndex((step) => step.key === activeStepKey));
+  const activeStep = visibleSteps[activeIndex] ?? visibleSteps[0];
+  const isComplete = completedCount >= totalCount;
+  const isFinalStep = activeIndex >= totalCount - 1 || completedCount >= totalCount - 1;
+  const activeCredit = isComplete ? 0 : 0.45;
+  const rawPercent = isComplete ? 100 : ((completedCount + activeCredit) / totalCount) * 100;
+  const percent = isComplete ? 100 : Math.min(96, Math.max(12, Math.round(rawPercent)));
+
+  let message = `${completedCount} od ${totalCount} korakov je zaključenih.`;
+  if (isComplete) {
+    message = "Zaključeno — projekt ima celotno sled od zahteve do računa.";
+  } else if (isFinalStep) {
+    message = "Še zadnji korak — večina dela je že opravljena.";
+  } else if (completedCount === 0) {
+    message = "Začetek je že narejen — projekt ima odprt delovni tok.";
+  } else if (activeStep?.key === "offers") {
+    message = "Zahteve so zbrane — ponudba je naslednji premik do potrditve.";
+  }
+
+  return {
+    percent,
+    completedCount,
+    totalCount,
+    activeLabel: activeStep?.label ?? "Korak",
+    message,
+  };
+}
+
+function MotivationalProgressBar({ info }: { info: WorkspaceProgressInfo }) {
+  return (
+    <div className="rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Napredek projekta</div>
+          <div className="mt-1 text-sm font-semibold text-foreground">{info.message}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-2xl font-semibold tabular-nums text-foreground">{info.percent}%</div>
+          <div className="text-xs text-muted-foreground">{info.activeLabel}</div>
+        </div>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full bg-[var(--brand-color)] transition-[width] duration-300"
+          style={{ width: `${info.percent}%` }}
+          aria-hidden
+        />
+      </div>
+      <div className="mt-2 flex items-center justify-between text-[11px] font-medium text-muted-foreground">
+        <span>Začetek</span>
+        <span>{info.completedCount}/{info.totalCount}</span>
+        <span>Zaključek</span>
+      </div>
+    </div>
+  );
+}
+
 interface ProjectWorkspaceProps {
   projectId: string;
   initialProject?: ProjectDetails | null;
@@ -258,6 +327,10 @@ export function ProjectWorkspace({
       };
     });
   }, [tabsConfig, timelineStepByKey]);
+  const workspaceProgress = useMemo(
+    () => buildWorkspaceProgressInfo(visibleTimelineSteps, activeQuickStep),
+    [activeQuickStep, visibleTimelineSteps],
+  );
   const hasInitializedActiveTabRef = useRef(false);
   const prevActivePhaseStepRef = useRef<StepKey | null>(null);
 
@@ -1360,6 +1433,9 @@ export function ProjectWorkspace({
               subjectLabel={projectDisplayId || project.title || project.id}
               title="Opravila projekta"
             />
+          </div>
+          <div className="mb-4">
+            <MotivationalProgressBar info={workspaceProgress} />
           </div>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
             <div className="space-y-4 lg:col-span-3">
