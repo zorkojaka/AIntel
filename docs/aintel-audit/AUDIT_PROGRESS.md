@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-08 (AIN-P3-01 login rate limiting)
-Last reviewed commit: AIN-P3-01 login rate limiting on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-09 (AIN-P3-02 shared frontend API client)
+Last reviewed commit: AIN-P3-02 shared frontend API client on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -143,15 +143,17 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   `NextFunction` types instead of accidental DOM globals.
 - **Docs drift cleanup**: `CURRENT_ARCHITECTURE.md` and `INTEGRATION_MAP.md` now reflect
   the authenticated `/uploads/*` route introduced by AIN-P0-03.
-- **AIN-P3-02 foundation**: added shared frontend API envelope parser/helper and moved
+- **AIN-P3-02 DONE**: added shared frontend API envelope parser/helper and moved
   core-shell auth, module-settings, module-projects, module-employees,
   module-profil, module-finance, module-crm, module-dashboard, and module-cenik
   API parsing to it; module-employees form/service-rate helper,
   module-settings secondary sections, selected module-projects hooks, project
   load, timeline/project workspace fetches, ProjectsPage CRUD/list operations,
   OffersTab offer/template/assignment transport, logistics/execution standard
-  fetches, and price-list autocomplete also use it.
-  Broader raw-fetch migration and toast/retry policy remain open.
+  fetches, and price-list autocomplete also use it. Shared `fetchApi` now has
+  opt-in retry and a standardized error-reporting hook. Remaining grep hits are
+  intentional special cases: custom category `options`, logistics email non-JSON
+  fallback, and cenik 409 duplicate-precheck conflict data.
 
 ## Genuine unresolved checks (curated in the final review)
 

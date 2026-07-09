@@ -105,9 +105,9 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 
 ## P3 — Product & polish
 
-- **AIN-P3-02** Shared frontend API client (fetch wrapper + error toasts + retry).
+- **AIN-P3-02 DONE** Shared frontend API client (fetch wrapper + error toasts + retry).
   Effort M.
-  - **Foundation landed**: shared `parseApiEnvelope`/`fetchApi` helper in
+  - Shared `parseApiEnvelope`/`fetchApi` helper in
     `shared/utils/api-client.ts`; core-shell auth, module-settings,
     module-projects, module-employees, module-profil, module-finance,
     module-crm, module-dashboard, and module-cenik API helpers now consume it;
@@ -115,8 +115,10 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     sections, selected module-projects hooks, project load, timeline/project
     workspace fetches, ProjectsPage CRUD/list operations, logistics/execution
     standard fetches, OffersTab offer/template/assignment transport, and
-    price-list autocomplete also use it. Remaining scope: migrate more modules
-    and add standardized toast/retry policy.
+    price-list autocomplete also use it. Shared `fetchApi` supports opt-in retry
+    and a standardized error-reporting hook. Remaining grep hits are intentional
+    special cases: custom category `options`, logistics email non-JSON fallback,
+    and cenik 409 duplicate-precheck conflict data.
 - **AIN-P3-03** Repeat-sale rules on installed equipment age. Effort M. Deps: P2-08.
 - **AIN-P3-04** Portal: offer acceptance + service tickets on shared client identity.
   Effort L. Deps: P1-07, P2-08.

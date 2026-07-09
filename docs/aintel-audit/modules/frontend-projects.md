@@ -38,11 +38,12 @@ communication feed. It is the operational cockpit of the company.
 Domain folder structure is the right direction; shared/types keeps payloads typed;
 mobile-aware pieces (OfferItemsMobile, mobileTopbar util, mobile smoke-test doc).
 The central `api.ts` uses shared `parseApiEnvelope` for envelope parsing
-(AIN-P3-02 foundation). Selected project hooks (`useConfirmOffer`,
+(AIN-P3-02). Selected project hooks (`useConfirmOffer`,
 `useInvoiceVersions`), project load, and price-list autocomplete also use the
-shared parser. Timeline/project workspace fetches are partially migrated; broader
-workspace raw-fetch migration remains open. ProjectsPage list/detail/create/update
-transport, OffersTab offer/template/assignment transport, and logistics/execution
-standard fetches are also on the shared parser.
+shared parser. Timeline/project workspace fetches, ProjectsPage
+list/detail/create/update transport, OffersTab offer/template/assignment
+transport, and logistics/execution standard fetches are also on the shared
+parser. Remaining raw-fetch grep hits are intentional special cases: custom
+category `options` and logistics email non-JSON fallback.
 
 Confidence: High on structure; component internals Probable.
