@@ -138,6 +138,21 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   to the internal offer flow AND especially the public web configurator so
   customers do not abandon it (web side = ECO-36). Effort S–M per flow.
 
+### AIN-P1-19 — Configurator result: "kaj dobite" value payload (not just a price)
+- Owner direction (2026-07-09): when the customer finishes the configurator and the
+  offer goes to their mail, the result page (which already shows the price) must sell
+  the VALUE: "prikazat jim morajo kaj bodo vse dobili, da je vse vključeno v ponudbo
+  kar rabijo in da je to to kar iščejo in to za ta denar — ne pa neke suhoparne
+  informacije."
+- API side (this repo): POST /inquiries `offerSummary` today returns only
+  offerNumber/totalWithVat/discountPercent. Extend it with a customer-friendly
+  breakdown built from the offer items + cenik content (ECO-31/32 friendly names,
+  short descriptions, images): grouped equipment ("vaša oprema"), included services
+  ("montaža, konfiguracija in zagon — vse vključeno"), coverage mapped back to what
+  the customer asked for (n prostorov → n senzorjev …), and reassurance block
+  (garancija, podpora). No internal notes (defaultsApplied stays internal). Site
+  presentation = ECO-37. Effort M. Deps: ECO-31/32 (done).
+
 ### AIN-P1-12 — Invoice payment tracking
 - dueDate + paidAt + status on (new) invoice collection; mark-paid endpoint
   (ADMIN/FINANCE); overdue rule → task + reminder email template. Effort M.
