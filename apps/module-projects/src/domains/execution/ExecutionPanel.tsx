@@ -1,4 +1,5 @@
 ﻿import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
 import { Textarea } from "../../components/ui/textarea";
@@ -71,14 +72,6 @@ type PreparationPhoto = {
   thumbnailUrl?: string;
   originalName?: string;
   uploadedAt?: string | null;
-};
-
-type PhotosResponse = {
-  success: boolean;
-  data?: {
-    photos?: PreparationPhoto[];
-  };
-  error?: string | null;
 };
 
 function normalizeExecutionMode(value: WorkOrderExecutionSpec["mode"] | undefined) {
@@ -210,9 +203,9 @@ function PreparationPhotoThumbnails({
           credentials: "same-origin",
           signal: controller.signal,
         });
-        const payload = (await response.json()) as PhotosResponse;
-        if (!alive || !response.ok || !payload.success) return;
-        setPhotos(dedupePhotos(payload.data?.photos ?? []));
+        const payload = await parseApiEnvelope<{ photos?: PreparationPhoto[] }>(response, "Fotografij ni mogoče naložiti.");
+        if (!alive) return;
+        setPhotos(dedupePhotos(payload?.photos ?? []));
       } catch (error: any) {
         if (!alive || error?.name === "AbortError") return;
         setPhotos([]);
@@ -634,9 +627,9 @@ export function ExecutionPanel({
     const fetchEmployees = async () => {
       try {
         const response = await fetch("/api/employees");
-        const payload = await response.json();
+        const payload = await parseApiEnvelope<Employee[]>(response, "Zaposlenih ni mogoče naložiti.");
         if (!alive) return;
-        setEmployees(Array.isArray(payload?.data) ? payload.data : []);
+        setEmployees(Array.isArray(payload) ? payload : []);
       } catch {
         if (!alive) return;
         setEmployees([]);
@@ -653,11 +646,11 @@ export function ExecutionPanel({
     const fetchMe = async () => {
       try {
         const response = await fetch("/api/auth/me", { credentials: "include" });
-        const payload = await response.json();
+        const payload = await parseApiEnvelope<any>(response, "Prijave ni mogoče preveriti.");
         if (!alive) return;
-        setCurrentEmployeeId(typeof payload?.data?.employee?.id === "string" ? payload.data.employee.id : null);
-        const employeeId = typeof payload?.data?.employee?.id === "string" ? payload.data.employee.id : null;
-        const roles = Array.isArray(payload?.data?.employee?.roles) ? payload.data.employee.roles : [];
+        setCurrentEmployeeId(typeof payload?.employee?.id === "string" ? payload.employee.id : null);
+        const employeeId = typeof payload?.employee?.id === "string" ? payload.employee.id : null;
+        const roles = Array.isArray(payload?.employee?.roles) ? payload.employee.roles : [];
         setCurrentEmployeeId(employeeId);
         setViewerRoles(roles.filter((role: unknown): role is string => typeof role === "string"));
       } catch {
@@ -1130,13 +1123,7 @@ export function ExecutionPanel({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(requestBody),
         });
-        const payload = await response.json();
-        if (!payload.success) {
-          setSavingStates((prev) => ({ ...prev, [orderId]: "error" }));
-          toast.error(payload.error ?? "Delovnega naloga ni mogoče shraniti.");
-          return false;
-        }
-        const updated: WorkOrder = payload.data;
+        const updated = await parseApiEnvelope<WorkOrder>(response, "Delovnega naloga ni mogoče shraniti.");
         const updatedDraft = getInitialDraftValues(updated);
         const mergedItems = mergeDraftItems(
           updatedDraft.items ?? [],
@@ -1262,12 +1249,8 @@ export function ExecutionPanel({
           projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
         }),
       });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Emaila monterju ni bilo mogoče pripraviti.");
-        return;
-      }
-      const preparedDraft = payload.data?.draft ?? payload.draft;
+      const payload = await parseApiEnvelope<any>(response, "Emaila monterju ni bilo mogoče pripraviti.");
+      const preparedDraft = payload?.draft;
       if (!preparedDraft) {
         toast.error("Emaila monterju ni bilo mogoče pripraviti.");
         return;
@@ -1300,12 +1283,8 @@ export function ExecutionPanel({
           projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
         }),
       });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Emaila monterju ni bilo mogoče poslati.");
-        return;
-      }
-      toast.success(payload.data?.loggingFailed || payload.loggingFailed ? "Email monterju je bil poslan, zapis v komunikacijah pa ni uspel." : "Email monterju je bil poslan.");
+      const payload = await parseApiEnvelope<any>(response, "Emaila monterju ni bilo mogoče poslati.");
+      toast.success(payload?.loggingFailed ? "Email monterju je bil poslan, zapis v komunikacijah pa ni uspel." : "Email monterju je bil poslan.");
       setInstallerEmailOrderId(null);
     } catch (error) {
       console.error(error);
@@ -1600,12 +1579,7 @@ export function ExecutionPanel({
             materialItems: draftMaterial.items ?? [],
           }),
         });
-        const payload = await response.json();
-        if (!payload.success) {
-          setSavingStates((prev) => ({ ...prev, [order._id]: "error" }));
-          toast.error(payload.error ?? "Shranjevanje prevzema ni uspelo.");
-          return false;
-        }
+        await parseApiEnvelope<unknown>(response, "Shranjevanje prevzema ni uspelo.");
         if (!options?.skipRefresh) {
           await refreshAfterMutation();
         }
@@ -2170,11 +2144,7 @@ export function ExecutionPanel({
       const response = await fetch(`/api/projects/${projectId}/work-orders/${order._id}/start-correction`, {
         method: "POST",
       });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Potrdila ni mogoče odkleniti za popravek.");
-        return;
-      }
+      await parseApiEnvelope<unknown>(response, "Potrdila ni mogoče odkleniti za popravek.");
       setCorrectionOrderId(null);
       await refreshAfterMutation();
       toast.success("Potrdilo je odklenjeno za popravek. Za trenutno stanje je potreben nov podpis.");
