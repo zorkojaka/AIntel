@@ -12,6 +12,12 @@ MAILING_AND_SEGMENTATION.md (izhodni mailing, ekosistem).
 
 ## AIN-P1-13 — Follow-up e-mail iz opravila (en klik, ročno pošiljanje)
 
+Status 2026-07-09: izvedeno. Opravilo `offer.follow_up` ima ročni gumb za
+predogled, paketni izbor v Opravilih, eksplicitno pošiljanje prek obstoječega
+communication modula in zaključek opravila šele po uspešnem pošiljanju. Če
+aktivna šablona `offer_follow_up` ne obstaja, sistem uporabi vgrajen varen
+follow-up tekst; pošiljanje ostaja vedno ročno.
+
 Kaj: opravilo tipa `offer.follow_up` v Opravilih dobi gumb **»Pripravi
 follow-up e-mail«**:
 

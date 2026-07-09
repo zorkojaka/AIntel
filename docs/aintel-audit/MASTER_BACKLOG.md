@@ -98,15 +98,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   tests over memory Mongo (60 backend tests green). Signature→invoice rule deferred
   to AIN-P1-12 (needs invoice collection).
 
-### AIN-P1-13 — Follow-up email from the follow-up task (one click, always manual)
-- Owner flow (2026-07-09): the `offer.follow_up` task gets a "Pripravi follow-up
-  e-mail" action — template `offer_follow_up` rendered with offer context, PREVIEW,
-  explicit send click via the communication module, logged to communication events +
-  project timeline, task completed with outcome. Batch view with checkboxes in
-  Opravila (each send logged separately). Never auto-send (owner rule). Spec:
-  `EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md`. Effort M. Deps: P1-09/P1-11 (done),
-  communication templates (exist).
-
 ### AIN-P1-14 — Inbound email ingestion (dedicated mailbox → project trail)
 - Dedicated mailbox read via IMAP scheduler job; raw messages stored in
   `email_messages`; matching by In-Reply-To/References (store messageId on send),
@@ -191,6 +182,25 @@ Every item lists its docs in-line; at minimum update MODULE_CATALOG review statu
 relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 
 ## Done
+
+### AIN-P1-13 — Follow-up email from the follow-up task (one click, always manual)
+- **Landed**: AIN-P1-13 implementation commit.
+- **Summary**: `offer.follow_up` tasks now expose a manual "Pripravi e-mail" action
+  in Opravila plus a batch follow-up section with checkboxes. The backend validates
+  that the task is an active offer follow-up, renders active template key
+  `offer_follow_up` with offer/customer context when present (fallback body otherwise),
+  previews recipient/subject/body/PDF attachment, sends only after explicit user
+  confirmation through the existing offer communication pipeline, and completes the
+  task with outcome `follow-up mail poslan` only after a successful send. Each batch
+  send is still a separate backend send and communication log entry. No automatic
+  e-mail sending was added.
+- **Acceptance used**: derived from the task text because no separate acceptance block
+  existed: preview renders the follow-up template with offer context; non-follow-up
+  tasks are rejected; failed sends leave the task open; Opravila supports single and
+  selected batch manual sends.
+- **Tests**: `backend/test/task-follow-up-email.test.ts` covers preview context,
+  invalid task rejection, and failed-send/no-complete behavior on
+  `mongodb-memory-server`.
 
 ### AIN-P1-02 — Error tracking (Sentry, EU data residency)
 - **Landed**: AIN-P1-02 implementation commit (owner chose Sentry EU 2026-07-08;

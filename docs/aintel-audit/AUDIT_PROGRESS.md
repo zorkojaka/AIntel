@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-09 (AIN-P1-10 scheduler worker)
-Last reviewed commit: AIN-P1-10 scheduler worker on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-09 (AIN-P1-13 follow-up email from task)
+Last reviewed commit: AIN-P1-13 follow-up email from task on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -179,6 +179,13 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   EU 2026-07-08; must create the EU project and set env secrets. Verified via
   `test/sentry-scrub.test.ts` (disabled no-op, enabled path, scrub) + 32 tests green.
   Frontend SPA capture remains a follow-up.
+- **AIN-P1-13 follow-up e-mail from task**: `offer.follow_up` tasks now support a
+  manual preview/send flow from Opravila, including a batch checkbox view. Backend
+  endpoints validate the task type/status, render active `offer_follow_up` templates
+  with offer context (safe fallback if missing), send through the existing offer
+  communication module with PDF offer attachment, and complete the task only after a
+  successful send. Failed sends leave the task open. Covered by
+  `test/task-follow-up-email.test.ts`; no automatic sending was added.
 
 ## Genuine unresolved checks (curated in the final review)
 

@@ -2,7 +2,17 @@ import { Router } from 'express';
 
 import { requireRoles } from '../../middlewares/auth';
 import { ROLE_ADMIN } from '../../utils/roles';
-import { getMyTasks, getTasks, getTasksBySubject, getWheelConfig, patchTask, postTask, putWheelConfig } from './task.controller';
+import {
+  getMyTasks,
+  getTasks,
+  getTasksBySubject,
+  getWheelConfig,
+  patchTask,
+  postTask,
+  previewTaskFollowUpEmail,
+  putWheelConfig,
+  sendTaskFollowUpEmail,
+} from './task.controller';
 
 // AIN-P1-09 (AINTEL_WHEEL_SPEC.md §2): /api/tasks — global requireAuth is
 // applied on /api in core/app.ts; the management list is ADMIN-gated.
@@ -14,6 +24,8 @@ router.get('/', requireRoles([ROLE_ADMIN]), getTasks);
 router.get('/wheel-config', requireRoles([ROLE_ADMIN]), getWheelConfig);
 router.put('/wheel-config', requireRoles([ROLE_ADMIN]), putWheelConfig);
 router.post('/', postTask);
+router.post('/:id/follow-up-email/preview', previewTaskFollowUpEmail);
+router.post('/:id/follow-up-email/send', sendTaskFollowUpEmail);
 router.patch('/:id', patchTask);
 
 export default router;

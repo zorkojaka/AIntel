@@ -9,6 +9,7 @@ import {
   updateTask,
   type ActorContext,
 } from './task.service';
+import { previewOfferFollowUpEmail, sendOfferFollowUpEmail } from './follow-up-email.service';
 
 function actorContext(req: Request): ActorContext {
   const context = (req as any).context ?? {};
@@ -80,6 +81,24 @@ export async function patchTask(req: Request, res: Response) {
     return res.success(task);
   } catch (error) {
     return handleError(res, error, 'Opravila ni bilo mogoče posodobiti.');
+  }
+}
+
+export async function previewTaskFollowUpEmail(req: Request, res: Response) {
+  try {
+    const draft = await previewOfferFollowUpEmail(actorContext(req), String(req.params.id));
+    return res.success(draft);
+  } catch (error) {
+    return handleError(res, error, 'Follow-up e-maila ni mogoče pripraviti.');
+  }
+}
+
+export async function sendTaskFollowUpEmail(req: Request, res: Response) {
+  try {
+    const result = await sendOfferFollowUpEmail(actorContext(req), String(req.params.id), req.body ?? {}, req as any);
+    return res.success(result);
+  } catch (error) {
+    return handleError(res, error, 'Follow-up e-maila ni mogoče poslati.');
   }
 }
 

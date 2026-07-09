@@ -88,3 +88,35 @@ export async function updateTask(taskId: string, payload: TaskAction): Promise<T
   });
   return parseApiEnvelope<TaskItem>(response, 'Opravila ni bilo mogoče posodobiti.');
 }
+
+export interface OfferFollowUpEmailDraft {
+  taskId: string;
+  projectId: string;
+  offerId: string;
+  to: string[];
+  subject: string;
+  body: string;
+  selectedAttachments: string[];
+  templateKey: string | null;
+  taskTitle: string;
+  offerLabel: string;
+}
+
+export async function previewOfferFollowUpEmail(taskId: string): Promise<OfferFollowUpEmailDraft> {
+  const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/follow-up-email/preview`, {
+    method: 'POST',
+  });
+  return parseApiEnvelope<OfferFollowUpEmailDraft>(response, 'Follow-up e-maila ni mogoče pripraviti.');
+}
+
+export async function sendOfferFollowUpEmail(
+  taskId: string,
+  payload: { to: string[]; subject: string; body: string },
+): Promise<{ message: { id: string }; task: TaskItem }> {
+  const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/follow-up-email/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return parseApiEnvelope<{ message: { id: string }; task: TaskItem }>(response, 'Follow-up e-maila ni mogoče poslati.');
+}

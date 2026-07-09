@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, CircleSlash, Hand, Loader2, Lock, Plus, RefreshCw, Unlock } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CircleSlash, Hand, Loader2, Lock, Mail, Plus, RefreshCw, Send, Unlock, X } from 'lucide-react';
 import {
   createTask,
   fetchMyTasks,
+  previewOfferFollowUpEmail,
+  sendOfferFollowUpEmail,
   updateTask,
+  type OfferFollowUpEmailDraft,
   type TaskItem,
   type TaskPriority,
 } from './api';
@@ -36,6 +39,10 @@ export function OpravilaPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [followUpDrafts, setFollowUpDrafts] = useState<OfferFollowUpEmailDraft[]>([]);
+  const [followUpForms, setFollowUpForms] = useState<Record<string, { to: string; subject: string; body: string }>>({});
+  const [selectedFollowUps, setSelectedFollowUps] = useState<Set<string>>(() => new Set());
+  const [followUpSending, setFollowUpSending] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', priority: 'normal' as TaskPriority, dueAt: '', assigneeRole: 'SALES', zame: true });
 
@@ -65,6 +72,11 @@ export function OpravilaPage() {
     return { moja, bazen };
   }, [tasks]);
 
+  const activeFollowUps = useMemo(
+    () => tasks.filter((task) => task.type === 'offer.follow_up' && ['open', 'in_progress'].includes(task.status)),
+    [tasks],
+  );
+
   const run = async (task: TaskItem, akcija: () => Promise<unknown>) => {
     setBusyId(task._id);
     setError(null);
@@ -88,6 +100,92 @@ export function OpravilaPage() {
     const reason = window.prompt('Zakaj je opravilo blokirano? (npr. čakam material)');
     if (!reason?.trim()) return;
     void run(task, () => updateTask(task._id, { action: 'block', blockedReason: reason.trim() }));
+  };
+
+  const prepareFollowUp = async (task: TaskItem) => {
+    setBusyId(task._id);
+    setError(null);
+    try {
+      const draft = await previewOfferFollowUpEmail(task._id);
+      setFollowUpDrafts([draft]);
+      setFollowUpForms({
+        [draft.taskId]: { to: draft.to.join(', '), subject: draft.subject, body: draft.body },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Follow-up e-maila ni mogoče pripraviti.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const prepareSelectedFollowUps = async () => {
+    const selected = activeFollowUps.filter((task) => selectedFollowUps.has(task._id));
+    if (!selected.length) return;
+    setError(null);
+    setFollowUpSending(true);
+    try {
+      const drafts = await Promise.all(selected.map((task) => previewOfferFollowUpEmail(task._id)));
+      setFollowUpDrafts(drafts);
+      setFollowUpForms(
+        drafts.reduce<Record<string, { to: string; subject: string; body: string }>>((acc, draft) => {
+          acc[draft.taskId] = { to: draft.to.join(', '), subject: draft.subject, body: draft.body };
+          return acc;
+        }, {}),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Follow-up e-mailov ni mogoče pripraviti.');
+    } finally {
+      setFollowUpSending(false);
+    }
+  };
+
+  const sendFollowUp = async () => {
+    if (!followUpDrafts.length) return;
+    const payloads = followUpDrafts.map((draft) => {
+      const form = followUpForms[draft.taskId];
+      return {
+        draft,
+        to: (form?.to ?? '').split(',').map((entry) => entry.trim()).filter(Boolean),
+        subject: (form?.subject ?? '').trim(),
+        body: (form?.body ?? '').trim(),
+      };
+    });
+    if (payloads.some((payload) => !payload.to.length || !payload.subject || !payload.body)) {
+      setError('Prejemnik, zadeva in vsebina so obvezni pri vseh predogledih.');
+      return;
+    }
+    setFollowUpSending(true);
+    setError(null);
+    try {
+      for (const payload of payloads) {
+        await sendOfferFollowUpEmail(payload.draft.taskId, {
+          to: payload.to,
+          subject: payload.subject,
+          body: payload.body,
+        });
+      }
+      setFollowUpDrafts([]);
+      setFollowUpForms({});
+      setSelectedFollowUps(new Set());
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Follow-up e-maila ni mogoče poslati.');
+    } finally {
+      setFollowUpSending(false);
+    }
+  };
+
+  const updateFollowUpForm = (taskId: string, patch: Partial<{ to: string; subject: string; body: string }>) => {
+    setFollowUpForms((current) => ({ ...current, [taskId]: { ...current[taskId], ...patch } }));
+  };
+
+  const toggleSelectedFollowUp = (taskId: string) => {
+    setSelectedFollowUps((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
   };
 
   const submitForm = async (event: React.FormEvent) => {
@@ -142,6 +240,11 @@ export function OpravilaPage() {
                 <Hand size={14} /> Prevzemi
               </button>
             ) : null}
+            {task.type === 'offer.follow_up' && ['open', 'in_progress'].includes(task.status) ? (
+              <button type="button" disabled={busy} onClick={() => void prepareFollowUp(task)} title="Pripravi follow-up e-mail">
+                <Mail size={14} /> Pripravi e-mail
+              </button>
+            ) : null}
             {task.status !== 'blocked' ? (
               <button type="button" disabled={busy} onClick={() => complete(task)} title="Zaključi z izidom">
                 <CheckCircle2 size={14} /> Zaključi
@@ -183,6 +286,55 @@ export function OpravilaPage() {
       </div>
 
       {error ? <div className="opravila-napaka">{error}</div> : null}
+
+      {followUpDrafts.length > 0 ? (
+        <div className="opravila-modal" role="dialog" aria-modal="true" aria-labelledby="follow-up-title">
+          <div className="opravila-modal__panel">
+            <div className="opravila-modal__header">
+              <div>
+                <h2 id="follow-up-title">Follow-up e-mail</h2>
+                <p>{followUpDrafts.length === 1 ? followUpDrafts[0].offerLabel : `${followUpDrafts.length} predogledov`}</p>
+              </div>
+              <button type="button" onClick={() => setFollowUpDrafts([])} title="Zapri">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="follow-up-form">
+              {followUpDrafts.map((draft) => {
+                const formState = followUpForms[draft.taskId] ?? { to: '', subject: '', body: '' };
+                return (
+                  <div key={draft.taskId} className="follow-up-form__draft">
+                    <h3>{draft.offerLabel}</h3>
+                    <label>
+                      Prejemnik
+                      <input value={formState.to} onChange={(e) => updateFollowUpForm(draft.taskId, { to: e.target.value })} />
+                    </label>
+                    <label>
+                      Zadeva
+                      <input value={formState.subject} onChange={(e) => updateFollowUpForm(draft.taskId, { subject: e.target.value })} />
+                    </label>
+                    <label>
+                      Vsebina
+                      <textarea rows={9} value={formState.body} onChange={(e) => updateFollowUpForm(draft.taskId, { body: e.target.value })} />
+                    </label>
+                    <div className="follow-up-form__priloge">
+                      Priloga: <strong>PDF ponudbe</strong>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="opravila-modal__actions">
+                <button type="button" className="gumb-sekundarni" onClick={() => setFollowUpDrafts([])} disabled={followUpSending}>
+                  Prekliči
+                </button>
+                <button type="button" className="gumb-primarni" onClick={() => void sendFollowUp()} disabled={followUpSending}>
+                  {followUpSending ? <Loader2 size={15} className="vrti" /> : <Send size={15} />} Pošlji
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {showForm ? (
         <form className="opravilo-forma" onSubmit={submitForm}>
@@ -240,6 +392,33 @@ export function OpravilaPage() {
         <div className="opravila-nalaganje"><Loader2 size={18} className="vrti" /> Nalagam …</div>
       ) : (
         <>
+          {activeFollowUps.length > 0 ? (
+            <section className="follow-up-batch">
+              <div className="follow-up-batch__header">
+                <h2>Follow-up ponudbe ({activeFollowUps.length})</h2>
+                <button
+                  type="button"
+                  className="gumb-sekundarni"
+                  disabled={selectedFollowUps.size === 0 || followUpSending}
+                  onClick={() => void prepareSelectedFollowUps()}
+                >
+                  <Mail size={15} /> Pripravi izbrane
+                </button>
+              </div>
+              <div className="follow-up-batch__list">
+                {activeFollowUps.map((task) => (
+                  <label key={task._id} className="follow-up-batch__item">
+                    <input
+                      type="checkbox"
+                      checked={selectedFollowUps.has(task._id)}
+                      onChange={() => toggleSelectedFollowUp(task._id)}
+                    />
+                    <span>{task.subject?.label || task.title}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+          ) : null}
           <section>
             <h2>Moja opravila ({moja.length})</h2>
             {moja.length === 0 ? <p className="opravila-prazno">Nič prevzetega — poglej bazen spodaj.</p> : moja.map((t) => renderTask(t, false))}
