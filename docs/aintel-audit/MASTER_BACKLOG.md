@@ -67,8 +67,15 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   staging. **Remaining scope: owner visual review.**
 
 ### AIN-P1-10 — Scheduler worker
-- In-process interval runner (node-cron acceptable — ask owner re dependency) with
-  job registry, per-job lock (mongo lock doc), run log. Effort M. Deps: P1-03 logging.
+- **Landed (2026-07-09, AIN-P1-10)**: `node-cron`-based in-process scheduler
+  foundation with job registry, Mongo lease locks (`scheduler_locks`), observable run
+  log (`scheduler_runs`), Sentry/log forwarding on failures, and a first
+  `tasks.sla_sweep` job that marks overdue open/in-progress tasks with
+  `slaBreachedAt` while skipping blocked tasks. The worker is env-gated by
+  `AINTEL_SCHEDULER_ENABLED=true` so staging/prod shared DB writes cannot start
+  accidentally before owner ops verification. Tests use `mongodb-memory-server`.
+  Remaining scope: owner enables env after staging DB safety review; automation rules
+  remain AIN-P1-11.
 
 ### AIN-P1-11 — First automation rules
 - Rule set + idempotency (dedupeKey) + config kill-switches per
