@@ -112,9 +112,9 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     module-projects, module-employees, module-profil, module-finance,
     module-crm, module-dashboard, and module-cenik API helpers now consume it;
     module-employees form/service-rate helper, module-settings secondary
-    sections, selected module-projects hooks, project load, and price-list
-    autocomplete also use it. Remaining scope: migrate more modules and add
-    standardized toast/retry policy.
+    sections, selected module-projects hooks, project load, timeline/project
+    workspace fetches, and price-list autocomplete also use it. Remaining scope:
+    migrate more modules and add standardized toast/retry policy.
 - **AIN-P3-03** Repeat-sale rules on installed equipment age. Effort M. Deps: P2-08.
 - **AIN-P3-04** Portal: offer acceptance + service tickets on shared client identity.
   Effort L. Deps: P1-07, P2-08.

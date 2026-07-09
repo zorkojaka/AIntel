@@ -5,6 +5,7 @@ import { Card } from "./ui/card";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
+import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import { clearMobileTopbar, setMobileTopbar } from "@aintel/shared/utils/mobileTopbar";
 import { Check, Pencil, X } from "lucide-react";
 import { OfferVersion } from "../domains/offers/OfferVersionCard";
@@ -376,11 +377,11 @@ export function ProjectWorkspace({
     const fetchClient = async () => {
       try {
         const response = await fetch(`/api/projects/${project.id}`);
-        const payload = await response.json();
-        if (!payload.success || cancelled) {
+        const payload = await parseApiEnvelope<any>(response, "Stranke projekta ni mogoče naložiti.");
+        if (cancelled) {
           return;
         }
-        setRemoteClient(payload.data?.client ?? null);
+        setRemoteClient(payload?.client ?? null);
       } catch {
         if (!cancelled) {
           setRemoteClient(null);
@@ -427,12 +428,7 @@ export function ProjectWorkspace({
     setIsOfferLoading(true);
     try {
       const response = await fetch(`${basePath}/offer`);
-      const result = await response.json();
-      if (!result.success) {
-        toast.error(result.error ?? "Napaka pri nalaganju ponudbe.");
-        return;
-      }
-      const offer: ProjectOffer = result.data;
+      const offer = await parseApiEnvelope<ProjectOffer>(response, "Napaka pri nalaganju ponudbe.");
       setActiveOffer(offer);
       setOfferItems(offer?.items ?? []);
     } catch (error) {
@@ -454,12 +450,7 @@ export function ProjectWorkspace({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ items: itemsToSave }),
         });
-        const result = await response.json();
-        if (!result.success) {
-          toast.error(result.error ?? "Napaka pri shranjevanju ponudbe.");
-          return null;
-        }
-        const offer: ProjectOffer = result.data;
+        const offer = await parseApiEnvelope<ProjectOffer>(response, "Napaka pri shranjevanju ponudbe.");
         setActiveOffer(offer);
         setOfferItems(offer?.items ?? []);
         return offer;
@@ -677,21 +668,18 @@ export function ProjectWorkspace({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        const result = await response.json();
-        if (!result.success) {
-          throw new Error(result.error ?? "Stranke ni mogoče shraniti.");
-        }
-        setRemoteClient(result.data ?? null);
+        const result = await parseApiEnvelope<any>(response, "Stranke ni mogoče shraniti.");
+        setRemoteClient(result ?? null);
         setProject((prev) => ({
           ...prev,
-          customer: result.data?.name ?? prev.customer,
+          customer: result?.name ?? prev.customer,
           customerDetail: {
             ...prev.customerDetail,
-            id: result.data?.id ?? prev.customerDetail.id,
-            name: result.data?.name ?? prev.customerDetail.name,
-            address: result.data?.address ?? address,
-            email: result.data?.email ?? clientDraft.email,
-            phone: result.data?.phone ?? clientDraft.phone,
+            id: result?.id ?? prev.customerDetail.id,
+            name: result?.name ?? prev.customerDetail.name,
+            address: result?.address ?? address,
+            email: result?.email ?? clientDraft.email,
+            phone: result?.phone ?? clientDraft.phone,
           },
         }));
       } else {
@@ -1680,4 +1668,3 @@ export function ProjectWorkspace({
 
   return renderContent();
 }
-

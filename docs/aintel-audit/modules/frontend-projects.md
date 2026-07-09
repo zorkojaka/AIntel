@@ -40,6 +40,7 @@ mobile-aware pieces (OfferItemsMobile, mobileTopbar util, mobile smoke-test doc)
 The central `api.ts` uses shared `parseApiEnvelope` for envelope parsing
 (AIN-P3-02 foundation). Selected project hooks (`useConfirmOffer`,
 `useInvoiceVersions`), project load, and price-list autocomplete also use the
-shared parser; broader workspace raw-fetch migration remains open.
+shared parser. Timeline/project workspace fetches are partially migrated; broader
+workspace raw-fetch migration remains open.
 
 Confidence: High on structure; component internals Probable.

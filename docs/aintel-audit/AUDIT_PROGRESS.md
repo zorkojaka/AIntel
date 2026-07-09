@@ -148,8 +148,8 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   module-profil, module-finance, module-crm, module-dashboard, and module-cenik
   API parsing to it; module-employees form/service-rate helper,
   module-settings secondary sections, selected module-projects hooks, project
-  load, and price-list autocomplete also use it. Broader raw-fetch migration and
-  toast/retry policy remain open.
+  load, timeline/project workspace fetches, and price-list autocomplete also use
+  it. Broader raw-fetch migration and toast/retry policy remain open.
 
 ## Genuine unresolved checks (curated in the final review)
 

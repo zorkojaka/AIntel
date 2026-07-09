@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ProjectDetails } from "../../types";
 import type { MaterialOrder, WorkOrder, WorkOrderStatus } from "@aintel/shared/types/logistics";
 import type { OfferVersionSummary } from "@aintel/shared/types/offers";
+import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import { deriveProjectPhase } from "@aintel/shared/utils/deriveProjectPhase";
 
 export type StepStatus = "done" | "inProgress" | "pending";
@@ -435,9 +436,9 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const fetchOffers = async () => {
       try {
         const response = await fetch(`/api/projects/${projectId}/offers`, { signal: controller.signal });
-        const payload = await response.json();
-        if (!payload.success || cancelled) return;
-        setRemoteOffers(Array.isArray(payload.data) ? payload.data : []);
+        const payload = await parseApiEnvelope<OfferVersionSummary[]>(response, "Ponudb ni mogoče naložiti.");
+        if (cancelled) return;
+        setRemoteOffers(Array.isArray(payload) ? payload : []);
       } catch (error) {
         if ((error as DOMException)?.name === "AbortError") return;
         if (!cancelled) {
