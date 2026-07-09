@@ -38,7 +38,7 @@ function sleep(ms: number) {
 function normalizeFetchOptions(fallbackMessageOrOptions?: string | FetchApiOptions): Required<Omit<FetchApiOptions, "fetchImpl" | "onError">> & Pick<FetchApiOptions, "fetchImpl" | "onError"> {
   if (typeof fallbackMessageOrOptions === "string" || fallbackMessageOrOptions === undefined) {
     return {
-      fallbackMessage: fallbackMessageOrOptions ?? DEFAULT_ERROR,
+      fallbackMessage: typeof fallbackMessageOrOptions === "string" ? fallbackMessageOrOptions : DEFAULT_ERROR,
       retries: 0,
       retryDelayMs: 250,
       retryStatuses: DEFAULT_RETRY_STATUSES,
