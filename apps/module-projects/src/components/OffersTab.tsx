@@ -22,6 +22,7 @@ import type { ProjectDetails } from "../types";
 import type { User } from "@aintel/shared/types/user";
 import type { Employee } from "@aintel/shared/types/employee";
 import type { CommunicationMessage } from "@aintel/shared/types/communication";
+import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 
 import { ArrowDown, ArrowLeft, Check, ChevronsUpDown, Download, Loader2, Pencil, RefreshCw, Trash, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
@@ -496,11 +497,11 @@ export function OffersTab({
           fetch("/api/users"),
           fetch("/api/employees"),
         ]);
-        const usersPayload = await usersRes.json();
-        const employeesPayload = await employeesRes.json();
+        const usersPayload = await parseApiEnvelope<User[]>(usersRes, "Uporabnikov ni mogoče naložiti.");
+        const employeesPayload = await parseApiEnvelope<Employee[]>(employeesRes, "Zaposlenih ni mogoče naložiti.");
         if (!alive) return;
-        setUsers(Array.isArray(usersPayload?.data) ? usersPayload.data : []);
-        setEmployees(Array.isArray(employeesPayload?.data) ? employeesPayload.data : []);
+        setUsers(Array.isArray(usersPayload) ? usersPayload : []);
+        setEmployees(Array.isArray(employeesPayload) ? employeesPayload : []);
       } catch {
         if (!alive) return;
         setUsers([]);
@@ -518,9 +519,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
 
     try {
       const response = await fetch(`/api/projects/${projectId}/offers/${offerId}`);
-      const payload = await response.json();
-      if (!payload.success) return;
-      const offer: OfferVersion = payload.data;
+      const offer = await parseApiEnvelope<OfferVersion>(response, "Ponudbe ni mogoče naložiti.");
       if (!offer) return;
 
       setTitle(offer.baseTitle || "Ponudba");
@@ -600,10 +599,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
 
       try {
         const res = await fetch(`/api/projects/${projectId}/offers`);
-        const json = await res.json();
-        if (!json.success) return;
-
-        const list: OfferVersionSummary[] = json.data ?? [];
+        const list = await parseApiEnvelope<OfferVersionSummary[]>(res, "Ponudb ni mogoče naložiti.");
         setVersions(list);
 
         if (list.length === 0) {
@@ -637,10 +633,8 @@ const loadOfferById = useCallback(async (offerId: string) => {
   const refreshTemplates = useCallback(async (preferredId?: string | null) => {
     try {
       const response = await fetch(`/api/projects/offer-templates`);
-      const payload = await response.json();
-      if (!payload.success) return;
-
-      const list: OfferTemplateSummary[] = Array.isArray(payload.data) ? payload.data : [];
+      const payload = await parseApiEnvelope<OfferTemplateSummary[]>(response, "Template-ov ni mogoče naložiti.");
+      const list: OfferTemplateSummary[] = Array.isArray(payload) ? payload : [];
       setTemplates(list);
 
       if (preferredId && list.some((entry) => entry._id === preferredId)) {
@@ -987,9 +981,8 @@ const buildOfferPdfFilename = (
     setLoadingLinkedServiceSuggestions((prev) => ({ ...prev, [rowId]: true }));
     try {
       const response = await fetch(`/api/cenik/product-service-links?productId=${encodeURIComponent(productId)}`);
-      const payload = await response.json();
-      const links: ProductServiceLink[] =
-        payload?.success && Array.isArray(payload?.data) ? payload.data : [];
+      const payload = await parseApiEnvelope<ProductServiceLink[]>(response, "Povezanih storitev ni mogoče naložiti.");
+      const links: ProductServiceLink[] = Array.isArray(payload) ? payload : [];
       setLinkedServiceSuggestions((prev) => ({ ...prev, [rowId]: links }));
     } catch {
       setLinkedServiceSuggestions((prev) => ({ ...prev, [rowId]: [] }));
@@ -1323,18 +1316,18 @@ const buildOfferPdfFilename = (
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rawText: raw, projectId }),
       });
-      const payload = await response.json();
-      if (!payload?.success || !Array.isArray(payload?.data?.rows)) {
+      const payload = await parseApiEnvelope<{ rows?: OfferImportRow[] }>(response, "Razčlenjevanje tabele ni uspelo.");
+      if (!Array.isArray(payload?.rows)) {
         setImportRows([]);
-        setImportError(payload?.error ?? "Razčlenjevanje tabele ni uspelo.");
+        setImportError("Razčlenjevanje tabele ni uspelo.");
         setShowImportMappingHint(true);
         return;
       }
-      setImportRows(payload.data.rows as OfferImportRow[]);
+      setImportRows(payload.rows);
     } catch (error) {
       console.error(error);
       setImportRows([]);
-      setImportError("Razčlenjevanje tabele ni uspelo.");
+      setImportError(error instanceof Error ? error.message : "Razčlenjevanje tabele ni uspelo.");
       setShowImportMappingHint(true);
     } finally {
       setImportLoading(false);
@@ -1524,13 +1517,7 @@ const buildOfferPdfFilename = (
         body: JSON.stringify(payloadBody),
       });
 
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Ponudbe ni bilo mogoče shraniti.");
-        return null;
-      }
-
-      const created: OfferVersion = payload.data;
+      const created = await parseApiEnvelope<OfferVersion>(response, "Ponudbe ni bilo mogoče shraniti.");
       const savedOfferId = offerIdBeingSaved ?? created._id ?? null;
       if (savedOfferId) {
         selectedOfferIdRef.current = savedOfferId;
@@ -1547,7 +1534,7 @@ const buildOfferPdfFilename = (
       return created;
     } catch (error) {
       console.error(error);
-      toast.error("Napaka pri shranjevanju ponudbe.");
+      toast.error(error instanceof Error ? error.message : "Napaka pri shranjevanju ponudbe.");
       return null;
     } finally {
       setSaving(false);
@@ -1570,27 +1557,34 @@ const buildOfferPdfFilename = (
     if (!selectedOfferId) return;
     if (!window.confirm("Res želiš izbrisati to verzijo ponudbe?")) return;
 
-    const response = await fetch(`/api/projects/${projectId}/offers/${selectedOfferId}`, {
-      method: "DELETE",
-    });
-    const payload = await response.json();
-    if (!payload.success || !payload.data) return;
+    try {
+      const response = await fetch(`/api/projects/${projectId}/offers/${selectedOfferId}`, {
+        method: "DELETE",
+      });
+      await parseApiEnvelope<unknown>(response, "Ponudbe ni bilo mogoče izbrisati.");
 
-    await refreshOffers(null);
+      await refreshOffers(null);
+    } catch (error) {
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : "Ponudbe ni bilo mogoče izbrisati.");
+    }
   };
 
   const handleCloneVersion = async () => {
     if (!selectedOfferId) return;
-    const payload = buildPayloadFromCurrentState();
-    const response = await fetch(`/api/projects/${projectId}/offers`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const json = await response.json();
-    if (!json.success || !json.data) return;
-    const created: OfferVersion = json.data;
-    await refreshOffers(created._id ?? null);
+    try {
+      const payload = buildPayloadFromCurrentState();
+      const response = await fetch(`/api/projects/${projectId}/offers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const created = await parseApiEnvelope<OfferVersion>(response, "Ponudbe ni bilo mogoče klonirati.");
+      await refreshOffers(created._id ?? null);
+    } catch (error) {
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : "Ponudbe ni bilo mogoče klonirati.");
+    }
   };
 
   const handleSaveTemplate = async () => {
@@ -1621,17 +1615,13 @@ const buildOfferPdfFilename = (
           title: templateName,
         }),
       });
-      const payload = await response.json();
-      if (!payload.success || !payload.data) {
-        toast.error(payload.error ?? "Template ni bilo mogoče shraniti.");
-        return;
-      }
+      const payload = await parseApiEnvelope<OfferTemplateSummary>(response, "Template ni bilo mogoče shraniti.");
 
-      await refreshTemplates(payload.data._id ?? null);
+      await refreshTemplates(payload._id ?? null);
       toast.success("Template shranjen.");
     } catch (error) {
       console.error(error);
-      toast.error("Template ni bilo mogoče shraniti.");
+      toast.error(error instanceof Error ? error.message : "Template ni bilo mogoče shraniti.");
     } finally {
       setTemplateSaving(false);
     }
@@ -1666,20 +1656,16 @@ const buildOfferPdfFilename = (
       const response = await fetch(`/api/projects/${projectId}/offer-templates/${targetTemplate._id}/apply`, {
         method: "POST",
       });
-      const payload = await response.json();
-      if (!payload.success || !payload.data) {
-        toast.error(payload.error ?? "Template podatkov ni bilo mogoče naložiti.");
-        return;
-      }
+      const payload = await parseApiEnvelope<OfferTemplate>(response, "Template podatkov ni bilo mogoče naložiti.");
 
       setTemplateDialogMode("rename");
       setTemplateDialogTemplateId(targetTemplate._id);
-      fillTemplateDialogFromTemplate(payload.data as OfferTemplate);
+      fillTemplateDialogFromTemplate(payload);
       setIsTemplateNameDialogOpen(true);
       setIsTemplatePickerOpen(false);
     } catch (error) {
       console.error(error);
-      toast.error("Template podatkov ni bilo mogoče naložiti.");
+      toast.error(error instanceof Error ? error.message : "Template podatkov ni bilo mogoče naložiti.");
     } finally {
       setTemplateSaving(false);
     }
@@ -1736,23 +1722,18 @@ const buildOfferPdfFilename = (
               }),
             });
 
-      const payload = await response.json();
-      if (!payload.success || !payload.data) {
-        toast.error(
-          payload.error ??
-            (templateDialogMode === "create"
-              ? "Template ni bilo mogoče shraniti."
-              : "Template ni bilo mogoče preimenovati.")
-        );
-        return;
-      }
+      const fallbackMessage =
+        templateDialogMode === "create"
+          ? "Template ni bilo mogoče shraniti."
+          : "Template ni bilo mogoče preimenovati.";
+      const payload = await parseApiEnvelope<OfferTemplateSummary>(response, fallbackMessage);
 
-      await refreshTemplates(payload.data._id ?? null);
+      await refreshTemplates(payload._id ?? null);
       setIsTemplateNameDialogOpen(false);
       toast.success(templateDialogMode === "create" ? "Template shranjen." : "Template preimenovan.");
     } catch (error) {
       console.error(error);
-      toast.error(templateDialogMode === "create" ? "Template ni bilo mogoče shraniti." : "Template ni bilo mogoče preimenovati.");
+      toast.error(error instanceof Error ? error.message : templateDialogMode === "create" ? "Template ni bilo mogoče shraniti." : "Template ni bilo mogoče preimenovati.");
     } finally {
       setTemplateSaving(false);
     }
@@ -1781,11 +1762,7 @@ const buildOfferPdfFilename = (
       const response = await fetch(`/api/projects/${projectId}/offer-templates/${deletedId}`, {
         method: "DELETE",
       });
-      const payload = await response.json();
-      if (!payload.success || !payload.data) {
-        toast.error(payload.error ?? "Template ni bilo mogoče izbrisati.");
-        return;
-      }
+      await parseApiEnvelope<unknown>(response, "Template ni bilo mogoče izbrisati.");
 
       setIsTemplateDeleteDialogOpen(false);
       setTemplateDeleteTarget(null);
@@ -1794,7 +1771,7 @@ const buildOfferPdfFilename = (
       toast.success("Template izbrisan.");
     } catch (error) {
       console.error(error);
-      toast.error("Template ni bilo mogoče izbrisati.");
+      toast.error(error instanceof Error ? error.message : "Template ni bilo mogoče izbrisati.");
     } finally {
       setTemplateDeleting(false);
     }
@@ -1811,13 +1788,7 @@ const buildOfferPdfFilename = (
       const response = await fetch(`/api/projects/${projectId}/offer-templates/${selectedTemplateId}/create-offer`, {
         method: "POST",
       });
-      const payload = await response.json();
-      if (!payload.success || !payload.data) {
-        toast.error(payload.error ?? "Ponudbe iz template-a ni bilo mogoče ustvariti.");
-        return;
-      }
-
-      const created: OfferVersion = payload.data;
+      const created = await parseApiEnvelope<OfferVersion>(response, "Ponudbe iz template-a ni bilo mogoče ustvariti.");
       await refreshAfterMutation(
         async () => {
           await Promise.all([
@@ -1832,7 +1803,7 @@ const buildOfferPdfFilename = (
       toast.success("Nova ponudba iz template-a je pripravljena.");
     } catch (error) {
       console.error(error);
-      toast.error("Ponudbe iz template-a ni bilo mogoče ustvariti.");
+      toast.error(error instanceof Error ? error.message : "Ponudbe iz template-a ni bilo mogoče ustvariti.");
     } finally {
       setTemplateCreating(false);
     }
@@ -1858,13 +1829,7 @@ const buildOfferPdfFilename = (
       const response = await fetch(`/api/projects/${projectId}/offer-templates/${selectedTemplateId}/apply`, {
         method: "POST",
       });
-      const payload = await response.json();
-      if (!payload.success || !payload.data) {
-        toast.error(payload.error ?? "Template podatkov ni bilo mogoče prenesti.");
-        return;
-      }
-
-      const template = payload.data as {
+      const template = await parseApiEnvelope<{
         paymentTerms: string | null;
         comment?: string | null;
         applyGlobalDiscount: boolean;
@@ -1875,7 +1840,7 @@ const buildOfferPdfFilename = (
         globalDiscountPercent?: number;
         discountPercent: number;
         items: OfferLineItem[];
-      };
+      }>(response, "Template podatkov ni bilo mogoče prenesti.");
 
       setPaymentTerms(template.paymentTerms ?? "");
       setComment(template.comment ?? "");
@@ -1922,7 +1887,7 @@ const buildOfferPdfFilename = (
       toast.success("Template podatki so bili preneseni v trenutno ponudbo.");
     } catch (error) {
       console.error(error);
-      toast.error("Template podatkov ni bilo mogoče prenesti.");
+      toast.error(error instanceof Error ? error.message : "Template podatkov ni bilo mogoče prenesti.");
     } finally {
       setTemplateCreating(false);
     }
@@ -1937,11 +1902,8 @@ const buildOfferPdfFilename = (
     if (!projectId) return null;
     try {
       const response = await fetch(`/api/projects/${projectId}`);
-      const result = await response.json();
-      if (!result.success || !result.data) {
-        return null;
-      }
-      const mapped = mapProject(result.data);
+      const result = await parseApiEnvelope<any>(response, "Projekt ni bil najden.");
+      const mapped = mapProject(result);
       setProjectDetails(mapped);
       setSalesUserId(mapped.salesUserId ?? "");
       setAssignedEmployeeIds(Array.isArray(mapped.assignedEmployeeIds) ? mapped.assignedEmployeeIds : []);
@@ -1975,12 +1937,8 @@ const buildOfferPdfFilename = (
           assignedEmployeeIds: nextEmployeeIds,
         }),
       });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Posodobitev dodelitev ni uspela.");
-        return false;
-      }
-      const mapped = mapProject(payload.data);
+      const payload = await parseApiEnvelope<any>(response, "Posodobitev dodelitev ni uspela.");
+      const mapped = mapProject(payload);
       setProjectDetails(mapped);
       setSalesUserId(mapped.salesUserId ?? "");
       setAssignedEmployeeIds(Array.isArray(mapped.assignedEmployeeIds) ? mapped.assignedEmployeeIds : []);
@@ -1990,7 +1948,7 @@ const buildOfferPdfFilename = (
       return true;
     } catch (error) {
       console.error(error);
-      toast.error("Posodobitev dodelitev ni uspela.");
+      toast.error(error instanceof Error ? error.message : "Posodobitev dodelitev ni uspela.");
       return false;
     } finally {
       setAssignmentsSaving(false);
@@ -2157,18 +2115,14 @@ const buildOfferPdfFilename = (
         `/api/projects/${projectId}/offers/${saved._id}/send`,
         { method: "POST" }
       );
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Pošiljanje ni uspelo.");
-        return;
-      }
+      const payload = await parseApiEnvelope<{ message?: string }>(response, "Pošiljanje ni uspelo.");
       toast.success(
-        payload.data?.message ?? "Pošiljanje bo implementirano kasneje."
+        payload?.message ?? "Pošiljanje bo implementirano kasneje."
       );
       await refreshOffers(saved._id ?? null, true);
     } catch (error) {
       console.error(error);
-      toast.error("Pošiljanje ni uspelo.");
+      toast.error(error instanceof Error ? error.message : "Pošiljanje ni uspelo.");
     } finally {
       setSending(false);
     }
@@ -2267,11 +2221,7 @@ const buildOfferPdfFilename = (
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ offerVersionId: offerId }),
       });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Potrditve ponudbe ni mogoče preklicati.");
-        return;
-      }
+      await parseApiEnvelope<unknown>(response, "Potrditve ponudbe ni mogoče preklicati.");
       toast.success("Potrditev ponudbe je bila preklicana.");
       await refreshAfterMutation(
         () => refreshOffers(offerId, true),
@@ -2280,7 +2230,7 @@ const buildOfferPdfFilename = (
         },
       );
     } catch (error) {
-      toast.error("Potrditve ponudbe ni mogoče preklicati.");
+      toast.error(error instanceof Error ? error.message : "Potrditve ponudbe ni mogoče preklicati.");
     } finally {
       setSaving(false);
     }
@@ -3350,5 +3300,3 @@ const buildOfferPdfFilename = (
     </Card>
   );
 }
-
-
