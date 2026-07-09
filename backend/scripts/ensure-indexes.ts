@@ -3,6 +3,7 @@ import mongoose, { type Model } from 'mongoose';
 import { connectToMongo } from '../db/mongo';
 import { loadEnvironment } from '../loadEnv';
 import { ProductModel } from '../modules/cenik/product.model';
+import { TaskModel } from '../modules/tasks/task.model';
 import { CommunicationEventModel } from '../modules/communication/schemas/event';
 import { CommunicationMessageModel } from '../modules/communication/schemas/message';
 import { CommunicationTemplateModel } from '../modules/communication/schemas/template';
@@ -34,6 +35,7 @@ type IndexSpec = {
 
 const INDEX_MODELS: Model<any>[] = [
   ProductModel,
+  TaskModel,
   CommunicationEventModel,
   CommunicationMessageModel,
   CommunicationTemplateModel,

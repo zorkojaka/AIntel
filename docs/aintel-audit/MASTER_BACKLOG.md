@@ -50,6 +50,15 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 - New `tasks` module (platform-core style): schema + API + inbox per
   **`AINTEL_WHEEL_SPEC.md` §2** (authoritative design; senior schema review first).
   Manual tasks first; no automation yet. Effort L.
+- **Backend landed (2026-07-09, AIN-P1-09)**: `modules/tasks` (schema per §2 incl.
+  indexes + ensure-indexes registration, dedupeKey unique-sparse; lifecycle
+  open/in_progress/blocked/done/cancelled with claim/complete/block/unblock/
+  cancel/reopen/reassign/reschedule actions, resolution required on done,
+  blockedReason required on blocked, task-local history). API `/api/tasks`:
+  GET /my (personal + role-pool union, overdue counts), GET / (ADMIN, aging),
+  GET /by-subject/:kind/:id, POST /, PATCH /:id. 11 tests on
+  mongodb-memory-server (46 backend tests green). **Remaining scope:
+  inbox UI in core-shell ("Opravila" page + nav badge + by-subject strips).**
 
 ### AIN-P1-10 — Scheduler worker
 - In-process interval runner (node-cron acceptable — ask owner re dependency) with
