@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import { ProjectClient, ProjectDetails } from "../../types";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 
@@ -114,11 +115,10 @@ export function mapProject(data: any): ProjectDetails {
 async function fetchProjectLogistics(projectId: string): Promise<ProjectLogistics | null> {
   try {
     const response = await fetch(`/api/projects/${projectId}/logistics`);
-    const payload = await response.json();
-    if (!payload.success || !payload.data) {
+    const data = await parseApiEnvelope<any>(response, "Logistike projekta ni mogoče naložiti.");
+    if (!data) {
       return null;
     }
-    const data = payload.data as any;
     return {
       workOrders: data.workOrders ?? [],
       materialOrders: data.materialOrders ?? [],
@@ -143,15 +143,8 @@ export function useProject(projectId: string, initialProject?: ProjectDetails | 
     setError(null);
     try {
       const response = await fetch(`/api/projects/${projectId}`);
-      const result = await response.json();
-      if (!result.success) {
-        const message = result.error ?? "Projekt ni bil najden.";
-        setError(new Error(message));
-        toast.error(message);
-        setProjectState(null);
-        return;
-      }
-      const mapped = mapProject(result.data);
+      const result = await parseApiEnvelope<any>(response, "Projekt ni bil najden.");
+      const mapped = mapProject(result);
       const logistics = await fetchProjectLogistics(projectId);
       const combined: ProjectDetails = {
         ...mapped,
