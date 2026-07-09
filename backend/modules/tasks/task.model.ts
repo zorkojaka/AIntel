@@ -48,7 +48,9 @@ export interface TaskDocument extends Document {
   slaBreachedAt?: Date;
   source: { kind: 'user' | 'rule'; ruleKey?: string; userId?: mongoose.Types.ObjectId };
   dedupeKey?: string;
-  resolution?: { outcome: string; note?: string; resolvedBy: mongoose.Types.ObjectId; resolvedAt: Date };
+  // resolvedBy = user (manual completion); resolvedByRule = rule key (AIN-P1-11
+  // rules resolve tasks too, e.g. offer accepted → follow-up auto-completes).
+  resolution?: { outcome: string; note?: string; resolvedBy?: mongoose.Types.ObjectId; resolvedByRule?: string; resolvedAt: Date };
   history: TaskHistoryEntry[];
   createdAt: Date;
   updatedAt: Date;
@@ -92,7 +94,8 @@ const TaskSchema = new Schema<TaskDocument>(
       type: {
         outcome: { type: String, required: true, trim: true },
         note: { type: String, trim: true, default: '' },
-        resolvedBy: { type: Schema.Types.ObjectId, required: true },
+        resolvedBy: { type: Schema.Types.ObjectId, default: undefined },
+        resolvedByRule: { type: String, trim: true, default: undefined },
         resolvedAt: { type: Date, required: true },
       },
       _id: false,

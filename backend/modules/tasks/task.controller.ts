@@ -82,3 +82,26 @@ export async function patchTask(req: Request, res: Response) {
     return handleError(res, error, 'Opravila ni bilo mogoče posodobiti.');
   }
 }
+
+// AIN-P1-11: stikala in parametri pravil kolesa (wheel_settings). ADMIN-only.
+export async function getWheelConfig(req: Request, res: Response) {
+  try {
+    const { getWheelConfig: readConfig } = await import('../scheduler/wheel-config');
+    return res.success(await readConfig());
+  } catch (error) {
+    return handleError(res, error, 'Nastavitev kolesa ni mogoče prebrati.');
+  }
+}
+
+export async function putWheelConfig(req: Request, res: Response) {
+  try {
+    const { setWheelConfig, getWheelConfig: readConfig } = await import('../scheduler/wheel-config');
+    await setWheelConfig(req.body ?? {});
+    return res.success(await readConfig());
+  } catch (error) {
+    if (error instanceof Error && /Nezn|Neveljavna/.test(error.message)) {
+      return res.fail(error.message, 400);
+    }
+    return handleError(res, error, 'Nastavitev kolesa ni bilo mogoče shraniti.');
+  }
+}

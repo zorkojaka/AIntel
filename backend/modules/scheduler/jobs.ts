@@ -1,4 +1,5 @@
 import { TaskModel } from '../tasks/task.model';
+import { scanOfferExpiry, scanOfferFollowUps, scanStaleInquiries } from './rules';
 import type { SchedulerJob } from './scheduler.service';
 
 export async function sweepTaskSla(now = new Date()) {
@@ -20,6 +21,30 @@ export function schedulerJobs(): SchedulerJob[] {
       cron: '*/15 * * * *',
       async handler() {
         return { counts: await sweepTaskSla() };
+      },
+    },
+    // AIN-P1-11: scan rules. Each is additionally gated by its own kill switch
+    // in wheel_settings (ships disabled) — an enabled scheduler with all rules
+    // off only runs the SLA sweep above.
+    {
+      key: 'rules.inquiry_stale_escalation',
+      cron: '10 * * * *',
+      async handler() {
+        return { counts: (await scanStaleInquiries()) as Record<string, number> };
+      },
+    },
+    {
+      key: 'rules.offer_follow_up',
+      cron: '25,55 * * * *',
+      async handler() {
+        return { counts: (await scanOfferFollowUps()) as Record<string, number> };
+      },
+    },
+    {
+      key: 'rules.offer_expiry',
+      cron: '40 6 * * *',
+      async handler() {
+        return { counts: (await scanOfferExpiry()) as Record<string, number> };
       },
     },
   ];

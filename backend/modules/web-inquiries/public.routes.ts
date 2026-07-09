@@ -4,6 +4,7 @@ import path from 'path';
 import multer from 'multer';
 import mongoose from 'mongoose';
 import { Router, type NextFunction, type Request, type Response } from 'express';
+import { fireRule, onWebInquiryNextStep, onWebInquiryProcessed } from '../scheduler/rules';
 import { getWebInquiryOptions, getWebIzdelki, getWebKatalog, PILLAR_LABELS, processWebInquiry, validateWebInquiryPayload, WebInquiryError } from './web-inquiry.service';
 import { WebInquiryModel } from './web-inquiry.model';
 import { getReviewByToken, listApprovedReviews, submitReview } from '../reviews/review.service';
@@ -173,6 +174,11 @@ router.post('/inquiries', async (req: Request, res: Response) => {
     }
 
     const result = await processWebInquiry(payload);
+    // AIN-P1-11: kolo — prvi kontakt (opravilo za prodajo). Fire-and-forget.
+    fireRule(
+      onWebInquiryProcessed(result.inquiry, Boolean(result.offerNumber) && result.emailSent),
+      'inquiry.first_contact',
+    );
     return res.status(201).json({
       ok: true,
       inquiryId: String(result.inquiry._id),
@@ -383,6 +389,8 @@ router.post('/inquiries/:id/next-step', async (req: Request, res: Response) => {
       return res.status(404).json({ ok: false, code: 'NOT_FOUND', message: 'Povpraševanje ni najdeno.' });
     }
     inquiry.nextStep = { choice: choice as any, note, chosenAt: new Date() };
+    // AIN-P1-11: kolo — stranka je izbrala naslednji korak (posvet/ogled/avans).
+    fireRule(onWebInquiryNextStep(inquiry, choice), 'inquiry.next_step');
     await inquiry.save();
     return res.json({ ok: true, message: NEXT_STEP_MESSAGES[choice] });
   } catch (error) {

@@ -84,6 +84,19 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   nextStep → matching task; inquiry new>1 business day uncontacted → escalation task.
 - Acceptance: each rule covered by a unit test; tasks visible in inbox; every rule
   individually disableable via config (ships disabled). Effort M. Deps: P1-09, P1-10.
+- **Landed (2026-07-09, AIN-P1-11), ALL RULES SHIP DISABLED**: scheduler/rules.ts —
+  event rules inquiry.first_contact (auto-offer → review task next business day;
+  else call task +4 working hours; hooks in public.routes POST /inquiries) and
+  inquiry.next_step (posvet/ogled/avans → immediate SALES task + auto-resolves the
+  first-contact task); scan rules inquiry.stale_escalation (hourly, >N business
+  days uncontacted → ADMIN urgent), offer.follow_up (sent+N days silent → task to
+  offer creator/SALES pool; accepted/rejected offers auto-complete their open task),
+  offer.expiry (validUntil passed → renew-or-close task; offer status NOT mutated in
+  v1). Kill switches + params in wheel_settings via scheduler/wheel-config.ts
+  (dots in rule keys encoded __ for Mongo paths), ADMIN API GET/PUT
+  /api/tasks/wheel-config. Task.resolution gains optional resolvedByRule. 7 unit
+  tests over memory Mongo (60 backend tests green). Signature→invoice rule deferred
+  to AIN-P1-12 (needs invoice collection).
 
 ### AIN-P1-12 — Invoice payment tracking
 - dueDate + paidAt + status on (new) invoice collection; mark-paid endpoint
