@@ -118,6 +118,17 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   `EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md`; F0 = owner creates the address + IMAP creds.
   Effort L. Deps: P1-10 (done); F2 touches communication send path (messageId).
 
+### AIN-P1-15 — Offer rescue campaign: discount code after a week of silence
+- Owner idea (2026-07-09): offer sent +X days, customer has MARKETING CONSENT and
+  offer above a threshold → campaign task with email PREVIEW carrying a single-use
+  discount code (percent, min order value, expiry, NOT stackable with quantity
+  discounts). Manual batch send like P1-13; true auto-mode is a separate per-rule
+  switch enabled only after owner trust. Needs a small coupons module in AIntel
+  (create/validate/redeem at offer confirmation, redemption ledger) and measurement
+  (redeemed codes ↔ offers → funnel card). GDPR: consented recipients only, unsubscribe
+  in every mail. Spec: `EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md` §AIN-P1-15. Effort M–L.
+  Deps: P1-13, ECO-09/10 (consents), coupons module.
+
 ### AIN-P1-12 — Invoice payment tracking
 - dueDate + paidAt + status on (new) invoice collection; mark-paid endpoint
   (ADMIN/FINANCE); overdue rule → task + reminder email template. Effort M.

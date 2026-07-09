@@ -60,3 +60,32 @@ Faze:
 Meje: samo branje in beleženje — sistem na pošto NIKOLI ne odgovarja sam;
 poverilnice samo v .env; priloge v F1 samo metapodatki (prenos kasneje po
 potrebi). Obseg: L (fazno).
+
+## AIN-P1-15 — Reševalna akcija: koda za popust po tednu tišine
+
+Lastnikova ideja (2026-07-09): namesto 5 % popusta vnaprej dobi stranka po
+~tednu neodzvane ponudbe e-mail s KODO za 5 % popusta na naročilo nad
+določeno vrednostjo, z rokom veljavnosti. Popust plačamo samo pri strankah,
+ki bi sicer odpadle; koda z rokom ustvari odločitev zdaj; unovčenje = merljiv
+učinek akcije.
+
+Sestavni deli:
+
+1. **Kuponi (mali modul v AIntelu)**: koda (enkratna, per-stranka), odstotek,
+   min. vrednost naročila, veljavnost, se NE sešteva s količinskimi popusti;
+   unovčenje ob potrditvi ponudbe/naročila (prodajnik vnese ali sistem
+   preveri), evidenca unovčenj. (Predviden že v SHOPIFY_REPLACEMENT_PLAN
+   »kuponi = nov mali modul, po potrebi« — potreba je zdaj.)
+2. **Pravilo `offer.rescue_discount`** (kolo): ponudba poslana +X dni (za
+   follow-upom, npr. 10–14 dni), stranka IMA marketinško soglasje (ECO-09 /
+   portal soglasja) in ponudba nad pragom → pripravi kampanjsko opravilo s
+   PREDOGLEDOM maila (šablona s kodo). Pošiljanje ročno s klikom (paket kot
+   P1-13); pravi avto-način je ločeno stikalo, ki se vklopi šele po
+   lastnikovem zaupanju.
+3. **Merjenje**: unovčene kode ↔ ponudbe (rešene ponudbe, prihodek akcije) →
+   kartica v dashboardu (ECO-13 lijak).
+
+GDPR: samo prejemniki z marketinško privolitvijo; odjava v vsakem mailu.
+Odvisnosti: P1-13 (mehanika pošiljanja iz opravila), ECO-09/10 (soglasja),
+kuponi modul. Parametri (odstotek, prag, roki) nastavljivi v wheel/kuponi
+konfiguraciji — brez trdo kodiranih vrednosti.
