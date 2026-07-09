@@ -72,7 +72,7 @@ coding starts — this is the system's future hub; schema mistakes here compound
 | Order | Item | Assignee | Depends on |
 |---|---|---|---|
 | 3.1 | **AIN-P1-09** Task entity + inbox (manual tasks only) | [agent] after [senior] schema sign-off | W2 checkpoint |
-| 3.2 | **AIN-P1-10** scheduler worker | [agent] | D-014 decided [owner]; 1.4 logging |
+| 3.2 | **AIN-P1-10** scheduler worker | [agent] DONE: env-gated node-cron worker, locks, run log, SLA sweep | D-014 decided [owner]; 1.4 logging |
 | 3.3 | **AIN-P1-11** first automation rules (5 rules per wheel spec §6) | [agent] | 3.1 + 3.2 |
 | 3.4 | **AIN-P1-12** invoice payment tracking + overdue rule | [agent] | 2.2, 3.3 |
 | 3.5 | **AIN-P2-02** state-machine layer (wrap existing statuses) | [agent] [senior] transition-map review | 1.4; can start parallel to 3.3 |

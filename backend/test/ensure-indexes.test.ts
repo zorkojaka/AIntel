@@ -41,4 +41,6 @@ test('AIN-P1-05 declares hot-path indexes used by project logistics and communic
   assert.ok(byCollectionAndName.has('workorders.assignedEmployeeIds_1_projectId_1'));
   assert.ok(byCollectionAndName.has('materialorders.projectId_1_offerVersionId_1'));
   assert.ok(byCollectionAndName.has('communication_messages.projectId_1_createdAt_-1'));
+  assert.ok(byCollectionAndName.has('scheduler_locks.leaseUntil_1'));
+  assert.ok(byCollectionAndName.has('scheduler_runs.key_1_startedAt_-1'));
 });

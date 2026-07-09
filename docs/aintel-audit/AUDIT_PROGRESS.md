@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-09 (AIN-P3-02 shared frontend API client)
-Last reviewed commit: AIN-P3-02 shared frontend API client on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-09 (AIN-P1-10 scheduler worker)
+Last reviewed commit: AIN-P1-10 scheduler worker on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -140,6 +140,11 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
 - **AIN-P1-09 follow-up**: by-subject task strips now render on project detail pages
   and expanded web-inquiry rows, backed by the existing `/api/tasks/by-subject/:kind/:id`
   API. Owner visual review remains.
+- **AIN-P1-10 scheduler worker**: added env-gated `node-cron` scheduler foundation
+  (`AINTEL_SCHEDULER_ENABLED=true`) with Mongo lease locks, run log, Sentry/log
+  failure reporting, declared indexes, and a first task SLA sweep job. It is disabled
+  by default to avoid accidental writes to the shared staging/prod DB before owner ops
+  verification.
 - **AIN-P3-01**: auth login now has a tested in-memory/per-process failed-attempt
   limiter. Optional 2FA and distributed/session revocation remain future scope.
 - **TD-B6**: auth route `blockNonPost` now uses Express `Request`/`Response`/

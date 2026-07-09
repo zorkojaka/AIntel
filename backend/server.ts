@@ -5,6 +5,7 @@ import { connectToMongo } from './db/mongo';
 import { logger } from './core/logger';
 import { bootstrapAdminUser } from './modules/auth/services/bootstrap';
 import { logSmtpDiagnostics } from './modules/communication/services/email-transport.service';
+import { startSchedulerWorker } from './modules/scheduler/worker';
 
 loadEnvironment();
 logSmtpDiagnostics('startup');
@@ -12,7 +13,10 @@ logSmtpDiagnostics('startup');
 const port = Number(process.env.PORT ?? 3000);
 
 connectToMongo()
-  .then(() => bootstrapAdminUser())
+  .then(async () => {
+    await bootstrapAdminUser();
+    startSchedulerWorker();
+  })
   .catch((error) => {
     logger.error({ err: error }, 'MongoDB se ni uspel povezati');
   });
