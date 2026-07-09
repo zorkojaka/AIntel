@@ -98,6 +98,26 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   tests over memory Mongo (60 backend tests green). Signature→invoice rule deferred
   to AIN-P1-12 (needs invoice collection).
 
+### AIN-P1-13 — Follow-up email from the follow-up task (one click, always manual)
+- Owner flow (2026-07-09): the `offer.follow_up` task gets a "Pripravi follow-up
+  e-mail" action — template `offer_follow_up` rendered with offer context, PREVIEW,
+  explicit send click via the communication module, logged to communication events +
+  project timeline, task completed with outcome. Batch view with checkboxes in
+  Opravila (each send logged separately). Never auto-send (owner rule). Spec:
+  `EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md`. Effort M. Deps: P1-09/P1-11 (done),
+  communication templates (exist).
+
+### AIN-P1-14 — Inbound email ingestion (dedicated mailbox → project trail)
+- Dedicated mailbox read via IMAP scheduler job; raw messages stored in
+  `email_messages`; matching by In-Reply-To/References (store messageId on send),
+  sender→CRM client→open projects, PON-/PRJ- numbers; matched → project timeline
+  entry + communication thread (sent+received together); unmatched → `email.unmatched`
+  task to SALES pool. Wheel follow-up: customer reply auto-completes the open
+  offer.follow_up task. Read-only mailbox handling, never auto-replies, credentials
+  in .env only. New deps `imapflow` + `mailparser` (owner approval). Phased F0–F4 in
+  `EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md`; F0 = owner creates the address + IMAP creds.
+  Effort L. Deps: P1-10 (done); F2 touches communication send path (messageId).
+
 ### AIN-P1-12 — Invoice payment tracking
 - dueDate + paidAt + status on (new) invoice collection; mark-paid endpoint
   (ADMIN/FINANCE); overdue rule → task + reminder email template. Effort M.

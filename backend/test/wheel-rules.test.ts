@@ -44,7 +44,7 @@ function makeOffer(overrides: Record<string, unknown> = {}) {
     title: 'Ponudba v1',
     documentNumber: `PON-${Math.floor(Math.random() * 100000)}`,
     status: 'sent',
-    sentAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+    sentAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
     items: [],
     ...overrides,
   });

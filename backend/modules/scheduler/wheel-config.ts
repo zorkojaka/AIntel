@@ -34,13 +34,13 @@ const WheelSettingsSchema = new Schema<WheelSettingsDocument>(
     rules: { type: Schema.Types.Mixed, default: {} },
     params: {
       type: {
-        offerFollowUpDays: { type: Number, default: 3 },
+        offerFollowUpDays: { type: Number, default: 7 },
         inquiryStaleBusinessDays: { type: Number, default: 1 },
         workStartHour: { type: Number, default: 8 },
         workEndHour: { type: Number, default: 16 },
       },
       _id: false,
-      default: () => ({ offerFollowUpDays: 3, inquiryStaleBusinessDays: 1, workStartHour: 8, workEndHour: 16 }),
+      default: () => ({ offerFollowUpDays: 7, inquiryStaleBusinessDays: 1, workStartHour: 8, workEndHour: 16 }),
     },
   },
   { timestamps: true, collection: 'wheel_settings' },
@@ -49,7 +49,8 @@ const WheelSettingsSchema = new Schema<WheelSettingsDocument>(
 export const WheelSettingsModel: Model<WheelSettingsDocument> =
   mongoose.models.WheelSettings || mongoose.model<WheelSettingsDocument>('WheelSettings', WheelSettingsSchema);
 
-const DEFAULT_PARAMS: WheelParams = { offerFollowUpDays: 3, inquiryStaleBusinessDays: 1, workStartHour: 8, workEndHour: 16 };
+// offerFollowUpDays=7: lastnik želi follow-up po enem tednu tišine.
+const DEFAULT_PARAMS: WheelParams = { offerFollowUpDays: 7, inquiryStaleBusinessDays: 1, workStartHour: 8, workEndHour: 16 };
 
 export type WheelConfig = { rules: Record<string, { enabled: boolean }>; params: WheelParams };
 
