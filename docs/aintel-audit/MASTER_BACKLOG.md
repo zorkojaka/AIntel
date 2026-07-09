@@ -57,8 +57,14 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   blockedReason required on blocked, task-local history). API `/api/tasks`:
   GET /my (personal + role-pool union, overdue counts), GET / (ADMIN, aging),
   GET /by-subject/:kind/:id, POST /, PATCH /:id. 11 tests on
-  mongodb-memory-server (46 backend tests green). **Remaining scope:
-  inbox UI in core-shell ("Opravila" page + nav badge + by-subject strips).**
+  mongodb-memory-server (46 backend tests green).
+- **Inbox UI landed (2026-07-09, AIN-P1-09)**: new `apps/module-tasks`
+  (OpravilaPage: Moja opravila / Bazen mojih vlog / Danes zaključeno; claim,
+  complete-with-outcome, block-with-reason, unblock, cancel; create form with
+  assign-to-me or role pool; overdue rows red), registered in core-shell with
+  route /opravila and an open-count nav badge (60 s refresh). Deployed to
+  staging. **Remaining scope: by-subject task strips on project/inquiry detail
+  pages (small follow-up); owner visual review.**
 
 ### AIN-P1-10 — Scheduler worker
 - In-process interval runner (node-cron acceptable — ask owner re dependency) with
