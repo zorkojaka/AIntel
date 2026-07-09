@@ -24,7 +24,7 @@ import type { Employee } from "@aintel/shared/types/employee";
 import type { CommunicationMessage } from "@aintel/shared/types/communication";
 import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 
-import { ArrowDown, ArrowLeft, Check, ChevronsUpDown, Download, Loader2, Pencil, RefreshCw, Trash, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronsUpDown, Download, Loader2, Pencil, RefreshCw, Trash, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
@@ -827,6 +827,22 @@ const loadOfferById = useCallback(async (offerId: string) => {
       const filtered = prev.filter((item) => item.id !== id);
       if (filtered.length === 0) return ensureTrailingBlank([]);
       return ensureTrailingBlank(filtered);
+    });
+  };
+
+  const moveItem = (id: string, direction: -1 | 1) => {
+    setItems((prev) => {
+      const movableItems = prev.filter((item) => !isEmptyOfferItem(item));
+      const fromIndex = movableItems.findIndex((item) => item.id === id);
+      const toIndex = fromIndex + direction;
+      if (fromIndex === -1 || toIndex < 0 || toIndex >= movableItems.length) return prev;
+
+      const nextMovableItems = [...movableItems];
+      const [movedItem] = nextMovableItems.splice(fromIndex, 1);
+      nextMovableItems.splice(toIndex, 0, movedItem);
+
+      const trailingBlank = prev.find((item) => isEmptyOfferItem(item)) ?? createEmptyItem();
+      return ensureTrailingBlank([...nextMovableItems, trailingBlank]);
     });
   };
 
@@ -2678,6 +2694,7 @@ const buildOfferPdfFilename = (
           onRevealBlankItem={revealMobileBlankItem}
           onUpdateItem={handleItemUpdate}
           onDeleteItem={deleteRow}
+          onMoveItem={moveItem}
           onSelectProduct={handleSelectProduct}
           onSelectCustomItem={handleSelectCustomItem}
           renderItemActions={(item) => renderKmCalculationMobile(item as OfferLineItemForm)}
@@ -2729,11 +2746,39 @@ const buildOfferPdfFilename = (
               const suggestionContent = renderLinkedServiceSuggestions(item);
               const kmButton = renderKmCalculationButton(item);
               const kmAddressComparison = renderKmAddressComparison(item);
+              const movableItems = items.filter((entry) => !isEmptyOfferItem(entry));
+              const itemOrderIndex = movableItems.findIndex((entry) => entry.id === item.id);
+              const canMoveUp = itemOrderIndex > 0;
+              const canMoveDown = itemOrderIndex >= 0 && itemOrderIndex < movableItems.length - 1;
               return (
               <Fragment key={item.id}>
               <TableRow key={item.id} className="h-11">
                 <TableCell className="text-left pl-4 align-middle min-w-0">
                   <div className="flex min-w-0 items-center gap-2">
+                    <div className="flex shrink-0 flex-col">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-5 w-7 rounded-none"
+                        disabled={!canMoveUp}
+                        onClick={() => moveItem(item.id, -1)}
+                        aria-label={`Premakni postavko ${item.name || index + 1} gor`}
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-5 w-7 rounded-none"
+                        disabled={!canMoveDown}
+                        onClick={() => moveItem(item.id, 1)}
+                        aria-label={`Premakni postavko ${item.name || index + 1} dol`}
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                     <div className="min-w-0 flex-1">
                     <PriceListProductAutocomplete
                       value={item.name}

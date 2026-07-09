@@ -40,8 +40,8 @@ regression, not data loss.
 |---|---|---|---|
 | 1.1 | **AIN-P1-01** staging DB split + email trap | [owner] infra remains, [agent] email-trap support + runbook DONE | — (unblocks all DB-writing work; schedule first) |
 | 1.2 | **AIN-P1-06** installer-prep ObjectId guard | [agent] | — (S effort; can even ride along with W0) |
-| 1.3 | **AIN-P1-02** error tracking | [agent] after [owner] picks Sentry vs GlitchTip | — |
-| 1.4 | **AIN-P1-03** structured logging (pino + request IDs) | [agent] | [owner] approves dependency |
+| 1.3 | **AIN-P1-02** error tracking | [agent] DONE: Sentry EU, optional via SENTRY_DSN, scrubbed context; [owner] creates EU project + sets env | owner chose Sentry EU 2026-07-08 |
+| 1.4 | **AIN-P1-03** structured logging (pino + request IDs) | [agent] DONE: pino + pino-http, request-id/tenant/user/route/latency, named console.* migrated | [owner] approved `pino` dependency 2026-07-08 |
 | 1.5 | **AIN-P1-04** smoke tests, five money flows | [agent] | Uses memory-server → does NOT wait on 1.1 |
 | 1.6 | **AIN-P1-05** index audit + ensure-indexes script | [agent] script DONE, [owner] runs dry-run/apply | Script landed; owner still runs read-only `db:ensure-indexes -- --json` and guarded apply if needed |
 

@@ -40,16 +40,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   required before marking done.
 - Effort M (mostly ops coordination). **Blocks all test-writing items.**
 
-### AIN-P1-02 — Error tracking (Sentry or self-hosted GlitchTip)
-- Wire into errorHandler + unhandledRejection + frontend. Needs owner approval for
-  new dependency + SaaS choice. Acceptance: TD-B7-style errors visible with stack +
-  request context. Effort S–M.
-
-### AIN-P1-03 — Structured logging with request IDs
-- pino + middleware (request id, user id, tenant, route, latency); replace ad-hoc
-  console.\* incrementally (start: core, communication sends, public intake).
-- Acceptance: one JSON line per request in prod logs. Effort M.
-
 ### AIN-P1-08 — Promote invoiceVersions to a collection
 - Schema from current shapes (inspect existing docs via dry-run analysis script with
   owner); dual-read (collection first, embedded fallback), write new only to
@@ -135,6 +125,47 @@ Every item lists its docs in-line; at minimum update MODULE_CATALOG review statu
 relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 
 ## Done
+
+### AIN-P1-02 — Error tracking (Sentry, EU data residency)
+- **Landed**: AIN-P1-02 implementation commit (owner chose Sentry EU 2026-07-08;
+  GlitchTip/self-host deferred to avoid ops burden).
+- **Summary**: Added `@sentry/node` behind `backend/core/sentry.ts` and an
+  `backend/instrument.ts` loaded first in `server.ts`. Sentry is **optional** — if
+  `SENTRY_DSN` is unset the app runs normally with no error tracking. `errorHandler`
+  forwards 500s via `captureRequestException` with minimal, scrubbed context:
+  request id (`x-request-id`), route, HTTP method, status code, environment, release,
+  and a minimal user (internal id + primary role only — no name/email). `sendDefaultPii`
+  is off and a `beforeSend` scrubber strips cookies, request body, query strings, and
+  auth/cookie/API-key headers as defence in depth. EU data residency is carried by the
+  DSN (EU-region project → `*.ingest.de.sentry.io`).
+- **Acceptance**: verified disabled-by-default no-op (no DSN), enabled path with an EU
+  DSN, and the scrubber removing secrets/PII via `test/sentry-scrub.test.ts`
+  (32 backend tests green); `npm run build` clean.
+- **Owner setup** (no secrets in repo): create an **EU-region** Sentry project and set
+  in AIntel backend env — `SENTRY_DSN` (EU DSN), optional `SENTRY_ENVIRONMENT`
+  (defaults to `NODE_ENV`), `SENTRY_RELEASE` (deploy commit sha), and
+  `SENTRY_TRACES_SAMPLE_RATE` (defaults `0`, errors only). Never commit the DSN.
+- **Follow-up**: frontend SPA capture (`@sentry/react`) not yet wired — backend-only
+  for now; add per-app init in a later item if desired.
+
+### AIN-P1-03 — Structured logging with request IDs
+- **Landed**: AIN-P1-03 implementation commit (owner approved the `pino` dependency
+  2026-07-08).
+- **Summary**: Added a shared `pino` logger (`backend/core/logger.ts`) and a
+  `pino-http` middleware (`backend/core/middleware/httpLogger.ts`) mounted first in
+  `createApp`, so every request — including `/api/public` intake — emits one JSON line
+  with a request id (echoed on the `x-request-id` response header), method/url, the
+  tenant/user/route from `req.context`, status, and latency. `errorHandler` now logs
+  500s with the full stack via `req.log`. Migrated the named ad-hoc `console.*` in core
+  (server bootstrap), communication sends (email transport, project-communication
+  controller, installer-prep logging), and public intake (web-inquiry routes + service)
+  to structured logging. Prod/test emit JSON; local dev gets `pino-pretty` only on a
+  TTY; tests run silent.
+- **Acceptance**: verified one JSON line per request with reqId/tenant/user/route/
+  latency and 200→info / 500→error+stack via a standalone smoke; `npm run build` and all
+  29 backend tests green.
+- **Follow-up**: `console.*` migration was scoped to the named start areas; remaining
+  ad-hoc `console.*` elsewhere can move to `req.log`/`logger` incrementally.
 
 ### AIN-P0-01 — Split public API surface; rotate web-inquiry API key
 - **Landed**: AIN-P0-01 implementation commit.

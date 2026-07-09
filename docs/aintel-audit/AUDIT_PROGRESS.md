@@ -154,6 +154,23 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   opt-in retry and a standardized error-reporting hook. Remaining grep hits are
   intentional special cases: custom category `options`, logistics email non-JSON
   fallback, and cenik 409 duplicate-precheck conflict data.
+- **AIN-P1-03 structured logging**: added `pino` + a `pino-http` middleware mounted
+  first in `createApp`, so every request (incl. `/api/public`) emits one JSON line with
+  a request id (echoed on `x-request-id`), method/url, tenant/user/route from
+  `req.context`, status, and latency. `errorHandler` logs 500s with full stack via
+  `req.log`. Named `console.*` in core/communication-sends/public-intake migrated to the
+  structured logger. Prod/test = JSON; dev = `pino-pretty` on a TTY; tests silent.
+  Verified via smoke + `npm run build` + 29 backend tests green. Owner approved the
+  `pino` dependency 2026-07-08.
+- **AIN-P1-02 error tracking**: added `@sentry/node` behind `core/sentry.ts` +
+  `instrument.ts` (loaded first in `server.ts`). Optional — no `SENTRY_DSN` means the app
+  runs with tracking disabled. 500s forwarded from `errorHandler` with scrubbed context
+  (request id, route, method, status, environment, release, minimal user = id + primary
+  role). `sendDefaultPii:false` + `beforeSend` strip cookies/body/query/auth+API-key
+  headers. EU residency carried by the DSN (`*.ingest.de.sentry.io`). Owner chose Sentry
+  EU 2026-07-08; must create the EU project and set env secrets. Verified via
+  `test/sentry-scrub.test.ts` (disabled no-op, enabled path, scrub) + 32 tests green.
+  Frontend SPA capture remains a follow-up.
 
 ## Genuine unresolved checks (curated in the final review)
 

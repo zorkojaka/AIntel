@@ -8,6 +8,7 @@ import type {
   CommunicationTemplate,
 } from "../../../../shared/types/communication";
 import { isValidObjectId } from "mongoose";
+import { logger } from "../../../core/logger";
 import { stripAppendedFooter } from "../../../../shared/utils/communication-footer";
 import { CommunicationSenderSettingsModel } from "../schemas/sender-settings";
 import { CommunicationTemplateModel } from "../schemas/template";
@@ -1440,7 +1441,7 @@ export async function sendInstallerPreparationEmail(input: {
       });
       return { message: serializeMessage(message.toObject()), sent: true };
     } catch (loggingError) {
-      console.error("Installer preparation email was sent, but communication logging failed", loggingError);
+      logger.error({ err: loggingError }, "Installer preparation email was sent, but communication logging failed");
       return { message: null, sent: true, loggingFailed: true };
     }
   } catch (error) {
