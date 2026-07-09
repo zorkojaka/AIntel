@@ -8,6 +8,7 @@ import { FinancePage } from '@aintel/module-finance';
 import { EmployeesPage } from '@aintel/module-employees';
 import { ProfilPage } from '@aintel/module-profil';
 import { DashboardPage } from '@aintel/module-dashboard';
+import { OpravilaPage, manifest as tasksManifest } from '@aintel/module-tasks';
 import { manifest as crmManifest } from '@aintel/module-crm';
 import { manifest as projectsManifest } from '@aintel/module-projects';
 import { manifest as cenikManifest } from '@aintel/module-cenik';
@@ -23,6 +24,7 @@ import { ResetPasswordPage } from './auth/ResetPasswordPage';
 
 const modules = [
   dashboardManifest,
+  tasksManifest,
   crmManifest,
   projectsManifest,
   cenikManifest,
@@ -46,6 +48,7 @@ function getModuleIdFromPath(pathname: string): ModuleId {
 
 const moduleComponents: Record<ModuleId, React.ReactNode> = {
   dashboard: <DashboardPage />,
+  tasks: <OpravilaPage />,
   settings: <SettingsPage />,
   crm: <CRMPage />,
   projects: <ProjectsPage />,

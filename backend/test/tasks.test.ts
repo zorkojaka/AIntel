@@ -43,7 +43,12 @@ test('AIN-P1-09 task module', async (t) => {
 
   await t.test('create requires title and an owner', async () => {
     await assert.rejects(createTask(sales, { title: '' }), TaskError);
-    await assert.rejects(createTask(sales, { title: 'Brez lastnika' }), TaskError);
+    // No explicit assignee: defaults to the creator's employee record …
+    const selfAssigned = await createTask(sales, { title: 'Zame' });
+    assert.equal(String(selfAssigned.assigneeEmployeeId), String(employeeId));
+    // … but a user without an employee record must name an owner.
+    const noEmployee: ActorContext = { ...sales, actorUserId: String(new mongoose.Types.ObjectId()), actorEmployeeId: null };
+    await assert.rejects(createTask(noEmployee, { title: 'Brez lastnika' }), TaskError);
   });
 
   await t.test('create manual task for a role pool', async () => {

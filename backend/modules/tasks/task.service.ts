@@ -85,10 +85,16 @@ export async function createTask(context: ActorContext, input: CreateTaskInput):
     throw new TaskError('Subjekt potrebuje ID (subject.id), razen pri kind="none".');
   }
 
-  const assigneeEmployeeId = parseObjectId(input.assigneeEmployeeId, 'assigneeEmployeeId');
+  let assigneeEmployeeId = parseObjectId(input.assigneeEmployeeId, 'assigneeEmployeeId');
   const assigneeRole = cleanString(input.assigneeRole, 30).toUpperCase() || undefined;
   if (!assigneeEmployeeId && !assigneeRole) {
-    throw new TaskError('Opravilo mora imeti lastnika: assigneeEmployeeId ali assigneeRole.');
+    // Owner semantics (§2): a task always has an owner. Without an explicit
+    // assignee, default to the creator's employee record when there is one.
+    if (context.actorEmployeeId) {
+      assigneeEmployeeId = new mongoose.Types.ObjectId(context.actorEmployeeId);
+    } else {
+      throw new TaskError('Opravilo mora imeti lastnika: assigneeEmployeeId ali assigneeRole.');
+    }
   }
 
   const priority = (cleanString(input.priority, 20) || 'normal') as TaskPriority;

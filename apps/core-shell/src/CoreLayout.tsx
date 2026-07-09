@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, FolderKanban, LayoutGrid, List, Menu, Settings, User, Users, Wallet } from 'lucide-react';
+import { ArrowLeft, FolderKanban, LayoutGrid, List, ListChecks, Menu, Settings, User, Users, Wallet } from 'lucide-react';
 import {
   MOBILE_TOPBAR_CLEAR_EVENT,
   MOBILE_TOPBAR_SET_EVENT,
   type MobileTopbarAction,
   type MobileTopbarConfig,
 } from '@aintel/shared/utils/mobileTopbar';
+import { fetchMyTaskCounts } from '@aintel/module-tasks';
 import './CoreLayout.css';
 
 type ModuleNavItem = {
@@ -41,6 +42,7 @@ const iconMap: Record<string, React.ReactNode> = {
   'layout-grid': <LayoutGrid size={16} />,
   list: <List size={16} />,
   wallet: <Wallet size={16} />,
+  'list-checks': <ListChecks size={16} />,
   settings: <Settings size={16} />,
 };
 
@@ -54,6 +56,26 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
   userInfo,
 }) => {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  // AIN-P1-09: badge z odprtimi opravili ob navigacijski postavki "Opravila".
+  const hasTasksModule = modules.some((module) => module.id === 'tasks');
+  const [taskBadge, setTaskBadge] = useState(0);
+  useEffect(() => {
+    if (!hasTasksModule) return;
+    let alive = true;
+    const tick = () => {
+      fetchMyTaskCounts()
+        .then((counts) => {
+          if (alive) setTaskBadge(counts.open);
+        })
+        .catch(() => {});
+    };
+    tick();
+    const interval = window.setInterval(tick, 60_000);
+    return () => {
+      alive = false;
+      window.clearInterval(interval);
+    };
+  }, [hasTasksModule, activeModule]);
   const [mobileTopbarConfig, setMobileTopbarConfig] = useState<MobileTopbarConfig | null>(null);
 
   useEffect(() => {
@@ -165,6 +187,9 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
                 >
                   {icon ? <span className="core-shell__nav-icon">{icon}</span> : null}
                   <span>{label}</span>
+                  {item.id === 'tasks' && taskBadge > 0 ? (
+                    <span className="core-shell__nav-badge">{taskBadge}</span>
+                  ) : null}
                 </button>
               </li>
             </React.Fragment>
