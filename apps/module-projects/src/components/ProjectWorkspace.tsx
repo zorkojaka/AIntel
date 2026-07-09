@@ -6,6 +6,7 @@ import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
+import { TaskSubjectStrip } from "@aintel/module-tasks";
 import { clearMobileTopbar, setMobileTopbar } from "@aintel/shared/utils/mobileTopbar";
 import { Check, Pencil, X } from "lucide-react";
 import { OfferVersion } from "../domains/offers/OfferVersionCard";
@@ -1351,6 +1352,14 @@ export function ProjectWorkspace({
         <div className="max-w-[1280px] mx-auto px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6">
           <div className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground md:hidden">
             ID: {projectDisplayId || project.id}
+          </div>
+          <div className="mb-4">
+            <TaskSubjectStrip
+              subjectKind="project"
+              subjectId={project._id}
+              subjectLabel={projectDisplayId || project.title || project.id}
+              title="Opravila projekta"
+            />
           </div>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
             <div className="space-y-4 lg:col-span-3">

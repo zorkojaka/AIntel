@@ -43,3 +43,29 @@
 .opravilo__akcije button:hover { background: #f1f5f9; }
 .opravilo__akcije button:disabled { opacity: .5; cursor: default; }
 .opravilo__kljukica { color: #15803d; }
+
+.opravila-strip { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; }
+.opravila-strip--compact { padding: 10px; }
+.opravila-strip__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.opravila-strip__header h3 { margin: 0; font-size: 14px; color: #0f2740; }
+.opravila-strip__header p { margin: 2px 0 0; font-size: 12.5px; color: #64748b; }
+.opravila-strip__actions { display: inline-flex; align-items: center; gap: 6px; }
+.opravila-strip__actions button, .opravila-strip__form button { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #d7dee6; background: #fff; color: #0f2740; border-radius: 7px; padding: 5px 8px; cursor: pointer; font-size: 12.5px; font-weight: 600; }
+.opravila-strip__actions button:hover, .opravila-strip__form button:hover { background: #f1f5f9; }
+.opravila-strip__actions button:disabled, .opravila-strip__form button:disabled { opacity: .55; cursor: default; }
+.opravila-strip__error { margin-top: 8px; color: #b91c1c; font-size: 12.5px; }
+.opravila-strip__form { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(100px, 130px) minmax(150px, 190px) auto; gap: 8px; margin-top: 10px; }
+.opravila-strip__form input, .opravila-strip__form select { border: 1px solid #d7dee6; border-radius: 7px; padding: 7px 9px; font-size: 13px; min-width: 0; }
+.opravila-strip__list { display: grid; gap: 6px; margin-top: 10px; }
+.opravila-strip__empty { margin: 0; color: #64748b; font-size: 13px; }
+.opravila-strip__item { display: grid; grid-template-columns: auto minmax(140px, 1fr) auto auto; align-items: center; gap: 8px; border: 1px solid #edf2f7; border-radius: 8px; padding: 7px 8px; font-size: 13px; }
+.opravila-strip__item--overdue { border-color: #fecaca; background: #fffafa; }
+.opravila-strip__title { font-weight: 650; color: #0f172a; overflow-wrap: anywhere; }
+.opravila-strip__status { color: #64748b; }
+.opravila-strip__due { display: inline-flex; align-items: center; gap: 4px; color: #64748b; white-space: nowrap; }
+.opravila-strip__item--overdue .opravila-strip__due { color: #b91c1c; }
+
+@media (max-width: 720px) {
+  .opravila-strip__form { grid-template-columns: 1fr; }
+  .opravila-strip__item { grid-template-columns: 1fr; align-items: start; }
+}

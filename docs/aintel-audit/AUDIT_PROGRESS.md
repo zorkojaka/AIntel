@@ -137,6 +137,9 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
 - **AIN-P1-01 agent support**: shared email transport now supports env-driven staging
   trap (`AINTEL_EMAIL_TRAP_TO`, `AINTEL_EMAIL_SUBJECT_PREFIX`) with tests and an owner
   rollout runbook. Staging DB split remains owner-owned and not yet verified.
+- **AIN-P1-09 follow-up**: by-subject task strips now render on project detail pages
+  and expanded web-inquiry rows, backed by the existing `/api/tasks/by-subject/:kind/:id`
+  API. Owner visual review remains.
 - **AIN-P3-01**: auth login now has a tested in-memory/per-process failed-attempt
   limiter. Optional 2FA and distributed/session revocation remain future scope.
 - **TD-B6**: auth route `blockNonPost` now uses Express `Request`/`Response`/

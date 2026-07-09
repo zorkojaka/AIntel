@@ -62,9 +62,9 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   (OpravilaPage: Moja opravila / Bazen mojih vlog / Danes zaključeno; claim,
   complete-with-outcome, block-with-reason, unblock, cancel; create form with
   assign-to-me or role pool; overdue rows red), registered in core-shell with
-  route /opravila and an open-count nav badge (60 s refresh). Deployed to
-  staging. **Remaining scope: by-subject task strips on project/inquiry detail
-  pages (small follow-up); owner visual review.**
+  route /opravila and an open-count nav badge (60 s refresh). By-subject task
+  strips now render on project detail and expanded web-inquiry rows. Deployed to
+  staging. **Remaining scope: owner visual review.**
 
 ### AIN-P1-10 — Scheduler worker
 - In-process interval runner (node-cron acceptable — ask owner re dependency) with

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Card, Input } from '@aintel/ui';
+import { TaskSubjectStrip } from '@aintel/module-tasks';
 import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 
 type ProductInfo = { id: string; name: string; price: number } | null;
@@ -531,6 +532,13 @@ export function WebInquiriesSection() {
                         ))}
                       </ul>
                     )}
+                    <TaskSubjectStrip
+                      subjectKind="inquiry"
+                      subjectId={inquiry.id}
+                      subjectLabel={`${inquiry.contact.firstName} ${inquiry.contact.lastName}`.trim() || inquiry.id}
+                      title="Opravila povpraševanja"
+                      compact
+                    />
                   </div>
                 )}
               </div>

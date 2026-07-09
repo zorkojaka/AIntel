@@ -2,13 +2,23 @@ import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 
 export type TaskStatus = 'open' | 'in_progress' | 'done' | 'cancelled' | 'blocked';
 export type TaskPriority = 'low' | 'normal' | 'high' | 'urgent';
+export type TaskSubjectKind =
+  | 'project'
+  | 'inquiry'
+  | 'client'
+  | 'offerVersion'
+  | 'workOrder'
+  | 'materialOrder'
+  | 'invoice'
+  | 'serviceTicket'
+  | 'none';
 
 export interface TaskItem {
   _id: string;
   type: string;
   title: string;
   description?: string;
-  subject: { kind: string; id?: string; label?: string };
+  subject: { kind: TaskSubjectKind; id?: string; label?: string };
   assigneeEmployeeId?: string | null;
   assigneeRole?: string | null;
   status: TaskStatus;
@@ -37,11 +47,17 @@ export async function fetchMyTaskCounts(): Promise<{ open: number; overdue: numb
   return data.counts;
 }
 
+export async function fetchTasksBySubject(kind: TaskSubjectKind, id: string): Promise<TaskItem[]> {
+  const response = await fetch(`/api/tasks/by-subject/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`);
+  return parseApiEnvelope<TaskItem[]>(response, 'Opravil subjekta ni mogoče naložiti.');
+}
+
 export type CreateTaskPayload = {
   title: string;
   description?: string;
   priority?: TaskPriority;
   dueAt?: string;
+  subject?: { kind: TaskSubjectKind; id?: string; label?: string };
   assigneeRole?: string;
   assigneeEmployeeId?: string;
 };

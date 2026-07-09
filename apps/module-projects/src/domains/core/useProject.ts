@@ -76,6 +76,7 @@ export function mapProject(data: any): ProjectDetails {
   };
   return {
     id: data.id,
+    _id: data._id ? String(data._id) : undefined,
     title: data.title,
     customer: data.customer?.name ?? data.customer ?? "",
     status: data.status,
