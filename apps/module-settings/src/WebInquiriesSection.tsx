@@ -39,6 +39,7 @@ const PILLAR_PICKERJI: Array<{ kljuc: 'alarm' | 'domofon' | 'pametniDom'; naslov
     naslov: 'Alarm (brezžični) – fiksne izbire',
     polja: [
       ['centralaProductId', 'Centrala (Ajax Hub)'],
+      ['centrala2ProductId', 'Centrala 2 (Ajax Hub 2 – ob foto senzorju)'],
       ['sensorAProductId', 'Senzor A (osnovni)'],
       ['sensorBProductId', 'Senzor B (srednji)'],
       ['sensorCProductId', 'Senzor C (napredni)'],

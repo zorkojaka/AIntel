@@ -6,7 +6,7 @@ import { ReviewModel } from '../reviews/review.model';
 
 const router = Router();
 
-const ALARM_POLJA = ['centralaProductId', 'sensorAProductId', 'sensorBProductId', 'sensorCProductId', 'sirenaZunanjaProductId', 'sirenaNotranjaProductId', 'tipkovnicaProductId', 'pozarProductId', 'coProductId'] as const;
+const ALARM_POLJA = ['centralaProductId', 'centrala2ProductId', 'sensorAProductId', 'sensorBProductId', 'sensorCProductId', 'sirenaZunanjaProductId', 'sirenaNotranjaProductId', 'tipkovnicaProductId', 'pozarProductId', 'coProductId'] as const;
 const DOMOFON_POLJA = ['notranjaEnotaProductId', 'zunanjaEnotaProductId'] as const;
 const DOM_POLJA = ['modulLuciProductId', 'modulSencilProductId'] as const;
 

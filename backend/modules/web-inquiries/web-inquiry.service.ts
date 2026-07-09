@@ -390,8 +390,21 @@ async function buildAlarmZahteva(input: {
   const { settings, defaultsApplied, data } = input;
   const cfg = settings.alarm;
   const sensorId = { A: cfg.sensorAProductId, B: cfg.sensorBProductId, C: cfg.sensorCProductId }[data.sensorChoice];
-  const centrala = await productNameOrThrow(cfg.centralaProductId, 'alarmna centrala');
   const senzor = await productNameOrThrow(sensorId, `senzor ${data.sensorChoice}`);
+
+  // Poslovno pravilo (2026-07-09): senzor s foto verifikacijo (MotionCam)
+  // potrebuje Ajax Hub 2 — sicer zadošča osnovni Hub. Centrala je VEDNO del
+  // ponudbe (fiksna izbira).
+  const jeFotoSenzor = /motioncam/i.test(senzor.ime);
+  let centrala = await productNameOrThrow(cfg.centralaProductId, 'alarmna centrala');
+  if (jeFotoSenzor) {
+    if (cfg.centrala2ProductId) {
+      centrala = await productNameOrThrow(cfg.centrala2ProductId, 'alarmna centrala 2 (Hub 2)');
+      defaultsApplied.push(`Senzor s foto verifikacijo → centrala nadgrajena na ${centrala.ime}.`);
+    } else {
+      defaultsApplied.push('OPOZORILO: senzor s foto verifikacijo, a Centrala 2 (Hub 2) v nastavitvah ni izbrana — uporabljena osnovna centrala. Preveri ročno!');
+    }
+  }
   defaultsApplied.push(`Centrala: ${centrala.ime} (fiksna izbira).`, `Senzor ${data.sensorChoice}: ${senzor.ime} × ${data.sensorCount}.`);
 
   const sirene: Array<{ productId: string; kolicina: number }> = [];
