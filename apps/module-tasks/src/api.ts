@@ -52,6 +52,23 @@ export async function fetchTasksBySubject(kind: TaskSubjectKind, id: string): Pr
   return parseApiEnvelope<TaskItem[]>(response, 'Opravil subjekta ni mogoče naložiti.');
 }
 
+export interface TaskTemplate {
+  _id: string;
+  name: string;
+  title: string;
+  description?: string;
+  priority: TaskPriority;
+  dueInDays?: number | null;
+  assigneeRole?: string | null;
+  isActive: boolean;
+  order: number;
+}
+
+export async function fetchTaskTemplates(): Promise<TaskTemplate[]> {
+  const response = await fetch('/api/tasks/templates');
+  return parseApiEnvelope<TaskTemplate[]>(response, 'Predlog opravil ni mogoče naložiti.');
+}
+
 export type CreateTaskPayload = {
   title: string;
   description?: string;

@@ -10,6 +10,12 @@ import {
   type ActorContext,
 } from './task.service';
 import { previewOfferFollowUpEmail, sendOfferFollowUpEmail } from './follow-up-email.service';
+import {
+  createTaskTemplate,
+  deleteTaskTemplate,
+  listTaskTemplates,
+  updateTaskTemplate,
+} from './task-template.service';
 
 function actorContext(req: Request): ActorContext {
   const context = (req as any).context ?? {};
@@ -99,6 +105,44 @@ export async function sendTaskFollowUpEmail(req: Request, res: Response) {
     return res.success(result);
   } catch (error) {
     return handleError(res, error, 'Follow-up e-maila ni mogoče poslati.');
+  }
+}
+
+// Predloge opravil (Nastavitve → Opravila): branje za vse prijavljene
+// (hitri izbor pri novem opravilu), upravljanje ADMIN-only.
+export async function getTaskTemplates(req: Request, res: Response) {
+  try {
+    const activeOnly = req.query.all !== '1';
+    const templates = await listTaskTemplates(actorContext(req), { activeOnly });
+    return res.success(templates);
+  } catch (error) {
+    return handleError(res, error, 'Predlog opravil ni mogoče prebrati.');
+  }
+}
+
+export async function postTaskTemplate(req: Request, res: Response) {
+  try {
+    const template = await createTaskTemplate(actorContext(req), req.body ?? {});
+    return res.success(template, 201);
+  } catch (error) {
+    return handleError(res, error, 'Predloge opravila ni bilo mogoče ustvariti.');
+  }
+}
+
+export async function patchTaskTemplate(req: Request, res: Response) {
+  try {
+    const template = await updateTaskTemplate(actorContext(req), String(req.params.id), req.body ?? {});
+    return res.success(template);
+  } catch (error) {
+    return handleError(res, error, 'Predloge opravila ni bilo mogoče posodobiti.');
+  }
+}
+
+export async function removeTaskTemplate(req: Request, res: Response) {
+  try {
+    return res.success(await deleteTaskTemplate(actorContext(req), String(req.params.id)));
+  } catch (error) {
+    return handleError(res, error, 'Predloge opravila ni bilo mogoče izbrisati.');
   }
 }
 

@@ -17,6 +17,11 @@
 .opravilo-forma input[type="text"], .opravilo-forma textarea, .opravilo-forma select, .opravilo-forma input[type="datetime-local"] { border: 1px solid #d7dee6; border-radius: 8px; padding: 8px 10px; font-size: 14px; width: 100%; }
 .opravilo-forma__vrstica { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
 .opravilo-forma__vrstica label { display: grid; gap: 4px; font-size: 12.5px; font-weight: 600; color: #475569; }
+.opravilo-forma__predloge { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.opravilo-forma__predloge-naslov { font-size: 12.5px; font-weight: 600; color: #475569; margin-right: 2px; }
+.opravilo-forma__predloga { border: 1px solid #d7dee6; background: #f8fafc; border-radius: 999px; padding: 4px 12px; font-size: 13px; color: #334155; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.opravilo-forma__predloga:hover { border-color: #94a3b8; }
+.opravilo-forma__predloga--aktivna { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; }
 
 .opravila-stran section { margin-top: 22px; }
 .opravila-stran section h2 { font-size: 1.02rem; margin: 0 0 10px; color: #0f2740; }

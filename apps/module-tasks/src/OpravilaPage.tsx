@@ -3,12 +3,14 @@ import { AlertTriangle, CheckCircle2, CircleSlash, Hand, Loader2, Lock, Mail, Pl
 import {
   createTask,
   fetchMyTasks,
+  fetchTaskTemplates,
   previewOfferFollowUpEmail,
   sendOfferFollowUpEmail,
   updateTask,
   type OfferFollowUpEmailDraft,
   type TaskItem,
   type TaskPriority,
+  type TaskTemplate,
 } from './api';
 import './styles.css';
 
@@ -45,6 +47,9 @@ export function OpravilaPage() {
   const [followUpSending, setFollowUpSending] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', priority: 'normal' as TaskPriority, dueAt: '', assigneeRole: 'SALES', zame: true });
+  const [templates, setTemplates] = useState<TaskTemplate[]>([]);
+  const [templatesLoaded, setTemplatesLoaded] = useState(false);
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,6 +70,35 @@ export function OpravilaPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Predloge (Nastavitve → Opravila) naložimo šele ob prvem odprtju obrazca.
+  useEffect(() => {
+    if (!showForm || templatesLoaded) return;
+    setTemplatesLoaded(true);
+    fetchTaskTemplates()
+      .then(setTemplates)
+      .catch(() => setTemplates([]));
+  }, [showForm, templatesLoaded]);
+
+  const applyTemplate = (template: TaskTemplate) => {
+    let dueAt = '';
+    if (template.dueInDays !== null && template.dueInDays !== undefined) {
+      const due = new Date();
+      due.setDate(due.getDate() + template.dueInDays);
+      due.setHours(16, 0, 0, 0);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      dueAt = `${due.getFullYear()}-${pad(due.getMonth() + 1)}-${pad(due.getDate())}T${pad(due.getHours())}:${pad(due.getMinutes())}`;
+    }
+    setActiveTemplateId(template._id);
+    setForm({
+      title: template.title,
+      description: template.description ?? '',
+      priority: template.priority,
+      dueAt,
+      assigneeRole: template.assigneeRole || 'SALES',
+      zame: !template.assigneeRole,
+    });
+  };
 
   const { moja, bazen } = useMemo(() => {
     const moja = tasks.filter((t) => t.assigneeEmployeeId);
@@ -202,6 +236,7 @@ export function OpravilaPage() {
         ...(form.zame ? {} : { assigneeRole: form.assigneeRole }),
       });
       setForm({ title: '', description: '', priority: 'normal', dueAt: '', assigneeRole: 'SALES', zame: true });
+      setActiveTemplateId(null);
       setShowForm(false);
       await load();
     } catch (err) {
@@ -338,6 +373,22 @@ export function OpravilaPage() {
 
       {showForm ? (
         <form className="opravilo-forma" onSubmit={submitForm}>
+          {templates.length > 0 ? (
+            <div className="opravilo-forma__predloge">
+              <span className="opravilo-forma__predloge-naslov">Predloge:</span>
+              {templates.map((template) => (
+                <button
+                  key={template._id}
+                  type="button"
+                  className={`opravilo-forma__predloga ${activeTemplateId === template._id ? 'opravilo-forma__predloga--aktivna' : ''}`}
+                  title={template.description || template.title}
+                  onClick={() => applyTemplate(template)}
+                >
+                  {template.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <input
             type="text"
             placeholder="Kaj je treba narediti? *"

@@ -120,6 +120,24 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   in every mail. Spec: `EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md` §AIN-P1-15. Effort M–L.
   Deps: P1-13, ECO-09/10 (consents), coupons module.
 
+### AIN-P1-16 — Smart form defaults: most-common choices preselected
+- Owner direction (2026-07-09): "optimizacija da prihranimo pri času in da so
+  stvari enostavne" — in the offer/inquiry creation flows the most common choices
+  are PRESELECTED so the user can move fast, with a subtle hint showing what is
+  usually chosen ("najpogosteje izbrano"). Source of truth = our own statistics
+  (salesStats/offer history, same engine as ECO-35), not hardcoded guesses;
+  recompute with the stats cron. Applies to: new-project/offer forms in AIntel
+  and the web configurator (web side tracked as ECO-36). Effort M. Deps: ECO-35.
+
+### AIN-P1-17 — Motivational progress bar in multi-step flows
+- Owner direction (2026-07-09): progress must be obvious and psychologically
+  encouraging. Rules: (1) the bar starts at a non-zero value the moment the flow
+  opens (endowed-progress effect), never at 0 %; (2) near the end — e.g. the data
+  entry before generating the offer — it must clearly show how much work is
+  already invested and that the finish is close ("še zadnji korak"); (3) applies
+  to the internal offer flow AND especially the public web configurator so
+  customers do not abandon it (web side = ECO-36). Effort S–M per flow.
+
 ### AIN-P1-12 — Invoice payment tracking
 - dueDate + paidAt + status on (new) invoice collection; mark-paid endpoint
   (ADMIN/FINANCE); overdue rule → task + reminder email template. Effort M.
@@ -182,6 +200,22 @@ Every item lists its docs in-line; at minimum update MODULE_CATALOG review statu
 relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 
 ## Done
+
+### AIN-P1-18 — Task templates + Nastavitve → Opravila section
+- **Landed 2026-07-09**: owner request — company configures its task processes in
+  settings; adding a task becomes one click on a template instead of typing.
+- **Summary**: new `task_templates` collection (name/title/description/priority/
+  dueInDays/assigneeRole/isActive/order, tenant-scoped) with defaults seeded on
+  first read (pokliči stranko, ogled, pripravi ponudbo, follow-up, naroči material,
+  termin montaže, servisni obisk). API: GET `/api/tasks/templates` (all users,
+  `?all=1` includes inactive), POST/PATCH/DELETE ADMIN-only. New settings section
+  **Opravila** (between Prodaja and Sistem) with template CRUD + the wheel automation
+  rules UI (per-rule toggles with SI descriptions + params offerFollowUpDays etc.,
+  via existing GET/PUT `/api/tasks/wheel-config`). OpravilaPage: template chips above
+  the new-task form; a click prefills title/description/priority/due/assignee, all
+  fields stay editable.
+- **Tests**: `backend/test/task-templates.test.ts` (default seeding idempotent,
+  validation, activeOnly filter, delete, tenant isolation) on memory Mongo.
 
 ### AIN-P1-13 — Follow-up email from the follow-up task (one click, always manual)
 - **Landed**: AIN-P1-13 implementation commit.

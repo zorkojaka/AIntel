@@ -6,11 +6,15 @@ import {
   getMyTasks,
   getTasks,
   getTasksBySubject,
+  getTaskTemplates,
   getWheelConfig,
   patchTask,
+  patchTaskTemplate,
   postTask,
+  postTaskTemplate,
   previewTaskFollowUpEmail,
   putWheelConfig,
+  removeTaskTemplate,
   sendTaskFollowUpEmail,
 } from './task.controller';
 
@@ -23,6 +27,10 @@ router.get('/by-subject/:kind/:id', getTasksBySubject);
 router.get('/', requireRoles([ROLE_ADMIN]), getTasks);
 router.get('/wheel-config', requireRoles([ROLE_ADMIN]), getWheelConfig);
 router.put('/wheel-config', requireRoles([ROLE_ADMIN]), putWheelConfig);
+router.get('/templates', getTaskTemplates);
+router.post('/templates', requireRoles([ROLE_ADMIN]), postTaskTemplate);
+router.patch('/templates/:id', requireRoles([ROLE_ADMIN]), patchTaskTemplate);
+router.delete('/templates/:id', requireRoles([ROLE_ADMIN]), removeTaskTemplate);
 router.post('/', postTask);
 router.post('/:id/follow-up-email/preview', previewTaskFollowUpEmail);
 router.post('/:id/follow-up-email/send', sendTaskFollowUpEmail);
