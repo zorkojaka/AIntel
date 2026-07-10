@@ -25,9 +25,10 @@ import emailRoutes from './modules/email/email.routes';
 import tasksRoutes from './modules/tasks/task.routes';
 import zahteveRoutes from './modules/zahteve/zahteva.routes';
 import executionRulesRoutes from './modules/execution-rules/execution-rules.routes';
+import serviceRoutes from './modules/service/service.routes';
 import webInquiriesAdminRoutes from './modules/web-inquiries/admin.routes';
 import { requireRoles } from './middlewares/auth';
-import { ROLE_ADMIN, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from './utils/roles';
+import { ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from './utils/roles';
 
 const router = Router();
 
@@ -54,6 +55,7 @@ router.use('/offers', offerPreviewRoutes);
 router.use('/files', filesRoutes);
 router.use('/photos', photosRoutes);
 router.use('/tasks', tasksRoutes);
+router.use('/service', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_EXECUTION]), serviceRoutes);
 router.use('/email', requireRoles([ROLE_ADMIN, ROLE_SALES]), emailRoutes);
 router.use('/zahteve', zahteveRoutes);
 router.use('/execution-rules', executionRulesRoutes);

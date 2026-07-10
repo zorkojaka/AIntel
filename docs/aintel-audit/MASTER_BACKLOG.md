@@ -181,8 +181,20 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     in OffersTab. Fifth slice moved the create/rename/delete template dialogs into
     `domains/offers/OfferTemplateDialogs.tsx`. AIN-P2-06 remains open until the large
     OffersTab UI/state sections are split further.
-- **AIN-P2-08** Service module: tickets + maintenance plans + portal intake
-  (TARGET §8). Effort XL.
+- **AIN-P2-08 DOING — rez 1 landed (2026-07-10)** Service module: tickets +
+  maintenance plans + portal intake (TARGET §8). Effort XL.
+  - Rez 1 (ServiceTicket backend): `modules/service/` — model `service_tickets`
+    (lifecycle reported→scheduled→resolved→(cancelled), viri portal/phone/email/
+    internal, tenant-scoped, partial-unique dedupeKey za portalni intake, history),
+    lifecycle storitev (ActorContext, validirani prehodi, samodejni scheduledAt/
+    resolvedAt/reopen), controller + admin API `GET/POST /api/service/tickets`,
+    `GET/PATCH /api/service/tickets/:id` (ADMIN/SALES/EXECUTION). Task modul že
+    rezervira subject.kind='serviceTicket'. Testi `test/service-ticket.test.ts`
+    (9 primerov). tsc čist, 105/105.
+  - Naslednji rezi: (2) MaintenancePlan (iz potrjenih offer items; letno opravilo +
+    e-mail »preventivni pregled«, warranty iz zaključka izvedbe, upsell checklist);
+    (3) portalni intake `POST /clients/service-tickets` + kolo pravilo
+    service.ticket_intake (odklene ECO-28); (4) frontend apps/module-service.
 - **AIN-P2-10** tenantId backfill on business collections + compound indexes +
   query-layer plugin. Effort L. Deps: P2-09, P1-05.
 - **AIN-P2-11 DONE-infra (2026-07-10)** Config store (namespaced, tenant-scoped,
