@@ -115,7 +115,7 @@ export function ClientForm({ open, client, mode = "create", onClose, onSubmit, o
       type: formValues.type,
       vatNumber: formValues.vatNumber.trim() || undefined,
       street: cleanValue(formValues.street),
-      postalCode: undefined,
+      postalCode: cleanValue(formValues.postalCode),
       postalCity: cleanValue(formValues.postalCity),
       email: cleanValue(formValues.email),
       phone: cleanValue(formValues.phone),
@@ -133,7 +133,9 @@ export function ClientForm({ open, client, mode = "create", onClose, onSubmit, o
             .filter(Boolean)
         : [];
 
-      const addressLine = [parsed.street, parsed.postalCity].filter(Boolean).join(", ") || undefined;
+      // Enak zapis kot v projektu: ulica, [poštna številka] mesto.
+      const cityLine = [parsed.postalCode, parsed.postalCity].filter(Boolean).join(" ");
+      const addressLine = [parsed.street, cityLine].filter(Boolean).join(", ") || undefined;
 
       const payload: ClientFormPayload = {
         name: parsed.name,
@@ -141,7 +143,7 @@ export function ClientForm({ open, client, mode = "create", onClose, onSubmit, o
         vatNumber: parsed.type === "company" && parsed.vatNumber ? parsed.vatNumber.toUpperCase() : undefined,
         address: addressLine,
         street: parsed.street,
-        postalCode: undefined,
+        postalCode: parsed.postalCode,
         postalCity: parsed.postalCity,
         email: parsed.email,
         phone: parsed.phone,
@@ -224,6 +226,11 @@ export function ClientForm({ open, client, mode = "create", onClose, onSubmit, o
                 />
               )}
               <Input label="Ulica" value={formValues.street} onChange={(event) => handleInput("street", event.target.value)} />
+              <Input
+                label="Poštna številka"
+                value={formValues.postalCode}
+                onChange={(event) => handleInput("postalCode", event.target.value)}
+              />
               <Input
                 label="Mesto"
                 value={formValues.postalCity}
