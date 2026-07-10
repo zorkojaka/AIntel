@@ -174,8 +174,12 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     domains; first OffersTab slice moved offer editor/import/KM/PDF helper types and
     pure functions into `domains/offers/offerEditorUtils.ts`. Second slice moved the
     pure offer item recalculation, trailing blank row handling, and totals calculation
-    into the same helper. AIN-P2-06 remains open until the large OffersTab UI/state
-    sections are split further.
+    into the same helper. Third slice moved the offer PDF action button group and PDF
+    preview/download state handlers into `domains/offers/OfferPdfActionGroup.tsx` and
+    `domains/offers/useOfferPdfActions.ts`. Fourth slice moved the pasted-offer import
+    modal into `domains/offers/OfferImportDialog.tsx` while keeping parse/apply state
+    in OffersTab. AIN-P2-06 remains open until the large OffersTab UI/state sections
+    are split further.
 - **AIN-P2-08** Service module: tickets + maintenance plans + portal intake
   (TARGET §8). Effort XL.
 - **AIN-P2-10** tenantId backfill on business collections + compound indexes +

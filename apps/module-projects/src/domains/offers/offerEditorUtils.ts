@@ -161,6 +161,15 @@ export const compareRouteAddresses = (projectAddress: string, geocoderAddress: s
 export const isItemValid = (item: OfferLineItem | OfferLineItemForm) =>
   item.name.trim() !== "" && item.unitPrice > 0;
 
+export function resolveImportRowProduct(row: OfferImportRow): OfferImportMatch | null {
+  const chosenProductId = row.chosenProductId;
+  if (!chosenProductId) {
+    return row.manualMatch ?? null;
+  }
+  const fromMatches = row.matches.find((match) => match.productId === chosenProductId);
+  return fromMatches ?? row.manualMatch ?? null;
+}
+
 export function recalculateOfferItem(
   item: OfferLineItemForm,
   options: {

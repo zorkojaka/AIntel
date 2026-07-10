@@ -2,7 +2,6 @@ import { Fragment, type ChangeEvent, useCallback, useEffect, useMemo, useRef, us
 
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
 import { Card } from "./ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
@@ -24,7 +23,7 @@ import type { Employee } from "@aintel/shared/types/employee";
 import type { CommunicationMessage } from "@aintel/shared/types/communication";
 import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 
-import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronsUpDown, Download, Loader2, Pencil, RefreshCw, Trash, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronsUpDown, Loader2, Pencil, RefreshCw, Trash, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
@@ -34,7 +33,6 @@ import { mapProject } from "../domains/core/useProject";
 import { useConfirmOffer } from "../domains/core/useConfirmOffer";
 import {
   calculateProjectKm,
-  downloadPdf,
   fetchExecutionRuleSettings,
   fetchRouteCalculationSettings,
   type RouteCalculationSettings,
@@ -45,8 +43,10 @@ import { OfferCommunicationComposeDialog } from "../domains/communication/OfferC
 import { OfferSentMessagesTable } from "../domains/communication/OfferSentMessagesTable";
 import { fetchOfferMessages } from "../domains/communication/api";
 import { ExecutionDefinitionPanel } from "../domains/logistics/ExecutionDefinitionPanel";
+import { OfferImportDialog } from "../domains/offers/OfferImportDialog";
+import { OfferPdfActionGroup } from "../domains/offers/OfferPdfActionGroup";
+import { useOfferPdfActions } from "../domains/offers/useOfferPdfActions";
 import {
-  buildOfferPdfFilename,
   calculateOfferTotals,
   compareRouteAddresses,
   createEmptyItem,
@@ -58,11 +58,11 @@ import {
   isEmptyOfferItem,
   isItemValid,
   recalculateOfferItem,
+  resolveImportRowProduct,
   resolveUnitFromName,
   sleep,
   type KmCalculationState,
   type OfferEmailSendContext,
-  type OfferImportMatch,
   type OfferImportRow,
   type OfferLineItemForm,
 } from "../domains/offers/offerEditorUtils";
@@ -107,8 +107,6 @@ export function OffersTab({
   const [vatAmount, setVatAmount] = useState<number>(0);
 
   const [saving, setSaving] = useState(false);
-  const [downloadingMode, setDownloadingMode] = useState<"offer" | "both" | "descriptions" | null>(null);
-  const [previewingMode, setPreviewingMode] = useState<"offer" | "descriptions" | null>(null);
   const [projectDetails, setProjectDetails] = useState<ProjectDetails | null>(null);
   const [sending, setSending] = useState(false);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
@@ -140,7 +138,6 @@ export function OffersTab({
   const [templateDeleteTarget, setTemplateDeleteTarget] = useState<OfferTemplateSummary | null>(null);
   const [templateDeleting, setTemplateDeleting] = useState(false);
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState(EMPTY_OFFER_SNAPSHOT);
-  const isPdfBusy = downloadingMode !== null || previewingMode !== null;
   const lineItemsRef = useRef<HTMLDivElement | null>(null);
   const commentTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [visibleMobileBlankItemId, setVisibleMobileBlankItemId] = useState<string | null>(null);
@@ -1069,15 +1066,6 @@ const loadOfferById = useCallback(async (offerId: string) => {
     );
   };
 
-  const resolveImportRowProduct = (row: OfferImportRow): OfferImportMatch | null => {
-    const chosenProductId = row.chosenProductId;
-    if (!chosenProductId) {
-      return row.manualMatch ?? null;
-    }
-    const fromMatches = row.matches.find((match) => match.productId === chosenProductId);
-    return fromMatches ?? row.manualMatch ?? null;
-  };
-
   const handleImportApply = () => {
     const importedRows = importRows.filter((row) => !row.skipped);
     const unresolvedRows = importedRows.filter((row) => !resolveImportRowProduct(row));
@@ -1654,6 +1642,20 @@ const loadOfferById = useCallback(async (offerId: string) => {
     return fetchProjectDetails();
   }, [fetchProjectDetails, projectDetails]);
 
+  const {
+    downloadingMode,
+    previewingMode,
+    isPdfBusy,
+    handleExportPdf,
+    handleExportDescriptionsPdf,
+    handlePreviewOfferPdf,
+    handlePreviewDescriptionsPdf,
+  } = useOfferPdfActions({
+    projectId,
+    ensureSavedOffer,
+    ensureProjectDetails,
+  });
+
   const saveAssignments = async (nextSalesUserId: string | null, nextEmployeeIds: string[]) => {
     if (!projectId) return;
     setAssignmentsSaving(true);
@@ -1705,134 +1707,6 @@ const loadOfferById = useCallback(async (offerId: string) => {
       setAssignedEmployeeIds(previous);
     }
   };
-
-  const handleExportPdf = async (mode: "offer" | "both") => {
-    setDownloadingMode(mode);
-    try {
-      const saved = await ensureSavedOffer();
-      if (!saved?._id) return;
-      const url = `/api/projects/${projectId}/offers/${saved._id}/pdf?mode=${mode}`;
-      const details = await ensureProjectDetails();
-      const filename = buildOfferPdfFilename(details, projectId, mode === "both" ? "Ponudba+Projekt" : "Ponudba", saved);
-      await downloadPdf(url, filename);
-      toast.success("PDF prenesen");
-    } catch (error) {
-      console.error(error);
-      toast.error("PDF ni bilo mogoce prenesti.");
-    } finally {
-      setDownloadingMode(null);
-    }
-  };
-
-  const handleExportDescriptionsPdf = async () => {
-    setDownloadingMode("descriptions");
-    try {
-      const saved = await ensureSavedOffer();
-      if (!saved?._id) return;
-      const url = `/api/projects/${projectId}/offers/${saved._id}/pdf?variant=descriptions`;
-      const details = await ensureProjectDetails();
-      const filename = buildOfferPdfFilename(details, projectId, "Opis", saved);
-      await downloadPdf(url, filename);
-      toast.success("PDF prenesen");
-    } catch (error) {
-      console.error(error);
-      toast.error("PDF ni bilo mogoce prenesti.");
-    } finally {
-      setDownloadingMode(null);
-    }
-  };
-
-  const openPreviewWindow = () => {
-    const previewWindow = window.open("about:blank", "_blank");
-    if (!previewWindow) {
-      toast.error("Predogleda ni bilo mogoče odpreti.");
-    }
-    return previewWindow;
-  };
-
-  const loadPdfPreview = async (previewWindow: Window, url: string) => {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error("PDF predogled ni na voljo.");
-      }
-      const blob = await response.blob();
-      const objectUrl = window.URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
-      previewWindow.location.href = objectUrl;
-      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 60000);
-    } catch (error) {
-      previewWindow.close();
-      console.error(error);
-      toast.error("PDF predogleda ni bilo mogoče odpreti.");
-    }
-  };
-
-  const handlePreviewOfferPdf = async () => {
-    const previewWindow = openPreviewWindow();
-    if (!previewWindow) return;
-    setPreviewingMode("offer");
-    try {
-      const saved = await ensureSavedOffer();
-      if (!saved?._id) {
-        previewWindow.close();
-        return;
-      }
-      await loadPdfPreview(previewWindow, `/api/projects/${projectId}/offers/${saved._id}/pdf?mode=offer`);
-    } finally {
-      setPreviewingMode(null);
-    }
-  };
-
-  const handlePreviewDescriptionsPdf = async () => {
-    const previewWindow = openPreviewWindow();
-    if (!previewWindow) return;
-    setPreviewingMode("descriptions");
-    try {
-      const saved = await ensureSavedOffer();
-      if (!saved?._id) {
-        previewWindow.close();
-        return;
-      }
-      await loadPdfPreview(previewWindow, `/api/projects/${projectId}/offers/${saved._id}/pdf?variant=descriptions`);
-    } finally {
-      setPreviewingMode(null);
-    }
-  };
-
-  const renderPdfActionGroup = (
-    previewLabel: string,
-    downloadLabel: string,
-    onPreview: () => void,
-    onDownload: () => void,
-    previewing: boolean,
-    downloading: boolean,
-  ) => (
-    <div className="inline-flex h-8 items-center rounded-md border border-border/70 bg-background">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="h-8 rounded-none border-r border-border/70 px-3"
-        onClick={onPreview}
-        disabled={isPdfBusy}
-      >
-        {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-        {previewLabel}
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="h-8 rounded-none px-3"
-        onClick={onDownload}
-        disabled={isPdfBusy}
-      >
-        {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-        {downloadLabel}
-      </Button>
-    </div>
-  );
-
 
   const handleSend = async () => {
     setSending(true);
@@ -2799,175 +2673,22 @@ const loadOfferById = useCallback(async (offerId: string) => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
-        <DialogContent className="sm:max-w-5xl max-h-[88vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Uvozi ponudbo</DialogTitle>
-            <DialogDescription>Prilepi tabelo iz Google Sheets (TSV/CSV) in preveri ujemanja s cenikom.</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Prilepi tabelo</label>
-            <Textarea
-              value={importRawText}
-              onChange={(event) => setImportRawText(event.target.value)}
-              rows={8}
-              placeholder={"Naziv\t9.5%\t1"}
-            />
-            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-              <span>Delimiter: samodejno zaznano (prednost ima tabulator).</span>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={parseOfferImport}
-                disabled={importLoading}
-              >
-                {importLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Analiziraj tabelo
-              </Button>
-            </div>
-            {importError && <p className="text-sm text-red-600">{importError}</p>}
-            {showImportMappingHint && (
-              <div className="rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
-                Namig mapiranja: naziv = prvi besedilni stolpec, DDV (%) se ignorira, kolicina = zadnji numericni stolpec.
-              </div>
-            )}
-          </div>
-
-          {importRows.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">Matched: {importMatchedCount}</Badge>
-                <Badge className="bg-amber-500 text-white hover:bg-amber-500">Needs review: {importNeedsReviewCount}</Badge>
-                <Badge className="bg-slate-600 text-white hover:bg-slate-600">Invalid: {importInvalidCount}</Badge>
-              </div>
-
-              <div className="rounded-md border overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[70px]">Vrstica</TableHead>
-                      <TableHead>Naziv iz paste</TableHead>
-                      <TableHead className="w-[120px] text-right">Kolicina</TableHead>
-                      <TableHead className="w-[180px]">Status</TableHead>
-                      <TableHead>Izbira produkta</TableHead>
-                      <TableHead className="w-[120px] text-right">Cena</TableHead>
-                      <TableHead className="w-[120px] text-right">Akcija</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {importRows.map((row) => {
-                      const resolvedProduct = resolveImportRowProduct(row);
-                      const candidateOptions = (row.matchCandidates?.length ? row.matchCandidates : row.matches) ?? [];
-                      const isSkipped = Boolean(row.skipped);
-                      return (
-                        <TableRow key={row.rowIndex} className={isSkipped ? "opacity-60" : ""}>
-                          <TableCell>{row.rowIndex}</TableCell>
-                          <TableCell className="align-top">
-                            <div className="break-words">{row.rawName || "-"}</div>
-                          </TableCell>
-                          <TableCell className="text-right">{row.qty}</TableCell>
-                          <TableCell>
-                            {row.status === "matched" && (
-                              <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">Matched</Badge>
-                            )}
-                            {row.status === "needs_review" && (
-                              <Badge className="bg-amber-500 text-white hover:bg-amber-500">Needs review</Badge>
-                            )}
-                            {(row.status === "not_found" || row.status === "invalid") && (
-                              <Badge className="bg-slate-600 text-white hover:bg-slate-600">Invalid</Badge>
-                            )}
-                            <div className="mt-1 text-xs text-muted-foreground">
-                              {row.chosenReason ?? "n/a"}{" "}
-                              {typeof row.matchScore === "number" ? row.matchScore.toFixed(2) : "0.00"}
-                            </div>
-                          </TableCell>
-                          <TableCell className="space-y-2">
-                            {candidateOptions.length > 0 ? (
-                              <Select
-                                value={row.chosenProductId ?? "__none"}
-                                onValueChange={(value) => {
-                                  updateImportRow(row.rowIndex, {
-                                    chosenProductId: value === "__none" ? undefined : value,
-                                  });
-                                }}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Izberi produkt" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="__none">Brez izbire</SelectItem>
-                                  {candidateOptions.map((match) => (
-                                    <SelectItem key={match.productId} value={match.productId}>
-                                      {match.displayName ?? match.ime}
-                                      {typeof match.score === "number" ? ` (${match.score.toFixed(3)})` : ""}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            ) : null}
-                            {(row.status === "not_found" || row.status === "needs_review") && (
-                              <PriceListProductAutocomplete
-                                value={row.manualMatch?.ime ?? row.rawName}
-                                placeholder="Rocno poisci v ceniku"
-                                onChange={(name) => {
-                                  updateImportRow(row.rowIndex, { rawName: name });
-                                }}
-                                onProductSelected={(product) => {
-                                  updateImportRow(row.rowIndex, {
-                                    chosenProductId: product.id,
-                                    manualMatch: {
-                                      productId: product.id,
-                                      ime: product.name,
-                                      prodajnaCena: product.unitPrice,
-                                      isService: product.unit === "ura",
-                                    },
-                                  });
-                                }}
-                              />
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {resolvedProduct
-                              ? `${Number(resolvedProduct.prodajnaCena).toLocaleString("sl-SI", {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })} €`
-                              : "-"}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={isSkipped ? "secondary" : "outline"}
-                              onClick={() => updateImportRow(row.rowIndex, { skipped: !isSkipped })}
-                            >
-                              {isSkipped ? "Vrni" : "Odstrani"}
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsImportOpen(false)}>
-              Zapri
-            </Button>
-            <Button
-              onClick={handleImportApply}
-              disabled={importRows.length === 0 || importLoading}
-            >
-              Uvozi v ponudbo
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <OfferImportDialog
+        open={isImportOpen}
+        onOpenChange={setIsImportOpen}
+        rawText={importRawText}
+        onRawTextChange={setImportRawText}
+        rows={importRows}
+        loading={importLoading}
+        error={importError}
+        showMappingHint={showImportMappingHint}
+        matchedCount={importMatchedCount}
+        needsReviewCount={importNeedsReviewCount}
+        invalidCount={importInvalidCount}
+        onParse={parseOfferImport}
+        onApply={handleImportApply}
+        onUpdateRow={updateImportRow}
+      />
 
       <OfferCommunicationComposeDialog
         open={isComposeOpen}
@@ -2990,30 +2711,32 @@ const loadOfferById = useCallback(async (offerId: string) => {
           <Button variant="outline" onClick={openImportModal}>
             Uvozi ponudbo
           </Button>
-          {renderPdfActionGroup(
-            "Poglej opise",
-            "",
-            () => {
+          <OfferPdfActionGroup
+            previewLabel="Poglej opise"
+            downloadLabel=""
+            onPreview={() => {
               void handlePreviewDescriptionsPdf();
-            },
-            () => {
+            }}
+            onDownload={() => {
               void handleExportDescriptionsPdf();
-            },
-            previewingMode === "descriptions",
-            downloadingMode === "descriptions",
-          )}
-          {renderPdfActionGroup(
-            "Poglej ponudbo",
-           "" ,
-            () => {
+            }}
+            previewing={previewingMode === "descriptions"}
+            downloading={downloadingMode === "descriptions"}
+            disabled={isPdfBusy}
+          />
+          <OfferPdfActionGroup
+            previewLabel="Poglej ponudbo"
+            downloadLabel=""
+            onPreview={() => {
               void handlePreviewOfferPdf();
-            },
-            () => {
+            }}
+            onDownload={() => {
               void handleExportPdf("offer");
-            },
-            previewingMode === "offer",
-            downloadingMode === "offer",
-          )}
+            }}
+            previewing={previewingMode === "offer"}
+            downloading={downloadingMode === "offer"}
+            disabled={isPdfBusy}
+          />
           <Button
             variant="outline"
             onClick={handleOpenSendDialog}
