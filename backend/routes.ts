@@ -5,6 +5,7 @@ import cenikRoutes from './modules/cenik/routes/cenik.routes';
 import categorySettingsRoutes from './modules/cenik/routes/category-settings.routes';
 import priceListRoutes from './modules/cenik/routes/price-list.routes';
 import settingsRoutes from './modules/settings/routes/settings.routes';
+import configRoutes from './modules/settings/config/config.routes';
 import financeRoutes from './modules/finance/routes';
 import categoriesRoutes from './modules/categories/routes';
 import projectsRoutes from './modules/projects/routes';
@@ -36,6 +37,7 @@ router.use('/cenik/category-settings', requireRoles([ROLE_ADMIN, ROLE_ORGANIZER]
 router.use('/cenik', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), cenikRoutes);
 router.use('/price-list', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), priceListRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/config', configRoutes);
 router.use('/settings', pdfSettingsRoutes);
 router.use('/settings/communication', communicationSettingsRoutes);
 router.use('/finance', financeRoutes);

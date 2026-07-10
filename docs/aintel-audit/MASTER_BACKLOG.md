@@ -185,8 +185,24 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   (TARGET §8). Effort XL.
 - **AIN-P2-10** tenantId backfill on business collections + compound indexes +
   query-layer plugin. Effort L. Deps: P2-09, P1-05.
-- **AIN-P2-11** Config store (namespaced, tenant-scoped, zod-validated) absorbing
-  scattered settings. Effort L.
+- **AIN-P2-11 DONE-infra (2026-07-10)** Config store (namespaced, tenant-scoped,
+  validated) absorbing scattered settings. Effort L.
+  - `modules/settings/config/`: `config_store` kolekcija (ena vrstica na
+    `{tenantId, namespace}`, unique index), register imenskih prostorov
+    (`config.<modul>.<kljuc>`), storitev `getConfig/setConfig/patchConfig/listConfig`
+    s procesnim cacheom + invalidacijo ob pisanju, admin API `GET /api/config`,
+    `GET/PUT/PATCH /api/config/:namespace` (branje=auth, pisanje=ADMIN).
+  - Validacija: lasten zod-podoben validator (`config-validator.ts`, `.parse()`
+    pogodba) — `zod` NI nameščen in nova paketa čakata lastnikov OK (CLAUDE.md:
+    "Do not install new npm packages without asking first"); ob odobritvi se sheme
+    prepišejo 1:1 v zod brez sprememb storitve.
+  - Semenska prostora `platform.general` (siteVisitFeeText, executionLeadText) in
+    `sales.discounts` (manualReviewThreshold, bands) z varnimi privzetki.
+  - Žive scattered kolekcije (web-inquiry/pdf/sender/category settings, execution
+    thresholds) NISO migrirane — vsaka selitev je lastniško vodena (SKUPNA
+    staging+prod baza); consumerji preidejo na `getConfig()` inkrementalno.
+  - Testi: `test/config-store.test.ts` (11 primerov: privzetki, validacija, get/set/
+    patch, tenant izolacija, cache invalidacija, 404, listConfig). tsc čist, 96/96.
 
 ## P3 — Product & polish
 
