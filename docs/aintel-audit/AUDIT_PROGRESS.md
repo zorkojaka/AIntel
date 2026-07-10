@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-10 (AIN-P2-06 OffersTab import/PDF split)
-Last reviewed commit: AIN-P2-06 OffersTab import/PDF split on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-10 (AIN-P2-06 OffersTab dialog split)
+Last reviewed commit: AIN-P2-06 OffersTab dialog split on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -226,9 +226,10 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   `apps/module-projects/src/domains/offers/offerEditorUtils.ts`. Offer PDF action
   button rendering and preview/download state handlers now live in
   `OfferPdfActionGroup.tsx` and `useOfferPdfActions.ts`; the pasted-offer import modal
-  now lives in `OfferImportDialog.tsx`. The task remains open: `OffersTab.tsx` is still
-  the large state/UI owner and needs further component/hook extraction before AIN-P2-06
-  can be marked done.
+  now lives in `OfferImportDialog.tsx`; template create/rename/delete dialogs now live
+  in `OfferTemplateDialogs.tsx`. The task remains open: `OffersTab.tsx` is still the
+  large state/UI owner and needs further component/hook extraction before AIN-P2-06 can
+  be marked done.
 
 ## Genuine unresolved checks (curated in the final review)
 

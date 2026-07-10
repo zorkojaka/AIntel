@@ -1,9 +1,8 @@
-import { Fragment, type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "./ui/table";
 import { toast } from "sonner";
@@ -45,6 +44,7 @@ import { fetchOfferMessages } from "../domains/communication/api";
 import { ExecutionDefinitionPanel } from "../domains/logistics/ExecutionDefinitionPanel";
 import { OfferImportDialog } from "../domains/offers/OfferImportDialog";
 import { OfferPdfActionGroup } from "../domains/offers/OfferPdfActionGroup";
+import { OfferTemplateDialogs } from "../domains/offers/OfferTemplateDialogs";
 import { useOfferPdfActions } from "../domains/offers/useOfferPdfActions";
 import {
   calculateOfferTotals,
@@ -2556,122 +2556,27 @@ const loadOfferById = useCallback(async (offerId: string) => {
         </div>
       </div>
 
-      <Dialog open={isTemplateNameDialogOpen} onOpenChange={setIsTemplateNameDialogOpen}>
-      <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{templateDialogMode === "create" ? "Shrani template" : "Preimenuj template"}</DialogTitle>
-            <DialogDescription>
-              {templateDialogMode === "create"
-                ? "Vnesi ime, pod katerim bo template viden v globalnem seznamu."
-                : "Posodobi ime izbranega template-a."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Ime template-a</label>
-              <Input
-                value={templateNameDraft}
-                onChange={(event) => setTemplateNameDraft(event.target.value)}
-                placeholder="npr. Standardna alarm ponudba"
-                autoFocus
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">DDV način</label>
-              <Select
-                value={String(templateVatModeDraft)}
-                onValueChange={(value) => setTemplateVatModeDraft(Number(value) as 0 | 9.5 | 22)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="22">22 %</SelectItem>
-                  <SelectItem value="9.5">9,5 %</SelectItem>
-                  <SelectItem value="0">0 % (76. člen)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50/60 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Popust na celotno ponudbo</label>
-                  <p className="text-xs text-muted-foreground">
-                    Če je izklopljen, trenutni globalni popust v ponudbi ostane nespremenjen.
-                  </p>
-                </div>
-                <Checkbox
-                  checked={templateApplyGlobalDiscount}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                    setTemplateApplyGlobalDiscount(event.target.checked)
-                  }
-                />
-              </div>
-              {templateApplyGlobalDiscount && (
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-slate-600">Vrednost popusta (%)</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={0.1}
-                    value={templateGlobalDiscountDraft}
-                    onChange={(event) => setTemplateGlobalDiscountDraft(event.target.value)}
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50/60 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Popust po produktih</label>
-                  <p className="text-xs text-muted-foreground">
-                    Če je izklopljen, item discounti v trenutni ponudbi ostanejo takšni kot so.
-                  </p>
-                </div>
-                <Checkbox
-                  checked={templateApplyPerItemDiscount}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                    setTemplateApplyPerItemDiscount(event.target.checked)
-                  }
-                />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsTemplateNameDialogOpen(false)}>
-              Prekliči
-            </Button>
-            <Button onClick={submitTemplateDialog} disabled={templateSaving}>
-              {templateSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Shrani
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isTemplateDeleteDialogOpen} onOpenChange={setIsTemplateDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Izbriši template</DialogTitle>
-            <DialogDescription>
-              Ali ste prepričani, da želite izbrisati ta template?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsTemplateDeleteDialogOpen(false)}>
-              Prekliči
-            </Button>
-            <Button variant="destructive" onClick={confirmDeleteTemplate} disabled={templateDeleting}>
-              {templateDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Izbriši
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <OfferTemplateDialogs
+        nameDialogOpen={isTemplateNameDialogOpen}
+        onNameDialogOpenChange={setIsTemplateNameDialogOpen}
+        deleteDialogOpen={isTemplateDeleteDialogOpen}
+        onDeleteDialogOpenChange={setIsTemplateDeleteDialogOpen}
+        mode={templateDialogMode}
+        nameDraft={templateNameDraft}
+        onNameDraftChange={setTemplateNameDraft}
+        vatModeDraft={templateVatModeDraft}
+        onVatModeDraftChange={setTemplateVatModeDraft}
+        applyGlobalDiscount={templateApplyGlobalDiscount}
+        onApplyGlobalDiscountChange={setTemplateApplyGlobalDiscount}
+        applyPerItemDiscount={templateApplyPerItemDiscount}
+        onApplyPerItemDiscountChange={setTemplateApplyPerItemDiscount}
+        globalDiscountDraft={templateGlobalDiscountDraft}
+        onGlobalDiscountDraftChange={setTemplateGlobalDiscountDraft}
+        saving={templateSaving}
+        deleting={templateDeleting}
+        onSubmit={submitTemplateDialog}
+        onConfirmDelete={confirmDeleteTemplate}
+      />
 
       <OfferImportDialog
         open={isImportOpen}
