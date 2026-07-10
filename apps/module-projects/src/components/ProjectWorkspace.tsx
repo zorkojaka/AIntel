@@ -1613,6 +1613,9 @@ export function ProjectWorkspace({
                         setActiveTab("offers");
                         setOffersRefreshKey((key) => key + 1);
                         pushProjectRoute("offers");
+                        // Zahteva → ponudba spremeni status projekta in doda ponudbo
+                        // na strežniku; brez osvežitve trak faz obstane do reloada.
+                        void onProjectUpdate(basePath).then(applyProjectUpdate).catch(() => {});
                       }}
                       onProjectRequestChanged={(zahteva) => {
                         setProject((prev) => ({

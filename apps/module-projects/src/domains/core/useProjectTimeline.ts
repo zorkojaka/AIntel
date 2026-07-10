@@ -190,7 +190,12 @@ function isWorkOrderCompletedLike(status?: WorkOrderStatus | string | null) {
 
 function buildRequirementsStep(project: ProjectDetails | null | undefined, basePath: string) {
   const requirementsText = project?.requirementsText ?? "";
-  const requirementsDone = requirementsText.trim().length > 0;
+  // Zahteve so zajete tudi, ko projekt uporablja strukturirano zahtevo (Zahteva
+  // modul) brez besedilnega opisa — sicer korak nikoli ne pozeleni.
+  const hasStructuredRequest =
+    Boolean((project as any)?.activeRequestId) ||
+    (Array.isArray((project as any)?.requestIds) && (project as any).requestIds.length > 0);
+  const requirementsDone = requirementsText.trim().length > 0 || hasStructuredRequest;
   const requirementsStatus: StepStatus = requirementsDone ? "done" : "inProgress";
   const requirementCount = Array.isArray(project?.requirements) ? project.requirements.length : 0;
   const requirementsMeta = requirementCount > 0 ? `${requirementCount} zahtev` : undefined;
