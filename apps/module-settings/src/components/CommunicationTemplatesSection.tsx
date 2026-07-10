@@ -190,7 +190,7 @@ export const CommunicationTemplatesSection: React.FC<CommunicationTemplatesSecti
           </div>
           <div className="rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
             Placeholderji: {'{{customer.name}}'}, {'{{customer.email}}'}, {'{{project.name}}'}, {'{{offer.number}}'}, {'{{offer.total}}'},
-            {' {{invoice.number}}'}, {'{{invoice.total}}'},
+            {' {{invoice.number}}'}, {'{{invoice.total}}'}, {'{{review.link}}'},
             {' {{workOrder.identifier}}'}, {'{{confirmation.date}}'}, {'{{company.name}}'}, {'{{sender.name}}'}, {'{{sender.email}}'},
             {'{{sender.phone}}'}, {'{{sender.role}}'}
           </div>

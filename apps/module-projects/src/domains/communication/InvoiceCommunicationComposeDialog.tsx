@@ -59,6 +59,14 @@ function buildDefaultBody(invoiceNumber: string) {
   ].join("\n");
 }
 
+function buildDefaultReviewText(link: string) {
+  return [
+    "Bomo zelo veseli, če si vzamete minuto in ocenite našo izvedbo:",
+    link,
+    "Vaše mnenje nam veliko pomeni in pomaga drugim strankam pri odločitvi.",
+  ].join("\n");
+}
+
 export function InvoiceCommunicationComposeDialog({
   open,
   onOpenChange,
@@ -88,6 +96,8 @@ export function InvoiceCommunicationComposeDialog({
   const [isDirty, setIsDirty] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [reviewLink, setReviewLink] = useState("");
+  const [askReview, setAskReview] = useState(false);
+  const [reviewText, setReviewText] = useState("");
 
   const normalizedCustomerEmail = useMemo(() => customerEmail.trim(), [customerEmail]);
   const invoiceTotalLabel = `${formatTotal(invoiceTotal)} EUR`;
@@ -155,6 +165,8 @@ export function InvoiceCommunicationComposeDialog({
         }
         if (!active) return;
         setReviewLink(nextReviewLink);
+        setAskReview(false);
+        setReviewText(nextReviewLink ? buildDefaultReviewText(nextReviewLink) : "");
 
         const activeTemplates = nextTemplates.filter((entry) => entry.isActive);
         const defaultTemplate = activeTemplates[0] ?? null;
@@ -235,6 +247,7 @@ export function InvoiceCommunicationComposeDialog({
     setSendError(null);
     setSent(false);
     try {
+      const finalBody = askReview && reviewText.trim() ? `${body.trimEnd()}\n\n${reviewText.trim()}` : body;
       await sendInvoiceCommunicationEmail(projectId, invoiceVersionId, {
         to,
         cc,
@@ -242,7 +255,7 @@ export function InvoiceCommunicationComposeDialog({
         templateId: selectedTemplate?.id ?? null,
         templateKey: selectedTemplate?.key ?? null,
         subject,
-        body,
+        body: finalBody,
         selectedAttachments: ["invoice_pdf"],
       });
       setSent(true);
@@ -341,6 +354,27 @@ export function InvoiceCommunicationComposeDialog({
                 <span className="font-medium">Vsebina</span>
                 <Textarea rows={10} value={body} onChange={(event) => { setBody(event.target.value); setIsDirty(true); }} />
               </label>
+              <div className="rounded-md border border-border px-4 py-3">
+                <label className="flex items-center gap-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={askReview}
+                    disabled={!reviewLink}
+                    onChange={(event) => setAskReview(event.target.checked)}
+                  />
+                  <span className="font-medium">Dodaj prošnjo za oceno</span>
+                </label>
+                {!reviewLink ? (
+                  <p className="mt-1 text-xs text-muted-foreground">Povezave za oceno ni bilo mogoče pripraviti.</p>
+                ) : askReview ? (
+                  <div className="mt-3 space-y-1">
+                    <Textarea rows={4} value={reviewText} onChange={(event) => setReviewText(event.target.value)} />
+                    <p className="text-xs text-muted-foreground">Besedilo se doda na konec sporočila. Stranka prek povezave odda oceno; 4–5 zvezdic jo povabi še na Google.</p>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-xs text-muted-foreground">Na konec sporočila doda povezavo, prek katere stranka oceni izvedbo.</p>
+                )}
+              </div>
               <div className="rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
                 <div>Priloga: Račun {invoiceNumber || invoiceVersionId}.pdf</div>
                 {renderedFooter ? <div className="mt-2 whitespace-pre-wrap border-t border-border pt-2">{renderedFooter}</div> : null}
