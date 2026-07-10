@@ -108,6 +108,21 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   in .env only. New deps `imapflow` + `mailparser` (owner approval). Phased F0–F4 in
   `EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md`; F0 = owner creates the address + IMAP creds.
   Effort L. Deps: P1-10 (done); F2 touches communication send path (messageId).
+- **Landed (2026-07-10) — F0–F4 + resolve center**: owner confirmed prodaja@ as the
+  dedicated mailbox (same creds as SMTP → AINTEL_IMAP_* in both .env files).
+  `modules/email`: email_messages + email_ingest_state (lastUid/uidValidity, mailbox
+  opened READ-ONLY, own sent mail skipped), scheduler job `email.ingest` every 5 min
+  gated by new wheel rule `email.ingest` (ships OFF; visible in Nastavitve →
+  Opravila). Matching F2 uses providerMessageId (already stored on send) →
+  document number (PONUDBA-/PRJ-) → CRM client email + newest active project.
+  F3: project timeline entry; F4: open offer.follow_up auto-completes on customer
+  reply + `email.reply`/`email.unmatched` task to SALES. New module **Pošta**
+  (`apps/module-mail`, route /posta): inbox with filters (povezano/čaka povezavo/
+  prezrto), search, message detail, manual link-to-project, ignore, manual ingest
+  run; API /api/email (ADMIN+SALES). Tests: `email-ingest.test.ts` (84 backend
+  tests green). Remaining: F5 AI layer (povzetek/klasifikacija/predlog odgovora —
+  needs Anthropic API key) + F6 smart forwarding to servis@/racuni@; owner enables
+  rule `email.ingest` in settings to start reading.
 
 ### AIN-P1-15 — Offer rescue campaign: discount code after a week of silence
 - Owner idea (2026-07-09): offer sent +X days, customer has MARKETING CONSENT and

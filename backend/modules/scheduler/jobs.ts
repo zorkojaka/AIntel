@@ -54,5 +54,16 @@ export function schedulerJobs(): SchedulerJob[] {
         return { counts: (await scanLateMaterialDeliveries()) as Record<string, number> };
       },
     },
+    // AIN-P1-14: branje prodajnega nabiralnika (read-only IMAP). Dodatno
+    // varovano s pravilom email.ingest (privzeto izklopljeno) in manjkajočo
+    // IMAP konfiguracijo — brez obojega je no-op.
+    {
+      key: 'email.ingest',
+      cron: '*/5 * * * *',
+      async handler() {
+        const { ingestInboundEmail } = await import('../email/email-ingest.service');
+        return { counts: (await ingestInboundEmail()) as Record<string, number> };
+      },
+    },
   ];
 }

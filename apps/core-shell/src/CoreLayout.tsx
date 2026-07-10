@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, FolderKanban, LayoutGrid, List, ListChecks, Menu, Settings, User, Users, Wallet } from 'lucide-react';
+import { ArrowLeft, FolderKanban, LayoutGrid, List, ListChecks, Mail, Menu, Settings, User, Users, Wallet } from 'lucide-react';
 import {
   MOBILE_TOPBAR_CLEAR_EVENT,
   MOBILE_TOPBAR_SET_EVENT,
@@ -43,6 +43,7 @@ const iconMap: Record<string, React.ReactNode> = {
   list: <List size={16} />,
   wallet: <Wallet size={16} />,
   'list-checks': <ListChecks size={16} />,
+  mail: <Mail size={16} />,
   settings: <Settings size={16} />,
 };
 

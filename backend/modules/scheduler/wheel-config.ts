@@ -12,6 +12,7 @@ export const WHEEL_RULE_KEYS = [
   'offer.follow_up',
   'offer.expiry',
   'material.late_delivery',
+  'email.ingest',
 ] as const;
 export type WheelRuleKey = (typeof WHEEL_RULE_KEYS)[number];
 

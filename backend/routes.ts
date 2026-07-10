@@ -20,6 +20,7 @@ import communicationSettingsRoutes from './modules/communication/routes/settings
 import communicationProjectRoutes from './modules/communication/routes/project.routes';
 import filesRoutes from './modules/files/routes';
 import photosRoutes from './modules/photos/routes';
+import emailRoutes from './modules/email/email.routes';
 import tasksRoutes from './modules/tasks/task.routes';
 import zahteveRoutes from './modules/zahteve/zahteva.routes';
 import executionRulesRoutes from './modules/execution-rules/execution-rules.routes';
@@ -51,6 +52,7 @@ router.use('/offers', offerPreviewRoutes);
 router.use('/files', filesRoutes);
 router.use('/photos', photosRoutes);
 router.use('/tasks', tasksRoutes);
+router.use('/email', requireRoles([ROLE_ADMIN, ROLE_SALES]), emailRoutes);
 router.use('/zahteve', zahteveRoutes);
 router.use('/execution-rules', executionRulesRoutes);
 router.use('/web-inquiries', requireRoles([ROLE_ADMIN, ROLE_SALES]), webInquiriesAdminRoutes);

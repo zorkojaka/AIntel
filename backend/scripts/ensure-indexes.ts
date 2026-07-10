@@ -6,6 +6,7 @@ import { ProductModel } from '../modules/cenik/product.model';
 import { SchedulerLockModel, SchedulerRunModel } from '../modules/scheduler/scheduler.model';
 import { TaskModel } from '../modules/tasks/task.model';
 import { TaskTemplateModel } from '../modules/tasks/task-template.model';
+import { EmailMessageModel } from '../modules/email/email-message.model';
 import { CommunicationEventModel } from '../modules/communication/schemas/event';
 import { CommunicationMessageModel } from '../modules/communication/schemas/message';
 import { CommunicationTemplateModel } from '../modules/communication/schemas/template';
@@ -41,6 +42,7 @@ const INDEX_MODELS: Model<any>[] = [
   SchedulerRunModel,
   TaskModel,
   TaskTemplateModel,
+  EmailMessageModel,
   CommunicationEventModel,
   CommunicationMessageModel,
   CommunicationTemplateModel,

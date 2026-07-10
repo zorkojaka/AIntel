@@ -81,6 +81,12 @@ const WHEEL_RULES: Array<{ key: string; label: string; description: string }> = 
     label: 'Zamuda dobave materiala',
     description: 'Materialno naročilo po pričakovanem datumu dobave → opravilo za organizacijo izvedbe.',
   },
+  {
+    key: 'email.ingest',
+    label: 'Branje prodajnega nabiralnika (Pošta)',
+    description:
+      'Sistem vsakih 5 min prebere dohodne maile (samo bere, nikoli ne odgovarja), jih poveže s projekti, zapre follow-up ob odgovoru stranke in nepovezane ponudi v modulu Pošta.',
+  },
 ];
 
 const PARAM_FIELDS: Array<{ key: keyof WheelConfig['params']; label: string }> = [
