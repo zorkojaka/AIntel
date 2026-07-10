@@ -17,6 +17,7 @@ import { Input } from "../../components/ui/input";
 type ExecutionDefinitionPanelProps = {
   projectId: string;
   offerVersionId?: string | null;
+  refreshToken?: unknown;
 };
 
 type PreparationPhoto = {
@@ -470,7 +471,7 @@ function ProjectPlanPhotoSection({
   );
 }
 
-export function ExecutionDefinitionPanel({ projectId, offerVersionId }: ExecutionDefinitionPanelProps) {
+export function ExecutionDefinitionPanel({ projectId, offerVersionId, refreshToken }: ExecutionDefinitionPanelProps) {
   const [items, setItems] = useState<ProjectExecutionDefinitionItem[]>([]);
   const [locations, setLocations] = useState<ProjectExecutionLocation[]>([]);
   const [loading, setLoading] = useState(false);
@@ -507,7 +508,7 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
 
   useEffect(() => {
     void loadDefinition();
-  }, [loadDefinition]);
+  }, [loadDefinition, refreshToken]);
 
   const updateUnit = (itemId: string, index: number, changes: Partial<WorkOrderExecutionUnit>) => {
     setItems((current) =>

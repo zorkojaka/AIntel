@@ -3112,7 +3112,11 @@ const loadOfferById = useCallback(async (offerId: string) => {
         offerId={currentOffer?._id ?? selectedOfferId}
         refreshKey={communicationRefreshKey}
       />
-      <ExecutionDefinitionPanel projectId={projectId} offerVersionId={currentOffer?._id ?? selectedOfferId} />
+      <ExecutionDefinitionPanel
+        projectId={projectId}
+        offerVersionId={currentOffer?._id ?? selectedOfferId}
+        refreshToken={lastSavedSnapshot}
+      />
 
     </Card>
   );

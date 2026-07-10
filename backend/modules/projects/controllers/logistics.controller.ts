@@ -1621,11 +1621,8 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
     : new Map<string, Array<{ locationId: string; locationName: string; sourcePhotoItemId: string; projectLocationId: string }>>();
   const offerItemsWithLocationFallbacks = withRequirementLocationFallbacks(offerItems, fallbackUnitsByProductId);
   const currentDefinitions = Array.isArray(project.executionDefinitions) ? project.executionDefinitions : [];
-  const hasDefinitionsForOffer = resolvedOfferId
-    ? currentDefinitions.some((definition: any) => String(definition?.offerVersionId ?? '') === resolvedOfferId)
-    : currentDefinitions.length > 0;
 
-  if (!hasDefinitionsForOffer && resolvedOfferId) {
+  if (resolvedOfferId) {
     const workOrder = await WorkOrderModel.findOne({
       projectId,
       offerVersionId: resolvedOfferId,
@@ -1658,13 +1655,32 @@ async function ensureProjectExecutionDefinitions(projectId: string, requestedOff
     }
 
     if (incomingDefinitions.length > 0) {
-      incomingDefinitions = applyProjectLocationMemoryToDefinitions(incomingDefinitions, currentDefinitions);
-      project.executionDefinitions = mergeProjectExecutionDefinitions({
-        currentDefinitions,
-        incomingDefinitions,
-        offerVersionId: resolvedOfferId,
-      });
-      await project.save();
+      // Uskladi se ob vsaki spremembi ponudbe, ne le ob prvem obisku; merge
+      // ohrani obstoječe razporeditve po lokacijah za postavke, ki ostajajo.
+      const definitionSignature = (defs: any[]) =>
+        JSON.stringify(
+          defs
+            .map((definition: any) => [
+              String(definition?.offerItemId ?? definition?.id ?? ''),
+              definition?.name ?? '',
+              definition?.quantity ?? 0,
+              definition?.unit ?? '',
+              definition?.isService === true,
+            ])
+            .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+        );
+      const currentForOffer = currentDefinitions.filter(
+        (definition: any) => String(definition?.offerVersionId ?? '') === resolvedOfferId,
+      );
+      if (definitionSignature(incomingDefinitions) !== definitionSignature(currentForOffer)) {
+        incomingDefinitions = applyProjectLocationMemoryToDefinitions(incomingDefinitions, currentDefinitions);
+        project.executionDefinitions = mergeProjectExecutionDefinitions({
+          currentDefinitions,
+          incomingDefinitions,
+          offerVersionId: resolvedOfferId,
+        });
+        await project.save();
+      }
     }
   }
 
