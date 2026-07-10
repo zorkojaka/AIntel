@@ -49,6 +49,7 @@ interface MaterialOrderCardProps {
   onPickupMethodChange: (value: MaterialPickupMethod) => void;
   onPickupLocationChange: (value: string) => void;
   onLogisticsOwnerChange: (employeeId: string | null) => void;
+  onExpectedAtChange: (value: string | null) => void;
   onTechnicianNoteChange?: (value: string) => void;
   onPickupNoteChange: (value: string) => void;
   onAddExtraMaterial: (draft: ExtraMaterialDraft) => void;
@@ -90,7 +91,7 @@ function resolveSupplier(item: MaterialLine) {
   const supplier = typeof item.dobavitelj === "string" ? item.dobavitelj.trim() : "";
   const supplierAddress = typeof item.naslovDobavitelja === "string" ? item.naslovDobavitelja.trim() : "";
   if (!supplier) return { key: "missing-supplier", label: "MANJKA DOBAVITELJ", address: "", isMissing: true };
-  return { key: supplier.toLowerCase(), label: supplier, address: supplierAddress, isMissing: false };
+  return { key: item.supplierKey || supplier.toLowerCase(), label: supplier, address: supplierAddress, isMissing: false };
 }
 
 function groupMaterialLines(lines: MaterialLine[]): SupplierGroup[] {
@@ -158,6 +159,13 @@ function formatDateTime(value: string | null | undefined) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function toDateInputValue(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
 }
 
 function getOverallStatus(readyCount: number, totalCount: number) {
@@ -242,6 +250,7 @@ export function MaterialOrderCard({
   onPickupMethodChange,
   onPickupLocationChange,
   onLogisticsOwnerChange,
+  onExpectedAtChange,
   onTechnicianNoteChange,
   onConfirmPickup,
   onBulkConfirmPickupAll,
@@ -529,8 +538,20 @@ export function MaterialOrderCard({
                     <span>Prevzem: {pickupMethodLabel}</span>
                     <span>Lokacija: {selectedPickupLocation}</span>
                     <span>Odgovorna oseba: {logisticsOwnerLabel}</span>
+                    <span>Dobava: {materialOrder.expectedAt ? formatDateTime(materialOrder.expectedAt) : "Ni določeno"}</span>
                   </div>
                 </div>
+                {!isExecutionMode ? (
+                  <label className="flex min-w-[170px] flex-col gap-1 text-xs font-medium text-muted-foreground">
+                    Pričakovana dobava
+                    <Input
+                      type="date"
+                      value={toDateInputValue(materialOrder.expectedAt)}
+                      onChange={(event) => onExpectedAtChange(event.target.value || null)}
+                      className="h-9 text-sm"
+                    />
+                  </label>
+                ) : null}
               </div>
               <div className="hidden md:block">
                 <Table className="table-fixed w-full">

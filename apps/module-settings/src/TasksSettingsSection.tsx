@@ -25,6 +25,7 @@ type WheelConfig = {
   params: {
     offerFollowUpDays: number;
     inquiryStaleBusinessDays: number;
+    materialLateGraceDays: number;
     workStartHour: number;
     workEndHour: number;
   };
@@ -72,11 +73,17 @@ const WHEEL_RULES: Array<{ key: string; label: string; description: string }> = 
     label: 'Potek veljavnosti ponudbe',
     description: 'Ponudbi poteče veljavnost → opravilo »podaljšaj ali zapri«.',
   },
+  {
+    key: 'material.late_delivery',
+    label: 'Zamuda dobave materiala',
+    description: 'Materialno naročilo po pričakovanem datumu dobave → opravilo za organizacijo izvedbe.',
+  },
 ];
 
 const PARAM_FIELDS: Array<{ key: keyof WheelConfig['params']; label: string }> = [
   { key: 'offerFollowUpDays', label: 'Follow-up ponudbe po (dneh)' },
   { key: 'inquiryStaleBusinessDays', label: 'Eskalacija po (delovnih dneh)' },
+  { key: 'materialLateGraceDays', label: 'Zamuda dobave po (dneh)' },
   { key: 'workStartHour', label: 'Začetek delovnega časa (ura)' },
   { key: 'workEndHour', label: 'Konec delovnega časa (ura)' },
 ];

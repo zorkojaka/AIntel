@@ -1576,6 +1576,7 @@ export function ExecutionPanel({
             materialOrderId: draftMaterial._id,
             materialStatus: draftMaterial.materialStatus,
             pickupConfirmedAt: draftMaterial.pickupConfirmedAt ?? null,
+            expectedAt: draftMaterial.expectedAt ?? null,
             materialItems: draftMaterial.items ?? [],
           }),
         });
@@ -2286,6 +2287,7 @@ export function ExecutionPanel({
                           onPickupMethodChange={(value) => updateMaterialDraft(materialOrder, { pickupMethod: value })}
                           onPickupLocationChange={(value) => updateMaterialDraft(materialOrder, { pickupLocation: value })}
                           onLogisticsOwnerChange={(employeeId) => updateMaterialDraft(materialOrder, { logisticsOwnerId: employeeId })}
+                          onExpectedAtChange={(value) => updateMaterialDraft(materialOrder, { expectedAt: value })}
                           onPickupNoteChange={() => {}}
                           onAddExtraMaterial={() => {}}
                           onConfirmPickup={() => {

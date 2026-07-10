@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 import { logger } from '../../core/logger';
 import { OfferVersionModel } from '../projects/schemas/offer-version';
+import { MaterialOrderModel } from '../projects/schemas/material-order';
 import { TaskModel, type TaskPriority } from '../tasks/task.model';
 import { UserModel } from '../users/schemas/user';
 import { WebInquiryModel, type WebInquiryDocument } from '../web-inquiries/web-inquiry.model';
@@ -310,6 +311,53 @@ export async function scanOfferExpiry(now = new Date()) {
     if (result === 'created') created += 1;
   }
   return { scanned: offers.length, created };
+}
+
+function materialSupplierLabel(order: any) {
+  const suppliers = Array.from(
+    new Set(
+      (order.items ?? [])
+        .map((item: any) => (typeof item.dobavitelj === 'string' ? item.dobavitelj.trim() : ''))
+        .filter(Boolean),
+    ),
+  );
+  return suppliers.length > 0 ? suppliers.join(', ') : 'brez dobavitelja';
+}
+
+/** material.late_delivery — material order past expectedAt and not ready → ORGANIZER. */
+export async function scanLateMaterialDeliveries(now = new Date()) {
+  if (!(await isRuleEnabled('material.late_delivery'))) return { skipped: 1 };
+  const { params } = await getWheelConfig();
+  const cutoff = new Date(now.getTime() - params.materialLateGraceDays * 24 * 60 * 60 * 1000);
+
+  const orders = await MaterialOrderModel.find({
+    status: { $ne: 'cancelled' },
+    cancelledAt: null,
+    expectedAt: { $ne: null, $lte: cutoff },
+    materialStatus: { $nin: ['Prevzeto', 'Pripravljeno', 'Dostavljeno', 'Zmontirano'] },
+  })
+    .sort({ expectedAt: 1 })
+    .limit(200)
+    .lean();
+
+  let created = 0;
+  for (const order of orders) {
+    const expected = order.expectedAt ? new Date(order.expectedAt).toLocaleDateString('sl-SI') : '';
+    const supplier = materialSupplierLabel(order);
+    const result = await ensureRuleTask({
+      ruleKey: 'material.late_delivery',
+      dedupeKey: `material.late_delivery:${order._id}:${expected}`,
+      type: 'material.late_delivery',
+      title: `Zamuda dobave materiala — ${supplier} (${order.projectId})`,
+      description: `Pričakovana dobava: ${expected}. Status materiala: ${order.materialStatus ?? 'ni določen'}.`,
+      subject: { kind: 'materialOrder', id: order._id as mongoose.Types.ObjectId, label: `${supplier} — ${order.projectId}` },
+      assigneeRole: 'ORGANIZER',
+      priority: 'high',
+      dueAt: nextBusinessDay(now, params.workStartHour),
+    });
+    if (result === 'created') created += 1;
+  }
+  return { scanned: orders.length, created };
 }
 
 /** Fire-and-forget wrapper for event hooks — a rule failure must never break the business flow. */

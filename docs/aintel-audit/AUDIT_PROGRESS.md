@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-10 (AIN-P2-07 mutation audit logging)
-Last reviewed commit: AIN-P2-07 mutation audit logging on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-10 (AIN-P2-05 supplier normalization and late delivery)
+Last reviewed commit: AIN-P2-05 supplier normalization and late delivery on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -202,6 +202,12 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   include auth-derived tenant/actor/roles, route, method, status, request id,
   best-effort module/entity id, and sensitive-key-filtered top-level changed field
   names. This is log-based auditability, not a new immutable database collection.
+- **AIN-P2-05 supplier normalization and late delivery**: material order items now
+  receive a normalized `supplierKey` while preserving display supplier fields, material
+  orders can store `expectedAt`, and the preparation UI can edit that date. Added a
+  disabled-by-default `material.late_delivery` wheel rule and scheduler job that create
+  ORGANIZER tasks for overdue, not-yet-ready material orders with deterministic
+  dedupe keys. No DB migration or shared-DB script was run.
 
 ## Genuine unresolved checks (curated in the final review)
 

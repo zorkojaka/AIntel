@@ -55,8 +55,10 @@ Commit `c0afad8`. Mapped against the target lifecycle. Legend: ✅ implemented,
   Za prevzem → Prevzeto → Pripravljeno", pickup method/owner, PDF (naročilnica/
   dobavnica), ORGANIZER role drives `advance` endpoint; readiness gates move project
   to execution automatically (`applyAutomaticPreparationProgression`).
-- 🟡 No supplier entity (free-text `dobavitelj`), no PO email to supplier, no expected
-  delivery dates → no late-delivery alerts.
+- 🟡 Supplier display fields remain free-text, but new material writes carry a
+  normalized `supplierKey`; material orders now have `expectedAt` and the disabled
+  `material.late_delivery` wheel rule can create ORGANIZER tasks after enablement.
+  PO email to supplier is still missing.
 
 ## 7. Scheduling
 

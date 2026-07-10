@@ -1,5 +1,5 @@
 import { TaskModel } from '../tasks/task.model';
-import { scanOfferExpiry, scanOfferFollowUps, scanStaleInquiries } from './rules';
+import { scanLateMaterialDeliveries, scanOfferExpiry, scanOfferFollowUps, scanStaleInquiries } from './rules';
 import type { SchedulerJob } from './scheduler.service';
 
 export async function sweepTaskSla(now = new Date()) {
@@ -45,6 +45,13 @@ export function schedulerJobs(): SchedulerJob[] {
       cron: '40 6 * * *',
       async handler() {
         return { counts: (await scanOfferExpiry()) as Record<string, number> };
+      },
+    },
+    {
+      key: 'rules.material_late_delivery',
+      cron: '15 7 * * *',
+      async handler() {
+        return { counts: (await scanLateMaterialDeliveries()) as Record<string, number> };
       },
     },
   ];

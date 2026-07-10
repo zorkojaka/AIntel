@@ -146,8 +146,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   material) with characterization tests. Effort L–XL. Deps: P1-04.
 - **AIN-P2-04** Unify four communication send functions into one pipeline; single
   place for template context + attachment resolution. Effort M–L.
-- **AIN-P2-05** Supplier normalization: supplier entity or config list; expectedAt on
-  material orders; late-delivery rule. Effort M.
 - **AIN-P2-06** Split ExecutionPanel/OffersTab/LogisticsPanel along domains/ with
   extracted hooks; no behavior change. Effort L–XL (per panel M–L).
 - **AIN-P2-08** Service module: tickets + maintenance plans + portal intake
@@ -189,6 +187,23 @@ Every item lists its docs in-line; at minimum update MODULE_CATALOG review statu
 relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 
 ## Done
+
+### AIN-P2-05 — Supplier normalization + expectedAt + late-delivery rule
+- **Landed**: AIN-P2-05 implementation commit.
+- **Summary**: Material order items now carry a normalized `supplierKey` derived from
+  supplier name/address while keeping the original Slovenian supplier display fields.
+  Material orders now support top-level `expectedAt`; preparation UI can set the date
+  and the existing work-order update path persists it. A new disabled-by-default wheel
+  rule `material.late_delivery` scans overdue, not-yet-ready material orders and
+  creates an ORGANIZER task with a deterministic dedupe key. Nastavitve → Opravila
+  exposes the new rule toggle and `materialLateGraceDays` parameter.
+- **Acceptance used**: derived from the task text because no separate acceptance block
+  existed: normalize supplier identity without adding a migration or new collection,
+  persist `expectedAt` on material orders, add a late-delivery rule, keep the rule
+  disabled until owner/admin enablement, and cover the rule with memory Mongo tests.
+- **Tests**: `backend/test/wheel-rules.test.ts` covers disabled behavior,
+  late-delivery task creation, readiness/future-date skip, and idempotency;
+  `backend/test/ensure-indexes.test.ts` covers the declared `expectedAt` index.
 
 ### AIN-P2-07 — Generic audit log middleware for mutating routes
 - **Landed**: AIN-P2-07 implementation commit.

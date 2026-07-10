@@ -36,6 +36,7 @@ import {
   buildActorDisplayName,
   recordOfferConfirmedCommunicationEvent,
 } from '../../communication/services/communication.service';
+import { normalizeSupplierFields, normalizeSupplierKey } from '../services/supplier-normalization.service';
 
 function calculateOfferTotalsFromSnapshot(offer: {
   items: OfferLineItem[];
@@ -123,6 +124,7 @@ function hasPreparationPayload(payload: Record<string, unknown>) {
     'pickupLocation' in payload ||
     'logisticsOwnerId' in payload ||
     'pickupNote' in payload ||
+    'expectedAt' in payload ||
     'pickupConfirmedAt' in payload ||
     'materialItems' in payload ||
     payload.status === 'issued'
@@ -152,7 +154,8 @@ function hasPreparationOnlyMaterialPayload(payload: Record<string, unknown>) {
     'pickupMethod' in payload ||
     'pickupLocation' in payload ||
     'logisticsOwnerId' in payload ||
-    'pickupNote' in payload
+    'pickupNote' in payload ||
+    'expectedAt' in payload
   );
 }
 
@@ -166,6 +169,13 @@ function isExecutionMaterialStep(value: unknown) {
 
 function resolveMaterialStep(value: unknown): MaterialStep {
   return MATERIAL_STEP_SEQUENCE.includes(value as MaterialStep) ? (value as MaterialStep) : 'Za naročiti';
+}
+
+function parseOptionalDate(value: unknown) {
+  if (value === null || value === '') return null;
+  if (typeof value !== 'string' && !(value instanceof Date)) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
 function getNextStep(step: MaterialStep | null): MaterialStep | null {
@@ -188,17 +198,14 @@ function isStepEligible(item: any, targetStep: MaterialStep) {
 }
 
 function resolveSupplierKey(item: any) {
-  const supplier = typeof item.dobavitelj === 'string' ? item.dobavitelj.trim().toLowerCase() : '';
-  const address =
-    typeof item.naslovDobavitelja === 'string' ? item.naslovDobavitelja.trim().toLowerCase() : '';
-  const key = `${supplier}||${address}`.trim();
-  return key.length > 2 ? key : 'brez-dobavitelja';
+  if (typeof item.supplierKey === 'string' && item.supplierKey.trim().length > 0) return item.supplierKey;
+  return normalizeSupplierKey(item.dobavitelj, item.naslovDobavitelja);
 }
 
 function mapOfferItemsToLogistics(items: OfferLineItem[]) {
   return items.map((item) => {
     const note = (item as any).note;
-    return {
+    return normalizeSupplierFields({
       id: item.id,
       productId: item.productId ?? null,
       name: item.name,
@@ -211,7 +218,7 @@ function mapOfferItemsToLogistics(items: OfferLineItem[]) {
       dobavitelj: (item as any).dobavitelj,
       naslovDobavitelja: (item as any).naslovDobavitelja,
       materialStep: 'Za naročiti',
-    };
+    });
   });
 }
 
@@ -1031,7 +1038,7 @@ async function ensureMaterialOrderForOffer(params: {
       (materialOrder.items ?? []).map((item: any) => [String(item.id), item])
     );
     const extraItems = (materialOrder.items ?? [])
-      .map((item: any) => (item.toObject ? item.toObject() : item))
+      .map((item: any) => normalizeSupplierFields(item.toObject ? item.toObject() : item))
       .filter((item: any) => item?.isExtra);
     materialOrder.items = [
       ...items.map((item) => ({
@@ -1042,6 +1049,10 @@ async function ensureMaterialOrderForOffer(params: {
           typeof existingItems.get(item.id)?.orderedQty === 'number' ? existingItems.get(item.id).orderedQty : 0,
         deliveredQty:
           typeof existingItems.get(item.id)?.deliveredQty === 'number' ? existingItems.get(item.id).deliveredQty : 0,
+        supplierKey:
+          typeof existingItems.get(item.id)?.supplierKey === 'string'
+            ? existingItems.get(item.id).supplierKey
+            : normalizeSupplierKey(item.dobavitelj, item.naslovDobavitelja),
         materialStep:
           typeof existingItems.get(item.id)?.materialStep === 'string'
             ? existingItems.get(item.id).materialStep
@@ -1089,6 +1100,7 @@ function serializeMaterialOrder(order: any): MaterialOrder | null {
       note: item.note,
       dobavitelj: item.dobavitelj,
       naslovDobavitelja: item.naslovDobavitelja,
+      supplierKey: typeof item.supplierKey === 'string' ? item.supplierKey : normalizeSupplierKey(item.dobavitelj, item.naslovDobavitelja),
       materialStep: typeof item.materialStep === 'string' ? item.materialStep : 'Za naročiti',
       offerItemId: item.offerItemId ?? null,
       offeredQuantity:
@@ -1110,6 +1122,7 @@ function serializeMaterialOrder(order: any): MaterialOrder | null {
     pickupLocation: typeof order.pickupLocation === 'string' ? order.pickupLocation : null,
     logisticsOwnerId: order.logisticsOwnerId ? String(order.logisticsOwnerId) : null,
     pickupNote: typeof order.pickupNote === 'string' ? order.pickupNote : null,
+    expectedAt: order.expectedAt ? new Date(order.expectedAt).toISOString() : null,
     pickupConfirmedAt: order.pickupConfirmedAt ? new Date(order.pickupConfirmedAt).toISOString() : null,
     pickupConfirmedBy: typeof order.pickupConfirmedBy === 'string' ? order.pickupConfirmedBy : null,
     cancelledAt: order.cancelledAt ? new Date(order.cancelledAt).toISOString() : null,
@@ -2371,6 +2384,12 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     if ('pickupNote' in payload) {
       materialUpdates.pickupNote = typeof payload.pickupNote === 'string' ? payload.pickupNote : null;
     }
+    if ('expectedAt' in payload) {
+      const expectedAt = parseOptionalDate(payload.expectedAt);
+      if (expectedAt !== undefined) {
+        materialUpdates.expectedAt = expectedAt;
+      }
+    }
     if ('logisticsOwnerId' in payload) {
       const nextOwner = typeof payload.logisticsOwnerId === 'string' ? payload.logisticsOwnerId.trim() : '';
       if (!nextOwner) {
@@ -2485,10 +2504,12 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
             }
             if (!isExecutionRestrictedMutation && typeof incoming.dobavitelj === 'string' && target.dobavitelj !== incoming.dobavitelj) {
               target.dobavitelj = incoming.dobavitelj;
+              target.supplierKey = normalizeSupplierKey(target.dobavitelj, target.naslovDobavitelja);
               hasItemMutations = true;
             }
             if (!isExecutionRestrictedMutation && typeof incoming.naslovDobavitelja === 'string' && target.naslovDobavitelja !== incoming.naslovDobavitelja) {
               target.naslovDobavitelja = incoming.naslovDobavitelja;
+              target.supplierKey = normalizeSupplierKey(target.dobavitelj, target.naslovDobavitelja);
               hasItemMutations = true;
             }
             if (!isExecutionRestrictedMutation && typeof incoming.isExtra === 'boolean' && target.isExtra !== incoming.isExtra) {
@@ -2531,6 +2552,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           note: typeof incoming.note === 'string' ? incoming.note : '',
           dobavitelj: typeof incoming.dobavitelj === 'string' ? incoming.dobavitelj : '',
           naslovDobavitelja: typeof incoming.naslovDobavitelja === 'string' ? incoming.naslovDobavitelja : '',
+          supplierKey: normalizeSupplierKey(incoming.dobavitelj, incoming.naslovDobavitelja),
           materialStep: typeof incoming.materialStep === 'string' ? incoming.materialStep : 'Prevzeto',
           isExtra: incoming.isExtra !== undefined ? Boolean(incoming.isExtra) : true,
         });
@@ -2769,6 +2791,7 @@ export async function advanceMaterialOrderStep(req: Request, res: Response, next
         pickupLocation: materialOrder.pickupLocation ?? null,
         logisticsOwnerId: materialOrder.logisticsOwnerId ?? null,
         pickupNote: materialOrder.pickupNote ?? null,
+        expectedAt: materialOrder.expectedAt ?? null,
         pickupConfirmedAt: materialOrder.pickupConfirmedAt ?? null,
         pickupConfirmedBy: materialOrder.pickupConfirmedBy ?? null,
         reopened: false,
@@ -2924,4 +2947,3 @@ export async function exportWorkOrderPdf(req: Request, res: Response, next: Next
     next(error);
   }
 }
-

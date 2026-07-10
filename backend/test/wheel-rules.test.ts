@@ -10,12 +10,14 @@ import {
   nextBusinessDay,
   onWebInquiryNextStep,
   onWebInquiryProcessed,
+  scanLateMaterialDeliveries,
   scanOfferExpiry,
   scanOfferFollowUps,
   scanStaleInquiries,
 } from '../modules/scheduler/rules';
 import { invalidateWheelConfigCache, setWheelConfig } from '../modules/scheduler/wheel-config';
 import { TaskModel } from '../modules/tasks/task.model';
+import { MaterialOrderModel } from '../modules/projects/schemas/material-order';
 import { OfferVersionModel } from '../modules/projects/schemas/offer-version';
 import { WebInquiryModel } from '../modules/web-inquiries/web-inquiry.model';
 
@@ -62,6 +64,7 @@ test('AIN-P1-11 wheel rules', async (t) => {
 
   t.beforeEach(async () => {
     await TaskModel.deleteMany({});
+    await MaterialOrderModel.deleteMany({});
     invalidateWheelConfigCache();
   });
 
@@ -87,6 +90,7 @@ test('AIN-P1-11 wheel rules', async (t) => {
     assert.deepEqual(await scanStaleInquiries(), { skipped: 1 });
     assert.deepEqual(await scanOfferFollowUps(), { skipped: 1 });
     assert.deepEqual(await scanOfferExpiry(), { skipped: 1 });
+    assert.deepEqual(await scanLateMaterialDeliveries(), { skipped: 1 });
   });
 
   await t.test('inquiry.first_contact: auto-offer → review task, idempotent', async () => {
@@ -190,5 +194,60 @@ test('AIN-P1-11 wheel rules', async (t) => {
     const task = await TaskModel.findOne({ type: 'offer.expiry' });
     assert.equal(task!.priority, 'high');
     assert.match(task!.title, /potekla/);
+  });
+
+  await t.test('material.late_delivery: expectedAt in the past creates one organizer task', async () => {
+    await setWheelConfig({ rules: { 'material.late_delivery': { enabled: true } } });
+    const past = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const future = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    const late = await MaterialOrderModel.create({
+      projectId: 'PRJ-LATE',
+      offerVersionId: new mongoose.Types.ObjectId().toString(),
+      expectedAt: past,
+      materialStatus: 'Naročeno',
+      status: 'ordered',
+      pickupMethod: 'SUPPLIER_PICKUP',
+      items: [
+        {
+          id: 'line-1',
+          productId: null,
+          name: 'Kamera',
+          quantity: 1,
+          unit: 'kos',
+          dobavitelj: 'Alarm Avtomatika',
+          naslovDobavitelja: 'Ljubljana',
+          supplierKey: 'alarm-avtomatika-ljubljana',
+          materialStep: 'Naročeno',
+        },
+      ],
+    });
+    await MaterialOrderModel.create({
+      projectId: 'PRJ-FUTURE',
+      offerVersionId: new mongoose.Types.ObjectId().toString(),
+      expectedAt: future,
+      materialStatus: 'Naročeno',
+      status: 'ordered',
+      pickupMethod: 'SUPPLIER_PICKUP',
+      items: [],
+    });
+    await MaterialOrderModel.create({
+      projectId: 'PRJ-READY',
+      offerVersionId: new mongoose.Types.ObjectId().toString(),
+      expectedAt: past,
+      materialStatus: 'Pripravljeno',
+      status: 'ordered',
+      pickupMethod: 'SUPPLIER_PICKUP',
+      items: [],
+    });
+
+    const result = await scanLateMaterialDeliveries();
+    assert.equal((result as any).created, 1);
+    assert.equal(((await scanLateMaterialDeliveries()) as any).created, 0);
+    const task = await TaskModel.findOne({ type: 'material.late_delivery' });
+    assert.ok(task);
+    assert.equal(task!.assigneeRole, 'ORGANIZER');
+    assert.equal(task!.priority, 'high');
+    assert.equal(task!.subject.kind, 'materialOrder');
+    assert.equal(String(task!.subject.id), String(late._id));
   });
 });

@@ -11,12 +11,14 @@ export const WHEEL_RULE_KEYS = [
   'inquiry.stale_escalation',
   'offer.follow_up',
   'offer.expiry',
+  'material.late_delivery',
 ] as const;
 export type WheelRuleKey = (typeof WHEEL_RULE_KEYS)[number];
 
 export interface WheelParams {
   offerFollowUpDays: number; // days of silence after sentAt before a follow-up task
   inquiryStaleBusinessDays: number; // business days before an uncontacted inquiry escalates
+  materialLateGraceDays: number; // calendar grace days after expectedAt before late-delivery task
   workStartHour: number; // working window for due-date computation (Mon–Fri)
   workEndHour: number;
 }
@@ -36,11 +38,12 @@ const WheelSettingsSchema = new Schema<WheelSettingsDocument>(
       type: {
         offerFollowUpDays: { type: Number, default: 7 },
         inquiryStaleBusinessDays: { type: Number, default: 1 },
+        materialLateGraceDays: { type: Number, default: 0 },
         workStartHour: { type: Number, default: 8 },
         workEndHour: { type: Number, default: 16 },
       },
       _id: false,
-      default: () => ({ offerFollowUpDays: 7, inquiryStaleBusinessDays: 1, workStartHour: 8, workEndHour: 16 }),
+      default: () => ({ offerFollowUpDays: 7, inquiryStaleBusinessDays: 1, materialLateGraceDays: 0, workStartHour: 8, workEndHour: 16 }),
     },
   },
   { timestamps: true, collection: 'wheel_settings' },
@@ -50,7 +53,7 @@ export const WheelSettingsModel: Model<WheelSettingsDocument> =
   mongoose.models.WheelSettings || mongoose.model<WheelSettingsDocument>('WheelSettings', WheelSettingsSchema);
 
 // offerFollowUpDays=7: lastnik želi follow-up po enem tednu tišine.
-const DEFAULT_PARAMS: WheelParams = { offerFollowUpDays: 7, inquiryStaleBusinessDays: 1, workStartHour: 8, workEndHour: 16 };
+const DEFAULT_PARAMS: WheelParams = { offerFollowUpDays: 7, inquiryStaleBusinessDays: 1, materialLateGraceDays: 0, workStartHour: 8, workEndHour: 16 };
 
 export type WheelConfig = { rules: Record<string, { enabled: boolean }>; params: WheelParams };
 
