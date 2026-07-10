@@ -164,8 +164,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 
 ## P2 — Structure, coupling, tenancy prep
 
-- **AIN-P2-01** Freeze legacy embedded offers/POs/deliveries: log usage counters on
-  legacy endpoints (D4/D5), then remove writes, then archive code. Effort M.
 - **AIN-P2-02** State-machine layer for project/offer/material transitions (wrap,
   don't migrate). Effort L. Deps: P1-04.
 - **AIN-P2-03** Extract logistics.controller services (confirmation/work-order/
@@ -213,6 +211,25 @@ Every item lists its docs in-line; at minimum update MODULE_CATALOG review statu
 relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 
 ## Done
+
+### AIN-P2-01 — Freeze legacy embedded offers/POs/deliveries
+- **Landed**: legacy embedded project write functions now fail closed with HTTP 410
+  and emit a structured `legacy.project_embedded_write` warning event. The still
+  registered legacy delivery receive route (`POST /api/projects/:id/deliveries/:deliveryId/receive`)
+  is blocked before any Project lookup or embedded-array mutation. Unregistered
+  legacy embedded offer actions in `project.controller.ts` (`sendOffer`,
+  `confirmOffer`, `cancelConfirmation`, `selectOffer`) are also guarded the same way
+  if they are ever re-mounted accidentally.
+- **Current source of truth**: `OfferVersion`, `MaterialOrder`, and `WorkOrder`
+  collection-backed APIs remain active; frontend grep confirms module-projects uses
+  those paths for offer save/send/confirm, material PDFs, and work-order execution.
+- **Acceptance used**: derived from the backlog text because no separate acceptance
+  block existed: legacy embedded write attempts are observable through logs, embedded
+  writes are removed/fail closed, and old code is left archived in-place rather than
+  deleted.
+- **Tests**: `backend/test/legacy-embedded-freeze.test.ts` verifies the registered
+  delivery receive endpoint returns 410 before DB access and logs the legacy counter
+  event.
 
 ### AIN-P1-20 — Follow-up agreed at send time + three-state rule modes
 - **Owner direction (2026-07-10)**: creating a follow-up task manually after sending
