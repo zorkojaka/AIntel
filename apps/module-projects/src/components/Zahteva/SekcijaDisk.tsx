@@ -2,7 +2,7 @@ import { HardDrive } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchPredlogDisk, getProductImageUrl, type CenikProduct } from "../../api";
 import type { Videonadzor } from "./utils";
-import { assignedCameraProducts, calculateDvcStorage, formatPrice, normalizedSelectedItems } from "./utils";
+import { assignedCameraProducts, calculateDvcStorage, formatPrice, normalizedSelectedItems, salesCompare, topSellerId } from "./utils";
 
 type Props = {
   videonadzor: Videonadzor;
@@ -75,10 +75,11 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
       Array.from(productById.values())
         .filter((product) => product.classification?.productType === "disk")
         .filter((product) => product.classification?.isSurveillanceDisk !== false)
-        .sort((a, b) => (a.classification?.diskCapacityTB ?? 0) - (b.classification?.diskCapacityTB ?? 0) || a.prodajnaCena - b.prodajnaCena)
+        .sort((a, b) => (a.classification?.diskCapacityTB ?? 0) - (b.classification?.diskCapacityTB ?? 0) || salesCompare(a, b) || a.prodajnaCena - b.prodajnaCena)
         .slice(0, 8),
     [productById],
   );
+  const najprodajnejsiId = useMemo(() => topSellerId(alternatives), [alternatives]);
 
   useEffect(() => {
     if (!hasSnemalnik) return;
@@ -147,6 +148,7 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
                 {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
                 <strong>{product.ime}</strong>
                 <small>{product.classification?.diskCapacityTB ?? "-"} TB</small>
+                {product._id === najprodajnejsiId ? <span className="zahteva-sales-hint">★ najpogosteje izbrano</span> : null}
                 <b>{formatPrice(product.prodajnaCena)}</b>
                 <span className="zahteva-disk-days">{days ? `${days} dni za ${cameras.length} kam` : "—"}</span>
               </button>

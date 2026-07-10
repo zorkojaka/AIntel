@@ -2,7 +2,7 @@ import { Network } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
 import type { Videonadzor } from "./utils";
-import { assignedCameraProducts, formatPrice, normalizedSelectedItems, standardPorts } from "./utils";
+import { assignedCameraProducts, formatPrice, normalizedSelectedItems, salesCompare, standardPorts, topSellerId } from "./utils";
 
 function optionKey(value?: string | number | null) {
   return String(value ?? "").trim().toLocaleLowerCase("sl-SI");
@@ -155,7 +155,7 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
         if (priority !== 0) return priority;
         const fit = switchFitRank(a, neededPorts) - switchFitRank(b, neededPorts);
         if (fit !== 0) return fit;
-        return portScore || a.prodajnaCena - b.prodajnaCena;
+        return portScore || salesCompare(a, b) || a.prodajnaCena - b.prodajnaCena;
       }),
     [manufacturerSwitches, neededPorts],
   );
@@ -163,7 +163,9 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
   const recommendedId =
     alternatives
       .filter((product) => poePortCount(product) >= Math.max(neededPorts, recommendedPorts))
-      .sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || poePortCount(a) - poePortCount(b) || a.prodajnaCena - b.prodajnaCena)[0]?._id ?? alternatives[0]?._id;
+      .sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || poePortCount(a) - poePortCount(b) || salesCompare(a, b) || a.prodajnaCena - b.prodajnaCena)[0]?._id ?? alternatives[0]?._id;
+
+  const najprodajnejsiId = topSellerId(alternatives);
 
   useEffect(() => {
     recommendedCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
@@ -213,6 +215,7 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
                 {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
                 <strong>{product.ime}</strong>
                 <small>{portSummary(product)}</small>
+                {product._id === najprodajnejsiId ? <span className="zahteva-sales-hint">★ najpogosteje izbrano</span> : null}
                 <b>{formatPrice(product.prodajnaCena)}</b>
               </button>
               <div className="zahteva-qty-control">

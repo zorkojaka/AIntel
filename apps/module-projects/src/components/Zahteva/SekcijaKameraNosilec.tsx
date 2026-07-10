@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { fetchKompatibilniNosilci, getProductImageUrl, type CenikProduct } from "../../api";
 import { Button } from "../ui/button";
-import { formatPrice } from "./utils";
+import { formatPrice, salesCompare, topSellerId } from "./utils";
 
 type Props = {
   productById: Map<string, CenikProduct>;
@@ -86,7 +86,7 @@ export function SekcijaKameraNosilec({ productById, onAddVariant, cameraMode = "
     () =>
       Array.from(productById.values())
         .filter((product) => cameraMode === "reolink_wifi" ? isReolinkProduct(product) && isCameraLikeProduct(product) : isIpCamera(product))
-        .sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || productBrand(a).localeCompare(productBrand(b), "sl") || a.prodajnaCena - b.prodajnaCena),
+        .sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || productBrand(a).localeCompare(productBrand(b), "sl") || salesCompare(a, b) || a.prodajnaCena - b.prodajnaCena),
     [cameraMode, productById],
   );
   const brands = useMemo(() => {
@@ -144,11 +144,13 @@ export function SekcijaKameraNosilec({ productById, onAddVariant, cameraMode = "
     [brand, cameraMode, cameras, housing, reolinkKind, resolution],
   );
 
+  const najprodajnejsiId = useMemo(() => topSellerId(filteredCameras), [filteredCameras]);
+
   const selectCamera = (camera: CenikProduct) => {
     setSelectedCamera(camera);
     setSelectedBracket(null);
     fetchKompatibilniNosilci(camera._id)
-      .then((items) => setBrackets([...items].sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || a.prodajnaCena - b.prodajnaCena)))
+      .then((items) => setBrackets([...items].sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || salesCompare(a, b) || a.prodajnaCena - b.prodajnaCena)))
       .catch((error) => toast.error(error instanceof Error ? error.message : "Nosilcev ni mogoče pridobiti."));
   };
 
@@ -195,6 +197,7 @@ export function SekcijaKameraNosilec({ productById, onAddVariant, cameraMode = "
               {camera.classification?.cameraHousing ? ` • ${camera.classification.cameraHousing}` : ""}
               {camera.classification?.hasPoE ? " • PoE" : ""}
             </small>
+            {camera._id === najprodajnejsiId ? <span className="zahteva-sales-hint">★ najpogosteje izbrano</span> : null}
             <b>{formatPrice(camera.prodajnaCena)}</b>
           </button>
         ))}

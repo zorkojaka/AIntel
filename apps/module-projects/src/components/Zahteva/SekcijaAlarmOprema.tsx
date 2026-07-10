@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
 import type { Alarm } from "./utils";
-import { formatPrice } from "./utils";
+import { formatPrice, salesCompare, topSellerId } from "./utils";
 
 type Props = {
   alarm: Alarm;
@@ -130,7 +130,7 @@ function filterOptions(products: CenikProduct[], resolver: (product: CenikProduc
 }
 
 function sortProducts(a: CenikProduct, b: CenikProduct) {
-  return categoryPriorityRank(a) - categoryPriorityRank(b) || a.ime.localeCompare(b.ime, "sl") || a.prodajnaCena - b.prodajnaCena;
+  return categoryPriorityRank(a) - categoryPriorityRank(b) || salesCompare(a, b) || a.ime.localeCompare(b.ime, "sl") || a.prodajnaCena - b.prodajnaCena;
 }
 
 function selectedQuantity(items: Array<{ productId: string; kolicina: number }>, productId: string) {
@@ -391,6 +391,7 @@ function SensorProductGroup({
                 {isPhotoVerificationSensorName(product.ime) ? " • photo" : ""}
                 {sensorColor(product) ? ` • ${sensorColor(product)}` : ""}
               </small>
+              {product._id === topSellerId(products) ? <span className="zahteva-sales-hint">★ najpogosteje izbrano</span> : null}
               <b>{formatPrice(product.prodajnaCena)}</b>
               <span className="zahteva-card-action">
                 <Plus className="h-3 w-3" aria-hidden />

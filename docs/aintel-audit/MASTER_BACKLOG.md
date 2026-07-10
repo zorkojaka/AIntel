@@ -128,6 +128,17 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   (salesStats/offer history, same engine as ECO-35), not hardcoded guesses;
   recompute with the stats cron. Applies to: new-project/offer forms in AIntel
   and the web configurator (web side tracked as ECO-36). Effort M. Deps: ECO-35.
+- **Landed (2026-07-10) — offer builder (Zahteva) + server suggestions**:
+  salesStats now flows into module-projects (CenikProduct type) with utils
+  salesQty/salesCompare/topSellerId (soldQty365 first, soldQty fallback). All
+  product tracks rank sales before price within equal adequacy: SekcijaSnemalnik
+  (alternatives + recommendedId), SekcijaPoESwitch, SekcijaDisk, SekcijaKameraNosilec
+  (cameras within brand + brackets), SekcijaAlarmOprema sortProducts (hub choice
+  untouched — owner-set Hub/Hub2 logic). Top seller per visible track gets an amber
+  »★ najpogosteje izbrano« badge (`.zahteva-sales-hint`). Backend predlagajSnemalnik/
+  PoESwitch/Disk/Nosilce sort `'salesStats.soldQty365': -1` before price within the
+  right size bucket. Tests: `backend/test/zahteve-predlogi-sales.test.ts` (4).
+  Remaining scope: owner visual review; web configurator side = ECO-36.
 
 ### AIN-P1-12 — Invoice payment tracking
 - dueDate + paidAt + status on (new) invoice collection; mark-paid endpoint

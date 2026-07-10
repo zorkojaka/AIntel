@@ -241,6 +241,12 @@ export type CenikProduct = {
     bracketCodeOwn?: string;
   };
   categoryPriority?: 1 | 2 | 3 | null;
+  salesStats?: {
+    soldQty?: number;
+    soldQty365?: number;
+    offersCount?: number;
+    salesRank?: number | null;
+  };
 };
 
 export function getProductImageUrl(product?: Pick<CenikProduct, "aaData" | "povezavaDoSlike"> | null) {
