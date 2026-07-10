@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-10 (AIN-P2-04 communication send pipeline)
-Last reviewed commit: AIN-P2-04 communication send pipeline on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-10 (AIN-P2-06 partial OffersTab split)
+Last reviewed commit: AIN-P2-06 partial OffersTab split on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -220,6 +220,11 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   message ids, and sent/failed `communication_events`. Domain-specific template
   contexts and attachment selection stay in their send functions; installer
   preparation keeps preview-only and "sent but logging failed" behavior.
+- **AIN-P2-06 partial OffersTab split**: the first low-risk frontend extraction moved
+  OffersTab editor/import/KM/PDF helper types and pure functions into
+  `apps/module-projects/src/domains/offers/offerEditorUtils.ts`. The task remains open:
+  `OffersTab.tsx` is still the large state/UI owner and needs further component/hook
+  extraction before AIN-P2-06 can be marked done.
 
 ## Genuine unresolved checks (curated in the final review)
 
