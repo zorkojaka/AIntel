@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-10 (AIN-P1-19 configurator value payload)
-Last reviewed commit: AIN-P1-19 configurator value payload on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-10 (AIN-P2-07 mutation audit logging)
+Last reviewed commit: AIN-P2-07 mutation audit logging on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -197,6 +197,11 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   descriptions/images, included services with a safe fallback, coverage mapped from
   configurator answers, and reassurance copy. Internal `defaultsApplied` automation
   notes remain private. Covered by the money-flow smoke test on memory Mongo.
+- **AIN-P2-07 mutation audit logging**: protected `/api` POST/PUT/PATCH/DELETE routes
+  now emit a structured `audit.mutation` log event after the response finishes. Events
+  include auth-derived tenant/actor/roles, route, method, status, request id,
+  best-effort module/entity id, and sensitive-key-filtered top-level changed field
+  names. This is log-based auditability, not a new immutable database collection.
 
 ## Genuine unresolved checks (curated in the final review)
 

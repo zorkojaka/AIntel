@@ -150,8 +150,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   material orders; late-delivery rule. Effort M.
 - **AIN-P2-06** Split ExecutionPanel/OffersTab/LogisticsPanel along domains/ with
   extracted hooks; no behavior change. Effort L–XL (per panel M–L).
-- **AIN-P2-07** Generic audit log middleware for mutating routes (who/route/entity/
-  diff summary). Effort M.
 - **AIN-P2-08** Service module: tickets + maintenance plans + portal intake
   (TARGET §8). Effort XL.
 - **AIN-P2-10** tenantId backfill on business collections + compound indexes +
@@ -191,6 +189,22 @@ Every item lists its docs in-line; at minimum update MODULE_CATALOG review statu
 relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 
 ## Done
+
+### AIN-P2-07 — Generic audit log middleware for mutating routes
+- **Landed**: AIN-P2-07 implementation commit.
+- **Summary**: Added a protected `/api` mutation audit middleware that emits one
+  structured log event after every POST/PUT/PATCH/DELETE request. The event records
+  tenant, actor user/employee, roles, method, route, status, request id, a best-effort
+  module/entity id, and a sensitive-key-filtered summary of changed top-level request
+  fields. Public intake and auth routes are intentionally outside this middleware;
+  public intake keeps its own request logging and protected app routes carry the auth
+  context needed for "who" fields.
+- **Acceptance used**: derived from the backlog text because no separate acceptance
+  block existed: mutating protected routes produce structured audit events with
+  who/route/entity/diff-summary data, sensitive values are not logged, and DELETE
+  requests do not log body field changes.
+- **Tests**: `backend/test/audit-log.test.ts` covers event shape, entity extraction,
+  sensitive field filtering, and DELETE field omission.
 
 ### AIN-P1-19 — Configurator result: "kaj dobite" value payload (not just a price)
 - **Landed**: AIN-P1-19 implementation commit.

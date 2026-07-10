@@ -103,16 +103,21 @@ directly. Consequence: no module is independently deployable today.
 
 ### Logging, monitoring, auditability
 
-- **Console logging only**; no structured logger, no request logging middleware, no
-  correlation IDs, no error tracker (Sentry etc.). PM2 captures stdout/stderr.
+- RESOLVED (AIN-P1-03): structured pino request logging is mounted first in
+  `createApp`, emits JSON request lines with request ids, and echoes `x-request-id`.
+- RESOLVED (AIN-P1-02): Sentry integration is optional behind `SENTRY_DSN`, with
+  request context scrubbing before capture.
 - RESOLVED (AIN-P1-06): observed live production error in logs where
   `sendInstallerPreparationEmail` cast the string `'undefined'` to ObjectId on a
   WorkOrder query. The installer-prep controller and service now guard invalid
   `workOrderId` before the WorkOrder lookup.
 - Audit trail: Project embeds a `timeline` array (event id = `evt-<Date.now36>`, whole
   events written by controllers). Communication module stores `CommunicationEvent` /
-  `CommunicationMessage` records. There is **no generic audit log** (who changed what
-  field when) and no immutability.
+  `CommunicationMessage` records.
+- RESOLVED (AIN-P2-07): protected `/api` mutating routes now emit structured
+  `audit.mutation` log events with auth-derived actor, route, best-effort entity id,
+  status, request id, and sensitive-key-filtered changed field names. This is
+  log-based auditability; there is still no immutable audit collection.
 
 ### Background work, schedules, automation
 

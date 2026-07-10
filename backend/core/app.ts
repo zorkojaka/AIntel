@@ -9,6 +9,7 @@ import { requireAuth } from '../middlewares/auth';
 import { responseHelpers } from './response';
 import { normalizePayload } from './middleware/normalizePayload';
 import { httpLogger } from './middleware/httpLogger';
+import { auditMutationLog } from './middleware/auditLog';
 import { errorHandler } from './errorHandler';
 import { isMongoConnected } from '../db/mongo';
 
@@ -63,7 +64,7 @@ export function createApp() {
 
   app.use('/api/auth', authRoutes);
   app.get('/uploads/*', requireAuth, streamUpload);
-  app.use('/api', requireAuth, routes);
+  app.use('/api', requireAuth, auditMutationLog, routes);
   app.use(errorHandler);
 
   return app;
