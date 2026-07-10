@@ -1357,7 +1357,7 @@ export function ExecutionPanel({
     setDownloadingWorkOrderId(order._id);
     try {
       const filename = `delovni-nalog-${order._id}.pdf`;
-      await downloadPdf(`/api/projects/${projectId}/work-orders/${order._id}/pdf?docType=WORK_ORDER`, filename);
+      await downloadPdf(`/api/projects/${projectId}/work-orders/${order._id}/pdf?docType=WORK_ORDER&mode=download`, filename);
       toast.success("Delovni nalog prenesen.");
     } catch (error) {
       console.error(error);
@@ -1365,6 +1365,15 @@ export function ExecutionPanel({
     } finally {
       setDownloadingWorkOrderId(null);
     }
+  };
+
+  const handlePreviewWorkOrder = (order: WorkOrder | null) => {
+    if (!order?._id) return;
+    window.open(
+      `/api/projects/${projectId}/work-orders/${order._id}/pdf?docType=WORK_ORDER&mode=inline`,
+      "_blank",
+      "noopener,noreferrer",
+    );
   };
 
   const applyDraftChange = (order: WorkOrder, values: Partial<{ status: WorkOrderStatus; executionNote: string }>) => {
@@ -2942,20 +2951,33 @@ export function ExecutionPanel({
                               )}
                             </div>
                             <div className="flex flex-wrap gap-2">
-                              <Button
-                                variant="outline"
-                                onClick={() => handleDownloadWorkOrder(order)}
-                                disabled={!order._id || downloadingWorkOrderId === order._id}
-                              >
-                                {downloadingWorkOrderId === order._id ? (
-                                  <span className="flex items-center gap-2">
+                              <div className="inline-flex h-8 items-center rounded-md border border-border/70 bg-background">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 rounded-none border-r border-border/70 px-3"
+                                  onClick={() => handlePreviewWorkOrder(order)}
+                                  disabled={!order._id}
+                                >
+                                  Poglej delovni nalog
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 rounded-none"
+                                  onClick={() => handleDownloadWorkOrder(order)}
+                                  disabled={!order._id || downloadingWorkOrderId === order._id}
+                                  aria-label="Prenesi delovni nalog"
+                                >
+                                  {downloadingWorkOrderId === order._id ? (
                                     <Loader2 className="h-4 w-4 animate-spin" />
-                                    Prenos...
-                                  </span>
-                                ) : (
-                                  "Prenesi delovni nalog"
-                                )}
-                              </Button>
+                                  ) : (
+                                    <Download className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
                               <Button
                                 onClick={() => saveWorkOrder(order._id)}
                                 disabled={!orderHasUnsavedChanges || isSavingOrder || isCompletingOrder || isConfirmationLocked}
