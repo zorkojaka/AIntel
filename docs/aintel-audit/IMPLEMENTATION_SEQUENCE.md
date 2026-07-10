@@ -87,8 +87,8 @@ manual behavior without data damage.
 
 ## Wave 4 — Structure & quality (after W3; largely parallel, refactor-heavy)
 
-AIN-P2-03 (extract logistics services — [senior] review), AIN-P2-04 (unify
-communication sends; do the S8 escaping check here), AIN-P2-06 (split 3k-line panels),
+AIN-P2-03 (extract logistics services — [senior] review), AIN-P2-04 DONE (shared
+delivery/record/event helper; S8 escaping tests retained), AIN-P2-06 (split 3k-line panels),
 AIN-P3-02 (shared API client), AIN-P2-07 (audit-log middleware — pairs naturally with
 the wheel's audit trail), AIN-P2-05 (supplier normalization + expectedAt — may be pulled
 into W3 if late-delivery rules are wanted early). All [agent] with characterization

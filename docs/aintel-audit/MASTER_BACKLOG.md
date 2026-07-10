@@ -168,8 +168,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   don't migrate). Effort L. Deps: P1-04.
 - **AIN-P2-03** Extract logistics.controller services (confirmation/work-order/
   material) with characterization tests. Effort L–XL. Deps: P1-04.
-- **AIN-P2-04** Unify four communication send functions into one pipeline; single
-  place for template context + attachment resolution. Effort M–L.
 - **AIN-P2-06** Split ExecutionPanel/OffersTab/LogisticsPanel along domains/ with
   extracted hooks; no behavior change. Effort L–XL (per panel M–L).
 - **AIN-P2-08** Service module: tickets + maintenance plans + portal intake
@@ -211,6 +209,25 @@ Every item lists its docs in-line; at minimum update MODULE_CATALOG review statu
 relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 
 ## Done
+
+### AIN-P2-04 — Unify communication send pipeline
+- **Landed**: the four outbound project communication sends (offer, invoice,
+  work-order confirmation, installer preparation) now share one internal
+  `sendAndRecordCommunicationEmail` pipeline for SMTP delivery, inline company logo
+  attachment handling, communication message persistence, provider message id capture,
+  and sent/failed communication events.
+- **Scoped intentionally**: domain-specific data gathering, template contexts, and
+  attachment request selection remain inside each send function because invoices,
+  offers, signed confirmations, and installer preparation have different validation
+  and fallback text. Installer preparation keeps its `previewOnly` path and its
+  existing "email sent but logging failed" response behavior.
+- **Acceptance used**: derived from the backlog text because no separate acceptance
+  block existed: all four send functions use a single delivery/record/event pipeline,
+  template HTML escaping remains covered by S8 tests, and attachment resolution still
+  flows through `attachment-resolver.service.ts`.
+- **Tests**: communication template escaping, email trap, installer preparation
+  guard, and follow-up email task tests; full backend test suite remains required for
+  final verification.
 
 ### AIN-P2-01 — Freeze legacy embedded offers/POs/deliveries
 - **Landed**: legacy embedded project write functions now fail closed with HTTP 410

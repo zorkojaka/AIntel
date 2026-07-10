@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-10 (AIN-P2-01 legacy embedded write freeze)
-Last reviewed commit: AIN-P2-01 legacy embedded write freeze on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-10 (AIN-P2-04 communication send pipeline)
+Last reviewed commit: AIN-P2-04 communication send pipeline on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -214,6 +214,12 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   receive route is blocked before DB access; unmounted embedded offer actions are also
   guarded if accidentally re-mounted. The collection-backed OfferVersion,
   MaterialOrder, and WorkOrder APIs remain the active paths.
+- **AIN-P2-04 communication send pipeline**: offer, invoice, work-order confirmation,
+  and installer-preparation sends now share one internal delivery/record/event helper
+  for `sendEmail`, inline company logo attachments, `communication_messages`, provider
+  message ids, and sent/failed `communication_events`. Domain-specific template
+  contexts and attachment selection stay in their send functions; installer
+  preparation keeps preview-only and "sent but logging failed" behavior.
 
 ## Genuine unresolved checks (curated in the final review)
 

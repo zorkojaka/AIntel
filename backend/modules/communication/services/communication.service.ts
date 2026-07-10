@@ -22,7 +22,7 @@ import {
   renderCommunicationTemplate,
   renderCommunicationText,
 } from "./template-render.service";
-import { resolveCommunicationAttachment } from "./attachment-resolver.service";
+import { resolveCommunicationAttachment, type ResolvedAttachment } from "./attachment-resolver.service";
 import { sendEmail } from "./email-transport.service";
 import { ProjectModel } from "../../projects/schemas/project";
 import { OfferVersionModel } from "../../projects/schemas/offer-version";
@@ -377,6 +377,118 @@ export async function createCommunicationEvent(input: {
   return serializeEvent(created.toObject());
 }
 
+type InlineEmailAttachment = Awaited<ReturnType<typeof resolveInlineCompanyLogo>>;
+
+async function sendAndRecordCommunicationEmail(input: {
+  senderSettings: CommunicationSenderSettings;
+  effectiveSender: {
+    senderName: string;
+    senderEmail: string;
+  };
+  recipients: string[];
+  cc: string[];
+  bcc: string[];
+  subjectFinal: string;
+  bodyFinal: string;
+  htmlFinal: string;
+  attachments: ResolvedAttachment[];
+  inlineCompanyLogo: InlineEmailAttachment;
+  baseMessage: Record<string, unknown>;
+  actorDisplayName?: string | null;
+  successEvent: {
+    projectId: string;
+    offerId?: string | null;
+    title: string;
+    metadata: Record<string, string>;
+  };
+  failureEvent: {
+    projectId: string;
+    offerId?: string | null;
+    title: string;
+    metadata: Record<string, string>;
+  };
+  onSentLoggingFailed?: (error: unknown) => { message: null; sent: true; loggingFailed: true };
+}) {
+  const attachmentFiles = input.attachments.map((attachment) => ({
+    filename: attachment.filename,
+    content: attachment.content,
+    contentType: attachment.contentType,
+  }));
+  const inlineLogoFiles = input.inlineCompanyLogo
+    ? [
+        {
+          filename: input.inlineCompanyLogo.filename,
+          content: input.inlineCompanyLogo.content,
+          contentType: input.inlineCompanyLogo.contentType,
+          cid: input.inlineCompanyLogo.cid,
+          contentDisposition: "inline" as const,
+        },
+      ]
+    : [];
+
+  let providerMessageId: string | null = null;
+  try {
+    const info = await sendEmail({
+      from: `"${input.effectiveSender.senderName}" <${input.effectiveSender.senderEmail}>`,
+      to: input.recipients.join(", "),
+      cc: input.cc.length > 0 ? input.cc.join(", ") : undefined,
+      bcc: input.bcc.length > 0 ? input.bcc.join(", ") : undefined,
+      replyTo: input.senderSettings.replyToEmail || undefined,
+      subject: input.subjectFinal,
+      text: input.bodyFinal,
+      html: input.htmlFinal,
+      attachments: [...attachmentFiles, ...inlineLogoFiles],
+    });
+    providerMessageId = typeof info.messageId === "string" ? info.messageId : null;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.";
+    const message = await CommunicationMessageModel.create({
+      ...input.baseMessage,
+      status: "failed",
+      sentAt: null,
+      errorMessage,
+    });
+    await createCommunicationEvent({
+      projectId: input.failureEvent.projectId,
+      offerId: input.failureEvent.offerId ?? null,
+      messageId: String(message._id),
+      type: "email_failed",
+      title: input.failureEvent.title,
+      description: errorMessage,
+      user: input.actorDisplayName ?? null,
+      metadata: input.failureEvent.metadata,
+    });
+    throw error;
+  }
+
+  try {
+    const message = await CommunicationMessageModel.create({
+      ...input.baseMessage,
+      status: "sent",
+      sentAt: new Date(),
+      providerMessageId,
+    });
+
+    await createCommunicationEvent({
+      projectId: input.successEvent.projectId,
+      offerId: input.successEvent.offerId ?? null,
+      messageId: String(message._id),
+      type: "email_sent",
+      title: input.successEvent.title,
+      description: `Poslano na ${input.recipients.join(", ")}`,
+      user: input.actorDisplayName ?? null,
+      metadata: input.successEvent.metadata,
+    });
+
+    return { message: serializeMessage(message.toObject()) };
+  } catch (error) {
+    if (input.onSentLoggingFailed) {
+      return input.onSentLoggingFailed(error);
+    }
+    throw error;
+  }
+}
+
 async function resolveTemplateByIdOrKey(input: { templateId?: string | null; templateKey?: string | null }) {
   if (input.templateId) {
     const byId = await CommunicationTemplateModel.findById(input.templateId).lean();
@@ -593,80 +705,39 @@ export async function sendInvoiceCommunicationEmail(input: {
     sentByUserId: input.actorUserId ?? null,
   };
 
-  try {
-    const info = await sendEmail({
-      from: `"${effectiveSender.senderName}" <${effectiveSender.senderEmail}>`,
-      to: resolvedRecipients.join(", "),
-      cc: cc.length > 0 ? cc.join(", ") : undefined,
-      bcc: bcc.length > 0 ? bcc.join(", ") : undefined,
-      replyTo: senderSettings.replyToEmail || undefined,
-      subject: subjectFinal,
-      text: bodyFinal,
-      html: htmlFinal,
-      attachments: [
-        ...attachments.map((attachment) => ({
-          filename: attachment.filename,
-          content: attachment.content,
-          contentType: attachment.contentType,
-        })),
-        ...(inlineCompanyLogo
-          ? [{
-              filename: inlineCompanyLogo.filename,
-              content: inlineCompanyLogo.content,
-              contentType: inlineCompanyLogo.contentType,
-              cid: inlineCompanyLogo.cid,
-              contentDisposition: "inline" as const,
-            }]
-          : []),
-      ],
-    });
-
-    const message = await CommunicationMessageModel.create({
-      ...baseMessage,
-      status: "sent",
-      sentAt: new Date(),
-      providerMessageId: typeof info.messageId === "string" ? info.messageId : null,
-    });
-
-    await createCommunicationEvent({
+  return sendAndRecordCommunicationEmail({
+    senderSettings,
+    effectiveSender,
+    recipients: resolvedRecipients,
+    cc,
+    bcc,
+    subjectFinal,
+    bodyFinal,
+    htmlFinal,
+    attachments,
+    inlineCompanyLogo,
+    baseMessage,
+    actorDisplayName: input.actorDisplayName ?? null,
+    successEvent: {
       projectId: input.projectId,
-      messageId: String(message._id),
-      type: "email_sent",
       title: "Email z računom poslan",
-      description: `Poslano na ${resolvedRecipients.join(", ")}`,
-      user: input.actorDisplayName ?? null,
       metadata: {
         to: resolvedRecipients.join(", "),
         subject: subjectFinal,
         invoiceVersionId: input.invoiceVersionId,
         attachments: selectedAttachmentRecords.map((attachment) => attachment.filename).join(", "),
       },
-    });
-
-    return { message: serializeMessage(message.toObject()) };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.";
-    const message = await CommunicationMessageModel.create({
-      ...baseMessage,
-      status: "failed",
-      sentAt: null,
-      errorMessage,
-    });
-    await createCommunicationEvent({
+    },
+    failureEvent: {
       projectId: input.projectId,
-      messageId: String(message._id),
-      type: "email_failed",
       title: "Pošiljanje emaila z računom ni uspelo",
-      description: errorMessage,
-      user: input.actorDisplayName ?? null,
       metadata: {
         to: resolvedRecipients.join(", "),
         subject: subjectFinal,
         invoiceVersionId: input.invoiceVersionId,
       },
-    });
-    throw error;
-  }
+    },
+  });
 }
 
 export async function sendOfferCommunicationEmail(input: {
@@ -820,84 +891,39 @@ export async function sendOfferCommunicationEmail(input: {
     sentByUserId: input.actorUserId ?? null,
   };
 
-  try {
-    const info = await sendEmail({
-      from: `"${effectiveSender.senderName}" <${effectiveSender.senderEmail}>`,
-      to: resolvedRecipients.join(", "),
-      cc: cc.length > 0 ? cc.join(", ") : undefined,
-      bcc: bcc.length > 0 ? bcc.join(", ") : undefined,
-      replyTo: senderSettings.replyToEmail || undefined,
-      subject: subjectFinal,
-      text: bodyFinal,
-      html: htmlFinal,
-      attachments: [
-        ...attachments.map((attachment) => ({
-          filename: attachment.filename,
-          content: attachment.content,
-          contentType: attachment.contentType,
-        })),
-        ...(inlineCompanyLogo
-          ? [
-              {
-                filename: inlineCompanyLogo.filename,
-                content: inlineCompanyLogo.content,
-                contentType: inlineCompanyLogo.contentType,
-                cid: inlineCompanyLogo.cid,
-                contentDisposition: "inline" as const,
-              },
-            ]
-          : []),
-      ],
-    });
-
-    const message = await CommunicationMessageModel.create({
-      ...baseMessage,
-      status: "sent",
-      sentAt: new Date(),
-      providerMessageId: typeof info.messageId === "string" ? info.messageId : null,
-    });
-
-    await createCommunicationEvent({
+  return sendAndRecordCommunicationEmail({
+    senderSettings,
+    effectiveSender,
+    recipients: resolvedRecipients,
+    cc,
+    bcc,
+    subjectFinal,
+    bodyFinal,
+    htmlFinal,
+    attachments,
+    inlineCompanyLogo,
+    baseMessage,
+    actorDisplayName: input.actorDisplayName ?? null,
+    successEvent: {
       projectId: input.projectId,
       offerId: input.offerId,
-      messageId: String(message._id),
-      type: "email_sent",
       title: "Email poslan",
-      description: `Poslano na ${resolvedRecipients.join(", ")}`,
-      user: input.actorDisplayName ?? null,
       metadata: {
         to: resolvedRecipients.join(", "),
         subject: subjectFinal,
         attachments: selectedAttachmentRecords.map((attachment) => attachment.filename).join(", "),
       },
-    });
-
-    return {
-      message: serializeMessage(message.toObject()),
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.";
-    const message = await CommunicationMessageModel.create({
-      ...baseMessage,
-      status: "failed",
-      sentAt: null,
-      errorMessage,
-    });
-    await createCommunicationEvent({
+    },
+    failureEvent: {
       projectId: input.projectId,
       offerId: input.offerId,
-      messageId: String(message._id),
-      type: "email_failed",
       title: "Pošiljanje emaila ni uspelo",
-      description: errorMessage,
-      user: input.actorDisplayName ?? null,
       metadata: {
         to: resolvedRecipients.join(", "),
         subject: subjectFinal,
       },
-    });
-    throw error;
-  }
+    },
+  });
 }
 
 export async function sendWorkOrderConfirmationCommunicationEmail(input: {
@@ -1063,86 +1089,41 @@ export async function sendWorkOrderConfirmationCommunicationEmail(input: {
     sentByUserId: input.actorUserId ?? null,
   };
 
-  try {
-    const info = await sendEmail({
-      from: `"${effectiveSender.senderName}" <${effectiveSender.senderEmail}>`,
-      to: resolvedRecipients.join(", "),
-      cc: cc.length > 0 ? cc.join(", ") : undefined,
-      bcc: bcc.length > 0 ? bcc.join(", ") : undefined,
-      replyTo: senderSettings.replyToEmail || undefined,
-      subject: subjectFinal,
-      text: bodyFinal,
-      html: htmlFinal,
-      attachments: [
-        ...attachments.map((attachment) => ({
-          filename: attachment.filename,
-          content: attachment.content,
-          contentType: attachment.contentType,
-        })),
-        ...(inlineCompanyLogo
-          ? [
-              {
-                filename: inlineCompanyLogo.filename,
-                content: inlineCompanyLogo.content,
-                contentType: inlineCompanyLogo.contentType,
-                cid: inlineCompanyLogo.cid,
-                contentDisposition: "inline" as const,
-              },
-            ]
-          : []),
-      ],
-    });
-
-    const message = await CommunicationMessageModel.create({
-      ...baseMessage,
-      status: "sent",
-      sentAt: new Date(),
-      providerMessageId: typeof info.messageId === "string" ? info.messageId : null,
-    });
-
-    await createCommunicationEvent({
+  return sendAndRecordCommunicationEmail({
+    senderSettings,
+    effectiveSender,
+    recipients: resolvedRecipients,
+    cc,
+    bcc,
+    subjectFinal,
+    bodyFinal,
+    htmlFinal,
+    attachments,
+    inlineCompanyLogo,
+    baseMessage,
+    actorDisplayName: input.actorDisplayName ?? null,
+    successEvent: {
       projectId: input.projectId,
       offerId: workOrder.offerVersionId ?? null,
-      messageId: String(message._id),
-      type: "email_sent",
       title: "Email s potrdilom poslan",
-      description: `Poslano na ${resolvedRecipients.join(", ")}`,
-      user: input.actorDisplayName ?? null,
       metadata: {
         to: resolvedRecipients.join(", "),
         subject: subjectFinal,
         workOrderId: input.workOrderId,
         attachments: selectedAttachmentRecords.map((attachment) => attachment.filename).join(", "),
       },
-    });
-
-    return {
-      message: serializeMessage(message.toObject()),
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.";
-    const message = await CommunicationMessageModel.create({
-      ...baseMessage,
-      status: "failed",
-      sentAt: null,
-      errorMessage,
-    });
-    await createCommunicationEvent({
+    },
+    failureEvent: {
       projectId: input.projectId,
       offerId: workOrder.offerVersionId ?? null,
-      messageId: String(message._id),
-      type: "email_failed",
       title: "Pošiljanje emaila s potrdilom ni uspelo",
-      description: errorMessage,
-      user: input.actorDisplayName ?? null,
       metadata: {
         to: resolvedRecipients.join(", "),
         subject: subjectFinal,
         workOrderId: input.workOrderId,
       },
-    });
-    throw error;
-  }
+    },
+  });
 }
 
 function formatDateTime(value: Date | string | null | undefined) {
@@ -1386,88 +1367,46 @@ export async function sendInstallerPreparationEmail(input: {
     sentByUserId: input.actorUserId ?? null,
   };
 
-  let providerMessageId: string | null = null;
-  try {
-    const info = await sendEmail({
-      from: `"${effectiveSender.senderName}" <${effectiveSender.senderEmail}>`,
-      to: resolvedRecipients.join(", "),
-      cc: cc.length > 0 ? cc.join(", ") : undefined,
-      bcc: bcc.length > 0 ? bcc.join(", ") : undefined,
-      replyTo: senderSettings.replyToEmail || undefined,
-      subject: subjectFinal,
-      text: bodyFinal,
-      html: htmlFinal,
-      attachments: [
-        {
-          filename: attachment.filename,
-          content: attachment.content,
-          contentType: attachment.contentType,
-        },
-        ...(inlineCompanyLogo
-          ? [{
-              filename: inlineCompanyLogo.filename,
-              content: inlineCompanyLogo.content,
-              contentType: inlineCompanyLogo.contentType,
-              cid: inlineCompanyLogo.cid,
-              contentDisposition: "inline" as const,
-            }]
-          : []),
-      ],
-    });
-
-    providerMessageId = typeof info.messageId === "string" ? info.messageId : null;
-
-    try {
-      const message = await CommunicationMessageModel.create({
-        ...baseMessage,
-        status: "sent",
-        sentAt: new Date(),
-        providerMessageId,
-      });
-      await createCommunicationEvent({
-        projectId: input.projectId,
-        offerId: workOrder.offerVersionId ?? null,
-        messageId: String(message._id),
-        type: "email_sent",
-        title: "Email monterju poslan",
-        description: `Poslano na ${resolvedRecipients.join(", ")}`,
-        user: input.actorDisplayName ?? null,
-        metadata: {
-          to: resolvedRecipients.join(", "),
-          subject: subjectFinal,
-          workOrderId,
-          attachments: selectedAttachmentRecords.map((record) => record.filename).join(", "),
-        },
-      });
-      return { message: serializeMessage(message.toObject()), sent: true };
-    } catch (loggingError) {
-      logger.error({ err: loggingError }, "Installer preparation email was sent, but communication logging failed");
-      return { message: null, sent: true, loggingFailed: true };
-    }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.";
-    const message = await CommunicationMessageModel.create({
-      ...baseMessage,
-      status: "failed",
-      sentAt: null,
-      errorMessage,
-    });
-    await createCommunicationEvent({
+  const payload = await sendAndRecordCommunicationEmail({
+    senderSettings,
+    effectiveSender,
+    recipients: resolvedRecipients,
+    cc,
+    bcc,
+    subjectFinal,
+    bodyFinal,
+    htmlFinal,
+    attachments: [attachment],
+    inlineCompanyLogo,
+    baseMessage,
+    actorDisplayName: input.actorDisplayName ?? null,
+    successEvent: {
       projectId: input.projectId,
       offerId: workOrder.offerVersionId ?? null,
-      messageId: String(message._id),
-      type: "email_failed",
+      title: "Email monterju poslan",
+      metadata: {
+        to: resolvedRecipients.join(", "),
+        subject: subjectFinal,
+        workOrderId,
+        attachments: selectedAttachmentRecords.map((record) => record.filename).join(", "),
+      },
+    },
+    failureEvent: {
+      projectId: input.projectId,
+      offerId: workOrder.offerVersionId ?? null,
       title: "Pošiljanje emaila monterju ni uspelo",
-      description: errorMessage,
-      user: input.actorDisplayName ?? null,
       metadata: {
         to: resolvedRecipients.join(", "),
         subject: subjectFinal,
         workOrderId,
       },
-    });
-    throw error;
-  }
+    },
+    onSentLoggingFailed: (loggingError) => {
+      logger.error({ err: loggingError }, "Installer preparation email was sent, but communication logging failed");
+      return { message: null, sent: true, loggingFailed: true };
+    },
+  });
+  return { ...payload, sent: true };
 }
 
 export async function listProjectCommunicationFeed(projectId: string, limit = 20) {
