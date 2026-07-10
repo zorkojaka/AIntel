@@ -466,29 +466,30 @@ export function OfferCommunicationComposeDialog({
           : {}),
       });
       if (result.queued) {
-        setSendStatus('queued');
-        setSendStatusText('Pošiljanje emaila se je začelo. Pripravljam PDF priponke in čakam na zaključek ...');
+        // Okno se zapre takoj — napredek in potrditev (vsaj 5 s) kaže stransko
+        // obvestilo v OffersTab.handleCommunicationSent (loading → success 8 s /
+        // error 12 s). Dialog ne podvaja prikaza statusa.
         setSending(false);
-        const message = await onSent(result, { offerId, subject: subjectAtSend, startedAtMs });
-        if (!message) return;
-        if (message.status === 'sent') {
-          setSendStatus('sent');
-          setSendStatusText('Email je bil uspešno poslan.');
-          clearSavedDraft();
-          setIsDirty(false);
-          return;
+        setIsDirty(false);
+        setSendStatus('idle');
+        setSendStatusText('');
+        onOpenChange(false);
+        try {
+          const message = await onSent(result, { offerId, subject: subjectAtSend, startedAtMs });
+          if (!message || message.status === 'sent') clearSavedDraft();
+        } catch {
+          // Napaka je že prikazana v stranskem obvestilu; osnutek ostane shranjen.
         }
-        setSendStatus('failed');
-        setSendStatusText('Pošiljanje emaila ni uspelo.');
-        setSendError(message.errorMessage || 'Pošiljanje emaila ni uspelo.');
         return;
       }
 
       await onSent(result);
-      setSendStatus('sent');
-      setSendStatusText('Email je bil uspešno poslan.');
       clearSavedDraft();
       setIsDirty(false);
+      setSendStatus('idle');
+      setSendStatusText('');
+      onOpenChange(false);
+      toast.success('Email je bil uspešno poslan.', { duration: 8000 });
     } catch (error) {
       setSendStatus('failed');
       setSendStatusText('Pošiljanje emaila ni uspelo.');
