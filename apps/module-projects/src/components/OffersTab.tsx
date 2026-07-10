@@ -47,16 +47,17 @@ import { fetchOfferMessages } from "../domains/communication/api";
 import { ExecutionDefinitionPanel } from "../domains/logistics/ExecutionDefinitionPanel";
 import {
   buildOfferPdfFilename,
-  clampMin,
-  clampPositive,
+  calculateOfferTotals,
   compareRouteAddresses,
   createEmptyItem,
   createOfferEditorSnapshot,
   EMPTY_OFFER_SNAPSHOT,
+  ensureTrailingBlankOfferItem,
   formatKm,
   formatProjectRouteAddress,
   isEmptyOfferItem,
   isItemValid,
+  recalculateOfferItem,
   resolveUnitFromName,
   sleep,
   type KmCalculationState,
@@ -489,43 +490,10 @@ const loadOfferById = useCallback(async (offerId: string) => {
 
 
   const recalcItem = (item: OfferLineItemForm, vatModeOverride?: 0 | 9.5 | 22): OfferLineItemForm => {
-    const quantity = clampMin(item.quantity, 1, 0);
-    const unitPrice = clampPositive(item.unitPrice, 0);
-    const vatRate = clampPositive(item.vatRate, 0);
-
-    const perItemDiscount = usePerItemDiscount ? clampPositive(item.discountPercent ?? 0, 0) : 0;
-
-    const net = Number((quantity * unitPrice * (1 - perItemDiscount / 100)).toFixed(2));
-
-    const activeVatMode = vatModeOverride ?? vatMode;
-    const effectiveVatRate = activeVatMode === 0 ? 0 : activeVatMode ?? vatRate;
-    const totalVat = Number((net * (effectiveVatRate / 100)).toFixed(2));
-    const totalGross = Number((net + totalVat).toFixed(2));
-
-    return {
-      ...item,
-      quantity,
-      unitPrice,
-      vatRate,
-      discountPercent: perItemDiscount,
-      totalNet: net,
-      totalVat,
-      totalGross,
-    };
+    return recalculateOfferItem(item, { usePerItemDiscount, vatMode, vatModeOverride });
   };
 
-  const ensureTrailingBlank = (list: OfferLineItemForm[]) => {
-    const trimmed = list.filter((item, index) => {
-      if (index === list.length - 1) return true;
-      return !isEmptyOfferItem(item);
-    });
-    const last = trimmed[trimmed.length - 1];
-    if (!last || !isEmptyOfferItem(last)) {
-      const blank = createEmptyItem();
-      trimmed.push(blank);
-    }
-    return trimmed;
-  };
+  const ensureTrailingBlank = ensureTrailingBlankOfferItem;
 
   const updateItem = (id: string, changes: Partial<OfferLineItemForm>) => {
     if (changes.productId === null) {
@@ -671,44 +639,17 @@ const loadOfferById = useCallback(async (offerId: string) => {
     }
   }, [items, visibleMobileBlankItemId]);
 
-  const totals = useMemo(() => {
-    const baseWithout = validItems.reduce(
-      (acc, item) => acc + item.quantity * item.unitPrice,
-      0
-    );
-
-    const perItemDisc = usePerItemDiscount
-      ? validItems.reduce(
-          (acc, item) =>
-            acc + item.quantity * item.unitPrice * ((item.discountPercent ?? 0) / 100),
-          0
-        )
-      : 0;
-
-    const baseAfterPerItem = Number((baseWithout - perItemDisc).toFixed(2));
-
-    const normalizedDiscount = useGlobalDiscount
-      ? Math.min(100, Math.max(0, globalDiscountPercent || 0))
-      : 0;
-
-    const globalDisc = Number((baseAfterPerItem * (normalizedDiscount / 100)).toFixed(2));
-    const baseAfterAll = Number((baseAfterPerItem - globalDisc).toFixed(2));
-
-    const vatRate =
-      vatMode === 22 ? 0.22 : vatMode === 9.5 ? 0.095 : 0;
-
-    const vatAmt = Number((baseAfterAll * vatRate).toFixed(2));
-    const totalWithVatVal = Number((baseAfterAll + vatAmt).toFixed(2));
-
-    return {
-      baseWithoutVat: baseWithout,
-      perItemDiscountAmount: perItemDisc,
-      globalDiscountAmount: globalDisc,
-      baseAfterDiscount: baseAfterAll,
-      vatAmount: vatAmt,
-      totalWithVat: totalWithVatVal,
-    };
-  }, [validItems, usePerItemDiscount, useGlobalDiscount, globalDiscountPercent, vatMode]);
+  const totals = useMemo(
+    () =>
+      calculateOfferTotals({
+        validItems,
+        usePerItemDiscount,
+        useGlobalDiscount,
+        globalDiscountPercent,
+        vatMode,
+      }),
+    [validItems, usePerItemDiscount, useGlobalDiscount, globalDiscountPercent, vatMode]
+  );
 
   useEffect(() => {
     setPerItemDiscountAmount(totals.perItemDiscountAmount ?? 0);

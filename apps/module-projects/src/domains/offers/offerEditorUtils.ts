@@ -161,6 +161,90 @@ export const compareRouteAddresses = (projectAddress: string, geocoderAddress: s
 export const isItemValid = (item: OfferLineItem | OfferLineItemForm) =>
   item.name.trim() !== "" && item.unitPrice > 0;
 
+export function recalculateOfferItem(
+  item: OfferLineItemForm,
+  options: {
+    usePerItemDiscount: boolean;
+    vatMode: 0 | 9.5 | 22;
+    vatModeOverride?: 0 | 9.5 | 22;
+  },
+): OfferLineItemForm {
+  const quantity = clampMin(item.quantity, 1, 0);
+  const unitPrice = clampPositive(item.unitPrice, 0);
+  const vatRate = clampPositive(item.vatRate, 0);
+  const perItemDiscount = options.usePerItemDiscount ? clampPositive(item.discountPercent ?? 0, 0) : 0;
+
+  const net = Number((quantity * unitPrice * (1 - perItemDiscount / 100)).toFixed(2));
+  const activeVatMode = options.vatModeOverride ?? options.vatMode;
+  const effectiveVatRate = activeVatMode === 0 ? 0 : activeVatMode ?? vatRate;
+  const totalVat = Number((net * (effectiveVatRate / 100)).toFixed(2));
+  const totalGross = Number((net + totalVat).toFixed(2));
+
+  return {
+    ...item,
+    quantity,
+    unitPrice,
+    vatRate,
+    discountPercent: perItemDiscount,
+    totalNet: net,
+    totalVat,
+    totalGross,
+  };
+}
+
+export function ensureTrailingBlankOfferItem(list: OfferLineItemForm[]) {
+  const trimmed = list.filter((item, index) => {
+    if (index === list.length - 1) return true;
+    return !isEmptyOfferItem(item);
+  });
+  const last = trimmed[trimmed.length - 1];
+  if (!last || !isEmptyOfferItem(last)) {
+    const blank = createEmptyItem();
+    trimmed.push(blank);
+  }
+  return trimmed;
+}
+
+export function calculateOfferTotals(input: {
+  validItems: OfferLineItemForm[];
+  usePerItemDiscount: boolean;
+  useGlobalDiscount: boolean;
+  globalDiscountPercent: number;
+  vatMode: 0 | 9.5 | 22;
+}) {
+  const baseWithoutVat = input.validItems.reduce(
+    (acc, item) => acc + item.quantity * item.unitPrice,
+    0
+  );
+
+  const perItemDiscountAmount = input.usePerItemDiscount
+    ? input.validItems.reduce(
+        (acc, item) =>
+          acc + item.quantity * item.unitPrice * ((item.discountPercent ?? 0) / 100),
+        0
+      )
+    : 0;
+
+  const baseAfterPerItem = Number((baseWithoutVat - perItemDiscountAmount).toFixed(2));
+  const normalizedDiscount = input.useGlobalDiscount
+    ? Math.min(100, Math.max(0, input.globalDiscountPercent || 0))
+    : 0;
+  const globalDiscountAmount = Number((baseAfterPerItem * (normalizedDiscount / 100)).toFixed(2));
+  const baseAfterDiscount = Number((baseAfterPerItem - globalDiscountAmount).toFixed(2));
+  const vatRate = input.vatMode === 22 ? 0.22 : input.vatMode === 9.5 ? 0.095 : 0;
+  const vatAmount = Number((baseAfterDiscount * vatRate).toFixed(2));
+  const totalWithVat = Number((baseAfterDiscount + vatAmount).toFixed(2));
+
+  return {
+    baseWithoutVat,
+    perItemDiscountAmount,
+    globalDiscountAmount,
+    baseAfterDiscount,
+    vatAmount,
+    totalWithVat,
+  };
+}
+
 export const resolveUnitFromName = (name: string) => {
   const normalized = name.trim();
   const match = normalized.match(/\[([^\]]+)\]\s*\*?\s*$/);

@@ -172,8 +172,10 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   extracted hooks; no behavior change. Effort L–XL (per panel M–L).
   - Progress (2026-07-10): `ExecutionPanel`/`LogisticsPanel` already live under
     domains; first OffersTab slice moved offer editor/import/KM/PDF helper types and
-    pure functions into `domains/offers/offerEditorUtils.ts`. AIN-P2-06 remains open
-    until the large OffersTab UI/state sections are split further.
+    pure functions into `domains/offers/offerEditorUtils.ts`. Second slice moved the
+    pure offer item recalculation, trailing blank row handling, and totals calculation
+    into the same helper. AIN-P2-06 remains open until the large OffersTab UI/state
+    sections are split further.
 - **AIN-P2-08** Service module: tickets + maintenance plans + portal intake
   (TARGET §8). Effort XL.
 - **AIN-P2-10** tenantId backfill on business collections + compound indexes +
