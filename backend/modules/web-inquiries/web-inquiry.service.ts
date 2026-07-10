@@ -1,4 +1,4 @@
-import { Types } from 'mongoose';
+import { Types, isValidObjectId } from 'mongoose';
 import { logger } from '../../core/logger';
 import { CrmClientModel } from '../crm/schemas/client';
 import { ProductModel } from '../cenik/product.model';
@@ -660,8 +660,110 @@ export interface ProcessInquiryResult {
   inquiry: WebInquiryDocument;
   offerNumber: string | null;
   offerTotalWithVat: number | null;
+  offerValuePayload?: WebOfferValuePayload | null;
   emailSent: boolean;
   message: string;
+}
+
+export interface WebOfferValuePayload {
+  headline: string;
+  intro: string;
+  equipment: Array<{ name: string; quantity: number; unit: string; description?: string; imageUrl?: string }>;
+  includedServices: Array<{ name: string; quantity: number; unit: string; description?: string }>;
+  coverage: string[];
+  reassurance: string[];
+}
+
+function shortText(value: unknown, maxLength = 180) {
+  return typeof value === 'string' ? value.normalize('NFC').trim().replace(/\s+/g, ' ').slice(0, maxLength) : '';
+}
+
+function isServiceOfferItem(item: any, product: any | undefined) {
+  const category = shortText(item?.category, 40).toLowerCase();
+  const productType = shortText(product?.classification?.productType, 40).toLowerCase();
+  return Boolean(item?.isService) || Boolean(product?.isService) || category === 'labor' || productType === 'storitev';
+}
+
+function buildCoverageLines(payload?: WebInquiryPayload | null) {
+  if (!payload) return [];
+  if (payload.pillar === 'videonadzor' && payload.videonadzor) {
+    return [
+      `${payload.videonadzor.cameraCount} ${payload.videonadzor.cameraCount === 1 ? 'kamera' : 'kamer'} za izbrani objekt.`,
+      payload.videonadzor.wiringType === 'wifi'
+        ? 'Rešitev je prilagojena za WiFi izvedbo.'
+        : payload.videonadzor.wiringReady
+          ? 'Rešitev upošteva pripravljeno žično napeljavo.'
+          : 'Rešitev vključuje žično izvedbo z upoštevanjem napeljave.',
+    ];
+  }
+  if (payload.pillar === 'alarm' && payload.alarm) {
+    return [
+      `${payload.alarm.sensorCount} ${payload.alarm.sensorCount === 1 ? 'varovan prostor' : 'varovanih prostorov'} z izbranim tipom senzorjev.`,
+      payload.alarm.addSirensAndKeypad ? 'Vključena je dodatna sirena oziroma upravljanje, kjer je izbrano.' : 'Osnovna alarmna konfiguracija je pripravljena za izbrane prostore.',
+    ];
+  }
+  if (payload.pillar === 'domofon' && payload.domofon) {
+    return [
+      `${payload.domofon.outdoorUnits} zunanja in ${payload.domofon.indoorUnits} notranja enota domofona.`,
+      payload.domofon.wiringReady ? 'Ponudba upošteva pripravljeno napeljavo.' : 'Napeljava je označena za preverjanje pri izvedbi.',
+    ];
+  }
+  if (payload.pillar === 'pametni_dom' && payload.pametniDom) {
+    return [
+      `${payload.pametniDom.lightsCount} modulov za luči in ${payload.pametniDom.shadesCount} modulov za senčila.`,
+      'Rešitev je pripravljena za izbrane funkcije pametnega doma.',
+    ];
+  }
+  return [];
+}
+
+export async function buildWebOfferValuePayload(offer: { items?: any[] } | null | undefined, payload?: WebInquiryPayload | null): Promise<WebOfferValuePayload | null> {
+  const items = Array.isArray(offer?.items) ? offer!.items : [];
+  if (items.length === 0) return null;
+
+  const productIds = items.map((item) => shortText(item?.productId, 80)).filter((id) => isValidObjectId(id));
+  const products: any[] = productIds.length ? await ProductModel.find({ _id: { $in: productIds } }).lean() : [];
+  const productById = new Map<string, any>(products.map((product) => [String(product._id), product]));
+
+  const equipment: WebOfferValuePayload['equipment'] = [];
+  const includedServices: WebOfferValuePayload['includedServices'] = [];
+  for (const item of items) {
+    const product = item?.productId ? productById.get(String(item.productId)) : undefined;
+    const name = shortText(product?.merchandising?.oznaka, 120) || shortText(item?.name, 120) || shortText(product?.ime, 120);
+    if (!name) continue;
+    const quantity = Math.max(0, Number(item?.quantity ?? 0));
+    const unit = shortText(item?.unit, 20) || 'kos';
+    const description = shortText(product?.kratkiOpis ?? product?.kratekOpis ?? product?.dolgOpis ?? product?.aaData?.rawDescription, 180);
+    if (isServiceOfferItem(item, product)) {
+      includedServices.push({ name, quantity, unit, ...(description ? { description } : {}) });
+    } else {
+      const imageUrl = shortText(product?.povezavaDoSlike ?? product?.aaData?.image, 400);
+      equipment.push({ name, quantity, unit, ...(description ? { description } : {}), ...(imageUrl ? { imageUrl } : {}) });
+    }
+  }
+
+  if (includedServices.length === 0) {
+    includedServices.push({
+      name: 'Montaža, konfiguracija in zagon',
+      quantity: 1,
+      unit: 'paket',
+      description: 'Izvedbeni del je vključen v ponudbo, kot je razvidno iz PDF ponudbe.',
+    });
+  }
+
+  return {
+    headline: 'Kaj dobite v ponudbi',
+    intro: 'Ponudba ni samo cena — vključuje opremo, izvedbo in zagon rešitve za vaš objekt.',
+    equipment: equipment.slice(0, 12),
+    includedServices: includedServices.slice(0, 8),
+    coverage: buildCoverageLines(payload).slice(0, 4),
+    reassurance: [
+      'Izbrane postavke so pripravljene glede na podatke, ki ste jih vnesli v konfigurator.',
+      'PDF ponudba vsebuje celoten seznam postavk in končno vrednost.',
+      'Pred izvedbo lahko ponudbo skupaj prilagodimo dejanskemu stanju objekta.',
+      'Po izvedbi ostaneta podpora in garancija po pogojih ponudbe.',
+    ],
+  };
 }
 
 export async function processWebInquiry(payload: WebInquiryPayload, tenantId = 'inteligent'): Promise<ProcessInquiryResult> {
@@ -853,6 +955,7 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
       inquiry,
       offerNumber: inquiry.offerNumber,
       offerTotalWithVat: inquiry.offerTotalWithVat,
+      offerValuePayload: await buildWebOfferValuePayload(offer, payload),
       emailSent: false,
       message: 'Povpraševanje smo prejeli. Informativno ponudbo vam pošiljamo na vaš e-naslov.',
     };

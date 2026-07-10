@@ -56,7 +56,7 @@ async function callSignatureController(req: any) {
   return result;
 }
 
-async function createProduct(input: { name: string; price: number; isService?: boolean }) {
+async function createProduct(input: { name: string; price: number; isService?: boolean; description?: string; imageUrl?: string }) {
   return ProductModel.create({
     ime: input.name,
     kategorija: input.isService ? 'Storitev' : 'Material',
@@ -65,6 +65,8 @@ async function createProduct(input: { name: string; price: number; isService?: b
     purchasePriceWithoutVat: input.price / 2,
     nabavnaCena: input.price / 2,
     prodajnaCena: input.price,
+    kratekOpis: input.description ?? '',
+    povezavaDoSlike: input.imageUrl ?? '',
     isService: input.isService ?? false,
     isActive: true,
   });
@@ -76,8 +78,8 @@ test('AIN-P1-04 smoke: inquiry offer, confirmation, preparation, signature, invo
 
   try {
     const [indoorUnit, outdoorUnit] = await Promise.all([
-      createProduct({ name: 'Domofon notranja enota', price: 120 }),
-      createProduct({ name: 'Domofon zunanja enota', price: 180 }),
+      createProduct({ name: 'Domofon notranja enota', price: 120, description: 'Notranja enota za odpiranje vrat.' }),
+      createProduct({ name: 'Domofon zunanja enota', price: 180, imageUrl: 'https://example.test/domofon.jpg' }),
     ]);
 
     await WebInquirySettingsModel.create({
@@ -116,6 +118,14 @@ test('AIN-P1-04 smoke: inquiry offer, confirmation, preparation, signature, invo
 
     assert.ok(inquiryResult.inquiry.projectId, 'inquiry created a project');
     assert.ok(inquiryResult.inquiry.offerId, 'inquiry created an offer');
+    assert.equal(inquiryResult.offerValuePayload?.headline, 'Kaj dobite v ponudbi');
+    assert.equal(inquiryResult.offerValuePayload?.equipment.length, 2);
+    assert.match(inquiryResult.offerValuePayload?.equipment[0]?.description ?? '', /Notranja enota/);
+    assert.equal(inquiryResult.offerValuePayload?.equipment[1]?.imageUrl, 'https://example.test/domofon.jpg');
+    assert.ok(inquiryResult.offerValuePayload?.includedServices.some((entry) => /Montaža/.test(entry.name)));
+    assert.ok(inquiryResult.offerValuePayload?.coverage.some((entry) => /zunanja/.test(entry)));
+    assert.ok(inquiryResult.offerValuePayload?.reassurance.length);
+    assert.equal(JSON.stringify(inquiryResult.offerValuePayload).includes('defaultsApplied'), false);
 
     const projectId = inquiryResult.inquiry.projectId!;
     const offerId = String(inquiryResult.inquiry.offerId);

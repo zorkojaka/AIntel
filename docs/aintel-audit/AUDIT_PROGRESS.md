@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-09 (AIN-P1-17 motivational project progress)
-Last reviewed commit: AIN-P1-17 motivational project progress on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-10 (AIN-P1-19 configurator value payload)
+Last reviewed commit: AIN-P1-19 configurator value payload on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -191,6 +191,12 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   existing timeline steps. It starts above 0 %, displays active step and completed
   count, and shows a near-finish message on the final step. This is presentational
   only; public configurator/web-side progress remains ECO-36 outside this repo.
+- **AIN-P1-19 configurator value payload**: browser `POST /api/public/inquiries`
+  keeps the existing `offerSummary` price fields and adds a customer-facing `value`
+  payload for automatic offers: equipment from actual offer items + cenik
+  descriptions/images, included services with a safe fallback, coverage mapped from
+  configurator answers, and reassurance copy. Internal `defaultsApplied` automation
+  notes remain private. Covered by the money-flow smoke test on memory Mongo.
 
 ## Genuine unresolved checks (curated in the final review)
 

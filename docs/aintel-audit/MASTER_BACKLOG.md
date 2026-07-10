@@ -129,21 +129,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   recompute with the stats cron. Applies to: new-project/offer forms in AIntel
   and the web configurator (web side tracked as ECO-36). Effort M. Deps: ECO-35.
 
-### AIN-P1-19 — Configurator result: "kaj dobite" value payload (not just a price)
-- Owner direction (2026-07-09): when the customer finishes the configurator and the
-  offer goes to their mail, the result page (which already shows the price) must sell
-  the VALUE: "prikazat jim morajo kaj bodo vse dobili, da je vse vključeno v ponudbo
-  kar rabijo in da je to to kar iščejo in to za ta denar — ne pa neke suhoparne
-  informacije."
-- API side (this repo): POST /inquiries `offerSummary` today returns only
-  offerNumber/totalWithVat/discountPercent. Extend it with a customer-friendly
-  breakdown built from the offer items + cenik content (ECO-31/32 friendly names,
-  short descriptions, images): grouped equipment ("vaša oprema"), included services
-  ("montaža, konfiguracija in zagon — vse vključeno"), coverage mapped back to what
-  the customer asked for (n prostorov → n senzorjev …), and reassurance block
-  (garancija, podpora). No internal notes (defaultsApplied stays internal). Site
-  presentation = ECO-37. Effort M. Deps: ECO-31/32 (done).
-
 ### AIN-P1-12 — Invoice payment tracking
 - dueDate + paidAt + status on (new) invoice collection; mark-paid endpoint
   (ADMIN/FINANCE); overdue rule → task + reminder email template. Effort M.
@@ -206,6 +191,22 @@ Every item lists its docs in-line; at minimum update MODULE_CATALOG review statu
 relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 
 ## Done
+
+### AIN-P1-19 — Configurator result: "kaj dobite" value payload (not just a price)
+- **Landed**: AIN-P1-19 implementation commit.
+- **Summary**: Browser `POST /api/public/inquiries` responses now extend
+  `offerSummary` with a customer-facing `value` payload when an automatic offer is
+  created (and for duplicate responses when the saved offer is available). The payload
+  is built from actual offer items plus cenik product descriptions/images: grouped
+  equipment, included services (with a safe montage/configuration fallback), coverage
+  text derived from the submitted configurator answers, and reassurance points. It
+  intentionally does not expose `defaultsApplied` or other internal automation notes.
+- **Acceptance used**: derived from the task text because no separate acceptance block
+  existed: keep existing price fields, add value payload from real offer/cenik data,
+  include equipment/services/coverage/reassurance, and keep internal defaults private.
+- **Tests**: existing money-flow smoke now asserts the value payload, descriptions,
+  image URL, coverage, reassurance, and no `defaultsApplied` leakage on
+  `mongodb-memory-server`.
 
 ### AIN-P1-17 — Motivational progress bar in multi-step flows
 - **Landed**: AIN-P1-17 implementation commit.

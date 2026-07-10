@@ -5,9 +5,19 @@ import multer from 'multer';
 import mongoose from 'mongoose';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { fireRule, onWebInquiryNextStep, onWebInquiryProcessed } from '../scheduler/rules';
-import { getWebInquiryOptions, getWebIzdelki, getWebKatalog, PILLAR_LABELS, processWebInquiry, validateWebInquiryPayload, WebInquiryError } from './web-inquiry.service';
+import {
+  buildWebOfferValuePayload,
+  getWebInquiryOptions,
+  getWebIzdelki,
+  getWebKatalog,
+  PILLAR_LABELS,
+  processWebInquiry,
+  validateWebInquiryPayload,
+  WebInquiryError,
+} from './web-inquiry.service';
 import { WebInquiryModel } from './web-inquiry.model';
 import { getReviewByToken, listApprovedReviews, submitReview } from '../reviews/review.service';
+import { OfferVersionModel } from '../projects/schemas/offer-version';
 
 const UPLOAD_BASE_DIR = '/var/www/aintel/uploads/web-inquiries';
 const PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -159,6 +169,7 @@ router.post('/inquiries', async (req: Request, res: Response) => {
       createdAt: { $gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
     }).sort({ createdAt: -1 });
     if (duplicate) {
+      const duplicateOffer = duplicate.offerId ? await OfferVersionModel.findById(duplicate.offerId).lean() : null;
       return res.json({
         ok: true,
         inquiryId: String(duplicate._id),
@@ -167,7 +178,12 @@ router.post('/inquiries', async (req: Request, res: Response) => {
             ? 'Povpraševanje smo že prejeli – informativna ponudba je bila poslana na vaš e-naslov.'
             : 'Povpraševanje smo že prejeli in ga obdelujemo.',
         offerSummary: duplicate.offerNumber
-          ? { offerNumber: duplicate.offerNumber, totalWithVat: duplicate.offerTotalWithVat, currency: 'EUR' }
+          ? {
+              offerNumber: duplicate.offerNumber,
+              totalWithVat: duplicate.offerTotalWithVat,
+              currency: 'EUR',
+              value: await buildWebOfferValuePayload(duplicateOffer, payload),
+            }
           : undefined,
         duplicate: true,
       });
@@ -190,6 +206,7 @@ router.post('/inquiries', async (req: Request, res: Response) => {
             currency: 'EUR',
             emailSent: result.emailSent,
             discountPercent: Number((result.inquiry as any).meta?.discountPercent) || 0,
+            value: result.offerValuePayload ?? null,
           }
         : undefined,
     });
