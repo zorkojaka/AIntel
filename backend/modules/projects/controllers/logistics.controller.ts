@@ -2220,6 +2220,9 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
             if (!isExecutionRestrictedMutation && typeof incoming.name === 'string') target.name = incoming.name;
             if (!isExecutionRestrictedMutation && typeof incoming.unit === 'string') target.unit = incoming.unit;
             if (!isExecutionRestrictedMutation && typeof incoming.isService === 'boolean') target.isService = incoming.isService;
+            if (!isExecutionRestrictedMutation && (typeof incoming.productId === 'string' || incoming.productId === null)) {
+              target.productId = incoming.productId ?? null;
+            }
             if (!isExecutionRestrictedMutation && (typeof incoming.note === 'string' || incoming.note === null)) target.note = incoming.note ?? '';
             if (typeof incoming.itemNote === 'string' || incoming.itemNote === null) {
               target.itemNote = incoming.itemNote ?? null;

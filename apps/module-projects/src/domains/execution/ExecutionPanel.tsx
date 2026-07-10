@@ -22,10 +22,12 @@ import type {
 } from "@aintel/shared/types/logistics";
 import { cn } from "../../components/ui/utils";
 import { MaterialOrderCard } from "../logistics/MaterialOrderCard";
+import { PriceListProductAutocomplete } from "../../components/PriceListProductAutocomplete";
 import { SignaturePad } from "./SignaturePad";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
 import type { Employee } from "@aintel/shared/types/employee";
+import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
 import { WorkOrderConfirmationComposeDialog } from "../communication/WorkOrderConfirmationComposeDialog";
 import { useSettingsData } from "@aintel/module-settings";
 
@@ -1103,6 +1105,11 @@ export function ExecutionPanel({
         return false;
       }
       const draft = options?.draftOverride ?? getDraftValues(order);
+      const incompleteExtraItem = (draft.items ?? []).find((item) => item.isExtra && !item.productId);
+      if (!options?.statusOnly && incompleteExtraItem) {
+        toast.error("Dodatna naloga mora biti izbrana iz cenika.");
+        return false;
+      }
       const requestBody = options?.statusOnly
         ? {
             workOrderId: orderId,
@@ -1485,6 +1492,8 @@ export function ExecutionPanel({
     item: WorkOrderItemDraft,
     values: Partial<{
       name: string;
+      productId: string | null;
+      isService: boolean;
       quantity: number;
       unit: string;
       location: string;
@@ -1494,6 +1503,8 @@ export function ExecutionPanel({
     const executionSpec = ensureExecutionSpec(item.executionSpec);
     applyItemChange(order, item.id, {
       ...(values.name !== undefined ? { name: values.name } : {}),
+      ...(values.productId !== undefined ? { productId: values.productId } : {}),
+      ...(values.isService !== undefined ? { isService: values.isService } : {}),
       ...(values.quantity !== undefined
         ? {
             quantity: values.quantity,
@@ -1507,6 +1518,15 @@ export function ExecutionPanel({
         ...(values.location !== undefined ? { locationSummary: values.location } : {}),
         ...(values.instructions !== undefined ? { instructions: values.instructions } : {}),
       },
+    });
+  };
+
+  const applyExtraProductSelection = (order: WorkOrder, item: WorkOrderItemDraft, product: PriceListSearchItem) => {
+    applyExtraExecutionFieldChange(order, item, {
+      name: product.name,
+      productId: product.id,
+      unit: product.unit ?? item.unit ?? "kos",
+      isService: !!product.isService,
     });
   };
 
@@ -1988,14 +2008,19 @@ export function ExecutionPanel({
             <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Naziv naloge
             </label>
-            <Input
+            <PriceListProductAutocomplete
               value={item.name ?? ""}
               disabled={isDisabled}
-              onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                applyExtraExecutionFieldChange(order, item, { name: event.target.value })
+              placeholder="Poišči produkt ali storitev v ceniku"
+              inputClassName="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+              onChange={(name) =>
+                applyExtraExecutionFieldChange(order, item, { name, productId: null })
               }
-              placeholder="Vnesite naziv naloge"
+              onProductSelected={(product) => applyExtraProductSelection(order, item, product)}
             />
+            {!item.productId ? (
+              <p className="text-xs text-destructive">Izberi postavko iz cenika.</p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
