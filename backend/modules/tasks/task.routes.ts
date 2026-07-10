@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { requireRoles } from '../../middlewares/auth';
 import { ROLE_ADMIN } from '../../utils/roles';
 import {
+  getFollowUpDefaults,
   getMyTasks,
   getTasks,
   getTasksBySubject,
@@ -27,6 +28,7 @@ router.get('/by-subject/:kind/:id', getTasksBySubject);
 router.get('/', requireRoles([ROLE_ADMIN]), getTasks);
 router.get('/wheel-config', requireRoles([ROLE_ADMIN]), getWheelConfig);
 router.put('/wheel-config', requireRoles([ROLE_ADMIN]), putWheelConfig);
+router.get('/follow-up-defaults', getFollowUpDefaults);
 router.get('/templates', getTaskTemplates);
 router.post('/templates', requireRoles([ROLE_ADMIN]), postTaskTemplate);
 router.patch('/templates/:id', requireRoles([ROLE_ADMIN]), patchTaskTemplate);

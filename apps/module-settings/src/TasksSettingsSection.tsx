@@ -20,8 +20,10 @@ type TaskTemplate = {
   order: number;
 };
 
+type WheelRuleMode = 'off' | 'manual' | 'auto';
+
 type WheelConfig = {
-  rules: Record<string, { enabled: boolean }>;
+  rules: Record<string, { enabled: boolean; mode?: WheelRuleMode }>;
   params: {
     offerFollowUpDays: number;
     inquiryStaleBusinessDays: number;
@@ -66,7 +68,8 @@ const WHEEL_RULES: Array<{ key: string; label: string; description: string }> = 
   {
     key: 'offer.follow_up',
     label: 'Follow-up poslane ponudbe',
-    description: 'Poslana ponudba brez odgovora po nastavljenih dneh → opravilo s pripravljenim e-mailom (pošlješ ročno).',
+    description:
+      'Ročno: pri pošiljanju ponudbe sam odkljukaš follow-up (checkbox v dialogu). Avtomatsko: checkbox je predizbran, poleg tega scan sam ustvari opravilo za vsako ponudbo brez odgovora.',
   },
   {
     key: 'offer.expiry',
@@ -265,10 +268,15 @@ export function TasksSettingsSection() {
     }
   };
 
-  const toggleRule = (key: string) => {
+  const ruleMode = (key: string): WheelRuleMode => {
+    const entry = wheel?.rules[key];
+    if (entry?.mode) return entry.mode;
+    return entry?.enabled === true ? 'auto' : 'off';
+  };
+
+  const setRuleMode = (key: string, mode: WheelRuleMode) => {
     if (!wheel) return;
-    const enabled = wheel.rules[key]?.enabled === true;
-    void saveWheel({ ...wheel, rules: { ...wheel.rules, [key]: { enabled: !enabled } } });
+    void saveWheel({ ...wheel, rules: { ...wheel.rules, [key]: { enabled: mode !== 'off', mode } } });
   };
 
   const roleLabel = (role?: string | null) =>
@@ -408,28 +416,47 @@ export function TasksSettingsSection() {
           <div className="space-y-4">
             <div className="space-y-2">
               {WHEEL_RULES.map((rule) => {
-                const enabled = wheel.rules[rule.key]?.enabled === true;
+                const mode = ruleMode(rule.key);
+                const MODES: Array<{ value: WheelRuleMode; label: string }> = [
+                  { value: 'off', label: 'Izklopljeno' },
+                  { value: 'manual', label: 'Ročno' },
+                  { value: 'auto', label: 'Avtomatsko' },
+                ];
                 return (
-                  <div key={rule.key} className="flex items-start justify-between gap-4 rounded-md border border-border px-4 py-3">
-                    <div>
+                  <div key={rule.key} className="flex flex-wrap items-start justify-between gap-4 rounded-md border border-border px-4 py-3">
+                    <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium text-foreground">{rule.label}</div>
                       <div className="text-xs text-muted-foreground">{rule.description}</div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => toggleRule(rule.key)}
-                      disabled={busy}
-                      className={`shrink-0 rounded-md border px-4 py-1.5 text-sm font-medium transition ${
-                        enabled
-                          ? 'border-success bg-success/10 text-success'
-                          : 'border-border text-muted-foreground hover:border-primary/40'
-                      }`}
-                    >
-                      {enabled ? 'Vklopljeno' : 'Izklopljeno'}
-                    </button>
+                    <div className="flex shrink-0 overflow-hidden rounded-md border border-border">
+                      {MODES.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setRuleMode(rule.key, option.value)}
+                          disabled={busy}
+                          className={`px-3 py-1.5 text-sm font-medium transition ${
+                            mode === option.value
+                              ? option.value === 'off'
+                                ? 'bg-muted text-foreground'
+                                : option.value === 'manual'
+                                  ? 'bg-primary/10 text-primary'
+                                  : 'bg-success/10 text-success'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 );
               })}
+              <p className="text-xs text-muted-foreground">
+                Izklopljeno = pravilo ne dela nič. Ročno = sistem pripravi, ti z enim klikom potrdiš.
+                Avtomatsko = zgodi se samo od sebe. Pri pravilih, ki zgolj ustvarjajo opravila, sta
+                Ročno in Avtomatsko enakovredna (opravilo je že samo po sebi poziv tebi).
+              </p>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               {PARAM_FIELDS.map((field) => (

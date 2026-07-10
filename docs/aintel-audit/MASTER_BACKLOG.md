@@ -199,6 +199,22 @@ relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 
 ## Done
 
+### AIN-P1-20 — Follow-up agreed at send time + three-state rule modes
+- **Owner direction (2026-07-10)**: creating a follow-up task manually after sending
+  an offer is wasted work. The send-offer dialog now has a checkbox "Če ne bo
+  odgovora, me spomni čez [N] dni" (N prefilled from wheel params, editable) — the
+  task is created immediately with the due date N days out, same dedupeKey as the
+  scan rule so nothing duplicates, and it still auto-resolves when the offer status
+  changes. Wheel rules got a third state: **off / manual / auto** (stored as `mode`
+  next to `enabled` for back-compat). For offer.follow_up: manual = checkbox
+  unchecked by default (user confirms per send), auto = checkbox prechecked AND the
+  silence scan creates tasks as a safety net; off = hidden + no scan. For task-only
+  rules manual==auto (documented in the settings UI). New non-admin endpoint
+  GET /api/tasks/follow-up-defaults for dialog prefill. Settings UI: three-button
+  segmented control per rule.
+- **Tests**: wheel-rules.test.ts +2 subtests (manual scan suppression; send-time
+  scheduling + dedupe + auto-resolve; off → no-op). 79 backend tests green.
+
 ### AIN-P2-05 — Supplier normalization + expectedAt + late-delivery rule
 - **Landed**: AIN-P2-05 implementation commit.
 - **Summary**: Material order items now carry a normalized `supplierKey` derived from

@@ -6,7 +6,7 @@ import { MaterialOrderModel } from '../projects/schemas/material-order';
 import { TaskModel, type TaskPriority } from '../tasks/task.model';
 import { UserModel } from '../users/schemas/user';
 import { WebInquiryModel, type WebInquiryDocument } from '../web-inquiries/web-inquiry.model';
-import { getWheelConfig, isRuleEnabled } from './wheel-config';
+import { getRuleMode, getWheelConfig, isRuleEnabled } from './wheel-config';
 
 // AIN-P1-11 (AINTEL_WHEEL_SPEC §3): first automation rules. A rule is a pure
 // function fired on an event (called directly from the mutation site) or on a
@@ -242,31 +242,68 @@ async function offerAssignee(sentByUserId?: string | null) {
   return { assigneeRole: 'SALES' };
 }
 
+/**
+ * offer.follow_up ob pošiljanju — checkbox v dialogu za pošiljanje ponudbe
+ * (lastnik 2026-07-10): opravilo nastane takoj, z rokom čez N dni. Isti
+ * dedupeKey kot scan, zato ni podvajanja.
+ */
+export async function scheduleOfferFollowUpTask(input: { offerId: string; days: number; actorUserId?: string | null }) {
+  if ((await getRuleMode('offer.follow_up')) === 'off') return { skipped: true as const };
+  if (!mongoose.isValidObjectId(input.offerId)) return { skipped: true as const };
+  const offer = await OfferVersionModel.findById(input.offerId).lean();
+  if (!offer) return { skipped: true as const };
+
+  const { params } = await getWheelConfig();
+  const days = Number.isFinite(input.days) && input.days > 0 && input.days <= 90 ? Math.round(input.days) : params.offerFollowUpDays;
+  const due = new Date();
+  due.setDate(due.getDate() + days);
+  due.setHours(params.workStartHour, 0, 0, 0);
+
+  const label = `${offer.documentNumber ?? offer.title ?? 'ponudba'} — ${offer.projectId}`;
+  const result = await ensureRuleTask({
+    ruleKey: 'offer.follow_up',
+    dedupeKey: `offer.follow_up:${offer._id}`,
+    type: 'offer.follow_up',
+    title: `Follow-up — ponudba ${offer.documentNumber ?? ''} (${offer.projectId})`.replace('  ', ' '),
+    description: `Follow-up dogovorjen ob pošiljanju ponudbe (čez ${days} dni).`,
+    subject: { kind: 'offerVersion', id: offer._id as mongoose.Types.ObjectId, label },
+    ...(await offerAssignee(offer.sentByUserId ?? input.actorUserId)),
+    dueAt: nextBusinessDay(due, params.workStartHour),
+  });
+  return { result, days };
+}
+
 /** offer.follow_up — offer sent N days ago and still silent → follow-up call. */
 export async function scanOfferFollowUps(now = new Date()) {
-  if (!(await isRuleEnabled('offer.follow_up'))) return { skipped: 1 };
+  const mode = await getRuleMode('offer.follow_up');
+  if (mode === 'off') return { skipped: 1 };
   const { params } = await getWheelConfig();
   const cutoff = new Date(now.getTime() - params.offerFollowUpDays * 24 * 60 * 60 * 1000);
 
-  const offers = await OfferVersionModel.find({ status: 'sent', sentAt: { $ne: null, $lte: cutoff } })
-    .sort({ sentAt: 1 })
-    .limit(200)
-    .lean();
-
+  // manual: opravila nastajajo samo prek checkboxa ob pošiljanju — scan jih ne
+  // ustvarja, še vedno pa razrešuje odprta (spodaj).
   let created = 0;
-  for (const offer of offers) {
-    const label = `${offer.documentNumber ?? offer.title ?? 'ponudba'} — ${offer.projectId}`;
-    const result = await ensureRuleTask({
-      ruleKey: 'offer.follow_up',
-      dedupeKey: `offer.follow_up:${offer._id}`,
-      type: 'offer.follow_up',
-      title: `Follow-up klic — ponudba ${offer.documentNumber ?? ''} (${offer.projectId})`.replace('  ', ' '),
-      description: `Poslana ${offer.sentAt ? new Date(offer.sentAt).toLocaleDateString('sl-SI') : ''}, brez odziva ${params.offerFollowUpDays} dni.`,
-      subject: { kind: 'offerVersion', id: offer._id as mongoose.Types.ObjectId, label },
-      ...(await offerAssignee(offer.sentByUserId)),
-      dueAt: nextBusinessDay(now, params.workStartHour),
-    });
-    if (result === 'created') created += 1;
+  let scanned = 0;
+  if (mode === 'auto') {
+    const offers = await OfferVersionModel.find({ status: 'sent', sentAt: { $ne: null, $lte: cutoff } })
+      .sort({ sentAt: 1 })
+      .limit(200)
+      .lean();
+    scanned = offers.length;
+    for (const offer of offers) {
+      const label = `${offer.documentNumber ?? offer.title ?? 'ponudba'} — ${offer.projectId}`;
+      const result = await ensureRuleTask({
+        ruleKey: 'offer.follow_up',
+        dedupeKey: `offer.follow_up:${offer._id}`,
+        type: 'offer.follow_up',
+        title: `Follow-up klic — ponudba ${offer.documentNumber ?? ''} (${offer.projectId})`.replace('  ', ' '),
+        description: `Poslana ${offer.sentAt ? new Date(offer.sentAt).toLocaleDateString('sl-SI') : ''}, brez odziva ${params.offerFollowUpDays} dni.`,
+        subject: { kind: 'offerVersion', id: offer._id as mongoose.Types.ObjectId, label },
+        ...(await offerAssignee(offer.sentByUserId)),
+        dueAt: nextBusinessDay(now, params.workStartHour),
+      });
+      if (result === 'created') created += 1;
+    }
   }
 
   // Resolve: offers no longer 'sent' auto-complete their open follow-up task.
@@ -281,7 +318,7 @@ export async function scanOfferFollowUps(now = new Date()) {
       resolved += await resolveRuleTasks({ _id: task._id }, 'offer.follow_up', `ponudba ${offer.status}`);
     }
   }
-  return { scanned: offers.length, created, resolved };
+  return { scanned, created, resolved };
 }
 
 /** offer.expiry — validUntil passed while still 'sent' → renew-or-close task. */

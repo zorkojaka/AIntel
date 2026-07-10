@@ -72,6 +72,13 @@ export async function fetchCommunicationSenderSettings() {
   return parseEnvelope<CommunicationSenderSettings>(response);
 }
 
+// Privzete vrednosti za checkbox »follow-up« ob pošiljanju ponudbe:
+// mode off → checkbox skrit; manual → neizbran (potrdiš ročno); auto → izbran.
+export async function fetchFollowUpDefaults() {
+  const response = await fetch('/api/tasks/follow-up-defaults');
+  return parseEnvelope<{ mode: 'off' | 'manual' | 'auto'; days: number }>(response);
+}
+
 export async function sendOfferCommunicationEmail(
   projectId: string,
   offerId: string,
@@ -85,6 +92,7 @@ export async function sendOfferCommunicationEmail(
     body: string;
     selectedAttachments: Array<'offer_pdf' | 'project_pdf'>;
     selectedOfferIds?: string[];
+    followUp?: { enabled: boolean; days: number };
   }
 ) {
   const response = await fetch(`/api/projects/${projectId}/offers/${offerId}/send`, {

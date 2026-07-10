@@ -146,6 +146,18 @@ export async function removeTaskTemplate(req: Request, res: Response) {
   }
 }
 
+// Privzete vrednosti za checkbox »follow-up« v dialogu pošiljanja ponudbe —
+// za vse prijavljene (wheel-config je ADMIN-only, tu je le izvleček).
+export async function getFollowUpDefaults(req: Request, res: Response) {
+  try {
+    const { getRuleMode, getWheelConfig: readConfig } = await import('../scheduler/wheel-config');
+    const [mode, config] = await Promise.all([getRuleMode('offer.follow_up'), readConfig()]);
+    return res.success({ mode, days: config.params.offerFollowUpDays });
+  } catch (error) {
+    return handleError(res, error, 'Privzetih vrednosti follow-upa ni mogoče prebrati.');
+  }
+}
+
 // AIN-P1-11: stikala in parametri pravil kolesa (wheel_settings). ADMIN-only.
 export async function getWheelConfig(req: Request, res: Response) {
   try {

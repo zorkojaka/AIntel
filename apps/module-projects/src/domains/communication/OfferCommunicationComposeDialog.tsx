@@ -23,6 +23,7 @@ import {
   createCommunicationTemplate,
   fetchCommunicationSenderSettings,
   fetchCommunicationTemplates,
+  fetchFollowUpDefaults,
   sendOfferCommunicationEmail,
 } from './api';
 import type { OfferVersionSummary } from '@aintel/shared/types/offers';
@@ -171,6 +172,11 @@ export function OfferCommunicationComposeDialog({
   const [isDirty, setIsDirty] = useState(false);
   const [savedDraftAt, setSavedDraftAt] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // Follow-up ob pošiljanju: off → skrito, manual → neizbrano (potrdiš s kljukico),
+  // auto → predizbrano. Dnevi predizpolnjeni iz nastavitev kolesa, ročno uredljivi.
+  const [followUpMode, setFollowUpMode] = useState<'off' | 'manual' | 'auto'>('off');
+  const [followUpEnabled, setFollowUpEnabled] = useState(false);
+  const [followUpDays, setFollowUpDays] = useState(7);
 
   const normalizedCustomerEmail = useMemo(() => customerEmail.trim(), [customerEmail]);
   const savedDraftKey = useMemo(() => buildSavedDraftKey(projectId, offerId), [offerId, projectId]);
@@ -230,11 +236,16 @@ export function OfferCommunicationComposeDialog({
       setInitError(null);
 
       try {
-        const [nextTemplates, nextSender] = await Promise.all([
+        const [nextTemplates, nextSender, followUpDefaults] = await Promise.all([
           fetchCommunicationTemplates('offer_send'),
           fetchCommunicationSenderSettings(),
+          fetchFollowUpDefaults().catch(() => ({ mode: 'off' as const, days: 7 })),
         ]);
         if (!active) return;
+
+        setFollowUpMode(followUpDefaults.mode);
+        setFollowUpDays(followUpDefaults.days);
+        setFollowUpEnabled(followUpDefaults.mode === 'auto');
 
         const activeTemplates = nextTemplates.filter((entry) => entry.isActive);
         const defaultTemplate = activeTemplates[0] ?? null;
@@ -450,6 +461,9 @@ export function OfferCommunicationComposeDialog({
         body,
         selectedAttachments,
         selectedOfferIds,
+        ...(followUpMode !== 'off'
+          ? { followUp: { enabled: followUpEnabled, days: followUpDays } }
+          : {}),
       });
       if (result.queued) {
         setSendStatus('queued');
@@ -727,6 +741,29 @@ export function OfferCommunicationComposeDialog({
                 <p className="text-xs text-muted-foreground">Priloge bodo na voljo po shranjevanju ponudbe.</p>
               ) : null}
             </div>
+            {followUpMode !== 'off' ? (
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Follow-up</div>
+                <label className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={followUpEnabled}
+                    onChange={(event) => setFollowUpEnabled(event.target.checked)}
+                  />
+                  <span>Če ne bo odgovora, me spomni čez</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={90}
+                    value={followUpDays}
+                    disabled={!followUpEnabled}
+                    onChange={(event) => setFollowUpDays(Math.max(1, Math.min(90, Number(event.target.value) || 1)))}
+                    className="h-8 w-16 rounded-md border border-input bg-background px-2 text-sm"
+                  />
+                  <span>dni (opravilo nastane takoj, ob odgovoru stranke se samo zapre)</span>
+                </label>
+              </div>
+            ) : null}
           </div>
         )}
         </div>

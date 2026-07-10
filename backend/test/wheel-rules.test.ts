@@ -14,6 +14,7 @@ import {
   scanOfferExpiry,
   scanOfferFollowUps,
   scanStaleInquiries,
+  scheduleOfferFollowUpTask,
 } from '../modules/scheduler/rules';
 import { invalidateWheelConfigCache, setWheelConfig } from '../modules/scheduler/wheel-config';
 import { TaskModel } from '../modules/tasks/task.model';
@@ -182,6 +183,38 @@ test('AIN-P1-11 wheel rules', async (t) => {
     assert.equal(done!.status, 'done');
     assert.match(done!.resolution!.outcome, /accepted/);
     assert.ok(fresh); // silence unused warning
+  });
+
+  await t.test('offer.follow_up manual: scan ne ustvarja, checkbox ob pošiljanju pa (isti dedupe)', async () => {
+    await setWheelConfig({ rules: { 'offer.follow_up': { mode: 'manual' } } });
+    const offer = await makeOffer();
+    // ročni način: scan starih poslanih ponudb NE sme ustvariti opravila
+    const scan = await scanOfferFollowUps();
+    assert.equal((scan as any).created, 0);
+    // checkbox ob pošiljanju ustvari opravilo z rokom čez N dni
+    const scheduled = await scheduleOfferFollowUpTask({ offerId: String(offer._id), days: 5 });
+    assert.equal((scheduled as any).result, 'created');
+    const task = await TaskModel.findOne({ type: 'offer.follow_up' });
+    assert.equal(String(task!.subject.id), String(offer._id));
+    assert.ok(task!.dueAt && task!.dueAt.getTime() > Date.now() + 4 * 24 * 60 * 60 * 1000);
+    // idempotentno tudi proti scanu v auto načinu (isti dedupeKey)
+    await setWheelConfig({ rules: { 'offer.follow_up': { mode: 'auto' } } });
+    invalidateWheelConfigCache();
+    assert.equal(((await scanOfferFollowUps()) as any).created, 0);
+    assert.equal(await TaskModel.countDocuments({ type: 'offer.follow_up' }), 1);
+    // odgovor stranke (sprememba statusa) opravilo samodejno zapre tudi v manual načinu
+    await setWheelConfig({ rules: { 'offer.follow_up': { mode: 'manual' } } });
+    invalidateWheelConfigCache();
+    await OfferVersionModel.updateOne({ _id: offer._id }, { $set: { status: 'accepted' } });
+    assert.equal(((await scanOfferFollowUps()) as any).resolved, 1);
+  });
+
+  await t.test('scheduleOfferFollowUpTask: izklopljeno pravilo → nič', async () => {
+    await setWheelConfig({ rules: { 'offer.follow_up': { mode: 'off' } } });
+    const offer = await makeOffer();
+    const result = await scheduleOfferFollowUpTask({ offerId: String(offer._id), days: 7 });
+    assert.equal((result as any).skipped, true);
+    assert.equal(await TaskModel.countDocuments({}), 0);
   });
 
   await t.test('offer.expiry: expired sent offer → renew-or-close task, idempotent', async () => {

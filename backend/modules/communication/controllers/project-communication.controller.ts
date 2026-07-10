@@ -76,6 +76,25 @@ export async function sendOfferCommunicationController(req: Request, res: Respon
       (req as any).log?.error({ err: error }, "Offer communication background send failed");
     });
 
+    // Follow-up dogovorjen ob pošiljanju (checkbox v dialogu): opravilo nastane
+    // takoj, z rokom čez N dni. scheduleOfferFollowUpTask sam upošteva način
+    // pravila (off → nič) in dedupeKey (ni podvajanja s scanom).
+    const followUp = req.body?.followUp;
+    if (followUp && followUp.enabled === true) {
+      const days = Number(followUp.days);
+      void import("../../scheduler/rules")
+        .then(({ scheduleOfferFollowUpTask }) =>
+          scheduleOfferFollowUpTask({
+            offerId: String(req.params.offerVersionId),
+            days,
+            actorUserId: (req as any)?.context?.actorUserId ?? null,
+          }),
+        )
+        .catch((error) => {
+          (req as any).log?.error({ err: error }, "Offer follow-up scheduling failed");
+        });
+    }
+
     return res.status(202).json({
       success: true,
       data: { queued: true },
