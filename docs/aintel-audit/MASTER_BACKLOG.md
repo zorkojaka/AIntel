@@ -191,10 +191,22 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     `GET/PATCH /api/service/tickets/:id` (ADMIN/SALES/EXECUTION). Task modul že
     rezervira subject.kind='serviceTicket'. Testi `test/service-ticket.test.ts`
     (9 primerov). tsc čist, 105/105.
-  - Naslednji rezi: (2) MaintenancePlan (iz potrjenih offer items; letno opravilo +
-    e-mail »preventivni pregled«, warranty iz zaključka izvedbe, upsell checklist);
-    (3) portalni intake `POST /clients/service-tickets` + kolo pravilo
-    service.ticket_intake (odklene ECO-28); (4) frontend apps/module-service.
+  - Rez 2 (MaintenancePlan) landed 2026-07-10: `maintenance-plan.model.ts`
+    (kolekcija `maintenance_plans`, partial-unique {tenantId,projectId}, oprema/
+    interval/warranty/nextDueAt/upsellChecklist/history) + service (createFromProject
+    izpelje opremo iz potrjene ponudbe = ne-storitvene postavke, installedAt iz
+    closedAt/createdAt, warranty +24m, nextDueAt +intervalMonths; lifecycle pause/
+    resume/end/recordVisit/reschedule; buildUpsellChecklist iz imen opreme — disk/
+    kamera/alarm heuristike) + admin API `GET/POST /api/service/maintenance-plans`,
+    `POST .../from-project`, `POST .../run-due`, `PATCH .../:id`. Avtomatika: kolo
+    pravilo `maintenance.due` (dodano v WHEEL_RULE_KEYS, privzeto OFF) + scheduler
+    job (dnevno 7:20) → `scanDueMaintenance` ustvari opravilo »preventivni pregled«
+    z upsell checklistom (assignee SALES, dedupeKey na dueStamp = idempotentno) in
+    prestavi nextDueAt. E-mail stranki NI samodejen (Jakov princip — pošlje se ročno
+    iz opravila; reuse follow-up-email pattern = mikro-korak). 12 testov. 117/117.
+  - Naslednji rezi: (3) portalni intake `POST /clients/service-tickets` + kolo pravilo
+    service.ticket_intake (odklene ECO-28) + ročni follow-up mail iz maintenance
+    opravila; (4) frontend apps/module-service.
 - **AIN-P2-10** tenantId backfill on business collections + compound indexes +
   query-layer plugin. Effort L. Deps: P2-09, P1-05.
 - **AIN-P2-11 DONE-infra (2026-07-10)** Config store (namespaced, tenant-scoped,

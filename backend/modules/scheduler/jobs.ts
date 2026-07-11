@@ -65,5 +65,15 @@ export function schedulerJobs(): SchedulerJob[] {
         return { counts: (await ingestInboundEmail()) as Record<string, number> };
       },
     },
+    // AIN-P2-08 rez 2: letni preventivni pregled. Dodatno varovano s pravilom
+    // maintenance.due (privzeto izklopljeno) — brez njega je no-op. Enkrat dnevno.
+    {
+      key: 'maintenance.due',
+      cron: '20 7 * * *',
+      async handler() {
+        const { scanDueMaintenance } = await import('../service/maintenance-plan.service');
+        return { counts: (await scanDueMaintenance()) as Record<string, number> };
+      },
+    },
   ];
 }
