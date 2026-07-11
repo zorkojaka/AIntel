@@ -268,7 +268,8 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     and a standardized error-reporting hook. Remaining grep hits are intentional
     special cases: custom category `options`, logistics email non-JSON fallback,
     and cenik 409 duplicate-precheck conflict data.
-- **AIN-P3-09 DONE** WooCommerce trgovina — prenos produktov iz cenika (2026-07-11).
+- **AIN-P3-09** WooCommerce trgovina — prenos produktov iz cenika. Effort M.
+  Status: DONE (2026-07-11).
   Modul `modules/shop`: sinhronizacija objavljene izložbe v WooCommerce prek REST
   API (kategorije kamere/ajax/blebox; ime, opisa, slika, cena brez DDV — trgovina
   doda 22 % DDV; slug = katalogSlug, isti kot spletni katalog; menu_order po
