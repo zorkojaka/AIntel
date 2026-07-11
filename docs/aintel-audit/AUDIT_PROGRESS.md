@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-11 (AIN-P2-06 OffersTab linked services split)
-Last reviewed commit: AIN-P2-06 OffersTab linked services split on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-11 (AIN-P2-06 OffersTab template picker split)
+Last reviewed commit: AIN-P2-06 OffersTab template picker split on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -229,9 +229,10 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   now lives in `OfferImportDialog.tsx`; template create/rename/delete dialogs now live
   in `OfferTemplateDialogs.tsx`; kilometrina calculation controls and address mismatch
   UI now live in `OfferKmCalculationControls.tsx`; linked service suggestion rendering
-  now lives in `OfferLinkedServiceSuggestions.tsx`. The task remains open:
-  `OffersTab.tsx` is still the large state/UI owner and needs further component/hook
-  extraction before AIN-P2-06 can be marked done.
+  now lives in `OfferLinkedServiceSuggestions.tsx`; the template picker/dropdown action
+  UI now lives in `OfferTemplatePicker.tsx`. The task remains open: `OffersTab.tsx` is
+  still the large state/UI owner and needs further component/hook extraction before
+  AIN-P2-06 can be marked done.
 
 ## Genuine unresolved checks (curated in the final review)
 

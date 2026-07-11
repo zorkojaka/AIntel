@@ -3,7 +3,6 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "./ui/table";
 import { toast } from "sonner";
 
@@ -22,7 +21,7 @@ import type { Employee } from "@aintel/shared/types/employee";
 import type { CommunicationMessage } from "@aintel/shared/types/communication";
 import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 
-import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronsUpDown, Loader2, Pencil, Trash, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, Trash } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
@@ -52,6 +51,7 @@ import {
 import { OfferLinkedServiceSuggestions } from "../domains/offers/OfferLinkedServiceSuggestions";
 import { OfferPdfActionGroup } from "../domains/offers/OfferPdfActionGroup";
 import { OfferTemplateDialogs } from "../domains/offers/OfferTemplateDialogs";
+import { OfferTemplatePicker } from "../domains/offers/OfferTemplatePicker";
 import { useOfferPdfActions } from "../domains/offers/useOfferPdfActions";
 import {
   calculateOfferTotals,
@@ -1725,168 +1725,23 @@ const loadOfferById = useCallback(async (offerId: string) => {
 
         <hr className="my-4 border-border" />
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Template
-            </span>
-            <div className="hidden items-center gap-2">
-              <Select
-                value={selectedTemplateId ?? ""}
-                onValueChange={(value) => setSelectedTemplateId(value)}
-              >
-                <SelectTrigger className="min-w-[260px]">
-                  <SelectValue placeholder="Izberi template" />
-                </SelectTrigger>
-                <SelectContent>
-                  {templates.map((template) => (
-                    <SelectItem key={template._id} value={template._id}>
-                      {template.title} {"-"} {formatCurrency(template.totalGrossAfterDiscount ?? template.totalWithVat ?? 0)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="size-9 shrink-0"
-                disabled={!selectedTemplateId}
-                onClick={() => openRenameTemplateDialog()}
-                aria-label="Preimenuj template"
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="size-9 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                disabled={!selectedTemplateId}
-                onClick={openDeleteTemplateDialog}
-                aria-label="Izbriši template"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-            <Popover open={isTemplatePickerOpen} onOpenChange={setIsTemplatePickerOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={isTemplatePickerOpen}
-                  className="min-w-[320px] justify-between"
-                >
-                  <span className="truncate text-left">
-                    {selectedTemplate
-                      ? `${selectedTemplate.title} - ${formatCurrency(selectedTemplate.totalGrossAfterDiscount ?? selectedTemplate.totalWithVat ?? 0)}`
-                      : "Izberi template"}
-                  </span>
-                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-[360px] p-2">
-                <div className="space-y-1">
-                  {templates.length === 0 ? (
-                    <div className="px-3 py-5 text-sm text-muted-foreground">Ni shranjenih template-ov.</div>
-                  ) : (
-                    templates.map((template) => {
-                      const isSelected = template._id === selectedTemplateId;
-                      return (
-                        <div
-                          key={template._id}
-                          role="button"
-                          tabIndex={0}
-                          className={`group flex items-center justify-between gap-3 rounded-md px-3 py-2 text-sm transition-colors ${
-                            isSelected ? "bg-accent text-accent-foreground" : "hover:bg-muted/70"
-                          }`}
-                          onClick={() => {
-                            setSelectedTemplateId(template._id);
-                            setIsTemplatePickerOpen(false);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              setSelectedTemplateId(template._id);
-                              setIsTemplatePickerOpen(false);
-                            }
-                          }}
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              {isSelected && <Check className="h-4 w-4 shrink-0 text-emerald-600" />}
-                              <span className="truncate font-medium">{template.title}</span>
-                            </div>
-                            <div className="mt-0.5 text-xs text-muted-foreground">
-                              {formatCurrency(template.totalGrossAfterDiscount ?? template.totalWithVat ?? 0)}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              className="size-8"
-                              aria-label={`Preimenuj ${template.title}`}
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void openRenameTemplateDialog(template);
-                              }}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              className="size-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                              aria-label={`Izbriši ${template.title}`}
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                openDeleteTemplateDialogForItem(template);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={openCreateTemplateDialog}
-              disabled={templateSaving}
-            >
-              {templateSaving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <ArrowLeft className="mr-2 h-4 w-4" />
-              )}
-              Shrani template
-            </Button>
-            <Button
-              size="sm"
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-              onClick={handleApplyTemplate}
-              disabled={!selectedTemplateId || templateCreating}
-            >
-              {templateCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Vnos podatkov
-              {!templateCreating && <ArrowDown className="ml-2 h-4 w-4" />}
-            </Button>
-          </div>
-        </div>
+        <OfferTemplatePicker
+          templates={templates}
+          selectedTemplate={selectedTemplate}
+          selectedTemplateId={selectedTemplateId}
+          open={isTemplatePickerOpen}
+          onOpenChange={setIsTemplatePickerOpen}
+          onSelectTemplate={setSelectedTemplateId}
+          formatCurrency={formatCurrency}
+          templateSaving={templateSaving}
+          templateCreating={templateCreating}
+          onRenameSelected={() => void openRenameTemplateDialog()}
+          onDeleteSelected={openDeleteTemplateDialog}
+          onRenameTemplate={(template) => void openRenameTemplateDialog(template)}
+          onDeleteTemplate={openDeleteTemplateDialogForItem}
+          onCreateTemplate={openCreateTemplateDialog}
+          onApplyTemplate={handleApplyTemplate}
+        />
 
         <div className="hidden mt-3 flex-wrap items-center justify-between gap-3 text-sm">
           <div className="flex items-center gap-2">

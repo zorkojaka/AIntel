@@ -183,6 +183,8 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     calculation button, reliability popover, and address mismatch warning into
     `domains/offers/OfferKmCalculationControls.tsx`. Seventh slice moved linked
     service suggestion rendering into `domains/offers/OfferLinkedServiceSuggestions.tsx`.
+    Eighth slice moved the offer template picker/dropdown actions into
+    `domains/offers/OfferTemplatePicker.tsx`.
     AIN-P2-06 remains open until the large OffersTab UI/state sections are split
     further.
 - **AIN-P2-08** Service module: tickets + maintenance plans + portal intake
