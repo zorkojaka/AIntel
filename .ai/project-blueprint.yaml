@@ -209,6 +209,25 @@ nodes:
       before: "Servisni klici brez evidence."
       after: "Vsak zahtevek ima status, zgodovino in odgovornega."
 
+  - id: trgovina
+    type: capability
+    label: "Trgovina — prenos produktov"
+    status: IMPLEMENTED
+    description: >
+      Objavljena izložba (cenik) se z enim klikom prenese v WooCommerce
+      trgovino na spletni strani: kategorije, opisi, slike, cene z DDV,
+      vrstni red po prodajni kuraciji. Gumb v Cenik → Izložba ali
+      scripts/shop-sync.ts.
+    done_when: >
+      Vsaka sprememba cenika pride v trgovino z enim klikom; izpadli
+      produkti gredo v osnutek.
+    evidence: "commit b78a61c (modul shop) + cb7eed0 (produkt v več kategorijah)"
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    tasks: [AIN-P3-09]
+    impact:
+      before: "Trgovina (Shopify) ločena od cenika — ročno prepisovanje produktov."
+      after: "Cenik urediš enkrat, trgovina se osveži z enim klikom."
+
   - id: ai-posta
     type: capability
     label: "AI pomoč pri pošti"
