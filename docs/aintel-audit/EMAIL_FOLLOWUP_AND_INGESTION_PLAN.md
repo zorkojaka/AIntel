@@ -95,3 +95,84 @@ GDPR: samo prejemniki z marketinško privolitvijo; odjava v vsakem mailu.
 Odvisnosti: P1-13 (mehanika pošiljanja iz opravila), ECO-09/10 (soglasja),
 kuponi modul. Parametri (odstotek, prag, roki) nastavljivi v wheel/kuponi
 konfiguraciji — brez trdo kodiranih vrednosti.
+
+## AI pomoč pri pošti (AIN-P1-21 … AIN-P1-25)
+
+Lastnikova zahteva (2026-07-11): naloge za AI pomoč pri pošti. Nadgradnja
+zgornjega načrta — AI pomaga pri branju, razvrščanju in pisanju, NIKOLI pa ne
+pošilja sam in NIKOLI ne računa cen.
+
+### Trdna pravila (veljajo za vse AI naloge)
+
+1. **Nič avtomatskega pošiljanja.** AI pripravi OSNUTEK; človek ga vidi v
+   predogledu, lahko uredi in šele nato ročno pošlje (ista mehanika kot P1-13).
+2. **Cene/popusti/statusi so deterministični iz AIntela.** AI dobi te podatke
+   kot vhod in jih sme samo citirati — nikoli izračunati ali izmisliti. Enako
+   načelo kot »ponudba nikoli iz AI« (AGENTS.md).
+3. **AI besedilo je označeno** (v UI »✨ AI osnutek — preveri pred pošiljanjem«)
+   in zabeleženo (kdo je potrdil, kaj je bilo spremenjeno).
+4. **Poverilnice samo v backend/.env** (`ANTHROPIC_API_KEY`, owner). Model
+   nastavljiv prek env (`AINTEL_AI_MODEL`, privzeto `claude-opus-4-8`).
+5. **Vsak AI klic v dnevnik**: namen, model, input/output tokeni, ocena stroška,
+   trajanje. Mesečna varovalka (`AINTEL_AI_MONTHLY_LIMIT_EUR`) — ko je presežena,
+   AI funkcije vrnejo »izklopljeno«, ročni tok dela naprej.
+6. **AI je opcijski sloj**: vse mora delovati tudi brez njega (feature flag
+   `AINTEL_AI_ENABLED`); izpad API-ja ne sme podreti nobenega toka.
+7. **GDPR/DPA (owner, D-AI1)**: vsebina strankine pošte gre v obdelavo
+   Anthropic API (podatki se ne uporabljajo za učenje; standardna hramba).
+   Owner potrdi obdelavo + doda omembo v pravilnik o zasebnosti.
+
+### AIN-P1-21 — AI temelj: `ai.service` v AIntel backendu
+
+Majhen modul `backend/modules/ai/` z `@anthropic-ai/sdk` (TypeScript):
+`aiKlic({namen, sistem, vsebina, shema?})` → en klic Messages API
+(`client.messages.create`, model iz env, `output_config.format` z JSON shemo
+za strukturirane izhode, adaptivno razmišljanje privzeto). Vgrajeno: dnevnik
+klicev (nova kolekcija `ai_calls`), stroškovna varovalka, feature flag, retry
+prek SDK (max_retries), timeout. Brez frontenda. Effort: S–M.
+Odvisnosti: owner D-AI1 (ključ + DPA + potrditev modela).
+
+### AIN-P1-22 — AI triaža dohodne pošte
+
+Nadgradnja P1-14: ob shranjenem sporočilu v `email_messages` (F1) AI vrne
+strukturirano: kategorija (odgovor_na_ponudbo / novo_povprasevanje / servis /
+racun_dobavitelja / spam / drugo), nujnost (1–3), povzetek v 1–2 stavkih,
+osnutek naslova opravila. Kadar hevristično ujemanje (F2) ne najde projekta,
+AI predlaga stranko/projekt s stopnjo zaupanja — SAMO predlog v opravilu
+`email.unmatched`, poveže človek. Rezultat se shrani na sporočilo
+(`aiTriaza` polje) in prikaže v opravilu/niti. Effort: M.
+Odvisnosti: P1-14 F1+F2, P1-21.
+
+### AIN-P1-23 — AI osnutek odgovora na strankin mail
+
+Gumb »✨ Pripravi osnutek odgovora« na projektni komunikacijski niti in na
+opravilih `email.unmatched`/»preberi odgovor stranke«. Kontekst za AI:
+zadnja sporočila niti, status projekta/ponudbe (št. ponudbe, znesek — kot
+podatek), dogovorjeni naslednji koraki. Izhod: slovenski osnutek (vikanje,
+podpis iz sender-settings), ki se odpre v OBSTOJEČEM predogledu za ročno
+pošiljanje (P1-13 mehanika). Nikoli ne obljublja cen/rokov, ki jih ni v
+vhodnih podatkih. Effort: M. Odvisnosti: P1-14 F3, P1-21, P2-04 (skupni
+send pipeline — soft).
+
+### AIN-P1-24 — AI povzetek komunikacijske niti na projektu
+
+Kartica »Povzetek komunikacije« na projektu: kaj stranka želi, odprta
+vprašanja, kaj smo obljubili (+datumi), zadnji kontakt. Osveži se ob novem
+dohodnem/odhodnem sporočilu (ali ročni gumb); shranjen povzetek, ne klic ob
+vsakem prikazu. Effort: S–M. Odvisnosti: P1-14 F3, P1-21.
+
+### AIN-P1-25 — AI personalizacija follow-up / reševalnih mailov
+
+Nadgradnja P1-13/P1-15: v predogledu follow-upa gumb »✨ Personaliziraj uvod« —
+AI napiše 1–2 uvodna stavka glede na zgodovino projekta (kaj je stranka
+spraševala, kaj je bilo dogovorjeno), OSTALO iz šablone ostane nespremenjeno
+(zneski, koda, povezave = deterministični). Diff prikaz proti šabloni;
+pošiljanje ročno. Effort: S. Odvisnosti: P1-13 (DONE), P1-21; za kupone P1-15.
+
+### Priporočen model in strošek (ocena, potrdi owner v D-AI1)
+
+Privzeto `claude-opus-4-8` ($5/$25 na mio tokenov): tipičen triažni klic
+(~2k vhod, ~300 izhod) ≈ 0,02 USD; osnutek odgovora ≈ 0,03–0,05 USD. Pri
+deset mailih/dan skupaj nekaj EUR/mesec. Za masovno triažo lahko owner izbere
+`claude-haiku-4-5` ($1/$5) — nastavljivo prek `AINTEL_AI_MODEL` brez spremembe
+kode. Odločitev + ključ + DPA = **D-AI1** (owner).

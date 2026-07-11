@@ -339,6 +339,48 @@ relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 - **Tests**: wheel-rules.test.ts +2 subtests (manual scan suppression; send-time
   scheduling + dedupe + auto-resolve; off → no-op). 79 backend tests green.
 
+### AIN-P1-21 — AI foundation: `ai.service` wrapper (Claude API)
+- Owner request (2026-07-11): tasks for AI help with email. Small backend module
+  `modules/ai/` wrapping the Anthropic TypeScript SDK (`@anthropic-ai/sdk`): one
+  entry point for single Messages API calls (model from env `AINTEL_AI_MODEL`,
+  default `claude-opus-4-8`; structured outputs via `output_config.format`), call
+  log collection `ai_calls` (purpose, tokens, cost estimate), monthly cost cap env,
+  feature flag `AINTEL_AI_ENABLED` (default off), graceful degradation — every flow
+  must work with AI off. Hard rules in EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AI
+  pomoč pri pošti: no auto-send ever; prices/discounts/statuses deterministic from
+  AIntel, AI may only quote them. Effort S–M. Deps: owner **D-AI1**
+  (ANTHROPIC_API_KEY in .env, DPA/GDPR sign-off, model choice).
+
+### AIN-P1-22 — AI inbox triage (builds on P1-14)
+- Classify each ingested `email_messages` doc: category (odgovor_na_ponudbo /
+  novo_povprasevanje / servis / racun_dobavitelja / spam / drugo), urgency 1–3,
+  1–2 sentence Slovenian summary, task-title draft; when F2 heuristics find no
+  project, AI suggests client/project with confidence — suggestion only, human
+  links it in the `email.unmatched` task. Stored as `aiTriaza` on the message.
+  Spec: EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AIN-P1-22. Effort M.
+  Deps: P1-14 F1+F2, P1-21.
+
+### AIN-P1-23 — AI draft reply to customer email
+- »✨ Pripravi osnutek odgovora« on the project communication thread and unmatched
+  tasks. Context: thread messages + project/offer status (numbers passed as data).
+  Output opens in the EXISTING manual-send preview (P1-13 mechanics) — always
+  human-reviewed, never auto-sent; never promises prices/dates absent from input.
+  Spec: EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AIN-P1-23. Effort M.
+  Deps: P1-14 F3, P1-21 (P2-04 soft).
+
+### AIN-P1-24 — AI thread summary card on project
+- »Povzetek komunikacije«: what the customer wants, open questions, promises made
+  (+dates), last contact; refreshed on new message or manual button, persisted (no
+  per-render calls). Spec: EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AIN-P1-24.
+  Effort S–M. Deps: P1-14 F3, P1-21.
+
+### AIN-P1-25 — AI personalized intro for follow-up / rescue mails
+- In the P1-13 follow-up preview: »✨ Personaliziraj uvod« writes 1–2 opening
+  sentences from project history; the rest of the template (amounts, coupon code,
+  links) stays deterministic and unchanged; diff view against the template; manual
+  send. Spec: EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AIN-P1-25. Effort S.
+  Deps: P1-13 (DONE), P1-21; P1-15 for coupons.
+
 ### AIN-P2-05 — Supplier normalization + expectedAt + late-delivery rule
 - **Landed**: AIN-P2-05 implementation commit.
 - **Summary**: Material order items now carry a normalized `supplierKey` derived from
