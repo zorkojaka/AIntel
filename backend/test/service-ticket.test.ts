@@ -99,6 +99,17 @@ test('AIN-P2-08 service tickets', async (t) => {
     await assert.rejects(listServiceTickets(admin, { status: 'neveljaven' }), ServiceTicketError);
   });
 
+  await t.test('list falls back to contact email when there is no CRM client', async () => {
+    await createServiceTicket(admin, {
+      subject: 'Portalni brez CRM',
+      source: 'portal',
+      contact: { email: 'noclient@example.com' },
+    });
+    const byEmail = await listServiceTickets(admin, { email: 'noclient@example.com' });
+    assert.ok(byEmail.length >= 1);
+    assert.ok(byEmail.every((tk) => tk.contact?.email === 'noclient@example.com'));
+  });
+
   await t.test('get across tenants returns 404', async () => {
     const ticket = await createServiceTicket(admin, { subject: 'Zaseben' });
     const other: ActorContext = { ...admin, tenantId: 'druga-firma' };

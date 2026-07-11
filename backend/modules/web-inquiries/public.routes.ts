@@ -371,8 +371,9 @@ internalRouter.get('/service-tickets', async (req: Request, res: Response) => {
     const naslov = resolveClientQuery(req);
     if (naslov.error) return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: naslov.error });
     const clientId = await resolveClientId(naslov);
-    if (!clientId) return res.json({ ok: true, clientId: null, tickets: [] });
-    const tickets = await listServiceTickets(SYSTEM_CTX, { clientId });
+    // Portal: praviloma je klient v CRM (clientId), a zahtevke brez CRM povezave
+    // beremo prek kontaktnega e-naslova (fallback).
+    const tickets = await listServiceTickets(SYSTEM_CTX, clientId ? { clientId } : { email: naslov.email });
     return res.json({
       ok: true,
       clientId,

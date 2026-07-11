@@ -121,7 +121,13 @@ export async function createServiceTicket(
   });
 }
 
-export type ServiceTicketFilters = { status?: unknown; clientId?: unknown; projectId?: unknown; source?: unknown };
+export type ServiceTicketFilters = {
+  status?: unknown;
+  clientId?: unknown;
+  projectId?: unknown;
+  source?: unknown;
+  email?: unknown;
+};
 
 export async function listServiceTickets(context: ActorContext, filters: ServiceTicketFilters = {}) {
   const query: Record<string, unknown> = { tenantId: context.tenantId };
@@ -133,7 +139,9 @@ export async function listServiceTickets(context: ActorContext, filters: Service
     query.status = status;
   }
   const clientId = parseObjectId(filters.clientId, 'clientId');
+  const email = cleanString(filters.email, 160).toLowerCase();
   if (clientId) query['client.id'] = clientId;
+  else if (email) query['contact.email'] = email; // fallback za zahtevke brez CRM povezave
   const projectId = cleanString(filters.projectId, 40);
   if (projectId) query.projectId = projectId;
   const source = cleanString(filters.source, 20);
