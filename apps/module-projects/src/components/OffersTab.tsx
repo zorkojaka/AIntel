@@ -52,6 +52,7 @@ import { OfferLinkedServiceSuggestions } from "../domains/offers/OfferLinkedServ
 import { OfferPdfActionGroup } from "../domains/offers/OfferPdfActionGroup";
 import { OfferTemplateDialogs } from "../domains/offers/OfferTemplateDialogs";
 import { OfferTemplatePicker } from "../domains/offers/OfferTemplatePicker";
+import { OfferVersionSelector } from "../domains/offers/OfferVersionSelector";
 import { useOfferPdfActions } from "../domains/offers/useOfferPdfActions";
 import {
   calculateOfferTotals,
@@ -1671,57 +1672,15 @@ const loadOfferById = useCallback(async (offerId: string) => {
     <Card className="p-4 space-y-4">
       {/* VERZIJE + DDV + POPUSTI */}
       <div className="mb-4 border-b pb-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Verzija ponudbe
-            </span>
-            <Select
-              value={selectedOfferId ?? ""}
-              onValueChange={handleChangeVersion}
-            >
-              <SelectTrigger className="min-w-[260px]">
-                <SelectValue placeholder="Izberi verzijo ponudbe" />
-              </SelectTrigger>
-              <SelectContent>
-                {versions.map((v) => (
-                  <SelectItem key={v._id} value={v._id}>
-                    {v.title} –{" "}
-                    {formatCurrency(
-                      v.totalGrossAfterDiscount ?? v.totalWithVat ?? v.totalGross ?? 0
-                    )}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleCreateNewVersion}
-            >
-              Nova verzija
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleCloneVersion}
-              disabled={!selectedOfferId}
-            >
-              Kopiraj verzijo
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={!selectedOfferId}
-              onClick={handleDeleteVersion}
-            >
-              Izbriši verzijo
-            </Button>
-          </div>
-        </div>
+        <OfferVersionSelector
+          versions={versions}
+          selectedOfferId={selectedOfferId}
+          formatCurrency={formatCurrency}
+          onChangeVersion={handleChangeVersion}
+          onCreateNewVersion={handleCreateNewVersion}
+          onCloneVersion={handleCloneVersion}
+          onDeleteVersion={handleDeleteVersion}
+        />
 
         <hr className="my-4 border-border" />
 

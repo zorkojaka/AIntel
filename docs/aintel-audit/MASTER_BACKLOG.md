@@ -184,7 +184,8 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     `domains/offers/OfferKmCalculationControls.tsx`. Seventh slice moved linked
     service suggestion rendering into `domains/offers/OfferLinkedServiceSuggestions.tsx`.
     Eighth slice moved the offer template picker/dropdown actions into
-    `domains/offers/OfferTemplatePicker.tsx`.
+    `domains/offers/OfferTemplatePicker.tsx`. Ninth slice moved offer version selector
+    rendering/actions into `domains/offers/OfferVersionSelector.tsx`.
     AIN-P2-06 remains open until the large OffersTab UI/state sections are split
     further.
 - **AIN-P2-08** Service module: tickets + maintenance plans + portal intake
