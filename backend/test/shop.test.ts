@@ -32,7 +32,7 @@ describe('shop woocommerce sync', () => {
     assert.equal(payload.imageSrc, 'https://example.com/slika.jpg');
     assert.equal(payload.featured, true);
     assert.equal(payload.menuOrder, 3);
-    assert.equal(payload.categoryKey, 'kamere');
+    assert.deepEqual(payload.categoryKeys, ['kamere']);
   });
 
   it('buildProductPayload uporabi aaData.image kot rezervo in kratekOpis kot opis', () => {

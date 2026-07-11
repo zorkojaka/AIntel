@@ -16,7 +16,7 @@ export interface ShopProductPayload {
   imageSrc: string;
   featured: boolean;
   menuOrder: number;
-  categoryKey: string;
+  categoryKeys: string[];
 }
 
 export async function getShopSettings(): Promise<ShopSettingsDocument | null> {
@@ -75,7 +75,7 @@ export function buildProductPayload(product: any, slug: string, menuOrder: numbe
     imageSrc: String(product.povezavaDoSlike || product?.aaData?.image || ''),
     featured: Boolean(product?.merchandising?.featured),
     menuOrder,
-    categoryKey,
+    categoryKeys: [categoryKey],
   };
 }
 
@@ -83,6 +83,9 @@ export function buildProductPayload(product: any, slug: string, menuOrder: numbe
 // da se povezave /izdelki/<slug> in /trgovina/izdelek/<slug> ujemajo.
 export async function buildShopCatalog(): Promise<ShopProductPayload[]> {
   const payloads: ShopProductPayload[] = [];
+  // Produkt je lahko v več skupinah (npr. Ajax kamera v kamere + ajax):
+  // en zapis z več kategorijami, sicer Woo zavrne podvojen SKU.
+  const bySku = new Map<string, ShopProductPayload>();
   const slugsSeen = new Set<string>();
   let menuOrder = 0;
   for (const skupina of IZDELKI_SKUPINE) {
@@ -106,10 +109,18 @@ export async function buildShopCatalog(): Promise<ShopProductPayload[]> {
       .lean();
     const sorted = [...candidates].sort(compareForDisplay);
     for (const product of sorted) {
+      const sku = `${SKU_PREFIX}${String((product as any)._id)}`;
+      const existing = bySku.get(sku);
+      if (existing) {
+        if (!existing.categoryKeys.includes(skupina.key)) existing.categoryKeys.push(skupina.key);
+        continue;
+      }
       let slug = katalogSlug(String((product as any).ime ?? '')) || String((product as any)._id);
       while (slugsSeen.has(slug)) slug = `${slug}-2`;
       slugsSeen.add(slug);
-      payloads.push(buildProductPayload(product, slug, menuOrder, skupina.key));
+      const payload = buildProductPayload(product, slug, menuOrder, skupina.key);
+      bySku.set(sku, payload);
+      payloads.push(payload);
       menuOrder += 1;
     }
   }
@@ -196,7 +207,7 @@ async function listExistingProducts(settings: ShopSettingsDocument): Promise<Map
   return bySku;
 }
 
-function toWooBody(payload: ShopProductPayload, categoryId: number | undefined, withImage: boolean): Record<string, unknown> {
+function toWooBody(payload: ShopProductPayload, categoryIds: number[], withImage: boolean): Record<string, unknown> {
   const body: Record<string, unknown> = {
     name: payload.name,
     slug: payload.slug,
@@ -209,7 +220,7 @@ function toWooBody(payload: ShopProductPayload, categoryId: number | undefined, 
     featured: payload.featured,
     menu_order: payload.menuOrder,
     manage_stock: false,
-    categories: categoryId ? [{ id: categoryId }] : [],
+    categories: categoryIds.map((id) => ({ id })),
     meta_data: [{ key: '_aintel_image_src', value: payload.imageSrc }],
   };
   if (withImage && payload.imageSrc) {
@@ -256,13 +267,15 @@ export async function runShopSync(): Promise<ShopSyncState> {
       const create: Array<Record<string, unknown>> = [];
       const update: Array<Record<string, unknown>> = [];
       for (const payload of chunk) {
-        const categoryId = categories.get(payload.categoryKey);
+        const categoryIds = payload.categoryKeys
+          .map((key) => categories.get(key))
+          .filter((id): id is number => typeof id === 'number');
         const found = existing.get(payload.sku);
         if (!found) {
-          create.push(toWooBody(payload, categoryId, true));
+          create.push(toWooBody(payload, categoryIds, true));
         } else {
           const imageChanged = payload.imageSrc !== found.imageSrc;
-          update.push({ id: found.id, ...toWooBody(payload, categoryId, imageChanged) });
+          update.push({ id: found.id, ...toWooBody(payload, categoryIds, imageChanged) });
         }
       }
       const result: {
