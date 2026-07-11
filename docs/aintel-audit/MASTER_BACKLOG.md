@@ -181,8 +181,10 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     in OffersTab. Fifth slice moved the create/rename/delete template dialogs into
     `domains/offers/OfferTemplateDialogs.tsx`. Sixth slice moved the kilometrina
     calculation button, reliability popover, and address mismatch warning into
-    `domains/offers/OfferKmCalculationControls.tsx`. AIN-P2-06 remains open until the
-    large OffersTab UI/state sections are split further.
+    `domains/offers/OfferKmCalculationControls.tsx`. Seventh slice moved linked
+    service suggestion rendering into `domains/offers/OfferLinkedServiceSuggestions.tsx`.
+    AIN-P2-06 remains open until the large OffersTab UI/state sections are split
+    further.
 - **AIN-P2-08** Service module: tickets + maintenance plans + portal intake
   (TARGET §8). Effort XL. Status: DOING — rez 1 (ServiceTicket) + rez 2
   (MaintenancePlan) landed 2026-07-10.

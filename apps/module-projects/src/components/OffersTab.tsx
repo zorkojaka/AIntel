@@ -49,6 +49,7 @@ import {
   OfferKmCalculationMobile,
   shouldShowOfferKmAddressComparison,
 } from "../domains/offers/OfferKmCalculationControls";
+import { OfferLinkedServiceSuggestions } from "../domains/offers/OfferLinkedServiceSuggestions";
 import { OfferPdfActionGroup } from "../domains/offers/OfferPdfActionGroup";
 import { OfferTemplateDialogs } from "../domains/offers/OfferTemplateDialogs";
 import { useOfferPdfActions } from "../domains/offers/useOfferPdfActions";
@@ -802,81 +803,19 @@ const loadOfferById = useCallback(async (offerId: string) => {
     [items, isSuggestedServiceAlreadyAdded, resolveSuggestedServiceQuantity, vatMode],
   );
 
-  const renderLinkedServiceSuggestions = useCallback(
-    (item: OfferLineItemForm) => {
-      const loadingSuggestions = loadingLinkedServiceSuggestions[item.id];
-      const links = linkedServiceSuggestions[item.id] ?? [];
-      if (!item.productId && !loadingSuggestions) return null;
-      if (!loadingSuggestions && links.length === 0) return null;
-
-      const canAddAny = links.some((link) => !isSuggestedServiceAlreadyAdded(link.serviceProductId, item.id));
-
-      return (
-        <div className="mt-2 rounded-md border border-border/60 bg-muted/30 p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Predlagane storitve
-            </div>
-            {links.length > 1 ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!canAddAny}
-                onClick={() => addSuggestedServicesToOffer(item.id, links, true)}
-              >
-                Dodaj vse
-              </Button>
-            ) : null}
-          </div>
-
-          {loadingSuggestions ? (
-            <p className="mt-2 text-xs text-muted-foreground">Nalaganje predlogov ...</p>
-          ) : (
-            <div className="mt-2 space-y-2">
-              {links.map((link) => {
-                const quantity = resolveSuggestedServiceQuantity(item, link);
-                const alreadyAdded = isSuggestedServiceAlreadyAdded(link.serviceProductId, item.id);
-                const serviceName = link.serviceProduct?.name ?? "Storitev";
-
-                return (
-                  <div
-                    key={link.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded border border-border/50 bg-background px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-foreground">
-                        {serviceName} ({quantity}x)
-                      </div>
-                      {alreadyAdded ? (
-                        <div className="text-xs text-muted-foreground">Že dodano v ponudbo.</div>
-                      ) : null}
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={alreadyAdded}
-                      onClick={() => addSuggestedServicesToOffer(item.id, [link])}
-                    >
-                      Dodaj
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      );
-    },
-    [
-      addSuggestedServicesToOffer,
-      isSuggestedServiceAlreadyAdded,
-      linkedServiceSuggestions,
-      loadingLinkedServiceSuggestions,
-      resolveSuggestedServiceQuantity,
-    ],
-  );
+  const getLinkedServiceSuggestionProps = (item: OfferLineItemForm) => {
+    const links = linkedServiceSuggestions[item.id] ?? [];
+    return {
+      item,
+      links,
+      loading: Boolean(loadingLinkedServiceSuggestions[item.id]),
+      canAddAny: links.some((link) => !isSuggestedServiceAlreadyAdded(link.serviceProductId, item.id)),
+      resolveQuantity: resolveSuggestedServiceQuantity,
+      isAlreadyAdded: isSuggestedServiceAlreadyAdded,
+      onAddAll: (rowId: string, targetLinks: ProductServiceLink[]) => addSuggestedServicesToOffer(rowId, targetLinks, true),
+      onAddOne: (rowId: string, link: ProductServiceLink) => addSuggestedServicesToOffer(rowId, [link]),
+    };
+  };
 
   const openClientAddressEditor = () => {
     const clientId = projectDetails?.client?.id ?? projectDetails?.customerDetail?.id;
@@ -2165,7 +2104,9 @@ const loadOfferById = useCallback(async (offerId: string) => {
           onSelectProduct={handleSelectProduct}
           onSelectCustomItem={handleSelectCustomItem}
           renderItemActions={(item) => <OfferKmCalculationMobile {...getKmCalculationProps(item as OfferLineItemForm)} />}
-          renderSuggestions={(item) => renderLinkedServiceSuggestions(item as OfferLineItemForm)}
+          renderSuggestions={(item) => (
+            <OfferLinkedServiceSuggestions {...getLinkedServiceSuggestionProps(item as OfferLineItemForm)} />
+          )}
         />
 
         <div className="hidden md:block bg-card rounded-[var(--radius-card)] border overflow-hidden offers-line-items-table">
@@ -2210,7 +2151,10 @@ const loadOfferById = useCallback(async (offerId: string) => {
           </TableHeader>
           <TableBody>
             {items.map((item, index) => {
-              const suggestionContent = renderLinkedServiceSuggestions(item);
+              const suggestionContent = <OfferLinkedServiceSuggestions {...getLinkedServiceSuggestionProps(item)} />;
+              const showSuggestions =
+                Boolean(item.productId || loadingLinkedServiceSuggestions[item.id]) &&
+                (Boolean(loadingLinkedServiceSuggestions[item.id]) || (linkedServiceSuggestions[item.id] ?? []).length > 0);
               const kmCalculationProps = getKmCalculationProps(item);
               const kmButton = <OfferKmCalculationButton {...kmCalculationProps} />;
               const kmAddressComparison = <OfferKmAddressComparison {...kmCalculationProps} />;
@@ -2357,7 +2301,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
                 </TableCell>
 
               </TableRow>
-              {suggestionContent ? (
+              {showSuggestions ? (
                 <TableRow key={`${item.id}-suggestions`}>
                   <TableCell colSpan={totalColumns} className="px-4 pb-4 pt-0">
                     {suggestionContent}
