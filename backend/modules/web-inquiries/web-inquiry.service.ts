@@ -968,6 +968,86 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
   }
 }
 
+// ECO-36 / AIN-P1-16 (spletna stran): predlogi »najpogosteje izbrano« za
+// konfigurator. Vir je izključno lastna statistika — salesStats iz sprejetih
+// ponudb (ECO-35) za izbiro produkta (senzor, žično/WiFi) in zgodovina spletnih
+// povpraševanj za število kamer in raven kakovosti. Navzven gre samo predlagani
+// ključ, nikoli surove prodajne številke.
+const PREDLOG_MIN_VZOREC = 3;
+
+export function webSalesQty(product: unknown): number {
+  const stats = (product as { salesStats?: { soldQty365?: unknown; soldQty?: unknown } } | null)?.salesStats;
+  const q365 = Number(stats?.soldQty365);
+  if (Number.isFinite(q365) && q365 > 0) return q365;
+  const q = Number(stats?.soldQty);
+  return Number.isFinite(q) && q > 0 ? q : 0;
+}
+
+export function webTopSalesKey(kandidati: Array<{ key: string; product: unknown }>): string | null {
+  let najKey: string | null = null;
+  let najQty = 0;
+  for (const kandidat of kandidati) {
+    const qty = webSalesQty(kandidat.product);
+    if (qty > najQty) {
+      najKey = kandidat.key;
+      najQty = qty;
+    }
+  }
+  return najKey;
+}
+
+export interface KonfiguratorPredlogi {
+  cameraCount: number | null;
+  kakovost: string | null;
+}
+
+export async function izracunajKonfiguratorPredloge(tenantId = 'inteligent'): Promise<KonfiguratorPredlogi> {
+  const zacetek = new Date(Date.now() - 365 * 24 * 3600 * 1000);
+  const rezultat: Array<{
+    kamere: Array<{ _id: number; n: number }>;
+    kakovost: Array<{ _id: string; n: number }>;
+  }> = await WebInquiryModel.aggregate([
+    { $match: { tenantId, createdAt: { $gte: zacetek } } },
+    {
+      $facet: {
+        kamere: [
+          { $match: { pillar: 'videonadzor', 'payload.videonadzor.cameraCount': { $gte: 1, $lte: 64 } } },
+          { $group: { _id: '$payload.videonadzor.cameraCount', n: { $sum: 1 } } },
+          { $sort: { n: -1, _id: 1 } },
+          { $limit: 1 },
+        ],
+        kakovost: [
+          { $match: { 'meta.qualityLevel': { $in: ['osnovna', 'priporocena', 'nadstandardna'] } } },
+          { $group: { _id: '$meta.qualityLevel', n: { $sum: 1 } } },
+          { $sort: { n: -1, _id: 1 } },
+          { $limit: 1 },
+        ],
+      },
+    },
+  ]);
+  const kamere = rezultat[0]?.kamere?.[0];
+  const kakovost = rezultat[0]?.kakovost?.[0];
+  return {
+    cameraCount: kamere && kamere.n >= PREDLOG_MIN_VZOREC ? kamere._id : null,
+    kakovost: kakovost && kakovost.n >= PREDLOG_MIN_VZOREC ? kakovost._id : null,
+  };
+}
+
+const predlogiCache = new Map<string, { data: KonfiguratorPredlogi; cas: number }>();
+
+async function getKonfiguratorPredlogi(tenantId: string): Promise<KonfiguratorPredlogi> {
+  const zadetek = predlogiCache.get(tenantId);
+  if (zadetek && Date.now() - zadetek.cas < 10 * 60 * 1000) return zadetek.data;
+  try {
+    const data = await izracunajKonfiguratorPredloge(tenantId);
+    predlogiCache.set(tenantId, { data, cas: Date.now() });
+    return data;
+  } catch (error) {
+    logger.warn(`Konfigurator predlogi: izračun ni uspel (${error instanceof Error ? error.message : error})`);
+    return { cameraCount: null, kakovost: null };
+  }
+}
+
 export async function getWebInquiryOptions(tenantId = 'inteligent') {
   const settings = await getWebInquirySettings(tenantId);
   const video = settings.videonadzor;
@@ -979,6 +1059,8 @@ export async function getWebInquiryOptions(tenantId = 'inteligent') {
   ].filter(Boolean);
   const products = productIds.length > 0 ? await ProductModel.find({ _id: { $in: productIds } }).lean() : [];
   const productById = new Map<string, any>(products.map((product) => [String(product._id), product]));
+  const predlogi = await getKonfiguratorPredlogi(tenantId);
+  const produkt = (productId: Types.ObjectId | null) => (productId ? productById.get(String(productId)) ?? null : null);
 
   function option(key: string, productId: Types.ObjectId | null) {
     const product = productId ? productById.get(String(productId)) : null;
@@ -1002,6 +1084,15 @@ export async function getWebInquiryOptions(tenantId = 'inteligent') {
         wiringRule: 'Do 3 kamere praviloma WiFi, 4 ali več priporočamo žično izvedbo.',
         cameras: [option('wifi', video.wifiCameraProductId), option('wired', video.wiredCameraProductId)].filter(Boolean),
         dniSnemanja: video.dniSnemanja,
+        // ECO-36: aditivno — najpogostejše izbire iz lastne statistike (null = premalo podatkov).
+        suggested: {
+          cameraCount: predlogi.cameraCount,
+          wiring: webTopSalesKey([
+            { key: 'wifi', product: produkt(video.wifiCameraProductId) },
+            { key: 'wired', product: produkt(video.wiredCameraProductId) },
+          ]),
+          kakovost: predlogi.kakovost,
+        },
       },
       alarm: {
         enabled: Boolean(settings.alarm.centralaProductId && (settings.alarm.sensorAProductId || settings.alarm.sensorBProductId)),
@@ -1011,6 +1102,14 @@ export async function getWebInquiryOptions(tenantId = 'inteligent') {
           option('C', settings.alarm.sensorCProductId),
         ].filter(Boolean),
         centrala: option('centrala', settings.alarm.centralaProductId),
+        // ECO-36: aditivno — najpogosteje prodani senzor (salesStats), null = ni podatkov.
+        suggested: {
+          sensor: webTopSalesKey([
+            { key: 'A', product: produkt(settings.alarm.sensorAProductId) },
+            { key: 'B', product: produkt(settings.alarm.sensorBProductId) },
+            { key: 'C', product: produkt(settings.alarm.sensorCProductId) },
+          ]),
+        },
       },
       domofon: {
         enabled: Boolean(settings.domofon.notranjaEnotaProductId && settings.domofon.zunanjaEnotaProductId),
