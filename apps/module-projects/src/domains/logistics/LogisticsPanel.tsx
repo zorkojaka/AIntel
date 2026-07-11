@@ -24,6 +24,7 @@ import { Checkbox } from "../../components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { MaterialOrderCard } from "./MaterialOrderCard";
+import { SupplierOrderEmailDialog } from "./SupplierOrderEmailDialog";
 import { PreparationPhotoThumbnails } from "./ExecutionDefinitionPanel";
 import { normalizeMaterialStatusLabel } from "./materialStatus";
 import { useConfirmOffer } from "../core/useConfirmOffer";
@@ -612,6 +613,12 @@ export function LogisticsPanel({
           : [];
     return formatExecutionDuration(items);
   }, [selectedWorkOrder?.items, workOrderForm.items]);
+
+  const [supplierOrderDialog, setSupplierOrderDialog] = useState<{
+    materialOrderId: string;
+    supplierLabel: string;
+    lines: MaterialOrder["items"];
+  } | null>(null);
 
   const fetchSnapshot = useCallback(async () => {
     setLoading(true);
@@ -2831,12 +2838,30 @@ export function LogisticsPanel({
                   onBulkMarkReady={(items) => {
                     void applyMaterialItemsAndSave(order._id, items);
                   }}
+                  onOrderBySupplier={(group) =>
+                    setSupplierOrderDialog({ materialOrderId: order._id, supplierLabel: group.supplierLabel, lines: group.lines })
+                  }
                   hasPendingMaterialChanges={Boolean(pendingMaterialOrderIds[order._id])}
                   canDownloadPdf={Boolean(order._id)}
                   downloadingPdf={materialDownloading}
                 />
               ))
             )}
+            {supplierOrderDialog ? (
+              <SupplierOrderEmailDialog
+                open
+                onOpenChange={(nextOpen) => {
+                  if (!nextOpen) setSupplierOrderDialog(null);
+                }}
+                projectId={projectId}
+                materialOrderId={supplierOrderDialog.materialOrderId}
+                supplierLabel={supplierOrderDialog.supplierLabel}
+                lines={supplierOrderDialog.lines}
+                onSent={() => {
+                  void fetchSnapshot();
+                }}
+              />
+            ) : null}
           </div>
         ) : null}
 

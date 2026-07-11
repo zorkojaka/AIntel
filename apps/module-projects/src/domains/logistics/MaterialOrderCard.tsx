@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Employee } from "@aintel/shared/types/employee";
 import type { MaterialOrder, MaterialPickupMethod, MaterialStep } from "@aintel/shared/types/logistics";
-import { Camera, ChevronDown, ChevronRight, Download, Loader2 } from "lucide-react";
+import { Camera, ChevronDown, ChevronRight, Download, Loader2, Mail } from "lucide-react";
 import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -66,6 +66,7 @@ interface MaterialOrderCardProps {
   onSaveMaterialChanges: () => void;
   onBulkMarkOrdered: (items: MaterialLine[]) => void;
   onBulkMarkReady: (items: MaterialLine[]) => void;
+  onOrderBySupplier?: (group: { supplierLabel: string; lines: MaterialLine[] }) => void;
   hasPendingMaterialChanges: boolean;
   canDownloadPdf: boolean;
   downloadingPdf: "PURCHASE_ORDER" | "DELIVERY_NOTE" | null;
@@ -259,6 +260,7 @@ export function MaterialOrderCard({
   onSaveMaterialChanges,
   onBulkMarkOrdered,
   onBulkMarkReady,
+  onOrderBySupplier,
   hasPendingMaterialChanges,
   savingWorkOrder,
   onPreviewPurchaseOrder,
@@ -349,8 +351,10 @@ export function MaterialOrderCard({
     onMaterialItemsChange(nextItems);
   };
 
-  const buildBulkOrderedItems = () =>
-    (materialOrder.items ?? []).map((item) => {
+  const buildBulkOrderedItems = (lines?: MaterialLine[]) => {
+    const scopedIds = lines ? new Set(lines.map((line) => line.id)) : null;
+    return (materialOrder.items ?? []).map((item) => {
+      if (scopedIds && !scopedIds.has(item.id)) return item;
       const planQty = resolvePlanQty(item);
       const nextOrderedQty = planQty;
       const nextReady = isReadyForPickup(resolveMaterialStep(item.materialStep));
@@ -361,9 +365,12 @@ export function MaterialOrderCard({
         materialStep: getStepForFlags(nextOrderedQty > 0, nextReady),
       };
     });
+  };
 
-  const buildBulkReadyItems = () =>
-    (materialOrder.items ?? []).map((item) => {
+  const buildBulkReadyItems = (lines?: MaterialLine[]) => {
+    const scopedIds = lines ? new Set(lines.map((line) => line.id)) : null;
+    return (materialOrder.items ?? []).map((item) => {
+      if (scopedIds && !scopedIds.has(item.id)) return item;
       const planQty = resolvePlanQty(item);
       const nextOrderedQty = planQty;
       return {
@@ -373,6 +380,7 @@ export function MaterialOrderCard({
         materialStep: getStepForFlags(nextOrderedQty > 0, true),
       };
     });
+  };
 
   const updateOrderedQty = (itemId: string, nextOrderedQty: number) => {
     const nextItems = (materialOrder.items ?? []).map((item) => (item.id === itemId ? { ...item, orderedQty: Math.max(0, nextOrderedQty), isOrdered: Math.max(0, nextOrderedQty) > 0 } : item));
@@ -528,7 +536,12 @@ export function MaterialOrderCard({
         {!isCollapsed ? (
           <>
         <div className="mt-4 space-y-4">
-          {groupedBySupplier.map((group) => (
+          {groupedBySupplier.map((group) => {
+            const groupAllOrdered = group.lines.every((item) => resolveOrderedStatus(item) === "DA");
+            const groupAllReady = group.lines.every(
+              (item) => resolvePlanQty(item) <= 0 || (resolveOrderedStatus(item) === "DA" && isReadyForPickup(resolveMaterialStep(item.materialStep))),
+            );
+            return (
             <section key={group.supplierKey} className="rounded-none border border-border/70 bg-card">
               <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 px-4 py-3">
                 <div className="space-y-1">
@@ -542,15 +555,30 @@ export function MaterialOrderCard({
                   </div>
                 </div>
                 {!isExecutionMode ? (
-                  <label className="flex min-w-[170px] flex-col gap-1 text-xs font-medium text-muted-foreground">
-                    Pričakovana dobava
-                    <Input
-                      type="date"
-                      value={toDateInputValue(materialOrder.expectedAt)}
-                      onChange={(event) => onExpectedAtChange(event.target.value || null)}
-                      className="h-9 text-sm"
-                    />
-                  </label>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="flex min-w-[170px] flex-col gap-1 text-xs font-medium text-muted-foreground">
+                      Pričakovana dobava
+                      <Input
+                        type="date"
+                        value={toDateInputValue(materialOrder.expectedAt)}
+                        onChange={(event) => onExpectedAtChange(event.target.value || null)}
+                        className="h-9 text-sm"
+                      />
+                    </label>
+                    {onOrderBySupplier ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-9"
+                        variant={groupAllOrdered ? "outline" : "default"}
+                        onClick={() => onOrderBySupplier({ supplierLabel: group.supplierLabel, lines: group.lines })}
+                        disabled={savingWorkOrder || group.lines.length === 0}
+                      >
+                        <Mail className="mr-1.5 h-4 w-4" />
+                        Naroči po emailu
+                      </Button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
               <div className="hidden md:block">
@@ -576,11 +604,11 @@ export function MaterialOrderCard({
                         ) : (
                           <Button
                             type="button"
-                            variant={allPlannedItemsOrdered ? "secondary" : "outline"}
+                            variant={groupAllOrdered ? "secondary" : "outline"}
                             size="sm"
                             className="h-8 px-3"
-                            onClick={() => onBulkMarkOrdered(buildBulkOrderedItems())}
-                            disabled={savingWorkOrder || totalCount === 0 || allPlannedItemsOrdered}
+                            onClick={() => onBulkMarkOrdered(buildBulkOrderedItems(group.lines))}
+                            disabled={savingWorkOrder || group.lines.length === 0 || groupAllOrdered}
                           >
                             Naročeno ✔
                           </Button>
@@ -590,11 +618,11 @@ export function MaterialOrderCard({
                         <TableHead className="w-[180px] text-center">
                           <Button
                             type="button"
-                            variant={allPlannedItemsReady ? "secondary" : "outline"}
+                            variant={groupAllReady ? "secondary" : "outline"}
                             size="sm"
                             className="h-8 px-3"
-                            onClick={() => onBulkMarkReady(buildBulkReadyItems())}
-                            disabled={savingWorkOrder || totalCount === 0 || allPlannedItemsReady}
+                            onClick={() => onBulkMarkReady(buildBulkReadyItems(group.lines))}
+                            disabled={savingWorkOrder || group.lines.length === 0 || groupAllReady}
                           >
                             Pripravljeno ✔
                           </Button>
@@ -698,7 +726,8 @@ export function MaterialOrderCard({
                 })}
               </div>
             </section>
-          ))}
+            );
+          })}
         </div>
 
         {!isExecutionMode && onTechnicianNoteChange ? (

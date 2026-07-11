@@ -27,6 +27,7 @@ import zahteveRoutes from './modules/zahteve/zahteva.routes';
 import executionRulesRoutes from './modules/execution-rules/execution-rules.routes';
 import serviceRoutes from './modules/service/service.routes';
 import webInquiriesAdminRoutes from './modules/web-inquiries/admin.routes';
+import supplierRoutes from './modules/suppliers/supplier.routes';
 import { requireRoles } from './middlewares/auth';
 import { ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from './utils/roles';
 
@@ -38,6 +39,7 @@ router.use('/cenik/category-settings', requireRoles([ROLE_ADMIN, ROLE_ORGANIZER]
 router.use('/cenik', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), cenikRoutes);
 router.use('/price-list', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), priceListRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/suppliers', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_ORGANIZER]), supplierRoutes);
 router.use('/config', configRoutes);
 router.use('/settings', pdfSettingsRoutes);
 router.use('/settings/communication', communicationSettingsRoutes);
