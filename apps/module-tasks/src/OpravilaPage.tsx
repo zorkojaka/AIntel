@@ -35,6 +35,17 @@ function isOverdue(task: TaskItem) {
   return Boolean(task.dueAt && ['open', 'in_progress'].includes(task.status) && new Date(task.dueAt).getTime() < Date.now());
 }
 
+function openProject(projectId: string) {
+  window.history.pushState({ moduleId: 'projects' }, '', `/projects/${encodeURIComponent(projectId)}`);
+  window.dispatchEvent(new PopStateEvent('popstate', { state: { moduleId: 'projects' } }));
+}
+
+function handleProjectLinkClick(event: React.MouseEvent<HTMLAnchorElement>, projectId: string) {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  openProject(projectId);
+}
+
 export function OpravilaPage() {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [doneTasks, setDoneTasks] = useState<TaskItem[]>([]);
@@ -247,12 +258,26 @@ export function OpravilaPage() {
   const renderTask = (task: TaskItem, pool: boolean) => {
     const overdue = isOverdue(task);
     const busy = busyId === task._id;
+    const subjectProjectId = task.subject?.kind === 'project' ? task.subject.id?.trim() : '';
     return (
       <div key={task._id} className={`opravilo ${overdue ? 'opravilo--zamuda' : ''} ${task.status === 'blocked' ? 'opravilo--blokirano' : ''}`}>
         <div className="opravilo__glava">
           <span className={`opravilo__prioriteta opravilo__prioriteta--${task.priority}`}>{PRIORITY_LABELS[task.priority]}</span>
           <span className="opravilo__naslov">{task.title}</span>
-          {task.subject?.label ? <span className="opravilo__subjekt">{task.subject.label}</span> : null}
+          {task.subject?.label ? (
+            subjectProjectId ? (
+              <a
+                className="opravilo__subjekt opravilo__subjekt--link"
+                href={`/projects/${encodeURIComponent(subjectProjectId)}`}
+                onClick={(event) => handleProjectLinkClick(event, subjectProjectId)}
+                title="Odpri projekt"
+              >
+                {task.subject.label}
+              </a>
+            ) : (
+              <span className="opravilo__subjekt">{task.subject.label}</span>
+            )
+          ) : null}
         </div>
         {task.description ? <p className="opravilo__opis">{task.description}</p> : null}
         <div className="opravilo__noga">

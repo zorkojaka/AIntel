@@ -34,6 +34,9 @@
 .opravilo__glava { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .opravilo__naslov { font-weight: 700; font-size: 14.5px; color: #0f172a; }
 .opravilo__subjekt { font-size: 12.5px; color: #475569; background: #f1f5f9; border-radius: 999px; padding: 2px 9px; }
+.opravilo__subjekt--link { cursor: pointer; text-decoration: none; }
+.opravilo__subjekt--link:hover { background: #e2e8f0; color: #0f2740; }
+.opravilo__subjekt--link:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 .opravilo__prioriteta { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; border-radius: 999px; padding: 2px 8px; background: #f1f5f9; color: #475569; }
 .opravilo__prioriteta--high { background: #fff7ed; color: #c2410c; }
 .opravilo__prioriteta--urgent { background: #fef2f2; color: #b91c1c; }
