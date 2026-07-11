@@ -346,7 +346,9 @@ relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
   default `claude-opus-4-8`; structured outputs via `output_config.format`), call
   log collection `ai_calls` (purpose, tokens, cost estimate), monthly cost cap env,
   feature flag `AINTEL_AI_ENABLED` (default off), graceful degradation — every flow
-  must work with AI off. Hard rules in EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AI
+  must work with AI off. Customer-facing text purposes load the owner's style guide
+  `docs/aintel-audit/email-style/01_POROCILO_O_SLOGU.md` into the system prompt.
+  Hard rules in EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AI
   pomoč pri pošti: no auto-send ever; prices/discounts/statuses deterministic from
   AIntel, AI may only quote them. Effort S–M. Deps: owner **D-AI1**
   (ANTHROPIC_API_KEY in .env, DPA/GDPR sign-off, model choice).
@@ -365,6 +367,8 @@ relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
   tasks. Context: thread messages + project/offer status (numbers passed as data).
   Output opens in the EXISTING manual-send preview (P1-13 mechanics) — always
   human-reviewed, never auto-sent; never promises prices/dates absent from input.
+  Drafts follow the owner's style guide (`email-style/01_POROCILO_O_SLOGU.md`) and
+  start from the matching template in `email-style/02_TEMPLATE_EMAILOV.md`.
   Spec: EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AIN-P1-23. Effort M.
   Deps: P1-14 F3, P1-21 (P2-04 soft).
 
@@ -378,7 +382,8 @@ relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 - In the P1-13 follow-up preview: »✨ Personaliziraj uvod« writes 1–2 opening
   sentences from project history; the rest of the template (amounts, coupon code,
   links) stays deterministic and unchanged; diff view against the template; manual
-  send. Spec: EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AIN-P1-25. Effort S.
+  send. Intro follows the owner's style guide (`email-style/01_POROCILO_O_SLOGU.md`).
+  Spec: EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AIN-P1-25. Effort S.
   Deps: P1-13 (DONE), P1-21; P1-15 for coupons.
 
 ### AIN-P2-05 — Supplier normalization + expectedAt + late-delivery rule

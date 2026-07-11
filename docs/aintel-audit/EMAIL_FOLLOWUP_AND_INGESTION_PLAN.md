@@ -121,6 +121,34 @@ pošilja sam in NIKOLI ne računa cen.
 7. **GDPR/DPA (owner, D-AI1)**: vsebina strankine pošte gre v obdelavo
    Anthropic API (podatki se ne uporabljajo za učenje; standardna hramba).
    Owner potrdi obdelavo + doda omembo v pravilnik o zasebnosti.
+8. **Slog pisanja = lastnikov slog.** Vsak AI osnutek mora slediti
+   `docs/aintel-audit/email-style/01_POROCILO_O_SLOGU.md` (analiza 173
+   poslanih mailov, 2026-07) in predlogam v
+   `email-style/02_TEMPLATE_EMAILOV.md`. Ključno: kratko (3–8 stavkov),
+   bistvo takoj, brez marketinških fraz in emojijev, zaključek
+   »Lep pozdrav, Jaka«; manjkajoči podatki označeni z `[DOPOLNI]`, nikoli
+   izmišljeni. Datoteki se naložita v system prompt AI klica (glej P1-21).
+
+### Slog pisanja — vir in uporaba
+
+Lastnik je 2026-07-11 dostavil analizo svojega sloga (izvorno
+`/home/jaka/inteligent-upgrade/email/`, kopirano v repo pod
+`docs/aintel-audit/email-style/`):
+
+- `01_POROCILO_O_SLOGU.md` — pravila sloga za AI (ton po prejemniku, zgradba,
+  značilne formulacije, prepovedane fraze, kontrolni seznam pred pošiljanjem).
+- `02_TEMPLATE_EMAILOV.md` — 7 potrjenih predlog (ponudba po stebrih z
+  dinamičnimi bloki, račun, zbiranje podatkov, termin, potrditev naročila,
+  servis, zaključek + Google ocena) in »glavno navodilo za uporabo z AI«.
+- `README.md` — kazalo.
+
+Uporaba po nalogah: P1-21 naj `ai.service` naloži `01_POROCILO_O_SLOGU.md`
+kot stalni del system prompta za vse namene, ki tvorijo besedilo za stranko;
+P1-23 (osnutek odgovora) dodatno izbere ustrezno predlogo iz
+`02_TEMPLATE_EMAILOV.md` glede na kontekst; P1-25 (personaliziran uvod) sledi
+pravilom sloga, a NE sme spreminjati determinističnega dela šablone. Če owner
+posodobi izvorno mapo, se kopija v repotu osveži ročno (datoteki sta vir
+resnice za AI, ne DB predloge — te ostajajo za deterministične maile P1-13).
 
 ### AIN-P1-21 — AI temelj: `ai.service` v AIntel backendu
 
@@ -129,8 +157,9 @@ Majhen modul `backend/modules/ai/` z `@anthropic-ai/sdk` (TypeScript):
 (`client.messages.create`, model iz env, `output_config.format` z JSON shemo
 za strukturirane izhode, adaptivno razmišljanje privzeto). Vgrajeno: dnevnik
 klicev (nova kolekcija `ai_calls`), stroškovna varovalka, feature flag, retry
-prek SDK (max_retries), timeout. Brez frontenda. Effort: S–M.
-Odvisnosti: owner D-AI1 (ključ + DPA + potrditev modela).
+prek SDK (max_retries), timeout. Za namene, ki tvorijo besedilo za stranko,
+v system prompt vključi `email-style/01_POROCILO_O_SLOGU.md`. Brez frontenda.
+Effort: S–M. Odvisnosti: owner D-AI1 (ključ + DPA + potrditev modela).
 
 ### AIN-P1-22 — AI triaža dohodne pošte
 
@@ -150,9 +179,12 @@ opravilih `email.unmatched`/»preberi odgovor stranke«. Kontekst za AI:
 zadnja sporočila niti, status projekta/ponudbe (št. ponudbe, znesek — kot
 podatek), dogovorjeni naslednji koraki. Izhod: slovenski osnutek (vikanje,
 podpis iz sender-settings), ki se odpre v OBSTOJEČEM predogledu za ročno
-pošiljanje (P1-13 mehanika). Nikoli ne obljublja cen/rokov, ki jih ni v
-vhodnih podatkih. Effort: M. Odvisnosti: P1-14 F3, P1-21, P2-04 (skupni
-send pipeline — soft).
+pošiljanje (P1-13 mehanika). Slog: obvezno po
+`email-style/01_POROCILO_O_SLOGU.md`; kadar situacija ustreza eni od predlog
+v `email-style/02_TEMPLATE_EMAILOV.md` (ponudba, zbiranje podatkov, termin,
+potrditev, servis, zaključek), AI izhaja iz nje. Nikoli ne obljublja
+cen/rokov, ki jih ni v vhodnih podatkih; manjkajoče označi `[DOPOLNI]`.
+Effort: M. Odvisnosti: P1-14 F3, P1-21, P2-04 (skupni send pipeline — soft).
 
 ### AIN-P1-24 — AI povzetek komunikacijske niti na projektu
 
@@ -166,8 +198,10 @@ vsakem prikazu. Effort: S–M. Odvisnosti: P1-14 F3, P1-21.
 Nadgradnja P1-13/P1-15: v predogledu follow-upa gumb »✨ Personaliziraj uvod« —
 AI napiše 1–2 uvodna stavka glede na zgodovino projekta (kaj je stranka
 spraševala, kaj je bilo dogovorjeno), OSTALO iz šablone ostane nespremenjeno
-(zneski, koda, povezave = deterministični). Diff prikaz proti šabloni;
-pošiljanje ročno. Effort: S. Odvisnosti: P1-13 (DONE), P1-21; za kupone P1-15.
+(zneski, koda, povezave = deterministični). Uvod v slogu
+`email-style/01_POROCILO_O_SLOGU.md` (kratko, brez marketinških fraz). Diff
+prikaz proti šabloni; pošiljanje ročno. Effort: S. Odvisnosti: P1-13 (DONE),
+P1-21; za kupone P1-15.
 
 ### Priporočen model in strošek (ocena, potrdi owner v D-AI1)
 
