@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@aintel/ui';
-import { Eye, EyeOff, RefreshCw, Star } from 'lucide-react';
+import { Eye, EyeOff, RefreshCw, ShoppingCart, Star } from 'lucide-react';
 import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 
 // ECO-33: kuracija spletne izložbe. Isti izbor in vrstni red kot javni
@@ -68,6 +68,115 @@ function primerjajZaPrikaz(a: IzlozbaProduct, b: IzlozbaProduct) {
   const sold = (b.salesStats?.soldQty ?? 0) - (a.salesStats?.soldQty ?? 0);
   if (sold !== 0) return sold;
   return (b.prodajnaCena ?? 0) - (a.prodajnaCena ?? 0);
+}
+
+type ShopSyncState = {
+  status?: 'idle' | 'running' | 'done' | 'failed';
+  finishedAt?: string;
+  total?: number;
+  processed?: number;
+  created?: number;
+  updated?: number;
+  archived?: number;
+  errors?: string[];
+  message?: string;
+};
+
+type ShopStatus = { running: boolean; lastSync: ShopSyncState | null };
+
+// Prenos objavljene izložbe v WooCommerce trgovino (isti izbor, vrstni red in
+// slugi kot spletni katalog). Sinhronizacija teče v ozadju; tu kažemo napredek.
+function TrgovinaSyncCard() {
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<ShopStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<number | null>(null);
+
+  const naloziStatus = async () => {
+    try {
+      const response = await fetch('/api/shop/sync/status', { credentials: 'include' });
+      const data = await parseApiEnvelope<ShopStatus>(response, 'Stanja trgovine ni bilo mogoče prebrati.');
+      setStatus(data);
+      return data;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Napaka pri branju stanja.');
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/shop/settings', { credentials: 'include' });
+        const data = await parseApiEnvelope<{ configured: boolean; lastSync?: ShopSyncState | null }>(
+          response,
+          'Nastavitev trgovine ni bilo mogoče prebrati.',
+        );
+        setConfigured(data.configured);
+        if (data.configured) await naloziStatus();
+      } catch {
+        setConfigured(false);
+      }
+    })();
+    return () => {
+      if (pollRef.current !== null) window.clearInterval(pollRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (status?.running && pollRef.current === null) {
+      pollRef.current = window.setInterval(async () => {
+        const next = await naloziStatus();
+        if (next && !next.running && pollRef.current !== null) {
+          window.clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      }, 3000);
+    }
+  }, [status?.running]);
+
+  const zazeni = async () => {
+    setError(null);
+    try {
+      const response = await fetch('/api/shop/sync', { method: 'POST', credentials: 'include' });
+      await parseApiEnvelope(response, 'Sinhronizacije ni bilo mogoče zagnati.');
+      await naloziStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sinhronizacije ni bilo mogoče zagnati.');
+    }
+  };
+
+  if (configured === false) return null;
+
+  const sync = status?.lastSync ?? null;
+  const running = Boolean(status?.running || sync?.status === 'running');
+  const napredek = running && sync?.total ? ` ${sync.processed ?? 0}/${sync.total}` : '';
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-foreground">Spletna trgovina (WooCommerce)</div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Objavljeni produkti iz izložbe se prenesejo v trgovino (ime, opis, slika, cena, kategorija).
+            {sync?.status === 'done' && sync.message ? ` Zadnji prenos: ${sync.message}` : ''}
+            {sync?.status === 'failed' ? ` Zadnji prenos ni uspel: ${sync.message ?? 'neznana napaka'}` : ''}
+          </p>
+        </div>
+        <Button size="sm" disabled={running || configured === null} onClick={() => void zazeni()}>
+          <ShoppingCart className="mr-1 h-4 w-4" />
+          {running ? `Prenašam …${napredek}` : 'Prenesi v trgovino'}
+        </Button>
+      </div>
+      {sync?.errors && sync.errors.length > 0 ? (
+        <p className="mt-2 text-sm text-amber-700">
+          Napake ({sync.errors.length}): {sync.errors.slice(0, 3).join(' · ')}
+          {sync.errors.length > 3 ? ' …' : ''}
+        </p>
+      ) : null}
+      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+    </div>
+  );
 }
 
 export function IzlozbaPanel() {
@@ -167,6 +276,8 @@ export function IzlozbaPanel() {
         </div>
         {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
       </div>
+
+      <TrgovinaSyncCard />
 
       {skupine.map((skupina) => (
         <div key={skupina.key} className="rounded-xl border border-border/60">

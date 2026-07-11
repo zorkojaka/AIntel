@@ -28,6 +28,7 @@ import executionRulesRoutes from './modules/execution-rules/execution-rules.rout
 import serviceRoutes from './modules/service/service.routes';
 import webInquiriesAdminRoutes from './modules/web-inquiries/admin.routes';
 import supplierRoutes from './modules/suppliers/supplier.routes';
+import shopRoutes from './modules/shop/shop.routes';
 import { requireRoles } from './middlewares/auth';
 import { ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from './utils/roles';
 
@@ -40,6 +41,7 @@ router.use('/cenik', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), cenik
 router.use('/price-list', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), priceListRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/suppliers', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_ORGANIZER]), supplierRoutes);
+router.use('/shop', requireRoles([ROLE_ADMIN, ROLE_SALES]), shopRoutes);
 router.use('/config', configRoutes);
 router.use('/settings', pdfSettingsRoutes);
 router.use('/settings/communication', communicationSettingsRoutes);

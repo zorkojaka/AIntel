@@ -1151,7 +1151,7 @@ export async function getWebInquiryOptions(tenantId = 'inteligent') {
   };
 }
 
-const IZDELKI_SKUPINE: Array<{ key: string; label: string; query: Record<string, unknown> }> = [
+export const IZDELKI_SKUPINE: Array<{ key: string; label: string; query: Record<string, unknown> }> = [
   { key: 'kamere', label: 'Kamere in videonadzor', query: { 'classification.productType': 'kamera' } },
   { key: 'ajax', label: 'Ajax alarm', query: { categorySlugs: 'ajax' } },
   { key: 'blebox', label: 'Blebox pametni dom', query: { categorySlugs: 'blebox' } },
@@ -1159,7 +1159,7 @@ const IZDELKI_SKUPINE: Array<{ key: string; label: string; query: Record<string,
 
 // ECO-33/35 ordering: owner curation first (vrstniRed, featured), then real
 // sales volume from accepted offers (salesStats), price only as tiebreaker.
-function compareForDisplay(a: any, b: any) {
+export function compareForDisplay(a: any, b: any) {
   const aOrder = a?.merchandising?.vrstniRed;
   const bOrder = b?.merchandising?.vrstniRed;
   if (typeof aOrder === 'number' || typeof bOrder === 'number') {
@@ -1174,7 +1174,7 @@ function compareForDisplay(a: any, b: any) {
   return (b?.prodajnaCena ?? 0) - (a?.prodajnaCena ?? 0);
 }
 
-function katalogSlug(value: string) {
+export function katalogSlug(value: string) {
   return String(value ?? '')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')

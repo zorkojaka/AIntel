@@ -268,6 +268,17 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     and a standardized error-reporting hook. Remaining grep hits are intentional
     special cases: custom category `options`, logistics email non-JSON fallback,
     and cenik 409 duplicate-precheck conflict data.
+- **AIN-P3-09 DONE** WooCommerce trgovina — prenos produktov iz cenika (2026-07-11).
+  Modul `modules/shop`: sinhronizacija objavljene izložbe v WooCommerce prek REST
+  API (kategorije kamere/ajax/blebox; ime, opisa, slika, cena brez DDV — trgovina
+  doda 22 % DDV; slug = katalogSlug, isti kot spletni katalog; menu_order po
+  prodajni kuraciji ECO-33/35; featured). Nastavitve v Mongo `shop_settings`
+  (key woocommerce: baseUrl + REST ključa), NE v .env. Zagon: gumb »Prenesi v
+  trgovino« (Cenik → Izložba; POST /api/shop/sync teče v ozadju, napredek GET
+  /api/shop/sync/status) ali `npx tsx scripts/shop-sync.ts`. Produkti, ki niso
+  več objavljeni, gredo v osnutek (ne brišejo se). Upsert po SKU `aintel-<id>`,
+  slika se ponovno naloži samo ob spremembi URL (meta `_aintel_image_src`).
+  Testi: test/shop.test.ts. Spletna stran: ECO-40 (inteligent-si).
 - **AIN-P3-03** Repeat-sale rules on installed equipment age. Effort M. Deps: P2-08.
 - **AIN-P3-04** Portal: offer acceptance + service tickets on shared client identity.
   Effort L. Deps: P1-07, P2-08.
