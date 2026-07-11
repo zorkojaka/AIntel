@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { fireRule, onServiceTicketReported, onWebInquiryNextStep, onWebInquiryProcessed } from '../scheduler/rules';
 import { createServiceTicket, listServiceTickets, type ActorContext } from '../service/service-ticket.service';
+import { listClientDocuments, generateClientDocument } from '../documents/client-documents.service';
 import {
   buildWebOfferValuePayload,
   getWebInquiryOptions,
@@ -441,6 +442,40 @@ internalRouter.post('/service-tickets', async (req: Request, res: Response) => {
     }
     (req as any).log?.error({ err: error }, '[web-inquiries] service-tickets intake');
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Servisnega zahtevka ni bilo mogoče oddati.' });
+  }
+});
+
+// ECO-29: seznam dokumentov stranke (ponudbe/računi) s podpisanimi žetoni (interni).
+internalRouter.get('/documents', async (req: Request, res: Response) => {
+  try {
+    const naslov = resolveClientQuery(req);
+    if (naslov.error) return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: naslov.error });
+    const { clientId, documents } = await listClientDocuments(naslov);
+    return res.json({ ok: true, clientId, documents });
+  } catch (error) {
+    (req as any).log?.error({ err: error }, '[web-inquiries] documents list');
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Dokumentov ni mogoče prebrati.' });
+  }
+});
+
+// ECO-29: prenos dokumenta prek PODPISANEGA žetona (server-to-server iz portala z
+// internim ključem; brskalnik govori samo s portalom). Žeton je kratkoživ in vezan
+// na stranko+dokument. PDF se generira na zahtevo.
+internalRouter.get('/documents/download', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.query.token ?? '');
+    const result = await generateClientDocument(token);
+    if ('error' in result) {
+      const status = result.error === 'INVALID' ? 403 : 404;
+      const message = result.error === 'INVALID' ? 'Povezava ni veljavna ali je potekla.' : 'Dokument ni na voljo.';
+      return res.status(status).json({ ok: false, code: result.error, message });
+    }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+    return res.end(result.buffer);
+  } catch (error) {
+    (req as any).log?.error({ err: error }, '[web-inquiries] document download');
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Dokumenta ni mogoče pripraviti.' });
   }
 });
 
