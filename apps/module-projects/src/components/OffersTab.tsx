@@ -22,7 +22,7 @@ import type { Employee } from "@aintel/shared/types/employee";
 import type { CommunicationMessage } from "@aintel/shared/types/communication";
 import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 
-import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronsUpDown, Loader2, Pencil, RefreshCw, Trash, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronsUpDown, Loader2, Pencil, Trash, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
@@ -43,18 +43,22 @@ import { OfferSentMessagesTable } from "../domains/communication/OfferSentMessag
 import { fetchOfferMessages } from "../domains/communication/api";
 import { ExecutionDefinitionPanel } from "../domains/logistics/ExecutionDefinitionPanel";
 import { OfferImportDialog } from "../domains/offers/OfferImportDialog";
+import {
+  OfferKmAddressComparison,
+  OfferKmCalculationButton,
+  OfferKmCalculationMobile,
+  shouldShowOfferKmAddressComparison,
+} from "../domains/offers/OfferKmCalculationControls";
 import { OfferPdfActionGroup } from "../domains/offers/OfferPdfActionGroup";
 import { OfferTemplateDialogs } from "../domains/offers/OfferTemplateDialogs";
 import { useOfferPdfActions } from "../domains/offers/useOfferPdfActions";
 import {
   calculateOfferTotals,
-  compareRouteAddresses,
   createEmptyItem,
   createOfferEditorSnapshot,
   EMPTY_OFFER_SNAPSHOT,
   ensureTrailingBlankOfferItem,
   formatKm,
-  formatProjectRouteAddress,
   isEmptyOfferItem,
   isItemValid,
   recalculateOfferItem,
@@ -874,68 +878,6 @@ const loadOfferById = useCallback(async (offerId: string) => {
     ],
   );
 
-  const renderKmReliabilityNote = (item: OfferLineItemForm) => {
-    if (!isKilometrinaOfferItem(item)) {
-      return null;
-    }
-
-    const state = kmCalculationStates[item.id] ?? { status: "idle" };
-    if (state.status === "loading") {
-      return <span className="text-xs text-muted-foreground">računam...</span>;
-    }
-
-    if (state.status === "manual") {
-      return <span className="text-xs text-muted-foreground">ročno</span>;
-    }
-
-    if (state.status === "error") {
-      return (
-        <Popover>
-          <PopoverTrigger asChild>
-            <button type="button" className="text-xs font-medium text-destructive underline-offset-2 hover:underline">
-              ⚠ napaka
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-80 text-xs" align="start">
-            {state.message || "Naslova ni bilo mogoče najti. Vnesi km ročno."}
-          </PopoverContent>
-        </Popover>
-      );
-    }
-
-    if (state.status !== "calculated") {
-      return null;
-    }
-
-    const projectAddress = formatProjectRouteAddress(projectDetails);
-    const comparison = compareRouteAddresses(projectAddress, state.result.naslovProjekt);
-    const isHigh = comparison.zanesljivost === "visoka";
-    const label = isHigh ? `✓ ${projectAddress || state.result.naslovProjekt}` : "⚠ glej";
-    const className = isHigh ? "text-emerald-700" : "text-amber-700";
-
-    return (
-      <Popover>
-        <PopoverTrigger asChild>
-          <button type="button" className={`max-w-[220px] truncate text-xs font-medium underline-offset-2 hover:underline ${className}`}>
-            {label}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className="w-80 space-y-1 text-xs" align="start">
-          <p>Od: {state.result.naslovPodjetje}</p>
-          <p>Do: {state.result.naslovProjekt}</p>
-          <p>Zanesljivost: {state.result.zanesljivostProcent ?? "?"}%</p>
-          {projectAddress ? <p>Projekt: {projectAddress}</p> : null}
-          <p>Geocoder: {state.result.naslovProjekt}</p>
-          <p>
-            {formatKm(state.result.razdaljaEnosmerno)} km × 2 = {formatKm(state.result.razdaljaSkupaj)} km.
-          </p>
-          {!isHigh ? <p>{comparison.razlog}. Preveri naslov, če ni točen.</p> : null}
-          {state.result.razlog ? <p>{state.result.razlog}</p> : null}
-        </PopoverContent>
-      </Popover>
-    );
-  };
-
   const openClientAddressEditor = () => {
     const clientId = projectDetails?.client?.id ?? projectDetails?.customerDetail?.id;
     if (!clientId) {
@@ -945,77 +887,15 @@ const loadOfferById = useCallback(async (offerId: string) => {
     window.location.href = `/crm?clientId=${encodeURIComponent(String(clientId))}`;
   };
 
-  const renderKmAddressComparison = (item: OfferLineItemForm) => {
-    if (!isKilometrinaOfferItem(item)) {
-      return null;
-    }
-    const state = kmCalculationStates[item.id] ?? { status: "idle" };
-    if (state.status !== "calculated") {
-      return null;
-    }
-
-    const projectAddress = formatProjectRouteAddress(projectDetails);
-    const comparison = compareRouteAddresses(projectAddress, state.result.naslovProjekt);
-    if (comparison.zanesljivost === "visoka") {
-      return null;
-    }
-
-    return (
-      <div className="space-y-1 text-xs text-muted-foreground">
-        <div>Izračun: {state.result.naslovPodjetje} -&gt; {state.result.naslovProjekt}</div>
-        <div>Zanesljivost: {state.result.zanesljivostProcent ?? "?"}%</div>
-        {projectAddress ? <div>Projekt: {projectAddress}</div> : null}
-        <div>
-          Geocoder: {state.result.naslovProjekt}
-          {comparison.razlog ? ` (${comparison.razlog})` : ""}
-        </div>
-        <button type="button" className="font-medium text-primary underline-offset-2 hover:underline" onClick={openClientAddressEditor}>
-          Popravi naslov
-        </button>
-      </div>
-    );
-  };
-
-  const renderKmCalculationButton = (item: OfferLineItemForm) => {
-    if (!isKilometrinaOfferItem(item)) {
-      return null;
-    }
-
-    const state = kmCalculationStates[item.id] ?? { status: "idle" };
-    const isLoading = state.status === "loading";
-    const disabled = isKmCalculationDisabled || isLoading;
-    const disabledNote = isKmCalculationDisabled ? "Nastavi naslov podjetja in API ključ" : null;
-
-    return (
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="size-8 shrink-0"
-          disabled={disabled}
-          onClick={() => void handleCalculateKm(item)}
-          aria-label="Izračunaj kilometrino"
-          title="Izračunaj kilometrino"
-        >
-          {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-        </Button>
-        {disabledNote ? <span className="text-xs text-muted-foreground">{disabledNote}</span> : renderKmReliabilityNote(item)}
-      </div>
-    );
-  };
-
-  const renderKmCalculationMobile = (item: OfferLineItemForm) => {
-    const button = renderKmCalculationButton(item);
-    const comparison = renderKmAddressComparison(item);
-    if (!button) return null;
-    return (
-      <div className="mt-3 space-y-2">
-        {button}
-        {comparison}
-      </div>
-    );
-  };
+  const getKmCalculationProps = (item: OfferLineItemForm) => ({
+    item,
+    isKmItem: isKilometrinaOfferItem(item),
+    state: kmCalculationStates[item.id] ?? ({ status: "idle" } as KmCalculationState),
+    disabled: isKmCalculationDisabled,
+    projectDetails,
+    onCalculate: (target: OfferLineItemForm) => void handleCalculateKm(target),
+    onOpenAddressEditor: openClientAddressEditor,
+  });
 
   const openImportModal = () => {
     setImportError("");
@@ -2284,7 +2164,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
           onMoveItem={moveItem}
           onSelectProduct={handleSelectProduct}
           onSelectCustomItem={handleSelectCustomItem}
-          renderItemActions={(item) => renderKmCalculationMobile(item as OfferLineItemForm)}
+          renderItemActions={(item) => <OfferKmCalculationMobile {...getKmCalculationProps(item as OfferLineItemForm)} />}
           renderSuggestions={(item) => renderLinkedServiceSuggestions(item as OfferLineItemForm)}
         />
 
@@ -2331,8 +2211,10 @@ const loadOfferById = useCallback(async (offerId: string) => {
           <TableBody>
             {items.map((item, index) => {
               const suggestionContent = renderLinkedServiceSuggestions(item);
-              const kmButton = renderKmCalculationButton(item);
-              const kmAddressComparison = renderKmAddressComparison(item);
+              const kmCalculationProps = getKmCalculationProps(item);
+              const kmButton = <OfferKmCalculationButton {...kmCalculationProps} />;
+              const kmAddressComparison = <OfferKmAddressComparison {...kmCalculationProps} />;
+              const showKmAddressComparison = shouldShowOfferKmAddressComparison(kmCalculationProps);
               const movableItems = items.filter((entry) => !isEmptyOfferItem(entry));
               const itemOrderIndex = movableItems.findIndex((entry) => entry.id === item.id);
               const canMoveUp = itemOrderIndex > 0;
@@ -2482,7 +2364,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
                   </TableCell>
                 </TableRow>
               ) : null}
-              {kmAddressComparison ? (
+              {showKmAddressComparison ? (
                 <TableRow key={`${item.id}-km-address`}>
                   <TableCell colSpan={totalColumns} className="px-4 pb-4 pt-0">
                     <div className="pl-2">{kmAddressComparison}</div>
