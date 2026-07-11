@@ -181,8 +181,9 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     in OffersTab. Fifth slice moved the create/rename/delete template dialogs into
     `domains/offers/OfferTemplateDialogs.tsx`. AIN-P2-06 remains open until the large
     OffersTab UI/state sections are split further.
-- **AIN-P2-08 DOING — rez 1 landed (2026-07-10)** Service module: tickets +
-  maintenance plans + portal intake (TARGET §8). Effort XL.
+- **AIN-P2-08** Service module: tickets + maintenance plans + portal intake
+  (TARGET §8). Effort XL. Status: DOING — rez 1 (ServiceTicket) + rez 2
+  (MaintenancePlan) landed 2026-07-10.
   - Rez 1 (ServiceTicket backend): `modules/service/` — model `service_tickets`
     (lifecycle reported→scheduled→resolved→(cancelled), viri portal/phone/email/
     internal, tenant-scoped, partial-unique dedupeKey za portalni intake, history),
@@ -209,8 +210,9 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     opravila; (4) frontend apps/module-service.
 - **AIN-P2-10** tenantId backfill on business collections + compound indexes +
   query-layer plugin. Effort L. Deps: P2-09, P1-05.
-- **AIN-P2-11 DONE-infra (2026-07-10)** Config store (namespaced, tenant-scoped,
-  validated) absorbing scattered settings. Effort L.
+- **AIN-P2-11** Config store (namespaced, tenant-scoped, validated) absorbing
+  scattered settings. Effort L. Status: DONE-infra 2026-07-10 (žive kolekcije
+  se selijo posamično, lastniško).
   - `modules/settings/config/`: `config_store` kolekcija (ena vrstica na
     `{tenantId, namespace}`, unique index), register imenskih prostorov
     (`config.<modul>.<kljuc>`), storitev `getConfig/setConfig/patchConfig/listConfig`
