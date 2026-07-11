@@ -213,9 +213,16 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     zahtevka `onServiceTicketReported` ustvari EXECUTION opravilo (subject.kind=
     serviceTicket, idempotentno) za triažo. Odklene **ECO-28** (portal ima zdaj API).
     4 testi (test/service-ticket-intake.test.ts). 121/121.
-  - Naslednji rez: (4) frontend apps/module-service (seznam zahtevkov + načrti
-    vzdrževanja). Mikro-korak: ročni follow-up mail iz maintenance opravila
-    (reuse follow-up-email pattern).
+  - Rez 4 (frontend) landed 2026-07-10: nov `apps/module-service` (micro-frontend
+    po vzoru module-tasks) — ServicePage z dvema zavihkoma: »Servisni zahtevki«
+    (seznam+filter statusa, nov zahtevek, prehodi statusa prek PATCH) in »Načrti
+    vzdrževanja« (izpelji iz projekta, zabeleži pregled, mirovanje/aktivacija/
+    zaključek, prikaz upsell checklista). Registriran v core-shell (App.tsx modules/
+    moduleComponents/moduleRoleMap [SALES,EXECUTION], package.json dep) + ikona
+    `wrench` v CoreLayout iconMap. Build core-shell + modul čist (pnpm -r build).
+    S tem je AIN-P2-08 FUNKCIJSKO CELOVIT (tickets+plans+intake+wheel+UI); odprto
+    ostane samo mikro-korak ročni follow-up mail iz maintenance opravila (reuse
+    follow-up-email pattern) — po potrebi.
 - **AIN-P2-10** tenantId backfill on business collections + compound indexes +
   query-layer plugin. Effort L. Deps: P2-09, P1-05.
 - **AIN-P2-11** Config store (namespaced, tenant-scoped, validated) absorbing
