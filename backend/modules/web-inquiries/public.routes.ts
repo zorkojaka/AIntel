@@ -8,6 +8,7 @@ import { fireRule, onServiceTicketReported, onWebInquiryNextStep, onWebInquiryPr
 import { createServiceTicket, listServiceTickets, type ActorContext } from '../service/service-ticket.service';
 import { listClientDocuments, generateClientDocument } from '../documents/client-documents.service';
 import {
+  assertInquiryQuota,
   buildWebOfferValuePayload,
   getWebInquiryOptions,
   getWebIzdelki,
@@ -55,10 +56,14 @@ const DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
 
 const requestLog = new Map<string, number[]>();
 
+// ECO-18/S10: nginx (proxy_add_x_forwarded_for) doda resnični IP odjemalca na
+// KONEC X-Forwarded-For — prve vnose lahko podtakne odjemalec sam. Zato beremo
+// zadnji vnos, ne prvega (prej je bil limit izogibljiv s poljubnim XFF).
 function clientIp(req: Request) {
   const forwarded = req.headers['x-forwarded-for'];
   if (typeof forwarded === 'string' && forwarded.length > 0) {
-    return forwarded.split(',')[0].trim();
+    const deli = forwarded.split(',');
+    return deli[deli.length - 1].trim();
   }
   return req.ip ?? 'unknown';
 }
@@ -190,6 +195,10 @@ router.post('/inquiries', async (req: Request, res: Response) => {
         duplicate: true,
       });
     }
+
+    // ECO-18/S10: trajne kvote (baza) — namerno ZA duplicate preverbo, da ponovna
+    // oddaja iste stranke vrne obstoječo ponudbo in ne 429.
+    await assertInquiryQuota(payload.contact.email);
 
     const result = await processWebInquiry(payload);
     // AIN-P1-11: kolo — prvi kontakt (opravilo za prodajo). Fire-and-forget.

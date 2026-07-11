@@ -968,6 +968,32 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
   }
 }
 
+// ECO-18/S10: trajne kvote iz baze — preživijo restart in veljajo za vse instance
+// (in-memory limiter v public.routes.ts lovi samo kratke izbruhe na en proces).
+// Nastavljivo prek env (owner), privzeto: 5 / e-naslov / 24 h, 200 skupno / 24 h.
+const KVOTA_OKNO_MS = 24 * 3600 * 1000;
+
+function kvotaStevilo(envKey: string, privzeto: number): number {
+  const v = Number(process.env[envKey]);
+  return Number.isFinite(v) && v > 0 ? v : privzeto;
+}
+
+export async function assertInquiryQuota(email: string, tenantId = 'inteligent'): Promise<void> {
+  const od = new Date(Date.now() - KVOTA_OKNO_MS);
+  const naEmail = kvotaStevilo('AINTEL_WEB_QUOTA_EMAIL_PER_DAY', 5);
+  const skupno = kvotaStevilo('AINTEL_WEB_QUOTA_GLOBAL_PER_DAY', 200);
+  const [zaEmail, vseh] = await Promise.all([
+    WebInquiryModel.countDocuments({ tenantId, 'contact.email': email, createdAt: { $gte: od } }),
+    WebInquiryModel.countDocuments({ tenantId, createdAt: { $gte: od } }),
+  ]);
+  if (zaEmail >= naEmail) {
+    throw new WebInquiryError('QUOTA_EXCEEDED', 'Dnevna omejitev povpraševanj za ta e-naslov je dosežena. Pokličite nas ali poskusite jutri.', 429);
+  }
+  if (vseh >= skupno) {
+    throw new WebInquiryError('QUOTA_EXCEEDED', 'Trenutno prejemamo veliko povpraševanj. Poskusite znova pozneje ali nas pokličite.', 429);
+  }
+}
+
 // ECO-36 / AIN-P1-16 (spletna stran): predlogi »najpogosteje izbrano« za
 // konfigurator. Vir je izključno lastna statistika — salesStats iz sprejetih
 // ponudb (ECO-35) za izbiro produkta (senzor, žično/WiFi) in zgodovina spletnih

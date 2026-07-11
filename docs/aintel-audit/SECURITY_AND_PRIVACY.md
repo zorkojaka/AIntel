@@ -134,6 +134,13 @@ Confidence: Confirmed / High confidence / Probable / Needs verification.
   weak rate limiting → spam can create projects/clients en masse and burn SMTP
   reputation. Duplicate window (10 min per email+pillar) helps only for identical
   senders. Remediation: captcha/turnstile on widget, server-side quotas, queue.
+- **Partial remediation (ECO-18, 2026-07-11)**: `clientIp` now trusts only the LAST
+  X-Forwarded-For entry (appended by our nginx `proxy_add_x_forwarded_for`) — the
+  in-memory limiter is no longer bypassable with a spoofed XFF. Added persistent
+  DB-backed quotas on POST /inquiries (`assertInquiryQuota`): 5/email/24h and
+  200 total/24h (env `AINTEL_WEB_QUOTA_EMAIL_PER_DAY` / `AINTEL_WEB_QUOTA_GLOBAL_PER_DAY`),
+  returning 429 QUOTA_EXCEEDED; checked after the duplicate window so repeat customers
+  still get their existing offer. Captcha/Turnstile remains open (owner picks provider).
 - 58k PM2 restarts: **explained** — historical boot crash-loop, already fixed in
   source (`specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-04). Residual availability risk:
   no PM2 backoff guardrails against a future boot misconfig.
