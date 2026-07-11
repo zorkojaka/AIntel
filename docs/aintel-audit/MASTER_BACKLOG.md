@@ -205,9 +205,17 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
     z upsell checklistom (assignee SALES, dedupeKey na dueStamp = idempotentno) in
     prestavi nextDueAt. E-mail stranki NI samodejen (Jakov princip — pošlje se ročno
     iz opravila; reuse follow-up-email pattern = mikro-korak). 12 testov. 117/117.
-  - Naslednji rezi: (3) portalni intake `POST /clients/service-tickets` + kolo pravilo
-    service.ticket_intake (odklene ECO-28) + ročni follow-up mail iz maintenance
-    opravila; (4) frontend apps/module-service.
+  - Rez 3 (portalni intake + kolo) landed 2026-07-10: interni klient-scoped rути v
+    web-inquiries `internalRouter` — `GET /clients/service-tickets` (seznam+statusi
+    stranke) + `POST /clients/service-tickets` (oddaja iz portala: klient prek
+    clientId/email, source=portal, dedupeKey proti dvojni oddaji). Kolo pravilo
+    `service.ticket_intake` (dodano v WHEEL_RULE_KEYS, privzeto OFF): ob prijavi
+    zahtevka `onServiceTicketReported` ustvari EXECUTION opravilo (subject.kind=
+    serviceTicket, idempotentno) za triažo. Odklene **ECO-28** (portal ima zdaj API).
+    4 testi (test/service-ticket-intake.test.ts). 121/121.
+  - Naslednji rez: (4) frontend apps/module-service (seznam zahtevkov + načrti
+    vzdrževanja). Mikro-korak: ročni follow-up mail iz maintenance opravila
+    (reuse follow-up-email pattern).
 - **AIN-P2-10** tenantId backfill on business collections + compound indexes +
   query-layer plugin. Effort L. Deps: P2-09, P1-05.
 - **AIN-P2-11** Config store (namespaced, tenant-scoped, validated) absorbing

@@ -161,6 +161,44 @@ export async function onWebInquiryProcessed(inquiry: WebInquiryDocument, offerSe
 }
 
 /**
+ * service.ticket_intake — fired right after a service ticket is reported
+ * (portal/phone/email/internal). Creates an EXECUTION task in the Opravila hub so
+ * the ticket is triaged. Ships OFF. Minimal shape so scheduler never imports the
+ * service module (one-way dependency).
+ */
+export async function onServiceTicketReported(ticket: {
+  _id: mongoose.Types.ObjectId | string;
+  subject?: string;
+  description?: string;
+  priority?: string;
+  source?: string;
+  client?: { id?: mongoose.Types.ObjectId | string | null; name?: string };
+  contact?: { phone?: string; email?: string };
+}) {
+  if (!(await isRuleEnabled('service.ticket_intake'))) return { skipped: true as const };
+  const { params } = await getWheelConfig();
+  const clientName = ticket.client?.name?.trim() || ticket.contact?.email || 'stranka';
+  const label = `${clientName} — ${ticket.subject ?? 'servisni zahtevek'}`.slice(0, 160);
+  const priority: TaskPriority = ticket.priority === 'high' ? 'high' : 'normal';
+  const ticketObjectId = new mongoose.Types.ObjectId(String(ticket._id));
+  const contactLine = [ticket.contact?.phone, ticket.contact?.email].filter(Boolean).join(' · ');
+  const result = await ensureRuleTask({
+    ruleKey: 'service.ticket_intake',
+    dedupeKey: `service.ticket_intake:${ticket._id}`,
+    type: 'service.ticket_intake',
+    title: `Servisni zahtevek — ${clientName}`.slice(0, 200),
+    description: [ticket.subject, ticket.description, contactLine && `Kontakt: ${contactLine}`, ticket.source && `Vir: ${ticket.source}`]
+      .filter(Boolean)
+      .join('\n'),
+    subject: { kind: 'serviceTicket', id: ticketObjectId, label },
+    assigneeRole: 'EXECUTION',
+    priority,
+    dueAt: addWorkingHours(new Date(), 8, params.workStartHour, params.workEndHour),
+  });
+  return { skipped: false as const, result };
+}
+
+/**
  * inquiry.next_step — customer picked a next step on the offer result page.
  * posvet/ogled/avans → immediate task; also auto-completes the open
  * first-contact task (the customer has responded — no cold call needed).

@@ -4,7 +4,8 @@ import path from 'path';
 import multer from 'multer';
 import mongoose from 'mongoose';
 import { Router, type NextFunction, type Request, type Response } from 'express';
-import { fireRule, onWebInquiryNextStep, onWebInquiryProcessed } from '../scheduler/rules';
+import { fireRule, onServiceTicketReported, onWebInquiryNextStep, onWebInquiryProcessed } from '../scheduler/rules';
+import { createServiceTicket, listServiceTickets, type ActorContext } from '../service/service-ticket.service';
 import {
   buildWebOfferValuePayload,
   getWebInquiryOptions,
@@ -350,6 +351,95 @@ internalRouter.get('/inquiries', async (req: Request, res: Response) => {
   } catch (error) {
     (req as any).log?.error({ err: error }, '[web-inquiries] inquiries');
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Povpraševanj ni mogoče prebrati.' });
+  }
+});
+
+// AIN-P2-08 rez 3: portalni servisni zahtevki (ECO-28). Interni (server-to-server)
+// klic iz portala z internim ključem; klient je določen s clientId/email.
+const SYSTEM_CTX: ActorContext = { tenantId: 'inteligent', actorUserId: '', actorEmployeeId: null, roles: [] };
+
+async function resolveClientId(naslov: { clientId: string | null; email: string | null }): Promise<string | null> {
+  if (naslov.clientId) return naslov.clientId;
+  const { CrmClientModel } = await import('../crm/schemas/client');
+  const client = await CrmClientModel.findOne({ email: naslov.email, isActive: true }).lean();
+  return client ? String(client._id) : null;
+}
+
+// Bralni pregled zahtevkov stranke (portal: seznam + statusi).
+internalRouter.get('/service-tickets', async (req: Request, res: Response) => {
+  try {
+    const naslov = resolveClientQuery(req);
+    if (naslov.error) return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: naslov.error });
+    const clientId = await resolveClientId(naslov);
+    if (!clientId) return res.json({ ok: true, clientId: null, tickets: [] });
+    const tickets = await listServiceTickets(SYSTEM_CTX, { clientId });
+    return res.json({
+      ok: true,
+      clientId,
+      tickets: tickets.map((t) => ({
+        id: String(t._id),
+        createdAt: t.createdAt,
+        status: t.status,
+        subject: t.subject,
+        description: t.description,
+        priority: t.priority,
+        source: t.source,
+        scheduledAt: t.scheduledAt ?? null,
+        resolvedAt: t.resolvedAt ?? null,
+        projectId: t.projectId ?? null,
+      })),
+    });
+  } catch (error) {
+    (req as any).log?.error({ err: error }, '[web-inquiries] service-tickets read');
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Servisnih zahtevkov ni mogoče prebrati.' });
+  }
+});
+
+// Oddaja servisnega zahtevka iz portala (intake). Klient iz clientId/email +
+// kontakt/predmet/opis. Sproži kolo pravilo service.ticket_intake (privzeto OFF).
+internalRouter.post('/service-tickets', async (req: Request, res: Response) => {
+  try {
+    const body = req.body ?? {};
+    const naslov = resolveClientQuery({ query: { clientId: body.clientId, email: body.email } } as any);
+    if (naslov.error) return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: naslov.error });
+    const subject = String(body.subject ?? '').trim();
+    if (!subject) return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: 'Predmet zahtevka je obvezen.' });
+
+    const clientId = await resolveClientId(naslov);
+    const ticket = await createServiceTicket(SYSTEM_CTX, {
+      subject,
+      description: body.description,
+      source: 'portal',
+      priority: body.priority,
+      client: { id: clientId ?? undefined, name: body.clientName },
+      projectId: body.projectId,
+      contact: { name: body.contactName, email: naslov.email ?? body.email, phone: body.phone },
+      dedupeKey: body.dedupeKey ? `portal:${String(body.dedupeKey).slice(0, 180)}` : undefined,
+      createdByKind: 'portal',
+    });
+    // Kolo: triaža zahtevka (fire-and-forget).
+    fireRule(
+      onServiceTicketReported({
+        _id: ticket._id as mongoose.Types.ObjectId,
+        subject: ticket.subject,
+        description: ticket.description,
+        priority: ticket.priority,
+        source: ticket.source,
+        client: { id: ticket.client?.id, name: ticket.client?.name },
+        contact: { phone: ticket.contact?.phone, email: ticket.contact?.email },
+      }),
+      'service.ticket_intake',
+    );
+    return res.status(201).json({ ok: true, ticketId: String(ticket._id), status: ticket.status });
+  } catch (error) {
+    if (error instanceof WebInquiryError) {
+      return res.status(error.statusCode).json({ ok: false, code: error.code, message: error.message });
+    }
+    if ((error as any)?.statusCode) {
+      return res.status((error as any).statusCode).json({ ok: false, code: 'VALIDATION_ERROR', message: (error as any).message });
+    }
+    (req as any).log?.error({ err: error }, '[web-inquiries] service-tickets intake');
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Servisnega zahtevka ni bilo mogoče oddati.' });
   }
 });
 
