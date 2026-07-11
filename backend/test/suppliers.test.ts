@@ -35,7 +35,7 @@ test('sanitizeSupplierEmails: veljavni naslovi, brez dvojnikov, natanko en privz
 });
 
 test('applySupplierOrderToItems: izbrane postavke naročene, napredni koraki ostanejo', () => {
-  const items = [
+  const items: Array<{ id: string; quantity: number; materialStep?: string; orderedQty?: number; isOrdered?: boolean }> = [
     { id: 'a', quantity: 4, materialStep: 'Za naročiti' },
     { id: 'b', quantity: 2, materialStep: 'Prevzeto', orderedQty: 1 },
     { id: 'c', quantity: 3, materialStep: 'Za naročiti' },
