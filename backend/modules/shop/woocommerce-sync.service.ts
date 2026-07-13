@@ -208,22 +208,34 @@ async function ensureCategories(
   needed: Map<string, { label: string; parent: string | null }>,
 ): Promise<Map<string, number>> {
   const byKey = new Map<string, number>();
+  const existing = new Map<string, { id: number; parent: number; name: string }>();
   let page = 1;
   for (;;) {
-    const rows: Array<{ id: number; slug: string }> = await wooFetch(
+    const rows: Array<{ id: number; slug: string; parent?: number; name?: string }> = await wooFetch(
       settings,
       'GET',
       `/products/categories?per_page=100&page=${page}`,
     );
-    for (const row of rows) byKey.set(row.slug, row.id);
+    for (const row of rows) {
+      byKey.set(row.slug, row.id);
+      existing.set(row.slug, { id: row.id, parent: Number(row.parent ?? 0), name: String(row.name ?? '') });
+    }
     if (rows.length < 100) break;
     page += 1;
   }
   // Najprej nadkategorije (parent=null), da so otroci lahko vezani nanje.
   const ordered = [...needed.entries()].sort((a, b) => Number(a[1].parent !== null) - Number(b[1].parent !== null));
   for (const [slug, def] of ordered) {
-    if (byKey.has(slug)) continue;
-    const parentId = def.parent ? byKey.get(def.parent) : undefined;
+    const parentId = def.parent ? byKey.get(def.parent) ?? 0 : 0;
+    const ex = existing.get(slug);
+    if (ex) {
+      // Samopopravek: če star zapis (npr. skupina 'ajax') visi na napačnem starševstvu
+      // ali ima staro ime, ga uskladimo (sicer proizvajalec pristane izven 'Proizvajalec').
+      if ((def.parent && ex.parent !== parentId) || (def.label && ex.name !== def.label)) {
+        await wooFetch(settings, 'PUT', `/products/categories/${ex.id}`, { parent: parentId, name: def.label });
+      }
+      continue;
+    }
     const created: { id: number } = await wooFetch(settings, 'POST', '/products/categories', {
       name: def.label,
       slug,
