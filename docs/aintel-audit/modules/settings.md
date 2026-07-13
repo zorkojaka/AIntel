@@ -8,7 +8,9 @@ prefixes) + `document_number_counters` (atomic numbering used by projects invoic
 documents). Frontend also hosts PDF settings UI and communication settings UI.
 
 ## Surface
-`GET/PUT /api/settings` — **PUT unrestricted for any authenticated user** (S4/Medium).
+`GET /api/settings` is auth-only for dependent modules; `PUT /api/settings` is ADMIN
+only (AIN-P0-02). PDF settings writes under `/api/settings/company` and
+`/api/settings/pdf-documents` are also ADMIN only.
 `useSettingsData` hook exported for other modules (CRM, projects) — good.
 Seed: `pnpm --filter aintel-backend seed:settings` (do not run — writes DB).
 

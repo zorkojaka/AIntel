@@ -2,9 +2,11 @@ import { Request, Response } from "express";
 import {
   buildActorDisplayName,
   getCommunicationMessage,
+  listInstallerPreparationMessages,
   listOfferMessages,
   sendInvoiceCommunicationEmail,
   listProjectCommunicationFeed,
+  normalizeWorkOrderObjectId,
   sendInstallerPreparationEmail,
   sendOfferCommunicationEmail,
   sendWorkOrderConfirmationCommunicationEmail,
@@ -155,9 +157,14 @@ export async function sendWorkOrderConfirmationCommunicationController(req: Requ
 
 export async function sendInstallerPreparationCommunicationController(req: Request, res: Response) {
   try {
+    const workOrderId = normalizeWorkOrderObjectId(req.params.workOrderId);
+    if (!workOrderId) {
+      return res.fail("Delovni nalog ni pravilno določen.", 400);
+    }
+
     const payload = await sendInstallerPreparationEmail({
       projectId: req.params.projectId,
-      workOrderId: req.params.workOrderId,
+      workOrderId,
       to: req.body?.to,
       cc: req.body?.cc,
       bcc: req.body?.bcc,
@@ -196,6 +203,20 @@ export async function getOfferMessagesController(req: Request, res: Response) {
     return res.success(messages);
   } catch (error) {
     console.error("Offer messages load failed", error);
+    return res.fail("Sporočil ni mogoče naložiti.", 500);
+  }
+}
+
+export async function getInstallerPreparationMessagesController(req: Request, res: Response) {
+  try {
+    const workOrderId = normalizeWorkOrderObjectId(req.params.workOrderId);
+    if (!workOrderId) {
+      return res.fail("Delovni nalog ni pravilno določen.", 400);
+    }
+    const messages = await listInstallerPreparationMessages(req.params.projectId, workOrderId);
+    return res.success(messages);
+  } catch (error) {
+    console.error("Installer preparation messages load failed", error);
     return res.fail("Sporočil ni mogoče naložiti.", 500);
   }
 }

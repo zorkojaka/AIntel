@@ -10,9 +10,11 @@ analog). Keep gate ADMIN. Risky-by-nature endpoints (bulk writes) — candidates
 dry-run defaults and audit logging.
 
 ## dashboard (220) — `/api/dashboard`
-Early-stage stats endpoint; frontend module-dashboard (1.5k lines) renders more than
-the backend provides — data sources need tracing (D7). The intended aggregation point
-for management visibility, currently minimal.
+Two endpoint shapes coexist. `GET /api/dashboard/stats` still returns static default
+metrics from `dashboardStats`; the active frontend dashboard uses
+`GET /api/dashboard/installer`, which reads live Project, MaterialOrder, and WorkOrder
+data scoped to the current employee. The intended management aggregation point remains
+minimal; installer workflow visibility is the real implemented path.
 
 ## categories (122) — `/api/categories`
 Project/product category list (auth only). Overlaps conceptually with cenik

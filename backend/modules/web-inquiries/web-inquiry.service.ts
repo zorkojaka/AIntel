@@ -296,6 +296,7 @@ async function findOrCreateClient(contact: WebInquiryContact, note: string | und
 }
 
 async function createProjectForInquiry(input: {
+  clientId: Types.ObjectId;
   clientName: string;
   siteAddressFull: string;
   pillar: WebInquiryPillar;
@@ -308,6 +309,7 @@ async function createProjectForInquiry(input: {
     id,
     code,
     projectNumber,
+    clientId: input.clientId,
     title: `${PILLAR_LABELS[input.pillar]} – ${input.clientName}`,
     customer: {
       name: input.clientName,
@@ -701,6 +703,7 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
       payload.pillar as 'videonadzor' | 'alarm' | 'domofon' | 'pametni_dom'
     ];
     const project = await createProjectForInquiry({
+      clientId: client._id as Types.ObjectId,
       clientName: client.name,
       siteAddressFull: payload.contact.siteAddress.full,
       pillar: payload.pillar,

@@ -500,6 +500,7 @@ export function ProjectsPage() {
       title,
       requirements,
       categories,
+      clientId,
       customer: {
         name: client.name,
         taxId: client.vatNumber,
@@ -537,6 +538,7 @@ export function ProjectsPage() {
             title: finalTitle,
             requirements,
             categories,
+            clientId,
             customer: {
               name: client.name,
               taxId: client.vatNumber,
@@ -615,6 +617,7 @@ export function ProjectsPage() {
       title,
       requirements,
       categories,
+      clientId,
       customer,
       items: projectFormInitial.items,
       templates: projectFormInitial.templates,
@@ -917,5 +920,4 @@ export function ProjectsPage() {
     </>
   );
 }
-
 

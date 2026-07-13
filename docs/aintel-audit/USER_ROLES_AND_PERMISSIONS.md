@@ -30,7 +30,9 @@ canonical role**; management visibility is not modeled).
 | /cenik/category-settings | ADMIN, ORGANIZER |
 | /employees, /users, /employee-profiles, /admin | ADMIN |
 | /web-inquiries (admin side) | ADMIN, SALES |
-| /dashboard, /crm, /settings, /finance, /categories, /projects, /requirement-templates, /profile, /offers, /files, /photos, /zahteve, /execution-rules | **auth only, no role gate at mount** |
+| /finance | Company finance endpoints ADMIN, FINANCE; `/my/earnings` and own earning detail scoped server-side for installers |
+| /settings | GET auth-only; settings, pdf-settings, communication settings writes ADMIN |
+| /dashboard, /crm, /categories, /projects, /requirement-templates, /profile, /offers, /files, /photos, /zahteve, /execution-rules | **auth only, no role gate at mount** |
 
 Projects adds route-level gates: write = ADMIN/SALES/FINANCE; work-order write adds
 EXECUTION/ORGANIZER; preparation-only = ORGANIZER; plus payload-shape checks in
@@ -39,23 +41,20 @@ may modify — fine-grained but hand-rolled and easy to drift.
 
 ## Findings
 
-1. **`/settings` PUT is open to any authenticated user** (no requireRoles on the
-   settings mount; `settings.routes.ts` adds none). Any employee can change company
-   identity, logo, prefixes. Severity: Medium. Confirmed.
-2. **`/finance` has no role gate** — any authenticated user (e.g. EXECUTION monter) can
-   read yearly summaries, employee earnings, pipeline, and PATCH employee earning
-   payment status (`routes/index.ts:40`). Severity: High (payroll-adjacent data).
-   Confirmed at mount level; no route-level gates found in finance routes.
+1. **RESOLVED (AIN-P0-02): `/settings` writes were open to any authenticated user.**
+   Settings, pdf-settings, and communication settings/template writes are now ADMIN
+   only; GET routes remain auth-only for dependent modules.
+2. **RESOLVED (AIN-P0-02): `/finance` exposed company/payroll-adjacent data to any
+   authenticated user.** Company finance endpoints and payment PATCH are now
+   ADMIN/FINANCE only; installers use server-scoped `/finance/my/earnings` and own
+   earning detail.
 3. **`/crm`, `/categories`, `/zahteve`, `/photos`, `/files`, `/execution-rules`
    unrestricted for any authenticated role** — mostly acceptable for a small company,
    but customer PII (CRM) readable by all roles. Medium.
-4. **Header-trust in `utils/tenant.ts`** (Confirmed code, exploitability depends on
-   call site): `resolveTenantId` prefers `x-tenant-id` header over the session tenant;
-   `resolveActorId` prefers `x-user-id` header over the session user. Any authenticated
-   user can spoof tenant/actor on endpoints using these helpers (used in logistics and
-   others via `resolveEmployeeIdForTenant`, actor attribution). Today single-tenant so
-   tenant spoofing is moot, but **actor spoofing corrupts the audit trail** and the
-   pattern is a critical blocker for multi-tenant. Severity: High (future Critical).
+4. **RESOLVED (AIN-P2-09): header-trust in `utils/tenant.ts`**. `resolveTenantId` and
+   `resolveActorId` now ignore `x-tenant-id`/`x-user-id` and use server-side session
+   context/user fallbacks. Frontend project panels no longer send `buildTenantHeaders`.
+   Remaining multi-tenant hardening is AIN-P2-10 tenantId backfill/query scoping.
 5. **No permission granularity below role** — no per-project assignment enforcement on
    reads: any SALES/EXECUTION user sees all projects (`listProjects` has no
    assignment filter; installer-scoped filtering exists only in specific preparation

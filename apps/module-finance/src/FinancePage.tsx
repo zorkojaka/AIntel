@@ -240,6 +240,47 @@ async function fetchAllSnapshots(): Promise<FinanceSnapshot[]> {
   return items;
 }
 
+async function fetchMyEarnings(): Promise<FinanceSnapshot[]> {
+  const limit = 200;
+  const firstPage = await fetchApi<SnapshotListEnvelope>(`/api/finance/my/earnings?limit=${limit}&page=1`);
+  const items = [...(firstPage.items ?? [])];
+  let page = 2;
+  while ((items.length % limit) === 0 && items.length > 0) {
+    const nextPage = await fetchApi<SnapshotListEnvelope>(`/api/finance/my/earnings?limit=${limit}&page=${page}`);
+    const nextItems = nextPage.items ?? [];
+    if (nextItems.length === 0) break;
+    items.push(...nextItems);
+    if (nextItems.length < limit) break;
+    page += 1;
+  }
+  return items;
+}
+
+function buildSelfEmployeeSummary(employeeId: string | null | undefined, snapshots: FinanceSnapshot[]): EmployeeSummary[] {
+  if (!employeeId) return [];
+  const totals = snapshots.reduce(
+    (current, snapshot) => {
+      const earning = snapshot.employeeEarnings.find((entry) => entry.employeeId === employeeId);
+      if (!earning) return current;
+      const value = Number(earning.earnings) || 0;
+      return {
+        totalEarned: current.totalEarned + value,
+        totalPaid: current.totalPaid + (earning.isPaid ? value : 0),
+      };
+    },
+    { totalEarned: 0, totalPaid: 0 },
+  );
+  return [
+    {
+      employeeId,
+      employeeName: 'Moji zaslužki',
+      totalEarned: totals.totalEarned,
+      totalPaid: totals.totalPaid,
+      totalUnpaid: totals.totalEarned - totals.totalPaid,
+    },
+  ];
+}
+
 function toIsoDay(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return '';
@@ -383,12 +424,13 @@ export const FinancePage: React.FC = () => {
         const mappedRoles = (me.roles ?? []) as Role[];
         const canSeeCompany = mappedRoles.includes('ADMIN') || mappedRoles.includes('FINANCE');
 
-        const [snapshotData, employeeData, projectsData, invoiceData] = await Promise.all([
-          fetchAllSnapshots(),
-          fetchApi<EmployeeSummary[]>('/api/finance/employees-summary'),
+        const [snapshotData, companyEmployeeData, projectsData, invoiceData] = await Promise.all([
+          canSeeCompany ? fetchAllSnapshots() : fetchMyEarnings(),
+          canSeeCompany ? fetchApi<EmployeeSummary[]>('/api/finance/employees-summary') : Promise.resolve([]),
           canSeeCompany ? fetchApi<ProjectListItem[]>('/api/projects?view=all') : Promise.resolve([]),
           canSeeCompany ? fetchApi<FinanceInvoiceListEnvelope>('/api/finance/invoices') : Promise.resolve({ items: [] }),
         ]);
+        const employeeData = canSeeCompany ? companyEmployeeData : buildSelfEmployeeSummary(me.employeeId, snapshotData);
 
         if (cancelled) return;
 

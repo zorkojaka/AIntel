@@ -31,8 +31,8 @@ Each item: evidence → business consequence → technical consequence → sever
 | TD-B3 | 4 category fields on Product; 2 status fields on MaterialOrder | `product.model.ts`, `material-order.ts` | Filtering bugs, import confusion | Medium | M |
 | TD-B4 | Max+1 ID generation | `generateProjectIdentifiers` (project.ts:393) | Duplicate-key 500s under concurrent creates | Low (single user base) | S (use DocumentCounter) |
 | TD-B5 | Dates as strings (project createdAt, scheduledAt, …) | project/work-order schemas | Wrong sorting/range queries; timezone bugs | Medium | M |
-| TD-B6 | auth.routes.ts uses DOM `Request`/`Response` types accidentally | `auth.routes.ts` blockNonPost (no express type import) | Type safety illusion | Low | S |
-| TD-B7 | Live prod error: `'undefined'` → ObjectId cast in installer-prep email | pm2 error log; `communication.service` WorkOrder lookup | Feature intermittently fails for users | Medium | S (guard + fix caller) |
+| TD-B6 | RESOLVED (TD-B6 auth route typing fix): auth.routes.ts used DOM `Request`/`Response` types accidentally | `auth.routes.ts` blockNonPost now imports Express `Request`/`Response`/`NextFunction` and calls typed `res.fail` | Type safety illusion removed | Low | Done |
+| TD-B7 | RESOLVED (AIN-P1-06): Live prod error: `'undefined'` → ObjectId cast in installer-prep email | pm2 error log; `communication.service` WorkOrder lookup; fixed with controller + service workOrderId guards | Repro now returns 400 instead of reaching Mongo cast path | Medium | Done |
 
 ## Frontend
 
@@ -47,8 +47,8 @@ Each item: evidence → business consequence → technical consequence → sever
 
 | ID | Item | Evidence | Consequence | Sev | Effort |
 |---|---|---|---|---|---|
-| TD-D1 | client↔project by name string; portal by email | DATA_MODEL §problems | Wrong-customer data mixing; orphaning on rename | High | M (add clientId + backfill) |
-| TD-D2 | `autoIndex:false` with no index procedure | `db/mongo.ts` | Slow queries as data grows; unique constraints possibly absent → duplicates | Medium (Needs Atlas verification) | S (documented ensure-indexes script, run consciously) |
+| TD-D1 | PARTIAL (AIN-P1-07): new Project rows carry `clientId`; legacy rows still use name fallback and portal identity remains email-based | DATA_MODEL §problems | Legacy wrong-customer data mixing/orphaning remains until owner-reviewed backfill; portal duplicate-email risk remains | High | S/M (review report + backfill, then portal identity) |
+| TD-D2 | RESOLVED (AIN-P1-05): `autoIndex:false` now has an explicit ensure-indexes procedure | `db/mongo.ts`, `backend/scripts/ensure-indexes.ts` | Owner still must run dry-run/apply consciously; no automatic boot-time index creation | Medium (Atlas run remains owner-owned) | S (script landed) |
 | TD-D3 | No transactions on multi-doc flows (confirmOffer, invoice issue) | logistics/invoice services | Partial writes on failure → stuck projects | Medium | M |
 | TD-D4 | Shared prod/staging DB | env layout | Test data pollution; accidental prod damage | High | M (org decision + data copy) |
 
@@ -80,6 +80,6 @@ Each item: evidence → business consequence → technical consequence → sever
 
 | ID | Item | Evidence | Consequence | Sev | Effort |
 |---|---|---|---|---|---|
-| TD-X1 | Stale docs describe in-memory modules | `docs/ARHITEKTURA.md`, `docs/MODULES.md` | Agents/humans misled | Medium | S (mark superseded, point here) |
-| TD-X2 | `docs/30_REALITY.md` auto-report with no signal | file | Noise | Low | S (archive) |
-| TD-X3 | No API reference; routes discoverable only by reading routes.ts | repo | Onboarding cost; integration mistakes | Medium | M (generate route table) |
+| TD-X1 | RESOLVED (AIN-P3-08 partial): stale docs now carry superseded banners | `docs/ARHITEKTURA.md`, `docs/MODULES.md` | Residual risk only if readers ignore the banner | Low | done |
+| TD-X2 | RESOLVED (AIN-P3-08 partial): `docs/30_REALITY.md` marked archival/stale | file | Residual noise only | Low | done |
+| TD-X3 | RESOLVED (AIN-P3-08 partial): route reference added | `docs/aintel-audit/API_ROUTE_REFERENCE.md` | Must be kept updated with route changes | Low | same-PR docs updates |

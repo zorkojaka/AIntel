@@ -297,4 +297,8 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
   { timestamps: true }
 );
 
+workOrderSchema.index({ projectId: 1, offerVersionId: 1 });
+workOrderSchema.index({ projectId: 1, cancelledAt: 1 });
+workOrderSchema.index({ assignedEmployeeIds: 1, projectId: 1 });
+
 export const WorkOrderModel = model<WorkOrderDocument>('WorkOrder', workOrderSchema);

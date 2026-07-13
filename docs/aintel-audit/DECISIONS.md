@@ -30,24 +30,31 @@ collections; migration left unfinished
 Both representations exist (P1/P2 duplication). Decision to finish (freeze embedded)
 is AIN-P2-01 — treat as accepted direction, pending owner confirmation.
 
-## D-008 [Existing-inferred] Public intake protected by shared static API key
-Made for simplicity; consequences in S1. Superseding decision needed: AIN-P0-01.
+## D-008 [Superseded by AIN-P0-01] Public intake protected by shared static API key
+Original decision was made for simplicity; consequences in S1. AIN-P0-01 supersedes it:
+browser widget/review endpoints keep `AINTEL_WEB_INQUIRY_API_KEY`, while
+`/api/public/clients/*` server-to-server endpoints require `AINTEL_INTERNAL_API_KEY`.
+Owner still controls env rollout and browser-key rotation.
 
 ## D-009 [Existing-confirmed] Prod and staging share one Mongo database
 Operational reality (audit brief). Risk accepted historically; recommendation to
 supersede via AIN-P1-01.
 
-## D-010 [Existing-inferred] Tenant passed as client header with server fallback
-`shared/utils/tenant.ts` + `backend/utils/tenant.ts`. Recommend superseding (AIN-P2-09):
-tenant strictly from session.
+## D-010 [Superseded by AIN-P2-09] Tenant passed as client header with server fallback
+AIN-P2-09 removed `buildTenantHeaders` and changed backend tenant/actor helpers to
+ignore `x-tenant-id`/`x-user-id`. Tenant/actor identity now comes from server-side
+session context/user fallbacks; AIN-P2-10 remains for business-data tenant scoping.
 
 ## D-011 [Existing-confirmed] Reviews: auto-publish 4–5★, Google redirect,
 auto-request behind default-off flag
 Commits 896f1ae, 59b1d55.
 
-## D-012 [Open] Finance read access for SALES?
-AIN-P0-02 defaults to ADMIN+FINANCE only. Owner must decide whether SALES keeps
-pipeline/summary reads.
+## D-012 [Existing-confirmed] Finance company read access is ADMIN+FINANCE only
+AIN-P0-02 shipped the strict default from the P0 spec: SALES does not get company
+finance reads. EXECUTION keeps a scoped self-service earnings view through
+`/api/finance/my/earnings`; company finance endpoints and payment PATCH are
+ADMIN+FINANCE. **Owner (Jaka) explicitly confirmed the strict default on 2026-07-06**
+(review sign-off); granting SALES read access later would be a purely additive change.
 
 ## D-013 [Open] PDF engine consolidation: pdfkit vs playwright-HTML
 Two pipelines maintained (P6). Decide one (playwright-HTML is more maintainable;

@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Document, Schema, Types } from 'mongoose';
 import type { RequirementFieldType, RequirementFormulaConfig } from '../../shared/requirements.types';
 
 export type ProjectStatus = 'draft' | 'offered' | 'ordered' | 'in-progress' | 'completed' | 'invoiced';
@@ -120,6 +120,7 @@ export interface Project {
   id: string;
   code: string;
   projectNumber: number;
+  clientId?: Types.ObjectId | string | null;
   title: string;
   customer: ProjectCustomer;
   status: ProjectStatus;
@@ -304,6 +305,7 @@ const ProjectSchema = new Schema<ProjectDocument>(
     id: { type: String, required: true, unique: true, index: true },
     code: { type: String, required: true, unique: true, index: true },
     projectNumber: { type: Number, required: true, unique: true, index: true },
+    clientId: { type: Schema.Types.ObjectId, ref: 'CrmClient', default: null },
     title: { type: String, required: true, trim: true },
     customer: {
       name: { type: String, required: true, trim: true },
@@ -351,6 +353,10 @@ const ProjectSchema = new Schema<ProjectDocument>(
 
 ProjectSchema.index({ projectNumber: 1 }, { unique: true });
 ProjectSchema.index({ code: 1 }, { unique: true });
+ProjectSchema.index({ status: 1 });
+ProjectSchema.index({ archivedAt: 1, status: 1 });
+ProjectSchema.index({ assignedEmployeeIds: 1 });
+ProjectSchema.index({ clientId: 1 });
 
 export const ProjectModel =
   (mongoose.models.Project as mongoose.Model<ProjectDocument>) ||

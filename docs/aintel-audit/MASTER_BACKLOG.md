@@ -13,43 +13,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 
 ## P0 — Security / active exposure
 
-### AIN-P0-01 — Split public API surface; rotate web-inquiry API key
-- **Problem**: One shared X-API-Key gates all `/api/public/*`; it is published in
-  website HTML (inteligent-si/videonadzor.html:12); `GET /api/public/clients/equipment`
-  returns any customer's installed security equipment by email.
-- **Evidence**: `backend/modules/web-inquiries/public.routes.ts` (requireApiKey,
-  equipment route); SECURITY_AND_PRIVACY.md S1.
-- **Value**: Closes public exposure of customer PII/physical-security data.
-- **Scope**: New env var for a second server-only key; move `/clients/equipment`
-  (and any future server-to-server route) behind it; keep widget endpoints on the
-  browser key; rotate both keys (coordinate website + portal env updates); add IP
-  allowlist option for the server key.
-- **Acceptance**: equipment endpoint rejects the browser key; widget flows unchanged
-  (manual test via staging widget); old key invalid.
-- **Deps**: coordinated deploy of AIntel + portal env + website HTML. Effort M. Risk:
-  brief widget downtime if keys mismatched — sequence: add new keys, switch consumers,
-  revoke old.
-- **Files**: public.routes.ts, core/app.ts (optional split mount), portal server.js
-  (env only), inteligent-si pillar pages (inline config), docs: SECURITY, INTEGRATION_MAP.
-
-### AIN-P0-02 — Fix finance authorization (server-side leak) + settings write gates
-> **Corrected (spec pass + final review) — this is NOT a one-line role gate.**
-> Full design: `specs/P0_IMPLEMENTATION_SPECS.md` §AIN-P0-02 (authoritative).
-- **Problem**: finance endpoints return **all** employees' earnings to any
-  authenticated user (server-side; the frontend role filter is cosmetic); the payment
-  PATCH is ungated; settings has **three** ungated write mounts (settings,
-  pdf-settings, communication settings).
-- **Evidence**: `backend/routes.ts:36-39` (no gates);
-  `finance-analytics.controller.ts` (no scoping/role checks); FinancePage.tsx
-  `isExecutionOnly` self-view (369-372) — a blanket gate breaks installer self-service.
-- **Scope**: split finance router into company (ADMIN+FINANCE) vs self sub-router with
-  **server-side** employee scoping (`/finance/my/earnings`); gate payment PATCH
-  [ADMIN, FINANCE]; gate the three settings write mounts [ADMIN]; phased rollout so
-  installers keep their earnings view (backend → SPA switch → final `/snapshots` gate).
-- **Acceptance**: per spec (EXECUTION curl: company endpoints 403, own earnings only;
-  settings writes 403 for non-ADMIN; FINANCE/ADMIN unchanged). Effort **M** (was
-  mis-scoped as S). Owner decision D-012 (SALES read access — default strict).
-
 ### AIN-P0-04 — PM2 restart guardrails (root cause RESOLVED)
 > **Corrected (spec pass): no longer an open investigation.** Root cause confirmed:
 > a **historical boot crash-loop** — an older build hard-required
@@ -72,6 +35,9 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 - **Scope**: new `MONGO_DB` for staging + documented data-copy procedure (owner runs);
   staging SMTP override to a trap/prefix mode; README warnings updated.
 - **Acceptance**: staging writes never touch prod db; staging emails clearly marked.
+- **Agent support landed**: shared email trap support and owner runbook
+  `runbooks/AIN-P1-01_STAGING_DB_EMAIL_TRAP.md`; owner env/ops verification still
+  required before marking done.
 - Effort M (mostly ops coordination). **Blocks all test-writing items.**
 
 ### AIN-P1-02 — Error tracking (Sentry or self-hosted GlitchTip)
@@ -83,37 +49,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 - pino + middleware (request id, user id, tenant, route, latency); replace ad-hoc
   console.\* incrementally (start: core, communication sends, public intake).
 - Acceptance: one JSON line per request in prod logs. Effort M.
-
-### AIN-P1-04 — Smoke tests for the five money flows
-- Inquiry→offer (mock SMTP), offer confirm→WO+MO, preparation advance, execution→
-  signature, invoice issue→snapshot. Vitest + mongodb-memory-server (no shared DB).
-- Acceptance: `pnpm test` green locally/CI without touching Atlas. Effort L.
-  Deps: AIN-P1-01 not strictly required (memory server), but P1-02 helps.
-
-### AIN-P1-05 — Index audit + ensure-indexes script
-- Compare schema-declared indexes vs Atlas actuals (owner runs read-only listIndexes);
-  add explicit `scripts/ensure-indexes.ts` run consciously at deploy; add missing
-  hot-path indexes (projects.status, communicationmessages.projectId, workorders
-  projectId+offerVersionId…). Effort M. Evidence: db/mongo.ts autoIndex:false.
-
-### AIN-P1-06 — Fix installer-prep ObjectId cast bug
-- **Evidence**: pm2 error log — `'undefined'` string cast at WorkOrder query in
-  `sendInstallerPreparationEmail` (communication.service.ts ~:854 dist).
-- Scope: guard workOrderId presence/validity in controller + service; return 400.
-- Acceptance: repro request returns clean error; no BSONError in logs. Effort S.
-
-### AIN-P1-07 — clientId on Project (WebInquiry already has it)
-> **Scope corrected (final review)**: `WebInquiry.clientId` already exists and is set
-> by the intake engine (`web-inquiry.model.ts:96`, `web-inquiry.service.ts:673`).
-> Only **Project** lacks the FK (`projects/schemas/project.ts` — embedded
-> `customer.name` only).
-- Add `clientId: ObjectId` (nullable) to Project + backfill script matching
-  customer.name → CrmClient (report ambiguities, don't guess); new projects always set
-  it (project creation + web-inquiry engine already touch CrmClient); equipment
-  endpoint (`public.routes.ts:210`, joins by `'customer.name'`) switches to clientId
-  with name fallback.
-- Acceptance: new projects linked; backfill report reviewed by owner before run
-  (dry-run mode mandatory). Effort M. Deps: P1-01 preferred first.
 
 ### AIN-P1-08 — Promote invoiceVersions to a collection
 - Schema from current shapes (inspect existing docs via dry-run analysis script with
@@ -163,8 +98,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   diff summary). Effort M.
 - **AIN-P2-08** Service module: tickets + maintenance plans + portal intake
   (TARGET §8). Effort XL.
-- **AIN-P2-09** Kill header tenant/actor trust (S3): server-side only; remove
-  buildTenantHeaders from frontend. Effort S–M (verify no legit use).
 - **AIN-P2-10** tenantId backfill on business collections + compound indexes +
   query-layer plugin. Effort L. Deps: P2-09, P1-05.
 - **AIN-P2-11** Config store (namespaced, tenant-scoped, zod-validated) absorbing
@@ -172,7 +105,6 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 
 ## P3 — Product & polish
 
-- **AIN-P3-01** Login rate limiting + optional 2FA. Effort M.
 - **AIN-P3-02** Shared frontend API client (fetch wrapper + error toasts + retry).
   Effort M.
 - **AIN-P3-03** Repeat-sale rules on installed equipment age. Effort M. Deps: P2-08.
@@ -183,14 +115,26 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 - **AIN-P3-06** Enum value neutralization (SL→neutral codes + display mapping).
   Effort L. Deps: P3-05 planning.
 - **AIN-P3-07** External pilot tenant. Deps: P2-10, P2-11, P3-05 partially.
-- **AIN-P3-08** Docs debt: mark stale docs superseded (TD-X1/X2), route reference
-  generation (TD-X3), archive dead files (D1–D3, D8, D10 after owner OK).
+- **AIN-P3-08** Docs debt: TD-X1/X2 stale-doc banners and TD-X3 route reference are
+  done. Remaining scope: archive dead files (D1–D3, D8, D10) after owner OK.
 
 ## Documentation updates per item
 Every item lists its docs in-line; at minimum update MODULE_CATALOG review status,
 relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 
 ## Done
+
+### AIN-P0-01 — Split public API surface; rotate web-inquiry API key
+- **Landed**: AIN-P0-01 implementation commit.
+- **Summary**: `/api/public/clients/*` now mounts before the browser-key public router,
+  uses non-browser CORS, and requires `AINTEL_INTERNAL_API_KEY`. Browser-facing
+  options/products/inquiries/reviews remain on `AINTEL_WEB_INQUIRY_API_KEY`.
+- **Acceptance**: backend tests verify `/clients/equipment` rejects the browser key
+  with 401, accepts the internal key with 200 and correct equipment data, and keeps the
+  widget `/options` route working with the browser key while rejecting the internal key.
+- **Owner rollout**: agent did not edit `.env`, portal env, website HTML, or secret
+  values. Owner must set `AINTEL_INTERNAL_API_KEY` in AIntel/portal and rotate the
+  published browser key on the website/widget before production rollout.
 
 ### AIN-P0-03 — Authenticate `/uploads`
 - **Landed**: AIN-P0-03 implementation commit.
@@ -200,3 +144,69 @@ relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 - **Acceptance**: unauthenticated `/uploads/...` returns 401; traversal resolver
   rejects escape attempts; source grep found no embedded `/uploads` email/template
   `<img>` references in checked communication paths.
+
+### AIN-P1-06 — Fix installer-prep ObjectId cast bug
+- **Landed**: AIN-P1-06 implementation commit.
+- **Summary**: Added shared workOrderId normalization for installer-prep email and
+  guard checks in both controller and service before any WorkOrder lookup.
+- **Acceptance**: a repro request with `workOrderId=undefined` returns a clean 400
+  error (`Delovni nalog ni pravilno določen.`), and service-level invalid input fails
+  before Mongo query code can trigger a BSON/ObjectId cast error.
+
+### AIN-P1-04 — Smoke tests for the five money flows
+- **Landed**: AIN-P1-04 implementation commit.
+- **Summary**: Added a backend `node:test` smoke scenario using
+  `mongodb-memory-server` for inquiry→offer, offer confirmation→work order/material
+  order, preparation advance, execution signature, and invoice issue→finance
+  snapshot.
+- **Acceptance**: `pnpm test` is green locally without touching Atlas; the test uses an
+  in-memory MongoDB and keeps inquiry auto-email disabled rather than sending SMTP.
+
+### AIN-P0-02 — Fix finance authorization (server-side leak) + settings write gates
+- **Landed**: AIN-P0-02 implementation commit.
+- **Summary**: Split finance into company routes gated to ADMIN/FINANCE and a scoped
+  `/finance/my/earnings` endpoint for installers. Switched the finance frontend
+  execution-only view to the scoped endpoint, gated payment PATCH to ADMIN/FINANCE, and
+  gated settings/pdf-settings/communication settings writes to ADMIN.
+- **Acceptance**: EXECUTION gets 403 on company finance endpoints, payment PATCH, and
+  non-ADMIN settings writes; `/finance/my/earnings` returns only the caller's
+  employee earnings; FINANCE company finance and payment PATCH remain available.
+
+### AIN-P1-05 — Index audit + ensure-indexes script
+- **Landed**: AIN-P1-05 implementation commit.
+- **Summary**: Added hot-path schema indexes for project status/assignment and
+  workorder/material-order project+offer lookups, plus
+  `backend/scripts/ensure-indexes.ts` and `pnpm --filter aintel-backend db:ensure-indexes`.
+- **Acceptance**: script defaults to read-only dry-run/listIndexes planning; apply mode
+  requires `--apply --i-understand-this-writes-indexes` and additionally
+  `--allow-shared-db` for db `inteligent`. Agent did not run against Atlas or create
+  indexes; owner must run the dry-run/apply consciously during deploy.
+
+### AIN-P1-07 — clientId on Project (WebInquiry already has it)
+- **Landed**: AIN-P1-07 implementation commit.
+- **Summary**: Added nullable `Project.clientId`, linked manual and web-inquiry
+  project creation to `CrmClient`, switched the portal equipment lookup to `clientId`
+  with a legacy `customer.name` fallback, and added a read-only
+  `project-clientid-backfill-report` script.
+- **Acceptance**: new projects are linked to active CRM clients; the equipment endpoint
+  prefers `clientId` and still supports legacy rows by name; the backfill report is
+  dry-run/report-only and must be reviewed by the owner before any future DB-writing
+  backfill. Agent did not run the report against Atlas/shared `inteligent`.
+
+### AIN-P2-09 — Kill header tenant/actor trust (S3)
+- **Landed**: AIN-P2-09 implementation commit.
+- **Summary**: `resolveTenantId` and `resolveActorId` now ignore spoofable
+  `x-tenant-id`/`x-user-id` headers and derive identity from server-side session
+  context/user fallbacks. Frontend project panels no longer import or send
+  `buildTenantHeaders`; the helper export was removed.
+- **Acceptance**: backend tests verify spoofed tenant/actor headers do not override
+  session context and unauthenticated single-tenant fallback still returns
+  `inteligent` for tenant and `null` for actor.
+
+### AIN-P3-01 — Login rate limiting
+- **Landed**: AIN-P3-01 implementation commit.
+- **Summary**: Added an in-memory/per-process failed-login limiter keyed by tenant,
+  normalized email, and request IP. Successful login resets the counter; blocked
+  attempts return 429 with `Retry-After`.
+- **Acceptance**: unit tests verify threshold blocking, reset/window expiry, and env
+  tuning. Optional 2FA remains future scope and was not implemented.

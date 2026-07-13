@@ -84,4 +84,7 @@ const materialOrderSchema = new Schema<MaterialOrderDocument>(
   { timestamps: true },
 );
 
+materialOrderSchema.index({ projectId: 1, offerVersionId: 1 });
+materialOrderSchema.index({ assignedEmployeeIds: 1, projectId: 1 });
+
 export const MaterialOrderModel = model<MaterialOrderDocument>("MaterialOrder", materialOrderSchema);

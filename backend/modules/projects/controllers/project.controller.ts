@@ -26,6 +26,7 @@ import { resolveTenantId } from '../../../utils/tenant';
 import { ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_SALES } from '../../../utils/roles';
 import { UserModel } from '../../users/schemas/user';
 import { EmployeeModel } from '../../employees/schemas/employee';
+import { CrmClientModel } from '../../crm/schemas/client';
 import {
   buildActorDisplayName,
   recordSignatureCompletedCommunicationEvent,
@@ -64,6 +65,20 @@ function validateProjectPayload(body: any) {
     return 'Manjka podatek o stranki (customer.name).';
   }
   return null;
+}
+
+async function resolveProjectClientId(rawClientId: unknown) {
+  if (rawClientId === undefined) return undefined;
+  if (rawClientId === null || rawClientId === '') return null;
+  const clientId = String(rawClientId).trim();
+  if (!mongoose.isValidObjectId(clientId)) {
+    throw new Error('Neveljaven ID stranke.');
+  }
+  const client = await CrmClientModel.findOne({ _id: clientId, isActive: { $ne: false } }).select('_id').lean();
+  if (!client) {
+    throw new Error('Izbrana stranka ne obstaja.');
+  }
+  return new Types.ObjectId(clientId);
 }
 
 function toISODate(value?: string) {
@@ -699,6 +714,12 @@ export async function calculateProjectKm(req: Request, res: Response) {
 export async function createProject(req: Request, res: Response) {
   const error = validateProjectPayload(req.body);
   if (error) return res.fail(error, 400);
+  let clientId: Types.ObjectId | null | undefined;
+  try {
+    clientId = await resolveProjectClientId(req.body?.clientId);
+  } catch (clientError) {
+    return res.fail(clientError instanceof Error ? clientError.message : 'Stranke ni mogoče povezati.', 400);
+  }
 
   const { id, code, projectNumber } = await generateProjectIdentifiers();
   const createdAt = toISODate();
@@ -721,6 +742,7 @@ export async function createProject(req: Request, res: Response) {
     id,
     code,
     projectNumber,
+    clientId: clientId ?? null,
     title: req.body.title,
     customer: {
       name: req.body.customer.name,
@@ -774,12 +796,21 @@ export async function updateProject(req: Request, res: Response) {
 
   const error = validateProjectPayload(req.body);
   if (error) return res.fail(error, 400);
+  let clientId: Types.ObjectId | null | undefined;
+  try {
+    clientId = await resolveProjectClientId(req.body?.clientId);
+  } catch (clientError) {
+    return res.fail(clientError instanceof Error ? clientError.message : 'Stranke ni mogoče povezati.', 400);
+  }
 
   const requestedVariantSlug = req.body?.requirementsTemplateVariantSlug
     ? String(req.body.requirementsTemplateVariantSlug).trim()
     : project.requirementsTemplateVariantSlug;
 
   project.title = req.body.title;
+  if (clientId !== undefined) {
+    project.clientId = clientId;
+  }
   if (req.body?.requirementsText !== undefined) {
     project.requirementsText = String(req.body.requirementsText ?? '').trim();
   } else if (typeof req.body?.requirements === 'string') {

@@ -444,9 +444,16 @@ async function addConfiguredExecutionRequests(
     const materialRequests = systemEntry.requests.filter((entry) => entry.tip === 'material');
     const systemTypes = new Set<string>([systemEntry.sistem.tip]);
     if (systemEntry.sistem.tip === 'wifi_kamere') systemTypes.add('videonadzor');
+    const scenarios = normalizeScenarios(settings.scenarios ?? DEFAULT_EXECUTION_SCENARIOS);
+    const selectedType = systemEntry.sistem.execution?.scenarioType ?? 'posiljanje';
+    const scenario = scenarios.find((entry) => entry.type === selectedType);
+    const scenarioServiceProductIds = new Set(
+      (scenario?.storitve ?? []).map((service) => String(service.serviceProductId)),
+    );
 
     for (const rule of settings.productServiceRules ?? []) {
       if (!rule.isActive) continue;
+      if (scenarioServiceProductIds.has(String(rule.serviceProductId))) continue;
       if (rule.triggerType === 'project') {
         const pseudoProduct = {};
         if (!executionProductMatches(rule, pseudoProduct, projectTypes)) continue;
@@ -468,9 +475,6 @@ async function addConfiguredExecutionRequests(
       }
     }
 
-    const scenarios = normalizeScenarios(settings.scenarios ?? DEFAULT_EXECUTION_SCENARIOS);
-    const selectedType = systemEntry.sistem.execution?.scenarioType ?? 'posiljanje';
-    const scenario = scenarios.find((entry) => entry.type === selectedType);
     const totalCameraCount = materialRequests.reduce((sum, request) => {
       const product = productMap.get(request.productId);
       return product?.classification?.productType === 'kamera' ? sum + request.kolicina : sum;

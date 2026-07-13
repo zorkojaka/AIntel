@@ -2,7 +2,9 @@
 
 Commit `c0afad8`. Source: schema files only (no DB records were read). Mongo db name:
 `inteligent` (shared prod+staging). `autoIndex: false` in `db/mongo.ts` — declared
-indexes are not auto-created (Needs verification which exist in Atlas).
+indexes are not auto-created. AIN-P1-05 added an explicit dry-run/apply
+`backend/scripts/ensure-indexes.ts`; owner still needs to run it against Atlas to
+verify actual indexes.
 
 ## Collections by owning module
 
@@ -41,7 +43,7 @@ Portal (`inteligent_portal` db, separate app): `Uporabnik`, `PrijavniZeton`, `Na
 
 ```mermaid
 erDiagram
-  CRMCLIENT ||..o{ PROJECT : "by customer.name STRING match"
+  CRMCLIENT ||--o{ PROJECT : "clientId (new) / name fallback legacy"
   PROJECT ||--o{ ZAHTEVA : "requestIds (ObjectId)"
   PROJECT ||--o{ OFFERVERSION : "projectId (string id)"
   OFFERVERSION ||--o{ WORKORDER : "offerVersionId"
@@ -57,10 +59,12 @@ erDiagram
 
 ## Cross-cutting problems
 
-1. **String-matching joins (High severity)**
-   - Project has **no clientId**; the link client↔project is `customer.name` equality
-     (used e.g. in `web-inquiries/public.routes.ts` equipment endpoint). Renaming a
-     client silently orphans projects; two clients with the same name mix data.
+1. **String-matching joins (High severity, partially resolved by AIN-P1-07)**
+   - Project now has nullable `clientId`; new project creation paths set it and the
+     `web-inquiries/public.routes.ts` equipment endpoint prefers it. Legacy projects
+     without `clientId` still fall back to `customer.name` equality until an
+     owner-reviewed backfill is run. Renaming a legacy-only client can still orphan
+     projects; duplicate legacy names can still mix data.
    - Portal↔AIntel identity is client **email** (CrmClient.email is not unique).
 2. **Duplicated concepts**
    - Offers exist twice (Project.offers embedded legacy vs `offerversions`).
@@ -85,10 +89,11 @@ erDiagram
 7. **Tenancy** — tenantId on identity/execution-rules/reviews/web-inquiries only;
    absent on projects, products, clients, offers, finance, settings. Settings is a
    single global document. Multi-company would require touching every collection.
-8. **Indexing** — beyond unique identity indexes and a few explicit ones
-   (OfferVersion compound, WebInquiry compound, MaterialOrder.projectId), list/queries
-   (e.g. projects by status, messages by projectId) rely on unindexed fields;
-   with `autoIndex: false` even declared ones may not exist (Needs verification).
+8. **Indexing** — AIN-P1-05 added hot-path declarations for project status/assignment
+   and workorder/material-order project+offer lookups, and existing communication
+   schemas declare project feed indexes. With `autoIndex: false`, owner must still run
+   the explicit ensure-indexes dry-run/apply procedure; declared indexes may not exist
+   in Atlas until then.
 9. **Integrity risks** — no transactions used anywhere (multi-document flows like
    confirmOffer create WorkOrder + MaterialOrder + update Project non-atomically);
    partial failure leaves inconsistent state. Delete of a client does not touch
@@ -96,7 +101,8 @@ erDiagram
 
 ## Migration concerns for productization
 
-- Introduce `clientId` on Project + backfill by name-match (needs manual review pass).
+- Run and review the AIN-P1-07 Project `clientId` backfill report, then apply a
+  separate owner-approved backfill for unambiguous legacy rows.
 - Promote `invoiceVersions` from Mixed to a real collection before anything else
   touches invoicing.
 - Collapse product category fields to one; keep aliases during transition.

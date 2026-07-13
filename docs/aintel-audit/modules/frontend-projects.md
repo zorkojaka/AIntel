@@ -27,7 +27,9 @@ communication feed. It is the operational cockpit of the company.
    local useState/useEffect at scale — highest frontend risk.
 2. Compose dialogs per document type are near-copies (mirror of backend send-function
    duplication) — unify.
-3. `components/ui` local widgets vs `packages/ui` (D9).
+3. Local shadcn-style `src/components/ui` widgets duplicate some `packages/ui`
+   primitives (D9); current usage is module-projects-local, while shared modules use
+   `@aintel/ui`.
 4. Root-level scratch files (`ExecutionPanel.tsx.bak`, `head_ProjectWorkspace.tsx`)
    from past edits (TD-F4).
 5. No tests.

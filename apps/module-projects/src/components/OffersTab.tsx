@@ -23,7 +23,7 @@ import type { User } from "@aintel/shared/types/user";
 import type { Employee } from "@aintel/shared/types/employee";
 import type { CommunicationMessage } from "@aintel/shared/types/communication";
 
-import { ArrowDown, ArrowLeft, Check, ChevronsUpDown, Download, Loader2, Pencil, RefreshCw, Trash, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronsUpDown, Download, Loader2, Pencil, RefreshCw, Trash, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
@@ -40,7 +40,6 @@ import {
   type RouteCalculationSettings,
 } from "../api";
 import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
-import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
 import { OfferCommunicationComposeDialog } from "../domains/communication/OfferCommunicationComposeDialog";
 import { OfferSentMessagesTable } from "../domains/communication/OfferSentMessagesTable";
@@ -67,6 +66,7 @@ type OfferLineItemForm = {
   totalVat: number;
   totalGross: number;
   discountPercent: number;
+  imageUrl?: string;
 };
 
 type KmCalculationState =
@@ -130,6 +130,7 @@ const createEmptyItem = (): OfferLineItemForm => ({
   unitPrice: 0,
   vatRate: 22,
   discountPercent: 0,
+  imageUrl: undefined,
   totalNet: 0,
   totalVat: 0,
   totalGross: 0,
@@ -437,6 +438,68 @@ export function OffersTab({
     () => templates.find((entry) => entry._id === selectedTemplateId) ?? null,
     [templates, selectedTemplateId]
   );
+  const missingItemImageLookupKey = useMemo(
+    () =>
+      items
+        .filter((item) => item.productId && !item.imageUrl && item.name.trim())
+        .map((item) => `${item.id}:${item.productId}:${item.name.trim()}`)
+        .join("|"),
+    [items],
+  );
+
+  useEffect(() => {
+    const missingItems = items.filter((item) => item.productId && !item.imageUrl && item.name.trim());
+    if (missingItems.length === 0) return;
+
+    let alive = true;
+    const controller = new AbortController();
+
+    const loadMissingImages = async () => {
+      const resolvedImages = await Promise.all(
+        missingItems.map(async (item) => {
+          try {
+            const response = await fetch(
+              `/api/price-list/items/search?q=${encodeURIComponent(item.name.trim())}`,
+              { signal: controller.signal },
+            );
+            const payload = await response.json();
+            const products: PriceListSearchItem[] =
+              payload?.success && Array.isArray(payload?.data) ? payload.data : [];
+            const match = products.find((product) => product.id === item.productId);
+            return match?.imageUrl ? { id: item.id, productId: item.productId, imageUrl: match.imageUrl } : null;
+          } catch (error) {
+            if ((error as DOMException)?.name !== "AbortError") {
+              return null;
+            }
+            return null;
+          }
+        }),
+      );
+
+      if (!alive) return;
+      const imageByItemId = new Map(
+        resolvedImages
+          .filter((entry): entry is { id: string; productId: string; imageUrl: string } => Boolean(entry))
+          .map((entry) => [entry.id, entry]),
+      );
+      if (imageByItemId.size === 0) return;
+
+      setItems((prev) =>
+        prev.map((item) => {
+          const resolved = imageByItemId.get(item.id);
+          if (!resolved || item.productId !== resolved.productId || item.imageUrl) return item;
+          return { ...item, imageUrl: resolved.imageUrl };
+        }),
+      );
+    };
+
+    void loadMissingImages();
+
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [missingItemImageLookupKey]);
 
   useEffect(() => {
     if (paymentTermsOptions.length === 0) {
@@ -493,10 +556,9 @@ export function OffersTab({
     let alive = true;
     const fetchAssignmentsData = async () => {
       try {
-        const headers = buildTenantHeaders();
         const [usersRes, employeesRes] = await Promise.all([
-          fetch("/api/users", { headers }),
-          fetch("/api/employees", { headers }),
+          fetch("/api/users"),
+          fetch("/api/employees"),
         ]);
         const usersPayload = await usersRes.json();
         const employeesPayload = await employeesRes.json();
@@ -569,6 +631,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
         totalVat: item.totalVat,
         totalGross: item.totalGross,
         productId: item.productId ?? null,
+        imageUrl: undefined,
       }));
 
       setItems(ensureTrailingBlank([...mapped]));
@@ -838,6 +901,22 @@ const loadOfferById = useCallback(async (offerId: string) => {
     });
   };
 
+  const moveItem = (id: string, direction: -1 | 1) => {
+    setItems((prev) => {
+      const movableItems = prev.filter((item) => !isEmptyOfferItem(item));
+      const fromIndex = movableItems.findIndex((item) => item.id === id);
+      const toIndex = fromIndex + direction;
+      if (fromIndex === -1 || toIndex < 0 || toIndex >= movableItems.length) return prev;
+
+      const nextMovableItems = [...movableItems];
+      const [movedItem] = nextMovableItems.splice(fromIndex, 1);
+      nextMovableItems.splice(toIndex, 0, movedItem);
+
+      const trailingBlank = prev.find((item) => isEmptyOfferItem(item)) ?? createEmptyItem();
+      return ensureTrailingBlank([...nextMovableItems, trailingBlank]);
+    });
+  };
+
   const revealMobileBlankItem = useCallback(() => {
     const trailingBlank =
       [...items].reverse().find((item) => isEmptyOfferItem(item)) ?? createEmptyItem();
@@ -974,6 +1053,7 @@ const buildOfferPdfFilename = (
     updateItem(rowId, {
       name: product.name,
       productId: product.id,
+      imageUrl: product.imageUrl,
       unit: product.unit ?? "kos",
       unitPrice: product.unitPrice,
       vatRate: product.vatRate ?? 22,
@@ -982,7 +1062,7 @@ const buildOfferPdfFilename = (
   };
 
   const handleSelectCustomItem = (rowId: string) => {
-    updateItem(rowId, { productId: null });
+    updateItem(rowId, { productId: null, imageUrl: undefined });
   };
 
   const loadLinkedServiceSuggestions = useCallback(async (rowId: string, productId: string) => {
@@ -1969,10 +2049,9 @@ const buildOfferPdfFilename = (
     if (!projectId) return;
     setAssignmentsSaving(true);
     try {
-      const headers = { "Content-Type": "application/json", ...buildTenantHeaders() };
       const response = await fetch(`/api/projects/${projectId}/assignments`, {
         method: "PATCH",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           salesUserId: nextSalesUserId,
           assignedEmployeeIds: nextEmployeeIds,
@@ -2731,6 +2810,7 @@ const buildOfferPdfFilename = (
           onRevealBlankItem={revealMobileBlankItem}
           onUpdateItem={handleItemUpdate}
           onDeleteItem={deleteRow}
+          onMoveItem={moveItem}
           onSelectProduct={handleSelectProduct}
           onSelectCustomItem={handleSelectCustomItem}
           renderItemActions={(item) => renderKmCalculationMobile(item as OfferLineItemForm)}
@@ -2782,18 +2862,54 @@ const buildOfferPdfFilename = (
               const suggestionContent = renderLinkedServiceSuggestions(item);
               const kmButton = renderKmCalculationButton(item);
               const kmAddressComparison = renderKmAddressComparison(item);
+              const movableItems = items.filter((entry) => !isEmptyOfferItem(entry));
+              const itemOrderIndex = movableItems.findIndex((entry) => entry.id === item.id);
+              const canMoveUp = itemOrderIndex > 0;
+              const canMoveDown = itemOrderIndex >= 0 && itemOrderIndex < movableItems.length - 1;
               return (
               <Fragment key={item.id}>
               <TableRow key={item.id} className="h-11">
                 <TableCell className="text-left pl-4 align-middle min-w-0">
                   <div className="flex min-w-0 items-center gap-2">
+                    <div className="flex shrink-0 flex-col">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-5 w-7 rounded-none"
+                        disabled={!canMoveUp}
+                        onClick={() => moveItem(item.id, -1)}
+                        aria-label={`Premakni postavko ${item.name || index + 1} gor`}
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-5 w-7 rounded-none"
+                        disabled={!canMoveDown}
+                        onClick={() => moveItem(item.id, 1)}
+                        aria-label={`Premakni postavko ${item.name || index + 1} dol`}
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                    {item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt=""
+                        className="h-10 w-10 shrink-0 rounded border bg-white object-contain p-1"
+                        loading="lazy"
+                      />
+                    ) : null}
                     <div className="min-w-0 flex-1">
                     <PriceListProductAutocomplete
                       value={item.name}
                       placeholder="Naziv ali iskanje v ceniku"
                       inputClassName="text-left h-9 min-w-0 truncate"
                       onChange={(name) => {
-                        updateItem(item.id, { name, productId: null });
+                        updateItem(item.id, { name, productId: null, imageUrl: undefined });
                       }}
                       onCustomSelected={() => handleSelectCustomItem(item.id)}
                       onProductSelected={(product) => handleSelectProduct(item.id, product, index)}
@@ -3353,6 +3469,5 @@ const buildOfferPdfFilename = (
     </Card>
   );
 }
-
 
 

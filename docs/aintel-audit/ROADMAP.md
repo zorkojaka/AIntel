@@ -15,7 +15,8 @@ ensure-indexes script + Atlas index audit (AIN-P1-05); smoke tests for five mone
 flows (AIN-P1-04). Outcome: safe to change code; failures visible.
 
 ## Phase 2 — Data foundations (2–4 weeks equivalent)
-clientId linkage (AIN-P1-07); invoiceVersions to real collection (AIN-P1-08); freeze
+clientId linkage for new Project rows and owner-reviewed legacy backfill (AIN-P1-07);
+invoiceVersions to real collection (AIN-P1-08); freeze
 legacy embedded arrays (AIN-P2-01); expectedAt + supplier normalization start
 (AIN-P2-05); date-string cleanup on new writes. Outcome: stable identity keys; invoices
 on a real schema.

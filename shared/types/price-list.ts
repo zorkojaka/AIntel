@@ -8,6 +8,7 @@ export interface PriceListSearchItem {
   categories?: string[];
   isService?: boolean;
   externalSource?: string;
+  imageUrl?: string;
   unit?: string;
   unitPrice: number;
   vatRate: number;

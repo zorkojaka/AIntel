@@ -17,6 +17,8 @@
     "db:reset-aa": "echo \"Dangerous: run ts-node scripts/DANGEROUS_reset_and_import_aa_api_products.ts --i-know-what-im-doing\"",
     "db:fix-legacy-products": "ts-node scripts/fix-legacy-products.ts",
     "db:audit-products": "ts-node scripts/audit-products.ts",
+    "db:ensure-indexes": "ts-node scripts/ensure-indexes.ts",
+    "db:project-clientid-report": "ts-node scripts/project-clientid-backfill-report.ts",
     "db:reconcile-cenik": "ts-node scripts/reconcile-cenik.ts",
     "db:sync-aa": "ts-node scripts/sync-products.ts --source aa_api --input data/cenik/aa_api_produkti.json",
     "db:migrate-aa-attributes": "ts-node scripts/migrate-cenik-aa-attributes.ts",
@@ -46,6 +48,7 @@
     "@types/jsonwebtoken": "^9.0.6",
     "@types/mongoose": "^5.11.97",
     "@types/node": "^20.15.0",
+    "mongodb-memory-server": "^11.2.0",
     "ts-node": "^10.0.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.3.0"

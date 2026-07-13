@@ -22,8 +22,8 @@ required before merge/rollout.
 
 | Order | Item | Assignee | Notes |
 |---|---|---|---|
-| 0.1 | **AIN-P0-01** key split + rotation | [agent] code, [owner] env+rollout, [senior] rollout sequencing | Follow the spec's dual-accept rollout exactly; two separate rotations (internal key first, browser key second) |
-| 0.2 | **AIN-P0-02** finance auth (phased) | [agent] backend phase 1, then frontend phase 2 | Needs [owner] decision D-012 (SALES read access — default strict). Phase 3 (`/snapshots` gate) only after SPA switch is deployed |
+| 0.1 | **AIN-P0-01** key split + rotation | [agent] DONE: code + tests; [owner] env+rollout remains | Internal key is now required for `/clients/*`; owner must set AIntel/portal env and rotate browser key on website/widget |
+| 0.2 | **AIN-P0-02** finance auth (phased) | [agent] backend phase 1, then frontend phase 2 | DONE. D-012 strict default owner-confirmed 2026-07-06: company finance ADMIN/FINANCE only, installer self view scoped server-side. Deploy backend + SPA together |
 | 0.3 | **AIN-P0-03** authenticate `/uploads` | [agent] | Includes the path-traversal guard; pre-ship grep of communication templates for embedded `/uploads` `<img>` |
 | 0.4 | **AIN-P0-04** restart guardrails | [owner] only | Verify prod dist has no `required in production` throw; set `AINTEL_ALLOWED_ORIGINS`; `pm2 reset aintel`; add `max_restarts`/`min_uptime`/`restart_delay`. No app code |
 
@@ -38,12 +38,12 @@ regression, not data loss.
 
 | Order | Item | Assignee | Depends on |
 |---|---|---|---|
-| 1.1 | **AIN-P1-01** staging DB split + email trap | [owner] infra, [agent] docs/config review | — (unblocks all DB-writing work; schedule first) |
+| 1.1 | **AIN-P1-01** staging DB split + email trap | [owner] infra remains, [agent] email-trap support + runbook DONE | — (unblocks all DB-writing work; schedule first) |
 | 1.2 | **AIN-P1-06** installer-prep ObjectId guard | [agent] | — (S effort; can even ride along with W0) |
 | 1.3 | **AIN-P1-02** error tracking | [agent] after [owner] picks Sentry vs GlitchTip | — |
 | 1.4 | **AIN-P1-03** structured logging (pino + request IDs) | [agent] | [owner] approves dependency |
 | 1.5 | **AIN-P1-04** smoke tests, five money flows | [agent] | Uses memory-server → does NOT wait on 1.1 |
-| 1.6 | **AIN-P1-05** index audit + ensure-indexes script | [agent] script, [owner] runs listIndexes read-only | — |
+| 1.6 | **AIN-P1-05** index audit + ensure-indexes script | [agent] script DONE, [owner] runs dry-run/apply | Script landed; owner still runs read-only `db:ensure-indexes -- --json` and guarded apply if needed |
 
 Parallelism: 1.2–1.6 can all run concurrently; 1.1 is owner-paced.
 **Checkpoint W1**: `pnpm test` green without touching Atlas; one JSON log line per
@@ -54,7 +54,7 @@ separate DB. **This checkpoint is the safety gate for everything below.**
 
 | Order | Item | Assignee | Depends on |
 |---|---|---|---|
-| 2.1 | **AIN-P1-07** clientId on **Project** (corrected scope — WebInquiry already has it) | [agent] code + dry-run backfill report, [owner] reviews report and runs backfill | 1.1 (real-DB backfill), 1.5 (index for clientId) |
+| 2.1 | **AIN-P1-07** clientId on **Project** (corrected scope — WebInquiry already has it) | [agent] DONE: code + read-only backfill report; [owner] still reviews report and runs any future backfill | 1.1 (real-DB backfill), 1.5 (index for clientId) |
 | 2.2 | **AIN-P1-08** invoiceVersions → real collection | [agent] [senior] schema + migration review | 1.4 (smoke tests exist), 2.1 preferred, D-016 answered (accounting handoff shapes the schema) |
 | 2.3 | **AIN-P2-01** freeze legacy embedded offers/POs/deliveries (usage counters → remove writes → archive) | [agent] | 1.3 (counters need logs) |
 
@@ -101,7 +101,7 @@ AIN-P3-04 portal integration (needs 2.1 clientId).
 
 ## Wave 6 — Multi-company foundations
 
-AIN-P2-09 kill header trust (small, may be pulled earlier — it is also security S3) →
+AIN-P2-09 kill header trust DONE (S3 resolved in code) →
 AIN-P2-10 tenantId backfill ([owner] runs) → AIN-P2-11 config store ([senior]) →
 AIN-P3-05/06 vertical extraction + enum neutralization ([senior], data migration).
 

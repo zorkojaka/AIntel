@@ -56,9 +56,11 @@ Middleware order in `core/app.ts` (Confirmed):
 2. Global CORS (allowlist in production: aintel domains + `AINTEL_ALLOWED_ORIGINS`).
 3. `express.json`, `cookieParser`, response helpers, normalizePayload.
 4. `/health`, `/api/health` (Mongo readyState).
-5. `/uploads` — `express.static('/var/www/aintel/uploads')` **without auth**.
-6. `/api/auth` (public), then `/api` behind `requireAuth` → `routes.ts`.
-7. `errorHandler`.
+5. `/api/auth` (public).
+6. `/uploads/*` — authenticated legacy upload streaming route with path-traversal
+   protection (AIN-P0-03).
+7. `/api` behind `requireAuth` → `routes.ts`.
+8. `errorHandler`.
 
 ### Module anatomy and quality gradient
 
@@ -101,9 +103,10 @@ directly. Consequence: no module is independently deployable today.
 
 - **Console logging only**; no structured logger, no request logging middleware, no
   correlation IDs, no error tracker (Sentry etc.). PM2 captures stdout/stderr.
-- Observed live production error in logs: `sendInstallerPreparationEmail` casts the
-  string `'undefined'` to ObjectId on a WorkOrder query
-  (`communication.service.ts` ~line 854 in dist) — evidence for backlog item AIN-P1-06.
+- RESOLVED (AIN-P1-06): observed live production error in logs where
+  `sendInstallerPreparationEmail` cast the string `'undefined'` to ObjectId on a
+  WorkOrder query. The installer-prep controller and service now guard invalid
+  `workOrderId` before the WorkOrder lookup.
 - Audit trail: Project embeds a `timeline` array (event id = `evt-<Date.now36>`, whole
   events written by controllers). Communication module stores `CommunicationEvent` /
   `CommunicationMessage` records. There is **no generic audit log** (who changed what
@@ -128,8 +131,9 @@ directly. Consequence: no module is independently deployable today.
   `web-inquiry-settings` model, `pdf-settings`, `communication` sender settings,
   `category-settings`, `execution-rules` — no single configuration story.
 - `db/mongo.ts` sets `autoIndex: false` — schema-declared indexes are **not** created
-  automatically in any environment; index creation procedure is undocumented
-  (Needs verification against Atlas).
+  automatically in any environment. AIN-P1-05 added an explicit
+  `backend/scripts/ensure-indexes.ts` dry-run/apply procedure; Atlas verification and
+  apply remain owner-controlled deploy steps.
 
 ## Frontend
 
@@ -177,6 +181,9 @@ closing (`invoice.controller`) → issue (finance snapshot) → send invoice ema
 3. No tests (backend zero; frontend 4 UI-kit component tests), no CI quality gate found.
 4. No observability beyond console logs; 58k PM2 restarts unexplained.
 5. No scheduler → the "wheel" cannot turn by itself for anything time-based.
-6. Identity joins by string (client email, customer name) instead of references.
-7. Shared prod/staging DB; `autoIndex: false` without an indexing procedure.
+6. Identity joins by string remain in places: portal identity still uses client email,
+   and legacy Projects still need name fallback until the AIN-P1-07 clientId backfill
+   is owner-reviewed and applied.
+7. Shared prod/staging DB; index application is a conscious deploy step because
+   `autoIndex` stays false.
 8. Tenancy only partial (identity modules), absent on business data.

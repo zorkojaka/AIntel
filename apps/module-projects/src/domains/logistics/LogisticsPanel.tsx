@@ -12,7 +12,7 @@ import type {
   WorkOrderStatus,
 } from "@aintel/shared/types/logistics";
 import type { Employee } from "@aintel/shared/types/employee";
-import type { CommunicationEvent } from "@aintel/shared/types/communication";
+import type { CommunicationMessage } from "@aintel/shared/types/communication";
 import { Card, CardContent, CardHeader } from "../../components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Badge } from "../../components/ui/badge";
@@ -29,10 +29,9 @@ import { useConfirmOffer } from "../core/useConfirmOffer";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
 import { AlertTriangle, Camera, Check, ChevronDown, ChevronRight, Download, Loader2, Send, Trash2, X } from "lucide-react";
-import { buildTenantHeaders } from "@aintel/shared/utils/tenant";
 import { useSettingsData } from "@aintel/module-settings";
 import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
-import { fetchCommunicationFeed } from "../communication/api";
+import { fetchInstallerPreparationMessages } from "../communication/api";
 
 interface LogisticsPanelProps {
   projectId: string;
@@ -462,9 +461,10 @@ export function LogisticsPanel({
   const [savingWorkOrder, setSavingWorkOrder] = useState(false);
   const [issuingOrder, setIssuingOrder] = useState(false);
   const [sendingInstallerEmail, setSendingInstallerEmail] = useState(false);
+  const [preparingInstallerEmail, setPreparingInstallerEmail] = useState(false);
   const [installerEmailDialogOpen, setInstallerEmailDialogOpen] = useState(false);
   const [installerEmailDraft, setInstallerEmailDraft] = useState({ to: "", cc: "", bcc: "", subject: "", body: "" });
-  const [installerEmailEvents, setInstallerEmailEvents] = useState<CommunicationEvent[]>([]);
+  const [installerEmailMessages, setInstallerEmailMessages] = useState<CommunicationMessage[]>([]);
   const [installerEmailStatusLoading, setInstallerEmailStatusLoading] = useState(false);
   const [advancingMaterialOrderId, setAdvancingMaterialOrderId] = useState<string | null>(null);
   const [materialDownloading, setMaterialDownloading] = useState<"PURCHASE_ORDER" | "DELIVERY_NOTE" | null>(null);
@@ -516,21 +516,15 @@ export function LogisticsPanel({
   );
   const refreshInstallerEmailStatus = useCallback(async () => {
     if (!projectId || !selectedWorkOrder?._id) {
-      setInstallerEmailEvents([]);
+      setInstallerEmailMessages([]);
       return;
     }
     setInstallerEmailStatusLoading(true);
     try {
-      const events = await fetchCommunicationFeed(projectId, 40);
-      setInstallerEmailEvents(
-        events.filter((event) =>
-          (event.type === "email_sent" || event.type === "email_failed") &&
-          event.metadata?.workOrderId === selectedWorkOrder._id &&
-          /monterju/i.test(event.title),
-        ),
-      );
+      const messages = await fetchInstallerPreparationMessages(projectId, selectedWorkOrder._id);
+      setInstallerEmailMessages(messages);
     } catch {
-      setInstallerEmailEvents([]);
+      setInstallerEmailMessages([]);
     } finally {
       setInstallerEmailStatusLoading(false);
     }
@@ -538,7 +532,7 @@ export function LogisticsPanel({
   useEffect(() => {
     void refreshInstallerEmailStatus();
   }, [refreshInstallerEmailStatus]);
-  const latestInstallerEmailEvent = installerEmailEvents[0] ?? null;
+  const latestInstallerEmailMessage = installerEmailMessages[0] ?? null;
   const selectedMaterialOrder = useMemo(
     () =>
       selectedWorkOrder
@@ -639,9 +633,7 @@ export function LogisticsPanel({
     let alive = true;
     const fetchEmployees = async () => {
       try {
-        const response = await fetch("/api/employees", {
-          headers: buildTenantHeaders(),
-        });
+        const response = await fetch("/api/employees");
         const payload = await response.json();
         if (!alive) return;
         setEmployees(Array.isArray(payload?.data) ? payload.data : []);
@@ -1392,7 +1384,10 @@ export function LogisticsPanel({
   };
 
   const openInstallerPreparationEmailDialog = async () => {
-    if (!selectedWorkOrder?._id || sendingInstallerEmail) return;
+    if (!selectedWorkOrder?._id || preparingInstallerEmail || sendingInstallerEmail) return;
+    setInstallerEmailDraft(buildInstallerPreparationEmailDraft(selectedWorkOrder));
+    setInstallerEmailDialogOpen(true);
+    setPreparingInstallerEmail(true);
     try {
       const currentConfirmedAt =
         typeof workOrderForm.scheduledConfirmedAt === "string"
@@ -1425,11 +1420,12 @@ export function LogisticsPanel({
       }
       const draft = payload.data?.draft ?? payload.draft;
       setInstallerEmailDraft(draft ?? buildInstallerPreparationEmailDraft(typeof saved === "object" ? saved : selectedWorkOrder));
-      await refreshInstallerEmailStatus();
-      setInstallerEmailDialogOpen(true);
+      void refreshInstallerEmailStatus();
     } catch (error) {
       console.error(error);
       toast.error("Emaila monterju ni bilo mogoče pripraviti.");
+    } finally {
+      setPreparingInstallerEmail(false);
     }
   };
 
@@ -2400,22 +2396,22 @@ export function LogisticsPanel({
                   <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                     {installerEmailStatusLoading ? (
                       <span>Preverjam status emaila monterju ...</span>
-                    ) : latestInstallerEmailEvent ? (
+                    ) : latestInstallerEmailMessage ? (
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge
                             className={
-                              latestInstallerEmailEvent.type === "email_sent"
+                              latestInstallerEmailMessage.status === "sent"
                                 ? "border-green-500/30 bg-green-500/10 text-green-700"
                                 : "border-red-500/30 bg-red-500/10 text-red-700"
                             }
                           >
-                            {latestInstallerEmailEvent.type === "email_sent" ? "Email monterju poslan" : "Email monterju ni uspel"}
+                            {latestInstallerEmailMessage.status === "sent" ? "Email monterju poslan" : "Email monterju ni uspel"}
                           </Badge>
-                          <span>{formatCommunicationTimestamp(latestInstallerEmailEvent.timestamp)}</span>
+                          <span>{formatCommunicationTimestamp(latestInstallerEmailMessage.sentAt ?? latestInstallerEmailMessage.createdAt)}</span>
                         </div>
-                        {latestInstallerEmailEvent.metadata?.to ? <div>Prejemnik: {latestInstallerEmailEvent.metadata.to}</div> : null}
-                        {latestInstallerEmailEvent.metadata?.subject ? <div>Zadeva: {latestInstallerEmailEvent.metadata.subject}</div> : null}
+                        {latestInstallerEmailMessage.to.length > 0 ? <div>Prejemnik: {latestInstallerEmailMessage.to.join(", ")}</div> : null}
+                        {latestInstallerEmailMessage.subjectFinal ? <div>Zadeva: {latestInstallerEmailMessage.subjectFinal}</div> : null}
                       </div>
                     ) : (
                       <span>Email monterju za ta delovni nalog še ni zabeležen kot poslan.</span>
@@ -2428,9 +2424,9 @@ export function LogisticsPanel({
                     size="sm"
                     className="h-8 gap-1.5"
                     onClick={() => void openInstallerPreparationEmailDialog()}
-                    disabled={savingWorkOrder || sendingInstallerEmail}
+                    disabled={savingWorkOrder || preparingInstallerEmail || sendingInstallerEmail}
                   >
-                    {sendingInstallerEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    {preparingInstallerEmail || sendingInstallerEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                     Pošlji email monterju
                   </Button>
                   {renderPdfActionGroup(
@@ -3029,11 +3025,17 @@ export function LogisticsPanel({
               Preglej podatke za pripravo montaže. Delovni nalog bo dodan kot PDF priponka.
             </DialogDescription>
           </DialogHeader>
-          {latestInstallerEmailEvent ? (
+          {latestInstallerEmailMessage ? (
             <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-              Zadnji status: {latestInstallerEmailEvent.type === "email_sent" ? "poslano" : "neuspešno"}{" "}
-              {formatCommunicationTimestamp(latestInstallerEmailEvent.timestamp)}
-              {latestInstallerEmailEvent.metadata?.to ? `, prejemnik: ${latestInstallerEmailEvent.metadata.to}` : ""}
+              Zadnji status: {latestInstallerEmailMessage.status === "sent" ? "poslano" : "neuspešno"}{" "}
+              {formatCommunicationTimestamp(latestInstallerEmailMessage.sentAt ?? latestInstallerEmailMessage.createdAt)}
+              {latestInstallerEmailMessage.to.length > 0 ? `, prejemnik: ${latestInstallerEmailMessage.to.join(", ")}` : ""}
+            </div>
+          ) : null}
+          {preparingInstallerEmail ? (
+            <div className="flex items-center gap-2 rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Pripravljam končni osnutek emaila ...
             </div>
           ) : null}
           <div className="grid gap-4 md:grid-cols-3">
@@ -3042,7 +3044,7 @@ export function LogisticsPanel({
               <Input
                 value={installerEmailDraft.to}
                 onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, to: event.target.value }))}
-                disabled={sendingInstallerEmail}
+                disabled={preparingInstallerEmail || sendingInstallerEmail}
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -3050,7 +3052,7 @@ export function LogisticsPanel({
               <Input
                 value={installerEmailDraft.cc}
                 onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, cc: event.target.value }))}
-                disabled={sendingInstallerEmail}
+                disabled={preparingInstallerEmail || sendingInstallerEmail}
               />
             </label>
             <label className="space-y-2 text-sm">
@@ -3058,7 +3060,7 @@ export function LogisticsPanel({
               <Input
                 value={installerEmailDraft.bcc}
                 onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, bcc: event.target.value }))}
-                disabled={sendingInstallerEmail}
+                disabled={preparingInstallerEmail || sendingInstallerEmail}
               />
             </label>
           </div>
@@ -3067,7 +3069,7 @@ export function LogisticsPanel({
             <Input
               value={installerEmailDraft.subject}
               onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, subject: event.target.value }))}
-              disabled={sendingInstallerEmail}
+              disabled={preparingInstallerEmail || sendingInstallerEmail}
             />
           </label>
           <label className="space-y-2 text-sm">
@@ -3076,7 +3078,7 @@ export function LogisticsPanel({
               rows={16}
               value={installerEmailDraft.body}
               onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, body: event.target.value }))}
-              disabled={sendingInstallerEmail}
+              disabled={preparingInstallerEmail || sendingInstallerEmail}
             />
           </label>
           <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
@@ -3089,7 +3091,7 @@ export function LogisticsPanel({
             <Button
               type="button"
               onClick={() => void handleSendInstallerPreparationEmail()}
-              disabled={sendingInstallerEmail || !installerEmailDraft.to.trim() || !installerEmailDraft.subject.trim() || !installerEmailDraft.body.trim()}
+              disabled={preparingInstallerEmail || sendingInstallerEmail || !installerEmailDraft.to.trim() || !installerEmailDraft.subject.trim() || !installerEmailDraft.body.trim()}
             >
               {sendingInstallerEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
               Pošlji

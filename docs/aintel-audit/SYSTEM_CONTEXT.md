@@ -72,7 +72,7 @@ Additional worktree: `/home/jaka/apps/aintel-staging/AIntel-web-intake`
 | Customer self-service accounts, self-help guides, campaigns | inteligent-portal (`inteligent_portal` db) |
 | Marketing content, lead capture UI | inteligent-si (static) |
 | Lead intake API + auto-offer engine | AIntel `web-inquiries` module |
-| Customer identity linking | Weak: portal ↔ AIntel joined by **email string**; AIntel client ↔ project joined by **customer name string** (see `DATA_MODEL.md`) |
+| Customer identity linking | Partially strengthened by AIN-P1-07: new AIntel Projects use `clientId`; portal ↔ AIntel still joins by **email string**, and legacy Projects still need `customer.name` fallback until owner-reviewed backfill (see `DATA_MODEL.md`) |
 
 ## Other processes on the VPS
 
@@ -83,5 +83,7 @@ Not audited; noted only to explain the process list.
 
 Outbound email is sent by AIntel via SMTP (nodemailer,
 `backend/modules/communication/services/email-transport.service.ts`; diagnostics logged
-at startup). The portal sends its own login/notification emails
+at startup). The AIntel transport supports a staging trap via
+`AINTEL_EMAIL_TRAP_TO` and `AINTEL_EMAIL_SUBJECT_PREFIX`; owner must enable those only
+in staging. The portal sends its own login/notification emails
 (`src/pomozno.js`). Two independent SMTP configurations — consolidation candidate.

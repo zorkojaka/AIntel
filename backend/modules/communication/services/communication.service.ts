@@ -15,6 +15,7 @@ import { CommunicationMessageModel } from "../schemas/message";
 import { CommunicationEventModel } from "../schemas/event";
 import {
   appendCommunicationFooter,
+  renderCommunicationBodyHtml,
   renderCommunicationFooterHtmlForEmail,
   buildTemplateContext,
   renderCommunicationTemplate,
@@ -164,15 +165,6 @@ function formatDate(value: Date | string | null | undefined) {
     month: "2-digit",
     year: "numeric",
   }).format(date);
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function toPublicLogoUrl(value: unknown) {
@@ -557,17 +549,7 @@ export async function sendInvoiceCommunicationEmail(input: {
   const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
 
   const bodyMainText = stripAppendedFooter(bodyWithoutFooter, renderedFooter);
-  const escapedMainHtml = bodyMainText
-    .split("\n")
-    .map((line) =>
-      line.trim()
-        ? `<div style="margin:0 0 8px 0;">${escapeHtml(line)}</div>`
-        : '<div style="height:8px;"></div>'
-    )
-    .join("");
-  const htmlFinal = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111827;">${escapedMainHtml}${
-    renderedFooterHtml ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;">${renderedFooterHtml}</div>` : ""
-  }</div>`;
+  const htmlFinal = renderCommunicationBodyHtml(bodyMainText, renderedFooterHtml);
 
   const selectedAttachments = Array.from(
     new Set(
@@ -789,17 +771,7 @@ export async function sendOfferCommunicationEmail(input: {
   }
 
   const bodyMainText = stripAppendedFooter(bodyWithoutFooter, renderedFooter);
-  const escapedMainHtml = bodyMainText
-    .split("\n")
-    .map((line) =>
-      line.trim()
-        ? `<div style="margin:0 0 8px 0;">${escapeHtml(line)}</div>`
-        : '<div style="height:8px;"></div>'
-    )
-    .join("");
-  const htmlFinal = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111827;">${escapedMainHtml}${
-    renderedFooterHtml ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;">${renderedFooterHtml}</div>` : ""
-  }</div>`;
+  const htmlFinal = renderCommunicationBodyHtml(bodyMainText, renderedFooterHtml);
 
   const selectedAttachments =
     Array.isArray(input.selectedAttachments) && input.selectedAttachments.length > 0
@@ -1044,17 +1016,7 @@ export async function sendWorkOrderConfirmationCommunicationEmail(input: {
   }
 
   const bodyMainText = stripAppendedFooter(bodyWithoutFooter, renderedFooter);
-  const escapedMainHtml = bodyMainText
-    .split("\n")
-    .map((line) =>
-      line.trim()
-        ? `<div style="margin:0 0 8px 0;">${escapeHtml(line)}</div>`
-        : '<div style="height:8px;"></div>'
-    )
-    .join("");
-  const htmlFinal = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111827;">${escapedMainHtml}${
-    renderedFooterHtml ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;">${renderedFooterHtml}</div>` : ""
-  }</div>`;
+  const htmlFinal = renderCommunicationBodyHtml(bodyMainText, renderedFooterHtml);
 
   const selectedAttachments = Array.from(
     new Set(
@@ -1226,6 +1188,11 @@ function formatWorkOrderExecutionDefinition(workOrder: any) {
   return lines;
 }
 
+export function normalizeWorkOrderObjectId(value: unknown) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized && isValidObjectId(normalized) ? normalized : null;
+}
+
 export async function sendInstallerPreparationEmail(input: {
   projectId: string;
   workOrderId: string;
@@ -1245,7 +1212,8 @@ export async function sendInstallerPreparationEmail(input: {
     role?: string | null;
   } | null;
 }) {
-  if (!isValidObjectId(input.workOrderId)) {
+  const workOrderId = normalizeWorkOrderObjectId(input.workOrderId);
+  if (!workOrderId) {
     throw new Error("Delovni nalog ni pravilno določen.");
   }
 
@@ -1259,7 +1227,7 @@ export async function sendInstallerPreparationEmail(input: {
 
   const [project, workOrder, globalSettings] = await Promise.all([
     ProjectModel.findOne({ id: input.projectId }),
-    WorkOrderModel.findOne({ _id: input.workOrderId, projectId: input.projectId }),
+    WorkOrderModel.findOne({ _id: workOrderId, projectId: input.projectId }),
     getSettings(),
   ]);
 
@@ -1386,23 +1354,13 @@ export async function sendInstallerPreparationEmail(input: {
     };
   }
   const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
-  const escapedMainHtml = bodyWithoutFooter
-    .split("\n")
-    .map((line) =>
-      line.trim()
-        ? `<div style="margin:0 0 8px 0;">${escapeHtml(line)}</div>`
-        : '<div style="height:8px;"></div>'
-    )
-    .join("");
-  const htmlFinal = `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111827;">${escapedMainHtml}${
-    renderedFooterHtml ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;">${renderedFooterHtml}</div>` : ""
-  }</div>`;
+  const htmlFinal = renderCommunicationBodyHtml(bodyWithoutFooter, renderedFooterHtml);
 
   const attachment = await resolveCommunicationAttachment({
     type: "work_order_pdf",
     projectId: input.projectId,
     offerId: workOrder.offerVersionId ?? null,
-    workOrderId: input.workOrderId,
+    workOrderId,
   });
   const selectedAttachmentRecords: CommunicationAttachmentRecord[] = [{
     type: attachment.type,
@@ -1412,7 +1370,7 @@ export async function sendInstallerPreparationEmail(input: {
   const baseMessage = {
     projectId: input.projectId,
     offerId: workOrder.offerVersionId ?? null,
-    workOrderId: input.workOrderId,
+    workOrderId,
     customerId: projectClient?.id ?? null,
     direction: "outbound" as const,
     channel: "email" as const,
@@ -1476,7 +1434,7 @@ export async function sendInstallerPreparationEmail(input: {
         metadata: {
           to: resolvedRecipients.join(", "),
           subject: subjectFinal,
-          workOrderId: input.workOrderId,
+          workOrderId,
           attachments: selectedAttachmentRecords.map((record) => record.filename).join(", "),
         },
       });
@@ -1504,7 +1462,7 @@ export async function sendInstallerPreparationEmail(input: {
       metadata: {
         to: resolvedRecipients.join(", "),
         subject: subjectFinal,
-        workOrderId: input.workOrderId,
+        workOrderId,
       },
     });
     throw error;
@@ -1518,6 +1476,17 @@ export async function listProjectCommunicationFeed(projectId: string, limit = 20
 
 export async function listOfferMessages(projectId: string, offerId: string) {
   const messages = await CommunicationMessageModel.find({ projectId, offerId }).sort({ createdAt: -1 }).lean();
+  return messages.map(serializeMessage);
+}
+
+export async function listInstallerPreparationMessages(projectId: string, workOrderId: string) {
+  const messages = await CommunicationMessageModel.find({
+    projectId,
+    workOrderId,
+    "selectedAttachments.type": "work_order_pdf",
+  })
+    .sort({ createdAt: -1 })
+    .lean();
   return messages.map(serializeMessage);
 }
 

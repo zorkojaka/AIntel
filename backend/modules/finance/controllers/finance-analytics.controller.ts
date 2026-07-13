@@ -13,6 +13,7 @@ import {
   setEmployeeProjectEarningPaid,
 } from '../services/finance-analytics.service';
 import { getProjectSnapshot, listFinanceSnapshots } from '../services/finance-snapshot.service';
+import { ROLE_ADMIN, ROLE_FINANCE } from '../../../utils/roles';
 
 function parseDate(value?: string) {
   if (!value) return undefined;
@@ -32,6 +33,35 @@ function buildRange(req: Request) {
   };
 }
 
+function getContextRoles(req: Request) {
+  const roles = (req as any).context?.roles;
+  return Array.isArray(roles) ? roles : [];
+}
+
+function isFinancePrivileged(req: Request) {
+  const roles = getContextRoles(req);
+  return roles.includes(ROLE_ADMIN) || roles.includes(ROLE_FINANCE);
+}
+
+function getActorEmployeeId(req: Request) {
+  const actorEmployeeId = (req as any).context?.actorEmployeeId;
+  return typeof actorEmployeeId === 'string' && actorEmployeeId.trim() ? actorEmployeeId.trim() : null;
+}
+
+function scopeSnapshotToEmployee(snapshot: any, employeeId: string) {
+  return {
+    ...snapshot,
+    items: [],
+    summary: {
+      totalSaleWithVat: 0,
+      totalSaleWithoutVat: 0,
+      totalPurchase: 0,
+      totalMargin: 0,
+    },
+    employeeEarnings: (snapshot.employeeEarnings ?? []).filter((entry: any) => String(entry.employeeId) === employeeId),
+  };
+}
+
 export async function monthlySummary(req: Request, res: Response) {
   const year = parseNumber(req.query.year as string, new Date().getFullYear());
   const data = await getMonthlySummary(year);
@@ -47,6 +77,10 @@ export async function employeesSummary(req: Request, res: Response) {
 export async function employeeProjectEarningDetail(req: Request, res: Response) {
   const employeeId = typeof req.params.employeeId === 'string' ? req.params.employeeId.trim() : '';
   const snapshotId = typeof req.params.snapshotId === 'string' ? req.params.snapshotId.trim() : '';
+  const actorEmployeeId = getActorEmployeeId(req);
+  if (!isFinancePrivileged(req) && (!actorEmployeeId || employeeId !== actorEmployeeId)) {
+    return res.fail('Ni dostopa.', 403);
+  }
   const data = await getEmployeeProjectEarningDetail(employeeId, snapshotId);
   if (!data) {
     return res.fail('Razčlemba zaslužka ni najdena.', 404);
@@ -55,9 +89,9 @@ export async function employeeProjectEarningDetail(req: Request, res: Response) 
 }
 
 function resolvePaidBy(req: Request) {
-  const authUserId = typeof (req as any).authUser?._id === 'string' ? (req as any).authUser._id : '';
+  const authUserId = (req as any).authUser?._id ? String((req as any).authUser._id) : '';
   if (authUserId) return authUserId;
-  const userId = typeof (req as any).user?._id === 'string' ? (req as any).user._id : '';
+  const userId = (req as any).user?._id ? String((req as any).user._id) : '';
   return userId || null;
 }
 
@@ -110,6 +144,33 @@ export async function snapshotsList(req: Request, res: Response) {
     projectId: projectId || undefined,
   });
   return res.success(data);
+}
+
+export async function myEarnings(req: Request, res: Response) {
+  const actorEmployeeId = getActorEmployeeId(req);
+  if (!actorEmployeeId) {
+    return res.fail('Zaposleni ni povezan z uporabnikom.', 403);
+  }
+  const page = Math.max(1, parseNumber(req.query.page as string, 1));
+  const limit = Math.min(200, Math.max(1, parseNumber(req.query.limit as string, 20)));
+  const filter = {
+    superseded: { $ne: true },
+    'employeeEarnings.employeeId': actorEmployeeId,
+  };
+  const [total, rows] = await Promise.all([
+    FinanceSnapshotModel.countDocuments(filter),
+    FinanceSnapshotModel.find(filter)
+      .sort({ issuedAt: -1, createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+  ]);
+  return res.success({
+    total,
+    page,
+    limit,
+    items: rows.map((snapshot) => scopeSnapshotToEmployee(snapshot, actorEmployeeId)),
+  });
 }
 
 export async function invoicesList(_req: Request, res: Response) {

@@ -77,18 +77,15 @@ function requireApiKey(req: Request, res: Response, next: NextFunction) {
   return next();
 }
 
-// AIN-P0-01: server-to-server routes (/clients/*) live behind a SEPARATE key that is
-// never shipped to a browser. During the rollout window the legacy browser key is still
-// accepted (dual-accept); remove that acceptance once both keys are rotated (spec step 3).
+// AIN-P0-01: server-to-server routes (/clients/*) live behind a separate key that is
+// never shipped to a browser.
 function requireServerApiKey(req: Request, res: Response, next: NextFunction) {
   const internalKey = process.env.AINTEL_INTERNAL_API_KEY?.trim();
-  const legacyKey = process.env.AINTEL_WEB_INQUIRY_API_KEY?.trim();
-  if (!internalKey && !legacyKey) {
+  if (!internalKey) {
     return res.status(503).json({ ok: false, code: 'NOT_CONFIGURED', message: 'Interni API ni omogočen (manjka AINTEL_INTERNAL_API_KEY).' });
   }
   const providedKey = (req.headers['x-api-key'] as string | undefined)?.trim();
-  const acceptedKeys = [internalKey, legacyKey].filter(Boolean);
-  if (!providedKey || !acceptedKeys.includes(providedKey)) {
+  if (providedKey !== internalKey) {
     return res.status(401).json({ ok: false, code: 'UNAUTHORIZED', message: 'Neveljaven API ključ.' });
   }
   return next();
@@ -218,20 +215,37 @@ router.post('/inquiries/:id/photos', (req: Request, res: Response) => {
 });
 
 // Oprema stranke (za portal "Moja oprema") - samo branje, server-to-server.
+// Stranko naslavljamo po clientId (stabilno; ECO-27), z e-mailom kot fallbackom za
+// prvi obisk - portal si clientId iz odgovora shrani in ga uporablja naprej.
+function resolveClientQuery(req: Request): { clientId: string | null; email: string | null; error?: string } {
+  const clientId = String(req.query.clientId ?? '').trim();
+  const email = String(req.query.email ?? '').trim().toLowerCase();
+  if (clientId) {
+    if (!mongoose.isValidObjectId(clientId)) return { clientId: null, email: null, error: 'Neveljaven clientId.' };
+    return { clientId, email: null };
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return { clientId: null, email: null, error: 'Neveljaven e-naslov.' };
+  return { clientId: null, email };
+}
+
 internalRouter.get('/equipment', async (req: Request, res: Response) => {
   try {
-    const email = String(req.query.email ?? '').trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-      return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: 'Neveljaven e-naslov.' });
+    const naslov = resolveClientQuery(req);
+    if (naslov.error) {
+      return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: naslov.error });
     }
     const { CrmClientModel } = await import('../crm/schemas/client');
     const { ProjectModel } = await import('../projects/schemas/project');
     const { OfferVersionModel } = await import('../projects/schemas/offer-version');
 
-    const client = await CrmClientModel.findOne({ email, isActive: true }).lean();
-    if (!client) return res.json({ ok: true, projects: [] });
+    const client = naslov.clientId
+      ? await CrmClientModel.findOne({ _id: naslov.clientId, isActive: true }).lean()
+      : await CrmClientModel.findOne({ email: naslov.email, isActive: true }).lean();
+    if (!client) return res.json({ ok: true, clientId: null, projects: [] });
 
-    const projects = await ProjectModel.find({ 'customer.name': client.name })
+    const projects = await ProjectModel.find({
+      $or: [{ clientId: client._id }, { clientId: null, 'customer.name': client.name }],
+    })
       .sort({ createdAt: -1 })
       .limit(20)
       .lean();
@@ -252,7 +266,7 @@ internalRouter.get('/equipment', async (req: Request, res: Response) => {
           .map((item: any) => ({ name: item.name, quantity: item.quantity })),
       });
     }
-    return res.json({ ok: true, projects: rezultat });
+    return res.json({ ok: true, clientId: String(client._id), projects: rezultat });
   } catch (error) {
     console.error('[web-inquiries] equipment', error);
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Opreme ni mogoče prebrati.' });
@@ -263,16 +277,25 @@ internalRouter.get('/equipment', async (req: Request, res: Response) => {
 // server-to-server. Povzetek brez postavk in brez internih opomb (defaultsApplied).
 internalRouter.get('/inquiries', async (req: Request, res: Response) => {
   try {
-    const email = String(req.query.email ?? '').trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-      return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: 'Neveljaven e-naslov.' });
+    const naslov = resolveClientQuery(req);
+    if (naslov.error) {
+      return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: naslov.error });
     }
-    const inquiries = await WebInquiryModel.find({ 'contact.email': email })
+    let clientId = naslov.clientId;
+    if (!clientId) {
+      const { CrmClientModel } = await import('../crm/schemas/client');
+      const client = await CrmClientModel.findOne({ email: naslov.email, isActive: true }).lean();
+      clientId = client ? String(client._id) : null;
+    }
+    const inquiries = await WebInquiryModel.find(
+      naslov.clientId ? { clientId: naslov.clientId } : { 'contact.email': naslov.email }
+    )
       .sort({ createdAt: -1 })
       .limit(20)
       .lean();
     return res.json({
       ok: true,
+      clientId,
       inquiries: inquiries.map((inquiry) => ({
         id: String(inquiry._id),
         createdAt: inquiry.createdAt,

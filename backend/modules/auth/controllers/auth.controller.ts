@@ -14,6 +14,11 @@ import {
   signSessionToken,
   verifyPassword,
 } from '../services/auth.service';
+import {
+  buildLoginRateLimitKey,
+  getLoginRateLimitConfig,
+  loginRateLimiter,
+} from '../services/login-rate-limit.service';
 
 const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 const RESET_EXPIRY_MS = 60 * 60 * 1000;
@@ -47,6 +52,10 @@ function buildAppUrl(req: Request) {
   return process.env.AINTEL_APP_URL || 'http://localhost:5173';
 }
 
+function getRequestIp(req: Request) {
+  return req.ip || req.socket?.remoteAddress || 'unknown';
+}
+
 export async function login(req: Request, res: Response) {
   const tenantId = resolveTenantId(req);
   if (!tenantId) {
@@ -57,6 +66,13 @@ export async function login(req: Request, res: Response) {
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
   if (!email || !password) {
     return res.fail('Email in geslo sta obvezna.', 400);
+  }
+
+  const rateLimitKey = buildLoginRateLimitKey({ tenantId, email, ip: getRequestIp(req) });
+  const rateLimit = loginRateLimiter.consume(rateLimitKey, getLoginRateLimitConfig());
+  if (!rateLimit.allowed) {
+    res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));
+    return res.fail('Preveč neuspešnih prijav. Poskusite znova kasneje.', 429);
   }
 
   const user = await UserModel.findOne({ tenantId, email, deletedAt: null });
@@ -74,6 +90,7 @@ export async function login(req: Request, res: Response) {
     return res.fail('Napačni podatki.', 401);
   }
 
+  loginRateLimiter.reset(rateLimitKey);
   const token = signSessionToken({ userId: String(user._id), tenantId });
   setSessionCookie(res, token);
   return res.success({ success: true });
