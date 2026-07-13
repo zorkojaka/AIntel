@@ -1479,6 +1479,17 @@ export async function listOfferMessages(projectId: string, offerId: string) {
   return messages.map(serializeMessage);
 }
 
+export async function listInstallerPreparationMessages(projectId: string, workOrderId: string) {
+  const messages = await CommunicationMessageModel.find({
+    projectId,
+    workOrderId,
+    "selectedAttachments.type": "work_order_pdf",
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+  return messages.map(serializeMessage);
+}
+
 export async function getCommunicationMessage(projectId: string, messageId: string) {
   const message = await CommunicationMessageModel.findOne({ _id: messageId, projectId }).lean();
   return message ? serializeMessage(message) : null;

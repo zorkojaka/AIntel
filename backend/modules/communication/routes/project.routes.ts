@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   getCommunicationMessageController,
+  getInstallerPreparationMessagesController,
   getOfferMessagesController,
   getProjectCommunicationFeedController,
 } from "../controllers/project-communication.controller";
@@ -23,6 +24,7 @@ router.get("/:projectId/review-link", async (req, res) => {
 
 router.get("/:projectId/communication/feed", getProjectCommunicationFeedController);
 router.get("/:projectId/offers/:offerVersionId/messages", getOfferMessagesController);
+router.get("/:projectId/work-orders/:workOrderId/installer-preparation-messages", getInstallerPreparationMessagesController);
 router.get("/:projectId/messages/:messageId", getCommunicationMessageController);
 
 export default router;

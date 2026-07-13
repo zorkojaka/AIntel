@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import {
   buildActorDisplayName,
   getCommunicationMessage,
+  listInstallerPreparationMessages,
   listOfferMessages,
   sendInvoiceCommunicationEmail,
   listProjectCommunicationFeed,
@@ -202,6 +203,20 @@ export async function getOfferMessagesController(req: Request, res: Response) {
     return res.success(messages);
   } catch (error) {
     console.error("Offer messages load failed", error);
+    return res.fail("Sporočil ni mogoče naložiti.", 500);
+  }
+}
+
+export async function getInstallerPreparationMessagesController(req: Request, res: Response) {
+  try {
+    const workOrderId = normalizeWorkOrderObjectId(req.params.workOrderId);
+    if (!workOrderId) {
+      return res.fail("Delovni nalog ni pravilno določen.", 400);
+    }
+    const messages = await listInstallerPreparationMessages(req.params.projectId, workOrderId);
+    return res.success(messages);
+  } catch (error) {
+    console.error("Installer preparation messages load failed", error);
     return res.fail("Sporočil ni mogoče naložiti.", 500);
   }
 }
