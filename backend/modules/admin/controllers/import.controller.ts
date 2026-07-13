@@ -15,6 +15,7 @@ import {
 const SOURCE_PATHS: Record<string, string | null> = {
   aa_api: 'backend/data/cenik/aa_api_produkti.json',
   services_sheet: 'backend/data/cenik/custom_storitve.json',
+  blebox: 'backend/data/cenik/blebox_produkti.json',
   dodatki: null,
   excel: null,
 };

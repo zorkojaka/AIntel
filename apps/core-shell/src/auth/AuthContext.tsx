@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 
 type AuthUser = {
   id: string;
@@ -54,12 +55,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
     throw new Error('Neveljaven odgovor streznika.');
   }
 
-  const payload = await response.json();
-  if (!response.ok || payload?.success === false) {
-    const error = payload?.error ?? 'Prislo je do napake';
-    throw new Error(error);
-  }
-  return payload?.data as T;
+  return parseApiEnvelope<T>(response, 'Prislo je do napake');
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -133,4 +129,3 @@ export function useAuth() {
   }
   return context;
 }
-

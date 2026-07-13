@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Camera, ChevronDown, ChevronRight, Image as ImageIcon, Loader2 } from "lucide-react";
+import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import type {
   ProjectExecutionDefinitionItem,
   WorkOrderExecutionSpec,
@@ -16,6 +17,7 @@ import { Input } from "../../components/ui/input";
 type ExecutionDefinitionPanelProps = {
   projectId: string;
   offerVersionId?: string | null;
+  refreshToken?: unknown;
 };
 
 type PreparationPhoto = {
@@ -24,13 +26,6 @@ type PreparationPhoto = {
   url: string;
   thumbnailUrl?: string;
   originalName?: string;
-};
-
-type PhotosResponse = {
-  success: boolean;
-  data?: {
-    photos?: PreparationPhoto[];
-  };
 };
 
 type ProjectExecutionLocation = {
@@ -303,8 +298,8 @@ export function PreparationPhotoThumbnails({
               credentials: "same-origin",
               signal: controller.signal,
             });
-            const payload = (await response.json()) as PhotosResponse;
-            return response.ok && payload.success ? payload.data?.photos ?? [] : [];
+            const payload = await parseApiEnvelope<{ photos?: PreparationPhoto[] }>(response, "Fotografij ni mogoče naložiti.");
+            return payload?.photos ?? [];
           }),
         );
         if (!alive) return;
@@ -402,9 +397,9 @@ function ProjectPlanPhotoSection({
           credentials: "same-origin",
           signal: controller.signal,
         });
-        const payload = (await response.json()) as PhotosResponse;
+        const payload = await parseApiEnvelope<{ photos?: PreparationPhoto[] }>(response, "Fotografij ni mogoče naložiti.");
         if (!alive) return;
-        setPhotos(response.ok && payload.success ? dedupePhotos(payload.data?.photos ?? []) : []);
+        setPhotos(dedupePhotos(payload?.photos ?? []));
       } catch (error: any) {
         if (!alive || error?.name === "AbortError") return;
         setPhotos([]);
@@ -476,7 +471,7 @@ function ProjectPlanPhotoSection({
   );
 }
 
-export function ExecutionDefinitionPanel({ projectId, offerVersionId }: ExecutionDefinitionPanelProps) {
+export function ExecutionDefinitionPanel({ projectId, offerVersionId, refreshToken }: ExecutionDefinitionPanelProps) {
   const [items, setItems] = useState<ProjectExecutionDefinitionItem[]>([]);
   const [locations, setLocations] = useState<ProjectExecutionLocation[]>([]);
   const [loading, setLoading] = useState(false);
@@ -495,13 +490,12 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
     try {
       const params = new URLSearchParams({ offerVersionId });
       const response = await fetch(`/api/projects/${projectId}/execution-definition?${params.toString()}`);
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Definicije izvedbe ni bilo mogoče naložiti.");
-        return;
-      }
-      const nextItems = Array.isArray(payload.data?.items) ? payload.data.items : [];
-      const nextLocations = Array.isArray(payload.data?.locations) ? payload.data.locations : [];
+      const payload = await parseApiEnvelope<{ items?: ProjectExecutionDefinitionItem[]; locations?: ProjectExecutionLocation[] }>(
+        response,
+        "Definicije izvedbe ni bilo mogoče naložiti.",
+      );
+      const nextItems = Array.isArray(payload?.items) ? payload.items : [];
+      const nextLocations = Array.isArray(payload?.locations) ? payload.locations : [];
       setItems(nextItems);
       setLocations(buildLocationRows(nextItems, nextLocations));
     } catch (error) {
@@ -514,7 +508,7 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
 
   useEffect(() => {
     void loadDefinition();
-  }, [loadDefinition]);
+  }, [loadDefinition, refreshToken]);
 
   const updateUnit = (itemId: string, index: number, changes: Partial<WorkOrderExecutionUnit>) => {
     setItems((current) =>
@@ -610,13 +604,12 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId }: Executio
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ offerVersionId, locations, items }),
       });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Definicije izvedbe ni bilo mogoče shraniti.");
-        return;
-      }
-      const nextItems = Array.isArray(payload.data?.items) ? payload.data.items : items;
-      const nextLocations = Array.isArray(payload.data?.locations) ? payload.data.locations : locations;
+      const payload = await parseApiEnvelope<{ items?: ProjectExecutionDefinitionItem[]; locations?: ProjectExecutionLocation[] }>(
+        response,
+        "Definicije izvedbe ni bilo mogoče shraniti.",
+      );
+      const nextItems = Array.isArray(payload?.items) ? payload.items : items;
+      const nextLocations = Array.isArray(payload?.locations) ? payload.locations : locations;
       setItems(nextItems);
       setLocations(buildLocationRows(nextItems, nextLocations));
       toast.success("Definicija izvedbe shranjena.");

@@ -224,11 +224,15 @@ export async function predlagajSnemalnik(skupajKamer: number, dominantenBrand?: 
   };
   if (potrebujePoE) baseQuery['classification.nvrHasPoE'] = true;
 
+  // AIN-P1-16: med ustreznimi zmaga najpogosteje prodan (lastnikova usmeritev:
+  // »ni najdražje, prav je največ prodajano«), cena je šele izenačevalec.
   const brand = normalizeText(dominantenBrand);
   const branded = brand
-    ? await ProductModel.findOne({ ...baseQuery, 'classification.manufacturer': brand }).sort({ prodajnaCena: 1 }).lean()
+    ? await ProductModel.findOne({ ...baseQuery, 'classification.manufacturer': brand })
+        .sort({ 'salesStats.soldQty365': -1, prodajnaCena: 1 })
+        .lean()
     : null;
-  return branded ?? ProductModel.findOne(baseQuery).sort({ prodajnaCena: 1 }).lean();
+  return branded ?? ProductModel.findOne(baseQuery).sort({ 'salesStats.soldQty365': -1, prodajnaCena: 1 }).lean();
 }
 
 export async function predlagajPoESwitch(potrebnoPortov: number) {
@@ -240,7 +244,7 @@ export async function predlagajPoESwitch(potrebnoPortov: number) {
     'classification.switchSpeed': 'gigabit',
     isActive: true,
   })
-    .sort({ 'classification.poePortCount': 1, prodajnaCena: 1 })
+    .sort({ 'classification.poePortCount': 1, 'salesStats.soldQty365': -1, prodajnaCena: 1 })
     .lean();
 }
 
@@ -251,7 +255,7 @@ export async function predlagajDisk(tb: number, surveillance = true) {
     ...(surveillance ? { 'classification.isSurveillanceDisk': true } : {}),
     isActive: true,
   })
-    .sort({ 'classification.diskCapacityTB': 1, prodajnaCena: 1 })
+    .sort({ 'classification.diskCapacityTB': 1, 'salesStats.soldQty365': -1, prodajnaCena: 1 })
     .lean();
 }
 
@@ -270,7 +274,7 @@ export async function predlagajNosilce(kameraId: string) {
       'classification.bracketCodeOwn': { $in: compatibleCodes },
       isActive: true,
     })
-      .sort({ prodajnaCena: 1 })
+      .sort({ 'salesStats.soldQty365': -1, prodajnaCena: 1 })
       .lean();
   }
 
@@ -280,7 +284,7 @@ export async function predlagajNosilce(kameraId: string) {
     ...(manufacturer ? { 'classification.manufacturer': manufacturer } : {}),
     isActive: true,
   })
-    .sort({ prodajnaCena: 1 })
+    .sort({ 'salesStats.soldQty365': -1, prodajnaCena: 1 })
     .lean();
 }
 
@@ -482,7 +486,11 @@ async function addConfiguredExecutionRequests(
     const estimates = systemEntry.sistem.execution?.estimates ?? {};
 
     for (const service of scenario?.storitve ?? []) {
-      let quantity = quantityFromRule(service, Math.max(1, totalCameraCount), undefined, estimates);
+      // per_unit scenario services scale with the CAMERA count: systems without
+      // cameras (alarm, domofon, pametni dom) must not get a phantom camera
+      // installation line (2026-07-09). fixed/per_classification_field rules
+      // are unaffected (the latter clamps its multiplier to >= 1 itself).
+      let quantity = quantityFromRule(service, totalCameraCount, undefined, estimates);
       if (service.quantityRule?.type === 'per_classification_field') {
         quantity = Number(getByPath(estimates, service.quantityRule.field)) || 0;
       }
@@ -690,6 +698,10 @@ export async function nadaljujNaPonudbo(zahtevaId: string, tenantId = 'inteligen
   zahteva.status = 'koncana';
   zahteva.generatedQuoteId = ponudba._id;
   await zahteva.save();
+
+  // Ponudba obstaja → projekt preide iz 'draft' v 'offered', enako kot pot prek
+  // zavihka Ponudbe (offer-version.controller); sicer faza projekta obstane.
+  await ProjectModel.updateOne({ id: projectKey, status: 'draft' }, { $set: { status: 'offered' } });
 
   return ponudba;
 }

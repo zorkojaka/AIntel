@@ -16,6 +16,7 @@ interface MaterialOrderDocument extends Document {
     note?: string;
     dobavitelj?: string;
     naslovDobavitelja?: string;
+    supplierKey?: string;
     materialStep?: "Za naročiti" | "Naročeno" | "Za prevzem" | "Prevzeto" | "Pripravljeno";
     isExtra?: boolean;
   }[];
@@ -24,6 +25,7 @@ interface MaterialOrderDocument extends Document {
   pickupLocation?: string | null;
   logisticsOwnerId?: Types.ObjectId | null;
   pickupNote?: string | null;
+  expectedAt?: Date | null;
   pickupConfirmedAt?: Date | null;
   pickupConfirmedBy?: string | null;
   status: "draft" | "ordered" | "received" | "cancelled";
@@ -45,6 +47,7 @@ const materialItemSchema = new Schema(
     note: { type: String },
     dobavitelj: { type: String, trim: true, default: "" },
     naslovDobavitelja: { type: String, trim: true, default: "" },
+    supplierKey: { type: String, trim: true, default: "brez-dobavitelja" },
     materialStep: {
       type: String,
       enum: ["Za naročiti", "Naročeno", "Za prevzem", "Prevzeto", "Pripravljeno"],
@@ -70,6 +73,7 @@ const materialOrderSchema = new Schema<MaterialOrderDocument>(
     pickupLocation: { type: String, default: null },
     logisticsOwnerId: { type: Schema.Types.ObjectId, ref: "Employee", default: null },
     pickupNote: { type: String, default: null },
+    expectedAt: { type: Date, default: null },
     pickupConfirmedAt: { type: Date, default: null },
     pickupConfirmedBy: { type: String, default: null },
     status: { type: String, enum: ["draft", "ordered", "received", "cancelled"], default: "draft" },
@@ -86,5 +90,6 @@ const materialOrderSchema = new Schema<MaterialOrderDocument>(
 
 materialOrderSchema.index({ projectId: 1, offerVersionId: 1 });
 materialOrderSchema.index({ assignedEmployeeIds: 1, projectId: 1 });
+materialOrderSchema.index({ expectedAt: 1, materialStatus: 1 });
 
 export const MaterialOrderModel = model<MaterialOrderDocument>("MaterialOrder", materialOrderSchema);

@@ -26,6 +26,7 @@ export interface WebInquirySettingsDocument extends Document {
   };
   alarm: {
     centralaProductId: Types.ObjectId | null;
+    centrala2ProductId: Types.ObjectId | null;
     sensorAProductId: Types.ObjectId | null;
     sensorBProductId: Types.ObjectId | null;
     sensorCProductId: Types.ObjectId | null;
@@ -85,6 +86,7 @@ const WebInquirySettingsSchema = new Schema<WebInquirySettingsDocument>(
     },
     alarm: {
       centralaProductId: { type: Schema.Types.ObjectId, ref: 'Product', default: null },
+      centrala2ProductId: { type: Schema.Types.ObjectId, ref: 'Product', default: null },
       sensorAProductId: { type: Schema.Types.ObjectId, ref: 'Product', default: null },
       sensorBProductId: { type: Schema.Types.ObjectId, ref: 'Product', default: null },
       sensorCProductId: { type: Schema.Types.ObjectId, ref: 'Product', default: null },

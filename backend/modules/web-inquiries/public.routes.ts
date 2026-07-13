@@ -4,9 +4,23 @@ import path from 'path';
 import multer from 'multer';
 import mongoose from 'mongoose';
 import { Router, type NextFunction, type Request, type Response } from 'express';
-import { getWebInquiryOptions, getWebIzdelki, PILLAR_LABELS, processWebInquiry, validateWebInquiryPayload, WebInquiryError } from './web-inquiry.service';
+import { fireRule, onServiceTicketReported, onWebInquiryNextStep, onWebInquiryProcessed } from '../scheduler/rules';
+import { createServiceTicket, listServiceTickets, type ActorContext } from '../service/service-ticket.service';
+import { listClientDocuments, generateClientDocument } from '../documents/client-documents.service';
+import {
+  assertInquiryQuota,
+  buildWebOfferValuePayload,
+  getWebInquiryOptions,
+  getWebIzdelki,
+  getWebKatalog,
+  PILLAR_LABELS,
+  processWebInquiry,
+  validateWebInquiryPayload,
+  WebInquiryError,
+} from './web-inquiry.service';
 import { WebInquiryModel } from './web-inquiry.model';
 import { getReviewByToken, listApprovedReviews, submitReview } from '../reviews/review.service';
+import { OfferVersionModel } from '../projects/schemas/offer-version';
 
 const UPLOAD_BASE_DIR = '/var/www/aintel/uploads/web-inquiries';
 const PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -42,10 +56,14 @@ const DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
 
 const requestLog = new Map<string, number[]>();
 
+// ECO-18/S10: nginx (proxy_add_x_forwarded_for) doda resnični IP odjemalca na
+// KONEC X-Forwarded-For — prve vnose lahko podtakne odjemalec sam. Zato beremo
+// zadnji vnos, ne prvega (prej je bil limit izogibljiv s poljubnim XFF).
 function clientIp(req: Request) {
   const forwarded = req.headers['x-forwarded-for'];
   if (typeof forwarded === 'string' && forwarded.length > 0) {
-    return forwarded.split(',')[0].trim();
+    const deli = forwarded.split(',');
+    return deli[deli.length - 1].trim();
   }
   return req.ip ?? 'unknown';
 }
@@ -127,6 +145,22 @@ router.get('/products', async (_req: Request, res: Response) => {
   }
 });
 
+// ECO-34: full catalogue for the static website build (same auth as /products).
+const katalogCache: { data: unknown; cas: number; limit: number } = { data: null, cas: 0, limit: 0 };
+router.get('/catalog', async (req: Request, res: Response) => {
+  try {
+    const limit = Math.max(1, Math.min(500, Number(req.query?.limit) || 100));
+    if (!katalogCache.data || katalogCache.limit !== limit || Date.now() - katalogCache.cas > 10 * 60 * 1000) {
+      katalogCache.data = await getWebKatalog(limit);
+      katalogCache.cas = Date.now();
+      katalogCache.limit = limit;
+    }
+    return res.json({ ok: true, groups: katalogCache.data });
+  } catch (error) {
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: error instanceof Error ? error.message : 'Napaka strežnika.' });
+  }
+});
+
 router.post('/inquiries', async (req: Request, res: Response) => {
   const ip = clientIp(req);
   if (isRateLimited(ip)) {
@@ -142,6 +176,7 @@ router.post('/inquiries', async (req: Request, res: Response) => {
       createdAt: { $gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
     }).sort({ createdAt: -1 });
     if (duplicate) {
+      const duplicateOffer = duplicate.offerId ? await OfferVersionModel.findById(duplicate.offerId).lean() : null;
       return res.json({
         ok: true,
         inquiryId: String(duplicate._id),
@@ -150,13 +185,27 @@ router.post('/inquiries', async (req: Request, res: Response) => {
             ? 'Povpraševanje smo že prejeli – informativna ponudba je bila poslana na vaš e-naslov.'
             : 'Povpraševanje smo že prejeli in ga obdelujemo.',
         offerSummary: duplicate.offerNumber
-          ? { offerNumber: duplicate.offerNumber, totalWithVat: duplicate.offerTotalWithVat, currency: 'EUR' }
+          ? {
+              offerNumber: duplicate.offerNumber,
+              totalWithVat: duplicate.offerTotalWithVat,
+              currency: 'EUR',
+              value: await buildWebOfferValuePayload(duplicateOffer, payload),
+            }
           : undefined,
         duplicate: true,
       });
     }
 
+    // ECO-18/S10: trajne kvote (baza) — namerno ZA duplicate preverbo, da ponovna
+    // oddaja iste stranke vrne obstoječo ponudbo in ne 429.
+    await assertInquiryQuota(payload.contact.email);
+
     const result = await processWebInquiry(payload);
+    // AIN-P1-11: kolo — prvi kontakt (opravilo za prodajo). Fire-and-forget.
+    fireRule(
+      onWebInquiryProcessed(result.inquiry, Boolean(result.offerNumber) && result.emailSent),
+      'inquiry.first_contact',
+    );
     return res.status(201).json({
       ok: true,
       inquiryId: String(result.inquiry._id),
@@ -168,6 +217,7 @@ router.post('/inquiries', async (req: Request, res: Response) => {
             currency: 'EUR',
             emailSent: result.emailSent,
             discountPercent: Number((result.inquiry as any).meta?.discountPercent) || 0,
+            value: result.offerValuePayload ?? null,
           }
         : undefined,
     });
@@ -175,7 +225,7 @@ router.post('/inquiries', async (req: Request, res: Response) => {
     if (error instanceof WebInquiryError) {
       return res.status(error.statusCode).json({ ok: false, code: error.code, message: error.message });
     }
-    console.error('[web-inquiries] Nepričakovana napaka', error);
+    (req as any).log?.error({ err: error }, '[web-inquiries] Nepričakovana napaka');
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Napaka strežnika. Poskusite znova ali nas pokličite.' });
   }
 });
@@ -208,7 +258,7 @@ router.post('/inquiries/:id/photos', (req: Request, res: Response) => {
       await inquiry.save();
       return res.json({ ok: true, uploaded: records.length, totalPhotos: inquiry.photos.length });
     } catch (error) {
-      console.error('[web-inquiries] Napaka pri shranjevanju slik', error);
+      (req as any).log?.error({ err: error }, '[web-inquiries] Napaka pri shranjevanju slik');
       return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Slik ni bilo mogoče shraniti.' });
     }
   });
@@ -268,7 +318,7 @@ internalRouter.get('/equipment', async (req: Request, res: Response) => {
     }
     return res.json({ ok: true, clientId: String(client._id), projects: rezultat });
   } catch (error) {
-    console.error('[web-inquiries] equipment', error);
+    (req as any).log?.error({ err: error }, '[web-inquiries] equipment');
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Opreme ni mogoče prebrati.' });
   }
 });
@@ -309,8 +359,132 @@ internalRouter.get('/inquiries', async (req: Request, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error('[web-inquiries] inquiries', error);
+    (req as any).log?.error({ err: error }, '[web-inquiries] inquiries');
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Povpraševanj ni mogoče prebrati.' });
+  }
+});
+
+// AIN-P2-08 rez 3: portalni servisni zahtevki (ECO-28). Interni (server-to-server)
+// klic iz portala z internim ključem; klient je določen s clientId/email.
+const SYSTEM_CTX: ActorContext = { tenantId: 'inteligent', actorUserId: '', actorEmployeeId: null, roles: [] };
+
+async function resolveClientId(naslov: { clientId: string | null; email: string | null }): Promise<string | null> {
+  if (naslov.clientId) return naslov.clientId;
+  const { CrmClientModel } = await import('../crm/schemas/client');
+  const client = await CrmClientModel.findOne({ email: naslov.email, isActive: true }).lean();
+  return client ? String(client._id) : null;
+}
+
+// Bralni pregled zahtevkov stranke (portal: seznam + statusi).
+internalRouter.get('/service-tickets', async (req: Request, res: Response) => {
+  try {
+    const naslov = resolveClientQuery(req);
+    if (naslov.error) return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: naslov.error });
+    const clientId = await resolveClientId(naslov);
+    // Portal: praviloma je klient v CRM (clientId), a zahtevke brez CRM povezave
+    // beremo prek kontaktnega e-naslova (fallback).
+    const tickets = await listServiceTickets(SYSTEM_CTX, clientId ? { clientId } : { email: naslov.email });
+    return res.json({
+      ok: true,
+      clientId,
+      tickets: tickets.map((t) => ({
+        id: String(t._id),
+        createdAt: t.createdAt,
+        status: t.status,
+        subject: t.subject,
+        description: t.description,
+        priority: t.priority,
+        source: t.source,
+        scheduledAt: t.scheduledAt ?? null,
+        resolvedAt: t.resolvedAt ?? null,
+        projectId: t.projectId ?? null,
+      })),
+    });
+  } catch (error) {
+    (req as any).log?.error({ err: error }, '[web-inquiries] service-tickets read');
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Servisnih zahtevkov ni mogoče prebrati.' });
+  }
+});
+
+// Oddaja servisnega zahtevka iz portala (intake). Klient iz clientId/email +
+// kontakt/predmet/opis. Sproži kolo pravilo service.ticket_intake (privzeto OFF).
+internalRouter.post('/service-tickets', async (req: Request, res: Response) => {
+  try {
+    const body = req.body ?? {};
+    const naslov = resolveClientQuery({ query: { clientId: body.clientId, email: body.email } } as any);
+    if (naslov.error) return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: naslov.error });
+    const subject = String(body.subject ?? '').trim();
+    if (!subject) return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: 'Predmet zahtevka je obvezen.' });
+
+    const clientId = await resolveClientId(naslov);
+    const ticket = await createServiceTicket(SYSTEM_CTX, {
+      subject,
+      description: body.description,
+      source: 'portal',
+      priority: body.priority,
+      client: { id: clientId ?? undefined, name: body.clientName },
+      projectId: body.projectId,
+      contact: { name: body.contactName, email: naslov.email ?? body.email, phone: body.phone },
+      dedupeKey: body.dedupeKey ? `portal:${String(body.dedupeKey).slice(0, 180)}` : undefined,
+      createdByKind: 'portal',
+    });
+    // Kolo: triaža zahtevka (fire-and-forget).
+    fireRule(
+      onServiceTicketReported({
+        _id: ticket._id as mongoose.Types.ObjectId,
+        subject: ticket.subject,
+        description: ticket.description,
+        priority: ticket.priority,
+        source: ticket.source,
+        client: { id: ticket.client?.id, name: ticket.client?.name },
+        contact: { phone: ticket.contact?.phone, email: ticket.contact?.email },
+      }),
+      'service.ticket_intake',
+    );
+    return res.status(201).json({ ok: true, ticketId: String(ticket._id), status: ticket.status });
+  } catch (error) {
+    if (error instanceof WebInquiryError) {
+      return res.status(error.statusCode).json({ ok: false, code: error.code, message: error.message });
+    }
+    if ((error as any)?.statusCode) {
+      return res.status((error as any).statusCode).json({ ok: false, code: 'VALIDATION_ERROR', message: (error as any).message });
+    }
+    (req as any).log?.error({ err: error }, '[web-inquiries] service-tickets intake');
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Servisnega zahtevka ni bilo mogoče oddati.' });
+  }
+});
+
+// ECO-29: seznam dokumentov stranke (ponudbe/računi) s podpisanimi žetoni (interni).
+internalRouter.get('/documents', async (req: Request, res: Response) => {
+  try {
+    const naslov = resolveClientQuery(req);
+    if (naslov.error) return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: naslov.error });
+    const { clientId, documents } = await listClientDocuments(naslov);
+    return res.json({ ok: true, clientId, documents });
+  } catch (error) {
+    (req as any).log?.error({ err: error }, '[web-inquiries] documents list');
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Dokumentov ni mogoče prebrati.' });
+  }
+});
+
+// ECO-29: prenos dokumenta prek PODPISANEGA žetona (server-to-server iz portala z
+// internim ključem; brskalnik govori samo s portalom). Žeton je kratkoživ in vezan
+// na stranko+dokument. PDF se generira na zahtevo.
+internalRouter.get('/documents/download', async (req: Request, res: Response) => {
+  try {
+    const token = String(req.query.token ?? '');
+    const result = await generateClientDocument(token);
+    if ('error' in result) {
+      const status = result.error === 'INVALID' ? 403 : 404;
+      const message = result.error === 'INVALID' ? 'Povezava ni veljavna ali je potekla.' : 'Dokument ni na voljo.';
+      return res.status(status).json({ ok: false, code: result.error, message });
+    }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+    return res.end(result.buffer);
+  } catch (error) {
+    (req as any).log?.error({ err: error }, '[web-inquiries] document download');
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Dokumenta ni mogoče pripraviti.' });
   }
 });
 
@@ -367,10 +541,12 @@ router.post('/inquiries/:id/next-step', async (req: Request, res: Response) => {
       return res.status(404).json({ ok: false, code: 'NOT_FOUND', message: 'Povpraševanje ni najdeno.' });
     }
     inquiry.nextStep = { choice: choice as any, note, chosenAt: new Date() };
+    // AIN-P1-11: kolo — stranka je izbrala naslednji korak (posvet/ogled/avans).
+    fireRule(onWebInquiryNextStep(inquiry, choice), 'inquiry.next_step');
     await inquiry.save();
     return res.json({ ok: true, message: NEXT_STEP_MESSAGES[choice] });
   } catch (error) {
-    console.error('[web-inquiries] Napaka pri naslednjem koraku', error);
+    (req as any).log?.error({ err: error }, '[web-inquiries] Napaka pri naslednjem koraku');
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Izbire ni bilo mogoče shraniti.' });
   }
 });

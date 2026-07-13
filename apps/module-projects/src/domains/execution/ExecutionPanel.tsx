@@ -1,4 +1,5 @@
 ﻿import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
 import { Textarea } from "../../components/ui/textarea";
@@ -21,10 +22,12 @@ import type {
 } from "@aintel/shared/types/logistics";
 import { cn } from "../../components/ui/utils";
 import { MaterialOrderCard } from "../logistics/MaterialOrderCard";
+import { PriceListProductAutocomplete } from "../../components/PriceListProductAutocomplete";
 import { SignaturePad } from "./SignaturePad";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
 import type { Employee } from "@aintel/shared/types/employee";
+import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
 import { WorkOrderConfirmationComposeDialog } from "../communication/WorkOrderConfirmationComposeDialog";
 import { useSettingsData } from "@aintel/module-settings";
 
@@ -71,14 +74,6 @@ type PreparationPhoto = {
   thumbnailUrl?: string;
   originalName?: string;
   uploadedAt?: string | null;
-};
-
-type PhotosResponse = {
-  success: boolean;
-  data?: {
-    photos?: PreparationPhoto[];
-  };
-  error?: string | null;
 };
 
 function normalizeExecutionMode(value: WorkOrderExecutionSpec["mode"] | undefined) {
@@ -210,9 +205,9 @@ function PreparationPhotoThumbnails({
           credentials: "same-origin",
           signal: controller.signal,
         });
-        const payload = (await response.json()) as PhotosResponse;
-        if (!alive || !response.ok || !payload.success) return;
-        setPhotos(dedupePhotos(payload.data?.photos ?? []));
+        const payload = await parseApiEnvelope<{ photos?: PreparationPhoto[] }>(response, "Fotografij ni mogoče naložiti.");
+        if (!alive) return;
+        setPhotos(dedupePhotos(payload?.photos ?? []));
       } catch (error: any) {
         if (!alive || error?.name === "AbortError") return;
         setPhotos([]);
@@ -634,9 +629,9 @@ export function ExecutionPanel({
     const fetchEmployees = async () => {
       try {
         const response = await fetch("/api/employees");
-        const payload = await response.json();
+        const payload = await parseApiEnvelope<Employee[]>(response, "Zaposlenih ni mogoče naložiti.");
         if (!alive) return;
-        setEmployees(Array.isArray(payload?.data) ? payload.data : []);
+        setEmployees(Array.isArray(payload) ? payload : []);
       } catch {
         if (!alive) return;
         setEmployees([]);
@@ -653,11 +648,11 @@ export function ExecutionPanel({
     const fetchMe = async () => {
       try {
         const response = await fetch("/api/auth/me", { credentials: "include" });
-        const payload = await response.json();
+        const payload = await parseApiEnvelope<any>(response, "Prijave ni mogoče preveriti.");
         if (!alive) return;
-        setCurrentEmployeeId(typeof payload?.data?.employee?.id === "string" ? payload.data.employee.id : null);
-        const employeeId = typeof payload?.data?.employee?.id === "string" ? payload.data.employee.id : null;
-        const roles = Array.isArray(payload?.data?.employee?.roles) ? payload.data.employee.roles : [];
+        setCurrentEmployeeId(typeof payload?.employee?.id === "string" ? payload.employee.id : null);
+        const employeeId = typeof payload?.employee?.id === "string" ? payload.employee.id : null;
+        const roles = Array.isArray(payload?.employee?.roles) ? payload.employee.roles : [];
         setCurrentEmployeeId(employeeId);
         setViewerRoles(roles.filter((role: unknown): role is string => typeof role === "string"));
       } catch {
@@ -1110,6 +1105,11 @@ export function ExecutionPanel({
         return false;
       }
       const draft = options?.draftOverride ?? getDraftValues(order);
+      const incompleteExtraItem = (draft.items ?? []).find((item) => item.isExtra && !item.productId);
+      if (!options?.statusOnly && incompleteExtraItem) {
+        toast.error("Dodatna naloga mora biti izbrana iz cenika.");
+        return false;
+      }
       const requestBody = options?.statusOnly
         ? {
             workOrderId: orderId,
@@ -1130,13 +1130,7 @@ export function ExecutionPanel({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(requestBody),
         });
-        const payload = await response.json();
-        if (!payload.success) {
-          setSavingStates((prev) => ({ ...prev, [orderId]: "error" }));
-          toast.error(payload.error ?? "Delovnega naloga ni mogoče shraniti.");
-          return false;
-        }
-        const updated: WorkOrder = payload.data;
+        const updated = await parseApiEnvelope<WorkOrder>(response, "Delovnega naloga ni mogoče shraniti.");
         const updatedDraft = getInitialDraftValues(updated);
         const mergedItems = mergeDraftItems(
           updatedDraft.items ?? [],
@@ -1262,12 +1256,8 @@ export function ExecutionPanel({
           projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
         }),
       });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Emaila monterju ni bilo mogoče pripraviti.");
-        return;
-      }
-      const preparedDraft = payload.data?.draft ?? payload.draft;
+      const payload = await parseApiEnvelope<any>(response, "Emaila monterju ni bilo mogoče pripraviti.");
+      const preparedDraft = payload?.draft;
       if (!preparedDraft) {
         toast.error("Emaila monterju ni bilo mogoče pripraviti.");
         return;
@@ -1300,12 +1290,8 @@ export function ExecutionPanel({
           projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
         }),
       });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Emaila monterju ni bilo mogoče poslati.");
-        return;
-      }
-      toast.success(payload.data?.loggingFailed || payload.loggingFailed ? "Email monterju je bil poslan, zapis v komunikacijah pa ni uspel." : "Email monterju je bil poslan.");
+      const payload = await parseApiEnvelope<any>(response, "Emaila monterju ni bilo mogoče poslati.");
+      toast.success(payload?.loggingFailed ? "Email monterju je bil poslan, zapis v komunikacijah pa ni uspel." : "Email monterju je bil poslan.");
       setInstallerEmailOrderId(null);
     } catch (error) {
       console.error(error);
@@ -1378,7 +1364,7 @@ export function ExecutionPanel({
     setDownloadingWorkOrderId(order._id);
     try {
       const filename = `delovni-nalog-${order._id}.pdf`;
-      await downloadPdf(`/api/projects/${projectId}/work-orders/${order._id}/pdf?docType=WORK_ORDER`, filename);
+      await downloadPdf(`/api/projects/${projectId}/work-orders/${order._id}/pdf?docType=WORK_ORDER&mode=download`, filename);
       toast.success("Delovni nalog prenesen.");
     } catch (error) {
       console.error(error);
@@ -1386,6 +1372,15 @@ export function ExecutionPanel({
     } finally {
       setDownloadingWorkOrderId(null);
     }
+  };
+
+  const handlePreviewWorkOrder = (order: WorkOrder | null) => {
+    if (!order?._id) return;
+    window.open(
+      `/api/projects/${projectId}/work-orders/${order._id}/pdf?docType=WORK_ORDER&mode=inline`,
+      "_blank",
+      "noopener,noreferrer",
+    );
   };
 
   const applyDraftChange = (order: WorkOrder, values: Partial<{ status: WorkOrderStatus; executionNote: string }>) => {
@@ -1497,6 +1492,8 @@ export function ExecutionPanel({
     item: WorkOrderItemDraft,
     values: Partial<{
       name: string;
+      productId: string | null;
+      isService: boolean;
       quantity: number;
       unit: string;
       location: string;
@@ -1506,6 +1503,8 @@ export function ExecutionPanel({
     const executionSpec = ensureExecutionSpec(item.executionSpec);
     applyItemChange(order, item.id, {
       ...(values.name !== undefined ? { name: values.name } : {}),
+      ...(values.productId !== undefined ? { productId: values.productId } : {}),
+      ...(values.isService !== undefined ? { isService: values.isService } : {}),
       ...(values.quantity !== undefined
         ? {
             quantity: values.quantity,
@@ -1519,6 +1518,15 @@ export function ExecutionPanel({
         ...(values.location !== undefined ? { locationSummary: values.location } : {}),
         ...(values.instructions !== undefined ? { instructions: values.instructions } : {}),
       },
+    });
+  };
+
+  const applyExtraProductSelection = (order: WorkOrder, item: WorkOrderItemDraft, product: PriceListSearchItem) => {
+    applyExtraExecutionFieldChange(order, item, {
+      name: product.name,
+      productId: product.id,
+      unit: product.unit ?? item.unit ?? "kos",
+      isService: !!product.isService,
     });
   };
 
@@ -1597,15 +1605,11 @@ export function ExecutionPanel({
             materialOrderId: draftMaterial._id,
             materialStatus: draftMaterial.materialStatus,
             pickupConfirmedAt: draftMaterial.pickupConfirmedAt ?? null,
+            expectedAt: draftMaterial.expectedAt ?? null,
             materialItems: draftMaterial.items ?? [],
           }),
         });
-        const payload = await response.json();
-        if (!payload.success) {
-          setSavingStates((prev) => ({ ...prev, [order._id]: "error" }));
-          toast.error(payload.error ?? "Shranjevanje prevzema ni uspelo.");
-          return false;
-        }
+        await parseApiEnvelope<unknown>(response, "Shranjevanje prevzema ni uspelo.");
         if (!options?.skipRefresh) {
           await refreshAfterMutation();
         }
@@ -2004,14 +2008,19 @@ export function ExecutionPanel({
             <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Naziv naloge
             </label>
-            <Input
+            <PriceListProductAutocomplete
               value={item.name ?? ""}
               disabled={isDisabled}
-              onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                applyExtraExecutionFieldChange(order, item, { name: event.target.value })
+              placeholder="Poišči produkt ali storitev v ceniku"
+              inputClassName="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+              onChange={(name) =>
+                applyExtraExecutionFieldChange(order, item, { name, productId: null })
               }
-              placeholder="Vnesite naziv naloge"
+              onProductSelected={(product) => applyExtraProductSelection(order, item, product)}
             />
+            {!item.productId ? (
+              <p className="text-xs text-destructive">Izberi postavko iz cenika.</p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -2170,11 +2179,7 @@ export function ExecutionPanel({
       const response = await fetch(`/api/projects/${projectId}/work-orders/${order._id}/start-correction`, {
         method: "POST",
       });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Potrdila ni mogoče odkleniti za popravek.");
-        return;
-      }
+      await parseApiEnvelope<unknown>(response, "Potrdila ni mogoče odkleniti za popravek.");
       setCorrectionOrderId(null);
       await refreshAfterMutation();
       toast.success("Potrdilo je odklenjeno za popravek. Za trenutno stanje je potreben nov podpis.");
@@ -2316,6 +2321,7 @@ export function ExecutionPanel({
                           onPickupMethodChange={(value) => updateMaterialDraft(materialOrder, { pickupMethod: value })}
                           onPickupLocationChange={(value) => updateMaterialDraft(materialOrder, { pickupLocation: value })}
                           onLogisticsOwnerChange={(employeeId) => updateMaterialDraft(materialOrder, { logisticsOwnerId: employeeId })}
+                          onExpectedAtChange={(value) => updateMaterialDraft(materialOrder, { expectedAt: value })}
                           onPickupNoteChange={() => {}}
                           onAddExtraMaterial={() => {}}
                           onConfirmPickup={() => {
@@ -2970,20 +2976,33 @@ export function ExecutionPanel({
                               )}
                             </div>
                             <div className="flex flex-wrap gap-2">
-                              <Button
-                                variant="outline"
-                                onClick={() => handleDownloadWorkOrder(order)}
-                                disabled={!order._id || downloadingWorkOrderId === order._id}
-                              >
-                                {downloadingWorkOrderId === order._id ? (
-                                  <span className="flex items-center gap-2">
+                              <div className="inline-flex h-8 items-center rounded-md border border-border/70 bg-background">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 rounded-none border-r border-border/70 px-3"
+                                  onClick={() => handlePreviewWorkOrder(order)}
+                                  disabled={!order._id}
+                                >
+                                  Poglej delovni nalog
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 rounded-none"
+                                  onClick={() => handleDownloadWorkOrder(order)}
+                                  disabled={!order._id || downloadingWorkOrderId === order._id}
+                                  aria-label="Prenesi delovni nalog"
+                                >
+                                  {downloadingWorkOrderId === order._id ? (
                                     <Loader2 className="h-4 w-4 animate-spin" />
-                                    Prenos...
-                                  </span>
-                                ) : (
-                                  "Prenesi delovni nalog"
-                                )}
-                              </Button>
+                                  ) : (
+                                    <Download className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
                               <Button
                                 onClick={() => saveWorkOrder(order._id)}
                                 disabled={!orderHasUnsavedChanges || isSavingOrder || isCompletingOrder || isConfirmationLocked}

@@ -1,7 +1,7 @@
 # Audit Progress
 
-Last updated: 2026-07-08 (AIN-P3-01 login rate limiting)
-Last reviewed commit: AIN-P3-01 login rate limiting on branch `codex/web-inquiries-intake`
+Last updated: 2026-07-11 (AIN-P2-06 OffersTab version selector split)
+Last reviewed commit: AIN-P2-06 OffersTab version selector split on branch `codex/web-inquiries-intake`
 
 **THE FOUNDATIONAL AUDIT IS COMPLETE.** All phases done, P0 specs written
 (`specs/P0_IMPLEMENTATION_SPECS.md`), and a final senior review pass
@@ -134,15 +134,108 @@ exist. `npx tsc --noEmit` in backend = exit 0 at this commit.
   Zahteva documents or frontend types. v6 is shape-inferred by `sistemi[]` and absence
   of legacy top-level fields; migration scripts are manual DB writers and were not run
   from staging.
-- **AIN-P1-01 agent support**: shared email transport now supports env-driven staging
-  trap (`AINTEL_EMAIL_TRAP_TO`, `AINTEL_EMAIL_SUBJECT_PREFIX`) with tests and an owner
-  rollout runbook. Staging DB split remains owner-owned and not yet verified.
+- **AIN-P1-01 code support**: a staging runtime now fails fast before connecting when
+  it targets the production `inteligent` database. Shared email transport redirects
+  recipients through `AINTEL_EMAIL_TRAP_TO` and visibly prefixes staging subjects.
+  Tests, `.env.example`, and `STAGING_ISOLATION_RUNBOOK.md` cover the repository-side
+  behavior; the Atlas copy and live staging environment remain owner-operated.
+- **AIN-P1-09 follow-up**: by-subject task strips now render on project detail pages
+  and expanded web-inquiry rows, backed by the existing `/api/tasks/by-subject/:kind/:id`
+  API. Owner visual review remains.
+- **AIN-P1-10 scheduler worker**: added env-gated `node-cron` scheduler foundation
+  (`AINTEL_SCHEDULER_ENABLED=true`) with Mongo lease locks, run log, Sentry/log
+  failure reporting, declared indexes, and a first task SLA sweep job. It is disabled
+  by default to avoid accidental writes to the shared staging/prod DB before owner ops
+  verification.
 - **AIN-P3-01**: auth login now has a tested in-memory/per-process failed-attempt
   limiter. Optional 2FA and distributed/session revocation remain future scope.
 - **TD-B6**: auth route `blockNonPost` now uses Express `Request`/`Response`/
   `NextFunction` types instead of accidental DOM globals.
 - **Docs drift cleanup**: `CURRENT_ARCHITECTURE.md` and `INTEGRATION_MAP.md` now reflect
   the authenticated `/uploads/*` route introduced by AIN-P0-03.
+- **AIN-P3-02 DONE**: added shared frontend API envelope parser/helper and moved
+  core-shell auth, module-settings, module-projects, module-employees,
+  module-profil, module-finance, module-crm, module-dashboard, and module-cenik
+  API parsing to it; module-employees form/service-rate helper,
+  module-settings secondary sections, selected module-projects hooks, project
+  load, timeline/project workspace fetches, ProjectsPage CRUD/list operations,
+  OffersTab offer/template/assignment transport, logistics/execution standard
+  fetches, and price-list autocomplete also use it. Shared `fetchApi` now has
+  opt-in retry and a standardized error-reporting hook. Remaining grep hits are
+  intentional special cases: custom category `options`, logistics email non-JSON
+  fallback, and cenik 409 duplicate-precheck conflict data.
+- **AIN-P1-03 structured logging**: added `pino` + a `pino-http` middleware mounted
+  first in `createApp`, so every request (incl. `/api/public`) emits one JSON line with
+  a request id (echoed on `x-request-id`), method/url, tenant/user/route from
+  `req.context`, status, and latency. `errorHandler` logs 500s with full stack via
+  `req.log`. Named `console.*` in core/communication-sends/public-intake migrated to the
+  structured logger. Prod/test = JSON; dev = `pino-pretty` on a TTY; tests silent.
+  Verified via smoke + `npm run build` + 29 backend tests green. Owner approved the
+  `pino` dependency 2026-07-08.
+- **AIN-P1-02 error tracking**: added `@sentry/node` behind `core/sentry.ts` +
+  `instrument.ts` (loaded first in `server.ts`). Optional — no `SENTRY_DSN` means the app
+  runs with tracking disabled. 500s forwarded from `errorHandler` with scrubbed context
+  (request id, route, method, status, environment, release, minimal user = id + primary
+  role). `sendDefaultPii:false` + `beforeSend` strip cookies/body/query/auth+API-key
+  headers. EU residency carried by the DSN (`*.ingest.de.sentry.io`). Owner chose Sentry
+  EU 2026-07-08; must create the EU project and set env secrets. Verified via
+  `test/sentry-scrub.test.ts` (disabled no-op, enabled path, scrub) + 32 tests green.
+  Frontend SPA capture remains a follow-up.
+- **AIN-P1-13 follow-up e-mail from task**: `offer.follow_up` tasks now support a
+  manual preview/send flow from Opravila, including a batch checkbox view. Backend
+  endpoints validate the task type/status, render active `offer_follow_up` templates
+  with offer context (safe fallback if missing), send through the existing offer
+  communication module with PDF offer attachment, and complete the task only after a
+  successful send. Failed sends leave the task open. Covered by
+  `test/task-follow-up-email.test.ts`; no automatic sending was added.
+- **AIN-P1-17 motivational project progress**: module-projects now shows a
+  motivational progress bar in the internal project workspace, derived from the
+  existing timeline steps. It starts above 0 %, displays active step and completed
+  count, and shows a near-finish message on the final step. This is presentational
+  only; public configurator/web-side progress remains ECO-36 outside this repo.
+- **AIN-P1-19 configurator value payload**: browser `POST /api/public/inquiries`
+  keeps the existing `offerSummary` price fields and adds a customer-facing `value`
+  payload for automatic offers: equipment from actual offer items + cenik
+  descriptions/images, included services with a safe fallback, coverage mapped from
+  configurator answers, and reassurance copy. Internal `defaultsApplied` automation
+  notes remain private. Covered by the money-flow smoke test on memory Mongo.
+- **AIN-P2-07 mutation audit logging**: protected `/api` POST/PUT/PATCH/DELETE routes
+  now emit a structured `audit.mutation` log event after the response finishes. Events
+  include auth-derived tenant/actor/roles, route, method, status, request id,
+  best-effort module/entity id, and sensitive-key-filtered top-level changed field
+  names. This is log-based auditability, not a new immutable database collection.
+- **AIN-P2-05 supplier normalization and late delivery**: material order items now
+  receive a normalized `supplierKey` while preserving display supplier fields, material
+  orders can store `expectedAt`, and the preparation UI can edit that date. Added a
+  disabled-by-default `material.late_delivery` wheel rule and scheduler job that create
+  ORGANIZER tasks for overdue, not-yet-ready material orders with deterministic
+  dedupe keys. No DB migration or shared-DB script was run.
+- **AIN-P2-01 legacy embedded write freeze**: legacy embedded project write functions
+  in `project.controller.ts` now fail closed with HTTP 410 and emit structured
+  `legacy.project_embedded_write` warning events. The still-mounted embedded delivery
+  receive route is blocked before DB access; unmounted embedded offer actions are also
+  guarded if accidentally re-mounted. The collection-backed OfferVersion,
+  MaterialOrder, and WorkOrder APIs remain the active paths.
+- **AIN-P2-04 communication send pipeline**: offer, invoice, work-order confirmation,
+  and installer-preparation sends now share one internal delivery/record/event helper
+  for `sendEmail`, inline company logo attachments, `communication_messages`, provider
+  message ids, and sent/failed `communication_events`. Domain-specific template
+  contexts and attachment selection stay in their send functions; installer
+  preparation keeps preview-only and "sent but logging failed" behavior.
+- **AIN-P2-06 partial OffersTab split**: low-risk frontend extractions moved
+  OffersTab editor/import/KM/PDF helper types plus pure item recalculation, trailing
+  blank row handling, and totals calculation into
+  `apps/module-projects/src/domains/offers/offerEditorUtils.ts`. Offer PDF action
+  button rendering and preview/download state handlers now live in
+  `OfferPdfActionGroup.tsx` and `useOfferPdfActions.ts`; the pasted-offer import modal
+  now lives in `OfferImportDialog.tsx`; template create/rename/delete dialogs now live
+  in `OfferTemplateDialogs.tsx`; kilometrina calculation controls and address mismatch
+  UI now live in `OfferKmCalculationControls.tsx`; linked service suggestion rendering
+  now lives in `OfferLinkedServiceSuggestions.tsx`; the template picker/dropdown action
+  UI now lives in `OfferTemplatePicker.tsx`; offer version selector rendering/actions
+  now live in `OfferVersionSelector.tsx`. The task remains open: `OffersTab.tsx` is
+  still the large state/UI owner and needs further component/hook extraction before
+  AIN-P2-06 can be marked done.
 
 ## Genuine unresolved checks (curated in the final review)
 

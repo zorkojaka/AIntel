@@ -8,6 +8,8 @@ import { streamUpload } from '../modules/files/upload-stream';
 import { requireAuth } from '../middlewares/auth';
 import { responseHelpers } from './response';
 import { normalizePayload } from './middleware/normalizePayload';
+import { httpLogger } from './middleware/httpLogger';
+import { auditMutationLog } from './middleware/auditLog';
 import { errorHandler } from './errorHandler';
 import { isMongoConnected } from '../db/mongo';
 
@@ -38,6 +40,10 @@ function createCorsOptions() {
 export function createApp() {
   const app = express();
 
+  // Structured request logging (request id + latency) wraps every route,
+  // including the public intake mounted below.
+  app.use(httpLogger);
+
   // Public intake for the inteligent.si website (before the global CORS allowlist
   // and cookie auth: it is protected by an X-API-Key header and rate limiting).
   app.use('/api/public', express.json(), webInquiryPublicRoutes);
@@ -58,7 +64,7 @@ export function createApp() {
 
   app.use('/api/auth', authRoutes);
   app.get('/uploads/*', requireAuth, streamUpload);
-  app.use('/api', requireAuth, routes);
+  app.use('/api', requireAuth, auditMutationLog, routes);
   app.use(errorHandler);
 
   return app;

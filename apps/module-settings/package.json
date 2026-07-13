@@ -21,6 +21,7 @@
     "check-encoding": "node ./scripts/check-encoding.cjs"
   },
   "dependencies": {
+    "@aintel/module-tasks": "*",
     "@aintel/theme": "*",
     "@aintel/ui": "*",
     "react": "^18.3.1",

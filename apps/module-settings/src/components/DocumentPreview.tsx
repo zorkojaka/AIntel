@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card } from '@aintel/ui';
-import type { ApiEnvelope, OfferPdfPreviewPayload } from '../types';
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
+import type { OfferPdfPreviewPayload } from '../types';
 
 interface DocumentPreviewProps {
   docType: OfferPdfPreviewPayload['docType'];
@@ -33,21 +34,18 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({ docType, visib
         if (!response.ok) {
           throw new Error('Predogled ni na voljo.');
         }
-        const payload = (await response.json()) as ApiEnvelope<OfferPdfPreviewPayload>;
-        if (!payload?.success || !payload.data) {
-          throw new Error(payload?.error ?? 'Predogled ni na voljo.');
-        }
+        const payload = await parseApiEnvelope<OfferPdfPreviewPayload>(response, 'Predogled ni na voljo.');
         const parser = typeof DOMParser !== 'undefined' ? new DOMParser() : null;
         if (parser) {
-          const parsed = parser.parseFromString(payload.data.html, 'text/html');
+          const parsed = parser.parseFromString(payload.html, 'text/html');
           const styleBlock = parsed.querySelector('style')?.outerHTML ?? '';
           if (mounted) {
-            setHtml(`${styleBlock}${parsed.body.innerHTML || payload.data.html}`);
+            setHtml(`${styleBlock}${parsed.body.innerHTML || payload.html}`);
           }
           return;
         }
         if (mounted) {
-          setHtml(payload.data.html);
+          setHtml(payload.html);
         }
       } catch (previewError) {
         if (!controller.signal.aborted && mounted) {

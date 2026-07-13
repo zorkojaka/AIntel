@@ -69,6 +69,15 @@ npm run dev
 
 Aplikacija bo dostopna na `http://localhost:3000`.
 
+### Staging varnost
+
+Staging ne sme uporabljati produkcijske baze `inteligent`. Za staging nastavi
+`AINTEL_ENV=staging` in ločen `MONGO_DB` (npr. `inteligent_staging`); backend ob zagonu
+zavrne kombinacijo `AINTEL_ENV=staging` + `MONGO_DB=inteligent`. Staging emaili morajo
+imeti nastavljen `AINTEL_EMAIL_TRAP_TO` in `AINTEL_EMAIL_SUBJECT_PREFIX=[STAGING]`, da
+ne dosežejo strank. Postopek je opisan v
+`docs/aintel-audit/STAGING_ISOLATION_RUNBOOK.md`.
+
 ### Sinhronizacija funkcijskih vej
 
 Če v lokalni kopiji ne vidiš najnovejših modulov (npr. `apps/module-settings` iz faze 4 – Nastavitve), posodobi vejo neposredno iz oddaljenega repozitorija:

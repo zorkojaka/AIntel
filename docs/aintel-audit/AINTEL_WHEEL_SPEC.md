@@ -1,6 +1,7 @@
 # AIntel Wheel Specification — the operating hub
 
-Status: **design specification, not implemented.** Authoritative design for backlog
+Status: **design specification, partially implemented.** AIN-P1-09 and the AIN-P1-10
+scheduler foundation have landed; automation rules remain future work. Authoritative design for backlog
 items AIN-P1-09/10/11/12 and the automation parts of AIN-P2-02. Workflow definitions
 (states per business entity, SLAs, required fields) live in `TARGET_OPERATING_MODEL.md`;
 this document defines the **mechanism** that executes them and supersedes

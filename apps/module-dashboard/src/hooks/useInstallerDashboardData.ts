@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 import type { InstallerDashboardResponse } from '../types';
 
 const EMPTY_DATA: InstallerDashboardResponse = {
@@ -19,12 +20,12 @@ export function useInstallerDashboardData() {
       setIsLoading(true);
       try {
         const response = await fetch('/api/dashboard/installer', { credentials: 'include' });
-        const result = await response.json();
-        if (!result?.success) {
-          throw new Error(result?.error ?? 'Napaka pri nalaganju dashboard podatkov.');
-        }
+        const result = await parseApiEnvelope<InstallerDashboardResponse>(
+          response,
+          'Napaka pri nalaganju dashboard podatkov.',
+        );
         if (active) {
-          setData(result.data ?? EMPTY_DATA);
+          setData(result ?? EMPTY_DATA);
           setError(null);
         }
       } catch (fetchError) {

@@ -5,6 +5,7 @@ import type {
   RequirementTemplateRow,
 } from '@aintel/shared/types/project';
 import { Button, Card, Input, Textarea } from '@aintel/ui';
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 import {
   createRequirementTemplateGroup,
   deleteRequirementTemplateGroup,
@@ -29,11 +30,8 @@ function normalizeOptions(value: string): string[] | undefined {
 
 async function fetchCategories(): Promise<CategoryOption[]> {
   const response = await fetch('/api/categories');
-  const payload = await response.json();
-  if (!payload.success) {
-    throw new Error(payload.error ?? 'Napaka pri nalaganju kategorij.');
-  }
-  return (payload.data ?? []).map((cat: any) => ({
+  const data = await parseApiEnvelope<any[]>(response, 'Napaka pri nalaganju kategorij.');
+  return (data ?? []).map((cat: any) => ({
     id: cat.id ?? cat._id ?? cat.slug,
     name: cat.name ?? cat.slug ?? 'Neimenovana kategorija',
     slug: cat.slug ?? cat.id ?? '',

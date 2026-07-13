@@ -11,6 +11,7 @@ export interface PreviewItem {
   name: string;
   quantity: number;
   plannedQuantity?: number | null;
+  actualQuantity?: number | null;
   unit?: string;
   itemNote?: string | null;
   locationSummary?: string | null;
@@ -21,6 +22,7 @@ export interface PreviewItem {
   total?: number;
   vatPercent?: number;
   statusLabel?: string | null;
+  deviationLabel?: string | null;
   executionLocations?: Array<{
     name: string;
     note?: string;
@@ -140,6 +142,7 @@ const baseStyles = `
   .workorder-item-header { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; border-bottom:1px solid #eef2f7; padding-bottom:7px; margin-bottom:8px; }
   .workorder-item-title { font-size:14px; font-weight:700; color:#0f172a; }
   .workorder-item-meta { text-align:right; white-space:nowrap; color:#475569; font-size:11px; }
+  .workorder-deviation { color:#b91c1c; font-weight:700; }
   .workorder-detail { margin:4px 0; font-size:11.5px; color:#334155; white-space:pre-wrap; }
   .workorder-detail strong { color:#0f172a; }
   .workorder-units { margin-top:8px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
@@ -660,6 +663,14 @@ export function renderWorkOrderPdf(context: DocumentPreviewContext) {
   const tasks = context.tasks ?? (context.items ?? []).map((item) => ({ label: item.name, status: 'todo' as const }));
   const itemCards = (context.items ?? []).map((item, index) => {
     const task = tasks[index] ?? { label: item.name, status: 'todo' as const };
+    const quantityUnit = item.unit ? ` ${escapeHtml(item.unit)}` : '';
+    const hasDeviation =
+      typeof item.actualQuantity === 'number' &&
+      typeof item.plannedQuantity === 'number' &&
+      item.actualQuantity !== item.plannedQuantity;
+    const quantityMeta = hasDeviation
+      ? `Izvedeno: ${item.actualQuantity}${quantityUnit}<br/>Dogovorjeno: ${item.plannedQuantity}${quantityUnit}<br/><span class="workorder-deviation">${escapeHtml(item.deviationLabel ?? 'Odstopanje')}</span>`
+      : `${item.quantity}${quantityUnit}${task.status ? `<br/>${escapeHtml(task.status)}` : ''}`;
     const locations = item.executionLocations ?? [];
     const hasLocationPhotos = locations.some((location) => location.photos.length > 0);
     const locationsBlock = locations.length
@@ -706,7 +717,7 @@ export function renderWorkOrderPdf(context: DocumentPreviewContext) {
     return `<section class="workorder-item">
         <div class="workorder-item-header">
           <div class="workorder-item-title">${escapeHtml(item.name || task.label)}</div>
-          <div class="workorder-item-meta">${item.quantity}${item.unit ? ` ${escapeHtml(item.unit)}` : ''}${task.status ? `<br/>${escapeHtml(task.status)}` : ''}</div>
+          <div class="workorder-item-meta">${quantityMeta}</div>
         </div>
         ${item.itemNote ? `<p class="workorder-detail"><strong>Opomba postavke:</strong> ${escapeHtml(item.itemNote)}</p>` : ''}
         ${item.locationSummary ? `<p class="workorder-detail"><strong>Povzetek lokacije:</strong> ${escapeHtml(item.locationSummary)}</p>` : ''}

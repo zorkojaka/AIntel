@@ -133,6 +133,25 @@ export function productLabel(product?: CenikProduct | null) {
   return product?.ime ?? "Ni izbrano";
 }
 
+// AIN-P1-16: lastna prodajna statistika (ECO-35) usmerja vrstni red in namig
+// »najpogosteje izbrano« — zadnjih 365 dni ima prednost pred vsemi časi.
+export function salesQty(product?: CenikProduct | null) {
+  const stats = product?.salesStats;
+  return Number(stats?.soldQty365 ?? 0) || Number(stats?.soldQty ?? 0) || 0;
+}
+
+export function salesCompare(a: CenikProduct, b: CenikProduct) {
+  return salesQty(b) - salesQty(a);
+}
+
+export function topSellerId(products: CenikProduct[]) {
+  let best: CenikProduct | null = null;
+  for (const product of products) {
+    if (salesQty(product) > 0 && (!best || salesQty(product) > salesQty(best))) best = product;
+  }
+  return best?._id ?? null;
+}
+
 export function formatPrice(value: number | undefined) {
   return `${Number(value ?? 0).toLocaleString("sl-SI", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 }

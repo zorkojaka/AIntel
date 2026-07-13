@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { logger } from "../../../core/logger";
 
 type SmtpDiagnostics = {
   configured: boolean;
@@ -119,7 +120,8 @@ export function logSmtpDiagnostics(context: string) {
   }
   lastDiagnosticsLogKey = key;
 
-  console.info("[communication][smtp]", {
+  logger.info({
+    scope: "communication.smtp",
     context,
     configured: diagnostics.configured,
     transportReady: diagnostics.transportReady,
@@ -133,7 +135,7 @@ export function logSmtpDiagnostics(context: string) {
     hasPassword: diagnostics.configSummary.hasPassword,
     trapTo: diagnostics.configSummary.trapTo,
     trapSubjectPrefix: diagnostics.configSummary.trapSubjectPrefix,
-  });
+  }, "[communication][smtp]");
 
   return diagnostics;
 }

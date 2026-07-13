@@ -2,7 +2,7 @@ import { Square, Server } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
 import type { Videonadzor } from "./utils";
-import { assignedCameraProducts, formatPrice, standardChannels } from "./utils";
+import { assignedCameraProducts, formatPrice, salesCompare, standardChannels, topSellerId } from "./utils";
 
 function optionKey(value?: string | number | null) {
   return String(value ?? "").trim().toLocaleLowerCase("sl-SI");
@@ -151,16 +151,18 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
           const brandScore =
             Number(optionKey(productBrand(b)) === optionKey(cameraBrand)) - Number(optionKey(productBrand(a)) === optionKey(cameraBrand));
           const poeScore = Number(Boolean(b.classification?.nvrHasPoE) === allPoE) - Number(Boolean(a.classification?.nvrHasPoE) === allPoE);
-          return channelScore || visiblePoeScore || priorityScore || brandScore || poeScore || a.prodajnaCena - b.prodajnaCena;
+          return channelScore || visiblePoeScore || priorityScore || brandScore || poeScore || salesCompare(a, b) || a.prodajnaCena - b.prodajnaCena;
         }),
     [allPoE, cameraBrand, manufacturerRecorders, poeFilter],
   );
+
+  const najprodajnejsiId = useMemo(() => topSellerId(alternatives), [alternatives]);
 
   const recommendedId = useMemo(() => {
     const withEnoughChannels = alternatives.filter((product) => recorderChannels(product) >= selectedChannels);
     const preferred = [...withEnoughChannels].sort((a, b) => {
       const poeScore = poeFilter === "all" && allPoE ? poeGroup(a) - poeGroup(b) : 0;
-      return poeScore || categoryPriorityRank(a) - categoryPriorityRank(b) || recorderChannels(a) - recorderChannels(b) || a.prodajnaCena - b.prodajnaCena;
+      return poeScore || categoryPriorityRank(a) - categoryPriorityRank(b) || recorderChannels(a) - recorderChannels(b) || salesCompare(a, b) || a.prodajnaCena - b.prodajnaCena;
     })[0];
     return preferred?._id ?? alternatives[0]?._id ?? null;
   }, [allPoE, alternatives, poeFilter, selectedChannels]);
@@ -259,6 +261,7 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
               {recorderChannels(product) || "-"} kanalov
               {product.classification?.nvrHasPoE ? " • PoE" : ""} • {hddLabel(product.classification?.nvrHddSlots)}
             </small>
+            {product._id === najprodajnejsiId ? <span className="zahteva-sales-hint">★ najpogosteje izbrano</span> : null}
             <b>{formatPrice(product.prodajnaCena)}</b>
           </button>
         ))}

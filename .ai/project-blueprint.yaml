@@ -1,0 +1,270 @@
+blueprint: 1
+project_id: aintel
+title: "AIntel — poslovni sistem"
+authoritative: true
+updated: 2026-07-11
+
+objective: >
+  En sistem vodi ves posel: od spletnega povpraševanja prek ponudbe, priprave
+  materiala in izvedbe do računa in ocene — s samodejnimi koraki povsod, kjer
+  odločitev ni potrebna.
+current_state: >
+  Celoten tok deluje na stagingu (testaintel.inteligent.si); produkcija še teče
+  na stari veji in si z stagingom deli bazo. E-pošta (prodaja@) se pošilja in
+  samodejno bere; naročanje pri dobaviteljih po e-mailu je živo.
+target_state: >
+  Merge na produkcijo, ločeni bazi, avtomatike vklopljene po presoji lastnika;
+  AI pomoč pri pošti in spletno plačilo avansa.
+current_milestone:
+  label: "Stabilizacija toka + prehod v produkcijo"
+  target_node: cutover
+  source: docs/aintel-audit/IMPLEMENTATION_SEQUENCE.md
+
+sources:
+  - docs/aintel-audit/MASTER_BACKLOG.md
+  - docs/aintel-audit/IMPLEMENTATION_SEQUENCE.md
+
+nodes:
+  - id: povprasevanje
+    type: workflow_step
+    label: "Povpraševanje"
+    status: VERIFIED
+    description: >
+      Spletno povpraševanje iz konfiguratorja samodejno ustvari stranko v CRM
+      in projekt; telefonske stranke se vnesejo ročno.
+    done_when: >
+      Vsako spletno povpraševanje brez ročnega dela postane projekt s stranko.
+    evidence: "E2E 2026-07-05: konfigurator→inquiry→CRM→projekt→ponudba→e-mail (ecosystem review)"
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    impact:
+      before: "Vsako povpraševanje je bilo treba ročno prepisati v sistem."
+      after: "Stranka in projekt nastaneta sama; prodajnik začne pri ponudbi."
+
+  - id: zahteve
+    type: workflow_step
+    label: "Zahteve"
+    status: IMPLEMENTED
+    description: >
+      Strukturiran vnos zahtev po stebrih; najpogosteje prodajane izbire so
+      predizbrane iz lastne prodajne statistike, napredek nikoli ne kaže 0 %.
+    done_when: >
+      Prodajnik vnese zahteve hitreje, kot bi jih napisal na papir.
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    tasks: [AIN-P1-16, AIN-P1-17]
+    impact:
+      before: "Vnos zahtev je zahteval razmislek pri vsakem polju."
+      after: "Najpogostejše izbire so že izbrane; popraviš samo odstopanja."
+
+  - id: ponudba
+    type: workflow_step
+    label: "Ponudba"
+    status: IMPLEMENTED
+    description: >
+      Postavke se predlagajo iz cenika (največ prodajano naprej), PDF in
+      pošiljanje iz prodaja@; ob pošiljanju kljukica za follow-up opomnik.
+    done_when: >
+      Ponudba od zahtev do poslanega maila brez prepisovanja; opomnik nastane
+      sam in se sam zapre, ko stranka odgovori.
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    tasks: [AIN-P1-13, AIN-P1-20]
+    impact:
+      before: "Follow-up si moral ročno beležiti; kdo je odgovoril, si iskal po pošti."
+      after: "Sistem te spomni sam in opomnik zapre, ko pride odgovor."
+
+  - id: potrditev
+    type: workflow_step
+    label: "Potrditev"
+    status: IMPLEMENTED
+    description: >
+      Potrjena ponudba samodejno ustvari naročilo materiala in delovni nalog;
+      faza projekta se premakne sama.
+    done_when: >
+      En klik na Potrdi pripravi vse za izvedbo.
+    evidence: "commit 3851902 (premik faze tudi iz poti zahteva→ponudba)"
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    impact:
+      before: "Material in delovni nalog je bilo treba odpreti ročno."
+      after: "Ob potrditvi je vse pripravljeno; vidiš, kaj je treba naročiti."
+
+  - id: priprava
+    type: workflow_step
+    label: "Priprava"
+    status: IMPLEMENTED
+    description: >
+      Material razdeljen po dobaviteljih; gumb »Naroči po emailu« pošlje
+      vnaprej izpolnjeno naročilo (naslovi v Nastavitve → Dobavitelji) in
+      postavke sam označi kot naročene. Zamuda dobave sproži opozorilo.
+    done_when: >
+      Naročilo dobavitelju = en pregled + en klik; ročno vnašaš samo izjeme.
+    evidence: "commit 3250052 (modules/suppliers + dialog + per-skupina potrjevanje)"
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    tasks: [AIN-P2-05]
+    impact:
+      before: "Naročila si tipkal v e-mail in ročno kljukal vsako postavko."
+      after: "Popis in naslov sta pripravljena; po pošiljanju je vse označeno."
+
+  - id: izvedba
+    type: workflow_step
+    label: "Izvedba"
+    status: IMPLEMENTED
+    description: >
+      Monterji kljukajo korake po lokacijah; naprave iz ponudbe se same
+      ponudijo za razporeditev (tudi po spremembi ponudbe).
+    done_when: >
+      Monter na objektu vidi točno, kaj kam vgradi, in potrdi z enim klikom.
+    evidence: "commit 5f16814 (uskladitev definicije izvedbe s spremenjeno ponudbo)"
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    tasks: [AIN-P2-06]
+    impact:
+      before: "Sprememba ponudbe se ni poznala pri razporejanju naprav."
+      after: "Lokacije vedno kažejo aktualno opremo iz ponudbe."
+
+  - id: predaja
+    type: workflow_step
+    label: "Predaja"
+    status: IMPLEMENTED
+    description: >
+      Zaključek del s podpisom stranke; potrdilo delovnega naloga kot PDF.
+    done_when: >
+      Podpisana predaja je shranjena na projektu.
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    impact:
+      before: "Potrdila na papirju, iskanje za nazaj."
+      after: "Podpis in dokument sta na projektu, dosegljiva v dveh klikih."
+
+  - id: racun
+    type: workflow_step
+    label: "Račun"
+    status: IMPLEMENTED
+    description: >
+      Račun nastane iz delovnega naloga in gre stranki po e-mailu; zraven
+      lahko z eno kljukico dodaš prošnjo za oceno.
+    done_when: >
+      Račun + prošnja za oceno v enem pošiljanju.
+    evidence: "commit 44c4d5a (kljukica prošnja za oceno v compose oknu)"
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    impact:
+      before: "Za oceno si moral prositi posebej ali pozabil."
+      after: "Vsak zaključen posel lahko brez truda povabi k oceni."
+
+  - id: ocena
+    type: workflow_step
+    label: "Ocena"
+    status: IMPLEMENTED
+    description: >
+      Stranka oceni prek unikatne povezave: 4–5 zvezdic jo povabi na Google,
+      1–3 ostane interno in te opozori.
+    done_when: >
+      Dobre ocene rastejo na Googlu, slabe prideta k tebi, ne v javnost.
+    evidence: "commit 896f1ae (sistem ocen: žeton, moderacija, Google preusmeritev)"
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    impact:
+      before: "Ocen skoraj ni bilo; slaba bi šla naravnost v javnost."
+      after: "Google profil raste; slabe ocene so tvoja druga priložnost."
+
+  - id: posta
+    type: capability
+    label: "Pošta prodaja@ (samodejno branje)"
+    status: IMPLEMENTED
+    description: >
+      Vsa prodajna pošta iz prodaja@; sistem vsakih 5 minut prebere odgovore,
+      jih poveže s projekti in zapre follow-upe. Neprepoznano čaka v resolve
+      centru (modul Pošta).
+    done_when: >
+      E-maila za prodajo ni treba odpirati; vse pomembno je v AIntelu.
+    evidence: "živ ingest 2026-07-09: prvo sporočilo pravilno v resolve centru; 5 testov"
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    tasks: [AIN-P1-14]
+    impact:
+      before: "Odgovore strank si lovil po nabiralniku."
+      after: "Odgovor sam najde projekt in zapre opomnik."
+
+  - id: kolo
+    type: capability
+    label: "Kolo — samodejna opravila"
+    status: IMPLEMENTED
+    description: >
+      Pravila (follow-up, zamuda materiala, prejeta pošta, servis …) ustvarjajo
+      opravila; vsako pravilo ima tri načine: izklopljeno / ročno / avtomatsko.
+    done_when: >
+      Nič pomembnega ne pade skozi; ti nastavljaš stopnjo avtomatike.
+    source: docs/aintel-audit/AINTEL_WHEEL_SPEC.md
+    tasks: [AIN-P1-18]
+    impact:
+      before: "Opomniki v glavi ali na listkih."
+      after: "Sistem opozarja sam; ti izbereš, kaj sme narediti brez vprašanja."
+
+  - id: servis
+    type: capability
+    label: "Servis"
+    status: PARTIAL
+    description: >
+      Servisni zahtevki (tudi iz portala Moj račun) in načrti vzdrževanja;
+      triaža prek kolesa.
+    done_when: >
+      Stranka odda zahtevek v portalu in spremlja status; ti ga vidiš kot opravilo.
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    tasks: [AIN-P2-08]
+    impact:
+      before: "Servisni klici brez evidence."
+      after: "Vsak zahtevek ima status, zgodovino in odgovornega."
+
+  - id: trgovina
+    type: capability
+    label: "Trgovina — prenos produktov"
+    status: IMPLEMENTED
+    description: >
+      Objavljena izložba (cenik) se z enim klikom prenese v WooCommerce
+      trgovino na spletni strani: kategorije, opisi, slike, cene z DDV,
+      vrstni red po prodajni kuraciji. Gumb v Cenik → Izložba ali
+      scripts/shop-sync.ts.
+    done_when: >
+      Vsaka sprememba cenika pride v trgovino z enim klikom; izpadli
+      produkti gredo v osnutek.
+    evidence: "commit b78a61c (modul shop) + cb7eed0 (produkt v več kategorijah)"
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    tasks: [AIN-P3-09]
+    impact:
+      before: "Trgovina (Shopify) ločena od cenika — ročno prepisovanje produktov."
+      after: "Cenik urediš enkrat, trgovina se osveži z enim klikom."
+
+  - id: ai-posta
+    type: capability
+    label: "AI pomoč pri pošti"
+    status: PLANNED
+    description: >
+      Povzetek prejetega maila, klasifikacija in predlog odgovora v tvojem tonu.
+    done_when: >
+      Na prejet mail odgovoriš s potrditvijo predloga, ne s tipkanjem.
+    source: docs/aintel-audit/MASTER_BACKLOG.md
+    impact:
+      before: "Vsak odgovor napišeš sam."
+      after: "Predlog počaka tebe; ti samo potrdiš ali popraviš."
+
+  - id: cutover
+    type: milestone
+    label: "Prehod v produkcijo"
+    status: PLANNED
+    description: >
+      Merge razvojne veje na produkcijo, ločitev staging/prod baze, rotacija
+      brskalniškega ključa; od takrat vse teče na aintel.inteligent.si.
+    done_when: >
+      Posel teče na produkciji, staging je varno ločen.
+    source: docs/aintel-audit/IMPLEMENTATION_SEQUENCE.md
+    impact:
+      before: "Delaš na stagingu, ki si deli bazo s produkcijo."
+      after: "Čisto produkcijsko okolje; staging za mirno preizkušanje."
+
+edges:
+  - { from: povprasevanje, to: zahteve, kind: flow }
+  - { from: zahteve, to: ponudba, kind: flow }
+  - { from: ponudba, to: potrditev, kind: flow }
+  - { from: potrditev, to: priprava, kind: flow }
+  - { from: priprava, to: izvedba, kind: flow }
+  - { from: izvedba, to: predaja, kind: flow }
+  - { from: predaja, to: racun, kind: flow }
+  - { from: racun, to: ocena, kind: flow }
+  - { from: posta, to: ponudba, kind: requires }
+  - { from: kolo, to: ponudba, kind: requires }
+  - { from: ai-posta, to: posta, kind: requires }
+  - { from: cutover, to: povprasevanje, kind: requires }

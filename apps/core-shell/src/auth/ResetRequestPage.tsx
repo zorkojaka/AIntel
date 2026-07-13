@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 
 type ResetResponse = {
   resetUrl?: string;
@@ -6,12 +7,7 @@ type ResetResponse = {
 };
 
 async function parseResponse<T>(response: Response): Promise<T> {
-  const payload = await response.json();
-  if (!response.ok || payload?.success === false) {
-    const error = payload?.error ?? 'Prišlo je do napake';
-    throw new Error(error);
-  }
-  return payload?.data as T;
+  return parseApiEnvelope<T>(response, 'Prišlo je do napake');
 }
 
 export const ResetRequestPage: React.FC = () => {

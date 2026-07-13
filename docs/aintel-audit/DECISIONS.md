@@ -54,22 +54,27 @@ AIN-P0-02 shipped the strict default from the P0 spec: SALES does not get compan
 finance reads. EXECUTION keeps a scoped self-service earnings view through
 `/api/finance/my/earnings`; company finance endpoints and payment PATCH are
 ADMIN+FINANCE. **Owner (Jaka) explicitly confirmed the strict default on 2026-07-06**
-(review sign-off); granting SALES read access later would be a purely additive change.
+(review sign-off; owner request `OWNER-D-012`); granting SALES read access later would
+be a purely additive change.
 
 ## D-013 [Open] PDF engine consolidation: pdfkit vs playwright-HTML
 Two pipelines maintained (P6). Decide one (playwright-HTML is more maintainable;
 pdfkit is lighter — also interacts with TD-R3 dependency weight).
 
-## D-014 [Open] Task/scheduler implementation choice
-In-process interval vs node-cron vs agenda (new dependency requires owner approval
-per CLAUDE.md). Blocking AIN-P1-10.
+## D-014 [Resolved 2026-07-08] Task/scheduler implementation choice
+**Decision (owner): `node-cron`.** Lightweight cron dependency, good fit for the
+PM2 single-instance deploy; preferred over an in-process interval (no cron semantics)
+and over `agenda` (heavier, persists jobs to the shared Mongo). Unblocks AIN-P1-10;
+owner-approved dependency. Revisit if multi-instance scheduling is needed later.
 
 ## D-015 [Open] Tenant data isolation model
 Single DB + tenantId assumed in MODULARIZATION_PLAN; confirm before Stage 5.
 
-## D-016 [Open] Accounting handoff
-No integration exists. Decide: export format (e-SLOG?), fiscalization requirements,
-or explicit "manual accounting" statement. Affects invoice module roadmap.
+## D-016 [Resolved 2026-07-08] Accounting handoff
+**Decision (owner): manual accounting — no integration for now.** No e-SLOG export or
+FURS fiscalization requirement at this stage. AIN-P1-08 (invoiceVersions → collection)
+therefore models the current invoice shape without export/fiscalization fields; an
+export/fiscalization layer can be added later without reshaping the core schema.
 
 ## D-017 [Open] CRM people/companies vs clients consolidation
 D6/P10: keep clients as master? Fold people/companies into contacts-on-client?
@@ -86,3 +91,10 @@ same commit (the P0-02/P0-04 drift that motivated this is fixed).
 `AINTEL_WHEEL_SPEC.md` is the proposed design for tasks/scheduler/automation
 (AIN-P1-09..12). Owner + senior review must sign off on §2 (Task schema) and §3 (rule
 engine) before implementation starts; interacts with D-014 (scheduler dependency).
+
+## D-020 [Existing-confirmed] Staging must be isolated from production writes
+AIN-P1-01 makes staging use a separate Mongo database (`MONGO_DB`, expected
+`inteligent_staging`) and a staging email trap/prefix. Source now refuses to boot when
+a runtime explicitly marked staging (`AINTEL_ENV`, `AINTEL_DEPLOY_ENV`, or `APP_ENV`)
+uses production database `inteligent`; owner remains responsible for the actual Atlas
+copy and staging `.env` values per `STAGING_ISOLATION_RUNBOOK.md`.

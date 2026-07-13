@@ -5,6 +5,7 @@ import cenikRoutes from './modules/cenik/routes/cenik.routes';
 import categorySettingsRoutes from './modules/cenik/routes/category-settings.routes';
 import priceListRoutes from './modules/cenik/routes/price-list.routes';
 import settingsRoutes from './modules/settings/routes/settings.routes';
+import configRoutes from './modules/settings/config/config.routes';
 import financeRoutes from './modules/finance/routes';
 import categoriesRoutes from './modules/categories/routes';
 import projectsRoutes from './modules/projects/routes';
@@ -20,11 +21,16 @@ import communicationSettingsRoutes from './modules/communication/routes/settings
 import communicationProjectRoutes from './modules/communication/routes/project.routes';
 import filesRoutes from './modules/files/routes';
 import photosRoutes from './modules/photos/routes';
+import emailRoutes from './modules/email/email.routes';
+import tasksRoutes from './modules/tasks/task.routes';
 import zahteveRoutes from './modules/zahteve/zahteva.routes';
 import executionRulesRoutes from './modules/execution-rules/execution-rules.routes';
+import serviceRoutes from './modules/service/service.routes';
 import webInquiriesAdminRoutes from './modules/web-inquiries/admin.routes';
+import supplierRoutes from './modules/suppliers/supplier.routes';
+import shopRoutes from './modules/shop/shop.routes';
 import { requireRoles } from './middlewares/auth';
-import { ROLE_ADMIN, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from './utils/roles';
+import { ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from './utils/roles';
 
 const router = Router();
 
@@ -34,6 +40,9 @@ router.use('/cenik/category-settings', requireRoles([ROLE_ADMIN, ROLE_ORGANIZER]
 router.use('/cenik', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), cenikRoutes);
 router.use('/price-list', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), priceListRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/suppliers', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_ORGANIZER]), supplierRoutes);
+router.use('/shop', requireRoles([ROLE_ADMIN, ROLE_SALES]), shopRoutes);
+router.use('/config', configRoutes);
 router.use('/settings', pdfSettingsRoutes);
 router.use('/settings/communication', communicationSettingsRoutes);
 router.use('/finance', financeRoutes);
@@ -49,6 +58,9 @@ router.use('/admin', requireRoles([ROLE_ADMIN]), adminRoutes);
 router.use('/offers', offerPreviewRoutes);
 router.use('/files', filesRoutes);
 router.use('/photos', photosRoutes);
+router.use('/tasks', tasksRoutes);
+router.use('/service', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_EXECUTION]), serviceRoutes);
+router.use('/email', requireRoles([ROLE_ADMIN, ROLE_SALES]), emailRoutes);
 router.use('/zahteve', zahteveRoutes);
 router.use('/execution-rules', executionRulesRoutes);
 router.use('/web-inquiries', requireRoles([ROLE_ADMIN, ROLE_SALES]), webInquiriesAdminRoutes);

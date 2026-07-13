@@ -1,0 +1,50 @@
+{
+  "meta": {
+    "source": "blebox",
+    "note": "ECO-31: kurirane povezave med scrape slugi in obstoječimi ročnimi vnosi v ceniku. adopt = obstoječi produkt (poiskan po točnem imenu) dobi externalKey blebox:<slug> in s tem vsebinski sync (cene/aktivnost/ime/dobavitelj ostanejo lastnikovi). skipCreate = slugi, ki se NE uvozijo kot novi (že pokriti z ročnimi variantami).",
+    "updatedAt": "2026-07-08"
+  },
+  "adopt": {
+    "rollergate": "Blebox RollerGate",
+    "gatebox": "Blebox GateBox",
+    "gatebox-pro": "Blebox GateBoxPRO",
+    "doorbox": "Blebox DoorBox",
+    "shutterbox": "Blebox ShutterBox",
+    "shutterboxdc": "Blebox ShutterBoxDC",
+    "switchbox": "Blebox SwitchBox",
+    "switchbox-light": "Blebox SwitchBoxLight",
+    "switchboxd": "Blebox SwitchBoxD",
+    "switchboxdc": "Blebox SwitchBoxDC",
+    "dimmerbox": "Blebox DimmerBox",
+    "dacboxd-dc": "Blebox dacboxD DC",
+    "wlightbox": "Blebox wLightBox",
+    "wlightboxs": "Blebox wLightBoxS",
+    "saunabox": "Blebox SaunaBox",
+    "thermobox": "Blebox ThermoBox",
+    "switchbox-din": "Blebox SwitchBox DIN",
+    "switchboxd-din": "Blebox SwitchBoxD DIN",
+    "shutterbox-din": "Blebox ShutterBox DIN",
+    "humiditysensor": "Blebox HumiditySensor",
+    "tempsensor": "Blebox TempSensor",
+    "tempsensorac": "Blebox TempSensorAC",
+    "tempsensor-pro": "Blebox TempSensorPRO",
+    "rainsensor": "Blebox RainSensor",
+    "floodsensor": "Blebox FloodSensor",
+    "windsensor-pro": "Blebox WindSensor",
+    "uremote": "Blebox uRemote - daljinček",
+    "sremote": "Blebox sRemote",
+    "inbox": "Blebox inBox",
+    "actionbox": "Blebox ActionBox",
+    "actionboxs": "Blebox ActionBoxS",
+    "proxiswitch": "Blebox ProxiSwitch",
+    "proxidimmer": "Blebox ProxiDimmer",
+    "blebox_reedswitch": "Blebox Magnetni senzor za vrata"
+  },
+  "skipCreate": ["blebox_tempprobe"],
+  "ownerReview": [
+    "Blebox proximitydimmer — verjeten ročni dvojnik produkta Blebox ProxiDimmer; predlog: deaktivirati ali združiti.",
+    "Blebox ThermoBoxSet s senzorjem in okvirjem — komplet, ostane ročni vnos brez sinca.",
+    "Blebox ActionBoxS Wired — varianta, ostane ročni vnos.",
+    "Blebox Temperaturna sonda 1m/2m/5m — ročne dolžinske variante; scrape blebox_tempprobe se zato NE uvozi (skipCreate)."
+  ]
+}

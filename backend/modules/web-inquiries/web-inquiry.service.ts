@@ -1,4 +1,5 @@
-import { Types } from 'mongoose';
+import { Types, isValidObjectId } from 'mongoose';
+import { logger } from '../../core/logger';
 import { CrmClientModel } from '../crm/schemas/client';
 import { ProductModel } from '../cenik/product.model';
 import {
@@ -389,8 +390,21 @@ async function buildAlarmZahteva(input: {
   const { settings, defaultsApplied, data } = input;
   const cfg = settings.alarm;
   const sensorId = { A: cfg.sensorAProductId, B: cfg.sensorBProductId, C: cfg.sensorCProductId }[data.sensorChoice];
-  const centrala = await productNameOrThrow(cfg.centralaProductId, 'alarmna centrala');
   const senzor = await productNameOrThrow(sensorId, `senzor ${data.sensorChoice}`);
+
+  // Poslovno pravilo (2026-07-09): senzor s foto verifikacijo (MotionCam)
+  // potrebuje Ajax Hub 2 — sicer zadošča osnovni Hub. Centrala je VEDNO del
+  // ponudbe (fiksna izbira).
+  const jeFotoSenzor = /motioncam/i.test(senzor.ime);
+  let centrala = await productNameOrThrow(cfg.centralaProductId, 'alarmna centrala');
+  if (jeFotoSenzor) {
+    if (cfg.centrala2ProductId) {
+      centrala = await productNameOrThrow(cfg.centrala2ProductId, 'alarmna centrala 2 (Hub 2)');
+      defaultsApplied.push(`Senzor s foto verifikacijo → centrala nadgrajena na ${centrala.ime}.`);
+    } else {
+      defaultsApplied.push('OPOZORILO: senzor s foto verifikacijo, a Centrala 2 (Hub 2) v nastavitvah ni izbrana — uporabljena osnovna centrala. Preveri ročno!');
+    }
+  }
   defaultsApplied.push(`Centrala: ${centrala.ime} (fiksna izbira).`, `Senzor ${data.sensorChoice}: ${senzor.ime} × ${data.sensorCount}.`);
 
   const sirene: Array<{ productId: string; kolicina: number }> = [];
@@ -634,7 +648,7 @@ async function sendInquiryOfferEmail(input: {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Napaka pri pošiljanju emaila.';
-    console.error('[web-inquiries] Pošiljanje ponudbe po emailu ni uspelo:', message);
+    logger.error({ err: error, scope: 'web-inquiries' }, '[web-inquiries] Pošiljanje ponudbe po emailu ni uspelo');
     await WebInquiryModel.updateOne(
       { _id: input.inquiryId },
       { $set: { emailSent: false, status: 'ponudba_ni_poslana', errorMessage: message } }
@@ -646,8 +660,110 @@ export interface ProcessInquiryResult {
   inquiry: WebInquiryDocument;
   offerNumber: string | null;
   offerTotalWithVat: number | null;
+  offerValuePayload?: WebOfferValuePayload | null;
   emailSent: boolean;
   message: string;
+}
+
+export interface WebOfferValuePayload {
+  headline: string;
+  intro: string;
+  equipment: Array<{ name: string; quantity: number; unit: string; description?: string; imageUrl?: string }>;
+  includedServices: Array<{ name: string; quantity: number; unit: string; description?: string }>;
+  coverage: string[];
+  reassurance: string[];
+}
+
+function shortText(value: unknown, maxLength = 180) {
+  return typeof value === 'string' ? value.normalize('NFC').trim().replace(/\s+/g, ' ').slice(0, maxLength) : '';
+}
+
+function isServiceOfferItem(item: any, product: any | undefined) {
+  const category = shortText(item?.category, 40).toLowerCase();
+  const productType = shortText(product?.classification?.productType, 40).toLowerCase();
+  return Boolean(item?.isService) || Boolean(product?.isService) || category === 'labor' || productType === 'storitev';
+}
+
+function buildCoverageLines(payload?: WebInquiryPayload | null) {
+  if (!payload) return [];
+  if (payload.pillar === 'videonadzor' && payload.videonadzor) {
+    return [
+      `${payload.videonadzor.cameraCount} ${payload.videonadzor.cameraCount === 1 ? 'kamera' : 'kamer'} za izbrani objekt.`,
+      payload.videonadzor.wiringType === 'wifi'
+        ? 'Rešitev je prilagojena za WiFi izvedbo.'
+        : payload.videonadzor.wiringReady
+          ? 'Rešitev upošteva pripravljeno žično napeljavo.'
+          : 'Rešitev vključuje žično izvedbo z upoštevanjem napeljave.',
+    ];
+  }
+  if (payload.pillar === 'alarm' && payload.alarm) {
+    return [
+      `${payload.alarm.sensorCount} ${payload.alarm.sensorCount === 1 ? 'varovan prostor' : 'varovanih prostorov'} z izbranim tipom senzorjev.`,
+      payload.alarm.addSirensAndKeypad ? 'Vključena je dodatna sirena oziroma upravljanje, kjer je izbrano.' : 'Osnovna alarmna konfiguracija je pripravljena za izbrane prostore.',
+    ];
+  }
+  if (payload.pillar === 'domofon' && payload.domofon) {
+    return [
+      `${payload.domofon.outdoorUnits} zunanja in ${payload.domofon.indoorUnits} notranja enota domofona.`,
+      payload.domofon.wiringReady ? 'Ponudba upošteva pripravljeno napeljavo.' : 'Napeljava je označena za preverjanje pri izvedbi.',
+    ];
+  }
+  if (payload.pillar === 'pametni_dom' && payload.pametniDom) {
+    return [
+      `${payload.pametniDom.lightsCount} modulov za luči in ${payload.pametniDom.shadesCount} modulov za senčila.`,
+      'Rešitev je pripravljena za izbrane funkcije pametnega doma.',
+    ];
+  }
+  return [];
+}
+
+export async function buildWebOfferValuePayload(offer: { items?: any[] } | null | undefined, payload?: WebInquiryPayload | null): Promise<WebOfferValuePayload | null> {
+  const items = Array.isArray(offer?.items) ? offer!.items : [];
+  if (items.length === 0) return null;
+
+  const productIds = items.map((item) => shortText(item?.productId, 80)).filter((id) => isValidObjectId(id));
+  const products: any[] = productIds.length ? await ProductModel.find({ _id: { $in: productIds } }).lean() : [];
+  const productById = new Map<string, any>(products.map((product) => [String(product._id), product]));
+
+  const equipment: WebOfferValuePayload['equipment'] = [];
+  const includedServices: WebOfferValuePayload['includedServices'] = [];
+  for (const item of items) {
+    const product = item?.productId ? productById.get(String(item.productId)) : undefined;
+    const name = shortText(product?.merchandising?.oznaka, 120) || shortText(item?.name, 120) || shortText(product?.ime, 120);
+    if (!name) continue;
+    const quantity = Math.max(0, Number(item?.quantity ?? 0));
+    const unit = shortText(item?.unit, 20) || 'kos';
+    const description = shortText(product?.kratkiOpis ?? product?.kratekOpis ?? product?.dolgOpis ?? product?.aaData?.rawDescription, 180);
+    if (isServiceOfferItem(item, product)) {
+      includedServices.push({ name, quantity, unit, ...(description ? { description } : {}) });
+    } else {
+      const imageUrl = shortText(product?.povezavaDoSlike ?? product?.aaData?.image, 400);
+      equipment.push({ name, quantity, unit, ...(description ? { description } : {}), ...(imageUrl ? { imageUrl } : {}) });
+    }
+  }
+
+  if (includedServices.length === 0) {
+    includedServices.push({
+      name: 'Montaža, konfiguracija in zagon',
+      quantity: 1,
+      unit: 'paket',
+      description: 'Izvedbeni del je vključen v ponudbo, kot je razvidno iz PDF ponudbe.',
+    });
+  }
+
+  return {
+    headline: 'Kaj dobite v ponudbi',
+    intro: 'Ponudba ni samo cena — vključuje opremo, izvedbo in zagon rešitve za vaš objekt.',
+    equipment: equipment.slice(0, 12),
+    includedServices: includedServices.slice(0, 8),
+    coverage: buildCoverageLines(payload).slice(0, 4),
+    reassurance: [
+      'Izbrane postavke so pripravljene glede na podatke, ki ste jih vnesli v konfigurator.',
+      'PDF ponudba vsebuje celoten seznam postavk in končno vrednost.',
+      'Pred izvedbo lahko ponudbo skupaj prilagodimo dejanskemu stanju objekta.',
+      'Po izvedbi ostaneta podpora in garancija po pogojih ponudbe.',
+    ],
+  };
 }
 
 export async function processWebInquiry(payload: WebInquiryPayload, tenantId = 'inteligent'): Promise<ProcessInquiryResult> {
@@ -839,6 +955,7 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
       inquiry,
       offerNumber: inquiry.offerNumber,
       offerTotalWithVat: inquiry.offerTotalWithVat,
+      offerValuePayload: await buildWebOfferValuePayload(offer, payload),
       emailSent: false,
       message: 'Povpraševanje smo prejeli. Informativno ponudbo vam pošiljamo na vaš e-naslov.',
     };
@@ -848,6 +965,112 @@ export async function processWebInquiry(payload: WebInquiryPayload, tenantId = '
     inquiry.defaultsApplied = defaultsApplied;
     await inquiry.save().catch(() => undefined);
     throw error;
+  }
+}
+
+// ECO-18/S10: trajne kvote iz baze — preživijo restart in veljajo za vse instance
+// (in-memory limiter v public.routes.ts lovi samo kratke izbruhe na en proces).
+// Nastavljivo prek env (owner), privzeto: 5 / e-naslov / 24 h, 200 skupno / 24 h.
+const KVOTA_OKNO_MS = 24 * 3600 * 1000;
+
+function kvotaStevilo(envKey: string, privzeto: number): number {
+  const v = Number(process.env[envKey]);
+  return Number.isFinite(v) && v > 0 ? v : privzeto;
+}
+
+export async function assertInquiryQuota(email: string, tenantId = 'inteligent'): Promise<void> {
+  const od = new Date(Date.now() - KVOTA_OKNO_MS);
+  const naEmail = kvotaStevilo('AINTEL_WEB_QUOTA_EMAIL_PER_DAY', 5);
+  const skupno = kvotaStevilo('AINTEL_WEB_QUOTA_GLOBAL_PER_DAY', 200);
+  const [zaEmail, vseh] = await Promise.all([
+    WebInquiryModel.countDocuments({ tenantId, 'contact.email': email, createdAt: { $gte: od } }),
+    WebInquiryModel.countDocuments({ tenantId, createdAt: { $gte: od } }),
+  ]);
+  if (zaEmail >= naEmail) {
+    throw new WebInquiryError('QUOTA_EXCEEDED', 'Dnevna omejitev povpraševanj za ta e-naslov je dosežena. Pokličite nas ali poskusite jutri.', 429);
+  }
+  if (vseh >= skupno) {
+    throw new WebInquiryError('QUOTA_EXCEEDED', 'Trenutno prejemamo veliko povpraševanj. Poskusite znova pozneje ali nas pokličite.', 429);
+  }
+}
+
+// ECO-36 / AIN-P1-16 (spletna stran): predlogi »najpogosteje izbrano« za
+// konfigurator. Vir je izključno lastna statistika — salesStats iz sprejetih
+// ponudb (ECO-35) za izbiro produkta (senzor, žično/WiFi) in zgodovina spletnih
+// povpraševanj za število kamer in raven kakovosti. Navzven gre samo predlagani
+// ključ, nikoli surove prodajne številke.
+const PREDLOG_MIN_VZOREC = 3;
+
+export function webSalesQty(product: unknown): number {
+  const stats = (product as { salesStats?: { soldQty365?: unknown; soldQty?: unknown } } | null)?.salesStats;
+  const q365 = Number(stats?.soldQty365);
+  if (Number.isFinite(q365) && q365 > 0) return q365;
+  const q = Number(stats?.soldQty);
+  return Number.isFinite(q) && q > 0 ? q : 0;
+}
+
+export function webTopSalesKey(kandidati: Array<{ key: string; product: unknown }>): string | null {
+  let najKey: string | null = null;
+  let najQty = 0;
+  for (const kandidat of kandidati) {
+    const qty = webSalesQty(kandidat.product);
+    if (qty > najQty) {
+      najKey = kandidat.key;
+      najQty = qty;
+    }
+  }
+  return najKey;
+}
+
+export interface KonfiguratorPredlogi {
+  cameraCount: number | null;
+  kakovost: string | null;
+}
+
+export async function izracunajKonfiguratorPredloge(tenantId = 'inteligent'): Promise<KonfiguratorPredlogi> {
+  const zacetek = new Date(Date.now() - 365 * 24 * 3600 * 1000);
+  const rezultat: Array<{
+    kamere: Array<{ _id: number; n: number }>;
+    kakovost: Array<{ _id: string; n: number }>;
+  }> = await WebInquiryModel.aggregate([
+    { $match: { tenantId, createdAt: { $gte: zacetek } } },
+    {
+      $facet: {
+        kamere: [
+          { $match: { pillar: 'videonadzor', 'payload.videonadzor.cameraCount': { $gte: 1, $lte: 64 } } },
+          { $group: { _id: '$payload.videonadzor.cameraCount', n: { $sum: 1 } } },
+          { $sort: { n: -1, _id: 1 } },
+          { $limit: 1 },
+        ],
+        kakovost: [
+          { $match: { 'meta.qualityLevel': { $in: ['osnovna', 'priporocena', 'nadstandardna'] } } },
+          { $group: { _id: '$meta.qualityLevel', n: { $sum: 1 } } },
+          { $sort: { n: -1, _id: 1 } },
+          { $limit: 1 },
+        ],
+      },
+    },
+  ]);
+  const kamere = rezultat[0]?.kamere?.[0];
+  const kakovost = rezultat[0]?.kakovost?.[0];
+  return {
+    cameraCount: kamere && kamere.n >= PREDLOG_MIN_VZOREC ? kamere._id : null,
+    kakovost: kakovost && kakovost.n >= PREDLOG_MIN_VZOREC ? kakovost._id : null,
+  };
+}
+
+const predlogiCache = new Map<string, { data: KonfiguratorPredlogi; cas: number }>();
+
+async function getKonfiguratorPredlogi(tenantId: string): Promise<KonfiguratorPredlogi> {
+  const zadetek = predlogiCache.get(tenantId);
+  if (zadetek && Date.now() - zadetek.cas < 10 * 60 * 1000) return zadetek.data;
+  try {
+    const data = await izracunajKonfiguratorPredloge(tenantId);
+    predlogiCache.set(tenantId, { data, cas: Date.now() });
+    return data;
+  } catch (error) {
+    logger.warn(`Konfigurator predlogi: izračun ni uspel (${error instanceof Error ? error.message : error})`);
+    return { cameraCount: null, kakovost: null };
   }
 }
 
@@ -862,6 +1085,8 @@ export async function getWebInquiryOptions(tenantId = 'inteligent') {
   ].filter(Boolean);
   const products = productIds.length > 0 ? await ProductModel.find({ _id: { $in: productIds } }).lean() : [];
   const productById = new Map<string, any>(products.map((product) => [String(product._id), product]));
+  const predlogi = await getKonfiguratorPredlogi(tenantId);
+  const produkt = (productId: Types.ObjectId | null) => (productId ? productById.get(String(productId)) ?? null : null);
 
   function option(key: string, productId: Types.ObjectId | null) {
     const product = productId ? productById.get(String(productId)) : null;
@@ -885,6 +1110,15 @@ export async function getWebInquiryOptions(tenantId = 'inteligent') {
         wiringRule: 'Do 3 kamere praviloma WiFi, 4 ali več priporočamo žično izvedbo.',
         cameras: [option('wifi', video.wifiCameraProductId), option('wired', video.wiredCameraProductId)].filter(Boolean),
         dniSnemanja: video.dniSnemanja,
+        // ECO-36: aditivno — najpogostejše izbire iz lastne statistike (null = premalo podatkov).
+        suggested: {
+          cameraCount: predlogi.cameraCount,
+          wiring: webTopSalesKey([
+            { key: 'wifi', product: produkt(video.wifiCameraProductId) },
+            { key: 'wired', product: produkt(video.wiredCameraProductId) },
+          ]),
+          kakovost: predlogi.kakovost,
+        },
       },
       alarm: {
         enabled: Boolean(settings.alarm.centralaProductId && (settings.alarm.sensorAProductId || settings.alarm.sensorBProductId)),
@@ -894,6 +1128,14 @@ export async function getWebInquiryOptions(tenantId = 'inteligent') {
           option('C', settings.alarm.sensorCProductId),
         ].filter(Boolean),
         centrala: option('centrala', settings.alarm.centralaProductId),
+        // ECO-36: aditivno — najpogosteje prodani senzor (salesStats), null = ni podatkov.
+        suggested: {
+          sensor: webTopSalesKey([
+            { key: 'A', product: produkt(settings.alarm.sensorAProductId) },
+            { key: 'B', product: produkt(settings.alarm.sensorBProductId) },
+            { key: 'C', product: produkt(settings.alarm.sensorCProductId) },
+          ]),
+        },
       },
       domofon: {
         enabled: Boolean(settings.domofon.notranjaEnotaProductId && settings.domofon.zunanjaEnotaProductId),
@@ -909,24 +1151,147 @@ export async function getWebInquiryOptions(tenantId = 'inteligent') {
   };
 }
 
-const IZDELKI_SKUPINE: Array<{ key: string; label: string; query: Record<string, unknown> }> = [
+export const IZDELKI_SKUPINE: Array<{ key: string; label: string; query: Record<string, unknown> }> = [
   { key: 'kamere', label: 'Kamere in videonadzor', query: { 'classification.productType': 'kamera' } },
   { key: 'ajax', label: 'Ajax alarm', query: { categorySlugs: 'ajax' } },
   { key: 'blebox', label: 'Blebox pametni dom', query: { categorySlugs: 'blebox' } },
 ];
 
-export async function getWebIzdelki(limit = 8) {
-  const skupine = [];
+// ECO-33/35 ordering: owner curation first (vrstniRed, featured), then real
+// sales volume from accepted offers (salesStats), price only as tiebreaker.
+export function compareForDisplay(a: any, b: any) {
+  const aOrder = a?.merchandising?.vrstniRed;
+  const bOrder = b?.merchandising?.vrstniRed;
+  if (typeof aOrder === 'number' || typeof bOrder === 'number') {
+    if (typeof aOrder !== 'number') return 1;
+    if (typeof bOrder !== 'number') return -1;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+  }
+  const featured = Number(Boolean(b?.merchandising?.featured)) - Number(Boolean(a?.merchandising?.featured));
+  if (featured !== 0) return featured;
+  const sold = (b?.salesStats?.soldQty ?? 0) - (a?.salesStats?.soldQty ?? 0);
+  if (sold !== 0) return sold;
+  return (b?.prodajnaCena ?? 0) - (a?.prodajnaCena ?? 0);
+}
+
+export function katalogSlug(value: string) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+// ECO-34: full published catalogue for the static website build (SEO pages).
+// Same groups, eligibility and ordering as getWebIzdelki, but with the rich
+// content fields (dolgOpis, specifications, boughtWith) and no 8-item cap.
+export async function getWebKatalog(limitPerGroup = 100) {
+  const limit = Math.max(1, Math.min(500, Number(limitPerGroup) || 100));
+  const skupine = [] as Array<Record<string, unknown>>;
+  const slugsSeen = new Set<string>();
+
   for (const skupina of IZDELKI_SKUPINE) {
-    const products = await ProductModel.find({
+    const candidates = await ProductModel.find({
       ...skupina.query,
       isActive: true,
       prodajnaCena: { $gt: 0 },
+      'merchandising.published': { $ne: false },
       $or: [{ povezavaDoSlike: { $nin: [null, ''] } }, { 'aaData.image': { $nin: [null, ''] } }],
     })
-      .sort({ prodajnaCena: -1 })
-      .limit(limit)
+      .select({
+        ime: 1,
+        kratekOpis: 1,
+        dolgOpis: 1,
+        prodajnaCena: 1,
+        povezavaDoSlike: 1,
+        povezavaDoProdukta: 1,
+        proizvajalec: 1,
+        'aaData.image': 1,
+        'aaData.vat': 1,
+        'aaData.attributes': 1,
+        merchandising: 1,
+        'salesStats.soldQty': 1,
+        'salesStats.boughtWith': 1,
+      })
       .lean();
+
+    const products = candidates
+      .sort(compareForDisplay)
+      .slice(0, limit)
+      .map((product: any) => {
+        const vat = Number(product?.aaData?.vat);
+        const vatRate = Number.isFinite(vat) && vat >= 0 ? vat : 22;
+        let slug = katalogSlug(product.ime) || String(product._id);
+        while (slugsSeen.has(slug)) slug = `${slug}-2`;
+        slugsSeen.add(slug);
+        return {
+          id: String(product._id),
+          slug,
+          name: product.ime,
+          manufacturer: product.proizvajalec || '',
+          shortDescription: (product.kratekOpis ?? '').slice(0, 200),
+          longDescription: product.dolgOpis ?? '',
+          priceWithVat: Number((Number(product.prodajnaCena ?? 0) * (1 + vatRate / 100)).toFixed(2)),
+          image: product.povezavaDoSlike || product?.aaData?.image || '',
+          badge: product?.merchandising?.oznaka || '',
+          featured: Boolean(product?.merchandising?.featured),
+          officialUrl: product.povezavaDoProdukta || '',
+          specs: (product?.aaData?.attributes ?? [])
+            .slice(0, 24)
+            .map((attr: any) => ({ attribute: attr.attribute, term: attr.term })),
+          soldQty: product?.salesStats?.soldQty ?? 0,
+          boughtWith: (product?.salesStats?.boughtWith ?? [])
+            .slice(0, 3)
+            .map((pair: any) => ({ productId: pair.productId, name: pair.ime })),
+        };
+      });
+
+    skupine.push({ key: skupina.key, label: skupina.label, products });
+  }
+
+  // boughtWith entries are linkable only when the partner product is itself in
+  // the catalogue: annotate with its slug so the site can render links.
+  const slugById = new Map<string, string>();
+  for (const skupina of skupine) {
+    for (const product of skupina.products as Array<{ id: string; slug: string }>) {
+      slugById.set(product.id, product.slug);
+    }
+  }
+  for (const skupina of skupine) {
+    for (const product of skupina.products as Array<{ boughtWith: Array<{ productId: string; slug?: string }> }>) {
+      for (const pair of product.boughtWith) {
+        const slug = slugById.get(pair.productId);
+        if (slug) pair.slug = slug;
+      }
+    }
+  }
+
+  return skupine;
+}
+
+export async function getWebIzdelki(limit = 8) {
+  const skupine = [];
+  for (const skupina of IZDELKI_SKUPINE) {
+    const candidates = await ProductModel.find({
+      ...skupina.query,
+      isActive: true,
+      prodajnaCena: { $gt: 0 },
+      'merchandising.published': { $ne: false },
+      $or: [{ povezavaDoSlike: { $nin: [null, ''] } }, { 'aaData.image': { $nin: [null, ''] } }],
+    })
+      .select({
+        ime: 1,
+        kratekOpis: 1,
+        prodajnaCena: 1,
+        'aaData.image': 1,
+        'aaData.vat': 1,
+        povezavaDoSlike: 1,
+        merchandising: 1,
+        'salesStats.soldQty': 1,
+      })
+      .lean();
+    const products = candidates.sort(compareForDisplay).slice(0, limit);
     skupine.push({
       key: skupina.key,
       label: skupina.label,
@@ -938,6 +1303,7 @@ export async function getWebIzdelki(limit = 8) {
           shortDescription: (product.kratekOpis ?? '').slice(0, 140),
           priceWithVat: Number((Number(product.prodajnaCena ?? 0) * (1 + vatRate / 100)).toFixed(2)),
           image: product.povezavaDoSlike || product?.aaData?.image || '',
+          badge: product?.merchandising?.oznaka || '',
         };
       }),
     });

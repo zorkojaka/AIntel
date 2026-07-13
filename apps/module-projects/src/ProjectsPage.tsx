@@ -4,6 +4,7 @@ import { ClientForm, ClientFormPayload, Client } from "@aintel/module-crm";
 import { useSettingsData } from "@aintel/module-settings";
 import { Plus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
+import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import { ProjectList } from "./components/ProjectList";
 import { ProjectFilters } from "./components/ProjectFilters";
 import { ProjectKanban } from "./components/ProjectKanban";
@@ -165,14 +166,11 @@ export function ProjectsPage() {
     const fetchMe = async () => {
       try {
         const response = await fetch("/api/auth/me");
-        const result = await response.json();
-        if (cancelled || !result?.success) {
-          if (!cancelled) {
-            setViewerRolesLoaded(true);
-          }
+        const result = await parseApiEnvelope<any>(response, "Prijave ni mogoče preveriti.");
+        if (cancelled) {
           return;
         }
-        const roles = Array.isArray(result?.data?.employee?.roles) ? result.data.employee.roles : [];
+        const roles = Array.isArray(result?.employee?.roles) ? result.employee.roles : [];
         setViewerRoles(roles);
         setViewerRolesLoaded(true);
       } catch {
@@ -216,14 +214,10 @@ export function ProjectsPage() {
   const fetchProjectList = useCallback(async () => {
     try {
       const response = await fetch(`${API_PREFIX}?view=${encodeURIComponent(projectLifecycleView)}`);
-      const result = await response.json();
-      if (!result.success) {
-        toast.error(result.error ?? "Napaka pri nalaganju projektov.");
-        return;
-      }
-      setProjects(result.data as ProjectSummary[]);
-    } catch {
-      toast.error("Napaka pri nalaganju projektov.");
+      const result = await parseApiEnvelope<ProjectSummary[]>(response, "Napaka pri nalaganju projektov.");
+      setProjects(result);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Napaka pri nalaganju projektov.");
     } finally {
       setProjectsLoaded(true);
     }
@@ -274,21 +268,17 @@ export function ProjectsPage() {
 
   const loadProjectDetails = async (projectId: string) => {
     const response = await fetch(`${API_PREFIX}/${projectId}`);
-    const result = await response.json();
-    if (!result.success) {
-      if (response.status === 403) {
-        if (!shownForbiddenProjectToasts.has(projectId)) {
-          shownForbiddenProjectToasts.add(projectId);
-          toast.error("Nimaš dostopa do izbranega projekta.");
-        }
-        handleBackToList();
-      } else {
-        toast.error(result.error ?? "Projekt ni bil najden.");
+    if (response.status === 403) {
+      if (!shownForbiddenProjectToasts.has(projectId)) {
+        shownForbiddenProjectToasts.add(projectId);
+        toast.error("Nimaš dostopa do izbranega projekta.");
       }
+      handleBackToList();
       return;
     }
+    const result = await parseApiEnvelope<any>(response, "Projekt ni bil najden.");
     shownForbiddenProjectToasts.delete(projectId);
-    const mapped = mapProject(result.data);
+    const mapped = mapProject(result);
     setProjectDetails(mapped);
     setSelectedProjectId(mapped.id);
     setTemplates(mapped.templates);
@@ -354,14 +344,10 @@ export function ProjectsPage() {
     setClientsLoading(true);
     try {
       const response = await fetch("/api/crm/clients");
-      const result = await response.json();
-      if (!result.success) {
-        toast.error(result.error ?? "Napaka pri nalaganju strank.");
-        return;
-      }
-      setCrmClients(result.data ?? []);
+      const result = await parseApiEnvelope<Client[]>(response, "Napaka pri nalaganju strank.");
+      setCrmClients(result ?? []);
     } catch (error) {
-      toast.error("Ne morem pridobiti strank.");
+      toast.error(error instanceof Error ? error.message : "Ne morem pridobiti strank.");
     } finally {
       setClientsLoading(false);
     }
@@ -386,12 +372,8 @@ export function ProjectsPage() {
   const handleEditProject = async (project: ProjectSummary) => {
     try {
       const response = await fetch(`${API_PREFIX}/${project.id}`);
-      const result = await response.json();
-      if (!result.success) {
-        toast.error(result.error ?? "Projekt ni bil najden.");
-        return;
-      }
-      const mapped = mapProject(result.data);
+      const result = await parseApiEnvelope<any>(response, "Projekt ni bil najden.");
+      const mapped = mapProject(result);
       setProjectFormInitial(mapped);
       setNewProjectDefaults({
         requirements: mapped.requirementsText ?? "",
@@ -406,18 +388,14 @@ export function ProjectsPage() {
         fetchCategories();
       }
     } catch (error) {
-      toast.error("Napaka pri nalaganju projekta.");
+      toast.error(error instanceof Error ? error.message : "Napaka pri nalaganju projekta.");
     }
   };
 
   const handleDeleteProject = async (project: ProjectSummary) => {
     try {
       const response = await fetch(`${API_PREFIX}/${project.id}`, { method: "DELETE" });
-      const result = await response.json();
-      if (!result.success) {
-        toast.error(result.error ?? "Projekt ni bil izbrisan.");
-        return;
-      }
+      await parseApiEnvelope<unknown>(response, "Projekt ni bil izbrisan.");
       toast.success("Projekt je bil izbrisan.");
       fetchProjectList();
       if (project.id === selectedProjectId) {
@@ -427,7 +405,7 @@ export function ProjectsPage() {
         setCurrentView("list");
       }
     } catch (error) {
-      toast.error("Napaka pri brisanju projekta.");
+      toast.error(error instanceof Error ? error.message : "Napaka pri brisanju projekta.");
     }
   };
 
@@ -451,12 +429,8 @@ export function ProjectsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
       });
-      const result = await response.json();
-      if (!result.success) {
-        toast.error(result.error ?? "Projekta ni bilo mogoče posodobiti.");
-        return;
-      }
-      const mapped = mapProject(result.data);
+      const result = await parseApiEnvelope<any>(response, "Projekta ni bilo mogoče posodobiti.");
+      const mapped = mapProject(result);
       setProjectDetails((current) => (current?.id === mapped.id ? mapped : current));
       setTemplates((current) => (projectDetails?.id === mapped.id ? mapped.templates : current));
       await fetchProjectList();
@@ -467,8 +441,8 @@ export function ProjectsPage() {
         reopen: "Projekt je ponovno odprt.",
       };
       toast.success(messages[action]);
-    } catch {
-      toast.error("Napaka pri posodabljanju projekta.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Napaka pri posodabljanju projekta.");
     }
   };
 
@@ -518,13 +492,9 @@ export function ProjectsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const result = await response.json();
-      if (!result.success) {
-        toast.error(result.error ?? "Napaka pri ustvarjanju projekta.");
-        return;
-      }
+      const result = await parseApiEnvelope<any>(response, "Napaka pri ustvarjanju projekta.");
 
-      let mapped = mapProject(result.data);
+      let mapped = mapProject(result);
       const finalCategoryNames = categories
         .map((slug) => categoryLookup.get(slug) ?? slug)
         .filter(Boolean);
@@ -550,9 +520,11 @@ export function ProjectsPage() {
             status: mapped.status,
           }),
         });
-        const updateResult = await updateResponse.json();
-        if (updateResult.success) {
-          mapped = mapProject(updateResult.data);
+        try {
+          const updateResult = await parseApiEnvelope<any>(updateResponse, "Napaka pri ustvarjanju projekta.");
+          mapped = mapProject(updateResult);
+        } catch {
+          // Keep the created project if the title normalization update fails.
         }
       }
 
@@ -568,7 +540,7 @@ export function ProjectsPage() {
       setProjectFormInitial(null);
       setNewProjectCategorySlugs([]);
     } catch (error) {
-      toast.error("Prišlo je do napake pri ustvarjanju projekta.");
+      toast.error(error instanceof Error ? error.message : "Prišlo je do napake pri ustvarjanju projekta.");
     } finally {
       setIsCreatingProject(false);
     }
@@ -630,13 +602,9 @@ export function ProjectsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const result = await response.json();
-      if (!result.success) {
-        toast.error(result.error ?? "Napaka pri posodabljanju projekta.");
-        return;
-      }
+      const result = await parseApiEnvelope<any>(response, "Napaka pri posodabljanju projekta.");
 
-      const mapped = mapProject(result.data);
+      const mapped = mapProject(result);
       setProjects((prev) =>
         prev.map((project) => (project.id === mapped.id ? toSummary(mapped) : project))
       );
@@ -648,7 +616,7 @@ export function ProjectsPage() {
       setProjectFormInitial(null);
       setNewProjectCategorySlugs(mapped.categories ?? []);
     } catch (error) {
-      toast.error("Napaka pri posodabljanju projekta.");
+      toast.error(error instanceof Error ? error.message : "Napaka pri posodabljanju projekta.");
     } finally {
       setIsCreatingProject(false);
     }
@@ -664,12 +632,7 @@ export function ProjectsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const result = await response.json();
-    if (!result.success) {
-      throw new Error(result.error ?? "Prišlo je do napake pri shranjevanju stranke.");
-    }
-
-    const createdClient = result.data as Client;
+    const createdClient = await parseApiEnvelope<Client>(response, "Prišlo je do napake pri shranjevanju stranke.");
     setCrmClients((prev) => {
       if (!prev.some((client) => client.id === createdClient.id)) {
         return [createdClient, ...prev];
@@ -692,12 +655,8 @@ export function ProjectsPage() {
         ...options,
         headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
     });
-    const result = await response.json();
-    if (!result.success) {
-      toast.error(result.error ?? "Napaka pri shranjevanju projekta.");
-      return null;
-    }
-    const mapped = mapProject(result.data);
+    const result = await parseApiEnvelope<any>(response, "Napaka pri shranjevanju projekta.");
+    const mapped = mapProject(result);
     setProjectDetails(mapped);
     setProjects((prev) => prev.map((proj) => (proj.id === mapped.id ? toSummary(mapped) : proj)));
     setTemplates(mapped.templates);
@@ -751,15 +710,10 @@ export function ProjectsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: nextStatus }),
         });
-        const result = await response.json();
-        if (!result.success) {
-          setProjects(previous);
-          toast.error(result.error ?? "Statusa ni bilo mogoče posodobiti.");
-          return;
-        }
-      } catch {
+        await parseApiEnvelope<unknown>(response, "Statusa ni bilo mogoče posodobiti.");
+      } catch (error) {
         setProjects(previous);
-        toast.error("Statusa ni bilo mogoče posodobiti.");
+        toast.error(error instanceof Error ? error.message : "Statusa ni bilo mogoče posodobiti.");
       }
     },
     [projects],
@@ -920,4 +874,3 @@ export function ProjectsPage() {
     </>
   );
 }
-

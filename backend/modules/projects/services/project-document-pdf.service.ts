@@ -308,6 +308,14 @@ function buildWorkOrderItemStatusLabel(item: NonNullable<Awaited<ReturnType<type
   return 'Odstopanje';
 }
 
+function buildWorkOrderItemDeviationLabel(executedQuantity: number, offeredQuantity: number, unit?: string | null) {
+  const difference = executedQuantity - offeredQuantity;
+  if (difference === 0) return null;
+  const sign = difference > 0 ? '+' : '';
+  const unitLabel = unit ? ` ${unit}` : '';
+  return `Odstopanje: ${sign}${difference}${unitLabel}`;
+}
+
 async function resolveWorkOrderExecutorLabel(
   workOrder: NonNullable<Awaited<ReturnType<typeof WorkOrderModel.findOne>>>,
   companyName: string,
@@ -462,17 +470,23 @@ export async function generateWorkOrderDocumentPdf(
         : typeof item.plannedQuantity === 'number'
           ? item.plannedQuantity
           : item.quantity ?? 0;
+    const hasQuantityDeviation = (!!item.isCompleted || executedQuantity > 0) && executedQuantity !== offeredQuantity;
 
     return {
       name: item.name ?? 'Neimenovana postavka',
       quantity: docType === 'WORK_ORDER_CONFIRMATION' ? executedQuantity : offeredQuantity,
-      plannedQuantity: docType === 'WORK_ORDER_CONFIRMATION' ? offeredQuantity : undefined,
+      plannedQuantity: docType === 'WORK_ORDER_CONFIRMATION' || hasQuantityDeviation ? offeredQuantity : undefined,
+      actualQuantity: docType === 'WORK_ORDER' && hasQuantityDeviation ? executedQuantity : undefined,
       unit: item.unit ?? '',
       itemNote: item.itemNote ?? item.note ?? null,
       locationSummary: item.executionSpec?.locationSummary ?? null,
       instructions: item.executionSpec?.instructions ?? null,
       trackingUnitLabel: item.executionSpec?.trackingUnitLabel ?? null,
       statusLabel: docType === 'WORK_ORDER_CONFIRMATION' ? buildWorkOrderItemStatusLabel(item) : null,
+      deviationLabel:
+        docType === 'WORK_ORDER' && hasQuantityDeviation
+          ? buildWorkOrderItemDeviationLabel(executedQuantity, offeredQuantity, item.unit ?? '')
+          : null,
       executionLocations: await resolveWorkOrderExecutionLocations(existingProject._id, item),
       executionUnits: await resolveWorkOrderExecutionUnits(existingProject._id, item),
     };

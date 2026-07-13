@@ -1,0 +1,44 @@
+.posta-stran { max-width: 1000px; margin: 0 auto; padding: 18px 16px 40px; }
+.posta-glava { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.posta-glava h1 { font-size: 24px; font-weight: 700; margin: 0; }
+.posta-podnaslov { color: #64748b; font-size: 13.5px; margin: 4px 0 0; }
+.posta-glava__akcije { display: flex; gap: 8px; }
+
+.posta-stran .gumb-primarni,
+.posta-stran .gumb-sekundarni { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 7px 13px; font-size: 13.5px; font-weight: 600; cursor: pointer; text-decoration: none; }
+.posta-stran .gumb-primarni { background: #2563eb; border: 1px solid #2563eb; color: #fff; }
+.posta-stran .gumb-primarni:disabled { opacity: 0.5; cursor: not-allowed; }
+.posta-stran .gumb-sekundarni { background: #fff; border: 1px solid #d7dee6; color: #334155; }
+
+.posta-obvestilo { margin-top: 14px; border: 1px solid #f6c453; background: #fffbeb; color: #92400e; border-radius: 10px; padding: 10px 14px; font-size: 13.5px; }
+.posta-napaka { margin-top: 14px; border: 1px solid #fca5a5; background: #fef2f2; color: #b91c1c; border-radius: 10px; padding: 10px 14px; font-size: 13.5px; }
+
+.posta-filtri { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
+.posta-filtri button { border: 1px solid #d7dee6; background: #fff; border-radius: 999px; padding: 5px 13px; font-size: 13px; color: #475569; cursor: pointer; }
+.posta-filtri button.is-active { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; font-weight: 600; }
+.posta-filtri input[type="search"] { border: 1px solid #d7dee6; border-radius: 8px; padding: 6px 10px; font-size: 13.5px; min-width: 220px; }
+.posta-stevec { color: #94a3b8; font-size: 12.5px; margin-left: auto; }
+
+.posta-nalaganje { display: flex; align-items: center; gap: 8px; color: #64748b; margin-top: 24px; }
+.posta-prazno { color: #94a3b8; margin-top: 24px; }
+@keyframes posta-vrtenje { to { transform: rotate(360deg); } }
+.posta-stran .vrti { animation: posta-vrtenje 1s linear infinite; }
+
+.posta-seznam { margin-top: 14px; display: grid; gap: 8px; }
+.posta-sporocilo { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
+.posta-sporocilo--unmatched { border-left: 3px solid #f59e0b; }
+.posta-sporocilo--matched { border-left: 3px solid #16a34a; }
+.posta-sporocilo--ignored { opacity: 0.55; }
+.posta-sporocilo__glava { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; padding: 10px 14px; text-align: left; cursor: pointer; font-size: 14px; }
+.posta-sporocilo__od { font-weight: 600; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.posta-sporocilo__zadeva { color: #475569; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.posta-sporocilo__projekt { background: #eff6ff; color: #1d4ed8; border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.posta-sporocilo__datum { color: #94a3b8; font-size: 12.5px; white-space: nowrap; }
+.posta-ikona--ok { color: #16a34a; }
+.posta-ikona--warn { color: #f59e0b; }
+.posta-ikona--muted { color: #94a3b8; }
+
+.posta-sporocilo__telo { border-top: 1px solid #eef2f7; padding: 12px 14px; }
+.posta-sporocilo__meta { display: flex; align-items: center; gap: 6px; color: #64748b; font-size: 12.5px; margin-bottom: 8px; }
+.posta-sporocilo__besedilo { white-space: pre-wrap; font-family: inherit; font-size: 13.5px; color: #1e293b; background: #f8fafc; border: 1px solid #eef2f7; border-radius: 8px; padding: 10px 12px; max-height: 320px; overflow: auto; margin: 0 0 10px; }
+.posta-sporocilo__akcije { display: flex; flex-wrap: wrap; gap: 8px; }

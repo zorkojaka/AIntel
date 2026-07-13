@@ -42,6 +42,7 @@ import {
   sendOfferCommunicationController,
   sendWorkOrderConfirmationCommunicationController,
 } from '../../communication/controllers/project-communication.controller';
+import { supplierOrderEmailController } from '../../suppliers/supplier.routes';
 
 const router = Router();
 const requireProjectWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]);
@@ -87,6 +88,7 @@ router.get('/:projectId/logistics/installer-availability/:employeeId', requirePr
 router.put('/:projectId/work-orders/:workOrderId', requireWorkOrderWrite, logisticsController.updateWorkOrder);
 router.post('/:projectId/work-orders/:workOrderId/start-correction', requireWorkOrderWrite, logisticsController.startWorkOrderConfirmationCorrection);
 router.post('/:projectId/material-orders/:materialOrderId/advance', requirePreparationAccess, logisticsController.advanceMaterialOrderStep);
+router.post('/:projectId/material-orders/:materialOrderId/supplier-order-email', requirePreparationAccess, supplierOrderEmailController);
 router.get('/:projectId/work-orders/:workOrderId/pdf', logisticsController.exportWorkOrderPdf);
 router.get('/:projectId/material-orders/:materialOrderId/pdf', logisticsController.exportMaterialOrderPdf);
 router.get('/:projectId/invoices', invoiceController.listInvoices);

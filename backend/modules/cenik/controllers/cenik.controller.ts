@@ -43,6 +43,8 @@ type ProductResponse = ProductPayload & {
   pricingRule?: CategoryMarginPricingInfo | null;
   status?: string;
   mergedIntoProductId?: string;
+  merchandising?: ProductDocument['merchandising'];
+  salesStats?: ProductDocument['salesStats'];
   createdAt: Date;
   updatedAt: Date;
 };
@@ -159,6 +161,8 @@ function sanitizeProduct(
     pricingRule,
     status: product.status ?? (product.isActive === false ? 'merged' : 'active'),
     mergedIntoProductId: product.mergedIntoProductId ? String(product.mergedIntoProductId) : '',
+    merchandising: product.merchandising,
+    salesStats: product.salesStats,
     createdAt: product.createdAt,
     updatedAt: product.updatedAt
   });
@@ -494,4 +498,58 @@ function resolveUnitFromName(name: string) {
 
 function resolvePriorityRank(priority: 1 | 2 | 3 | null) {
   return priority ?? 4;
+}
+
+// ECO-33: owner display curation (published/featured/vrstniRed/oznaka).
+// Separate from updateProduct so curation cannot touch prices or content.
+export async function updateProductMerchandising(req: Request, res: Response) {
+  const body = req.body ?? {};
+  const update: Record<string, unknown> = {};
+
+  if (body.published !== undefined) {
+    if (typeof body.published !== 'boolean') return res.fail('published mora biti boolean', 400);
+    update['merchandising.published'] = body.published;
+  }
+  if (body.featured !== undefined) {
+    if (typeof body.featured !== 'boolean') return res.fail('featured mora biti boolean', 400);
+    update['merchandising.featured'] = body.featured;
+  }
+  if (body.vrstniRed !== undefined) {
+    if (body.vrstniRed !== null && (typeof body.vrstniRed !== 'number' || !Number.isFinite(body.vrstniRed))) {
+      return res.fail('vrstniRed mora biti število ali null', 400);
+    }
+    update['merchandising.vrstniRed'] = body.vrstniRed === null ? undefined : body.vrstniRed;
+  }
+  if (body.oznaka !== undefined) {
+    if (typeof body.oznaka !== 'string' || body.oznaka.length > 40) {
+      return res.fail('oznaka mora biti niz (do 40 znakov)', 400);
+    }
+    update['merchandising.oznaka'] = body.oznaka.trim();
+  }
+  if (Object.keys(update).length === 0) {
+    return res.fail('Ni podatkov za posodobitev (published, featured, vrstniRed, oznaka)', 400);
+  }
+
+  try {
+    const unset: Record<string, ''> = {};
+    for (const [key, value] of Object.entries(update)) {
+      if (value === undefined) {
+        unset[key] = '';
+        delete update[key];
+      }
+    }
+    const updated = await ProductModel.findByIdAndUpdate(
+      req.params.id,
+      { ...(Object.keys(update).length ? { $set: update } : {}), ...(Object.keys(unset).length ? { $unset: unset } : {}) },
+      { new: true },
+    )
+      .select({ ime: 1, merchandising: 1 })
+      .lean();
+    if (!updated) {
+      return res.fail('Produkt ne obstaja', 404);
+    }
+    res.success(updated);
+  } catch (_error) {
+    res.fail('Napaka pri posodabljanju kuracije produkta');
+  }
 }

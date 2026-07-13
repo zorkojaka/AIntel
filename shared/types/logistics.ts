@@ -12,6 +12,7 @@ export interface LogisticsMaterialItem {
   note?: string;
   dobavitelj?: string;
   naslovDobavitelja?: string;
+  supplierKey?: string;
   materialStep?: MaterialStep;
   isExtra?: boolean;
 }
@@ -49,6 +50,7 @@ export interface MaterialOrder {
   pickupLocation?: string | null;
   logisticsOwnerId?: string | null;
   pickupNote?: string | null;
+  expectedAt?: string | null;
   pickupConfirmedAt?: string | null;
   pickupConfirmedBy?: string | null;
   cancelledAt?: string | null;

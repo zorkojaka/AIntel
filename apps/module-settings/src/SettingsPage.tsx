@@ -15,6 +15,8 @@ import {
 import { OfferRulesSection } from './OfferRulesSection';
 import { ExecutionRulesSection } from './ExecutionRulesSection';
 import { RequirementTemplatesSection } from './RequirementTemplatesSection';
+import { TasksSettingsSection } from './TasksSettingsSection';
+import { SuppliersSettingsSection } from './SuppliersSettingsSection';
 import { WebInquiriesSection } from './WebInquiriesSection';
 import { CommunicationSenderSection } from './components/CommunicationSenderSection';
 import { CommunicationTemplatesSection } from './components/CommunicationTemplatesSection';
@@ -38,7 +40,7 @@ interface StatusBanner {
 
 type FormSaveScope = 'company' | 'documents' | 'sales' | 'system';
 type DocumentTabKey = DocumentTypeKey;
-type SettingsSectionKey = 'company' | 'documents' | 'communication' | 'sales' | 'system';
+type SettingsSectionKey = 'company' | 'documents' | 'communication' | 'sales' | 'tasks' | 'suppliers' | 'system';
 
 const SECTION_QUERY_PARAM = 'section';
 const SETTINGS_SECTIONS: Array<{
@@ -70,6 +72,18 @@ const SETTINGS_SECTIONS: Array<{
     label: 'Prodaja',
     title: 'Prodaja',
     description: 'Prodajna pravila, predloge zahtev in prodajni privzeti teksti.',
+  },
+  {
+    key: 'tasks',
+    label: 'Opravila',
+    title: 'Opravila',
+    description: 'Predloge opravil za hitri izbor in avtomatska pravila kolesa.',
+  },
+  {
+    key: 'suppliers',
+    label: 'Dobavitelji',
+    title: 'Dobavitelji',
+    description: 'E-naslovi dobaviteljev za pošiljanje naročil materiala.',
   },
   {
     key: 'system',
@@ -599,6 +613,10 @@ export const SettingsPage: React.FC = () => {
             <RequirementTemplatesSection />
           </div>
         );
+      case 'tasks':
+        return <TasksSettingsSection />;
+      case 'suppliers':
+        return <SuppliersSettingsSection />;
       case 'system':
         return (
           <SystemSettingsSection

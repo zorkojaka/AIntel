@@ -74,8 +74,27 @@ export async function sendOfferCommunicationController(req: Request, res: Respon
     };
 
     void sendOfferCommunicationEmail(input).catch((error) => {
-      console.error("Offer communication background send failed", error);
+      (req as any).log?.error({ err: error }, "Offer communication background send failed");
     });
+
+    // Follow-up dogovorjen ob pošiljanju (checkbox v dialogu): opravilo nastane
+    // takoj, z rokom čez N dni. scheduleOfferFollowUpTask sam upošteva način
+    // pravila (off → nič) in dedupeKey (ni podvajanja s scanom).
+    const followUp = req.body?.followUp;
+    if (followUp && followUp.enabled === true) {
+      const days = Number(followUp.days);
+      void import("../../scheduler/rules")
+        .then(({ scheduleOfferFollowUpTask }) =>
+          scheduleOfferFollowUpTask({
+            offerId: String(req.params.offerVersionId),
+            days,
+            actorUserId: (req as any)?.context?.actorUserId ?? null,
+          }),
+        )
+        .catch((error) => {
+          (req as any).log?.error({ err: error }, "Offer follow-up scheduling failed");
+        });
+    }
 
     return res.status(202).json({
       success: true,
@@ -83,7 +102,7 @@ export async function sendOfferCommunicationController(req: Request, res: Respon
       error: null,
     });
   } catch (error) {
-    console.error("Offer communication send failed", error);
+    (req as any).log?.error({ err: error }, "Offer communication send failed");
     return res.fail(error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.", 400);
   }
 }
@@ -107,7 +126,7 @@ export async function sendInvoiceCommunicationController(req: Request, res: Resp
     });
     return res.success(payload);
   } catch (error) {
-    console.error("Invoice communication send failed", error);
+    (req as any).log?.error({ err: error }, "Invoice communication send failed");
     return res.fail(error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.", 400);
   }
 }
@@ -132,7 +151,7 @@ export async function sendWorkOrderConfirmationCommunicationController(req: Requ
     });
     return res.success(payload);
   } catch (error) {
-    console.error("Work order confirmation communication send failed", error);
+    (req as any).log?.error({ err: error }, "Work order confirmation communication send failed");
     const errorCode = typeof error === "object" && error !== null && "code" in error ? (error as any).code : null;
     if (typeof errorCode === "string") {
       const message =
@@ -181,7 +200,7 @@ export async function sendInstallerPreparationCommunicationController(req: Reque
     });
     return res.success(payload);
   } catch (error) {
-    console.error("Installer preparation communication send failed", error);
+    (req as any).log?.error({ err: error }, "Installer preparation communication send failed");
     return res.fail(error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.", 400);
   }
 }
@@ -192,7 +211,7 @@ export async function getProjectCommunicationFeedController(req: Request, res: R
     const feed = await listProjectCommunicationFeed(req.params.projectId, Number.isFinite(limit) ? limit : 20);
     return res.success(feed);
   } catch (error) {
-    console.error("Project communication feed load failed", error);
+    (req as any).log?.error({ err: error }, "Project communication feed load failed");
     return res.fail("Komunikacijskega feeda ni mogoče naložiti.", 500);
   }
 }
@@ -202,7 +221,7 @@ export async function getOfferMessagesController(req: Request, res: Response) {
     const messages = await listOfferMessages(req.params.projectId, req.params.offerVersionId);
     return res.success(messages);
   } catch (error) {
-    console.error("Offer messages load failed", error);
+    (req as any).log?.error({ err: error }, "Offer messages load failed");
     return res.fail("Sporočil ni mogoče naložiti.", 500);
   }
 }
@@ -229,7 +248,7 @@ export async function getCommunicationMessageController(req: Request, res: Respo
     }
     return res.success(message);
   } catch (error) {
-    console.error("Communication message load failed", error);
+    (req as any).log?.error({ err: error }, "Communication message load failed");
     return res.fail("Sporočila ni mogoče naložiti.", 500);
   }
 }

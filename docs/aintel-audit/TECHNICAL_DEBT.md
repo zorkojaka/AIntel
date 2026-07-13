@@ -11,7 +11,7 @@ Each item: evidence → business consequence → technical consequence → sever
 | TD-A2 | Legacy embedded offers/POs/deliveries/workOrders parallel to collections | `project.controller.ts:875-1226` vs `offerversions`/`workorders`/`materialorders` | Two sources of truth; stale UI numbers possible | Confusing writes; migrations blocked | High | M–L |
 | TD-A3 | Business logic in controllers | `logistics.controller.ts` (2,927 lines, ~60 helpers) | Changes are risky → slow feature delivery on the core flow | Untestable units; hidden coupling | High | L (extract services incrementally) |
 | TD-A4 | No state machine for lifecycles | statuses mutated ad hoc across controllers | Invalid transitions possible; wheel can't be automated | Every automation must re-derive rules | High | L (introduce transition layer) |
-| TD-A5 | No background scheduler | no cron/queue anywhere | No follow-ups, SLAs, maintenance — core product vision blocked | Any timed feature needs new infra | High | M (add worker + job store) |
+| TD-A5 | RESOLVED (AIN-P1-10 scheduler foundation) | `backend/modules/scheduler/*`, `server.ts` env-gated startup | Time-based rules now have a worker foundation; actual business automations remain AIN-P1-11+ | Job registry, Mongo locks, run log, and SLA sweep are in place; worker disabled unless `AINTEL_SCHEDULER_ENABLED=true` | Medium | Follow-up rules |
 | TD-A6 | Direct cross-module model imports (no interfaces/events) | e.g. web-inquiries imports crm/projects/cenik models; communication ↔ projects | none today | Blocks modular product; refactors ripple | Medium | XL (gradual) |
 
 ## Module coupling
@@ -50,7 +50,7 @@ Each item: evidence → business consequence → technical consequence → sever
 | TD-D1 | PARTIAL (AIN-P1-07): new Project rows carry `clientId`; legacy rows still use name fallback and portal identity remains email-based | DATA_MODEL §problems | Legacy wrong-customer data mixing/orphaning remains until owner-reviewed backfill; portal duplicate-email risk remains | High | S/M (review report + backfill, then portal identity) |
 | TD-D2 | RESOLVED (AIN-P1-05): `autoIndex:false` now has an explicit ensure-indexes procedure | `db/mongo.ts`, `backend/scripts/ensure-indexes.ts` | Owner still must run dry-run/apply consciously; no automatic boot-time index creation | Medium (Atlas run remains owner-owned) | S (script landed) |
 | TD-D3 | No transactions on multi-doc flows (confirmOffer, invoice issue) | logistics/invoice services | Partial writes on failure → stuck projects | Medium | M |
-| TD-D4 | Shared prod/staging DB | env layout | Test data pollution; accidental prod damage | High | M (org decision + data copy) |
+| TD-D4 | RESOLVED IN CODE (AIN-P1-01; owner rollout required): Shared prod/staging DB | env layout; `backend/db/mongo.ts`; `STAGING_ISOLATION_RUNBOOK.md` | Startup now fails if a staging runtime points at `MONGO_DB=inteligent`; owner still must set staging `.env` and copy data to `inteligent_staging` | Medium until rollout verified | Owner ops |
 
 ## Testing
 

@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import { useProjectMutationRefresh } from "./useProjectMutationRefresh";
 
 interface UseConfirmOfferOptions {
@@ -23,17 +24,13 @@ export function useConfirmOffer({ projectId, onConfirmed }: UseConfirmOfferOptio
       setConfirmingId(offerId);
       try {
         const response = await fetch(`/api/projects/${projectId}/offers/${offerId}/confirm`, { method: "POST" });
-        const payload = await response.json();
-        if (!payload.success) {
-          toast.error(payload.error ?? "Ponudbe ni mogoče potrditi.");
-          return false;
-        }
+        await parseApiEnvelope<unknown>(response, "Ponudbe ni mogoče potrditi.");
         toast.success("Ponudba potrjena.");
         console.debug("[projects] CONFIRM_OFFER success -> refreshing project", { projectId, offerId });
         await refreshAfterMutation(onConfirmed);
         return true;
       } catch (error) {
-        toast.error("Ponudbe ni mogoče potrditi.");
+        toast.error(error instanceof Error ? error.message : "Ponudbe ni mogoče potrditi.");
         return false;
       } finally {
         setConfirmingId(null);

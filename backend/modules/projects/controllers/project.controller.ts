@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { ProductModel } from '../../cenik/product.model';
+import { logger } from '../../../core/logger';
 import {
   Project,
   ProjectDocument,
@@ -221,6 +222,25 @@ function sanitizeOfferItemPayload(body: any, existing?: ProjectOfferItem): { ite
 
 function updateOfferAmount(project: Project) {
   project.offerAmount = Number(calculateOfferAmount(project.items).toFixed(2));
+}
+
+function rejectLegacyEmbeddedWrite(req: Request, res: Response, operation: string) {
+  const log = (req as any).log ?? logger;
+  log.warn(
+    {
+      scope: 'legacy.project_embedded_write',
+      operation,
+      projectId: req.params.id ?? req.params.projectId ?? null,
+      offerId: req.params.offerId ?? null,
+      deliveryId: req.params.deliveryId ?? null,
+      route: req.originalUrl ?? req.url,
+    },
+    'Legacy embedded project write blocked',
+  );
+  return res.fail(
+    'Legacy embedded project write is disabled. Use OfferVersion, MaterialOrder and WorkOrder APIs.',
+    410,
+  );
 }
 
 async function reconcileProjectOfferStatus(project: any, savedOfferProjectIds?: Set<string>) {
@@ -1067,6 +1087,8 @@ export async function deleteItem(req: Request, res: Response) {
 }
 
 export async function sendOffer(req: Request, res: Response) {
+  return rejectLegacyEmbeddedWrite(req, res, 'sendOffer');
+/*
   const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
@@ -1085,6 +1107,7 @@ export async function sendOffer(req: Request, res: Response) {
   await project.save();
 
   return res.success(await responseProject(project.toObject()));
+*/
 }
 
 function createPurchaseOrders(project: Project) {
@@ -1109,6 +1132,8 @@ function createPurchaseOrders(project: Project) {
 }
 
 export async function confirmOffer(req: Request, res: Response) {
+  return rejectLegacyEmbeddedWrite(req, res, 'confirmOffer');
+/*
   const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
@@ -1185,9 +1210,12 @@ export async function confirmOffer(req: Request, res: Response) {
   await project.save();
 
   return res.success(await responseProject(project.toObject()));
+*/
 }
 
 export async function cancelConfirmation(req: Request, res: Response) {
+  return rejectLegacyEmbeddedWrite(req, res, 'cancelConfirmation');
+/*
   const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
@@ -1216,9 +1244,12 @@ export async function cancelConfirmation(req: Request, res: Response) {
   await project.save();
 
   return res.success(await responseProject(project.toObject()));
+*/
 }
 
 export async function selectOffer(req: Request, res: Response) {
+  return rejectLegacyEmbeddedWrite(req, res, 'selectOffer');
+/*
   const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
@@ -1241,9 +1272,12 @@ export async function selectOffer(req: Request, res: Response) {
   await project.save();
 
   return res.success(await responseProject(project.toObject()));
+*/
 }
 
 export async function receiveDelivery(req: Request, res: Response) {
+  return rejectLegacyEmbeddedWrite(req, res, 'receiveDelivery');
+/*
   const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
 
@@ -1282,6 +1316,7 @@ export async function receiveDelivery(req: Request, res: Response) {
   await project.save();
 
   return res.success(await responseProject(project.toObject()));
+*/
 }
 
 export async function saveSignature(req: Request, res: Response) {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ProjectDetails } from "../../types";
 import type { MaterialOrder, WorkOrder, WorkOrderStatus } from "@aintel/shared/types/logistics";
 import type { OfferVersionSummary } from "@aintel/shared/types/offers";
+import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import { deriveProjectPhase } from "@aintel/shared/utils/deriveProjectPhase";
 
 export type StepStatus = "done" | "inProgress" | "pending";
@@ -189,7 +190,12 @@ function isWorkOrderCompletedLike(status?: WorkOrderStatus | string | null) {
 
 function buildRequirementsStep(project: ProjectDetails | null | undefined, basePath: string) {
   const requirementsText = project?.requirementsText ?? "";
-  const requirementsDone = requirementsText.trim().length > 0;
+  // Zahteve so zajete tudi, ko projekt uporablja strukturirano zahtevo (Zahteva
+  // modul) brez besedilnega opisa — sicer korak nikoli ne pozeleni.
+  const hasStructuredRequest =
+    Boolean((project as any)?.activeRequestId) ||
+    (Array.isArray((project as any)?.requestIds) && (project as any).requestIds.length > 0);
+  const requirementsDone = requirementsText.trim().length > 0 || hasStructuredRequest;
   const requirementsStatus: StepStatus = requirementsDone ? "done" : "inProgress";
   const requirementCount = Array.isArray(project?.requirements) ? project.requirements.length : 0;
   const requirementsMeta = requirementCount > 0 ? `${requirementCount} zahtev` : undefined;
@@ -435,9 +441,9 @@ export function useProjectTimeline(project?: ProjectDetails | null): TimelineSte
     const fetchOffers = async () => {
       try {
         const response = await fetch(`/api/projects/${projectId}/offers`, { signal: controller.signal });
-        const payload = await response.json();
-        if (!payload.success || cancelled) return;
-        setRemoteOffers(Array.isArray(payload.data) ? payload.data : []);
+        const payload = await parseApiEnvelope<OfferVersionSummary[]>(response, "Ponudb ni mogoče naložiti.");
+        if (cancelled) return;
+        setRemoteOffers(Array.isArray(payload) ? payload : []);
       } catch (error) {
         if ((error as DOMException)?.name === "AbortError") return;
         if (!cancelled) {

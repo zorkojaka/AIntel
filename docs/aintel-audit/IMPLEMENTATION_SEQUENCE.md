@@ -11,8 +11,9 @@ required before merge/rollout.
 
 ## Ground rules
 
-1. Until AIN-P1-01 lands, **no work item may write to the database** from staging or
-   scripts — prod and staging share db `inteligent`. Tests use mongodb-memory-server.
+1. AIN-P1-01 now blocks a marked staging runtime from using the production database.
+   Owner rollout must still set the staging environment and Atlas copy correctly;
+   tests continue to use mongodb-memory-server.
 2. Every wave ends with a checkpoint: verify acceptance criteria, update docs per
    `DOCUMENTATION_MAINTENANCE.md`, bump `AUDIT_PROGRESS.md` last-reviewed commit.
 3. Each item's rollback path is noted in its spec/backlog entry; do not start an item
@@ -38,10 +39,10 @@ regression, not data loss.
 
 | Order | Item | Assignee | Depends on |
 |---|---|---|---|
-| 1.1 | **AIN-P1-01** staging DB split + email trap | [owner] infra remains, [agent] email-trap support + runbook DONE | — (unblocks all DB-writing work; schedule first) |
+| 1.1 | **AIN-P1-01** staging DB split + email trap | [agent] code/tests/docs DONE; [owner] live env + Atlas copy verification remains | Repository guard and email trap landed |
 | 1.2 | **AIN-P1-06** installer-prep ObjectId guard | [agent] | — (S effort; can even ride along with W0) |
-| 1.3 | **AIN-P1-02** error tracking | [agent] after [owner] picks Sentry vs GlitchTip | — |
-| 1.4 | **AIN-P1-03** structured logging (pino + request IDs) | [agent] | [owner] approves dependency |
+| 1.3 | **AIN-P1-02** error tracking | [agent] DONE: Sentry EU, optional via SENTRY_DSN, scrubbed context; [owner] creates EU project + sets env | owner chose Sentry EU 2026-07-08 |
+| 1.4 | **AIN-P1-03** structured logging (pino + request IDs) | [agent] DONE: pino + pino-http, request-id/tenant/user/route/latency, named console.* migrated | [owner] approved `pino` dependency 2026-07-08 |
 | 1.5 | **AIN-P1-04** smoke tests, five money flows | [agent] | Uses memory-server → does NOT wait on 1.1 |
 | 1.6 | **AIN-P1-05** index audit + ensure-indexes script | [agent] script DONE, [owner] runs dry-run/apply | Script landed; owner still runs read-only `db:ensure-indexes -- --json` and guarded apply if needed |
 
@@ -56,7 +57,7 @@ separate DB. **This checkpoint is the safety gate for everything below.**
 |---|---|---|---|
 | 2.1 | **AIN-P1-07** clientId on **Project** (corrected scope — WebInquiry already has it) | [agent] DONE: code + read-only backfill report; [owner] still reviews report and runs any future backfill | 1.1 (real-DB backfill), 1.5 (index for clientId) |
 | 2.2 | **AIN-P1-08** invoiceVersions → real collection | [agent] [senior] schema + migration review | 1.4 (smoke tests exist), 2.1 preferred, D-016 answered (accounting handoff shapes the schema) |
-| 2.3 | **AIN-P2-01** freeze legacy embedded offers/POs/deliveries (usage counters → remove writes → archive) | [agent] | 1.3 (counters need logs) |
+| 2.3 | **AIN-P2-01** freeze legacy embedded offers/POs/deliveries | [agent] DONE: legacy writes 410 + structured log; guarded code remains for owner-approved archive | 1.3 (counters need logs) |
 
 **Checkpoint W2**: new projects carry clientId; equipment endpoint joins by clientId
 with name fallback; new invoices write to the collection with dual-read fallback
@@ -72,7 +73,7 @@ coding starts — this is the system's future hub; schema mistakes here compound
 | Order | Item | Assignee | Depends on |
 |---|---|---|---|
 | 3.1 | **AIN-P1-09** Task entity + inbox (manual tasks only) | [agent] after [senior] schema sign-off | W2 checkpoint |
-| 3.2 | **AIN-P1-10** scheduler worker | [agent] | D-014 decided [owner]; 1.4 logging |
+| 3.2 | **AIN-P1-10** scheduler worker | [agent] DONE: env-gated node-cron worker, locks, run log, SLA sweep | D-014 decided [owner]; 1.4 logging |
 | 3.3 | **AIN-P1-11** first automation rules (5 rules per wheel spec §6) | [agent] | 3.1 + 3.2 |
 | 3.4 | **AIN-P1-12** invoice payment tracking + overdue rule | [agent] | 2.2, 3.3 |
 | 3.5 | **AIN-P2-02** state-machine layer (wrap existing statuses) | [agent] [senior] transition-map review | 1.4; can start parallel to 3.3 |
@@ -87,8 +88,9 @@ manual behavior without data damage.
 
 ## Wave 4 — Structure & quality (after W3; largely parallel, refactor-heavy)
 
-AIN-P2-03 (extract logistics services — [senior] review), AIN-P2-04 (unify
-communication sends; do the S8 escaping check here), AIN-P2-06 (split 3k-line panels),
+AIN-P2-03 (extract logistics services — [senior] review), AIN-P2-04 DONE (shared
+delivery/record/event helper; S8 escaping tests retained), AIN-P2-06 PARTIAL
+(OffersTab helpers/PDF/import/template/KM/linked-service/template/version UI extracted; further UI/state split still open),
 AIN-P3-02 (shared API client), AIN-P2-07 (audit-log middleware — pairs naturally with
 the wheel's audit trail), AIN-P2-05 (supplier normalization + expectedAt — may be pulled
 into W3 if late-delivery rules are wanted early). All [agent] with characterization

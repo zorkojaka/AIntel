@@ -2,7 +2,8 @@
 
 Prioritized P0–P3. Effort: S <1d, M days, L 1–2wk, XL multi-week. Each item is
 self-contained for handoff to a coding agent. Always read AGENT_HANDOFF.md first;
-never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
+never run DB-writing scripts against shared/prod data; AIN-P1-01 guards marked staging
+runtimes, while owner-controlled environment and Atlas rollout remain authoritative.
 
 > **Authority note (final review 2026-07-05):** for P0 items,
 > `specs/P0_IMPLEMENTATION_SPECS.md` is authoritative over the summaries below.
@@ -35,20 +36,11 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 - **Scope**: new `MONGO_DB` for staging + documented data-copy procedure (owner runs);
   staging SMTP override to a trap/prefix mode; README warnings updated.
 - **Acceptance**: staging writes never touch prod db; staging emails clearly marked.
-- **Agent support landed**: shared email trap support and owner runbook
-  `runbooks/AIN-P1-01_STAGING_DB_EMAIL_TRAP.md`; owner env/ops verification still
-  required before marking done.
+- **Repository implementation landed**: staging startup rejects the production
+  database name; shared email transport traps recipients and prefixes staging mail.
+  Tests, `.env.example`, and `STAGING_ISOLATION_RUNBOOK.md` are included. Owner
+  environment/Atlas rollout verification remains.
 - Effort M (mostly ops coordination). **Blocks all test-writing items.**
-
-### AIN-P1-02 — Error tracking (Sentry or self-hosted GlitchTip)
-- Wire into errorHandler + unhandledRejection + frontend. Needs owner approval for
-  new dependency + SaaS choice. Acceptance: TD-B7-style errors visible with stack +
-  request context. Effort S–M.
-
-### AIN-P1-03 — Structured logging with request IDs
-- pino + middleware (request id, user id, tenant, route, latency); replace ad-hoc
-  console.\* incrementally (start: core, communication sends, public intake).
-- Acceptance: one JSON line per request in prod logs. Effort M.
 
 ### AIN-P1-08 — Promote invoiceVersions to a collection
 - Schema from current shapes (inspect existing docs via dry-run analysis script with
@@ -60,10 +52,32 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 - New `tasks` module (platform-core style): schema + API + inbox per
   **`AINTEL_WHEEL_SPEC.md` §2** (authoritative design; senior schema review first).
   Manual tasks first; no automation yet. Effort L.
+- **Backend landed (2026-07-09, AIN-P1-09)**: `modules/tasks` (schema per §2 incl.
+  indexes + ensure-indexes registration, dedupeKey unique-sparse; lifecycle
+  open/in_progress/blocked/done/cancelled with claim/complete/block/unblock/
+  cancel/reopen/reassign/reschedule actions, resolution required on done,
+  blockedReason required on blocked, task-local history). API `/api/tasks`:
+  GET /my (personal + role-pool union, overdue counts), GET / (ADMIN, aging),
+  GET /by-subject/:kind/:id, POST /, PATCH /:id. 11 tests on
+  mongodb-memory-server (46 backend tests green).
+- **Inbox UI landed (2026-07-09, AIN-P1-09)**: new `apps/module-tasks`
+  (OpravilaPage: Moja opravila / Bazen mojih vlog / Danes zaključeno; claim,
+  complete-with-outcome, block-with-reason, unblock, cancel; create form with
+  assign-to-me or role pool; overdue rows red), registered in core-shell with
+  route /opravila and an open-count nav badge (60 s refresh). By-subject task
+  strips now render on project detail and expanded web-inquiry rows. Deployed to
+  staging. **Remaining scope: owner visual review.**
 
 ### AIN-P1-10 — Scheduler worker
-- In-process interval runner (node-cron acceptable — ask owner re dependency) with
-  job registry, per-job lock (mongo lock doc), run log. Effort M. Deps: P1-03 logging.
+- **Landed (2026-07-09, AIN-P1-10)**: `node-cron`-based in-process scheduler
+  foundation with job registry, Mongo lease locks (`scheduler_locks`), observable run
+  log (`scheduler_runs`), Sentry/log forwarding on failures, and a first
+  `tasks.sla_sweep` job that marks overdue open/in-progress tasks with
+  `slaBreachedAt` while skipping blocked tasks. The worker is env-gated by
+  `AINTEL_SCHEDULER_ENABLED=true` so staging/prod shared DB writes cannot start
+  accidentally before owner ops verification. Tests use `mongodb-memory-server`.
+  Remaining scope: owner enables env after staging DB safety review; automation rules
+  remain AIN-P1-11.
 
 ### AIN-P1-11 — First automation rules
 - Rule set + idempotency (dedupeKey) + config kill-switches per
@@ -72,6 +86,76 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
   nextStep → matching task; inquiry new>1 business day uncontacted → escalation task.
 - Acceptance: each rule covered by a unit test; tasks visible in inbox; every rule
   individually disableable via config (ships disabled). Effort M. Deps: P1-09, P1-10.
+- **Landed (2026-07-09, AIN-P1-11), ALL RULES SHIP DISABLED**: scheduler/rules.ts —
+  event rules inquiry.first_contact (auto-offer → review task next business day;
+  else call task +4 working hours; hooks in public.routes POST /inquiries) and
+  inquiry.next_step (posvet/ogled/avans → immediate SALES task + auto-resolves the
+  first-contact task); scan rules inquiry.stale_escalation (hourly, >N business
+  days uncontacted → ADMIN urgent), offer.follow_up (sent+N days silent → task to
+  offer creator/SALES pool; accepted/rejected offers auto-complete their open task),
+  offer.expiry (validUntil passed → renew-or-close task; offer status NOT mutated in
+  v1). Kill switches + params in wheel_settings via scheduler/wheel-config.ts
+  (dots in rule keys encoded __ for Mongo paths), ADMIN API GET/PUT
+  /api/tasks/wheel-config. Task.resolution gains optional resolvedByRule. 7 unit
+  tests over memory Mongo (60 backend tests green). Signature→invoice rule deferred
+  to AIN-P1-12 (needs invoice collection).
+
+### AIN-P1-14 — Inbound email ingestion (dedicated mailbox → project trail)
+- Dedicated mailbox read via IMAP scheduler job; raw messages stored in
+  `email_messages`; matching by In-Reply-To/References (store messageId on send),
+  sender→CRM client→open projects, PON-/PRJ- numbers; matched → project timeline
+  entry + communication thread (sent+received together); unmatched → `email.unmatched`
+  task to SALES pool. Wheel follow-up: customer reply auto-completes the open
+  offer.follow_up task. Read-only mailbox handling, never auto-replies, credentials
+  in .env only. New deps `imapflow` + `mailparser` (owner approval). Phased F0–F4 in
+  `EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md`; F0 = owner creates the address + IMAP creds.
+  Effort L. Deps: P1-10 (done); F2 touches communication send path (messageId).
+- **Landed (2026-07-10) — F0–F4 + resolve center**: owner confirmed prodaja@ as the
+  dedicated mailbox (same creds as SMTP → AINTEL_IMAP_* in both .env files).
+  `modules/email`: email_messages + email_ingest_state (lastUid/uidValidity, mailbox
+  opened READ-ONLY, own sent mail skipped), scheduler job `email.ingest` every 5 min
+  gated by new wheel rule `email.ingest` (ships OFF; visible in Nastavitve →
+  Opravila). Matching F2 uses providerMessageId (already stored on send) →
+  document number (PONUDBA-/PRJ-) → CRM client email + newest active project.
+  F3: project timeline entry; F4: open offer.follow_up auto-completes on customer
+  reply + `email.reply`/`email.unmatched` task to SALES. New module **Pošta**
+  (`apps/module-mail`, route /posta): inbox with filters (povezano/čaka povezavo/
+  prezrto), search, message detail, manual link-to-project, ignore, manual ingest
+  run; API /api/email (ADMIN+SALES). Tests: `email-ingest.test.ts` (84 backend
+  tests green). Remaining: F5 AI layer (povzetek/klasifikacija/predlog odgovora —
+  needs Anthropic API key) + F6 smart forwarding to servis@/racuni@; owner enables
+  rule `email.ingest` in settings to start reading.
+
+### AIN-P1-15 — Offer rescue campaign: discount code after a week of silence
+- Owner idea (2026-07-09): offer sent +X days, customer has MARKETING CONSENT and
+  offer above a threshold → campaign task with email PREVIEW carrying a single-use
+  discount code (percent, min order value, expiry, NOT stackable with quantity
+  discounts). Manual batch send like P1-13; true auto-mode is a separate per-rule
+  switch enabled only after owner trust. Needs a small coupons module in AIntel
+  (create/validate/redeem at offer confirmation, redemption ledger) and measurement
+  (redeemed codes ↔ offers → funnel card). GDPR: consented recipients only, unsubscribe
+  in every mail. Spec: `EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md` §AIN-P1-15. Effort M–L.
+  Deps: P1-13, ECO-09/10 (consents), coupons module.
+
+### AIN-P1-16 — Smart form defaults: most-common choices preselected
+- Owner direction (2026-07-09): "optimizacija da prihranimo pri času in da so
+  stvari enostavne" — in the offer/inquiry creation flows the most common choices
+  are PRESELECTED so the user can move fast, with a subtle hint showing what is
+  usually chosen ("najpogosteje izbrano"). Source of truth = our own statistics
+  (salesStats/offer history, same engine as ECO-35), not hardcoded guesses;
+  recompute with the stats cron. Applies to: new-project/offer forms in AIntel
+  and the web configurator (web side tracked as ECO-36). Effort M. Deps: ECO-35.
+- **Landed (2026-07-10) — offer builder (Zahteva) + server suggestions**:
+  salesStats now flows into module-projects (CenikProduct type) with utils
+  salesQty/salesCompare/topSellerId (soldQty365 first, soldQty fallback). All
+  product tracks rank sales before price within equal adequacy: SekcijaSnemalnik
+  (alternatives + recommendedId), SekcijaPoESwitch, SekcijaDisk, SekcijaKameraNosilec
+  (cameras within brand + brackets), SekcijaAlarmOprema sortProducts (hub choice
+  untouched — owner-set Hub/Hub2 logic). Top seller per visible track gets an amber
+  »★ najpogosteje izbrano« badge (`.zahteva-sales-hint`). Backend predlagajSnemalnik/
+  PoESwitch/Disk/Nosilce sort `'salesStats.soldQty365': -1` before price within the
+  right size bucket. Tests: `backend/test/zahteve-predlogi-sales.test.ts` (4).
+  Remaining scope: owner visual review; web configurator side = ECO-36.
 
 ### AIN-P1-12 — Invoice payment tracking
 - dueDate + paidAt + status on (new) invoice collection; mark-paid endpoint
@@ -82,31 +166,122 @@ never run DB-writing scripts (shared prod DB) until AIN-P1-01 is done.
 
 ## P2 — Structure, coupling, tenancy prep
 
-- **AIN-P2-01** Freeze legacy embedded offers/POs/deliveries: log usage counters on
-  legacy endpoints (D4/D5), then remove writes, then archive code. Effort M.
 - **AIN-P2-02** State-machine layer for project/offer/material transitions (wrap,
   don't migrate). Effort L. Deps: P1-04.
 - **AIN-P2-03** Extract logistics.controller services (confirmation/work-order/
   material) with characterization tests. Effort L–XL. Deps: P1-04.
-- **AIN-P2-04** Unify four communication send functions into one pipeline; single
-  place for template context + attachment resolution. Effort M–L.
-- **AIN-P2-05** Supplier normalization: supplier entity or config list; expectedAt on
-  material orders; late-delivery rule. Effort M.
 - **AIN-P2-06** Split ExecutionPanel/OffersTab/LogisticsPanel along domains/ with
   extracted hooks; no behavior change. Effort L–XL (per panel M–L).
-- **AIN-P2-07** Generic audit log middleware for mutating routes (who/route/entity/
-  diff summary). Effort M.
+  - Progress (2026-07-10): `ExecutionPanel`/`LogisticsPanel` already live under
+    domains; first OffersTab slice moved offer editor/import/KM/PDF helper types and
+    pure functions into `domains/offers/offerEditorUtils.ts`. Second slice moved the
+    pure offer item recalculation, trailing blank row handling, and totals calculation
+    into the same helper. Third slice moved the offer PDF action button group and PDF
+    preview/download state handlers into `domains/offers/OfferPdfActionGroup.tsx` and
+    `domains/offers/useOfferPdfActions.ts`. Fourth slice moved the pasted-offer import
+    modal into `domains/offers/OfferImportDialog.tsx` while keeping parse/apply state
+    in OffersTab. Fifth slice moved the create/rename/delete template dialogs into
+    `domains/offers/OfferTemplateDialogs.tsx`. Sixth slice moved the kilometrina
+    calculation button, reliability popover, and address mismatch warning into
+    `domains/offers/OfferKmCalculationControls.tsx`. Seventh slice moved linked
+    service suggestion rendering into `domains/offers/OfferLinkedServiceSuggestions.tsx`.
+    Eighth slice moved the offer template picker/dropdown actions into
+    `domains/offers/OfferTemplatePicker.tsx`. Ninth slice moved offer version selector
+    rendering/actions into `domains/offers/OfferVersionSelector.tsx`.
+    AIN-P2-06 remains open until the large OffersTab UI/state sections are split
+    further.
 - **AIN-P2-08** Service module: tickets + maintenance plans + portal intake
-  (TARGET §8). Effort XL.
+  (TARGET §8). Effort XL. Status: DOING — rez 1 (ServiceTicket) + rez 2
+  (MaintenancePlan) landed 2026-07-10.
+  - Rez 1 (ServiceTicket backend): `modules/service/` — model `service_tickets`
+    (lifecycle reported→scheduled→resolved→(cancelled), viri portal/phone/email/
+    internal, tenant-scoped, partial-unique dedupeKey za portalni intake, history),
+    lifecycle storitev (ActorContext, validirani prehodi, samodejni scheduledAt/
+    resolvedAt/reopen), controller + admin API `GET/POST /api/service/tickets`,
+    `GET/PATCH /api/service/tickets/:id` (ADMIN/SALES/EXECUTION). Task modul že
+    rezervira subject.kind='serviceTicket'. Testi `test/service-ticket.test.ts`
+    (9 primerov). tsc čist, 105/105.
+  - Rez 2 (MaintenancePlan) landed 2026-07-10: `maintenance-plan.model.ts`
+    (kolekcija `maintenance_plans`, partial-unique {tenantId,projectId}, oprema/
+    interval/warranty/nextDueAt/upsellChecklist/history) + service (createFromProject
+    izpelje opremo iz potrjene ponudbe = ne-storitvene postavke, installedAt iz
+    closedAt/createdAt, warranty +24m, nextDueAt +intervalMonths; lifecycle pause/
+    resume/end/recordVisit/reschedule; buildUpsellChecklist iz imen opreme — disk/
+    kamera/alarm heuristike) + admin API `GET/POST /api/service/maintenance-plans`,
+    `POST .../from-project`, `POST .../run-due`, `PATCH .../:id`. Avtomatika: kolo
+    pravilo `maintenance.due` (dodano v WHEEL_RULE_KEYS, privzeto OFF) + scheduler
+    job (dnevno 7:20) → `scanDueMaintenance` ustvari opravilo »preventivni pregled«
+    z upsell checklistom (assignee SALES, dedupeKey na dueStamp = idempotentno) in
+    prestavi nextDueAt. E-mail stranki NI samodejen (Jakov princip — pošlje se ročno
+    iz opravila; reuse follow-up-email pattern = mikro-korak). 12 testov. 117/117.
+  - Rez 3 (portalni intake + kolo) landed 2026-07-10: interni klient-scoped rути v
+    web-inquiries `internalRouter` — `GET /clients/service-tickets` (seznam+statusi
+    stranke) + `POST /clients/service-tickets` (oddaja iz portala: klient prek
+    clientId/email, source=portal, dedupeKey proti dvojni oddaji). Kolo pravilo
+    `service.ticket_intake` (dodano v WHEEL_RULE_KEYS, privzeto OFF): ob prijavi
+    zahtevka `onServiceTicketReported` ustvari EXECUTION opravilo (subject.kind=
+    serviceTicket, idempotentno) za triažo. Odklene **ECO-28** (portal ima zdaj API).
+    4 testi (test/service-ticket-intake.test.ts). 121/121.
+  - Rez 4 (frontend) landed 2026-07-10: nov `apps/module-service` (micro-frontend
+    po vzoru module-tasks) — ServicePage z dvema zavihkoma: »Servisni zahtevki«
+    (seznam+filter statusa, nov zahtevek, prehodi statusa prek PATCH) in »Načrti
+    vzdrževanja« (izpelji iz projekta, zabeleži pregled, mirovanje/aktivacija/
+    zaključek, prikaz upsell checklista). Registriran v core-shell (App.tsx modules/
+    moduleComponents/moduleRoleMap [SALES,EXECUTION], package.json dep) + ikona
+    `wrench` v CoreLayout iconMap. Build core-shell + modul čist (pnpm -r build).
+    S tem je AIN-P2-08 FUNKCIJSKO CELOVIT (tickets+plans+intake+wheel+UI); odprto
+    ostane samo mikro-korak ročni follow-up mail iz maintenance opravila (reuse
+    follow-up-email pattern) — po potrebi.
 - **AIN-P2-10** tenantId backfill on business collections + compound indexes +
   query-layer plugin. Effort L. Deps: P2-09, P1-05.
-- **AIN-P2-11** Config store (namespaced, tenant-scoped, zod-validated) absorbing
-  scattered settings. Effort L.
+- **AIN-P2-11** Config store (namespaced, tenant-scoped, validated) absorbing
+  scattered settings. Effort L. Status: DONE-infra 2026-07-10 (žive kolekcije
+  se selijo posamično, lastniško).
+  - `modules/settings/config/`: `config_store` kolekcija (ena vrstica na
+    `{tenantId, namespace}`, unique index), register imenskih prostorov
+    (`config.<modul>.<kljuc>`), storitev `getConfig/setConfig/patchConfig/listConfig`
+    s procesnim cacheom + invalidacijo ob pisanju, admin API `GET /api/config`,
+    `GET/PUT/PATCH /api/config/:namespace` (branje=auth, pisanje=ADMIN).
+  - Validacija: lasten zod-podoben validator (`config-validator.ts`, `.parse()`
+    pogodba) — `zod` NI nameščen in nova paketa čakata lastnikov OK (CLAUDE.md:
+    "Do not install new npm packages without asking first"); ob odobritvi se sheme
+    prepišejo 1:1 v zod brez sprememb storitve.
+  - Semenska prostora `platform.general` (siteVisitFeeText, executionLeadText) in
+    `sales.discounts` (manualReviewThreshold, bands) z varnimi privzetki.
+  - Žive scattered kolekcije (web-inquiry/pdf/sender/category settings, execution
+    thresholds) NISO migrirane — vsaka selitev je lastniško vodena (SKUPNA
+    staging+prod baza); consumerji preidejo na `getConfig()` inkrementalno.
+  - Testi: `test/config-store.test.ts` (11 primerov: privzetki, validacija, get/set/
+    patch, tenant izolacija, cache invalidacija, 404, listConfig). tsc čist, 96/96.
 
 ## P3 — Product & polish
 
-- **AIN-P3-02** Shared frontend API client (fetch wrapper + error toasts + retry).
+- **AIN-P3-02 DONE** Shared frontend API client (fetch wrapper + error toasts + retry).
   Effort M.
+  - Shared `parseApiEnvelope`/`fetchApi` helper in
+    `shared/utils/api-client.ts`; core-shell auth, module-settings,
+    module-projects, module-employees, module-profil, module-finance,
+    module-crm, module-dashboard, and module-cenik API helpers now consume it;
+    module-employees form/service-rate helper, module-settings secondary
+    sections, selected module-projects hooks, project load, timeline/project
+    workspace fetches, ProjectsPage CRUD/list operations, logistics/execution
+    standard fetches, OffersTab offer/template/assignment transport, and
+    price-list autocomplete also use it. Shared `fetchApi` supports opt-in retry
+    and a standardized error-reporting hook. Remaining grep hits are intentional
+    special cases: custom category `options`, logistics email non-JSON fallback,
+    and cenik 409 duplicate-precheck conflict data.
+- **AIN-P3-09** WooCommerce trgovina — prenos produktov iz cenika. Effort M.
+  Status: DONE (2026-07-11).
+  Modul `modules/shop`: sinhronizacija objavljene izložbe v WooCommerce prek REST
+  API (kategorije kamere/ajax/blebox; ime, opisa, slika, cena brez DDV — trgovina
+  doda 22 % DDV; slug = katalogSlug, isti kot spletni katalog; menu_order po
+  prodajni kuraciji ECO-33/35; featured). Nastavitve v Mongo `shop_settings`
+  (key woocommerce: baseUrl + REST ključa), NE v .env. Zagon: gumb »Prenesi v
+  trgovino« (Cenik → Izložba; POST /api/shop/sync teče v ozadju, napredek GET
+  /api/shop/sync/status) ali `npx tsx scripts/shop-sync.ts`. Produkti, ki niso
+  več objavljeni, gredo v osnutek (ne brišejo se). Upsert po SKU `aintel-<id>`,
+  slika se ponovno naloži samo ob spremembi URL (meta `_aintel_image_src`).
+  Testi: test/shop.test.ts. Spletna stran: ECO-40 (inteligent-si).
 - **AIN-P3-03** Repeat-sale rules on installed equipment age. Effort M. Deps: P2-08.
 - **AIN-P3-04** Portal: offer acceptance + service tickets on shared client identity.
   Effort L. Deps: P1-07, P2-08.
@@ -123,6 +298,246 @@ Every item lists its docs in-line; at minimum update MODULE_CATALOG review statu
 relevant modules/*.md, and AUDIT_PROGRESS "last reviewed commit" when landed.
 
 ## Done
+
+### AIN-P2-04 — Unify communication send pipeline
+- **Landed**: the four outbound project communication sends (offer, invoice,
+  work-order confirmation, installer preparation) now share one internal
+  `sendAndRecordCommunicationEmail` pipeline for SMTP delivery, inline company logo
+  attachment handling, communication message persistence, provider message id capture,
+  and sent/failed communication events.
+- **Scoped intentionally**: domain-specific data gathering, template contexts, and
+  attachment request selection remain inside each send function because invoices,
+  offers, signed confirmations, and installer preparation have different validation
+  and fallback text. Installer preparation keeps its `previewOnly` path and its
+  existing "email sent but logging failed" response behavior.
+- **Acceptance used**: derived from the backlog text because no separate acceptance
+  block existed: all four send functions use a single delivery/record/event pipeline,
+  template HTML escaping remains covered by S8 tests, and attachment resolution still
+  flows through `attachment-resolver.service.ts`.
+- **Tests**: communication template escaping, email trap, installer preparation
+  guard, and follow-up email task tests; full backend test suite remains required for
+  final verification.
+
+### AIN-P2-01 — Freeze legacy embedded offers/POs/deliveries
+- **Landed**: legacy embedded project write functions now fail closed with HTTP 410
+  and emit a structured `legacy.project_embedded_write` warning event. The still
+  registered legacy delivery receive route (`POST /api/projects/:id/deliveries/:deliveryId/receive`)
+  is blocked before any Project lookup or embedded-array mutation. Unregistered
+  legacy embedded offer actions in `project.controller.ts` (`sendOffer`,
+  `confirmOffer`, `cancelConfirmation`, `selectOffer`) are also guarded the same way
+  if they are ever re-mounted accidentally.
+- **Current source of truth**: `OfferVersion`, `MaterialOrder`, and `WorkOrder`
+  collection-backed APIs remain active; frontend grep confirms module-projects uses
+  those paths for offer save/send/confirm, material PDFs, and work-order execution.
+- **Acceptance used**: derived from the backlog text because no separate acceptance
+  block existed: legacy embedded write attempts are observable through logs, embedded
+  writes are removed/fail closed, and old code is left archived in-place rather than
+  deleted.
+- **Tests**: `backend/test/legacy-embedded-freeze.test.ts` verifies the registered
+  delivery receive endpoint returns 410 before DB access and logs the legacy counter
+  event.
+
+### AIN-P1-20 — Follow-up agreed at send time + three-state rule modes
+- **Owner direction (2026-07-10)**: creating a follow-up task manually after sending
+  an offer is wasted work. The send-offer dialog now has a checkbox "Če ne bo
+  odgovora, me spomni čez [N] dni" (N prefilled from wheel params, editable) — the
+  task is created immediately with the due date N days out, same dedupeKey as the
+  scan rule so nothing duplicates, and it still auto-resolves when the offer status
+  changes. Wheel rules got a third state: **off / manual / auto** (stored as `mode`
+  next to `enabled` for back-compat). For offer.follow_up: manual = checkbox
+  unchecked by default (user confirms per send), auto = checkbox prechecked AND the
+  silence scan creates tasks as a safety net; off = hidden + no scan. For task-only
+  rules manual==auto (documented in the settings UI). New non-admin endpoint
+  GET /api/tasks/follow-up-defaults for dialog prefill. Settings UI: three-button
+  segmented control per rule.
+- **Tests**: wheel-rules.test.ts +2 subtests (manual scan suppression; send-time
+  scheduling + dedupe + auto-resolve; off → no-op). 79 backend tests green.
+
+### AIN-P1-21 — AI foundation: `ai.service` wrapper (Claude API)
+- Owner request (2026-07-11): tasks for AI help with email. Small backend module
+  `modules/ai/` wrapping the Anthropic TypeScript SDK (`@anthropic-ai/sdk`): one
+  entry point for single Messages API calls (model from env `AINTEL_AI_MODEL`,
+  default `claude-opus-4-8`; structured outputs via `output_config.format`), call
+  log collection `ai_calls` (purpose, tokens, cost estimate), monthly cost cap env,
+  feature flag `AINTEL_AI_ENABLED` (default off), graceful degradation — every flow
+  must work with AI off. Customer-facing text purposes load the owner's style guide
+  `docs/aintel-audit/email-style/01_POROCILO_O_SLOGU.md` into the system prompt.
+  Hard rules in EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AI
+  pomoč pri pošti: no auto-send ever; prices/discounts/statuses deterministic from
+  AIntel, AI may only quote them. Effort S–M. Deps: owner **D-AI1**
+  (ANTHROPIC_API_KEY in .env, DPA/GDPR sign-off, model choice).
+
+### AIN-P1-22 — AI inbox triage (builds on P1-14)
+- Classify each ingested `email_messages` doc: category (odgovor_na_ponudbo /
+  novo_povprasevanje / servis / racun_dobavitelja / spam / drugo), urgency 1–3,
+  1–2 sentence Slovenian summary, task-title draft; when F2 heuristics find no
+  project, AI suggests client/project with confidence — suggestion only, human
+  links it in the `email.unmatched` task. Stored as `aiTriaza` on the message.
+  Spec: EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AIN-P1-22. Effort M.
+  Deps: P1-14 F1+F2, P1-21.
+
+### AIN-P1-23 — AI draft reply to customer email
+- »✨ Pripravi osnutek odgovora« on the project communication thread and unmatched
+  tasks. Context: thread messages + project/offer status (numbers passed as data).
+  Output opens in the EXISTING manual-send preview (P1-13 mechanics) — always
+  human-reviewed, never auto-sent; never promises prices/dates absent from input.
+  Drafts follow the owner's style guide (`email-style/01_POROCILO_O_SLOGU.md`) and
+  start from the matching template in `email-style/02_TEMPLATE_EMAILOV.md`.
+  Spec: EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AIN-P1-23. Effort M.
+  Deps: P1-14 F3, P1-21 (P2-04 soft).
+
+### AIN-P1-24 — AI thread summary card on project
+- »Povzetek komunikacije«: what the customer wants, open questions, promises made
+  (+dates), last contact; refreshed on new message or manual button, persisted (no
+  per-render calls). Spec: EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AIN-P1-24.
+  Effort S–M. Deps: P1-14 F3, P1-21.
+
+### AIN-P1-25 — AI personalized intro for follow-up / rescue mails
+- In the P1-13 follow-up preview: »✨ Personaliziraj uvod« writes 1–2 opening
+  sentences from project history; the rest of the template (amounts, coupon code,
+  links) stays deterministic and unchanged; diff view against the template; manual
+  send. Intro follows the owner's style guide (`email-style/01_POROCILO_O_SLOGU.md`).
+  Spec: EMAIL_FOLLOWUP_AND_INGESTION_PLAN.md §AIN-P1-25. Effort S.
+  Deps: P1-13 (DONE), P1-21; P1-15 for coupons.
+
+### AIN-P2-05 — Supplier normalization + expectedAt + late-delivery rule
+- **Landed**: AIN-P2-05 implementation commit.
+- **Summary**: Material order items now carry a normalized `supplierKey` derived from
+  supplier name/address while keeping the original Slovenian supplier display fields.
+  Material orders now support top-level `expectedAt`; preparation UI can set the date
+  and the existing work-order update path persists it. A new disabled-by-default wheel
+  rule `material.late_delivery` scans overdue, not-yet-ready material orders and
+  creates an ORGANIZER task with a deterministic dedupe key. Nastavitve → Opravila
+  exposes the new rule toggle and `materialLateGraceDays` parameter.
+- **Acceptance used**: derived from the task text because no separate acceptance block
+  existed: normalize supplier identity without adding a migration or new collection,
+  persist `expectedAt` on material orders, add a late-delivery rule, keep the rule
+  disabled until owner/admin enablement, and cover the rule with memory Mongo tests.
+- **Tests**: `backend/test/wheel-rules.test.ts` covers disabled behavior,
+  late-delivery task creation, readiness/future-date skip, and idempotency;
+  `backend/test/ensure-indexes.test.ts` covers the declared `expectedAt` index.
+
+### AIN-P2-07 — Generic audit log middleware for mutating routes
+- **Landed**: AIN-P2-07 implementation commit.
+- **Summary**: Added a protected `/api` mutation audit middleware that emits one
+  structured log event after every POST/PUT/PATCH/DELETE request. The event records
+  tenant, actor user/employee, roles, method, route, status, request id, a best-effort
+  module/entity id, and a sensitive-key-filtered summary of changed top-level request
+  fields. Public intake and auth routes are intentionally outside this middleware;
+  public intake keeps its own request logging and protected app routes carry the auth
+  context needed for "who" fields.
+- **Acceptance used**: derived from the backlog text because no separate acceptance
+  block existed: mutating protected routes produce structured audit events with
+  who/route/entity/diff-summary data, sensitive values are not logged, and DELETE
+  requests do not log body field changes.
+- **Tests**: `backend/test/audit-log.test.ts` covers event shape, entity extraction,
+  sensitive field filtering, and DELETE field omission.
+
+### AIN-P1-19 — Configurator result: "kaj dobite" value payload (not just a price)
+- **Landed**: AIN-P1-19 implementation commit.
+- **Summary**: Browser `POST /api/public/inquiries` responses now extend
+  `offerSummary` with a customer-facing `value` payload when an automatic offer is
+  created (and for duplicate responses when the saved offer is available). The payload
+  is built from actual offer items plus cenik product descriptions/images: grouped
+  equipment, included services (with a safe montage/configuration fallback), coverage
+  text derived from the submitted configurator answers, and reassurance points. It
+  intentionally does not expose `defaultsApplied` or other internal automation notes.
+- **Acceptance used**: derived from the task text because no separate acceptance block
+  existed: keep existing price fields, add value payload from real offer/cenik data,
+  include equipment/services/coverage/reassurance, and keep internal defaults private.
+- **Tests**: existing money-flow smoke now asserts the value payload, descriptions,
+  image URL, coverage, reassurance, and no `defaultsApplied` leakage on
+  `mongodb-memory-server`.
+
+### AIN-P1-17 — Motivational progress bar in multi-step flows
+- **Landed**: AIN-P1-17 implementation commit.
+- **Summary**: Added a visible motivational progress bar to the internal
+  `module-projects` project workspace flow. It derives progress from the existing
+  timeline steps (`Zahteve → Ponudbe → Priprava → Izvedba → Račun`), starts above
+  0 % via an endowed-progress baseline, shows completed/total step count, highlights
+  the active step, and switches to a near-finish message (`Še zadnji korak`) when the
+  workflow reaches the final step. The change is presentational only and does not
+  mutate project status, offer, logistics, execution, or invoice business logic.
+- **Acceptance used**: derived from the task text because no separate acceptance block
+  existed: progress is obvious in the internal multi-step flow, never starts at 0 %,
+  clearly signals near-completion, and keeps the public configurator/web-side work
+  scoped to ECO-36 outside this repository.
+
+### AIN-P1-18 — Task templates + Nastavitve → Opravila section
+- **Landed 2026-07-09**: owner request — company configures its task processes in
+  settings; adding a task becomes one click on a template instead of typing.
+- **Summary**: new `task_templates` collection (name/title/description/priority/
+  dueInDays/assigneeRole/isActive/order, tenant-scoped) with defaults seeded on
+  first read (pokliči stranko, ogled, pripravi ponudbo, follow-up, naroči material,
+  termin montaže, servisni obisk). API: GET `/api/tasks/templates` (all users,
+  `?all=1` includes inactive), POST/PATCH/DELETE ADMIN-only. New settings section
+  **Opravila** (between Prodaja and Sistem) with template CRUD + the wheel automation
+  rules UI (per-rule toggles with SI descriptions + params offerFollowUpDays etc.,
+  via existing GET/PUT `/api/tasks/wheel-config`). OpravilaPage: template chips above
+  the new-task form; a click prefills title/description/priority/due/assignee, all
+  fields stay editable.
+- **Tests**: `backend/test/task-templates.test.ts` (default seeding idempotent,
+  validation, activeOnly filter, delete, tenant isolation) on memory Mongo.
+
+### AIN-P1-13 — Follow-up email from the follow-up task (one click, always manual)
+- **Landed**: AIN-P1-13 implementation commit.
+- **Summary**: `offer.follow_up` tasks now expose a manual "Pripravi e-mail" action
+  in Opravila plus a batch follow-up section with checkboxes. The backend validates
+  that the task is an active offer follow-up, renders active template key
+  `offer_follow_up` with offer/customer context when present (fallback body otherwise),
+  previews recipient/subject/body/PDF attachment, sends only after explicit user
+  confirmation through the existing offer communication pipeline, and completes the
+  task with outcome `follow-up mail poslan` only after a successful send. Each batch
+  send is still a separate backend send and communication log entry. No automatic
+  e-mail sending was added.
+- **Acceptance used**: derived from the task text because no separate acceptance block
+  existed: preview renders the follow-up template with offer context; non-follow-up
+  tasks are rejected; failed sends leave the task open; Opravila supports single and
+  selected batch manual sends.
+- **Tests**: `backend/test/task-follow-up-email.test.ts` covers preview context,
+  invalid task rejection, and failed-send/no-complete behavior on
+  `mongodb-memory-server`.
+
+### AIN-P1-02 — Error tracking (Sentry, EU data residency)
+- **Landed**: AIN-P1-02 implementation commit (owner chose Sentry EU 2026-07-08;
+  GlitchTip/self-host deferred to avoid ops burden).
+- **Summary**: Added `@sentry/node` behind `backend/core/sentry.ts` and an
+  `backend/instrument.ts` loaded first in `server.ts`. Sentry is **optional** — if
+  `SENTRY_DSN` is unset the app runs normally with no error tracking. `errorHandler`
+  forwards 500s via `captureRequestException` with minimal, scrubbed context:
+  request id (`x-request-id`), route, HTTP method, status code, environment, release,
+  and a minimal user (internal id + primary role only — no name/email). `sendDefaultPii`
+  is off and a `beforeSend` scrubber strips cookies, request body, query strings, and
+  auth/cookie/API-key headers as defence in depth. EU data residency is carried by the
+  DSN (EU-region project → `*.ingest.de.sentry.io`).
+- **Acceptance**: verified disabled-by-default no-op (no DSN), enabled path with an EU
+  DSN, and the scrubber removing secrets/PII via `test/sentry-scrub.test.ts`
+  (32 backend tests green); `npm run build` clean.
+- **Owner setup** (no secrets in repo): create an **EU-region** Sentry project and set
+  in AIntel backend env — `SENTRY_DSN` (EU DSN), optional `SENTRY_ENVIRONMENT`
+  (defaults to `NODE_ENV`), `SENTRY_RELEASE` (deploy commit sha), and
+  `SENTRY_TRACES_SAMPLE_RATE` (defaults `0`, errors only). Never commit the DSN.
+- **Follow-up**: frontend SPA capture (`@sentry/react`) not yet wired — backend-only
+  for now; add per-app init in a later item if desired.
+
+### AIN-P1-03 — Structured logging with request IDs
+- **Landed**: AIN-P1-03 implementation commit (owner approved the `pino` dependency
+  2026-07-08).
+- **Summary**: Added a shared `pino` logger (`backend/core/logger.ts`) and a
+  `pino-http` middleware (`backend/core/middleware/httpLogger.ts`) mounted first in
+  `createApp`, so every request — including `/api/public` intake — emits one JSON line
+  with a request id (echoed on the `x-request-id` response header), method/url, the
+  tenant/user/route from `req.context`, status, and latency. `errorHandler` now logs
+  500s with the full stack via `req.log`. Migrated the named ad-hoc `console.*` in core
+  (server bootstrap), communication sends (email transport, project-communication
+  controller, installer-prep logging), and public intake (web-inquiry routes + service)
+  to structured logging. Prod/test emit JSON; local dev gets `pino-pretty` only on a
+  TTY; tests run silent.
+- **Acceptance**: verified one JSON line per request with reqId/tenant/user/route/
+  latency and 200→info / 500→error+stack via a standalone smoke; `npm run build` and all
+  29 backend tests green.
+- **Follow-up**: `console.*` migration was scoped to the named start areas; remaining
+  ad-hoc `console.*` elsewhere can move to `req.log`/`logger` incrementally.
 
 ### AIN-P0-01 — Split public API surface; rotate web-inquiry API key
 - **Landed**: AIN-P0-01 implementation commit.

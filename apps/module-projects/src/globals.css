@@ -1665,6 +1665,17 @@
   text-transform: uppercase;
 }
 
+.zahteva-sales-hint {
+  justify-self: start;
+  border-radius: 999px;
+  background: color-mix(in srgb, #b45309 12%, #ffffff 88%);
+  color: #b45309;
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 0.12rem 0.4rem;
+  white-space: nowrap;
+}
+
 .zahteva-track-card img,
 .zahteva-track-card .zahteva-image-empty {
   width: 56px;

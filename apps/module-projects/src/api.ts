@@ -1,22 +1,15 @@
 import type { OfferCandidate, ProjectOfferItem, Zahteva } from "./types";
+import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 
 export async function fetchRequirementVariants(categorySlug?: string) {
   const query = categorySlug ? `?categorySlug=${encodeURIComponent(categorySlug)}` : "";
   const response = await fetch(`/api/requirement-templates/variants${query}`);
-  const payload = await response.json();
-  if (!payload.success) {
-    throw new Error(payload.error ?? "Ne morem pridobiti variant.");
-  }
-  return (payload.data ?? []) as { variantSlug: string; label: string }[];
+  return parseApiResponse<{ variantSlug: string; label: string }[]>(response, "Ne morem pridobiti variant.");
 }
 
 export async function fetchOfferCandidates(projectId: string): Promise<OfferCandidate[]> {
   const response = await fetch(`/api/projects/${projectId}/offer-candidates`);
-  const payload = await response.json();
-  if (!payload.success) {
-    throw new Error(payload.error ?? "Ne morem generirati ponudbe iz zahtev.");
-  }
-  return payload.data ?? [];
+  return parseApiResponse<OfferCandidate[]>(response, "Ne morem generirati ponudbe iz zahtev.");
 }
 
 export type ProductLookup = {
@@ -34,11 +27,8 @@ export async function fetchProductsByCategories(categorySlugs: string[]): Promis
   if (!unique.length) return [];
   const query = `?suggestForCategories=${encodeURIComponent(unique.join(","))}`;
   const response = await fetch(`/api/cenik/products${query}`);
-  const payload = await response.json();
-  if (!payload.success) {
-    throw new Error(payload.error ?? "Napaka pri nalaganju cenika.");
-  }
-  return (payload.data ?? []).map((p: any) => ({
+  const products = await parseApiResponse<any[]>(response, "Napaka pri nalaganju cenika.");
+  return products.map((p: any) => ({
     id: p._id ?? p.id,
     name: p.ime ?? p.name ?? "Neimenovan produkt",
     price: Number(p.prodajnaCena ?? 0),
@@ -187,13 +177,7 @@ export async function nadaljujZahtevaNaPonudbo(id: string): Promise<any> {
   return parseApiResponse<any>(response, "Zahteve ni mogoče zaključiti.");
 }
 
-async function parseApiResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
-  const payload = await response.json();
-  if (!payload.success) {
-    throw new Error(payload.error ?? fallbackMessage);
-  }
-  return payload.data as T;
-}
+const parseApiResponse = parseApiEnvelope;
 
 export async function fetchZahteva(id: string): Promise<Zahteva> {
   const response = await fetch(`/api/zahteve/${id}`);
@@ -257,6 +241,12 @@ export type CenikProduct = {
     bracketCodeOwn?: string;
   };
   categoryPriority?: 1 | 2 | 3 | null;
+  salesStats?: {
+    soldQty?: number;
+    soldQty365?: number;
+    offersCount?: number;
+    salesRank?: number | null;
+  };
 };
 
 export function getProductImageUrl(product?: Pick<CenikProduct, "aaData" | "povezavaDoSlike"> | null) {

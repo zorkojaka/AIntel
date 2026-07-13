@@ -14,11 +14,13 @@ Audit date 2026-07-05, commit `c0afad8`. No secret values in this document.
 | PM2 process | `aintel` (fork) | `aintel-staging` (fork) |
 | Port | 3000 | 3001 |
 | Entry | `backend/dist/backend/server.js` (compiled) | same pattern |
-| Database | Mongo Atlas, db **`inteligent`** | **same db `inteligent`** ⚠️ |
+| Database | Mongo Atlas, db **`inteligent`** | target db **`inteligent_staging`** after AIN-P1-01 rollout |
 
-⚠️ **Production and staging share one database.** Any DB write from staging is a
-production write. This is the single most important operational constraint
-(Confirmed: audit brief + both `.env` locations untouched, PM2 cwd inspection).
+AIN-P1-01 added source guardrails for the staging split: a runtime marked
+`AINTEL_ENV=staging` / `AINTEL_DEPLOY_ENV=staging` / `APP_ENV=staging` refuses
+`MONGO_DB=inteligent`, and staging email can be redirected with
+`AINTEL_EMAIL_TRAP_TO` plus marked with `AINTEL_EMAIL_SUBJECT_PREFIX`. Owner rollout
+must set the actual staging `.env` and copy data per `STAGING_ISOLATION_RUNBOOK.md`.
 
 Additional worktree: `/home/jaka/apps/aintel-staging/AIntel-web-intake`
 (branch `codex/web-inquiries-intake`) — used for the web-intake feature and this audit.
@@ -87,3 +89,5 @@ at startup). The AIntel transport supports a staging trap via
 `AINTEL_EMAIL_TRAP_TO` and `AINTEL_EMAIL_SUBJECT_PREFIX`; owner must enable those only
 in staging. The portal sends its own login/notification emails
 (`src/pomozno.js`). Two independent SMTP configurations — consolidation candidate.
+For AIntel staging, `AINTEL_EMAIL_TRAP_TO` redirects all outgoing emails to an internal
+trap mailbox and `AINTEL_EMAIL_SUBJECT_PREFIX=[STAGING]` visibly marks subjects.

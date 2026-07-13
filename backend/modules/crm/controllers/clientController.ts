@@ -140,7 +140,7 @@ export async function createClient(req: Request, res: Response) {
     const street = payload.street?.trim();
     const postalCode = payload.postalCode?.trim() || undefined;
     const postalCity = payload.postalCity?.trim();
-    const addressLine = [street, postalCity]
+    const addressLine = [street, [postalCode, postalCity].filter(Boolean).join(' ')]
       .filter(Boolean)
       .join(', ');
 
@@ -185,7 +185,7 @@ export async function updateClient(req: Request, res: Response) {
     const street = payload.street?.trim();
     const postalCode = payload.postalCode?.trim() || undefined;
     const postalCity = payload.postalCity?.trim();
-    const addressLine = [street, postalCity]
+    const addressLine = [street, [postalCode, postalCity].filter(Boolean).join(' ')]
       .filter(Boolean)
       .join(', ');
 
@@ -216,19 +216,31 @@ export async function updateClient(req: Request, res: Response) {
       { new: true }
     );
 
+    // Sprememba stranke se prenese v kopijo `customer` na AKTIVNIH projektih —
+    // ponudbe in drugi dokumenti se rišejo iz te kopije, zato so sicer kazali
+    // stare podatke (lastnik 2026-07-10). Zaključeni/zaračunani projekti
+    // ostanejo zamrznjeni (izdani dokumenti se ne spreminjajo za nazaj).
+    const customerNames = Array.from(new Set([existing.name, name].filter(Boolean)));
+    const taxIds = Array.from(new Set([existing.vat_number, type === 'company' ? vatNumber : undefined].filter(Boolean)));
+    const snapshot: Record<string, unknown> = {
+      'customer.name': name,
+      'customer.taxId': type === 'company' ? vatNumber ?? '' : '',
+      'customer.address': addressLine || payload.address?.trim() || '',
+    };
     if (previousAddressKey !== nextAddressKey) {
-      const customerNames = Array.from(new Set([existing.name, name].filter(Boolean)));
-      const taxIds = Array.from(new Set([existing.vat_number, type === 'company' ? vatNumber : undefined].filter(Boolean)));
-      await ProjectModel.updateMany(
-        {
-          $or: [
-            ...(customerNames.length ? [{ 'customer.name': { $in: customerNames } }] : []),
-            ...(taxIds.length ? [{ 'customer.taxId': { $in: taxIds } }] : []),
-          ],
-        },
-        { $set: { routeCoordinates: null } },
-      );
+      snapshot.routeCoordinates = null;
     }
+    await ProjectModel.updateMany(
+      {
+        status: { $in: ['draft', 'offered', 'ordered', 'in-progress'] },
+        $or: [
+          { clientId: existing._id },
+          ...(customerNames.length ? [{ 'customer.name': { $in: customerNames } }] : []),
+          ...(taxIds.length ? [{ 'customer.taxId': { $in: taxIds } }] : []),
+        ],
+      },
+      { $set: snapshot },
+    );
 
     res.success(formatClient(updated));
   } catch (error) {

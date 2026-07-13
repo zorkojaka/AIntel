@@ -8,11 +8,13 @@ const ATTACHMENT_OPTIONS: Array<{ value: CommunicationAttachmentType; label: str
   { value: 'offer_pdf', label: 'PDF ponudbe' },
   { value: 'project_pdf', label: 'PDF projekta' },
   { value: 'work_order_confirmation_pdf', label: 'PDF potrdila delovnega naloga' },
+  { value: 'invoice_pdf', label: 'PDF računa' },
 ];
 
 const TEMPLATE_CATEGORY_OPTIONS = [
   { value: 'offer_send', label: 'Pošiljanje ponudbe' },
   { value: 'work_order_confirmation_send', label: 'Pošiljanje potrdila delovnega naloga' },
+  { value: 'invoice_send', label: 'Pošiljanje računa' },
 ] as const;
 
 function createEmptyTemplate(): EditableTemplate {
@@ -188,6 +190,7 @@ export const CommunicationTemplatesSection: React.FC<CommunicationTemplatesSecti
           </div>
           <div className="rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
             Placeholderji: {'{{customer.name}}'}, {'{{customer.email}}'}, {'{{project.name}}'}, {'{{offer.number}}'}, {'{{offer.total}}'},
+            {' {{invoice.number}}'}, {'{{invoice.total}}'}, {'{{review.link}}'},
             {' {{workOrder.identifier}}'}, {'{{confirmation.date}}'}, {'{{company.name}}'}, {'{{sender.name}}'}, {'{{sender.email}}'},
             {'{{sender.phone}}'}, {'{{sender.role}}'}
           </div>

@@ -1,8 +1,9 @@
-import { Types } from 'mongoose';
+import { Types, isValidObjectId } from 'mongoose';
 import { ProjectModel, type Project, type ProjectDocument, addTimeline, type ProjectStatus } from '../schemas/project';
 import { WorkOrderModel } from '../schemas/work-order';
 import { OfferVersionModel } from '../schemas/offer-version';
 import type { OfferLineItem } from '../../../../shared/types/offers';
+import { ProductModel } from '../../cenik/product.model';
 import { createFinanceSnapshot } from '../../finance/services/finance-snapshot.service';
 import { FinanceSnapshotModel } from '../../finance/schemas/finance-snapshot';
 import {
@@ -322,6 +323,21 @@ async function aggregateClosingItems(project: ProjectDocument): Promise<{
     });
   });
 
+  const productIds = Array.from(
+    new Set(
+      Array.from(grouped.values())
+        .map((entry) => entry.productId)
+        .filter((productId): productId is string => !!productId && isValidObjectId(productId)),
+    ),
+  );
+  const priceProducts =
+    productIds.length > 0
+      ? ((await ProductModel.find({ _id: { $in: productIds } })
+          .select('_id prodajnaCena aaData')
+          .lean()) as Array<{ _id: unknown; prodajnaCena?: number; aaData?: { vat?: number } }>)
+      : [];
+  const productsById = new Map(priceProducts.map((product) => [String(product._id), product]));
+
   const invoiceItems: InvoiceItemPayload[] = [];
   grouped.forEach((entry) => {
     let type: InvoiceItem['type'] = 'Osnovno';
@@ -334,9 +350,10 @@ async function aggregateClosingItems(project: ProjectDocument): Promise<{
       (entry.offerItemId && offerIndex.itemsById.get(entry.offerItemId)) ||
       (entry.productId && offerIndex.itemsByProductId.get(entry.productId)) ||
       null;
-    const unitPrice = matchedOfferItem ? toNumber(matchedOfferItem.unitPrice, 0) : 0;
+    const matchedProduct = entry.productId ? productsById.get(entry.productId) : null;
+    const unitPrice = matchedOfferItem ? toNumber(matchedOfferItem.unitPrice, 0) : toNumber(matchedProduct?.prodajnaCena, 0);
     const offerVatMode = offerIndex.offer ? toNumber(offerIndex.offer.vatMode, 22) : null;
-    const vatPercent = offerVatMode ?? (matchedOfferItem ? toNumber(matchedOfferItem.vatRate, 22) : 22);
+    const vatPercent = offerVatMode ?? (matchedOfferItem ? toNumber(matchedOfferItem.vatRate, 22) : toNumber(matchedProduct?.aaData?.vat, 22));
     invoiceItems.push({
       id: entry.offerItemId ?? entry.productId ?? `${entry.name}:${entry.unit}:${type}`,
       name: entry.name || 'Neimenovana postavka',

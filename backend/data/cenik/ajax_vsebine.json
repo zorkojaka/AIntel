@@ -1,0 +1,182 @@
+{
+  "meta": {
+    "source": "ajax-content-overrides",
+    "note": "ECO-32: strankam prijazni opisi paradnih Ajax produktov. AA API ostaja resnica za cene/zalogo/nabor; ta datoteka samo PREPIŠE prodajna besedila (kratekOpis/dolgOpis) in doda uradno predstavitveno povezavo. Pravila se ujemajo z regex na normalizirano ime (male črke, strnjeni presledki) SAMO za aa_api produkte proizvajalca Ajax; barvne variante (WH/BL/...) dobijo isto vsebino. Tehnični AA opis ostane v aaData.rawDescription.",
+    "updatedAt": "2026-07-08"
+  },
+  "rules": [
+    {
+      "match": "^ajax hub ?2 (wh|bl)$",
+      "kratekOpis": "Srce alarmnega sistema Ajax: centrala za do 100 brezžičnih naprav, z internetno in dvojno SIM povezavo ter rezervno baterijo do 16 ur. Podpira foto potrditev alarmov.",
+      "dolgOpis": "Hub 2 je pametna centrala, ki povezuje vse naprave vašega alarmnega sistema Ajax in vas ob dogodku takoj obvesti na telefon. Z varnostnim centrom komunicira po treh neodvisnih poteh (internetni kabel + dve SIM kartici), zato deluje tudi ob izpadu interneta, ob izpadu elektrike pa jo do 16 ur napaja vgrajena baterija. Podpira do 100 naprav in foto potrditev alarmov — ob sprožitvi vidite, kaj se je zares zgodilo.",
+      "povezavaDoProdukta": "https://ajax.systems/products/hub-2/"
+    },
+    {
+      "match": "^ajax hub ?2 4g (wh|bl)$",
+      "kratekOpis": "Pametna centrala Ajax z LTE (4G) povezavo: do 100 naprav, internetna in dvojna SIM pot, rezervna baterija, foto potrditev alarmov.",
+      "dolgOpis": "Hub 2 4G je pametna centrala, ki povezuje vse naprave vašega alarmnega sistema Ajax in vas ob dogodku takoj obvesti na telefon. Zahvaljujoč hitremu LTE (4G) omrežju in trem neodvisnim komunikacijskim potem (internetni kabel + dve SIM kartici) sistem deluje tudi ob izpadu interneta, ob izpadu elektrike pa centralo napaja vgrajena baterija. Podpira do 100 naprav in foto potrditev alarmov.",
+      "povezavaDoProdukta": "https://ajax.systems/products/hub-2/"
+    },
+    {
+      "match": "^ajax hub ?2 plus (wh|bl)$",
+      "kratekOpis": "Najzmogljivejša Ajax centrala: do 200 naprav, štiri komunikacijske poti (LAN, WiFi, 2 SIM z LTE), rezervna baterija in foto potrditev alarmov.",
+      "dolgOpis": "Hub 2 Plus je najzmogljivejša centrala sistema Ajax — prava izbira za večje domove in poslovne prostore. Z varnostnim centrom in vašim telefonom komunicira po kar štirih neodvisnih poteh (internetni kabel, WiFi in dve SIM kartici z LTE), zato ostane povezana v praktično vsaki situaciji. Podpira do 200 naprav, 25 ločenih območij in foto potrditev alarmov, ob izpadu elektrike pa deluje na vgrajeno baterijo.",
+      "povezavaDoProdukta": "https://ajax.systems/products/hub2-plus/"
+    },
+    {
+      "match": "^ajax motionprotect (wh|bl)$",
+      "kratekOpis": "Brezžični senzor gibanja z dosegom do 12 m, ki zanesljivo loči vlomilca od hišnega ljubljenčka (do 20 kg). Baterija deluje leta, ne mesece.",
+      "dolgOpis": "MotionProtect je brezžični senzor gibanja, ki varuje prostor v polmeru do 12 metrov in pri tem ignorira hišne ljubljenčke do 20 kg. Namesti se brez vrtanja in kablov, z baterijo, ki zdrži do 5 let. Ob zaznanem gibanju centrala v hipu sproži alarm in obvestilo na vaš telefon.",
+      "povezavaDoProdukta": "https://ajax.systems/products/motionprotect/"
+    },
+    {
+      "match": "^ajax motionprotect plus (wh|bl)$",
+      "kratekOpis": "Senzor gibanja z dvojno tehnologijo (PIR + mikrovalovi) za prostore, kjer klasični senzorji sprožajo lažne alarme — prepih, klima, sevanje toplote.",
+      "dolgOpis": "MotionProtect Plus poleg infrardečega senzorja uporablja še mikrovalovno preverjanje: ob zaznavi gibanja prostor dodatno preveri in tako izloči lažne alarme zaradi prepiha, klimatske naprave ali sončnih žarkov. Ščiti do 12 metrov, ignorira ljubljenčke do 20 kg in deluje na baterijo do 5 let. Prava izbira za zimske vrtove, mansarde in prostore s kaminom."
+    },
+    {
+      "match": "^ajax motionprotect outdoor (wh|bl)$",
+      "kratekOpis": "Zunanji senzor gibanja z dvema senzorjema in zaščito pred lažnimi alarmi — dvorišče zavaruje, preden vlomilec sploh pride do hiše.",
+      "dolgOpis": "MotionProtect Outdoor varuje okolico hiše in sproži alarm, še preden se kdo dotakne vrat ali okna. Dva infrardeča senzorja in pametni algoritem izločijo lažne alarme zaradi živali, vej in vremena, senzor pa zazna tudi poskus prekritja (antimasking). Doseg je nastavljiv od 3 do 15 metrov, ohišje je odporno na dež in prah (IP54), baterija pa zdrži do 5 let.",
+      "povezavaDoProdukta": "https://ajax.systems/products/motionprotect-outdoor/"
+    },
+    {
+      "match": "^ajax doorprotect (wh|bl)$",
+      "kratekOpis": "Brezžični senzor za vrata in okna — takoj zazna in javi vsako odprtje. Osnovni gradnik varovanja vsakega doma.",
+      "dolgOpis": "DoorProtect je diskreten senzor, ki zazna odprtje vrat ali okna in v hipu obvesti centralo ter vaš telefon. Namesti se v nekaj minutah brez vrtanja, baterija pa zdrži do 7 let. Osnovni gradnik varovanja: z njim zavarujete vhodna vrata, balkonska vrata in okna v pritličju.",
+      "povezavaDoProdukta": "https://ajax.systems/products/doorprotect/"
+    },
+    {
+      "match": "^ajax doorprotectplus (wh|bl)$",
+      "kratekOpis": "Senzor za vrata in okna z dodatnima senzorjema nagiba in udarca — zazna tudi poskus vloma, ne le odprtja.",
+      "dolgOpis": "DoorProtect Plus poleg odprtja vrat ali okna zazna tudi tresljaje in nagib — torej že sam POSKUS vloma, ne šele vstop. Idealen za okna na kip, strešna okna in vrata, kjer želite alarm ob prvem sunku lomilke. Brezžičen, z baterijo do 5 let in preprosto namestitvijo.",
+      "povezavaDoProdukta": "https://ajax.systems/products/doorprotectplus/"
+    },
+    {
+      "match": "^ajax glassprotect (wh|bl)$",
+      "kratekOpis": "Senzor loma stekla z dosegom 9 m — zazna zvok razbitja šipe in sproži alarm, še preden vlomilec vstopi.",
+      "dolgOpis": "GlassProtect prepozna značilen zvok razbitja stekla v polmeru 9 metrov in takoj sproži alarm. Pametni dvostopenjski mikrofon izloči lažne alarme (grmenje, pasji lajež), zato je zanesljiv tudi v dnevni sobi. En senzor pokrije več oken v prostoru, baterija pa zdrži do 7 let.",
+      "povezavaDoProdukta": "https://ajax.systems/products/glassprotect/"
+    },
+    {
+      "match": "^ajax combiprotect (wh|bl)$",
+      "kratekOpis": "Dva senzorja v enem: gibanje (12 m) in lom stekla (9 m). Z eno napravo zavarujete cel prostor z okni.",
+      "dolgOpis": "CombiProtect združuje senzor gibanja in senzor loma stekla v eni napravi — z enim senzorjem pokrijete prostor in njegova okna hkrati. Gibanje zazna do 12 metrov daleč (ignorira hišne ljubljenčke), razbitje šipe pa do 9 metrov. Manj naprav, nižji strošek, enaka varnost.",
+      "povezavaDoProdukta": "https://ajax.systems/products/combiprotect/"
+    },
+    {
+      "match": "^ajax keypad (wh|bl)$",
+      "kratekOpis": "Tipkovnica na dotik za vklop in izklop alarma s kodo — za družinske člane in goste brez telefona.",
+      "dolgOpis": "KeyPad je elegantna tipkovnica na dotik, s katero sistem vklopite, izklopite ali vklopite le delno (nočno varovanje) — brez telefona, z osebno kodo za vsakega uporabnika. Ob prisili lahko vtipkate posebno kodo, ki neopazno pokliče pomoč. Brezžična, baterija zdrži do 2 leti.",
+      "povezavaDoProdukta": "https://ajax.systems/products/keypad/"
+    },
+    {
+      "match": "^ajax keypad outdoor (wh|bl|white|black|graphite|grey)$",
+      "kratekOpis": "Zunanja tipkovnica z RFID čitalnikom in Bluetooth — alarm izklopite s kodo, obeskom ali telefonom še pred vstopom. Odporna na vremenske vplive (IP66).",
+      "dolgOpis": "KeyPad Outdoor je tipkovnica za zunanjo namestitev ob vhodu: sistem izklopite s kodo, brezstičnim obeskom/kartico ali kar s približanim telefonom (Bluetooth), še preden odprete vrata. Vgrajen piskač potrjuje vklop in odšteva zakasnitev, ohišje IP66 pa prenese dež, sneg in prah."
+    },
+    {
+      "match": "^ajax spacecontrol (wh|bl)$",
+      "kratekOpis": "Obesek za daljinski vklop/izklop alarma s tipko za klic v sili — za tiste, ki ne uporabljajo telefona.",
+      "dolgOpis": "SpaceControl je preprost daljinec za na ključe: en pritisk za vklop, en za izklop, posebna tipka pa sproži tihi klic v sili. Odlična rešitev za starejše družinske člane in vse, ki alarma ne želijo upravljati prek telefona. Baterija zdrži do 5 let.",
+      "povezavaDoProdukta": "https://ajax.systems/products/spacecontrol/"
+    },
+    {
+      "match": "^ajax button (wh|bl)$",
+      "kratekOpis": "Panik tipka za klic pomoči z enim pritiskom — nosite jo s seboj ali pritrdite pod mizo. Zaščitena pred nenamerno sprožitvijo.",
+      "dolgOpis": "Button je majhna panik tipka, s katero družinski član ali zaposleni z enim pritiskom neopazno pokliče pomoč — alarm se sproži na centrali in telefonih, doma ali v varnostnem centru. Zaščita pred nenamerno sprožitvijo (daljši ali dvojni pritisk), odpornost IP55, uporabna tudi kot pametni gumb za scenarije.",
+      "povezavaDoProdukta": "https://ajax.systems/products/button/"
+    },
+    {
+      "match": "^ajax doublebutton (wh|bl)$",
+      "kratekOpis": "Panik tipka z dvema gumboma in fizično pregrado — alarm se sproži samo ob sočasnem pritisku obeh, lažni alarmi so praktično nemogoči.",
+      "dolgOpis": "DoubleButton je panik tipka, zasnovana za okolja, kjer si lažnega alarma ne smete privoščiti (trgovine, banke, recepcije): sproži se le ob sočasnem pritisku obeh gumbov, ločenih s plastično pregrado. Alarm neopazno obvesti varnostni center in odgovorne osebe.",
+      "povezavaDoProdukta": "https://ajax.systems/products/doublebutton/"
+    },
+    {
+      "match": "^ajax homesiren (wh|bl)$",
+      "kratekOpis": "Notranja sirena do 105 dB — vlomilca prežene iz hiše in opozori vse v njej. Glasnost si nastavite sami.",
+      "dolgOpis": "HomeSiren ob alarmu napolni prostor z zvokom do 105 dB in vlomilca praviloma prežene v nekaj sekundah. Glasnost in trajanje nastavite po želji, LED indikator pa lahko sveti kot opozorilo, da je sistem vklopljen. Brezžična namestitev, baterija do 5 let.",
+      "povezavaDoProdukta": "https://ajax.systems/products/homesiren/"
+    },
+    {
+      "match": "^ajax streetsiren (wh|bl)$",
+      "kratekOpis": "Zunanja sirena do 113 dB z LED obročem — vsem v okolici pove, da je hiša varovana, ob alarmu pa opozori celo sosesko.",
+      "dolgOpis": "StreetSiren je zunanja sirena, ki ob alarmu z do 113 dB opozori celotno okolico, vgrajena zaščita pa zazna vsak poskus odstranitve ali odpiranja. Že sama vidna prisotnost sirene z LED obročem odvrne večino vlomilcev. Deluje na baterije (do 5 let) ali zunanje napajanje.",
+      "povezavaDoProdukta": "https://ajax.systems/products/streetsiren/"
+    },
+    {
+      "match": "^ajax streetsiren doubledeck (wh|bl)$",
+      "kratekOpis": "Zunanja sirena do 113 dB z mestom za tablico vašega podjetja — varovanje, ki se vidi. Sabotažna zaščita in dolga avtonomija.",
+      "dolgOpis": "StreetSiren DoubleDeck je zunanja sirena z nosilcem za tablico z logotipom — jasno sporočilo, kdo varuje objekt. Ob alarmu zatuli z do 113 dB, vgrajena zaščita zazna vsak poskus snemanja ali odpiranja, napajanje pa je baterijsko (do 5 let) ali zunanje.",
+      "povezavaDoProdukta": "https://ajax.systems/products/streetsiren-doubledeck/"
+    },
+    {
+      "match": "^ajax fireprotect 2 (rb|sb) \\(heat\\) (wh|bl)$",
+      "kratekOpis": "Pametni javljalnik toplote — zazna nagel dvig ali kritično temperaturo in vas obvesti na telefon. Vgrajena sirena 85 dB.",
+      "dolgOpis": "FireProtect 2 (Heat) bedi nad temperaturo v prostoru: ob naglem dvigu ali kritični vročini sproži vgrajeno sireno (85 dB) in obvestilo na vaš telefon — tudi ko vas ni doma. Primeren za kuhinje in kotlovnice, kjer bi dimni javljalnik povzročal lažne alarme. Deluje samostojno ali v sistemu Ajax."
+    },
+    {
+      "match": "^ajax fireprotect 2 (rb|sb) \\(co\\) (wh|bl)$",
+      "kratekOpis": "Javljalnik ogljikovega monoksida (CO) — tihega ubijalca zazna, preden postane nevaren, in vas takoj opozori. Sirena 85 dB.",
+      "dolgOpis": "FireProtect 2 (CO) neprekinjeno meri koncentracijo ogljikovega monoksida — plina brez barve in vonja, ki je smrtno nevaren. Ob povišani vrednosti sproži sireno (85 dB) in obvestilo na telefon. Nepogrešljiv v prostorih s kaminom, plinsko pečjo ali garažo pod stanovanjem. Deluje samostojno ali v sistemu Ajax."
+    },
+    {
+      "match": "^ajax fireprotect 2 (rb|sb) \\(heat/co\\) (wh|bl)$",
+      "kratekOpis": "Kombinirani javljalnik toplote in ogljikovega monoksida (CO) v eni napravi. Vgrajena sirena 85 dB in obvestila na telefon.",
+      "dolgOpis": "FireProtect 2 (Heat/CO) v eni napravi združuje nadzor temperature in merjenje ogljikovega monoksida: zazna nagel dvig vročine in nevaren plin brez vonja. Ob nevarnosti sproži sireno (85 dB) in obvestilo na vaš telefon. Deluje samostojno ali v sistemu Ajax."
+    },
+    {
+      "match": "^ajax fireprotect 2 (rb|sb) \\(heat/smoke\\) (wh|bl)$",
+      "kratekOpis": "Pametni javljalnik dima in toplote z vgrajeno sireno 85 dB — požar zazna v prvih minutah in vas obvesti tudi, ko vas ni doma.",
+      "dolgOpis": "FireProtect 2 (Heat/Smoke) združuje dimni in toplotni senzor: požar zazna že v fazi tlenja in ob tem sproži vgrajeno sireno (85 dB) ter obvestilo na vaš telefon — tudi ko ste na dopustu. Deluje samostojno ali povezan v sistem Ajax, kjer ob dimu zatulijo tudi vse ostale sirene v hiši."
+    },
+    {
+      "match": "^ajax fireprotect 2 (rb|sb) \\(heat/smoke/co\\) (wh|bl)$",
+      "kratekOpis": "Trojna požarna zaščita v eni napravi: dim, toplota in ogljikov monoksid (CO). Sirena 85 dB in obvestila na telefon.",
+      "dolgOpis": "FireProtect 2 (Heat/Smoke/CO) je najpopolnejši požarni javljalnik v družini Ajax: hkrati zaznava dim, nevaren dvig temperature in ogljikov monoksid. Ob nevarnosti sproži vgrajeno sireno (85 dB) in obvestilo na vaš telefon, v sistemu Ajax pa aktivira tudi ostale sirene. Ena naprava, popolna požarna varnost prostora."
+    },
+    {
+      "match": "^ajax leaksprotect (wh|bl)$",
+      "kratekOpis": "Miniaturni senzor izliva vode — postavite ga pod pralni stroj ali bojler in izvedeli boste za puščanje, preden nastane škoda.",
+      "dolgOpis": "LeaksProtect je senzor velikosti škatlice vžigalic, ki ga preprosto položite pod pralni stroj, pomivalno korito ali bojler. Ob prvih kapljicah vode vas obvesti na telefon, v povezavi s pametnimi ventili pa lahko sistem vodo tudi samodejno zapre. Popolnoma vodotesen (IP65), baterija zdrži do 5 let.",
+      "povezavaDoProdukta": "https://ajax.systems/products/leaksprotect/"
+    },
+    {
+      "match": "^ajax motioncamera( hdr)?( \\(phod\\))? (wh|bl)$",
+      "kratekOpis": "Senzor gibanja z vgrajeno kamero — ob alarmu takoj prejmete fotografije in veste, ali gre za vlom ali po hiši hodi maček.",
+      "dolgOpis": "MotionCam je senzor gibanja s fotoaparatom: ob sprožitvi alarma v nekaj sekundah na telefon prejmete serijo fotografij in takoj vidite, kaj se dogaja doma. Konec ugibanja in nepotrebnih klicev — vi in varnostni center ukrepate na podlagi resnične slike. Ignorira ljubljenčke do 20 kg, baterija zdrži leta.",
+      "povezavaDoProdukta": "https://ajax.systems/products/motioncam/"
+    },
+    {
+      "match": "^ajax motioncamera outdoor( highmount)?( \\(phod\\))? (wh|bl)$",
+      "kratekOpis": "Zunanji senzor gibanja s kamero — foto potrditev alarma na dvorišču, zaščita pred lažnimi alarmi zaradi živali in vremena.",
+      "dolgOpis": "MotionCam Outdoor varuje okolico hiše in ob alarmu pošlje fotografije dogajanja na vaš telefon — vidite, kdo je na dvorišču, še preden pride do vrat. Pametni algoritem in dva senzorja izločita živali ter vremenske vplive, senzor pa zazna tudi poskus prekritja. Doseg do 15 m, odporen na dež in prah.",
+      "povezavaDoProdukta": "https://ajax.systems/products/motioncam-outdoor/"
+    },
+    {
+      "match": "^ajax rex (wh|bl)$",
+      "kratekOpis": "Ojačevalec dosega — podvoji doseg brezžičnega sistema Ajax za velike hiše in več objektov na parceli.",
+      "dolgOpis": "ReX podvoji doseg brezžične povezave med centralo in napravami Ajax — senzorji lahko varujejo tudi garažo, vrtno uto ali oddaljeno nadstropje. Ob izpadu elektrike deluje na vgrajeno baterijo do 35 ur.",
+      "povezavaDoProdukta": "https://ajax.systems/products/rex/"
+    },
+    {
+      "match": "^ajax rex ?2 (wh|bl)$",
+      "kratekOpis": "Ojačevalec dosega z ethernet povezavo in podporo foto senzorjem — razširi sistem na oddaljene objekte do 1700 m od centrale.",
+      "dolgOpis": "ReX 2 razširi doseg sistema Ajax do oddaljenih delov posesti (do 1700 m od centrale) in kot edini ojačevalec prenaša tudi fotografije MotionCam senzorjev. S centralo se lahko poveže tudi prek internetnega kabla, ob izpadu elektrike pa deluje na baterijo do 38 ur.",
+      "povezavaDoProdukta": "https://ajax.systems/products/rex-2/"
+    },
+    {
+      "match": "^ajax socket (wh|bl)$",
+      "kratekOpis": "Pametna vtičnica — naprave vklapljate s telefonom ali po urniku, spremljate porabo in preprečite pregrevanje.",
+      "dolgOpis": "Socket je pametni vmesnik za vtičnico: priključeno napravo vklapljate s telefonom, urnikom ali scenarijem (npr. izklop likalnika ob vklopu alarma), ob tem pa meri porabo elektrike ter ščiti pred preobremenitvijo in pregrevanjem. Barvni LED obroč pokaže trenutno obremenitev.",
+      "povezavaDoProdukta": "https://ajax.systems/products/socket/"
+    },
+    {
+      "match": "^ajax lifequality (wh|bl)$",
+      "kratekOpis": "Senzor kakovosti zraka: temperatura, vlaga in CO2 — pove vam, kdaj je čas za prezračevanje, in samodejno krmili prezračevalni sistem.",
+      "dolgOpis": "LifeQuality meri temperaturo, vlažnost in koncentracijo CO2 — pokazatelje, zaradi katerih smo utrujeni, se slabo naspimo ali težko zberemo. Aplikacija vas opozori, kdaj prezračiti, v povezavi z releji Ajax pa senzor prezračevanje krmili samodejno. Elegantno ohišje, baterija do 3 leta.",
+      "povezavaDoProdukta": "https://ajax.systems/products/lifequality/"
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+.servis-stran { max-width: 880px; margin: 0 auto; padding: 8px 4px 40px; }
+.servis-glava { margin-bottom: 12px; }
+.servis-glava h1 { font-size: 1.5rem; margin: 0; }
+.servis-podnaslov { margin: 4px 0 0; color: var(--muted-foreground, #64748b); font-size: 14px; }
+
+.servis-zavihki { display: flex; gap: 6px; border-bottom: 1px solid #e2e8f0; margin-bottom: 16px; }
+.servis-zavihki button { background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 12px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
+.servis-zavihki button.aktiven { color: #0f2740; border-bottom-color: #0f2740; }
+
+.servis-orodja { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.servis-orodja__desno { display: flex; gap: 8px; }
+.servis-orodja select, .servis-forma select, .servis-forma input, .servis-forma textarea { border: 1px solid #d7dee6; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+
+.gumb-primarni, .gumb-sekundarni { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 8px 14px; font-size: 14px; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
+.gumb-primarni { background: #0f2740; color: #fff; }
+.gumb-primarni:hover { background: #1b3a5c; }
+.gumb-primarni:disabled { opacity: .55; cursor: default; }
+.gumb-sekundarni { background: #fff; border-color: #d7dee6; color: #0f2740; }
+.gumb-sekundarni:hover { background: #f1f5f9; }
+
+.servis-forma { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 18px; display: grid; gap: 10px; }
+.servis-forma input[type="text"], .servis-forma textarea { width: 100%; }
+.servis-forma--vrstica { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.servis-forma--vrstica input { flex: 1; min-width: 220px; }
+.servis-forma__vrstica { display: flex; flex-wrap: wrap; gap: 12px; }
+.servis-forma__vrstica label { display: grid; gap: 4px; font-size: 12.5px; font-weight: 600; color: #475569; }
+.servis-forma__akcije { display: flex; justify-content: flex-end; gap: 8px; }
+
+.servis-napaka { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 14px; }
+.servis-nalaganje { display: flex; align-items: center; gap: 8px; color: var(--muted-foreground, #64748b); padding: 24px 0; }
+.servis-prazno { color: var(--muted-foreground, #64748b); font-size: 14px; margin: 8px 0; }
+.vrti { animation: servis-vrtenje 1s linear infinite; }
+@keyframes servis-vrtenje { to { transform: rotate(360deg); } }
+
+.servis-kartica { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; }
+.servis-kartica__glava { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.servis-kartica__naslov { font-weight: 700; font-size: 14.5px; color: #0f172a; }
+.servis-kartica__opis { margin: 6px 0 0; font-size: 13.5px; color: #475569; white-space: pre-wrap; }
+.servis-kartica__noga { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-top: 10px; }
+.servis-meta { font-size: 12.5px; color: #64748b; }
+.servis-vir { font-size: 12px; color: #475569; background: #f1f5f9; border-radius: 999px; padding: 2px 9px; }
+
+.servis-znacka { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; }
+.servis-znacka--reported, .servis-znacka--active { background: #eff6ff; color: #1d4ed8; }
+.servis-znacka--scheduled, .servis-znacka--paused { background: #fff7ed; color: #c2410c; }
+.servis-znacka--resolved, .servis-znacka--ended { background: #f0fdf4; color: #15803d; }
+.servis-znacka--cancelled { background: #f1f5f9; color: #64748b; }
+
+.servis-prioriteta { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; border-radius: 999px; padding: 2px 8px; background: #f1f5f9; color: #475569; }
+.servis-prioriteta--high { background: #fff7ed; color: #c2410c; }
+.servis-prioriteta--low { background: #f0fdf4; color: #15803d; }
+
+.servis-checklist { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: #475569; display: grid; gap: 3px; }
+
+.servis-akcije { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.servis-akcije button { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; border: 1px solid #d7dee6; background: #fff; color: #0f2740; border-radius: 7px; padding: 4px 9px; cursor: pointer; }
+.servis-akcije button:hover { background: #f1f5f9; }
+.servis-akcije button:disabled { opacity: .5; cursor: default; }

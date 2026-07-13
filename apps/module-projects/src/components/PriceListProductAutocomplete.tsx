@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
 import { cn } from "./ui/utils";
 
@@ -112,11 +113,11 @@ export function PriceListProductAutocomplete({
           `/api/price-list/items/search?q=${encodeURIComponent(trimmed)}`,
           { signal: controller.signal },
         );
-        const payload = await response.json();
-        if (!payload.success || !Array.isArray(payload.data)) {
+        const payload = await parseApiEnvelope<PriceListSearchItem[]>(response, "Iskanje po ceniku ni uspelo.");
+        if (!Array.isArray(payload)) {
           setResults([]);
         } else {
-          setResults(payload.data);
+          setResults(payload);
         }
       } catch (error) {
         if ((error as DOMException)?.name !== "AbortError") {

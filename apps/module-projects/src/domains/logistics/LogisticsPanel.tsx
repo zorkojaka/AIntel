@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import type {
   MaterialOrder,
   MaterialPickupMethod,
@@ -23,6 +24,7 @@ import { Checkbox } from "../../components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { MaterialOrderCard } from "./MaterialOrderCard";
+import { SupplierOrderEmailDialog } from "./SupplierOrderEmailDialog";
 import { PreparationPhotoThumbnails } from "./ExecutionDefinitionPanel";
 import { normalizeMaterialStatusLabel } from "./materialStatus";
 import { useConfirmOffer } from "../core/useConfirmOffer";
@@ -607,18 +609,20 @@ export function LogisticsPanel({
     return formatExecutionDuration(items);
   }, [selectedWorkOrder?.items, workOrderForm.items]);
 
+  const [supplierOrderDialog, setSupplierOrderDialog] = useState<{
+    materialOrderId: string;
+    supplierLabel: string;
+    lines: MaterialOrder["items"];
+  } | null>(null);
+
   const fetchSnapshot = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch(`/api/projects/${projectId}/logistics`);
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Napaka pri nalaganju logistike.");
-        return;
-      }
-      setSnapshot(payload.data as ProjectLogisticsSnapshot);
+      const payload = await parseApiEnvelope<ProjectLogisticsSnapshot>(response, "Napaka pri nalaganju logistike.");
+      setSnapshot(payload);
     } catch (error) {
-      toast.error("Napaka pri nalaganju logistike.");
+      toast.error(error instanceof Error ? error.message : "Napaka pri nalaganju logistike.");
     } finally {
       setLoading(false);
     }
@@ -634,9 +638,9 @@ export function LogisticsPanel({
     const fetchEmployees = async () => {
       try {
         const response = await fetch("/api/employees");
-        const payload = await response.json();
+        const payload = await parseApiEnvelope<Employee[]>(response, "Zaposlenih ni mogoče naložiti.");
         if (!alive) return;
-        setEmployees(Array.isArray(payload?.data) ? payload.data : []);
+        setEmployees(Array.isArray(payload) ? payload : []);
       } catch {
         if (!alive) return;
         setEmployees([]);
@@ -713,13 +717,9 @@ export function LogisticsPanel({
           `/api/projects/${projectId}/logistics/installer-availability/${mainInstallerId}${query}`,
           { signal: controller.signal },
         );
-        const payload = await response.json();
+        const payload = await parseApiEnvelope<InstallerAvailabilityEntry[]>(response, "Razpoložljivosti monterja ni mogoče naložiti.");
         if (!alive) return;
-        if (!payload?.success) {
-          setInstallerAvailability([]);
-          return;
-        }
-        setInstallerAvailability(Array.isArray(payload.data) ? payload.data : []);
+        setInstallerAvailability(Array.isArray(payload) ? payload : []);
       } catch (error) {
         if (!alive || (error instanceof DOMException && error.name === "AbortError")) return;
         setInstallerAvailability([]);
@@ -801,15 +801,11 @@ export function LogisticsPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ offerVersionId: offerId }),
       });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Preklic potrditve ni uspel.");
-        return;
-      }
+      await parseApiEnvelope<unknown>(response, "Preklic potrditve ni uspel.");
       toast.success("Potrditev ponudbe je bila preklicana.");
       await refreshAfterMutation(fetchSnapshot);
     } catch (error) {
-      toast.error("Preklic potrditve ni uspel.");
+      toast.error(error instanceof Error ? error.message : "Preklic potrditve ni uspel.");
     } finally {
       setCancelling(false);
     }
@@ -1045,25 +1041,21 @@ export function LogisticsPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ targetStep }),
       });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Napaka pri posodabljanju materiala.");
-        return;
-      }
-      if (payload.data?.materialOrders) {
+      const payload = await parseApiEnvelope<{ materialOrders?: MaterialOrder[] }>(response, "Napaka pri posodabljanju materiala.");
+      if (payload?.materialOrders) {
         setSnapshot((prev) =>
           prev
             ? {
                 ...prev,
-                materialOrders: payload.data.materialOrders,
-                materialOrder: payload.data.materialOrders[0] ?? prev.materialOrder,
+                materialOrders: payload.materialOrders ?? [],
+                materialOrder: payload.materialOrders?.[0] ?? prev.materialOrder,
               }
             : prev,
         );
       }
       await refreshAfterMutation(fetchSnapshot);
     } catch (error) {
-      toast.error("Napaka pri posodabljanju materiala.");
+      toast.error(error instanceof Error ? error.message : "Napaka pri posodabljanju materiala.");
     } finally {
       setAdvancingMaterialOrderId(null);
     }
@@ -1158,12 +1150,7 @@ export function LogisticsPanel({
               : undefined,
         }),
       });
-      const payload = await response.json();
-      if (!payload.success) {
-        toast.error(payload.error ?? "Delovnega naloga ni mogoce shraniti.");
-        return false;
-      }
-      const updated: LogisticsWorkOrder = payload.data;
+      const updated = await parseApiEnvelope<LogisticsWorkOrder>(response, "Delovnega naloga ni mogoce shraniti.");
       const mergedWorkOrder = { ...updated, ...(workOrderOverrides ?? {}) };
       const materialTargetId = materialOverrides?._id ?? currentMaterial?._id ?? null;
       setSnapshot((prev) => {
@@ -2850,12 +2837,30 @@ export function LogisticsPanel({
                   onBulkMarkReady={(items) => {
                     void applyMaterialItemsAndSave(order._id, items);
                   }}
+                  onOrderBySupplier={(group) =>
+                    setSupplierOrderDialog({ materialOrderId: order._id, supplierLabel: group.supplierLabel, lines: group.lines })
+                  }
                   hasPendingMaterialChanges={Boolean(pendingMaterialOrderIds[order._id])}
                   canDownloadPdf={Boolean(order._id)}
                   downloadingPdf={materialDownloading}
                 />
               ))
             )}
+            {supplierOrderDialog ? (
+              <SupplierOrderEmailDialog
+                open
+                onOpenChange={(nextOpen) => {
+                  if (!nextOpen) setSupplierOrderDialog(null);
+                }}
+                projectId={projectId}
+                materialOrderId={supplierOrderDialog.materialOrderId}
+                supplierLabel={supplierOrderDialog.supplierLabel}
+                lines={supplierOrderDialog.lines}
+                onSent={() => {
+                  void fetchSnapshot();
+                }}
+              />
+            ) : null}
           </div>
         ) : null}
 

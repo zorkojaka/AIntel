@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button, Card, Input } from '@aintel/ui';
+import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 import {
   fetchCenikServiceProducts,
   fetchExecutionRuleSettings,
@@ -443,8 +444,8 @@ function PriceListServiceAutocomplete({
         const response = await fetch(`/api/price-list/items/search?q=${encodeURIComponent(trimmed)}`, {
           signal: controller.signal,
         });
-        const payload = await response.json();
-        const data = Array.isArray(payload?.data) ? payload.data as PriceListSearchItem[] : [];
+        const payload = await parseApiEnvelope<PriceListSearchItem[]>(response, 'Iskanje po ceniku ni uspelo.');
+        const data = Array.isArray(payload) ? payload : [];
         setResults(
           data.sort((a, b) => {
             const aPreferred = a.isService || a.externalSource === 'manual' ? 0 : 1;

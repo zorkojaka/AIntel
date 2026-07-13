@@ -1,11 +1,13 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, DataTable, Input, CategoryMultiSelect, TableRowActions } from '@aintel/ui';
 import { ExternalLink, FileDown, FileUp, Pencil, Save, Trash2, X } from 'lucide-react';
+import { parseApiEnvelope, type ApiEnvelope } from '@aintel/shared/utils/api-client';
 import { clearMobileTopbar, setMobileTopbar } from '@aintel/shared/utils/mobileTopbar';
 import type { ProductServiceLink, ProductServiceLinkQuantityMode } from '@aintel/shared/types/product-service-link';
 import FilterBar from './components/FilterBar';
 import { ImportConflictReview } from './components/ImportConflictReview';
 import { CategorySettingsPanel } from './components/CategorySettingsPanel';
+import { IzlozbaPanel } from './components/IzlozbaPanel';
 
 type Product = {
   _id?: string;
@@ -43,12 +45,6 @@ type ProductServiceLinkDraft = ProductServiceLink;
 type StatusBanner = {
   variant: 'success' | 'error';
   text: string;
-};
-
-type ApiEnvelope<T> = {
-  success: boolean;
-  data: T;
-  error: string | null;
 };
 
 type ImportSource = 'aa_api' | 'services_sheet' | 'dodatki' | 'excel';
@@ -197,7 +193,7 @@ type DuplicateCandidateGroup = {
   products: DuplicateCandidateProduct[];
 };
 
-type CatalogView = 'cenik' | 'produkti' | 'storitve' | 'category-settings';
+type CatalogView = 'cenik' | 'produkti' | 'storitve' | 'category-settings' | 'izlozba';
 type CenikQuickFilter = 'all' | 'products' | 'services';
 
 type AuditReport = {
@@ -490,11 +486,7 @@ function CategoryChipRow({ slugs, lookup }: CategoryChipRowProps) {
 }
 
 async function parseEnvelope<T>(response: Response) {
-  const payload: ApiEnvelope<T> = await response.json();
-  if (!payload.success) {
-    throw new Error(payload.error ?? 'Napaka pri komunikaciji s strežnikom.');
-  }
-  return payload.data;
+  return parseApiEnvelope<T>(response, 'Napaka pri komunikaciji s strežnikom.');
 }
 
 export const CenikPage: React.FC = () => {
@@ -727,6 +719,15 @@ export const CenikPage: React.FC = () => {
         listTitle: 'Seznam storitev za urejanje',
         addLabel: '+ Dodaj storitev',
         emptyLabel: 'Ni najdenih storitev.',
+      };
+    }
+    if (catalogView === 'izlozba') {
+      return {
+        title: 'Spletna izložba',
+        description: 'Kaj kaže spletna stran in v kakšnem vrstnem redu: objava, izpostavljenost, ročni vrstni red in oznake. Privzeto razvršča po dejanski prodaji.',
+        listTitle: 'Spletne skupine',
+        addLabel: '+ Dodaj postavko',
+        emptyLabel: 'Ni kandidatov za izložbo.',
       };
     }
     if (catalogView === 'category-settings') {
@@ -1313,12 +1314,8 @@ export const CenikPage: React.FC = () => {
     setAuditError(null);
     try {
       const response = await fetch('/api/admin/cenik/audit');
-      const payload: ApiEnvelope<AuditReport> = await response.json();
-      if (!payload.success) {
-        setAuditError(payload.error ?? 'Audit ni uspel.');
-        return;
-      }
-      setAuditResult(payload.data);
+      const data = await parseApiEnvelope<AuditReport>(response, 'Audit ni uspel.');
+      setAuditResult(data);
     } catch (error) {
       setAuditError('Audit ni uspel. Poskusi znova.');
     } finally {
@@ -1458,7 +1455,8 @@ export const CenikPage: React.FC = () => {
               { id: 'cenik', label: 'Cenik' },
               { id: 'produkti', label: 'Urejanje produktov' },
               { id: 'storitve', label: 'Urejanje storitev' },
-              { id: 'category-settings', label: 'Nastavitve kategorij' }
+              { id: 'category-settings', label: 'Nastavitve kategorij' },
+              { id: 'izlozba', label: 'Spletna izložba' }
             ] as Array<{ id: CatalogView; label: string }>).map((view) => (
               <Button
                 key={view.id}
@@ -1478,7 +1476,9 @@ export const CenikPage: React.FC = () => {
       </Card>
 
 
-      {catalogView === 'category-settings' ? (
+      {catalogView === 'izlozba' ? (
+        <IzlozbaPanel />
+      ) : catalogView === 'category-settings' ? (
         <CategorySettingsPanel />
       ) : (
         <>
