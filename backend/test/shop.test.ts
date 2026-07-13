@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { buildProductPayload, textToHtml } from '../modules/shop/woocommerce-sync.service';
+import { buildProductPayload, textToHtml, mapSolutions, normalizeBrand } from '../modules/shop/woocommerce-sync.service';
 
 describe('shop woocommerce sync', () => {
   it('textToHtml pretvori golo besedilo v odstavke in ubeži HTML', () => {
@@ -21,8 +21,10 @@ describe('shop woocommerce sync', () => {
       dolgOpis: 'Dolg opis',
       povezavaDoSlike: 'https://example.com/slika.jpg',
       merchandising: { featured: true },
+      categorySlugs: ['kamera', 'ip-kamera'],
+      proizvajalec: 'HIKVISION',
     };
-    const payload = buildProductPayload(product, 'testna-kamera', 3, 'kamere');
+    const payload = buildProductPayload(product, 'testna-kamera', 3);
     assert.equal(payload.sku, 'aintel-abc123');
     assert.equal(payload.slug, 'testna-kamera');
     assert.equal(payload.name, 'Testna kamera');
@@ -32,7 +34,25 @@ describe('shop woocommerce sync', () => {
     assert.equal(payload.imageSrc, 'https://example.com/slika.jpg');
     assert.equal(payload.featured, true);
     assert.equal(payload.menuOrder, 3);
-    assert.deepEqual(payload.categoryKeys, ['kamere']);
+    // rešitev (videonadzor) + proizvajalec (hikvision)
+    assert.deepEqual(payload.categoryKeys, ['videonadzor', 'hikvision']);
+  });
+
+  it('mapSolutions preslika categorySlugs v rešitve strani', () => {
+    assert.deepEqual(mapSolutions(['ip-kamera']), ['videonadzor']);
+    assert.deepEqual(mapSolutions(['alarm-komponenta']), ['alarm']);
+    assert.deepEqual(mapSolutions(['domofoni-in-video-domofoni']), ['domofon']);
+    assert.deepEqual(mapSolutions(['blebox', 'wifi-krmilniki']), ['pametni-dom']);
+    assert.deepEqual(mapSolutions(['neznano-nekaj']), []);
+  });
+
+  it('normalizeBrand poenoti različne zapise proizvajalca', () => {
+    assert.deepEqual(normalizeBrand('AJAX'), { slug: 'ajax', label: 'Ajax' });
+    assert.deepEqual(normalizeBrand('Ajax'), { slug: 'ajax', label: 'Ajax' });
+    assert.deepEqual(normalizeBrand('HIKVISION'), { slug: 'hikvision', label: 'Hikvision' });
+    assert.deepEqual(normalizeBrand('BleBox'), { slug: 'blebox', label: 'BleBox' });
+    assert.equal(normalizeBrand(''), null);
+    assert.equal(normalizeBrand(null), null);
   });
 
   it('buildProductPayload uporabi aaData.image kot rezervo in kratekOpis kot opis', () => {
@@ -45,7 +65,7 @@ describe('shop woocommerce sync', () => {
       povezavaDoSlike: '',
       aaData: { image: 'https://cdn.example.com/senzor.png' },
     };
-    const payload = buildProductPayload(product, 'senzor', 0, 'ajax');
+    const payload = buildProductPayload(product, 'senzor', 0);
     assert.equal(payload.regularPrice, '10.00');
     assert.equal(payload.imageSrc, 'https://cdn.example.com/senzor.png');
     assert.equal(payload.description, '<p>Samo kratek</p>');

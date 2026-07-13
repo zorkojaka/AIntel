@@ -19,6 +19,43 @@ export interface ShopProductPayload {
   categoryKeys: string[];
 }
 
+// ── Filtri trgovine: rešitev + proizvajalec (product_cat, dve nadkategoriji) ──
+// Rešitev = kot meni glavne strani; slikamo iz product.categorySlugs. Otroci
+// nadkategorije 'resitev'; proizvajalec pa otroci nadkategorije 'proizvajalec'.
+export const SHOP_PARENT_RESITEV = 'resitev';
+export const SHOP_PARENT_PROIZVAJALEC = 'proizvajalec';
+
+const RESITVE: Array<{ slug: string; label: string; match: string[] }> = [
+  { slug: 'videonadzor', label: 'Videonadzor', match: ['videonadzor', 'videonadzorni-sistemi', 'kamere', 'kamera', 'ip-kamera', 'wifi-kamera', 'wifi-kamere', 'ptz-kamera', 'ptz-kamere', 'dome', 'bullet', 'vandal-proof', 'snemalnik', 'snemalniki', 'disk', 'trdi-diski', 'dodatki-sistema-videonadzora', 'poe-stikala', 'ptz-tipkovnice'] },
+  { slug: 'alarm', label: 'Alarm', match: ['alarm', 'alarm-komponenta', 'alarmne-centrale', 'protivlomni-sistemi', 'detekcija-stanja-okolice', 'detekcija-v-prostoru', 'detekcija-v-tocki', 'detektorji-kovin', 'perimeterska-detekcija', 'signalizacija', 'sistemi-zamegljevanja', 'komunikatorji'] },
+  { slug: 'domofon', label: 'Domofon', match: ['domofon', 'domofoni', 'domofoni-in-video-domofoni', 'notranje-enote', 'zunanje-enote', 'dodatki-za-notranje-enote', 'dodatki-za-zunanje-enote', 'moduli-za-zunanje-enote'] },
+  { slug: 'pametni-dom', label: 'Pametni dom', match: ['pametni-dom', 'pametna-hisa', 'pametne-hise', 'smarthome', 'smartlife', 'blebox', 'blebox-dodatki', 'wifi-krmilniki', 'wifi-krmilniki-din', 'wifi-krmilniki-pro', 'wifi-senzorji', 'wifi-senzorji-pro', 'bluetooth-krmilniki'] },
+  { slug: 'pametne-kljucavnice', label: 'Pametne ključavnice', match: ['pametna-kljucavnica', 'pametne-kljucavnice', 'yale', 'assa-abloy', 'geze'] },
+];
+
+// Kanonična imena proizvajalcev (podatek je nedosleden: Ajax/AJAX, Hikvision/HIKVISION …).
+const PROIZVAJALEC_KANON: Record<string, string> = {
+  ajax: 'Ajax', hikvision: 'Hikvision', dvc: 'DVC', blebox: 'BleBox', reolink: 'Reolink',
+  paradox: 'Paradox', dsc: 'DSC', inout: 'INOut', smartlife: 'SmartLife', dahua: 'Dahua',
+  vivotek: 'Vivotek', crow: 'Crow', inim: 'Inim', jantar: 'Jantar', yale: 'Yale',
+};
+
+export function mapSolutions(categorySlugs: string[]): string[] {
+  const set = new Set((categorySlugs ?? []).map((s) => String(s).toLowerCase()));
+  const out: string[] = [];
+  for (const r of RESITVE) if (r.match.some((m) => set.has(m))) out.push(r.slug);
+  return out;
+}
+
+export function normalizeBrand(proizvajalec: unknown): { slug: string; label: string } | null {
+  const raw = String(proizvajalec ?? '').trim();
+  if (!raw) return null;
+  const key = raw.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const label = PROIZVAJALEC_KANON[key] ?? raw.replace(/\b\w/g, (c) => c.toUpperCase());
+  const slug = katalogSlug(label);
+  return slug ? { slug, label } : null;
+}
+
 export async function getShopSettings(): Promise<ShopSettingsDocument | null> {
   return ShopSettingsModel.findOne({ key: SETTINGS_KEY });
 }
@@ -64,7 +101,11 @@ export function textToHtml(value: string): string {
     .join('\n');
 }
 
-export function buildProductPayload(product: any, slug: string, menuOrder: number, categoryKey: string): ShopProductPayload {
+export function buildProductPayload(product: any, slug: string, menuOrder: number): ShopProductPayload {
+  const solutions = mapSolutions(product?.categorySlugs ?? []);
+  const brand = normalizeBrand(product?.proizvajalec);
+  const categoryKeys = [...solutions];
+  if (brand) categoryKeys.push(brand.slug);
   return {
     sku: `${SKU_PREFIX}${String(product._id)}`,
     slug,
@@ -75,14 +116,18 @@ export function buildProductPayload(product: any, slug: string, menuOrder: numbe
     imageSrc: String(product.povezavaDoSlike || product?.aaData?.image || ''),
     featured: Boolean(product?.merchandising?.featured),
     menuOrder,
-    categoryKeys: [categoryKey],
+    categoryKeys,
   };
 }
 
 // Ista upravičenost, razvrščanje in slugi kot spletni katalog (getWebKatalog),
 // da se povezave /izdelki/<slug> in /trgovina/izdelek/<slug> ujemajo.
-export async function buildShopCatalog(): Promise<ShopProductPayload[]> {
+export async function buildShopCatalog(): Promise<{
+  payloads: ShopProductPayload[];
+  categories: Map<string, { label: string; parent: string | null }>;
+}> {
   const payloads: ShopProductPayload[] = [];
+  const categories = neededShopCategories(); // nadkategoriji + rešitve; proizvajalce dodamo sproti
   // Produkt je lahko v več skupinah (npr. Ajax kamera v kamere + ajax):
   // en zapis z več kategorijami, sicer Woo zavrne podvojen SKU.
   const bySku = new Map<string, ShopProductPayload>();
@@ -105,26 +150,35 @@ export async function buildShopCatalog(): Promise<ShopProductPayload[]> {
         'aaData.image': 1,
         merchandising: 1,
         'salesStats.soldQty': 1,
+        categorySlugs: 1,
+        proizvajalec: 1,
       })
       .lean();
     const sorted = [...candidates].sort(compareForDisplay);
     for (const product of sorted) {
       const sku = `${SKU_PREFIX}${String((product as any)._id)}`;
-      const existing = bySku.get(sku);
-      if (existing) {
-        if (!existing.categoryKeys.includes(skupina.key)) existing.categoryKeys.push(skupina.key);
-        continue;
-      }
+      if (bySku.has(sku)) continue; // produkt je lahko v več skupinah — kategorije so že izpeljane iz njega
       let slug = katalogSlug(String((product as any).ime ?? '')) || String((product as any)._id);
       while (slugsSeen.has(slug)) slug = `${slug}-2`;
       slugsSeen.add(slug);
-      const payload = buildProductPayload(product, slug, menuOrder, skupina.key);
+      const payload = buildProductPayload(product, slug, menuOrder);
+      const brand = normalizeBrand((product as any).proizvajalec);
+      if (brand && !categories.has(brand.slug)) categories.set(brand.slug, { label: brand.label, parent: SHOP_PARENT_PROIZVAJALEC });
       bySku.set(sku, payload);
       payloads.push(payload);
       menuOrder += 1;
     }
   }
-  return payloads;
+  return { payloads, categories };
+}
+
+// Nadkategoriji + rešitve (fiksne); proizvajalce doda buildShopCatalog sproti.
+export function neededShopCategories(): Map<string, { label: string; parent: string | null }> {
+  const map = new Map<string, { label: string; parent: string | null }>();
+  map.set(SHOP_PARENT_RESITEV, { label: 'Rešitev', parent: null });
+  map.set(SHOP_PARENT_PROIZVAJALEC, { label: 'Proizvajalec', parent: null });
+  for (const r of RESITVE) map.set(r.slug, { label: r.label, parent: SHOP_PARENT_RESITEV });
+  return map;
 }
 
 async function wooFetch(
@@ -149,7 +203,10 @@ async function wooFetch(
   return response.json();
 }
 
-async function ensureCategories(settings: ShopSettingsDocument): Promise<Map<string, number>> {
+async function ensureCategories(
+  settings: ShopSettingsDocument,
+  needed: Map<string, { label: string; parent: string | null }>,
+): Promise<Map<string, number>> {
   const byKey = new Map<string, number>();
   let page = 1;
   for (;;) {
@@ -162,13 +219,17 @@ async function ensureCategories(settings: ShopSettingsDocument): Promise<Map<str
     if (rows.length < 100) break;
     page += 1;
   }
-  for (const skupina of IZDELKI_SKUPINE) {
-    if (byKey.has(skupina.key)) continue;
+  // Najprej nadkategorije (parent=null), da so otroci lahko vezani nanje.
+  const ordered = [...needed.entries()].sort((a, b) => Number(a[1].parent !== null) - Number(b[1].parent !== null));
+  for (const [slug, def] of ordered) {
+    if (byKey.has(slug)) continue;
+    const parentId = def.parent ? byKey.get(def.parent) : undefined;
     const created: { id: number } = await wooFetch(settings, 'POST', '/products/categories', {
-      name: skupina.label,
-      slug: skupina.key,
+      name: def.label,
+      slug,
+      ...(parentId ? { parent: parentId } : {}),
     });
-    byKey.set(skupina.key, created.id);
+    byKey.set(slug, created.id);
   }
   return byKey;
 }
@@ -254,11 +315,11 @@ export async function runShopSync(): Promise<ShopSyncState> {
   await saveSyncState(state);
 
   try {
-    const catalog = await buildShopCatalog();
+    const { payloads: catalog, categories: neededCats } = await buildShopCatalog();
     state.total = catalog.length;
     await saveSyncState(state);
 
-    const categories = await ensureCategories(settings);
+    const categories = await ensureCategories(settings, neededCats);
     const existing = await listExistingProducts(settings);
     const currentSkus = new Set(catalog.map((item) => item.sku));
 
