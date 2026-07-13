@@ -15,6 +15,7 @@ export type OfferLineItemForm = {
   totalVat: number;
   totalGross: number;
   discountPercent: number;
+  imageUrl?: string;
 };
 
 export type KmCalculationState =
@@ -78,6 +79,7 @@ export const createEmptyItem = (): OfferLineItemForm => ({
   unitPrice: 0,
   vatRate: 22,
   discountPercent: 0,
+  imageUrl: undefined,
   totalNet: 0,
   totalVat: 0,
   totalGross: 0,

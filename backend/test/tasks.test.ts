@@ -92,7 +92,7 @@ test('AIN-P1-09 task module', async (t) => {
     const claimed = await updateTask(sales, String(task._id), { action: 'claim' });
     assert.equal(claimed.status, 'in_progress');
     assert.equal(String(claimed.assigneeEmployeeId), String(employeeId));
-    assert.equal(claimed.history.at(-1)?.action, 'claimed');
+    assert.equal(claimed.history[claimed.history.length - 1]?.action, 'claimed');
   });
 
   await t.test('complete requires resolution outcome and is terminal', async () => {

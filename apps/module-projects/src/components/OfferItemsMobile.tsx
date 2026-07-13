@@ -18,6 +18,7 @@ type OfferItemsMobileItem = {
   vatRate: number;
   totalGross: number;
   discountPercent: number;
+  imageUrl?: string;
 };
 
 type OfferItemsMobileTotals = {
@@ -133,6 +134,14 @@ export function OfferItemsMobile({
                     <ArrowDown className="h-4 w-4" />
                   </Button>
                 </div>
+                {item.imageUrl ? (
+                  <img
+                    src={item.imageUrl}
+                    alt=""
+                    className="mt-5 h-12 w-12 shrink-0 rounded border bg-white object-contain p-1"
+                    loading="lazy"
+                  />
+                ) : null}
                 <div className="min-w-0 flex-1">
                   <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Naziv
@@ -142,7 +151,7 @@ export function OfferItemsMobile({
                     placeholder="Naziv ali iskanje v ceniku"
                     inputClassName="min-w-0 h-10 text-base font-semibold"
                     onChange={(name) => {
-                      onUpdateItem(item.id, { name, productId: null });
+                      onUpdateItem(item.id, { name, productId: null, imageUrl: undefined });
                     }}
                     onCustomSelected={() => onSelectCustomItem(item.id)}
                     onProductSelected={(product) => onSelectProduct(item.id, product, index)}

@@ -43,7 +43,7 @@ test('AIN-P2-08 service tickets', async (t) => {
     assert.equal(ticket.status, 'reported');
     assert.equal(ticket.source, 'phone');
     assert.equal(ticket.priority, 'high');
-    assert.equal(ticket.history.at(-1)?.action, 'created');
+    assert.equal(ticket.history[ticket.history.length - 1]?.action, 'created');
   });
 
   await t.test('invalid source and priority are rejected', async () => {
@@ -78,7 +78,7 @@ test('AIN-P2-08 service tickets', async (t) => {
     const reopened = await updateServiceTicket(admin, ticket.id, { status: 'reported' });
     assert.equal(reopened.status, 'reported');
     assert.equal(reopened.scheduledAt, undefined);
-    assert.equal(reopened.history.at(-1)?.action, 'reopened');
+    assert.equal(reopened.history[reopened.history.length - 1]?.action, 'reopened');
   });
 
   await t.test('dedupeKey prevents duplicate portal intake', async () => {

@@ -75,14 +75,14 @@ test('AIN-P2-08 rez 2 maintenance plans', async (t) => {
     const updated = await updateMaintenancePlan(admin, plan.id, { recordVisit: true });
     assert.ok(updated.lastVisitAt instanceof Date);
     assert.ok(updated.nextDueAt.getTime() > before);
-    assert.equal(updated.history.at(-1)?.action, 'visit_recorded');
+    assert.equal(updated.history[updated.history.length - 1]?.action, 'visit_recorded');
   });
 
   await t.test('pause and end transitions record history', async () => {
     const plan = await createMaintenancePlan(admin, { equipment: [{ name: 'Kamera' }] });
     const paused = await updateMaintenancePlan(admin, plan.id, { status: 'paused' });
     assert.equal(paused.status, 'paused');
-    assert.equal(paused.history.at(-1)?.action, 'paused');
+    assert.equal(paused.history[paused.history.length - 1]?.action, 'paused');
     const ended = await updateMaintenancePlan(admin, plan.id, { status: 'ended' });
     assert.equal(ended.status, 'ended');
   });

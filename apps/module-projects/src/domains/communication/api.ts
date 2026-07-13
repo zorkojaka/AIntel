@@ -43,6 +43,13 @@ export async function fetchOfferMessages(projectId: string, offerId: string) {
   return parseEnvelope<CommunicationMessage[]>(response);
 }
 
+export async function fetchInstallerPreparationMessages(projectId: string, workOrderId: string) {
+  const response = await fetch(
+    `/api/projects/${projectId}/work-orders/${workOrderId}/installer-preparation-messages`
+  );
+  return parseEnvelope<CommunicationMessage[]>(response);
+}
+
 export async function fetchCommunicationMessage(projectId: string, messageId: string) {
   const response = await fetch(`/api/projects/${projectId}/messages/${messageId}`);
   return parseEnvelope<CommunicationMessage>(response);

@@ -239,6 +239,66 @@ export function OffersTab({
     () => templates.find((entry) => entry._id === selectedTemplateId) ?? null,
     [templates, selectedTemplateId]
   );
+  const missingItemImageLookupKey = useMemo(
+    () =>
+      items
+        .filter((item) => item.productId && !item.imageUrl && item.name.trim())
+        .map((item) => `${item.id}:${item.productId}:${item.name.trim()}`)
+        .join("|"),
+    [items],
+  );
+
+  useEffect(() => {
+    const missingItems = items.filter((item) => item.productId && !item.imageUrl && item.name.trim());
+    if (missingItems.length === 0) return;
+
+    let alive = true;
+    const controller = new AbortController();
+
+    const loadMissingImages = async () => {
+      const resolvedImages = await Promise.all(
+        missingItems.map(async (item) => {
+          try {
+            const response = await fetch(
+              `/api/price-list/items/search?q=${encodeURIComponent(item.name.trim())}`,
+              { signal: controller.signal },
+            );
+            const products = await parseApiEnvelope<PriceListSearchItem[]>(
+              response,
+              "Slike izdelka ni mogoče naložiti.",
+            );
+            const match = products.find((product) => product.id === item.productId);
+            return match?.imageUrl ? { id: item.id, productId: item.productId, imageUrl: match.imageUrl } : null;
+          } catch (error) {
+            if ((error as DOMException)?.name !== "AbortError") return null;
+            return null;
+          }
+        }),
+      );
+
+      if (!alive) return;
+      const imageByItemId = new Map(
+        resolvedImages
+          .filter((entry): entry is { id: string; productId: string; imageUrl: string } => Boolean(entry))
+          .map((entry) => [entry.id, entry]),
+      );
+      if (imageByItemId.size === 0) return;
+
+      setItems((prev) =>
+        prev.map((item) => {
+          const resolved = imageByItemId.get(item.id);
+          if (!resolved || item.productId !== resolved.productId || item.imageUrl) return item;
+          return { ...item, imageUrl: resolved.imageUrl };
+        }),
+      );
+    };
+
+    void loadMissingImages();
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [missingItemImageLookupKey]);
 
   useEffect(() => {
     if (paymentTermsOptions.length === 0) {
@@ -368,6 +428,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
         totalVat: item.totalVat,
         totalGross: item.totalGross,
         productId: item.productId ?? null,
+        imageUrl: undefined,
       }));
 
       setItems(ensureTrailingBlank([...mapped]));
@@ -698,6 +759,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
     updateItem(rowId, {
       name: product.name,
       productId: product.id,
+      imageUrl: product.imageUrl,
       unit: product.unit ?? "kos",
       unitPrice: product.unitPrice,
       vatRate: product.vatRate ?? 22,
@@ -706,7 +768,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
   };
 
   const handleSelectCustomItem = (rowId: string) => {
-    updateItem(rowId, { productId: null });
+    updateItem(rowId, { productId: null, imageUrl: undefined });
   };
 
   const loadLinkedServiceSuggestions = useCallback(async (rowId: string, productId: string) => {
@@ -2006,13 +2068,21 @@ const loadOfferById = useCallback(async (offerId: string) => {
                         <ArrowDown className="h-3.5 w-3.5" />
                       </Button>
                     </div>
+                    {item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt=""
+                        className="h-10 w-10 shrink-0 rounded border bg-white object-contain p-1"
+                        loading="lazy"
+                      />
+                    ) : null}
                     <div className="min-w-0 flex-1">
                     <PriceListProductAutocomplete
                       value={item.name}
                       placeholder="Naziv ali iskanje v ceniku"
                       inputClassName="text-left h-9 min-w-0 truncate"
                       onChange={(name) => {
-                        updateItem(item.id, { name, productId: null });
+                        updateItem(item.id, { name, productId: null, imageUrl: undefined });
                       }}
                       onCustomSelected={() => handleSelectCustomItem(item.id)}
                       onProductSelected={(product) => handleSelectProduct(item.id, product, index)}

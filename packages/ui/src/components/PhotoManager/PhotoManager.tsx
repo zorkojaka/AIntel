@@ -20,6 +20,7 @@ export interface PhotoManagerProps {
   description?: string;
   canDelete?: boolean;
   onPhotoCountChange?: (count: number) => void;
+  inlineCameraCapture?: boolean;
 }
 
 export interface ManagedPhoto {
@@ -407,14 +408,20 @@ export function PhotoManager({
   description,
   canDelete = true,
   onPhotoCountChange,
+  inlineCameraCapture = false,
 }: PhotoManagerProps) {
   const [tiles, setTiles] = useState<PhotoTile[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const photosRef = useRef<ManagedPhoto[]>([]);
   const onPhotoCountChangeRef = useRef(onPhotoCountChange);
   const lastNotifiedCountRef = useRef<number | null>(null);
@@ -445,6 +452,59 @@ export function PhotoManager({
     lastNotifiedCountRef.current = nextCount;
     onPhotoCountChangeRef.current?.(nextCount);
   }, []);
+
+  const stopInlineCamera = useCallback(() => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraOpen(false);
+    setCameraLoading(false);
+    setCameraError(null);
+  }, []);
+
+  const startInlineCamera = useCallback(async () => {
+    if (!inlineCameraCapture) {
+      cameraInputRef.current?.click();
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      cameraInputRef.current?.click();
+      return;
+    }
+
+    setCameraOpen(true);
+    setCameraLoading(true);
+    setCameraError(null);
+    try {
+      stopInlineCamera();
+      setCameraOpen(true);
+      setCameraLoading(true);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      });
+      cameraStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch (error) {
+      console.warn(`${PHOTO_MANAGER_LOG_PREFIX} Camera stream failed`, {
+        error,
+        message: getErrorMessage(error),
+      });
+      stopInlineCamera();
+      cameraInputRef.current?.click();
+    } finally {
+      setCameraLoading(false);
+    }
+  }, [inlineCameraCapture, stopInlineCamera]);
 
   const fetchPhotos = useCallback(
     async (signal?: AbortSignal) => {
@@ -478,6 +538,11 @@ export function PhotoManager({
     void fetchPhotos(controller.signal);
     return () => controller.abort();
   }, [fetchPhotos, itemId, open, phase, projectId, tag, unitIndex]);
+
+  useEffect(() => {
+    if (open) return;
+    stopInlineCamera();
+  }, [open, stopInlineCamera]);
 
   useEffect(() => {
     if (previewIndex !== null && previewIndex >= photos.length) {
@@ -523,6 +588,12 @@ export function PhotoManager({
       });
     };
   }, [tiles]);
+
+  useEffect(() => {
+    return () => {
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
 
   const uploadFile = async (selectedFile: File) => {
     let file = normalizeUploadFile(selectedFile);
@@ -619,6 +690,39 @@ export function PhotoManager({
     }
   };
 
+  const captureInlinePhoto = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || video.readyState < 2) {
+      setCameraError('Kamera še ni pripravljena.');
+      return;
+    }
+
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context2d = canvas.getContext('2d');
+    if (!context2d) {
+      setCameraError('Zajem slike ni uspel.');
+      return;
+    }
+
+    context2d.drawImage(video, 0, 0, width, height);
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        setCameraError('Zajem slike ni uspel.');
+        return;
+      }
+      setCameraError(null);
+      const file = new File([blob], `kamera-${Date.now()}.jpg`, {
+        type: 'image/jpeg',
+        lastModified: Date.now(),
+      });
+      void uploadFile(file);
+    }, 'image/jpeg', COMPRESSION_QUALITY);
+  }, []);
+
   const handleFileSelect = async (event: ChangeEvent<HTMLInputElement>) => {
     try {
       const selectedFiles = Array.from(event.target.files ?? []);
@@ -679,6 +783,7 @@ export function PhotoManager({
   const handleDialogOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
       setPreviewIndex(null);
+      stopInlineCamera();
     }
     onOpenChange(nextOpen);
   };
@@ -712,7 +817,29 @@ export function PhotoManager({
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
-            {loading ? (
+            {inlineCameraCapture && cameraOpen ? (
+              <div className="flex min-h-56 flex-col gap-3">
+                <div className="relative overflow-hidden rounded-md bg-black">
+                  <video
+                    ref={videoRef}
+                    className="aspect-[3/4] w-full bg-black object-cover sm:aspect-video"
+                    autoPlay
+                    muted
+                    playsInline
+                  />
+                  {cameraLoading ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white">
+                      <Loader2 className="h-8 w-8 animate-spin" />
+                    </div>
+                  ) : null}
+                </div>
+                {cameraError ? (
+                  <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {cameraError}
+                  </div>
+                ) : null}
+              </div>
+            ) : loading ? (
               <div className="flex min-h-56 items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
@@ -761,24 +888,45 @@ export function PhotoManager({
           </div>
 
           <div className="sticky bottom-0 z-10 shrink-0 border-t bg-background px-4 py-4">
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border bg-background px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-accent hover:text-accent-foreground"
-                onClick={() => cameraInputRef.current?.click()}
-              >
-                <Camera className="h-4 w-4" />
-                Kamera
-              </button>
-              <button
-                type="button"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border bg-background px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-accent hover:text-accent-foreground"
-                onClick={() => galleryInputRef.current?.click()}
-              >
-                <ImageIcon className="h-4 w-4" />
-                Galerija
-              </button>
-            </div>
+            {inlineCameraCapture && cameraOpen ? (
+              <div className="grid grid-cols-[auto_1fr] gap-3">
+                <button
+                  type="button"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border bg-background px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-accent hover:text-accent-foreground"
+                  onClick={stopInlineCamera}
+                >
+                  Nazaj
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:opacity-60"
+                  onClick={captureInlinePhoto}
+                  disabled={cameraLoading}
+                >
+                  <Camera className="h-4 w-4" />
+                  Zajemi
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border bg-background px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => void startInlineCamera()}
+                >
+                  <Camera className="h-4 w-4" />
+                  Kamera
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border bg-background px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => galleryInputRef.current?.click()}
+                >
+                  <ImageIcon className="h-4 w-4" />
+                  Galerija
+                </button>
+              </div>
+            )}
           </div>
 
           <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={(event) => void handleFileSelect(event)} className="hidden" />
