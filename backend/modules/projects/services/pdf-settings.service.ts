@@ -110,6 +110,9 @@ function sanitizeCompanyPayload(payload: Partial<PdfCompanySettings>): Partial<P
     vatId: normalizeString(payload.vatId),
     iban: normalizeString(payload.iban),
     directorName: normalizeString(payload.directorName),
+    signatureUrl: normalizeString(payload.signatureUrl),
+    stampUrl: normalizeString(payload.stampUrl),
+    useStamp: Boolean(payload.useStamp),
     logoUrl: normalizeString(payload.logoUrl),
     logoAssetId: normalizeString(payload.logoAssetId),
   };

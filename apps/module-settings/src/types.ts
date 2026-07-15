@@ -65,6 +65,9 @@ export interface SettingsDto {
   iban?: string;
   vatId?: string;
   directorName?: string;
+  signatureUrl?: string;
+  stampUrl?: string;
+  useStamp?: boolean;
   notes?: NoteDto[];
   noteDefaultsByDoc?: NotesDefaultsByDoc;
   defaultPaymentTerms?: string;
@@ -95,6 +98,9 @@ export interface PdfCompanySettingsDto {
   vatId?: string;
   iban?: string;
   directorName?: string;
+  signatureUrl?: string;
+  stampUrl?: string;
+  useStamp?: boolean;
   logoUrl?: string;
   logoAssetId?: string;
   primaryColor?: string;

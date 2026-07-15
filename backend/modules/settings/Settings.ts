@@ -75,6 +75,12 @@ export interface Settings {
   iban?: string;
   vatId?: string;
   directorName?: string;
+  /** Slika podpisa direktorja (data URL) — desno spodaj na računu. */
+  signatureUrl?: string;
+  /** Slika žiga (data URL). Če je ni, se namesto nje izpiše "Poslujemo brez žiga." */
+  stampUrl?: string;
+  /** Ali se poleg podpisa uporablja tudi žig. */
+  useStamp?: boolean;
   notes: Note[];
   noteDefaultsByDoc: NoteDefaultsByDoc;
   defaultPaymentTerms?: string;
@@ -182,6 +188,9 @@ const SettingsSchema = new Schema<SettingsDocument>(
     iban: { type: String },
     vatId: { type: String },
     directorName: { type: String },
+    signatureUrl: { type: String },
+    stampUrl: { type: String },
+    useStamp: { type: Boolean, default: false },
     notes: { type: [NoteSchema], default: [] },
     noteDefaultsByDoc: {
       type: new Schema<NoteDefaultsByDoc>(noteDefaultsShape, { _id: false }),

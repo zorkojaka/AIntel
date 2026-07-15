@@ -368,6 +368,22 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const handleImageUpload = async (field: 'signatureUrl' | 'stampUrl', file: File | null, napakaOpis: string) => {
+    if (!file) {
+      setForm((prev) => ({ ...prev, [field]: '' }));
+      return;
+    }
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setForm((prev) => ({ ...prev, [field]: dataUrl }));
+    } catch (uploadError) {
+      setStatus({
+        variant: 'error',
+        text: uploadError instanceof Error ? uploadError.message : napakaOpis,
+      });
+    }
+  };
+
   const handleNotesChange = (nextNotes: NoteDto[]) => {
     setForm((prev) => ({
       ...prev,
@@ -780,10 +796,78 @@ const CompanySettingsForm: React.FC<CompanySettingsFormProps> = ({
           onChange={(event) => handleFieldChange('vatId', event.target.value)}
         />
         <Input
-          label="Direktor"
+          label="Ime in priimek direktorja"
           value={form.directorName ?? ''}
           onChange={(event) => handleFieldChange('directorName', event.target.value)}
         />
+      </div>
+    </Card>
+
+    <Card title="Podpis in žig">
+      <p className="mb-4 text-sm text-muted-foreground">
+        Podpis se izpiše desno spodaj na računu, pod njim ime in priimek direktorja.
+      </p>
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="space-y-3">
+          <FileUpload
+            label="Naloži sliko podpisa"
+            accept="image/*"
+            onFileSelect={(file) => handleImageUpload('signatureUrl', file, 'Napaka pri nalaganju podpisa.')}
+          />
+          {form.signatureUrl ? (
+            <div className="flex items-center gap-4">
+              <img
+                src={form.signatureUrl}
+                alt="Podpis direktorja"
+                className="h-16 w-32 rounded-md border border-border bg-white object-contain"
+              />
+              <Button type="button" variant="ghost" onClick={() => handleFieldChange('signatureUrl', '')}>
+                Odstrani podpis
+              </Button>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Podpis še ni naložen.</p>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <FileUpload
+            label="Naloži sliko žiga"
+            accept="image/*"
+            onFileSelect={(file) => handleImageUpload('stampUrl', file, 'Napaka pri nalaganju žiga.')}
+          />
+          {form.stampUrl ? (
+            <div className="flex items-center gap-4">
+              <img
+                src={form.stampUrl}
+                alt="Žig podjetja"
+                className="h-16 w-16 rounded-md border border-border bg-white object-contain"
+              />
+              <Button type="button" variant="ghost" onClick={() => handleFieldChange('stampUrl', '')}>
+                Odstrani žig
+              </Button>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Poslujemo brez žiga.</p>
+          )}
+
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={!!form.useStamp}
+              onChange={(event) => setForm((prev) => ({ ...prev, useStamp: event.target.checked }))}
+            />
+            <span>
+              Poleg podpisa uporabi tudi žig
+              {form.useStamp && !form.stampUrl && (
+                <span className="block text-muted-foreground">
+                  Slike žiga ni — na račun se bo namesto nje izpisalo »Poslujemo brez žiga.«
+                </span>
+              )}
+            </span>
+          </label>
+        </div>
       </div>
     </Card>
 

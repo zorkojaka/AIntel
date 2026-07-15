@@ -197,6 +197,16 @@ const baseStyles = `
   .offer-notes li { font-size:11px; color:#475569; margin-bottom:2px; }
   .offer-closing { margin-top:10px; break-inside:avoid; page-break-inside:avoid; }
   .offer-bottom { margin-top:10px; display:flex; flex-direction:column; gap:8px; break-inside:avoid; page-break-inside:avoid; }
+  /* Podpis direktorja desno spodaj; žig levo od podpisa. */
+  .document-signature { margin-top:18px; display:flex; justify-content:flex-end; align-items:flex-end; gap:22px;
+    break-inside:avoid; page-break-inside:avoid; }
+  .document-signature-person { display:flex; flex-direction:column; align-items:center; min-width:170px; }
+  .document-signature-image { max-height:56px; max-width:180px; object-fit:contain; }
+  .document-signature-line { height:56px; width:170px; }
+  .document-signature-name { margin-top:4px; padding-top:4px; border-top:1px solid #94a3b8; width:100%;
+    text-align:center; font-size:11px; font-weight:600; }
+  .document-stamp img { max-height:76px; max-width:150px; object-fit:contain; }
+  .document-stamp--none { font-size:11px; color:#64748b; font-style:italic; padding-bottom:6px; }
   .offer-footer { border-top:1px solid #e2e8f0; margin-top:0; padding-top:8px; display:flex; flex-direction:column; gap:3px; break-inside:avoid; page-break-inside:avoid; }
   .offer-contact-line { display:flex; flex-wrap:wrap; justify-content:center; gap:4px; font-size:11px; color:#475569; }
   .offer-dot { color:#cbd5e1; margin:0 4px; }
@@ -359,6 +369,42 @@ interface DocumentShellOptions {
   commentBlock?: string;
   notesBlock?: string;
   extraSections?: string;
+  /** Podpis direktorja (in po potrebi žig) desno spodaj. */
+  signatureBlock?: string;
+}
+
+/**
+ * Podpis direktorja desno spodaj: slika podpisa, pod njo ime in priimek.
+ * Žig se prikaže samo, če je v nastavitvah obkljukano, da ga uporabljamo —
+ * če je takrat slike žiga ni, na njeno mesto pride "Poslujemo brez žiga."
+ */
+export function buildDirectorSignatureBlock(company: PdfCompanySettings | undefined) {
+  const directorName = (company?.directorName ?? '').trim();
+  const signatureUrl = (company?.signatureUrl ?? '').trim();
+  const stampUrl = (company?.stampUrl ?? '').trim();
+  const useStamp = !!company?.useStamp;
+
+  if (!directorName && !signatureUrl && !useStamp) {
+    return '';
+  }
+
+  const stampCell = useStamp
+    ? stampUrl
+      ? `<div class="document-stamp"><img src="${stampUrl}" alt="Žig podjetja" /></div>`
+      : `<div class="document-stamp document-stamp--none"><span>Poslujemo brez žiga.</span></div>`
+    : '';
+
+  const signatureImage = signatureUrl
+    ? `<img class="document-signature-image" src="${signatureUrl}" alt="Podpis direktorja" />`
+    : '<div class="document-signature-line"></div>';
+
+  return `<div class="document-signature">
+      ${stampCell}
+      <div class="document-signature-person">
+        ${signatureImage}
+        <div class="document-signature-name">${escapeHtml(directorName)}</div>
+      </div>
+    </div>`;
 }
 
 function buildStandardDocument(context: DocumentPreviewContext, options: DocumentShellOptions) {
@@ -442,6 +488,7 @@ function buildStandardDocument(context: DocumentPreviewContext, options: Documen
           ${commentBlock}
           ${notesBlock}
           ${extraSections}
+          ${options.signatureBlock ?? ''}
 
           <div class="offer-bottom">
             <div class="offer-footer">
@@ -607,6 +654,7 @@ export function renderInvoicePdf(context: DocumentPreviewContext) {
     tableFooterRows: totalRows,
     commentBlock,
     notesBlock,
+    signatureBlock: buildDirectorSignatureBlock(context.company),
   });
 }
 

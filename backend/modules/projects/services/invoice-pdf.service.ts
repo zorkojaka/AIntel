@@ -240,6 +240,10 @@ function buildCompanyProfile(
     vatId: settings.vatId || company.vatId,
     iban: settings.iban || company.iban,
     directorName: settings.directorName || company.directorName,
+    signatureUrl: settings.signatureUrl || company.signatureUrl,
+    stampUrl: settings.stampUrl || company.stampUrl,
+    // Kljukica je izrecna izbira, zato je settings merodajen tudi, kadar je izklopljena.
+    useStamp: typeof settings.useStamp === 'boolean' ? settings.useStamp : company.useStamp,
     logoUrl: settings.logoUrl || company.logoUrl,
     primaryColor: settings.primaryColor || company.primaryColor || '#0f62fe',
     website: settings.website || company.website,
