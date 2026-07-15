@@ -110,15 +110,69 @@ function recalculateItem(item: InvoiceItem): InvoiceItem {
   };
 }
 
-function calculateSummary(items: InvoiceItem[]): InvoiceSummary {
-  const baseWithoutVat = round(items.reduce((sum, item) => sum + (item.totalWithoutVat ?? 0), 0));
-  const totalWithVat = round(items.reduce((sum, item) => sum + (item.totalWithVat ?? 0), 0));
-  const vatAmount = round(totalWithVat - baseWithoutVat);
+function clampPercent(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.min(100, Math.max(0, round(parsed)));
+}
+
+interface DiscountSettings {
+  discountPercent: number;
+  useGlobalDiscount: boolean;
+  usePerItemDiscount: boolean;
+}
+
+/**
+ * Zrcali recalculateItems() iz backend/modules/projects/services/invoice.service.ts
+ * (pot brez vatMode), da uporabnik vidi učinek popusta že pred shranjevanjem.
+ * Merodajen ostaja povzetek strežnika, ki se vrne ob shranjevanju.
+ */
+function calculateSummary(items: InvoiceItem[], discount: DiscountSettings): InvoiceSummary {
+  const globalDiscountPercent = discount.useGlobalDiscount ? clampPercent(discount.discountPercent) : 0;
+
+  const prepared = items.map((item) => {
+    const quantity = Number.isFinite(item.quantity) ? item.quantity : 0;
+    const unitPrice = Number.isFinite(item.unitPrice) ? item.unitPrice : 0;
+    const vatPercent = Number.isFinite(item.vatPercent) ? item.vatPercent : 0;
+    const perItemPercent = discount.usePerItemDiscount ? clampPercent(item.discountPercent ?? 0) : 0;
+    const baseWithoutVat = round(quantity * unitPrice);
+    return {
+      baseWithoutVat,
+      lineAfterPerItemDiscount: round(baseWithoutVat * (1 - perItemPercent / 100)),
+      vatPercent,
+    };
+  });
+
+  const baseWithoutVat = round(prepared.reduce((sum, item) => sum + item.baseWithoutVat, 0));
+  const perItemDiscountedBase = round(prepared.reduce((sum, item) => sum + item.lineAfterPerItemDiscount, 0));
+  const globalDiscountAmount = round(perItemDiscountedBase * (globalDiscountPercent / 100));
+  const candidates = prepared.filter((item) => item.lineAfterPerItemDiscount > 0);
+  const lastCandidate = candidates[candidates.length - 1];
+
+  let allocatedGlobalDiscount = 0;
+  let discountedBase = 0;
+  let vatAmount = 0;
+
+  prepared.forEach((item) => {
+    let itemGlobalDiscount = 0;
+    if (globalDiscountPercent > 0 && item.lineAfterPerItemDiscount > 0) {
+      if (item === lastCandidate) {
+        itemGlobalDiscount = round(globalDiscountAmount - allocatedGlobalDiscount);
+      } else if (perItemDiscountedBase > 0) {
+        itemGlobalDiscount = round(globalDiscountAmount * (item.lineAfterPerItemDiscount / perItemDiscountedBase));
+        allocatedGlobalDiscount = round(allocatedGlobalDiscount + itemGlobalDiscount);
+      }
+    }
+    const totalWithoutVat = round(Math.max(0, item.lineAfterPerItemDiscount - itemGlobalDiscount));
+    discountedBase = round(discountedBase + totalWithoutVat);
+    vatAmount = round(vatAmount + round(totalWithoutVat * (item.vatPercent / 100)));
+  });
+
   return {
     baseWithoutVat,
-    discountedBase: baseWithoutVat,
+    discountedBase,
     vatAmount,
-    totalWithVat,
+    totalWithVat: round(discountedBase + vatAmount),
   };
 }
 
@@ -182,10 +236,29 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
 
   const canEdit = draftVersion?.status === "draft";
   const items = draftVersion?.items ?? [];
-  const calculatedSummary = useMemo(() => calculateSummary(items), [items]);
-  const summary = draftVersion?.summary ?? calculatedSummary;
+  const discountPercent = draftVersion?.discountPercent ?? 0;
+  const useGlobalDiscount = draftVersion?.useGlobalDiscount ?? false;
+  const usePerItemDiscount = draftVersion?.usePerItemDiscount ?? false;
+  const calculatedSummary = useMemo(
+    () => calculateSummary(items, { discountPercent, useGlobalDiscount, usePerItemDiscount }),
+    [items, discountPercent, useGlobalDiscount, usePerItemDiscount],
+  );
+  // Med urejanjem povzetek strežnika zastara — takrat prikažemo lokalni predogled.
+  const summary = dirty ? calculatedSummary : draftVersion?.summary ?? calculatedSummary;
+  const discountAmount = round(Math.max(0, summary.baseWithoutVat - summary.discountedBase));
   const invoiceNumberChanged = (invoiceNumberDraft.trim() || "") !== (activeVersion?.invoiceNumber?.trim() || "");
   const canSaveDraft = dirty || invoiceNumberChanged;
+
+  const handleDiscountChange = (value: string) => {
+    if (!draftVersion || !canEdit) return;
+    const nextPercent = clampPercent(value === "" ? 0 : value);
+    setDraftVersion({
+      ...draftVersion,
+      discountPercent: nextPercent,
+      useGlobalDiscount: nextPercent > 0,
+    });
+    setDirty(true);
+  };
 
   const handleItemChange = (itemId: string, updates: Partial<InvoiceItem>) => {
     if (!draftVersion || !canEdit) return;
@@ -224,7 +297,10 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
 
   const handleSave = async () => {
     if (!draftVersion || !canEdit) return false;
-    const success = await saveDraft(draftVersion.items, invoiceNumberDraft);
+    const success = await saveDraft(draftVersion.items, invoiceNumberDraft, {
+      discountPercent: draftVersion.discountPercent ?? 0,
+      useGlobalDiscount: draftVersion.useGlobalDiscount ?? false,
+    });
     if (success) {
       setDirty(false);
     }
@@ -507,6 +583,34 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
               <span className="text-muted-foreground">Osnova brez DDV</span>
               <span>{formatCurrency(summary.baseWithoutVat)}</span>
             </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-muted-foreground">
+                Popust
+                {canEdit ? (
+                  <span className="flex items-center gap-1">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step="0.01"
+                      className="h-7 w-20 text-right"
+                      value={discountPercent}
+                      onChange={(event) => handleDiscountChange(event.target.value)}
+                      aria-label="Popust v odstotkih"
+                    />
+                    <span>%</span>
+                  </span>
+                ) : (
+                  <span>({numberFormatter.format(discountPercent)} %)</span>
+                )}
+              </span>
+              <span>{discountAmount > 0 ? `– ${formatCurrency(discountAmount)}` : formatCurrency(0)}</span>
+            </div>
+            {usePerItemDiscount && (
+              <p className="text-xs text-muted-foreground m-0">
+                Ponudba ima popuste po postavkah — zgornji odstotek se obračuna dodatno na že popustirane postavke.
+              </p>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Osnova po popustih</span>
               <span>{formatCurrency(summary.discountedBase)}</span>

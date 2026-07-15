@@ -55,6 +55,8 @@ export async function updateInvoice(req: Request, res: Response) {
     const payload = await updateInvoiceVersion(getProjectId(req), getVersionId(req), {
       items: Array.isArray(req.body?.items) ? req.body.items : [],
       invoiceNumber: req.body?.invoiceNumber,
+      discountPercent: req.body?.discountPercent,
+      useGlobalDiscount: req.body?.useGlobalDiscount,
     });
     return res.success(payload);
   } catch (error) {
