@@ -18,7 +18,9 @@ export interface PdfCompanySettings {
   vatId?: string;
   iban?: string;
   directorName?: string;
-  /** Slika podpisa direktorja (data URL) — izpiše se desno spodaj na računu. */
+  /** manual = narisan v nastavitvah, image = naložena slika, none = brez podpisa. */
+  invoiceSignatureMode?: 'manual' | 'image' | 'none';
+  /** Podpis direktorja (data URL) — izpiše se desno spodaj na računu. */
   signatureUrl?: string;
   /** Slika žiga (data URL). Če je ni, dokument pove, da poslujemo brez žiga. */
   stampUrl?: string;
@@ -44,6 +46,7 @@ const PdfCompanySettingsSchema = new Schema<PdfCompanySettingsDocument>(
     vatId: { type: String, trim: true },
     iban: { type: String, trim: true },
     directorName: { type: String, trim: true },
+    invoiceSignatureMode: { type: String, enum: ['manual', 'image', 'none'], default: 'image' },
     signatureUrl: { type: String, trim: true },
     stampUrl: { type: String, trim: true },
     useStamp: { type: Boolean, default: false },
@@ -155,6 +158,7 @@ export const DEFAULT_COMPANY_SETTINGS: PdfCompanySettings = {
   vatId: '',
   iban: '',
   directorName: '',
+  invoiceSignatureMode: 'image',
   signatureUrl: '',
   stampUrl: '',
   useStamp: false,

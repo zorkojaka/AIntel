@@ -6,6 +6,8 @@ export { DataTable } from './components/DataTable/DataTable';
 export { Textarea } from './components/Textarea/Textarea';
 export { ColorPicker } from './components/ColorPicker/ColorPicker';
 export { FileUpload } from './components/FileUpload/FileUpload';
+export { SignatureCanvas } from './components/SignatureCanvas/SignatureCanvas';
+export type { SignatureCanvasProps } from './components/SignatureCanvas/SignatureCanvas';
 export { CategoryMultiSelect } from './components/CategoryMultiSelect/CategoryMultiSelect';
 export { TableRowActions } from './components/TableRowActions/TableRowActions';
 export { PhotoManager } from './components/PhotoManager/PhotoManager';

@@ -110,6 +110,10 @@ function sanitizeCompanyPayload(payload: Partial<PdfCompanySettings>): Partial<P
     vatId: normalizeString(payload.vatId),
     iban: normalizeString(payload.iban),
     directorName: normalizeString(payload.directorName),
+    invoiceSignatureMode:
+      payload.invoiceSignatureMode === 'manual' || payload.invoiceSignatureMode === 'image' || payload.invoiceSignatureMode === 'none'
+        ? payload.invoiceSignatureMode
+        : DEFAULT_COMPANY_SETTINGS.invoiceSignatureMode,
     signatureUrl: normalizeString(payload.signatureUrl),
     stampUrl: normalizeString(payload.stampUrl),
     useStamp: Boolean(payload.useStamp),

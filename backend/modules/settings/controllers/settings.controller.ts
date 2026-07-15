@@ -72,6 +72,12 @@ function validatePayload(body: unknown): SettingsUpdate {
     iban: pickString(payload.iban),
     vatId: pickString(payload.vatId),
     directorName: pickString(payload.directorName),
+    invoiceSignatureMode:
+      payload.invoiceSignatureMode === 'manual' ||
+      payload.invoiceSignatureMode === 'image' ||
+      payload.invoiceSignatureMode === 'none'
+        ? payload.invoiceSignatureMode
+        : undefined,
     signatureUrl: pickString(payload.signatureUrl),
     stampUrl: pickString(payload.stampUrl),
     useStamp: typeof payload.useStamp === 'boolean' ? payload.useStamp : undefined,

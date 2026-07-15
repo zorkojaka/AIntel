@@ -52,3 +52,27 @@ test('brez direktorja, podpisa in ziga se blok sploh ne izrise', () => {
   assert.equal(buildDirectorSignatureBlock(company({ directorName: '', signatureUrl: '', useStamp: false })), '');
   assert.equal(buildDirectorSignatureBlock(undefined), '');
 });
+
+test('nacin "brez podpisa": podpisa in imena ni, zig pa ostane, ce je vklopljen', () => {
+  const brez = buildDirectorSignatureBlock(
+    company({ invoiceSignatureMode: 'none', signatureUrl: PODPIS, stampUrl: ZIG, useStamp: true }),
+  );
+  assert.doesNotMatch(brez, /base64,PODPIS/, 'podpisa ni, tudi ce je shranjen');
+  assert.doesNotMatch(brez, /Jaka Zorko/, 'imena direktorja ni');
+  assert.match(brez, /base64,ZIG/, 'zig je locena izbira in ostane');
+
+  const cisto = buildDirectorSignatureBlock(company({ invoiceSignatureMode: 'none', signatureUrl: PODPIS }));
+  assert.equal(cisto, '', 'brez podpisa in brez ziga se blok sploh ne izrise');
+});
+
+test('nacina "rocni podpis" in "slika podpisa" se izriseta enako', () => {
+  const rocni = buildDirectorSignatureBlock(company({ invoiceSignatureMode: 'manual', signatureUrl: PODPIS }));
+  const slika = buildDirectorSignatureBlock(company({ invoiceSignatureMode: 'image', signatureUrl: PODPIS }));
+  assert.equal(rocni, slika, 'razlikuje ju samo vnos v nastavitvah, ne izris');
+  assert.match(rocni, /base64,PODPIS/);
+});
+
+test('privzeti nacin je slika podpisa (nazaj zdruzljivo)', () => {
+  const brezNacina = buildDirectorSignatureBlock(company({ signatureUrl: PODPIS }));
+  assert.match(brezNacina, /base64,PODPIS/, 'stare nastavitve brez nacina se izrisejo kot doslej');
+});

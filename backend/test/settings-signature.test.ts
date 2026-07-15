@@ -64,3 +64,26 @@ test('delna posodobitev ne pobrise podpisa in ziga', async () => {
     assert.equal(updated.useStamp, true);
   });
 });
+
+test('nacin podpisa se shrani in prezivi branje', async () => {
+  await withMongo(async () => {
+    const privzeto = await getSettings(true);
+    assert.equal(privzeto.invoiceSignatureMode, 'image', 'privzeto = slika podpisa (nazaj zdruzljivo)');
+
+    await updateSettings({ invoiceSignatureMode: 'manual', signatureUrl: PODPIS } as any);
+    assert.equal((await getSettings(true)).invoiceSignatureMode, 'manual');
+
+    await updateSettings({ invoiceSignatureMode: 'none' } as any);
+    const izklopljen = await getSettings(true);
+    assert.equal(izklopljen.invoiceSignatureMode, 'none');
+    assert.equal(izklopljen.signatureUrl, PODPIS, 'podpis ostane shranjen za ponoven vklop');
+  });
+});
+
+test('neveljaven nacin ne povozi shranjenega', async () => {
+  await withMongo(async () => {
+    await updateSettings({ invoiceSignatureMode: 'manual' } as any);
+    await updateSettings({ invoiceSignatureMode: 'nekaj-cudnega' } as any);
+    assert.equal((await getSettings(true)).invoiceSignatureMode, 'manual');
+  });
+});

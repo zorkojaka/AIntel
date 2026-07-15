@@ -1,5 +1,5 @@
 import React, { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Button, Card, ColorPicker, FileUpload, Input, Textarea } from '@aintel/ui';
+import { Button, Card, ColorPicker, FileUpload, Input, SignatureCanvas, Textarea } from '@aintel/ui';
 import {
   applySettingsTheme,
   createCommunicationTemplate,
@@ -27,6 +27,7 @@ import {
   CommunicationSenderSettings,
   CommunicationTemplate,
   DocumentTypeKey,
+  InvoiceSignatureMode,
   NoteDto,
   OfferPdfPreviewPayload,
   PdfDocumentSettingsDto,
@@ -367,6 +368,14 @@ export const SettingsPage: React.FC = () => {
       });
     }
   };
+
+  const SIGNATURE_MODE_OPTIONS: Array<{ value: InvoiceSignatureMode; label: string; description: string }> = [
+    { value: 'manual', label: 'Ročni podpis', description: 'Direktor se enkrat podpiše spodaj; podpis gre na vse račune.' },
+    { value: 'image', label: 'Slika podpisa', description: 'Naloži se slika podpisa (npr. skenirana).' },
+    { value: 'none', label: 'Brez podpisa', description: 'Na računu ni podpisa in ne imena direktorja.' },
+  ];
+
+  const signatureMode: InvoiceSignatureMode = form.invoiceSignatureMode ?? 'image';
 
   const handleImageUpload = async (field: 'signatureUrl' | 'stampUrl', file: File | null, napakaOpis: string) => {
     if (!file) {
@@ -805,29 +814,68 @@ const CompanySettingsForm: React.FC<CompanySettingsFormProps> = ({
 
     <Card title="Podpis in žig">
       <p className="mb-4 text-sm text-muted-foreground">
-        Podpis se izpiše desno spodaj na računu, pod njim ime in priimek direktorja.
+        Podpis se izpiše desno spodaj na računu in dobropisu, pod njim ime in priimek direktorja.
       </p>
       <div className="grid gap-6 md:grid-cols-2">
         <div className="space-y-3">
-          <FileUpload
-            label="Naloži sliko podpisa"
-            accept="image/*"
-            onFileSelect={(file) => handleImageUpload('signatureUrl', file, 'Napaka pri nalaganju podpisa.')}
-          />
-          {form.signatureUrl ? (
-            <div className="flex items-center gap-4">
-              <img
-                src={form.signatureUrl}
-                alt="Podpis direktorja"
-                className="h-16 w-32 rounded-md border border-border bg-white object-contain"
-              />
-              <Button type="button" variant="ghost" onClick={() => handleFieldChange('signatureUrl', '')}>
-                Odstrani podpis
-              </Button>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Podpis še ni naložen.</p>
+          <div className="space-y-2">
+            <span className="text-sm font-medium">Podpis na računu</span>
+            {SIGNATURE_MODE_OPTIONS.map((option) => (
+              <label key={option.value} className="flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="invoiceSignatureMode"
+                  className="mt-1"
+                  checked={signatureMode === option.value}
+                  onChange={() => setForm((prev) => ({ ...prev, invoiceSignatureMode: option.value }))}
+                />
+                <span>
+                  {option.label}
+                  <span className="block text-muted-foreground">{option.description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          {signatureMode === 'image' && (
+            <FileUpload
+              label="Naloži sliko podpisa"
+              accept="image/*"
+              onFileSelect={(file) => handleImageUpload('signatureUrl', file, 'Napaka pri nalaganju podpisa.')}
+            />
           )}
+
+          {signatureMode === 'manual' && (
+            <div className="space-y-2">
+              <span className="text-sm font-medium">Podpišite se</span>
+              <SignatureCanvas
+                value={form.signatureUrl || null}
+                height={140}
+                onChange={(dataUrl) => setForm((prev) => ({ ...prev, signatureUrl: dataUrl ?? '' }))}
+              />
+              <p className="m-0 text-xs text-muted-foreground">
+                Podpis se shrani ob kliku »Shrani podjetje« in se nato postavi na vse račune.
+              </p>
+            </div>
+          )}
+
+          {signatureMode !== 'none' &&
+            (form.signatureUrl ? (
+              <div className="flex items-center gap-4">
+                <img
+                  src={form.signatureUrl}
+                  alt="Podpis direktorja"
+                  className="h-16 w-32 rounded-md border border-border bg-white object-contain"
+                />
+                <Button type="button" variant="ghost" onClick={() => handleFieldChange('signatureUrl', '')}>
+                  Odstrani podpis
+                </Button>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Podpisa še ni — na računu bo nad imenom prazen prostor za ročni podpis.
+              </p>
+            ))}
         </div>
 
         <div className="space-y-3">

@@ -191,6 +191,7 @@ export const DEFAULT_SETTINGS: SettingsDto = {
   iban: 'SI56 0201 2003 4567 890',
   vatId: 'SI12345678',
   directorName: 'Janez Novak',
+  invoiceSignatureMode: 'image',
   signatureUrl: '',
   stampUrl: '',
   useStamp: false,

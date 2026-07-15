@@ -240,6 +240,7 @@ function buildCompanyProfile(
     vatId: settings.vatId || company.vatId,
     iban: settings.iban || company.iban,
     directorName: settings.directorName || company.directorName,
+    invoiceSignatureMode: settings.invoiceSignatureMode || company.invoiceSignatureMode,
     signatureUrl: settings.signatureUrl || company.signatureUrl,
     stampUrl: settings.stampUrl || company.stampUrl,
     // Kljukica je izrecna izbira, zato je settings merodajen tudi, kadar je izklopljena.

@@ -379,8 +379,12 @@ interface DocumentShellOptions {
  * če je takrat slike žiga ni, na njeno mesto pride "Poslujemo brez žiga."
  */
 export function buildDirectorSignatureBlock(company: PdfCompanySettings | undefined) {
-  const directorName = (company?.directorName ?? '').trim();
-  const signatureUrl = (company?.signatureUrl ?? '').trim();
+  // Način podpisa je izbira v nastavitvah: 'none' pomeni, da podpisa na računu ni.
+  // 'manual' (narisan) in 'image' (naložen) se izrišeta enako — razlikuje ju le vnos.
+  const mode = company?.invoiceSignatureMode ?? 'image';
+  const signatureOff = mode === 'none';
+  const directorName = signatureOff ? '' : (company?.directorName ?? '').trim();
+  const signatureUrl = signatureOff ? '' : (company?.signatureUrl ?? '').trim();
   const stampUrl = (company?.stampUrl ?? '').trim();
   const useStamp = !!company?.useStamp;
 
@@ -393,6 +397,10 @@ export function buildDirectorSignatureBlock(company: PdfCompanySettings | undefi
       ? `<div class="document-stamp"><img src="${stampUrl}" alt="Žig podjetja" /></div>`
       : `<div class="document-stamp document-stamp--none"><span>Poslujemo brez žiga.</span></div>`
     : '';
+
+  if (signatureOff) {
+    return `<div class="document-signature">${stampCell}</div>`;
+  }
 
   const signatureImage = signatureUrl
     ? `<img class="document-signature-image" src="${signatureUrl}" alt="Podpis direktorja" />`
