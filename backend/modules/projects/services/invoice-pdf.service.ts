@@ -30,6 +30,8 @@ export interface InvoiceVersion {
     vatAmount: number;
     totalWithVat: number;
   };
+  discountPercent?: number;
+  useGlobalDiscount?: boolean;
   invoiceNumber?: string;
 }
 
@@ -75,6 +77,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
   const totals = {
     subtotal: summary.baseWithoutVat ?? 0,
     discount: discountValue,
+    discountPercent: invoice.useGlobalDiscount ? invoice.discountPercent ?? 0 : 0,
     subtotalAfterDiscount: summary.discountedBase ?? summary.baseWithoutVat ?? 0,
     vat: summary.vatAmount ?? 0,
     total: summary.totalWithVat ?? 0,

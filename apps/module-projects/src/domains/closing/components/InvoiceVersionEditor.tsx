@@ -592,7 +592,7 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
                       type="number"
                       min={0}
                       max={100}
-                      step="0.01"
+                      step={1}
                       className="h-7 w-20 text-right"
                       value={discountPercent}
                       onChange={(event) => handleDiscountChange(event.target.value)}

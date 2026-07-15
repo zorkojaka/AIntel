@@ -6,6 +6,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 
 import { ProjectModel } from '../modules/projects/schemas/project';
 import { updateInvoiceVersion } from '../modules/projects/services/invoice.service';
+import { formatDiscountLabel } from '../modules/projects/services/document-renderers';
 
 const VERSION_ID = '507f1f77bcf86cd799439011';
 
@@ -155,4 +156,13 @@ test('račun: izdanega računa ni mogoče popustiti', async () => {
     await mongoose.disconnect();
     await mongo.stop();
   }
+});
+
+test('PDF računa: oznaka popusta pokaže odstotek', () => {
+  assert.equal(formatDiscountLabel(10), 'Popust (10 %)');
+  assert.equal(formatDiscountLabel(5), 'Popust (5 %)');
+  assert.equal(formatDiscountLabel(12.5), 'Popust (12,5 %)');
+  // Brez odstotka (npr. samo popusti po postavkah) ostane stara oznaka.
+  assert.equal(formatDiscountLabel(0), 'Popust');
+  assert.equal(formatDiscountLabel(undefined), 'Popust');
 });

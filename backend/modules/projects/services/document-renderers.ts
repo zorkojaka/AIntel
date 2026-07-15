@@ -41,10 +41,19 @@ export interface PreviewItem {
 export interface PreviewTotals {
   subtotal?: number;
   discount?: number;
+  /** Odstotek globalnega popusta; izpiše se ob znesku popusta (npr. "Popust (10 %)"). */
+  discountPercent?: number;
   subtotalAfterDiscount?: number;
   vat?: number;
   total?: number;
   dueDays?: number;
+}
+
+export function formatDiscountLabel(discountPercent?: number) {
+  const percent = Number(discountPercent ?? 0);
+  if (!Number.isFinite(percent) || percent <= 0) return 'Popust';
+  const zaokrozen = Math.round(percent * 100) / 100;
+  return `Popust (${String(zaokrozen).replace('.', ',')} %)`;
 }
 
 export interface PreviewTask {
@@ -547,7 +556,7 @@ export function renderInvoicePdf(context: DocumentPreviewContext) {
     { label: 'Skupaj brez DDV', value: totals.subtotal ?? 0 },
     ...(discount > 0
       ? [
-          { label: 'Popust', value: discount },
+          { label: formatDiscountLabel(totals.discountPercent), value: discount },
           { label: 'Cena s popustom brez DDV', value: totals.subtotalAfterDiscount ?? totals.subtotal ?? 0 },
         ]
       : []),
