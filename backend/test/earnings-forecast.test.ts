@@ -7,6 +7,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { ProductModel } from '../modules/cenik/product.model';
 import { EmployeeServiceRateModel } from '../modules/employee-profiles/schemas/employee-service-rate';
 import { OfferVersionModel } from '../modules/projects/schemas/offer-version';
+import { WorkOrderModel } from '../modules/projects/schemas/work-order';
 import { ProjectModel } from '../modules/projects/schemas/project';
 import { getEarningsForecast } from '../modules/finance/services/earnings-forecast.service';
 
@@ -95,7 +96,18 @@ async function createConfirmedProject(params: {
     status: params.status ?? 'in-progress',
     createdAt: new Date().toISOString(),
     confirmedOfferVersionId: String(offer._id),
-    assignedEmployeeIds: params.assigned,
+    // project.assignedEmployeeIds je v praksi PRAZEN — monter je dodeljen prek
+    // delovnega naloga. Testi zato posnemajo resnicno stanje.
+    assignedEmployeeIds: [],
+  });
+  await WorkOrderModel.create({
+    projectId: params.code,
+    offerVersionId: String(offer._id),
+    title: 'Delovni nalog',
+    status: 'issued',
+    cancelledAt: null,
+    assignedEmployeeIds: params.assigned.map(String),
+    items: [],
   });
   return offer;
 }

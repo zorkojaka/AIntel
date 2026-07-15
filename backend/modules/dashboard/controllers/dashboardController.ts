@@ -84,9 +84,23 @@ export async function getInstallerDashboard(req: Request, res: Response) {
 
   const employeeObjectId = new mongoose.Types.ObjectId(employeeId);
 
+  // Monter je dodeljen prek delovnega naloga — project.assignedEmployeeIds je v
+  // praksi prazen, zato je bil ta seznam monterju vedno prazen. Projektno polje
+  // vseeno upoštevamo, če se kdaj napolni.
+  const myAssignedWorkOrders = await WorkOrderModel.find({
+    assignedEmployeeIds: employeeId,
+    status: { $ne: 'cancelled' },
+    cancelledAt: null,
+  })
+    .select({ projectId: 1 })
+    .lean();
+  const myAssignedProjectIds = Array.from(
+    new Set(myAssignedWorkOrders.map((order) => String(order.projectId)).filter(Boolean)),
+  );
+
   const upcomingProjects = await ProjectModel.find({
     confirmedOfferVersionId: { $ne: null },
-    assignedEmployeeIds: employeeObjectId,
+    $or: [{ id: { $in: myAssignedProjectIds } }, { assignedEmployeeIds: employeeObjectId }],
   }).lean();
 
   const upcomingConfirmedProjects: UpcomingProjectSummary[] = upcomingProjects.map((project) => {

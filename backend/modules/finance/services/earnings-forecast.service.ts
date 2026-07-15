@@ -16,6 +16,7 @@ import { ProductModel } from '../../cenik/product.model';
 import { EmployeeServiceRateModel } from '../../employee-profiles/schemas/employee-service-rate';
 import { OfferVersionModel } from '../../projects/schemas/offer-version';
 import { ProjectModel } from '../../projects/schemas/project';
+import { WorkOrderModel } from '../../projects/schemas/work-order';
 
 export interface ForecastProject {
   projectId: string;
@@ -90,15 +91,45 @@ export async function getEarningsForecast(employeeId: string): Promise<EarningsF
     throw new Error('Neveljaven ID zaposlenega.');
   }
 
-  // Potrjeno, a še ne zaračunano — in monter mora biti dodeljen.
+  // Monter je dodeljen prek DELOVNEGA NALOGA, ne prek projekta: project.assignedEmployeeIds
+  // je v praksi prazen. Projekt.assignedEmployeeIds vseeno upoštevamo, če se kdaj napolni.
+  const myWorkOrders = await WorkOrderModel.find({
+    assignedEmployeeIds: employeeId,
+    status: { $ne: 'cancelled' },
+    cancelledAt: null,
+  })
+    .select({ projectId: 1 })
+    .lean();
+  const myProjectIds = Array.from(new Set(myWorkOrders.map((order) => String(order.projectId)).filter(Boolean)));
+
+  // Potrjeno, a še ne zaračunano.
   const projects = await ProjectModel.find({
     confirmedOfferVersionId: { $ne: null },
     status: { $nin: ['invoiced', 'draft'] },
-    assignedEmployeeIds: employeeId,
     archivedAt: null,
+    $or: [{ id: { $in: myProjectIds } }, { assignedEmployeeIds: employeeId }],
   })
     .select({ id: 1, code: 1, title: 1, status: 1, 'customer.name': 1, confirmedOfferVersionId: 1, assignedEmployeeIds: 1 })
     .lean();
+
+  // Koliko monterjev si projekt deli — prek delovnih nalogov vseh teh projektov.
+  const allWorkOrders = projects.length
+    ? await WorkOrderModel.find({
+        projectId: { $in: projects.map((project) => project.id) },
+        status: { $ne: 'cancelled' },
+        cancelledAt: null,
+      })
+        .select({ projectId: 1, assignedEmployeeIds: 1 })
+        .lean()
+    : [];
+  const assigneesByProject = new Map<string, Set<string>>();
+  for (const order of allWorkOrders) {
+    const key = String(order.projectId);
+    if (!assigneesByProject.has(key)) assigneesByProject.set(key, new Set());
+    for (const id of order.assignedEmployeeIds ?? []) {
+      if (id) assigneesByProject.get(key)!.add(String(id));
+    }
+  }
 
   const rateCache = new Map<string, { defaultPercent: number; overridePrice: number | null } | null>();
   const getRate = async (productId: string) => {
@@ -151,8 +182,11 @@ export async function getEarningsForecast(employeeId: string): Promise<EarningsF
     }
 
     // Delo si dodeljeni monterji razdelijo; kdo bo kaj opravil, se ve šele ob izvedbi.
-    const assigned = (project.assignedEmployeeIds ?? []).map(normalizeId).filter(Boolean);
-    const sharedBetween = Math.max(1, assigned.length);
+    const assigned = new Set<string>(assigneesByProject.get(project.id) ?? []);
+    for (const id of project.assignedEmployeeIds ?? []) {
+      if (id) assigned.add(normalizeId(id));
+    }
+    const sharedBetween = Math.max(1, assigned.size);
     const acceptedAt = (offer as any).acceptedAt ? new Date((offer as any).acceptedAt) : null;
     const key = monthKey(acceptedAt);
 
