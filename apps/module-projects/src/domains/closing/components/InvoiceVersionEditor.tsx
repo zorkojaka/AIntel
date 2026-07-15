@@ -48,6 +48,12 @@ const numberFormatter = new Intl.NumberFormat("sl-SI", {
   maximumFractionDigits: 2,
 });
 
+// Odstotek brez vsiljenih decimalk (10 %, ne 10,00 %) — enako kot na PDF računa.
+const percentFormatter = new Intl.NumberFormat("sl-SI", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+
 const formatCurrency = (value: number) => `${numberFormatter.format(value)} €`;
 
 function DownloadActionButton({
@@ -601,7 +607,7 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
                     <span>%</span>
                   </span>
                 ) : (
-                  <span>({numberFormatter.format(discountPercent)} %)</span>
+                  <span>({percentFormatter.format(discountPercent)} %)</span>
                 )}
               </span>
               <span>{discountAmount > 0 ? `– ${formatCurrency(discountAmount)}` : formatCurrency(0)}</span>
