@@ -35,20 +35,22 @@ async function main() {
   const projects = projectIds.length
     ? await ProjectModel.find({ id: { $in: projectIds } }).select({ id: 1, timeline: 1 }).lean()
     : [];
-  const timelineByProject = new Map(projects.map((project) => [project.id, project.timeline ?? []]));
+  const timelineByProject = new Map<string, Array<{ title?: unknown; timestamp?: unknown }>>(
+    projects.map((project) => [String(project.id), (project.timeline ?? []) as Array<{ title?: unknown; timestamp?: unknown }>]),
+  );
 
   let izCasovnice = 0;
   let izUpdatedAt = 0;
 
   for (const offer of offers) {
-    const events = (timelineByProject.get(offer.projectId) ?? []).filter(
-      (event: any) => POTRJENA.test(String(event?.title ?? '')) && event?.timestamp,
+    const events = (timelineByProject.get(String(offer.projectId)) ?? []).filter(
+      (event) => POTRJENA.test(String(event?.title ?? '')) && !!event?.timestamp,
     );
     // Zadnja potrditev na projektu je tista, ki velja za trenutno potrjeno ponudbo.
-    const latest = events
-      .map((event: any) => new Date(event.timestamp))
-      .filter((date: Date) => !Number.isNaN(date.getTime()))
-      .sort((a: Date, b: Date) => b.getTime() - a.getTime())[0];
+    const latest: Date | undefined = events
+      .map((event) => new Date(String(event.timestamp)))
+      .filter((date) => !Number.isNaN(date.getTime()))
+      .sort((a, b) => b.getTime() - a.getTime())[0];
 
     const acceptedAt = latest ?? ((offer as any).updatedAt ? new Date((offer as any).updatedAt) : null);
     if (!acceptedAt) continue;
