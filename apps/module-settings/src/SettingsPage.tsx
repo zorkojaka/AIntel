@@ -94,6 +94,12 @@ const SETTINGS_SECTIONS: Array<{
   },
 ];
 
+const SIGNATURE_MODE_OPTIONS: Array<{ value: InvoiceSignatureMode; label: string; description: string }> = [
+  { value: 'manual', label: 'Ročni podpis', description: 'Direktor se enkrat podpiše spodaj; podpis gre na vse račune.' },
+  { value: 'image', label: 'Slika podpisa', description: 'Naloži se slika podpisa (npr. skenirana).' },
+  { value: 'none', label: 'Brez podpisa', description: 'Na računu ni podpisa in ne imena direktorja.' },
+];
+
 const documentTabs: { key: DocumentTabKey; label: string; implemented: boolean }[] = [
   { key: 'offer', label: 'Ponudba', implemented: true },
   { key: 'invoice', label: 'Račun', implemented: true },
@@ -369,14 +375,6 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  const SIGNATURE_MODE_OPTIONS: Array<{ value: InvoiceSignatureMode; label: string; description: string }> = [
-    { value: 'manual', label: 'Ročni podpis', description: 'Direktor se enkrat podpiše spodaj; podpis gre na vse račune.' },
-    { value: 'image', label: 'Slika podpisa', description: 'Naloži se slika podpisa (npr. skenirana).' },
-    { value: 'none', label: 'Brez podpisa', description: 'Na računu ni podpisa in ne imena direktorja.' },
-  ];
-
-  const signatureMode: InvoiceSignatureMode = form.invoiceSignatureMode ?? 'image';
-
   const handleImageUpload = async (field: 'signatureUrl' | 'stampUrl', file: File | null, napakaOpis: string) => {
     if (!file) {
       setForm((prev) => ({ ...prev, [field]: '' }));
@@ -541,6 +539,7 @@ export const SettingsPage: React.FC = () => {
             form={form}
             handleFieldChange={handleFieldChange}
             handleLogoUpload={handleLogoUpload}
+            handleImageUpload={handleImageUpload}
             handleSubmit={handleCompanySubmit}
             saving={savingScope === 'company'}
             loading={loading}
@@ -730,6 +729,7 @@ interface CompanySettingsFormProps {
     value: Omit<SettingsDto, 'documentPrefix'>[K]
   ) => void;
   handleLogoUpload: (file: File | null) => Promise<void> | void;
+  handleImageUpload: (field: 'signatureUrl' | 'stampUrl', file: File | null, napakaOpis: string) => Promise<void> | void;
   handleSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   saving: boolean;
   loading: boolean;
@@ -739,10 +739,14 @@ const CompanySettingsForm: React.FC<CompanySettingsFormProps> = ({
   form,
   handleFieldChange,
   handleLogoUpload,
+  handleImageUpload,
   handleSubmit,
   saving,
   loading,
-}) => (
+}) => {
+  const signatureMode: InvoiceSignatureMode = form.invoiceSignatureMode ?? 'image';
+
+  return (
   <form className="space-y-6" onSubmit={handleSubmit}>
     <Card title="Osnovni podatki podjetja">
       <div className="grid gap-4 md:grid-cols-2">
@@ -827,7 +831,7 @@ const CompanySettingsForm: React.FC<CompanySettingsFormProps> = ({
                   name="invoiceSignatureMode"
                   className="mt-1"
                   checked={signatureMode === option.value}
-                  onChange={() => setForm((prev) => ({ ...prev, invoiceSignatureMode: option.value }))}
+                  onChange={() => handleFieldChange('invoiceSignatureMode', option.value)}
                 />
                 <span>
                   {option.label}
@@ -851,7 +855,7 @@ const CompanySettingsForm: React.FC<CompanySettingsFormProps> = ({
               <SignatureCanvas
                 value={form.signatureUrl || null}
                 height={140}
-                onChange={(dataUrl) => setForm((prev) => ({ ...prev, signatureUrl: dataUrl ?? '' }))}
+                onChange={(dataUrl) => handleFieldChange('signatureUrl', dataUrl ?? '')}
               />
               <p className="m-0 text-xs text-muted-foreground">
                 Podpis se shrani ob kliku »Shrani podjetje« in se nato postavi na vse račune.
@@ -904,7 +908,7 @@ const CompanySettingsForm: React.FC<CompanySettingsFormProps> = ({
               type="checkbox"
               className="mt-1"
               checked={!!form.useStamp}
-              onChange={(event) => setForm((prev) => ({ ...prev, useStamp: event.target.checked }))}
+              onChange={(event) => handleFieldChange('useStamp', event.target.checked)}
             />
             <span>
               Poleg podpisa uporabi tudi žig
@@ -957,7 +961,8 @@ const CompanySettingsForm: React.FC<CompanySettingsFormProps> = ({
       </Button>
     </div>
   </form>
-);
+  );
+};
 
 interface ProjectPdfSettingsSectionProps {
   value: PdfDocumentSettingsDto | null;
