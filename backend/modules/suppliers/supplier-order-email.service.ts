@@ -1,5 +1,5 @@
 import { MaterialOrderModel } from '../projects/schemas/material-order';
-import { ProjectModel } from '../projects/schemas/project';
+import { ProjectModel, newTimelineEventId } from '../projects/schemas/project';
 import { getCommunicationSenderSettings } from '../communication/services/communication.service';
 import { sendEmail } from '../communication/services/email-transport.service';
 import {
@@ -119,6 +119,7 @@ export async function sendSupplierOrderEmail(input: {
     {
       $push: {
         timeline: {
+          id: newTimelineEventId(),
           type: 'edit',
           title: `Naročilo poslano dobavitelju ${supplierName}`,
           description: `${to}: ${subject} (${itemIds.length} postavk)`,
