@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { ProjectModel } from '../../projects/schemas/project';
 import { FinanceSnapshotModel } from '../schemas/finance-snapshot';
+import { getEarningsForecast } from '../services/earnings-forecast.service';
 import {
   getBasketAnalysis,
   getEmployeeProjectEarningDetail,
@@ -251,4 +252,19 @@ export async function productBundles(req: Request, res: Response) {
   const year = Number.isFinite(rawYear) ? rawYear : null;
   const data = await getProductBundles(year);
   return res.success(data);
+}
+
+export async function myEarningsForecast(req: Request, res: Response) {
+  // Monter iz seje, nikoli iz zahtevka — vsak vidi samo svojo napoved.
+  const actorEmployeeId = getActorEmployeeId(req);
+  if (!actorEmployeeId) {
+    return res.fail('Zaposleni ni povezan z uporabnikom.', 403);
+  }
+  try {
+    const data = await getEarningsForecast(actorEmployeeId);
+    return res.success(data);
+  } catch (error) {
+    (req as any).log?.error?.({ err: error }, 'Napovedi zaslužka ni bilo mogoče izračunati.');
+    return res.fail(error instanceof Error ? error.message : 'Napovedi zaslužka ni bilo mogoče izračunati.', 400);
+  }
 }

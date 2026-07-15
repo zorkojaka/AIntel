@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { getEarningsForecast, type EarningsForecast } from '../../finance/services/earnings-forecast.service';
 import mongoose from 'mongoose';
 import { getDefaultDashboardStats, DashboardStats } from '../schemas/dashboardStats';
 import { ProjectModel } from '../../projects/schemas/project';
@@ -46,6 +47,8 @@ type InstallerDashboardResponse = {
   upcomingConfirmedProjects: UpcomingProjectSummary[];
   myMaterialOrders: MaterialOrderSummary[];
   myWorkOrders: WorkOrderSummary[];
+  /** Napoved zaslužka monterja iz potrjenih, še ne zaračunanih ponudb. */
+  earningsForecast: EarningsForecast | null;
 };
 
 export function getStats(_req: Request, res: Response) {
@@ -74,6 +77,7 @@ export async function getInstallerDashboard(req: Request, res: Response) {
       upcomingConfirmedProjects: [],
       myMaterialOrders: [],
       myWorkOrders: [],
+      earningsForecast: null,
     };
     return res.success(empty);
   }
@@ -188,10 +192,19 @@ export async function getInstallerDashboard(req: Request, res: Response) {
     createdAt: formatDate((order as any).createdAt),
   }));
 
+  // Napoved ne sme podreti nadzorne plosce, ce cene monterja niso nastavljene.
+  let earningsForecast: EarningsForecast | null = null;
+  try {
+    earningsForecast = await getEarningsForecast(employeeId);
+  } catch (error) {
+    (req as any).log?.error?.({ err: error }, 'Napovedi zasluzka ni bilo mogoce izracunati.');
+  }
+
   const payload: InstallerDashboardResponse = {
     upcomingConfirmedProjects,
     myMaterialOrders,
     myWorkOrders,
+    earningsForecast,
   };
 
   return res.success(payload);

@@ -1816,6 +1816,9 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
     const projectClient = await resolveProjectClient(project);
     const previousStatus = offer.status;
     offer.status = 'accepted';
+    // Datum potrditve je doslej obstajal samo kot dogodek v časovnici; napoved
+    // zaslužka monterja ga potrebuje kot podatek na ponudbi.
+    offer.acceptedAt = new Date();
     await offer.save();
 
     const offerTotals = calculateOfferTotalsFromSnapshot(offer as any);
@@ -1945,6 +1948,7 @@ export async function cancelOfferConfirmation(req: Request, res: Response, next:
     const now = new Date();
 
     offer.status = offer.sentAt ? 'sent' : 'draft';
+    offer.acceptedAt = null;
     await offer.save();
 
     const replacementConfirmedOffer = await OfferVersionModel.findOne({

@@ -36,6 +36,8 @@ export interface OfferVersion {
   sentAt?: string | null;
   sentByUserId?: string | null;
   sentVia?: "email" | null;
+  /** Kdaj je stranka potrdila ponudbo — podlaga za napoved zaslužka po mesecih. */
+  acceptedAt?: string | null;
   comment?: string | null;
   items: OfferLineItem[];
   totalNet: number;
