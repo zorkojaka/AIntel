@@ -1,7 +1,14 @@
 import { useMemo, useState } from "react";
 import { Badge } from "./ui/badge";
 import { ProjectSummary } from "../types";
-import { getPhaseProgress, getProjectPhase, getStatusForPhase, phaseDefinitions, ProjectPhase } from "./projectPhases";
+import {
+  compareProjectsNewestFirst,
+  getPhaseProgress,
+  getProjectPhase,
+  getStatusForPhase,
+  phaseDefinitions,
+  ProjectPhase,
+} from "./projectPhases";
 
 interface ProjectKanbanProps {
   projects: ProjectSummary[];
@@ -35,6 +42,7 @@ export function ProjectKanban({ projects, categoryLookup, onSelectProject, onPro
       const phase = getProjectPhase(project);
       initial.get(phase)?.push(project);
     });
+    initial.forEach((phaseProjects) => phaseProjects.sort(compareProjectsNewestFirst));
     return initial;
   }, [projects]);
 
