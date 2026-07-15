@@ -24,6 +24,7 @@ import { cn } from "../../components/ui/utils";
 import { MaterialOrderCard } from "../logistics/MaterialOrderCard";
 import { PriceListProductAutocomplete } from "../../components/PriceListProductAutocomplete";
 import { SignaturePad } from "./SignaturePad";
+import { ClientNotesCard } from "../core/ClientNotesCard";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
 import type { Employee } from "@aintel/shared/types/employee";
@@ -2251,6 +2252,7 @@ export function ExecutionPanel({
 
   return (
     <div className="space-y-8 overflow-x-hidden pb-24 md:pb-0">
+      <ClientNotesCard projectId={projectId} currentProjectId={projectId} />
       <div className="space-y-6">
         {STATUS_OPTIONS.map((statusOption) => {
           const entries = workOrdersByStatus[statusOption.value] ?? [];
