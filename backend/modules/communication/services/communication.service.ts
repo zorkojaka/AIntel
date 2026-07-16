@@ -14,6 +14,7 @@ import { CommunicationSenderSettingsModel } from "../schemas/sender-settings";
 import { CommunicationTemplateModel } from "../schemas/template";
 import { CommunicationMessageModel } from "../schemas/message";
 import { CommunicationEventModel } from "../schemas/event";
+import { buildThreadHeaders, type ThreadHeaders } from "./thread.service";
 import {
   appendCommunicationFooter,
   renderCommunicationBodyHtml,
@@ -426,6 +427,16 @@ async function sendAndRecordCommunicationEmail(input: {
       ]
     : [];
 
+  // Nit pogovora: novo sporocilo se pripne na zadnji clen (nase ali strankin).
+  // Napaka pri branju niti ne sme ustaviti posiljanja — sporocilo raje odide
+  // brez nitenja, kot da ne odide.
+  let thread: ThreadHeaders = {};
+  try {
+    thread = await buildThreadHeaders(input.successEvent.projectId);
+  } catch (error) {
+    console.error("Nitenja ni bilo mogoce sestaviti, posiljam brez njega.", error);
+  }
+
   let providerMessageId: string | null = null;
   try {
     const info = await sendEmail({
@@ -435,6 +446,8 @@ async function sendAndRecordCommunicationEmail(input: {
       bcc: input.bcc.length > 0 ? input.bcc.join(", ") : undefined,
       replyTo: input.senderSettings.replyToEmail || undefined,
       subject: input.subjectFinal,
+      inReplyTo: thread.inReplyTo,
+      references: thread.references,
       text: input.bodyFinal,
       html: input.htmlFinal,
       attachments: [...attachmentFiles, ...inlineLogoFiles],
@@ -467,6 +480,7 @@ async function sendAndRecordCommunicationEmail(input: {
       status: "sent",
       sentAt: new Date(),
       providerMessageId,
+      references: thread.references ?? [],
     });
 
     await createCommunicationEvent({

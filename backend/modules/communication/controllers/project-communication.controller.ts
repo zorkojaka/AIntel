@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { buildThreadHeaders } from "../services/thread.service";
 import {
   buildActorDisplayName,
   getCommunicationMessage,
@@ -252,3 +253,18 @@ export async function getCommunicationMessageController(req: Request, res: Respo
     return res.fail("Sporočila ni mogoče naložiti.", 500);
   }
 }
+
+/**
+ * Zadeva obstojece niti projekta — dialog jo predizpolni, da nova verzija
+ * ponudbe ne odpre nove niti (Gmail nit razbije ze ob spremenjeni zadevi).
+ */
+export async function getProjectThreadController(req: Request, res: Response) {
+  try {
+    const thread = await buildThreadHeaders(req.params.projectId);
+    return res.success({ subject: thread.threadSubject ?? null, hasThread: !!thread.inReplyTo });
+  } catch (error) {
+    (req as any).log?.error({ err: error }, "Project thread load failed");
+    return res.fail("Niti pogovora ni mogoče naložiti.", 500);
+  }
+}
+

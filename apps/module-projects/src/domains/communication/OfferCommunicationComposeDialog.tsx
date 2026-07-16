@@ -24,6 +24,7 @@ import {
   fetchCommunicationSenderSettings,
   fetchCommunicationTemplates,
   fetchFollowUpDefaults,
+  fetchProjectThread,
   sendOfferCommunicationEmail,
 } from './api';
 import type { OfferVersionSummary } from '@aintel/shared/types/offers';
@@ -236,10 +237,12 @@ export function OfferCommunicationComposeDialog({
       setInitError(null);
 
       try {
-        const [nextTemplates, nextSender, followUpDefaults] = await Promise.all([
+        const [nextTemplates, nextSender, followUpDefaults, thread] = await Promise.all([
           fetchCommunicationTemplates('offer_send'),
           fetchCommunicationSenderSettings(),
           fetchFollowUpDefaults().catch(() => ({ mode: 'off' as const, days: 7 })),
+          // Nit je priročnost, ne pogoj za pošiljanje — ob napaki pišemo novo zadevo.
+          fetchProjectThread(projectId).catch(() => ({ subject: null, hasThread: false })),
         ]);
         if (!active) return;
 
@@ -269,7 +272,13 @@ export function OfferCommunicationComposeDialog({
         setTo(savedDraft?.to ?? normalizedCustomerEmail);
         setCc(savedDraft?.cc ?? nextSender?.defaultCc ?? '');
         setBcc(savedDraft?.bcc ?? nextSender?.defaultBcc ?? '');
-        setSubject(savedDraft?.subject ?? (defaultTemplate ? replacePlaceholders(defaultTemplate.subjectTemplate, initialContext) : ''));
+        // Osnutek > zadeva niti > predloga: nova verzija ponudbe ostane v isti niti,
+        // uporabnikov osnutek pa ima vseeno prednost.
+        setSubject(
+          savedDraft?.subject ??
+            thread.subject ??
+            (defaultTemplate ? replacePlaceholders(defaultTemplate.subjectTemplate, initialContext) : ''),
+        );
         setBody(savedDraft?.body ?? (defaultTemplate ? replacePlaceholders(defaultTemplate.bodyTemplate, initialContext) : ''));
         setSelectedAttachments(savedDraft?.selectedAttachments ?? defaultTemplate?.defaultAttachments ?? ['offer_pdf']);
         setSelectedOfferIds(savedDraft?.selectedOfferIds.length ? savedDraft.selectedOfferIds : offerId ? [offerId] : []);

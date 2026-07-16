@@ -32,6 +32,8 @@ export interface CommunicationMessageDocument extends Document {
   sentAt?: Date | null;
   sentByUserId?: string | null;
   providerMessageId?: string | null;
+  /** Veriga niti (RFC 5322 References) — brez nje bi vsako sporocilo odprlo svojo nit. */
+  references?: string[];
   errorMessage?: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -67,6 +69,7 @@ const CommunicationMessageSchema = new Schema<CommunicationMessageDocument>(
     sentAt: { type: Date, default: null },
     sentByUserId: { type: String, default: null },
     providerMessageId: { type: String, default: null },
+    references: { type: [String], default: [] },
     errorMessage: { type: String, default: null },
   },
   { timestamps: true, versionKey: false, collection: "communication_messages" }
