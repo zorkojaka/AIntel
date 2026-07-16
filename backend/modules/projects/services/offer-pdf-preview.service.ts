@@ -196,9 +196,18 @@ function buildOfferPdfTotals(offer: OfferVersion) {
   const storedSubtotal = firstNumber(offer.baseWithoutVat);
   const subtotal = storedSubtotal > 0 ? storedSubtotal : subtotalAfterDiscount + discount;
 
+  // Odstotek izpišemo samo, kadar je popust IZKLJUČNO globalni. Če so zraven še
+  // popusti po postavkah, je zgornji znesek njihova vsota in odstotek ob njem
+  // ne bi držal.
+  const perItemDiscount = firstNumber(offer.perItemDiscountAmount);
+  const globalPercent = offer.useGlobalDiscount
+    ? firstPositiveNumber(offer.globalDiscountPercent, offer.discountPercent)
+    : 0;
+
   return {
     subtotal,
     discount,
+    discountPercent: perItemDiscount > 0 ? 0 : globalPercent,
     subtotalAfterDiscount,
     vat: firstPositiveNumber(offer.vatAmount, offer.totalVat),
     total: firstPositiveNumber(offer.totalWithVat, offer.totalGrossAfterDiscount, offer.totalGross),

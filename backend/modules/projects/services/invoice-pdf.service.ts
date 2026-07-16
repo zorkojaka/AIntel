@@ -20,6 +20,7 @@ export interface InvoiceVersion {
     unit: string;
     quantity: number;
     unitPrice: number;
+    discountPercent?: number;
     vatPercent: number;
     totalWithoutVat: number;
     totalWithVat: number;
@@ -32,6 +33,7 @@ export interface InvoiceVersion {
   };
   discountPercent?: number;
   useGlobalDiscount?: boolean;
+  usePerItemDiscount?: boolean;
   invoiceNumber?: string;
 }
 
@@ -74,10 +76,15 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
   const summary = invoice.summary ?? { baseWithoutVat: 0, discountedBase: 0, vatAmount: 0, totalWithVat: 0 };
   const discountValue = Math.max(0, (summary.baseWithoutVat ?? 0) - (summary.discountedBase ?? summary.baseWithoutVat ?? 0));
 
+  // Odstotek izpišemo samo, kadar je popust IZKLJUČNO globalni. Če so zraven še
+  // popusti po postavkah, je znesek njihova vsota in odstotek ob njem ne bi držal.
+  const imaPopustPoPostavkah =
+    !!invoice.usePerItemDiscount && (invoice.items ?? []).some((item) => (item.discountPercent ?? 0) > 0);
+
   const totals = {
     subtotal: summary.baseWithoutVat ?? 0,
     discount: discountValue,
-    discountPercent: invoice.useGlobalDiscount ? invoice.discountPercent ?? 0 : 0,
+    discountPercent: invoice.useGlobalDiscount && !imaPopustPoPostavkah ? invoice.discountPercent ?? 0 : 0,
     subtotalAfterDiscount: summary.discountedBase ?? summary.baseWithoutVat ?? 0,
     vat: summary.vatAmount ?? 0,
     total: summary.totalWithVat ?? 0,

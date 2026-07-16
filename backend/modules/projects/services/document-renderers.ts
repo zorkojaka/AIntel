@@ -537,7 +537,7 @@ export function renderOfferPdf(context: DocumentPreviewContext) {
     { label: 'Skupaj brez DDV', value: totals.subtotal ?? 0 },
     ...(discount > 0
       ? [
-          { label: 'Popust', value: discount },
+          { label: formatDiscountLabel(totals.discountPercent), value: discount },
           { label: 'Cena s popustom brez DDV', value: totals.subtotalAfterDiscount ?? totals.subtotal ?? 0 },
         ]
       : []),
