@@ -1,3 +1,5 @@
+export type InvoiceSignatureMode = 'manual' | 'image' | 'none';
+
 export type DocumentPrefixKey = 'offer' | 'invoice' | 'order' | 'deliveryNote' | 'workOrder';
 
 export interface DocumentPrefix {
@@ -65,6 +67,10 @@ export interface SettingsDto {
   iban?: string;
   vatId?: string;
   directorName?: string;
+  invoiceSignatureMode?: InvoiceSignatureMode;
+  signatureUrl?: string;
+  stampUrl?: string;
+  useStamp?: boolean;
   notes?: NoteDto[];
   noteDefaultsByDoc?: NotesDefaultsByDoc;
   defaultPaymentTerms?: string;
@@ -95,6 +101,10 @@ export interface PdfCompanySettingsDto {
   vatId?: string;
   iban?: string;
   directorName?: string;
+  invoiceSignatureMode?: InvoiceSignatureMode;
+  signatureUrl?: string;
+  stampUrl?: string;
+  useStamp?: boolean;
   logoUrl?: string;
   logoAssetId?: string;
   primaryColor?: string;

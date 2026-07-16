@@ -9,6 +9,8 @@ import {
   LegacyOfferClause,
   DocumentNumberingSettings,
   DocumentNumberingConfig,
+  InvoiceSignatureMode,
+  INVOICE_SIGNATURE_MODES,
 } from './Settings';
 import {
   buildPatternFromPrefix,
@@ -90,6 +92,10 @@ const DEFAULT_SETTINGS: Settings = {
   iban: '',
   vatId: '',
   directorName: '',
+  invoiceSignatureMode: 'image',
+  signatureUrl: '',
+  stampUrl: '',
+  useStamp: false,
   notes: [],
   noteDefaultsByDoc: createEmptyNoteDefaults(),
   defaultPaymentTerms: '',
@@ -334,6 +340,12 @@ function sanitizeSettings(payload: SettingsUpdate, baseOverride?: Settings): Set
     iban: sanitizeString(payload.iban, base.iban ?? ''),
     vatId: sanitizeString(payload.vatId, base.vatId ?? ''),
     directorName: sanitizeString(payload.directorName, base.directorName ?? ''),
+    invoiceSignatureMode: INVOICE_SIGNATURE_MODES.includes(payload.invoiceSignatureMode as InvoiceSignatureMode)
+      ? (payload.invoiceSignatureMode as InvoiceSignatureMode)
+      : base.invoiceSignatureMode ?? DEFAULT_SETTINGS.invoiceSignatureMode,
+    signatureUrl: sanitizeString(payload.signatureUrl, base.signatureUrl ?? ''),
+    stampUrl: sanitizeString(payload.stampUrl, base.stampUrl ?? ''),
+    useStamp: typeof payload.useStamp === 'boolean' ? payload.useStamp : base.useStamp ?? false,
     notes,
     noteDefaultsByDoc: noteDefaults,
     documentNumbering: normalizeDocumentNumbering(payload.documentNumbering, base, documentPrefix),

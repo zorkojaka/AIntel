@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { TableRowActions } from "@aintel/ui";
 import { Badge } from "./ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
+import { getProjectDateValue } from "./projectPhases";
 import { Category, ProjectStatus, ProjectSummary } from "../types";
 
 interface ProjectListProps {
@@ -71,10 +72,6 @@ function compareText(a?: string, b?: string) {
   return (a ?? "").localeCompare(b ?? "", "sl", { sensitivity: "base" });
 }
 
-function getDateValue(value: string) {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
-}
 
 function canCloseProject(project: ProjectSummary) {
   return project.status === "invoiced" || project.phaseSignals?.hasIssuedInvoice === true;
@@ -128,7 +125,12 @@ export function ProjectList({
           cmp = hideFinancials ? 0 : (a.invoiceAmount ?? 0) - (b.invoiceAmount ?? 0);
           break;
         case "datum":
-          cmp = getDateValue(a.createdAt) - getDateValue(b.createdAt);
+          cmp = getProjectDateValue(a.createdAt) - getProjectDateValue(b.createdAt);
+          // createdAt je samo datum (brez ure), zato so projekti istega dne izenačeni —
+          // zaporedna številka projekta je takrat edini vrstni red nastanka.
+          if (cmp === 0) {
+            cmp = (a.projectNumber ?? 0) - (b.projectNumber ?? 0);
+          }
           break;
       }
       return sortDir === "asc" ? cmp : -cmp;

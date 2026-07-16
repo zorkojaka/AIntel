@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireRoles } from '../../../middlewares/auth';
 import { ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from '../../../utils/roles';
+import { getProjectClientNotes, postProjectClientNote } from '../../crm/controllers/clientNotesController';
 import {
   addItem,
   addItemFromCenik,
@@ -53,6 +54,10 @@ const requireOfferConfirmationWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE
 router.get('/', listProjects);
 router.get('/offer-templates', listOfferTemplates);
 router.post('/', requireProjectWrite, createProject);
+// Interni zapisi o stranki projekta — monter (EXECUTION) jih mora videti in dopisovati
+// iz delovnega naloga; zapis se shrani na stranko, projekt je le izvor.
+router.get('/:projectId/client-notes', getProjectClientNotes);
+router.post('/:projectId/client-notes', requireWorkOrderWrite, postProjectClientNote);
 router.get('/:id', getProject);
 router.patch('/:id/assignments', requireProjectWrite, updateProjectAssignments);
 router.post('/:id/lifecycle', requireProjectWrite, updateProjectLifecycle);

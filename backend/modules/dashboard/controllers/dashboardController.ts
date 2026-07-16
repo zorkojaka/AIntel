@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { getEarningsForecast, type EarningsForecast } from '../../finance/services/earnings-forecast.service';
 import mongoose from 'mongoose';
 import { getDefaultDashboardStats, DashboardStats } from '../schemas/dashboardStats';
 import { ProjectModel } from '../../projects/schemas/project';
@@ -46,6 +47,8 @@ type InstallerDashboardResponse = {
   upcomingConfirmedProjects: UpcomingProjectSummary[];
   myMaterialOrders: MaterialOrderSummary[];
   myWorkOrders: WorkOrderSummary[];
+  /** Napoved zaslužka monterja iz potrjenih, še ne zaračunanih ponudb. */
+  earningsForecast: EarningsForecast | null;
 };
 
 export function getStats(_req: Request, res: Response) {
@@ -74,15 +77,30 @@ export async function getInstallerDashboard(req: Request, res: Response) {
       upcomingConfirmedProjects: [],
       myMaterialOrders: [],
       myWorkOrders: [],
+      earningsForecast: null,
     };
     return res.success(empty);
   }
 
   const employeeObjectId = new mongoose.Types.ObjectId(employeeId);
 
+  // Monter je dodeljen prek delovnega naloga — project.assignedEmployeeIds je v
+  // praksi prazen, zato je bil ta seznam monterju vedno prazen. Projektno polje
+  // vseeno upoštevamo, če se kdaj napolni.
+  const myAssignedWorkOrders = await WorkOrderModel.find({
+    assignedEmployeeIds: employeeId,
+    status: { $ne: 'cancelled' },
+    cancelledAt: null,
+  })
+    .select({ projectId: 1 })
+    .lean();
+  const myAssignedProjectIds = Array.from(
+    new Set(myAssignedWorkOrders.map((order) => String(order.projectId)).filter(Boolean)),
+  );
+
   const upcomingProjects = await ProjectModel.find({
     confirmedOfferVersionId: { $ne: null },
-    assignedEmployeeIds: employeeObjectId,
+    $or: [{ id: { $in: myAssignedProjectIds } }, { assignedEmployeeIds: employeeObjectId }],
   }).lean();
 
   const upcomingConfirmedProjects: UpcomingProjectSummary[] = upcomingProjects.map((project) => {
@@ -188,10 +206,19 @@ export async function getInstallerDashboard(req: Request, res: Response) {
     createdAt: formatDate((order as any).createdAt),
   }));
 
+  // Napoved ne sme podreti nadzorne plosce, ce cene monterja niso nastavljene.
+  let earningsForecast: EarningsForecast | null = null;
+  try {
+    earningsForecast = await getEarningsForecast(employeeId);
+  } catch (error) {
+    (req as any).log?.error?.({ err: error }, 'Napovedi zasluzka ni bilo mogoce izracunati.');
+  }
+
   const payload: InstallerDashboardResponse = {
     upcomingConfirmedProjects,
     myMaterialOrders,
     myWorkOrders,
+    earningsForecast,
   };
 
   return res.success(payload);

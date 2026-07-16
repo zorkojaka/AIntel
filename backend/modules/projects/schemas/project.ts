@@ -369,8 +369,17 @@ export function calculateOfferAmount(items: ProjectItem[]) {
   );
 }
 
+/**
+ * ID dogodka časovnice. Uporabi ga tudi, kadar dogodek potiskaš z updateOne($push):
+ * $push sheme NE preveri, zato se zapis brez id tiho shrani in nato podre VSAK
+ * project.save() (validacija celega dokumenta) — projekta ni več mogoče urejati.
+ */
+export function newTimelineEventId() {
+  return `evt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export function addTimeline(project: Project | ProjectDocument, event: Omit<TimelineEvent, 'id'>) {
-  const newEvent: TimelineEvent = { ...event, id: `evt-${Date.now().toString(36)}` };
+  const newEvent: TimelineEvent = { ...event, id: newTimelineEventId() };
   project.timeline = [newEvent, ...(project.timeline ?? [])];
 }
 

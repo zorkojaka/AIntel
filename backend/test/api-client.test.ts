@@ -61,3 +61,11 @@ test("AIN-P3-02 fetchApi reports one standardized error after retries are exhaus
 
   assert.deepEqual(errors, ["Still unavailable"]);
 });
+
+test("413 pove, da je priloga prevelika (streznik vrne HTML, ne ovojnice)", async () => {
+  const html = new Response("<!DOCTYPE html><html><body>PayloadTooLargeError</body></html>", {
+    status: 413,
+    headers: { "Content-Type": "text/html" },
+  });
+  await assert.rejects(() => parseApiEnvelope(html, "Fallback error"), /prevelika/);
+});

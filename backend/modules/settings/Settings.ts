@@ -29,6 +29,10 @@ export interface Note {
 
 export type NoteDefaultsByDoc = Record<DocumentTypeKey, string[]>;
 
+/** manual = direktor podpis nariše v nastavitvah; image = naloži sliko; none = brez podpisa. */
+export type InvoiceSignatureMode = 'manual' | 'image' | 'none';
+export const INVOICE_SIGNATURE_MODES: InvoiceSignatureMode[] = ['manual', 'image', 'none'];
+
 export interface LegacyOfferClause {
   id: string;
   title: string;
@@ -75,6 +79,14 @@ export interface Settings {
   iban?: string;
   vatId?: string;
   directorName?: string;
+  /** Kako se podpis direktorja postavi na račun: ročno narisan, naložena slika ali izklopljen. */
+  invoiceSignatureMode?: InvoiceSignatureMode;
+  /** Podpis direktorja (data URL) — narisan ali naložen, glede na invoiceSignatureMode. */
+  signatureUrl?: string;
+  /** Slika žiga (data URL). Če je ni, se namesto nje izpiše "Poslujemo brez žiga." */
+  stampUrl?: string;
+  /** Ali se poleg podpisa uporablja tudi žig. */
+  useStamp?: boolean;
   notes: Note[];
   noteDefaultsByDoc: NoteDefaultsByDoc;
   defaultPaymentTerms?: string;
@@ -182,6 +194,10 @@ const SettingsSchema = new Schema<SettingsDocument>(
     iban: { type: String },
     vatId: { type: String },
     directorName: { type: String },
+    invoiceSignatureMode: { type: String, enum: ['manual', 'image', 'none'], default: 'image' },
+    signatureUrl: { type: String },
+    stampUrl: { type: String },
+    useStamp: { type: Boolean, default: false },
     notes: { type: [NoteSchema], default: [] },
     noteDefaultsByDoc: {
       type: new Schema<NoteDefaultsByDoc>(noteDefaultsShape, { _id: false }),

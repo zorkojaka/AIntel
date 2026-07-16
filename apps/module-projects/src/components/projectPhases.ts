@@ -52,3 +52,18 @@ export function getPhaseProgress(project: ProjectSummary, phase: ProjectPhase): 
   }
   return derivedPhase === "racun" ? 100 : 85;
 }
+
+export function getProjectDateValue(value: string) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+}
+
+/**
+ * Novejši projekt pred starejšim. Projekti imajo createdAt samo na dan natančno,
+ * zato je znotraj istega dne zaporedna številka projekta edini vrstni red nastanka.
+ */
+export function compareProjectsNewestFirst(a: ProjectSummary, b: ProjectSummary) {
+  const cmp = getProjectDateValue(b.createdAt) - getProjectDateValue(a.createdAt);
+  if (cmp !== 0) return cmp;
+  return (b.projectNumber ?? 0) - (a.projectNumber ?? 0);
+}

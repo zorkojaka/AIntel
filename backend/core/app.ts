@@ -49,7 +49,10 @@ export function createApp() {
   app.use('/api/public', express.json(), webInquiryPublicRoutes);
 
   app.use(cors(createCorsOptions()));
-  app.use(express.json());
+  // Slike (logotip, podpis, zig) potujejo kot data URL v telesu zahtevka, zato
+  // privzetih 100 kB ne zadosca — shranjevanje nastavitev je tiho padlo s 413.
+  // Javni intake zgoraj namenoma ostane pri privzeti meji.
+  app.use(express.json({ limit: '5mb' }));
   app.use(cookieParser());
   app.use(responseHelpers);
   app.use(normalizePayload);

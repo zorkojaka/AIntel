@@ -106,6 +106,10 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function clampPercent(value: unknown) {
+  return Math.min(100, Math.max(0, round(toNumber(value, 0))));
+}
+
 function selectActiveVersionId(versions: InvoiceVersion[]): string | null {
   const sorted = [...versions].sort((a, b) => a.versionNumber - b.versionNumber);
   const latestDraft = [...sorted].reverse().find((version) => version.status === 'draft');
@@ -445,12 +449,28 @@ export async function createInvoiceFromClosing(projectId: string): Promise<Invoi
 export async function updateInvoiceVersion(
   projectId: string,
   versionId: string,
-  payload: { items: InvoiceItemPayload[]; invoiceNumber?: unknown },
+  payload: {
+    items: InvoiceItemPayload[];
+    invoiceNumber?: unknown;
+    discountPercent?: unknown;
+    useGlobalDiscount?: unknown;
+  },
 ): Promise<InvoiceListResponse> {
   const project = await findProjectOrFail(projectId);
   const version = ensureInvoiceVersion(project, versionId);
   if (version.status === 'issued') {
     throw new Error('Izdane verzije ni mogoče urejati.');
+  }
+  if (payload.discountPercent !== undefined) {
+    version.discountPercent = clampPercent(payload.discountPercent);
+    // Popust > 0 sam po sebi vklopi globalni popust — račun iz ponudbe brez popusta
+    // ga nima vklopljenega, uporabnik pa ga mora lahko dodati.
+    if (payload.useGlobalDiscount === undefined) {
+      version.useGlobalDiscount = version.discountPercent > 0;
+    }
+  }
+  if (payload.useGlobalDiscount !== undefined) {
+    version.useGlobalDiscount = Boolean(payload.useGlobalDiscount);
   }
   const invoiceNumber = typeof payload.invoiceNumber === 'string' ? payload.invoiceNumber.trim() : '';
   if (invoiceNumber) {

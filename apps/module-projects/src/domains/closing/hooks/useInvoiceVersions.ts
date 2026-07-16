@@ -11,6 +11,7 @@ export interface InvoiceItem {
   unit: string;
   quantity: number;
   unitPrice: number;
+  discountPercent?: number;
   vatPercent: number;
   totalWithoutVat: number;
   totalWithVat: number;
@@ -33,8 +34,16 @@ export interface InvoiceVersion {
   createdAt: string;
   issuedAt?: string | null;
   correctedFromInvoiceVersionId?: string | null;
+  discountPercent?: number;
+  useGlobalDiscount?: boolean;
+  usePerItemDiscount?: boolean;
   items: InvoiceItem[];
   summary: InvoiceSummary;
+}
+
+export interface InvoiceDiscountPayload {
+  discountPercent: number;
+  useGlobalDiscount: boolean;
 }
 
 interface InvoiceApiResponse {
@@ -142,7 +151,7 @@ export function useInvoiceVersions(projectId?: string | null) {
   }, [projectId, runAction]);
 
   const saveDraft = useCallback(
-    async (items: InvoiceItem[], invoiceNumber?: string): Promise<boolean> => {
+    async (items: InvoiceItem[], invoiceNumber?: string, discount?: InvoiceDiscountPayload): Promise<boolean> => {
       if (!projectId || !resolveActiveVersion || resolveActiveVersion.status !== "draft") {
         return false;
       }
@@ -150,7 +159,7 @@ export function useInvoiceVersions(projectId?: string | null) {
         () =>
           requestInvoiceApi(projectId, `/invoices/${resolveActiveVersion._id}`, {
             method: "PATCH",
-            body: JSON.stringify({ items, invoiceNumber }),
+            body: JSON.stringify({ items, invoiceNumber, ...(discount ?? {}) }),
           }),
         "Račun shranjen.",
       );

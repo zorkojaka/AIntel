@@ -1,5 +1,5 @@
 import React, { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Button, Card, ColorPicker, FileUpload, Input, Textarea } from '@aintel/ui';
+import { Button, Card, ColorPicker, FileUpload, Input, SignatureCanvas, Textarea } from '@aintel/ui';
 import {
   applySettingsTheme,
   createCommunicationTemplate,
@@ -23,10 +23,12 @@ import { CommunicationTemplatesSection } from './components/CommunicationTemplat
 import { DocumentPreview } from './components/DocumentPreview';
 import { DocumentSettingsTab } from './components/DocumentSettingsTab';
 import { useSettingsData } from './hooks/useSettings';
+import { preberiInPomanjsaj } from './utils/image';
 import {
   CommunicationSenderSettings,
   CommunicationTemplate,
   DocumentTypeKey,
+  InvoiceSignatureMode,
   NoteDto,
   OfferPdfPreviewPayload,
   PdfDocumentSettingsDto,
@@ -91,6 +93,12 @@ const SETTINGS_SECTIONS: Array<{
     title: 'Sistem',
     description: 'Napredne sistemske informacije in tehnično stanje nastavitev.',
   },
+];
+
+const SIGNATURE_MODE_OPTIONS: Array<{ value: InvoiceSignatureMode; label: string; description: string }> = [
+  { value: 'manual', label: 'Ročni podpis', description: 'Direktor se enkrat podpiše spodaj; podpis gre na vse račune.' },
+  { value: 'image', label: 'Slika podpisa', description: 'Naloži se slika podpisa (npr. skenirana).' },
+  { value: 'none', label: 'Brez podpisa', description: 'Na računu ni podpisa in ne imena direktorja.' },
 ];
 
 const documentTabs: { key: DocumentTabKey; label: string; implemented: boolean }[] = [
@@ -158,15 +166,6 @@ function sanitizeNoteDefaults(
   });
 
   return result;
-}
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ''));
-    reader.onerror = () => reject(new Error('Datoteke ni mogoče prebrati.'));
-    reader.readAsDataURL(file);
-  });
 }
 
 function formatNumberPreview(
@@ -358,12 +357,28 @@ export const SettingsPage: React.FC = () => {
       return;
     }
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const dataUrl = await preberiInPomanjsaj(file);
       setForm((prev) => ({ ...prev, logoUrl: dataUrl }));
     } catch (uploadError) {
       setStatus({
         variant: 'error',
         text: uploadError instanceof Error ? uploadError.message : 'Napaka pri nalaganju logotipa.',
+      });
+    }
+  };
+
+  const handleImageUpload = async (field: 'signatureUrl' | 'stampUrl', file: File | null, napakaOpis: string) => {
+    if (!file) {
+      setForm((prev) => ({ ...prev, [field]: '' }));
+      return;
+    }
+    try {
+      const dataUrl = await preberiInPomanjsaj(file);
+      setForm((prev) => ({ ...prev, [field]: dataUrl }));
+    } catch (uploadError) {
+      setStatus({
+        variant: 'error',
+        text: uploadError instanceof Error ? uploadError.message : napakaOpis,
       });
     }
   };
@@ -516,6 +531,7 @@ export const SettingsPage: React.FC = () => {
             form={form}
             handleFieldChange={handleFieldChange}
             handleLogoUpload={handleLogoUpload}
+            handleImageUpload={handleImageUpload}
             handleSubmit={handleCompanySubmit}
             saving={savingScope === 'company'}
             loading={loading}
@@ -705,6 +721,7 @@ interface CompanySettingsFormProps {
     value: Omit<SettingsDto, 'documentPrefix'>[K]
   ) => void;
   handleLogoUpload: (file: File | null) => Promise<void> | void;
+  handleImageUpload: (field: 'signatureUrl' | 'stampUrl', file: File | null, napakaOpis: string) => Promise<void> | void;
   handleSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   saving: boolean;
   loading: boolean;
@@ -714,10 +731,14 @@ const CompanySettingsForm: React.FC<CompanySettingsFormProps> = ({
   form,
   handleFieldChange,
   handleLogoUpload,
+  handleImageUpload,
   handleSubmit,
   saving,
   loading,
-}) => (
+}) => {
+  const signatureMode: InvoiceSignatureMode = form.invoiceSignatureMode ?? 'image';
+
+  return (
   <form className="space-y-6" onSubmit={handleSubmit}>
     <Card title="Osnovni podatki podjetja">
       <div className="grid gap-4 md:grid-cols-2">
@@ -780,10 +801,117 @@ const CompanySettingsForm: React.FC<CompanySettingsFormProps> = ({
           onChange={(event) => handleFieldChange('vatId', event.target.value)}
         />
         <Input
-          label="Direktor"
+          label="Ime in priimek direktorja"
           value={form.directorName ?? ''}
           onChange={(event) => handleFieldChange('directorName', event.target.value)}
         />
+      </div>
+    </Card>
+
+    <Card title="Podpis in žig">
+      <p className="mb-4 text-sm text-muted-foreground">
+        Podpis se izpiše desno spodaj na računu in dobropisu, pod njim ime in priimek direktorja.
+      </p>
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <span className="text-sm font-medium">Podpis na računu</span>
+            {SIGNATURE_MODE_OPTIONS.map((option) => (
+              <label key={option.value} className="flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="invoiceSignatureMode"
+                  className="mt-1"
+                  checked={signatureMode === option.value}
+                  onChange={() => handleFieldChange('invoiceSignatureMode', option.value)}
+                />
+                <span>
+                  {option.label}
+                  <span className="block text-muted-foreground">{option.description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          {signatureMode === 'image' && (
+            <FileUpload
+              label="Naloži sliko podpisa"
+              accept="image/*"
+              onFileSelect={(file) => handleImageUpload('signatureUrl', file, 'Napaka pri nalaganju podpisa.')}
+            />
+          )}
+
+          {signatureMode === 'manual' && (
+            <div className="space-y-2">
+              <span className="text-sm font-medium">Podpišite se</span>
+              <SignatureCanvas
+                value={form.signatureUrl || null}
+                height={140}
+                onChange={(dataUrl) => handleFieldChange('signatureUrl', dataUrl ?? '')}
+              />
+              <p className="m-0 text-xs text-muted-foreground">
+                Podpis se shrani ob kliku »Shrani podjetje« in se nato postavi na vse račune.
+              </p>
+            </div>
+          )}
+
+          {signatureMode !== 'none' &&
+            (form.signatureUrl ? (
+              <div className="flex items-center gap-4">
+                <img
+                  src={form.signatureUrl}
+                  alt="Podpis direktorja"
+                  className="h-16 w-32 rounded-md border border-border bg-white object-contain"
+                />
+                <Button type="button" variant="ghost" onClick={() => handleFieldChange('signatureUrl', '')}>
+                  Odstrani podpis
+                </Button>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Podpisa še ni — na računu bo nad imenom prazen prostor za ročni podpis.
+              </p>
+            ))}
+        </div>
+
+        <div className="space-y-3">
+          <FileUpload
+            label="Naloži sliko žiga"
+            accept="image/*"
+            onFileSelect={(file) => handleImageUpload('stampUrl', file, 'Napaka pri nalaganju žiga.')}
+          />
+          {form.stampUrl ? (
+            <div className="flex items-center gap-4">
+              <img
+                src={form.stampUrl}
+                alt="Žig podjetja"
+                className="h-16 w-16 rounded-md border border-border bg-white object-contain"
+              />
+              <Button type="button" variant="ghost" onClick={() => handleFieldChange('stampUrl', '')}>
+                Odstrani žig
+              </Button>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Poslujemo brez žiga.</p>
+          )}
+
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={!!form.useStamp}
+              onChange={(event) => handleFieldChange('useStamp', event.target.checked)}
+            />
+            <span>
+              Poleg podpisa uporabi tudi žig
+              {form.useStamp && !form.stampUrl && (
+                <span className="block text-muted-foreground">
+                  Slike žiga ni — na račun se bo namesto nje izpisalo »Poslujemo brez žiga.«
+                </span>
+              )}
+            </span>
+          </label>
+        </div>
       </div>
     </Card>
 
@@ -825,7 +953,8 @@ const CompanySettingsForm: React.FC<CompanySettingsFormProps> = ({
       </Button>
     </div>
   </form>
-);
+  );
+};
 
 interface ProjectPdfSettingsSectionProps {
   value: PdfDocumentSettingsDto | null;

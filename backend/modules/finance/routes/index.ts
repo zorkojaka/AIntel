@@ -15,6 +15,7 @@ import {
   invoicesList,
   monthlySummary,
   myEarnings,
+  myEarningsForecast,
   pipelineSummary,
   productBundles,
   productCooccurrence,
@@ -28,6 +29,7 @@ const router = Router();
 const companyFinance = requireRoles([ROLE_ADMIN, ROLE_FINANCE]);
 
 router.get('/my/earnings', myEarnings);
+router.get('/my/earnings-forecast', myEarningsForecast);
 
 router.get('/', companyFinance, listFinanceEntries);
 router.post('/addFromInvoice', companyFinance, addFromInvoice);

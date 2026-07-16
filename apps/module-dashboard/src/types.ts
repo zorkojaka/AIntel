@@ -7,7 +7,8 @@ export type DashboardWidgetId =
   | 'project-summary'
   | 'upcoming-projects'
   | 'material-orders'
-  | 'work-orders';
+  | 'work-orders'
+  | 'earnings-forecast';
 export type DashboardWidgetSize = 'sm' | 'md' | 'lg';
 
 export interface DashboardWidgetDefinition {
@@ -61,10 +62,40 @@ export interface WorkOrderSummary {
   createdAt: string;
 }
 
+export interface ForecastProject {
+  projectId: string;
+  code: string;
+  title: string;
+  customerName: string;
+  status: string;
+  acceptedAt: string | null;
+  month: string | null;
+  earnings: number;
+  /** Med koliko dodeljenih monterjev je zaslužek razdeljen (1 = sam). */
+  sharedBetween: number;
+  /** Storitve brez nastavljene cene zame — zaslužek je zato podcenjen. */
+  servicesWithoutRate: string[];
+}
+
+export interface ForecastMonth {
+  month: string | null;
+  label: string;
+  earnings: number;
+  projectCount: number;
+}
+
+export interface EarningsForecast {
+  employeeId: string;
+  totalEarnings: number;
+  projects: ForecastProject[];
+  months: ForecastMonth[];
+}
+
 export interface InstallerDashboardResponse {
   upcomingConfirmedProjects: UpcomingProjectSummary[];
   myMaterialOrders: MaterialOrderSummary[];
   myWorkOrders: WorkOrderSummary[];
+  earningsForecast?: EarningsForecast | null;
 }
 
 export interface InstallerDashboardWidgetProps {

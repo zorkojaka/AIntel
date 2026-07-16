@@ -82,6 +82,45 @@ async function resolveProjectClientId(rawClientId: unknown) {
   return new Types.ObjectId(clientId);
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Projekt ne sme ostati brez stranke: vse, kar vemo o stranki (interni zapisi,
+ * dokumenti, prejšnji projekti), visi na njej. Če stranka ni izbrana, jo poiščemo
+ * po imenu — ista stranka ima več projektov — in jo šele nato ustvarimo, tudi če
+ * imamo samo naziv. Manjkajoče podatke je mogoče dopolniti kadar koli kasneje.
+ */
+export async function resolveOrCreateProjectClient(rawClientId: unknown, customer: any) {
+  const explicit = await resolveProjectClientId(rawClientId);
+  if (explicit) return explicit;
+
+  const name = typeof customer?.name === 'string' ? customer.name.trim() : '';
+  if (!name) return null;
+
+  const existing = await CrmClientModel.findOne({
+    name: { $regex: `^${escapeRegExp(name)}$`, $options: 'i' },
+    isActive: { $ne: false },
+  })
+    .select('_id')
+    .lean();
+  if (existing) {
+    return new Types.ObjectId(String(existing._id));
+  }
+
+  const taxId = typeof customer?.taxId === 'string' ? customer.taxId.trim() : '';
+  const created = await CrmClientModel.create({
+    name,
+    type: taxId ? 'company' : 'individual',
+    vat_number: taxId || undefined,
+    address: typeof customer?.address === 'string' ? customer.address.trim() : '',
+    tags: [],
+    isActive: true,
+  });
+  return created._id as Types.ObjectId;
+}
+
 function toISODate(value?: string) {
   if (!value) return new Date().toISOString().slice(0, 10);
   const date = new Date(value);
@@ -736,7 +775,7 @@ export async function createProject(req: Request, res: Response) {
   if (error) return res.fail(error, 400);
   let clientId: Types.ObjectId | null | undefined;
   try {
-    clientId = await resolveProjectClientId(req.body?.clientId);
+    clientId = await resolveOrCreateProjectClient(req.body?.clientId, req.body?.customer);
   } catch (clientError) {
     return res.fail(clientError instanceof Error ? clientError.message : 'Stranke ni mogoče povezati.', 400);
   }

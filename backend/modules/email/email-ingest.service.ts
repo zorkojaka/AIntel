@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 import { CommunicationMessageModel } from '../communication/schemas/message';
 import { CrmClientModel } from '../crm/schemas/client';
 import { OfferVersionModel } from '../projects/schemas/offer-version';
-import { ProjectModel } from '../projects/schemas/project';
+import { ProjectModel, newTimelineEventId } from '../projects/schemas/project';
 import { ensureRuleTask } from '../scheduler/rules';
 import { getRuleMode } from '../scheduler/wheel-config';
 import { TaskModel } from '../tasks/task.model';
@@ -131,6 +131,7 @@ async function applyMatchActions(email: EmailMessageDocument) {
       {
         $push: {
           timeline: {
+            id: newTimelineEventId(),
             type: 'edit',
             title: 'Prejet e-mail',
             description: `${senderLabel}: ${email.subject || '(brez zadeve)'}`,
