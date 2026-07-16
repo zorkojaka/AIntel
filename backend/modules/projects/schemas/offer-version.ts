@@ -59,6 +59,8 @@ const OfferVersionSchema = new Schema<OfferVersionDocument>(
     /** Kdaj je stranka potrdila ponudbo. Podlaga za napoved zaslužka po mesecih. */
     acceptedAt: { type: Date, default: null },
     comment: { type: String, default: null },
+    /** Opombe (id-ji iz nastavitev) za nogo PDF-ja. Manjkajoče = privzete iz nastavitev. */
+    selectedNoteIds: { type: [String], default: undefined },
     items: { type: [OfferLineItemSchema], default: [] },
     totalNet: { type: Number, required: true, default: 0 },
     totalVat22: { type: Number, required: true, default: 0 },

@@ -39,6 +39,8 @@ export interface OfferVersion {
   /** Kdaj je stranka potrdila ponudbo — podlaga za napoved zaslužka po mesecih. */
   acceptedAt?: string | null;
   comment?: string | null;
+  /** Opombe (id-ji iz nastavitev) za nogo PDF-ja. null/manjkajoče = privzete iz nastavitev. */
+  selectedNoteIds?: string[] | null;
   items: OfferLineItem[];
   totalNet: number;
   totalVat22: number;
