@@ -33,6 +33,7 @@ import {
   calculateProjectKm,
   fetchExecutionRuleSettings,
   fetchRouteCalculationSettings,
+  type ProjectKmCalculation,
   type RouteCalculationSettings,
 } from "../api";
 import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
