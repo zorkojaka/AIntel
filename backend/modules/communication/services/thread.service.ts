@@ -61,6 +61,11 @@ async function zadnjiOdhodni(projectId: string): Promise<Clen | null> {
     direction: 'outbound',
     status: 'sent',
     providerMessageId: { $ne: null },
+    // Nit je pogovor s STRANKO: posta ekipi (monterjem) ne sme postati stars
+    // niti vir zadeve. Zapisi pred uvedbo polja audience se poznajo po prilogi
+    // delovnega naloga — enako locevanje uporablja listInstallerPreparationMessages.
+    audience: { $ne: 'internal' },
+    'selectedAttachments.type': { $ne: 'work_order_pdf' },
   })
     .sort({ createdAt: -1 })
     .select({ providerMessageId: 1, references: 1, subjectFinal: 1, sentAt: 1, createdAt: 1 })

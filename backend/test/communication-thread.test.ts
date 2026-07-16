@@ -127,6 +127,52 @@ test('nepovezan odgovor (brez projekta) ne vstopi v nit', async () => {
   assert.equal(glave.inReplyTo, '<nasa@inteligent.si>');
 });
 
+test('monterjeva posta (audience internal) ni stars niti in ne vir zadeve', async () => {
+  await poslji('PRJ-011', '<ponudba@inteligent.si>', 'Ponudba za alarm', 120);
+  const cas = new Date(Date.now() - 10 * 60_000);
+  await CommunicationMessageModel.create({
+    projectId: 'PRJ-011',
+    direction: 'outbound',
+    channel: 'email',
+    to: ['monter@inteligent.si'],
+    subjectFinal: 'Priprava na montazo',
+    bodyFinal: 'besedilo',
+    status: 'sent',
+    sentAt: cas,
+    providerMessageId: '<monter@inteligent.si>',
+    audience: 'internal',
+  });
+
+  const glave = await buildThreadHeaders('PRJ-011');
+  assert.equal(glave.inReplyTo, '<ponudba@inteligent.si>', 'stars je zadnja posta STRANKI');
+  assert.equal(glave.threadSubject, 'Ponudba za alarm', 'zadeva ne sme biti monterjeva');
+});
+
+// Zapisi pred uvedbo polja audience: monterjeva posta se pozna po prilogi
+// delovnega naloga (enako locevanje kot listInstallerPreparationMessages).
+test('zgodovinska monterjeva posta (brez audience) prav tako ni clen niti', async () => {
+  await poslji('PRJ-012', '<ponudba@inteligent.si>', 'Ponudba za kamere', 120);
+  const cas = new Date(Date.now() - 10 * 60_000);
+  await CommunicationMessageModel.collection.insertOne({
+    projectId: 'PRJ-012',
+    direction: 'outbound',
+    channel: 'email',
+    to: ['monter@inteligent.si'],
+    subjectFinal: 'Priprava na montazo',
+    bodyFinal: 'besedilo',
+    status: 'sent',
+    sentAt: cas,
+    createdAt: cas,
+    updatedAt: cas,
+    providerMessageId: '<monter-star@inteligent.si>',
+    selectedAttachments: [{ type: 'work_order_pdf', refId: 'DN-1', filename: 'delovni-nalog.pdf' }],
+  });
+
+  const glave = await buildThreadHeaders('PRJ-012');
+  assert.equal(glave.inReplyTo, '<ponudba@inteligent.si>');
+  assert.equal(glave.threadSubject, 'Ponudba za kamere');
+});
+
 test('neuspelo sporocilo ni clen niti', async () => {
   await CommunicationMessageModel.create({
     projectId: 'PRJ-009',

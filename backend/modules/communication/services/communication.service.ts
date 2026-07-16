@@ -428,13 +428,18 @@ async function sendAndRecordCommunicationEmail(input: {
     : [];
 
   // Nit pogovora: novo sporocilo se pripne na zadnji clen (nase ali strankin).
+  // Interna posta (monterji) ne nosi glav niti s stranko — monter referenciranega
+  // sporocila nima, nit pa je pogovor s stranko, ne z ekipo.
   // Napaka pri branju niti ne sme ustaviti posiljanja — sporocilo raje odide
   // brez nitenja, kot da ne odide.
+  const internalAudience = (input.baseMessage as { audience?: string }).audience === "internal";
   let thread: ThreadHeaders = {};
-  try {
-    thread = await buildThreadHeaders(input.successEvent.projectId);
-  } catch (error) {
-    console.error("Nitenja ni bilo mogoce sestaviti, posiljam brez njega.", error);
+  if (!internalAudience) {
+    try {
+      thread = await buildThreadHeaders(input.successEvent.projectId);
+    } catch (error) {
+      console.error("Nitenja ni bilo mogoce sestaviti, posiljam brez njega.", error);
+    }
   }
 
   let providerMessageId: string | null = null;
@@ -1368,6 +1373,7 @@ export async function sendInstallerPreparationEmail(input: {
     offerId: workOrder.offerVersionId ?? null,
     workOrderId,
     customerId: projectClient?.id ?? null,
+    audience: "internal" as const,
     direction: "outbound" as const,
     channel: "email" as const,
     to: resolvedRecipients,
