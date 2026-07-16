@@ -21,7 +21,7 @@ import type { Employee } from "@aintel/shared/types/employee";
 import type { CommunicationMessage } from "@aintel/shared/types/communication";
 import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 
-import { ArrowDown, ArrowUp, Loader2, Trash } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Loader2, Trash } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
@@ -95,6 +95,8 @@ export function OffersTab({
   const [comment, setComment] = useState<string>("");
   // null = ponudba še nima lastnega izbora → veljajo privzete opombe iz nastavitev.
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[] | null>(null);
+  // Privzeto zaprto: opombe so večinoma privzete, odpre se le za posebne primere.
+  const [notesExpanded, setNotesExpanded] = useState(false);
 
   const [currentOffer, setCurrentOffer] = useState<OfferVersion | null>(null);
 
@@ -1940,8 +1942,23 @@ const loadOfferById = useCallback(async (offerId: string) => {
         {offerNotes.length > 0 && (
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="text-sm font-medium">Opombe v nogi ponudbe (PDF)</label>
-              {selectedNoteIds !== null && (
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-sm font-medium"
+                onClick={() => setNotesExpanded((prev) => !prev)}
+                aria-expanded={notesExpanded}
+              >
+                <ChevronDown
+                  className={`size-4 shrink-0 text-muted-foreground transition-transform ${
+                    notesExpanded ? "" : "-rotate-90"
+                  }`}
+                />
+                Opombe v nogi ponudbe
+                <span className="font-normal text-muted-foreground">
+                  ({effectiveSelectedNoteIds.length}/{offerNotes.length})
+                </span>
+              </button>
+              {notesExpanded && selectedNoteIds !== null && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -1952,6 +1969,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
                 </Button>
               )}
             </div>
+            {notesExpanded && (
             <div className="grid gap-1.5 md:grid-cols-2">
               {offerNotes.map((note) => {
                 const checked = effectiveSelectedNoteIds.includes(note.id);
@@ -1979,6 +1997,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
                 );
               })}
             </div>
+            )}
           </div>
         )}
       </div>
