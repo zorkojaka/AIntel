@@ -94,12 +94,23 @@ test('veriga raste skozi vec izmenjav', async () => {
   assert.deepEqual(glave.references, ['<v1@inteligent.si>', '<odg1@gmail.com>', '<v2@inteligent.si>']);
 });
 
-test('zadeva se prevzame iz PRVEGA sporocila niti (tipkarska napaka ne razbije niti)', async () => {
-  await poslji('PRJ-005', '<prva@inteligent.si>', 'DVC videonadzor - ponudba', 120);
-  await poslji('PRJ-005', '<druga@inteligent.si>', 'DVC videonadzor - ponubda', 60);
+// Iz pravih podatkov (PRJ-217): prva zadeva je imela tipkarsko napako, popravek
+// je prisel sele v naslednji. Zadeva niti mora slediti popravku, ne napaki.
+test('zadeva se prevzame iz ZADNJEGA odhodnega (popravek se ohrani)', async () => {
+  await poslji('PRJ-005', '<prva@inteligent.si>', 'DVC videonadzor - ponubda', 120);
+  await poslji('PRJ-005', '<druga@inteligent.si>', 'DVC videonadzor - ponudba', 60);
 
   const glave = await buildThreadHeaders('PRJ-005');
   assert.equal(glave.threadSubject, 'DVC videonadzor - ponudba');
+});
+
+test('strankin "Re: ..." ne postane zadeva nase nove ponudbe', async () => {
+  await poslji('PRJ-010', '<nasa@inteligent.si>', 'Ponudba za alarm', 120);
+  await odgovor('PRJ-010', '<strankin@gmail.com>', '<nasa@inteligent.si>', 30);
+
+  const glave = await buildThreadHeaders('PRJ-010');
+  assert.equal(glave.inReplyTo, '<strankin@gmail.com>', 'glave se pripnejo na odgovor');
+  assert.equal(glave.threadSubject, 'Ponudba za alarm', 'zadeva pa ostane nasa');
 });
 
 test('nit drugega projekta ne pronica sem', async () => {

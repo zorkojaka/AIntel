@@ -95,14 +95,6 @@ async function zadnjiDohodni(projectId: string): Promise<Clen | null> {
   };
 }
 
-/** Prvo poslano sporocilo projekta doloca zadevo niti. */
-async function prvoOdhodno(projectId: string) {
-  return CommunicationMessageModel.findOne({ projectId, direction: 'outbound', status: 'sent' })
-    .sort({ createdAt: 1 })
-    .select({ subjectFinal: 1 })
-    .lean();
-}
-
 /**
  * Glave, s katerimi se novo sporocilo pripne na obstojeco nit projekta.
  * Ce niti se ni (prvo sporocilo), vrne prazno — sporocilo odpre svojo nit.
@@ -110,11 +102,7 @@ async function prvoOdhodno(projectId: string) {
 export async function buildThreadHeaders(projectId: string): Promise<ThreadHeaders> {
   if (!projectId) return {};
 
-  const [odhodni, dohodni, prvi] = await Promise.all([
-    zadnjiOdhodni(projectId),
-    zadnjiDohodni(projectId),
-    prvoOdhodno(projectId),
-  ]);
+  const [odhodni, dohodni] = await Promise.all([zadnjiOdhodni(projectId), zadnjiDohodni(projectId)]);
 
   const kandidati = [odhodni, dohodni].filter((entry): entry is Clen => !!entry);
   if (kandidati.length === 0) return {};
@@ -124,7 +112,10 @@ export async function buildThreadHeaders(projectId: string): Promise<ThreadHeade
   const stars = kandidati.reduce((a, b) => (b.cas > a.cas ? b : a));
 
   const references = skrajsajReference([...stars.references, stars.messageId]);
-  const threadSubject = (prvi?.subjectFinal ?? stars.subject ?? '').trim();
+  // Zadevo vzamemo iz ZADNJEGA odhodnega, ne iz prvega: PRJ-217 kaze, da je bila
+  // prva zadeva tipkarsko napacna ("ponubda") in popravljena sele v naslednji —
+  // prva zadeva bi napako prepisovala naprej. Strankin "Re: ..." ni vir zadeve.
+  const threadSubject = (odhodni?.subject ?? '').trim();
 
   return {
     inReplyTo: stars.messageId,
