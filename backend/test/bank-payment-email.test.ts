@@ -101,6 +101,42 @@ test('parser: znesek ob EUR brez ključne besede in sklic za besedo referenca', 
   assert.equal(parsed.reference, '4-7-2026');
 });
 
+// Resnični format Delavske hranilnice (posredovan mail, 2026-07-16). Pasti:
+// "ID transakcije: 296758102" ne sme postati znesek, "Na račun: SI56…" ne sklic,
+// pošiljatelj banke pa je pri ročnem posredovanju v telesu, ne v glavi.
+test('DH format: posredovano obvestilo o prilivu se pravilno prebere', () => {
+  const dhBesedilo = [
+    '---------- Forwarded message ---------',
+    'From: DH Poslovni <Dh-Poslovni@delavska-hranilnica.si>',
+    'Subject: Obvestilo o prilivu',
+    '',
+    'Obvestilo o prilivu - ID transakcije: 296758102',
+    'Na račun: SI56***3186',
+    'Plačnik: HAOCHI D.O.O.',
+    'Namen: TAKOJŠNJE PLAČILO PRILIV',
+    'Znesek: 243,17 EUR',
+    'Referenca: SI00 0709',
+    'Datum valute: 15.07.2026',
+  ].join('\n');
+
+  const dhKonfig = { senders: ['delavska-hranilnica.si'], keywords: ['priliv'] };
+  assert.equal(
+    isBankPaymentEmail({ fromAddress: 'jaka@inteligent.si', subject: 'Fwd: Obvestilo o prilivu', text: dhBesedilo } as any, dhKonfig),
+    true,
+    'posredovan mail z banko v telesu se prepozna',
+  );
+  assert.equal(
+    isBankPaymentEmail({ fromAddress: 'jaka@inteligent.si', subject: 'Vprašanje o delavska-hranilnica.si prilivu', text: 'običajen mail' } as any, dhKonfig),
+    false,
+    'brez Fwd: se telo ne upošteva za pošiljatelja',
+  );
+
+  const parsed = parseBankPaymentEmail('Fwd: Obvestilo o prilivu', dhBesedilo);
+  assert.equal(parsed.amount, 243.17, 'znesek, ne ID transakcije');
+  assert.equal(parsed.reference, 'SI00 0709', 'referenca, ne maskiran IBAN');
+  assert.equal(parsed.payerName, 'HAOCHI D.O.O.');
+});
+
 test('ujemanje: sklic s številkami računa najde pravi račun (12/7/2026 ↔ SI00 12-7-2026)', async () => {
   await ustvariRacun('PRJ-201', '12/7/2026', 1220);
   await ustvariRacun('PRJ-202', '13/7/2026', 1220);

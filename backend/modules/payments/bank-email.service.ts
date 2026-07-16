@@ -31,16 +31,26 @@ export async function getBankIngestConfig(): Promise<BankIngestConfig> {
   };
 }
 
-/** Ali je mail bančno obvestilo o prilivu? Pošiljatelj + vsaj ena ključna beseda. */
+/**
+ * Ali je mail bančno obvestilo o prilivu? Pošiljatelj + vsaj ena ključna beseda.
+ * Ročno posredovan mail (Fwd:) ima za pošiljatelja posredovalca, banka pa je v
+ * "From:" vrstici telesa — zato pri posredovanih preverimo tudi začetek telesa.
+ */
 export function isBankPaymentEmail(
   email: Pick<EmailMessageDocument, 'fromAddress' | 'subject' | 'text'>,
   config: BankIngestConfig,
 ): boolean {
   if (!config.senders.length) return false;
   const from = (email.fromAddress ?? '').toLowerCase();
-  if (!config.senders.some((sender) => from.includes(sender))) return false;
+  const subject = (email.subject ?? '').toLowerCase();
+  const jePosredovan = /^\s*(fwd?|posredovano)\s*:/i.test(subject);
+  const glavaTelesa = jePosredovan ? (email.text ?? '').slice(0, 1500).toLowerCase() : '';
+  const senderOk = config.senders.some(
+    (sender) => from.includes(sender) || (jePosredovan && glavaTelesa.includes(sender)),
+  );
+  if (!senderOk) return false;
   if (!config.keywords.length) return true;
-  const besedilo = `${email.subject ?? ''}\n${email.text ?? ''}`.toLowerCase();
+  const besedilo = `${subject}\n${email.text ?? ''}`.toLowerCase();
   return config.keywords.some((keyword) => besedilo.includes(keyword));
 }
 
@@ -71,11 +81,11 @@ export interface ParsedBankPayment {
 export function parseBankPaymentEmail(subject: string, text: string): ParsedBankPayment {
   const besedilo = `${subject}\n${text}`;
 
-  // Znesek: najprej ob ključni besedi (znesek/priliv/nakazilo/prejeli), sicer prvi "… EUR".
+  // Znesek: najprej izrecno "Znesek: X" (DH format), nato "X EUR" / "EUR X".
+  // Ohlapnih ključnih besed (priliv, nakazilo) NE uporabljamo za zajem števila —
+  // DH piše "Obvestilo o prilivu - ID transakcije: 296758102" in bi zgrabili ID.
   let amount: number | null = null;
-  const zneskovni = besedilo.match(
-    new RegExp(String.raw`(?:znes[ek][ku]?|priliv|nakazil[oa]|prejeli)[^\d€]{0,40}(${AMOUNT_TOKEN})`, 'i'),
-  );
+  const zneskovni = besedilo.match(new RegExp(String.raw`znes\w{0,3}\s*:?\s*(${AMOUNT_TOKEN})`, 'i'));
   if (zneskovni) amount = parseAmountToken(zneskovni[1]);
   if (amount === null) {
     const obEur = besedilo.match(new RegExp(String.raw`(${AMOUNT_TOKEN})\s*(?:EUR|€)`, 'i'))
@@ -83,14 +93,15 @@ export function parseBankPaymentEmail(subject: string, text: string): ParsedBank
     if (obEur) amount = parseAmountToken(obEur[1]);
   }
 
-  // Sklic: "SIxx …" ali za besedo sklic/referenca.
+  // Sklic: najprej označena vrstica (Referenca:/Sklic: — DH format), šele nato
+  // splošni "SIxx …" vzorec, ki bi sicer lahko zgrabil IBAN iz "Na račun: SI56…".
   let reference: string | null = null;
-  const sklicSi = besedilo.match(/\bSI\d{2}[ \t]?[\d\-/]{1,22}\d\b/i);
-  if (sklicSi) {
-    reference = sklicSi[0].replace(/\s+/g, ' ').trim();
+  const sklicBeseda = besedilo.match(/(?:sklic|referenca|reference)\s*[:\s]\s*([A-Za-z0-9\-/ ]{3,30})/i);
+  if (sklicBeseda) {
+    reference = sklicBeseda[1].trim().replace(/\s{2,}/g, ' ');
   } else {
-    const sklicBeseda = besedilo.match(/(?:sklic|referenca|reference)\s*[:\s]\s*([A-Za-z0-9\-/ ]{3,30})/i);
-    if (sklicBeseda) reference = sklicBeseda[1].trim().replace(/\s{2,}/g, ' ');
+    const sklicSi = besedilo.match(/\bSI\d{2}[ \t]?[\d\-/]{1,22}\d\b/i);
+    if (sklicSi) reference = sklicSi[0].replace(/\s+/g, ' ').trim();
   }
 
   // Plačnik: za besedo plačnik/nalogodajalec do konca vrstice.
