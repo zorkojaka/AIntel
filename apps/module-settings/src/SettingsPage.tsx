@@ -23,6 +23,7 @@ import { CommunicationTemplatesSection } from './components/CommunicationTemplat
 import { DocumentPreview } from './components/DocumentPreview';
 import { DocumentSettingsTab } from './components/DocumentSettingsTab';
 import { useSettingsData } from './hooks/useSettings';
+import { preberiInPomanjsaj } from './utils/image';
 import {
   CommunicationSenderSettings,
   CommunicationTemplate,
@@ -165,15 +166,6 @@ function sanitizeNoteDefaults(
   });
 
   return result;
-}
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ''));
-    reader.onerror = () => reject(new Error('Datoteke ni mogoče prebrati.'));
-    reader.readAsDataURL(file);
-  });
 }
 
 function formatNumberPreview(
@@ -365,7 +357,7 @@ export const SettingsPage: React.FC = () => {
       return;
     }
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const dataUrl = await preberiInPomanjsaj(file);
       setForm((prev) => ({ ...prev, logoUrl: dataUrl }));
     } catch (uploadError) {
       setStatus({
@@ -381,7 +373,7 @@ export const SettingsPage: React.FC = () => {
       return;
     }
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const dataUrl = await preberiInPomanjsaj(file);
       setForm((prev) => ({ ...prev, [field]: dataUrl }));
     } catch (uploadError) {
       setStatus({

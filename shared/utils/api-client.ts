@@ -5,6 +5,7 @@ export type ApiEnvelope<T> = {
 };
 
 const DEFAULT_ERROR = "Neznana napaka pri komunikaciji s strežnikom.";
+const TOO_LARGE_ERROR = "Priloga je prevelika za shranjevanje. Uporabite manjšo sliko.";
 const DEFAULT_RETRY_STATUSES = [408, 429, 500, 502, 503, 504];
 
 export type FetchApiOptions = {
@@ -21,6 +22,11 @@ export async function parseApiEnvelope<T>(response: Response, fallbackMessage = 
   try {
     payload = (await response.json()) as ApiEnvelope<T>;
   } catch {
+    // Ob 413 strežnik vrne HTML, ne ovojnice, zato bi uporabnik dobil le splošno
+    // napako in ne bi vedel, da je kriva velikost priloge.
+    if (response.status === 413) {
+      throw new Error(TOO_LARGE_ERROR);
+    }
     throw new Error(fallbackMessage);
   }
 
