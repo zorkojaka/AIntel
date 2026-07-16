@@ -8,7 +8,8 @@ export type DashboardWidgetId =
   | 'upcoming-projects'
   | 'material-orders'
   | 'work-orders'
-  | 'earnings-forecast';
+  | 'earnings-forecast'
+  | 'my-availability';
 export type DashboardWidgetSize = 'sm' | 'md' | 'lg';
 
 export interface DashboardWidgetDefinition {

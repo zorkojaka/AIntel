@@ -271,6 +271,31 @@ export function MaterialOrderCard({
   defaultCollapsed = false,
 }: MaterialOrderCardProps) {
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+  const [bookingSending, setBookingSending] = useState(false);
+  const [bookingResult, setBookingResult] = useState<string | null>(null);
+
+  const sendBookingInvite = async () => {
+    if (!materialOrder?.workOrderId) return;
+    setBookingSending(true);
+    try {
+      const response = await fetch(
+        `/api/projects/${encodeURIComponent(projectId)}/work-orders/${encodeURIComponent(materialOrder.workOrderId)}/booking-invite`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
+      );
+      const payload = await response.json();
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.message || "Vabila ni bilo mogoče poslati.");
+      }
+      const data = payload?.data ?? payload;
+      setBookingResult(
+        `Vabilo poslano (${new Date().toLocaleTimeString("sl-SI", { hour: "2-digit", minute: "2-digit" })}). Na voljo ${data.freeDaysCount ?? "?"} prostih dni, predvideno trajanje ${data.durationHours ?? "?"} h.`,
+      );
+    } catch (error) {
+      setBookingResult(error instanceof Error ? error.message : "Vabila ni bilo mogoče poslati.");
+    } finally {
+      setBookingSending(false);
+    }
+  };
 
   if (!materialOrder) {
     return <p className="text-sm text-muted-foreground">Naročilo za material bo ustvarjeno ob potrditvi ponudbe.</p>;
@@ -494,6 +519,24 @@ export function MaterialOrderCard({
                   <span className="text-sm text-muted-foreground">
                     Ocena trajanja izvedbe: <span className="font-medium text-foreground">{executionDurationLabel}</span>
                   </span>
+                ) : null}
+                {!executionDateConfirmedAt && materialOrder?.workOrderId ? (
+                  <div className="space-y-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={bookingSending || savingWorkOrder}
+                      onClick={() => void sendBookingInvite()}
+                    >
+                      {bookingSending ? "Pošiljam..." : "Povabi stranko k izbiri termina"}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      {bookingResult
+                        ? bookingResult
+                        : "Stranka po e-mailu dobi povezavo s prostimi dnevi monterjev; z izbiro dneva je termin hkrati potrjen."}
+                    </p>
+                  </div>
                 ) : null}
               </div>
             </div>

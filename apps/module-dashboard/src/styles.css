@@ -1111,3 +1111,26 @@
     gap: 0.25rem;
   }
 }
+
+/* Moja razpoložljivost — koledar prostih dni monterja */
+.razpolozljivost { display: flex; flex-direction: column; gap: 12px; }
+.razpolozljivost__privzeto { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.razpolozljivost__privzeto select { padding: 4px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--surface, #fff); }
+.razpolozljivost__mreza { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.razpolozljivost__dan { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 2px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--surface, #fff); cursor: pointer; font: inherit; }
+.razpolozljivost__dan:hover { border-color: #94a3b8; }
+.razpolozljivost__dan.je-aktiven { background: #e7f4ec; border-color: #1a7f4f; }
+.razpolozljivost__dan.je-fiksen { background: #eef4fc; border-color: #0a6db3; }
+.razpolozljivost__dan.je-izbran { outline: 2px solid #0a6db3; }
+.razpolozljivost__dan:disabled { opacity: 0.5; cursor: wait; }
+.razpolozljivost__dan-teden { font-size: 10px; text-transform: uppercase; color: #64748b; }
+.razpolozljivost__dan-st { font-weight: 700; }
+.razpolozljivost__dan-ure { font-size: 10px; color: #1a7f4f; font-weight: 600; }
+.razpolozljivost__ure { border-top: 1px solid var(--border, #e2e8f0); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.razpolozljivost__ure-mreza { display: flex; flex-wrap: wrap; gap: 6px; }
+.razpolozljivost__ura { padding: 5px 10px; border: 1px solid var(--border, #e2e8f0); border-radius: 999px; background: var(--surface, #fff); cursor: pointer; font: inherit; font-size: 13px; }
+.razpolozljivost__ura.je-aktivna { background: #1a7f4f; border-color: #1a7f4f; color: #fff; }
+.razpolozljivost__ura:disabled { opacity: 0.5; cursor: wait; }
+.razpolozljivost__gumb { align-self: flex-start; padding: 6px 12px; border: 1px solid #0a6db3; border-radius: 8px; background: #0a6db3; color: #fff; cursor: pointer; font: inherit; font-size: 13px; }
+.razpolozljivost__gumb--pocisti { background: transparent; color: #b91c1c; border-color: #b91c1c; }
+.razpolozljivost__napaka { color: #b91c1c; font-size: 13px; }
