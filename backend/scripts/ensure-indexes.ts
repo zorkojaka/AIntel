@@ -15,6 +15,7 @@ import { EmployeeModel } from '../modules/employees/schemas/employee';
 import { FinanceSnapshotModel } from '../modules/finance/schemas/finance-snapshot';
 import { MaterialOrderModel } from '../modules/projects/schemas/material-order';
 import { OfferVersionModel } from '../modules/projects/schemas/offer-version';
+import { InvoicePaymentModel } from '../modules/payments/invoice-payment.model';
 import { ProjectModel } from '../modules/projects/schemas/project';
 import { WorkOrderModel } from '../modules/projects/schemas/work-order';
 import { UserModel } from '../modules/users/schemas/user';
@@ -37,6 +38,7 @@ type IndexSpec = {
 };
 
 const INDEX_MODELS: Model<any>[] = [
+  InvoicePaymentModel,
   ProductModel,
   SchedulerLockModel,
   SchedulerRunModel,

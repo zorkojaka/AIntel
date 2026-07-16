@@ -70,10 +70,14 @@ interface FinanceInvoiceRow {
   totalWithVat: number;
   totalWithoutVat: number;
   hasFinanceSnapshot: boolean;
+  paidAmount?: number;
+  lastPaymentAt?: string | null;
+  paymentState?: 'unpaid' | 'partial' | 'paid' | null;
 }
 
 interface FinanceInvoiceListEnvelope {
   items: FinanceInvoiceRow[];
+  openPaymentsCount?: number;
 }
 
 interface EmployeeSummary {
@@ -303,6 +307,19 @@ function invoiceStatusLabel(status: string) {
   return status || '-';
 }
 
+function paymentStateLabel(state: FinanceInvoiceRow['paymentState']) {
+  if (state === 'paid') return 'Plačan';
+  if (state === 'partial') return 'Delno plačan';
+  if (state === 'unpaid') return 'Neplačan';
+  return '-';
+}
+
+function paymentStateBadgeClass(state: FinanceInvoiceRow['paymentState']) {
+  if (state === 'paid') return 'is-paid';
+  if (state === 'partial') return 'is-pending';
+  return 'is-cancelled';
+}
+
 function detailKey(employeeIdValue: string, snapshotId: string) {
   return `${employeeIdValue}:${snapshotId}`;
 }
@@ -375,6 +392,7 @@ export const FinancePage: React.FC = () => {
 
   const [projectSearch, setProjectSearch] = useState('');
   const [invoiceSearch, setInvoiceSearch] = useState('');
+  const [samoNeplacani, setSamoNeplacani] = useState(false);
 
   const [expandedProjectRows, setExpandedProjectRows] = useState<Record<string, boolean>>({});
   const [expandedEmployeeRows, setExpandedEmployeeRows] = useState<Record<string, boolean>>({});
@@ -536,6 +554,9 @@ export const FinancePage: React.FC = () => {
   const filteredInvoices = useMemo(() => {
     const term = invoiceSearch.trim().toLowerCase();
     return periodInvoices.filter((invoice) => {
+      if (samoNeplacani && (invoice.status !== 'issued' || invoice.paymentState === 'paid')) {
+        return false;
+      }
       if (!term) return true;
       return (
         invoice.invoiceNumber.toLowerCase().includes(term) ||
@@ -544,15 +565,22 @@ export const FinancePage: React.FC = () => {
         invoice.customerName.toLowerCase().includes(term)
       );
     });
-  }, [invoiceSearch, periodInvoices]);
+  }, [invoiceSearch, samoNeplacani, periodInvoices]);
 
   const invoiceSummary = useMemo(() => {
     const active = filteredInvoices.filter((invoice) => invoice.status === 'issued');
+    const openInvoices = active.filter((invoice) => invoice.paymentState && invoice.paymentState !== 'paid');
     return {
       issuedCount: active.length,
       missingSnapshotCount: active.filter((invoice) => !invoice.hasFinanceSnapshot).length,
       cancelledCount: filteredInvoices.filter((invoice) => invoice.status === 'cancelled').length,
       totalWithVat: active.reduce((sum, invoice) => sum + (Number(invoice.totalWithVat) || 0), 0),
+      paidCount: active.filter((invoice) => invoice.paymentState === 'paid').length,
+      openAmount: openInvoices.reduce(
+        (sum, invoice) => sum + Math.max(0, (Number(invoice.totalWithVat) || 0) - (Number(invoice.paidAmount) || 0)),
+        0,
+      ),
+      openCount: openInvoices.length,
     };
   }, [filteredInvoices]);
 
@@ -681,6 +709,30 @@ export const FinancePage: React.FC = () => {
   const reloadInvoices = async () => {
     const data = await fetchApi<FinanceInvoiceListEnvelope>('/api/finance/invoices');
     setInvoiceRows(data.items ?? []);
+  };
+
+  const handleRecordPayment = async (invoice: FinanceInvoiceRow) => {
+    const outstanding = Math.max(0, (Number(invoice.totalWithVat) || 0) - (Number(invoice.paidAmount) || 0));
+    const vnos = window.prompt(
+      `Prejeti znesek za račun ${invoice.invoiceNumber} (odprto: ${currency.format(outstanding)})`,
+      outstanding.toFixed(2),
+    );
+    if (vnos === null) return;
+    const amount = Number(vnos.replace(',', '.'));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError('Znesek plačila mora biti pozitivno število.');
+      return;
+    }
+    const key = `${invoice.projectId}:${invoice.invoiceVersionId}:payment`;
+    setInvoiceActionSaving((current) => ({ ...current, [key]: true }));
+    try {
+      await postApi('/api/payments', { invoiceNumber: invoice.invoiceNumber, amount });
+      await reloadInvoices();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Plačila ni bilo mogoče zabeležiti.');
+    } finally {
+      setInvoiceActionSaving((current) => ({ ...current, [key]: false }));
+    }
   };
 
   const handleCloneInvoice = async (invoice: FinanceInvoiceRow) => {
@@ -1205,8 +1257,9 @@ export const FinancePage: React.FC = () => {
           <section className="finance-cards-grid">
             <article className="finance-card"><span>Izdani računi</span><strong>{invoiceSummary.issuedCount}</strong></article>
             <article className="finance-card"><span>Skupaj z DDV</span><strong>{currency.format(invoiceSummary.totalWithVat)}</strong></article>
+            <article className="finance-card"><span>Odprto za plačilo ({invoiceSummary.openCount})</span><strong>{currency.format(invoiceSummary.openAmount)}</strong></article>
+            <article className="finance-card"><span>Plačani</span><strong>{invoiceSummary.paidCount}</strong></article>
             <article className="finance-card"><span>Manjka finance snapshot</span><strong>{invoiceSummary.missingSnapshotCount}</strong></article>
-            <article className="finance-card"><span>Odstranjeni</span><strong>{invoiceSummary.cancelledCount}</strong></article>
           </section>
 
           <section className="finance-panel">
@@ -1223,6 +1276,14 @@ export const FinancePage: React.FC = () => {
                 value={invoiceSearch}
                 onChange={(event) => setInvoiceSearch(event.target.value)}
               />
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                <input
+                  type="checkbox"
+                  checked={samoNeplacani}
+                  onChange={(event) => setSamoNeplacani(event.target.checked)}
+                />
+                Samo neplačani
+              </label>
             </div>
 
             {filteredInvoices.length === 0 ? (
@@ -1239,6 +1300,7 @@ export const FinancePage: React.FC = () => {
                       <th>Datum izdaje</th>
                       <th>Brez DDV</th>
                       <th>Z DDV</th>
+                      <th>Plačilo</th>
                       <th>Finance</th>
                       <th>Akcije</th>
                     </tr>
@@ -1260,6 +1322,24 @@ export const FinancePage: React.FC = () => {
                           <td>{currency.format(Number(invoice.totalWithoutVat) || 0)}</td>
                           <td>{currency.format(Number(invoice.totalWithVat) || 0)}</td>
                           <td>
+                            {invoice.status === 'issued' ? (
+                              <span
+                                className={`status-badge ${paymentStateBadgeClass(invoice.paymentState)}`}
+                                title={
+                                  invoice.paymentState === 'partial'
+                                    ? `Plačano ${currency.format(Number(invoice.paidAmount) || 0)} od ${currency.format(Number(invoice.totalWithVat) || 0)}`
+                                    : invoice.lastPaymentAt
+                                      ? `Zadnje plačilo: ${new Date(invoice.lastPaymentAt).toLocaleDateString('sl-SI')}`
+                                      : undefined
+                                }
+                              >
+                                {paymentStateLabel(invoice.paymentState)}
+                              </span>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td>
                             <span className={`status-badge ${invoice.hasFinanceSnapshot ? 'is-paid' : 'is-pending'}`}>
                               {invoice.hasFinanceSnapshot ? 'Viden' : 'Manjka'}
                             </span>
@@ -1269,6 +1349,16 @@ export const FinancePage: React.FC = () => {
                               <button type="button" className="finance-btn" onClick={() => { window.location.href = `/projects/${invoice.projectId}`; }}>
                                 Odpri
                               </button>
+                              {invoice.status === 'issued' && invoice.paymentState !== 'paid' && (
+                                <button
+                                  type="button"
+                                  className="finance-btn"
+                                  disabled={!!invoiceActionSaving[`${invoice.projectId}:${invoice.invoiceVersionId}:payment`]}
+                                  onClick={() => void handleRecordPayment(invoice)}
+                                >
+                                  {invoiceActionSaving[`${invoice.projectId}:${invoice.invoiceVersionId}:payment`] ? 'Beležim...' : 'Plačilo'}
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 className="finance-btn"

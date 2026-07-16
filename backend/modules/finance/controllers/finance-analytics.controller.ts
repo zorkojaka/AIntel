@@ -14,6 +14,11 @@ import {
   setEmployeeProjectEarningPaid,
 } from '../services/finance-analytics.service';
 import { getProjectSnapshot, listFinanceSnapshots } from '../services/finance-snapshot.service';
+import {
+  confirmedPaymentsByInvoiceNumber,
+  countOpenPayments,
+  paymentStateFor,
+} from '../../payments/payments.service';
 import { ROLE_ADMIN, ROLE_FINANCE } from '../../../utils/roles';
 
 function parseDate(value?: string) {
@@ -228,7 +233,23 @@ export async function invoicesList(_req: Request, res: Response) {
     return right - left;
   });
 
-  return res.success({ items: rows });
+  // Plačila: vsota potrjenih plačil po številki računa → status plačila vrstice.
+  const paymentsByNumber = await confirmedPaymentsByInvoiceNumber(
+    rows.map((row) => String(row.invoiceNumber ?? '')).filter(Boolean),
+  );
+  const enriched = rows.map((row) => {
+    const paid = paymentsByNumber.get(String(row.invoiceNumber ?? ''));
+    const paidAmount = paid?.paidAmount ?? 0;
+    return {
+      ...row,
+      paidAmount,
+      lastPaymentAt: paid?.lastPaymentAt ?? null,
+      paymentState: row.status === 'issued' ? paymentStateFor(Number(row.totalWithVat) || 0, paidAmount) : null,
+    };
+  });
+  const openPaymentsCount = await countOpenPayments();
+
+  return res.success({ items: enriched, openPaymentsCount });
 }
 
 export async function snapshotByProject(req: Request, res: Response) {
