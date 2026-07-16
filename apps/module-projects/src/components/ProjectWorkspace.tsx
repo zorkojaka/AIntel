@@ -9,6 +9,7 @@ import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import { TaskSubjectStrip } from "@aintel/module-tasks";
 import { clearMobileTopbar, setMobileTopbar } from "@aintel/shared/utils/mobileTopbar";
 import { Check, Pencil, X } from "lucide-react";
+import { ClientNotesCard } from "../domains/core/ClientNotesCard";
 import { OfferVersion } from "../domains/offers/OfferVersionCard";
 import type { WorkOrder as LogisticsWorkOrder } from "@aintel/shared/types/logistics";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
@@ -1519,6 +1520,8 @@ export function ProjectWorkspace({
                 )}
               </Card>
 
+              <ClientNotesCard projectId={project.id} currentProjectId={project.id} />
+
               <Card className="p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <h3>Zahteve</h3>
@@ -1688,6 +1691,7 @@ export function ProjectWorkspace({
                     onWorkOrderUpdated={handleWorkOrderUpdated}
                     onWorkOrderDraftChange={handleWorkOrderDraftChange}
                     onRegisterSaveHandler={registerExecutionSaveHandler}
+                    showClientNotes={false}
                   />
                 </TabsContent>
                 ) : null}

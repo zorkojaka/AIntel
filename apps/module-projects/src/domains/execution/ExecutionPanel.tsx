@@ -46,6 +46,12 @@ interface ExecutionPanelProps {
   onWorkOrderDraftChange?: (workOrder: WorkOrder) => void;
   onRegisterSaveHandler?: (handler: (() => Promise<boolean>) | null) => void;
   collapsibleMaterialOrders?: boolean;
+  /**
+   * Privzeto vklopljeno, ker monter na nadzorni plosci vidi samo ta panel in
+   * mora do zapiskov priti. V delovnem prostoru projekta jih ima ze stranski
+   * stolpec, zato jih tam izklopimo, da niso dvakrat.
+   */
+  showClientNotes?: boolean;
 }
 
 type WorkOrderDraft = {
@@ -591,6 +597,7 @@ export function ExecutionPanel({
   onWorkOrderDraftChange,
   onRegisterSaveHandler,
   collapsibleMaterialOrders = false,
+  showClientNotes = true,
 }: ExecutionPanelProps) {
   const rawWorkOrders = logistics?.workOrders ?? [];
   const materialOrders = logistics?.materialOrders ?? [];
@@ -2252,7 +2259,7 @@ export function ExecutionPanel({
 
   return (
     <div className="space-y-8 overflow-x-hidden pb-24 md:pb-0">
-      <ClientNotesCard projectId={projectId} currentProjectId={projectId} />
+      {showClientNotes ? <ClientNotesCard projectId={projectId} currentProjectId={projectId} /> : null}
       <div className="space-y-6">
         {STATUS_OPTIONS.map((statusOption) => {
           const entries = workOrdersByStatus[statusOption.value] ?? [];
