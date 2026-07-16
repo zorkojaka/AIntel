@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CommunicationEvent } from '@aintel/shared/types/communication';
-import { Mail, ShieldCheck, Signature, StickyNote } from 'lucide-react';
+import { Mail, MailOpen, ShieldCheck, Signature, StickyNote } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { fetchCommunicationFeed } from './api';
@@ -21,6 +21,7 @@ function formatTimestamp(value: string) {
 
 function getEventIcon(type: CommunicationEvent['type']) {
   if (type === 'email_sent' || type === 'email_failed') return Mail;
+  if (type === 'email_received') return MailOpen;
   if (type === 'offer_confirmed') return ShieldCheck;
   if (type === 'signature_completed') return Signature;
   return StickyNote;
@@ -72,8 +73,12 @@ export function CommunicationPanel({ projectId, refreshKey = 0 }: CommunicationP
         {events.map((event) => {
           const Icon = getEventIcon(event.type);
           const isExpanded = expandedId === event.id;
+          const inbound = event.type === 'email_received';
           return (
-            <div key={event.id} className="rounded-lg border border-border/70 px-3 py-3">
+            <div
+              key={event.id}
+              className={`rounded-lg border px-3 py-3 ${inbound ? 'border-emerald-200 bg-emerald-50/40' : 'border-border/70'}`}
+            >
               <button
                 type="button"
                 onClick={() => setExpandedId((prev) => (prev === event.id ? null : event.id))}
@@ -90,10 +95,13 @@ export function CommunicationPanel({ projectId, refreshKey = 0 }: CommunicationP
               </button>
               {isExpanded ? (
                 <div className="mt-3 space-y-2 border-t pt-3 text-xs text-muted-foreground">
-                  {event.user ? <div>Uporabnik: {event.user}</div> : null}
+                  {event.metadata?.from ? <div>Od: {event.metadata.from}</div> : event.user ? <div>Uporabnik: {event.user}</div> : null}
                   {event.metadata?.to ? <div>Prejemnik: {event.metadata.to}</div> : null}
                   {event.metadata?.subject ? <div>Zadeva: {event.metadata.subject}</div> : null}
                   {event.metadata?.attachments ? <div>Priloge: {event.metadata.attachments}</div> : null}
+                  {event.metadata?.snippet ? (
+                    <div className="whitespace-pre-wrap rounded-md bg-muted/60 p-2 text-foreground/80">{event.metadata.snippet}</div>
+                  ) : null}
                 </div>
               ) : null}
             </div>

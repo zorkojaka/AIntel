@@ -10,6 +10,7 @@ export type CommunicationMessageStatus = "sent" | "failed";
 
 export type CommunicationEventType =
   | "email_sent"
+  | "email_received"
   | "email_failed"
   | "offer_confirmed"
   | "signature_completed"

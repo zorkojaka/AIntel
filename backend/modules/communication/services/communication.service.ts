@@ -14,6 +14,7 @@ import { CommunicationSenderSettingsModel } from "../schemas/sender-settings";
 import { CommunicationTemplateModel } from "../schemas/template";
 import { CommunicationMessageModel } from "../schemas/message";
 import { CommunicationEventModel } from "../schemas/event";
+import { EmailMessageModel } from "../../email/email-message.model";
 import { buildThreadHeaders, type ThreadHeaders } from "./thread.service";
 import {
   appendCommunicationFooter,
@@ -1429,9 +1430,41 @@ export async function sendInstallerPreparationEmail(input: {
   return { ...payload, sent: true };
 }
 
+/** Strankin odgovor (email_messages) v obliki dogodka za potek komunikacije. */
+function serializeInboundEmailEvent(doc: any): CommunicationEvent {
+  const from = doc?.fromName ? `${doc.fromName} <${doc.fromAddress}>` : (doc?.fromAddress ?? "");
+  return {
+    id: `email-${String(doc?._id)}`,
+    projectId: doc?.match?.projectId ?? "",
+    offerId: null,
+    messageId: null,
+    type: "email_received",
+    title: "Odgovor stranke",
+    description: doc?.subject || "(brez zadeve)",
+    timestamp: doc?.date ? new Date(doc.date).toISOString() : "",
+    user: from || null,
+    metadata: {
+      from,
+      subject: doc?.subject ?? "",
+      snippet: String(doc?.text ?? "").slice(0, 800),
+    },
+  };
+}
+
 export async function listProjectCommunicationFeed(projectId: string, limit = 20) {
-  const events = await CommunicationEventModel.find({ projectId }).sort({ timestamp: -1 }).limit(limit).lean();
-  return events.map(serializeEvent);
+  // Potek je cel pogovor s stranko: nasa posta (events) + strankini odgovori
+  // (dohodni maili, povezani na projekt) — sicer se v projektu vidi le ena smer.
+  const [events, inbound] = await Promise.all([
+    CommunicationEventModel.find({ projectId }).sort({ timestamp: -1 }).limit(limit).lean(),
+    EmailMessageModel.find({ "match.projectId": projectId, status: "matched" })
+      .sort({ date: -1 })
+      .limit(limit)
+      .select({ fromAddress: 1, fromName: 1, subject: 1, text: 1, date: 1, "match.projectId": 1 })
+      .lean(),
+  ]);
+  return [...events.map(serializeEvent), ...inbound.map(serializeInboundEmailEvent)]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, limit);
 }
 
 export async function listOfferMessages(projectId: string, offerId: string) {
