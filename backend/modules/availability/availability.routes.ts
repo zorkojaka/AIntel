@@ -146,6 +146,9 @@ export async function bookingInviteController(req: Request, res: Response) {
       projectId: req.params.projectId,
       workOrderId: req.params.workOrderId,
       to: req.body?.to,
+      subject: typeof req.body?.subject === 'string' ? req.body.subject : null,
+      body: typeof req.body?.body === 'string' ? req.body.body : null,
+      previewOnly: req.body?.previewOnly === true,
       actorUserId: context?.actorUserId ?? null,
     });
     return res.success(result);

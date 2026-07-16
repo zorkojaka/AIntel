@@ -1499,6 +1499,9 @@ export async function sendBookingInviteEmail(input: {
   bookingLink: string;
   durationHours: number;
   to?: unknown;
+  subject?: string | null;
+  body?: string | null;
+  previewOnly?: boolean;
   actorUserId?: string | null;
   actorDisplayName?: string | null;
   actorProfile?: {
@@ -1562,8 +1565,8 @@ export async function sendBookingInviteEmail(input: {
   });
 
   const customerFirstLine = (project.customer?.name ?? projectClient?.name ?? "").trim();
-  const subjectFinal = `Izbira termina montaže — ${project.title ?? input.projectId}`;
-  const bodyWithoutFooter = [
+  const subjectFinal = sanitizeString(input.subject) || `Izbira termina montaže — ${project.title ?? input.projectId}`;
+  const defaultBody = [
     customerFirstLine ? `Spoštovani ${customerFirstLine},` : "Spoštovani,",
     "",
     "vaša montaža je pripravljena. Prosimo, izberite dan, ki vam najbolj ustreza — na spodnji povezavi so samo dnevi, ko je naša ekipa res na voljo:",
@@ -1575,6 +1578,16 @@ export async function sendBookingInviteEmail(input: {
     "",
     "Lep pozdrav",
   ].join("\n");
+  const bodyWithoutFooter = input.body?.toString().trim() || defaultBody;
+  if (input.previewOnly) {
+    return {
+      draft: {
+        to: resolvedRecipients.join(", "),
+        subject: subjectFinal,
+        body: bodyWithoutFooter,
+      },
+    };
+  }
   const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
   const bodyMainText = stripAppendedFooter(bodyWithoutFooter, renderedFooter);
   const htmlFinal = renderCommunicationBodyHtml(bodyMainText, renderedFooterHtml);

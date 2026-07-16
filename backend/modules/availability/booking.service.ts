@@ -25,6 +25,10 @@ export async function createBookingInvite(input: {
   projectId: string;
   workOrderId: string;
   to?: unknown;
+  subject?: string | null;
+  body?: string | null;
+  /** true = samo pripravi osnutek maila (nič se ne pošlje). */
+  previewOnly?: boolean;
   actorUserId?: string | null;
   actorDisplayName?: string | null;
   actorProfile?: { name?: string | null; email?: string | null; phone?: string | null; role?: string | null } | null;
@@ -54,18 +58,31 @@ export async function createBookingInvite(input: {
   const token = workOrder.bookingToken || crypto.randomBytes(24).toString('hex');
   const link = bookingLinkFor(token, await bookingPageUrl());
 
-  await sendBookingInviteEmail({
+  // Žeton shranimo že ob predogledu, da povezava v osnutku zagotovo velja.
+  if (!workOrder.bookingToken) {
+    workOrder.bookingToken = token;
+    await workOrder.save();
+  }
+
+  const result = await sendBookingInviteEmail({
     projectId: input.projectId,
     workOrderId: String(workOrder._id),
     bookingLink: link,
     durationHours,
     to: input.to,
+    subject: input.subject,
+    body: input.body,
+    previewOnly: input.previewOnly,
     actorUserId: input.actorUserId,
     actorDisplayName: input.actorDisplayName,
     actorProfile: input.actorProfile,
   });
 
-  workOrder.bookingToken = token;
+  if (input.previewOnly) {
+    const draft = (result as { draft?: { to: string; subject: string; body: string } }).draft;
+    return { draft, link, durationHours, freeDaysCount: freeDays.length };
+  }
+
   workOrder.bookingInviteSentAt = new Date();
   await workOrder.save();
 

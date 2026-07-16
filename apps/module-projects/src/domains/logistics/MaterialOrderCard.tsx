@@ -3,9 +3,12 @@ import type { Employee } from "@aintel/shared/types/employee";
 import type { MaterialOrder, MaterialPickupMethod, MaterialStep } from "@aintel/shared/types/logistics";
 import { Camera, ChevronDown, ChevronRight, Download, Loader2, Mail } from "lucide-react";
 import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
+import { toast } from "sonner";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 
@@ -272,26 +275,61 @@ export function MaterialOrderCard({
 }: MaterialOrderCardProps) {
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
   const [bookingSending, setBookingSending] = useState(false);
+  const [bookingPreparing, setBookingPreparing] = useState(false);
+  const [bookingDialogOpen, setBookingDialogOpen] = useState(false);
+  const [bookingDraft, setBookingDraft] = useState({ to: "", subject: "", body: "" });
+  const [bookingMeta, setBookingMeta] = useState<{ durationHours?: number; freeDaysCount?: number } | null>(null);
   const [bookingResult, setBookingResult] = useState<string | null>(null);
 
+  const bookingEndpoint = materialOrder?.workOrderId
+    ? `/api/projects/${encodeURIComponent(projectId)}/work-orders/${encodeURIComponent(materialOrder.workOrderId)}/booking-invite`
+    : null;
+
+  // Kot pri mailu monterju: najprej predogled (strežnik pripravi osnutek), šele nato pošiljanje.
+  const openBookingDialog = async () => {
+    if (!bookingEndpoint || bookingPreparing) return;
+    setBookingPreparing(true);
+    try {
+      const response = await fetch(bookingEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ previewOnly: true }),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.message || "Osnutka vabila ni bilo mogoče pripraviti.");
+      }
+      const data = payload?.data ?? payload;
+      setBookingDraft(data.draft ?? { to: "", subject: "", body: "" });
+      setBookingMeta({ durationHours: data.durationHours, freeDaysCount: data.freeDaysCount });
+      setBookingDialogOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Osnutka vabila ni bilo mogoče pripraviti.");
+    } finally {
+      setBookingPreparing(false);
+    }
+  };
+
   const sendBookingInvite = async () => {
-    if (!materialOrder?.workOrderId) return;
+    if (!bookingEndpoint || bookingSending) return;
     setBookingSending(true);
     try {
-      const response = await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/work-orders/${encodeURIComponent(materialOrder.workOrderId)}/booking-invite`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
-      );
+      const response = await fetch(bookingEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bookingDraft),
+      });
       const payload = await response.json();
       if (!response.ok || payload?.ok === false) {
         throw new Error(payload?.message || "Vabila ni bilo mogoče poslati.");
       }
-      const data = payload?.data ?? payload;
+      toast.success("Vabilo k izbiri termina je bilo poslano.");
       setBookingResult(
-        `Vabilo poslano (${new Date().toLocaleTimeString("sl-SI", { hour: "2-digit", minute: "2-digit" })}). Na voljo ${data.freeDaysCount ?? "?"} prostih dni, predvideno trajanje ${data.durationHours ?? "?"} h.`,
+        `Vabilo poslano (${new Date().toLocaleTimeString("sl-SI", { hour: "2-digit", minute: "2-digit" })}). Na voljo ${bookingMeta?.freeDaysCount ?? "?"} prostih dni.`,
       );
+      setBookingDialogOpen(false);
     } catch (error) {
-      setBookingResult(error instanceof Error ? error.message : "Vabila ni bilo mogoče poslati.");
+      toast.error(error instanceof Error ? error.message : "Vabila ni bilo mogoče poslati.");
     } finally {
       setBookingSending(false);
     }
@@ -526,15 +564,15 @@ export function MaterialOrderCard({
                       type="button"
                       size="sm"
                       variant="outline"
-                      disabled={bookingSending || savingWorkOrder}
-                      onClick={() => void sendBookingInvite()}
+                      disabled={bookingPreparing || savingWorkOrder}
+                      onClick={() => void openBookingDialog()}
                     >
-                      {bookingSending ? "Pošiljam..." : "Povabi stranko k izbiri termina"}
+                      {bookingPreparing ? "Pripravljam..." : "Povabi stranko k izbiri termina"}
                     </Button>
                     <p className="text-xs text-muted-foreground">
                       {bookingResult
                         ? bookingResult
-                        : "Stranka po e-mailu dobi povezavo s prostimi dnevi monterjev; z izbiro dneva je termin hkrati potrjen."}
+                        : "Stranka po e-mailu dobi povezavo s prostimi dnevi monterjev; z izbiro dneva je termin hkrati potrjen. Pred pošiljanjem vidiš in urediš vsebino."}
                     </p>
                   </div>
                 ) : null}
@@ -818,6 +856,53 @@ export function MaterialOrderCard({
           </>
         ) : null}
       </div>
+
+      <Dialog open={bookingDialogOpen} onOpenChange={(open) => !bookingSending && setBookingDialogOpen(open)}>
+        <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Povabi stranko k izbiri termina</DialogTitle>
+            <DialogDescription>
+              Preglej in po potrebi uredi sporočilo. Povezava v vsebini stranki pokaže samo dneve, ko so dodeljeni monterji
+              prosti{bookingMeta?.durationHours ? ` (predvideno trajanje ${bookingMeta.durationHours} h` : ""}
+              {bookingMeta?.freeDaysCount !== undefined ? `, trenutno ${bookingMeta.freeDaysCount} prostih dni)` : bookingMeta?.durationHours ? ")" : ""}.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Prejemnik</span>
+            <Input
+              value={bookingDraft.to}
+              onChange={(event) => setBookingDraft((prev) => ({ ...prev, to: event.target.value }))}
+              disabled={bookingSending}
+            />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Zadeva</span>
+            <Input
+              value={bookingDraft.subject}
+              onChange={(event) => setBookingDraft((prev) => ({ ...prev, subject: event.target.value }))}
+              disabled={bookingSending}
+            />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Vsebina</span>
+            <Textarea
+              rows={12}
+              value={bookingDraft.body}
+              onChange={(event) => setBookingDraft((prev) => ({ ...prev, body: event.target.value }))}
+              disabled={bookingSending}
+            />
+          </label>
+          <p className="text-xs text-muted-foreground">Podpis (noga) se doda samodejno, enako kot pri ostali pošti.</p>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setBookingDialogOpen(false)} disabled={bookingSending}>
+              Prekliči
+            </Button>
+            <Button type="button" onClick={() => void sendBookingInvite()} disabled={bookingSending || !bookingDraft.to.trim()}>
+              {bookingSending ? "Pošiljam..." : "Pošlji vabilo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
