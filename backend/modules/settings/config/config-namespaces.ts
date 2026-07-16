@@ -27,6 +27,20 @@ export function registerCoreConfigNamespaces(): void {
     }),
   });
 
+  // Prepoznava bančnih obvestil o prilivu v dohodni pošti (payment.bank_email).
+  // senders: podnizi pošiljateljevega naslova (npr. "nlb.si") — prazno = neaktivno.
+  registerConfigNamespace({
+    namespace: 'finance.bank',
+    description: 'Prepoznava bančnih obvestil o prilivu za samodejno ujemanje plačil računov.',
+    schema: v.object({
+      senders: v.array(v.string({ max: 120 }), { max: 20 }).default([]),
+      // Vsaj ena od teh besed mora biti v zadevi ali telesu, da mail štejemo za obvestilo o prilivu.
+      keywords: v
+        .array(v.string({ max: 60 }), { max: 20 })
+        .default(['priliv', 'nakazil', 'prejeli', 'dobro pisan', 'knjižen']),
+    }),
+  });
+
   // Popustni pasovi (prag pregleda / količinski popusti) — semenski prostor.
   registerConfigNamespace({
     namespace: 'sales.discounts',

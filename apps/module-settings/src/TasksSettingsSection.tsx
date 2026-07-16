@@ -87,6 +87,12 @@ const WHEEL_RULES: Array<{ key: string; label: string; description: string }> = 
     description:
       'Sistem vsakih 5 min prebere dohodne maile (samo bere, nikoli ne odgovarja), jih poveže s projekti, zapre follow-up ob odgovoru stranke in nepovezane ponudi v modulu Pošta.',
   },
+  {
+    key: 'payment.bank_email',
+    label: 'Prilivi iz bančnih obvestil (plačila računov)',
+    description:
+      'Bančno obvestilo o prilivu (posredovano na prodajni nabiralnik) → zapis plačila in ujemanje z odprtim računom po sklicu/znesku. Ročno: ujemanje potrdiš v Finance → Računi (opravilo za finance). Avtomatsko: nedvoumna ujemanja se potrdijo sama. Pogoj: v nastavitvah so vpisani pošiljatelji banke (finance.bank).',
+  },
 ];
 
 const PARAM_FIELDS: Array<{ key: keyof WheelConfig['params']; label: string }> = [
