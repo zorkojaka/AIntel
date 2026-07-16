@@ -311,6 +311,14 @@ export async function updateCommunicationSenderSettings(payload: Partial<Communi
   return serializeSenderSettings(doc.toObject());
 }
 
+/**
+ * Zadnja aktivna predloga kategorije — za maile, kjer osnutek sestavi streznik
+ * (mail monterju, vabilo k terminu) in uporabnik predloge ne izbira rocno.
+ */
+async function findActiveTemplate(category: CommunicationCategory) {
+  return CommunicationTemplateModel.findOne({ category, isActive: true }).sort({ updatedAt: -1 }).lean();
+}
+
 export async function listCommunicationTemplates(category?: CommunicationCategory) {
   const filter = category ? { category } : {};
   const templates = await CommunicationTemplateModel.find(filter).sort({ name: 1, updatedAt: -1 }).lean();
@@ -1275,24 +1283,22 @@ export async function sendInstallerPreparationEmail(input: {
   const projectIdentifier = project.code || project.id || input.projectId;
   const workOrderIdentifier = workOrder.code || workOrder.title || String(workOrder._id);
 
-  const bodyLines: string[] = [
-    `Pozdravljen ${primaryInstaller?.name || "monter"},`,
-    "",
-    `Pošiljamo podatke za pripravo na montažo in potrditev termina za projekt ${projectIdentifier}${project.title ? ` - ${project.title}` : ""}.`,
-  ];
-  appendSection(bodyLines, "Termin", [
+  // Podatkovni blok naloga gre v predlogo kot {{workOrder.details}} — predloga
+  // ureja nagovor in okvir, podatke pa vedno sestavi streznik iz naloga.
+  const detailsLines: string[] = [];
+  appendSection(detailsLines, "Termin", [
     schedule ? `Termin izvedbe: ${schedule}` : "Termin izvedbe: ni določen",
     workOrder.scheduledConfirmedAt ? `Termin potrjen: ${formatDateTime(workOrder.scheduledConfirmedAt)}` : null,
     teamNames.length > 0 ? `Ekipa: ${teamNames.join(", ")}` : null,
   ]);
-  appendSection(bodyLines, "Stranka", [
+  appendSection(detailsLines, "Stranka", [
     customerName,
     customerAddress,
     customerEmail ? `Email: ${customerEmail}` : null,
     customerPhone ? `Telefon: ${customerPhone}` : null,
     project.customer?.taxId ? `Davčna: ${project.customer.taxId}` : null,
   ]);
-  appendSection(bodyLines, "Opombe", [
+  appendSection(detailsLines, "Opombe", [
     project.requirementsText ? `Projekt: ${project.requirementsText}` : null,
     offer?.comment ? `Ponudba: ${offer.comment}` : null,
     workOrder.notes ? `Delovni nalog: ${workOrder.notes}` : null,
@@ -1302,12 +1308,24 @@ export async function sendInstallerPreparationEmail(input: {
     const quantity = typeof item.quantity === "number" ? item.quantity : item.plannedQuantity ?? "";
     return `- ${item.name || "Postavka"} (${quantity} ${item.unit || ""})`;
   });
-  appendSection(bodyLines, "Postavke delovnega naloga", itemLines);
-  appendSection(bodyLines, "Definicija izvedbe", formatWorkOrderExecutionDefinition(workOrder));
-  appendSection(bodyLines, "Povezava", [
+  appendSection(detailsLines, "Postavke delovnega naloga", itemLines);
+  appendSection(detailsLines, "Definicija izvedbe", formatWorkOrderExecutionDefinition(workOrder));
+  appendSection(detailsLines, "Povezava", [
     input.projectLink ? `Projekt/delovni nalog: ${input.projectLink}` : null,
   ]);
-  bodyLines.push("", "Delovni nalog je priložen v PDF priponki.", "", "Lep pozdrav");
+  const workOrderDetails = detailsLines.join("\n").trim();
+
+  const bodyLines: string[] = [
+    `Pozdravljen ${primaryInstaller?.name || "monter"},`,
+    "",
+    `Pošiljamo podatke za pripravo na montažo in potrditev termina za projekt ${projectIdentifier}${project.title ? ` - ${project.title}` : ""}.`,
+    "",
+    workOrderDetails,
+    "",
+    "Delovni nalog je priložen v PDF priponki.",
+    "",
+    "Lep pozdrav",
+  ];
 
   const templateContext = buildTemplateContext({
     customerName,
@@ -1317,6 +1335,9 @@ export async function sendInstallerPreparationEmail(input: {
     offerTotal: "",
     workOrderIdentifier,
     confirmationDate: schedule,
+    workOrderSchedule: schedule,
+    workOrderDetails,
+    installerName: sanitizeString(primaryInstaller?.name) || "monter",
     companyName: globalSettings.companyName ?? "",
     companyWebsite: globalSettings.website ?? "",
     companyAddress: globalSettings.address ?? "",
@@ -1339,8 +1360,15 @@ export async function sendInstallerPreparationEmail(input: {
     logoSrc: inlineCompanyLogo ? `cid:${inlineCompanyLogo.cid}` : toPublicEmailLogoUrl(globalSettings.logoUrl),
   });
 
-  const subjectFinal = sanitizeString(input.subject) || `Priprava montaže: ${projectIdentifier}${schedule ? ` - ${schedule}` : ""}`;
-  const bodyWithoutFooter = input.body?.toString().trim() || bodyLines.join("\n");
+  // Aktivna predloga (Nastavitve → Komunikacija) doloci privzeti osnutek;
+  // rocno vpisana zadeva/vsebina iz predogleda imata vedno prednost.
+  const template = await findActiveTemplate("installer_preparation_send");
+  const renderedTemplate = template ? renderCommunicationTemplate(template, templateContext) : null;
+  const subjectFinal =
+    sanitizeString(input.subject) ||
+    renderedTemplate?.subject ||
+    `Priprava montaže: ${projectIdentifier}${schedule ? ` - ${schedule}` : ""}`;
+  const bodyWithoutFooter = input.body?.toString().trim() || renderedTemplate?.body || bodyLines.join("\n");
   const resolvedRecipients = selectedRecipients.length > 0 ? selectedRecipients : [String(primaryInstaller.email).toLowerCase()];
   const cc = sanitizeEmailList(input.cc);
   const bcc = sanitizeEmailList(input.bcc);
@@ -1382,8 +1410,8 @@ export async function sendInstallerPreparationEmail(input: {
     bcc,
     subjectFinal,
     bodyFinal,
-    templateId: null,
-    templateKey: null,
+    templateId: template?._id ? String(template._id) : null,
+    templateKey: template?.key ?? null,
     selectedAttachments: selectedAttachmentRecords,
     sentByUserId: input.actorUserId ?? null,
   };
@@ -1569,12 +1597,15 @@ export async function sendBookingInviteEmail(input: {
     throw new Error("Stranka nima nastavljenega e-naslova.");
   }
 
+  const durationLabel = `${input.durationHours} ${input.durationHours === 1 ? "ura" : input.durationHours === 2 ? "uri" : "ure"}`;
   const templateContext = buildTemplateContext({
     customerName: project.customer?.name ?? projectClient?.name ?? "",
     customerEmail: projectClient?.email ?? "",
     projectName: project.title ?? "",
     offerNumber: "",
     offerTotal: "",
+    bookingLink: input.bookingLink,
+    bookingDuration: durationLabel,
     companyName: globalSettings.companyName ?? "",
     companyWebsite: globalSettings.website ?? "",
     companyAddress: globalSettings.address ?? "",
@@ -1598,7 +1629,12 @@ export async function sendBookingInviteEmail(input: {
   });
 
   const customerFirstLine = (project.customer?.name ?? projectClient?.name ?? "").trim();
-  const subjectFinal = sanitizeString(input.subject) || `Izbira termina montaže — ${project.title ?? input.projectId}`;
+  // Aktivna predloga (Nastavitve → Komunikacija) doloci privzeti osnutek;
+  // rocno vpisana zadeva/vsebina iz predogleda imata vedno prednost.
+  const template = await findActiveTemplate("booking_invite_send");
+  const renderedTemplate = template ? renderCommunicationTemplate(template, templateContext) : null;
+  const subjectFinal =
+    sanitizeString(input.subject) || renderedTemplate?.subject || `Izbira termina montaže — ${project.title ?? input.projectId}`;
   const defaultBody = [
     customerFirstLine ? `Spoštovani ${customerFirstLine},` : "Spoštovani,",
     "",
@@ -1606,12 +1642,17 @@ export async function sendBookingInviteEmail(input: {
     "",
     input.bookingLink,
     "",
-    `Predvideno trajanje izvedbe: približno ${input.durationHours} ${input.durationHours === 1 ? "ura" : input.durationHours === 2 ? "uri" : "ure"}.`,
+    `Predvideno trajanje izvedbe: približno ${durationLabel}.`,
     "Z izbiro dneva je termin potrjen; če vam noben termin ne ustreza, nas pokličite.",
     "",
     "Lep pozdrav",
   ].join("\n");
-  const bodyWithoutFooter = input.body?.toString().trim() || defaultBody;
+  let bodyWithoutFooter = input.body?.toString().trim() || renderedTemplate?.body || defaultBody;
+  // Varovalo: brez povezave je vabilo neuporabno — ce jo predloga ali rocni
+  // popravek izpusti ({{booking.link}} manjka), jo pripnemo na konec.
+  if (!bodyWithoutFooter.includes(input.bookingLink)) {
+    bodyWithoutFooter = `${bodyWithoutFooter}\n\nPovezava za izbiro termina: ${input.bookingLink}`;
+  }
   if (input.previewOnly) {
     return {
       draft: {
@@ -1637,8 +1678,8 @@ export async function sendBookingInviteEmail(input: {
     bcc: [] as string[],
     subjectFinal,
     bodyFinal,
-    templateId: null,
-    templateKey: null,
+    templateId: template?._id ? String(template._id) : null,
+    templateKey: template?.key ?? null,
     selectedAttachments: [] as CommunicationAttachmentRecord[],
     sentByUserId: input.actorUserId ?? null,
   };
