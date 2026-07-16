@@ -21,6 +21,8 @@ import {
 import { WebInquiryModel } from './web-inquiry.model';
 import { getReviewByToken, listApprovedReviews, submitReview } from '../reviews/review.service';
 import { buildAdvanceInstructions } from '../payments/advance-payment.service';
+import { chooseBookingDay, getBookingByToken } from '../availability/booking.service';
+import { AvailabilityError } from '../availability/availability.service';
 import { OfferVersionModel } from '../projects/schemas/offer-version';
 
 const UPLOAD_BASE_DIR = '/var/www/aintel/uploads/web-inquiries';
@@ -558,6 +560,34 @@ router.post('/inquiries/:id/next-step', async (req: Request, res: Response) => {
   } catch (error) {
     (req as any).log?.error({ err: error }, '[web-inquiries] Napaka pri naslednjem koraku');
     return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Izbire ni bilo mogoče shraniti.' });
+  }
+});
+
+// Rezervacija dneva montaže: stranka prek žetona iz maila vidi proste dneve
+// in enega izbere. Žeton je edina avtorizacija (naključen, enkraten).
+router.get('/booking/:token', async (req: Request, res: Response) => {
+  try {
+    const booking = await getBookingByToken(req.params.token);
+    return res.json({ ok: true, ...booking });
+  } catch (error) {
+    if (error instanceof AvailabilityError) {
+      return res.status(error.statusCode).json({ ok: false, code: 'BOOKING_ERROR', message: error.message });
+    }
+    (req as any).log?.error({ err: error }, '[booking] Napaka pri branju terminov');
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Terminov ni bilo mogoče naložiti.' });
+  }
+});
+
+router.post('/booking/:token', async (req: Request, res: Response) => {
+  try {
+    const result = await chooseBookingDay(req.params.token, req.body?.date);
+    return res.json({ ok: true, scheduledAt: result.scheduledAt, message: 'Termin je potrjen. Se vidimo!' });
+  } catch (error) {
+    if (error instanceof AvailabilityError) {
+      return res.status(error.statusCode).json({ ok: false, code: 'BOOKING_ERROR', message: error.message });
+    }
+    (req as any).log?.error({ err: error }, '[booking] Napaka pri izbiri termina');
+    return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: 'Termina ni bilo mogoče potrditi.' });
   }
 });
 

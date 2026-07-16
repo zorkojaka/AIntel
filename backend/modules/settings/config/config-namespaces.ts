@@ -24,6 +24,8 @@ export function registerCoreConfigNamespaces(): void {
         .default('Strokovni ogled objekta (50 € z DDV; ob izvedbi se prizna kot popust).'),
       // Informativna opomba o roku izvedbe.
       executionLeadText: v.string({ max: 300 }).default('praviloma v 14 dneh po potrditvi in plačilu avansa'),
+      // Javna stran, kjer stranka izbere dan montaže (OB CUTOVERU: inteligent.si/izbira-termina).
+      bookingPageUrl: v.string({ max: 300 }).default('https://dev.inteligent.si/predogled/izbira-termina'),
     }),
   });
 

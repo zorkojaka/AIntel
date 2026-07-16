@@ -30,6 +30,7 @@ import webInquiriesAdminRoutes from './modules/web-inquiries/admin.routes';
 import supplierRoutes from './modules/suppliers/supplier.routes';
 import shopRoutes from './modules/shop/shop.routes';
 import paymentsRoutes from './modules/payments/payments.routes';
+import availabilityRoutes from './modules/availability/availability.routes';
 import { requireRoles } from './middlewares/auth';
 import { ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from './utils/roles';
 
@@ -48,6 +49,7 @@ router.use('/settings', pdfSettingsRoutes);
 router.use('/settings/communication', communicationSettingsRoutes);
 router.use('/finance', financeRoutes);
 router.use('/payments', requireRoles([ROLE_ADMIN, ROLE_FINANCE]), paymentsRoutes);
+router.use('/availability', availabilityRoutes);
 router.use('/categories', categoriesRoutes);
 router.use('/projects', projectsRoutes);
 router.use('/projects', communicationProjectRoutes);

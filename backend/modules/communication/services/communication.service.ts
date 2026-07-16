@@ -1487,3 +1487,140 @@ export async function recordSignatureCompletedCommunicationEvent(input: {
     user: input.user ?? null,
   });
 }
+
+/**
+ * Vabilo stranki, da si sama izbere dan montaže (rezervacijska povezava).
+ * Brez predloge in prilog — kratko sporočilo s povezavo; zabeleži se kot vsa
+ * ostala pošta projekta (nit, dnevnik, dogodki).
+ */
+export async function sendBookingInviteEmail(input: {
+  projectId: string;
+  workOrderId: string;
+  bookingLink: string;
+  durationHours: number;
+  to?: unknown;
+  actorUserId?: string | null;
+  actorDisplayName?: string | null;
+  actorProfile?: {
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    role?: string | null;
+  } | null;
+}) {
+  const senderSettings = await getCommunicationSenderSettings();
+  if (!senderSettings.enabled) {
+    throw new Error("Komunikacija po emailu ni omogočena.");
+  }
+  if (!senderSettings.senderName || !senderSettings.senderEmail) {
+    throw new Error("Pošiljatelj ni pravilno nastavljen.");
+  }
+
+  const [project, globalSettings] = await Promise.all([
+    ProjectModel.findOne({ id: input.projectId }),
+    getSettings(),
+  ]);
+  if (!project) {
+    throw new Error("Projekt ni najden.");
+  }
+
+  const effectiveSender = resolveSenderIdentity(senderSettings, input.actorProfile);
+  const projectClient = await resolveProjectClient(project);
+  const customerEmail = projectClient?.email?.trim() || "";
+  const to = sanitizeEmailList(input.to);
+  const resolvedRecipients = to.length > 0 ? to : customerEmail ? [customerEmail.toLowerCase()] : [];
+  if (resolvedRecipients.length === 0) {
+    throw new Error("Stranka nima nastavljenega e-naslova.");
+  }
+
+  const templateContext = buildTemplateContext({
+    customerName: project.customer?.name ?? projectClient?.name ?? "",
+    customerEmail: projectClient?.email ?? "",
+    projectName: project.title ?? "",
+    offerNumber: "",
+    offerTotal: "",
+    companyName: globalSettings.companyName ?? "",
+    companyWebsite: globalSettings.website ?? "",
+    companyAddress: globalSettings.address ?? "",
+    companyEmail: globalSettings.email ?? "",
+    companyPhone: globalSettings.phone ?? "",
+    companyLogoUrl: toPublicLogoUrl(globalSettings.logoUrl),
+    sender: {
+      ...senderSettings,
+      senderName: effectiveSender.senderName,
+      senderEmail: effectiveSender.senderEmail,
+      senderPhone: effectiveSender.senderPhone,
+      senderRole: formatRoleLabel(effectiveSender.senderRole),
+    },
+  });
+
+  const renderedFooter = renderCommunicationText(senderSettings.emailFooterTemplate, templateContext);
+  const footerUsesLogo = (senderSettings.emailFooterTemplate ?? "").includes("{{company.logo}}");
+  const inlineCompanyLogo = footerUsesLogo ? await resolveInlineCompanyLogo(globalSettings.logoUrl) : null;
+  const renderedFooterHtml = renderCommunicationFooterHtmlForEmail(senderSettings.emailFooterTemplate, templateContext, {
+    logoSrc: inlineCompanyLogo ? `cid:${inlineCompanyLogo.cid}` : toPublicEmailLogoUrl(globalSettings.logoUrl),
+  });
+
+  const customerFirstLine = (project.customer?.name ?? projectClient?.name ?? "").trim();
+  const subjectFinal = `Izbira termina montaže — ${project.title ?? input.projectId}`;
+  const bodyWithoutFooter = [
+    customerFirstLine ? `Spoštovani ${customerFirstLine},` : "Spoštovani,",
+    "",
+    "vaša montaža je pripravljena. Prosimo, izberite dan, ki vam najbolj ustreza — na spodnji povezavi so samo dnevi, ko je naša ekipa res na voljo:",
+    "",
+    input.bookingLink,
+    "",
+    `Predvideno trajanje izvedbe: približno ${input.durationHours} ${input.durationHours === 1 ? "ura" : input.durationHours === 2 ? "uri" : "ure"}.`,
+    "Z izbiro dneva je termin potrjen; če vam noben termin ne ustreza, nas pokličite.",
+    "",
+    "Lep pozdrav",
+  ].join("\n");
+  const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
+  const bodyMainText = stripAppendedFooter(bodyWithoutFooter, renderedFooter);
+  const htmlFinal = renderCommunicationBodyHtml(bodyMainText, renderedFooterHtml);
+
+  const baseMessage = {
+    projectId: input.projectId,
+    offerId: null,
+    workOrderId: input.workOrderId,
+    customerId: projectClient?.id ?? null,
+    direction: "outbound" as const,
+    channel: "email" as const,
+    to: resolvedRecipients,
+    cc: [] as string[],
+    bcc: [] as string[],
+    subjectFinal,
+    bodyFinal,
+    templateId: null,
+    templateKey: null,
+    selectedAttachments: [] as CommunicationAttachmentRecord[],
+    sentByUserId: input.actorUserId ?? null,
+  };
+
+  return sendAndRecordCommunicationEmail({
+    senderSettings,
+    effectiveSender,
+    recipients: resolvedRecipients,
+    cc: [],
+    bcc: [],
+    subjectFinal,
+    bodyFinal,
+    htmlFinal,
+    attachments: [],
+    inlineCompanyLogo,
+    baseMessage,
+    actorDisplayName: input.actorDisplayName ?? null,
+    successEvent: {
+      projectId: input.projectId,
+      offerId: null,
+      title: "Vabilo k izbiri termina poslano",
+      metadata: { to: resolvedRecipients.join(", "), subject: subjectFinal },
+    },
+    failureEvent: {
+      projectId: input.projectId,
+      offerId: null,
+      title: "Vabila k izbiri termina ni bilo mogoče poslati",
+      metadata: { to: resolvedRecipients.join(", "), subject: subjectFinal },
+    },
+  });
+}
