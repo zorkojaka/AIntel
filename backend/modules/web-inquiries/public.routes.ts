@@ -20,6 +20,7 @@ import {
 } from './web-inquiry.service';
 import { WebInquiryModel } from './web-inquiry.model';
 import { getReviewByToken, listApprovedReviews, submitReview } from '../reviews/review.service';
+import { buildAdvanceInstructions } from '../payments/advance-payment.service';
 import { OfferVersionModel } from '../projects/schemas/offer-version';
 
 const UPLOAD_BASE_DIR = '/var/www/aintel/uploads/web-inquiries';
@@ -544,6 +545,15 @@ router.post('/inquiries/:id/next-step', async (req: Request, res: Response) => {
     // AIN-P1-11: kolo — stranka je izbrala naslednji korak (posvet/ogled/avans).
     fireRule(onWebInquiryNextStep(inquiry, choice), 'inquiry.next_step');
     await inquiry.save();
+
+    // Avans: stranki takoj vrnemo UPN navodila (TRR, znesek, sklic po številki
+    // ponudbe) — priliv se nato prek bančnega obvestila samodejno ujame.
+    if (choice === 'avans') {
+      const payment = await buildAdvanceInstructions(inquiry.offerNumber, inquiry.offerTotalWithVat).catch(() => null);
+      if (payment) {
+        return res.json({ ok: true, message: NEXT_STEP_MESSAGES[choice], payment });
+      }
+    }
     return res.json({ ok: true, message: NEXT_STEP_MESSAGES[choice] });
   } catch (error) {
     (req as any).log?.error({ err: error }, '[web-inquiries] Napaka pri naslednjem koraku');

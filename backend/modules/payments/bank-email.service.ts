@@ -2,9 +2,11 @@ import { getConfig } from '../settings/config/config-store.service';
 import { getRuleMode } from '../scheduler/wheel-config';
 import { ensureRuleTask } from '../scheduler/rules';
 import { ProjectModel } from '../projects/schemas/project';
+import { OfferVersionModel } from '../projects/schemas/offer-version';
 import type { EmailMessageDocument } from '../email/email-message.model';
 import { InvoicePaymentModel, type InvoicePaymentDocument } from './invoice-payment.model';
-import { confirmedPaymentsByInvoiceNumber } from './payments.service';
+import { referenceMatchesOfferNumber } from './advance-payment.service';
+import { confirmedPaymentsByInvoiceNumber, createAdvanceReceivedTask } from './payments.service';
 
 // Bančno obvestilo o prilivu (posredovano na prodaja@) → zapis plačila in
 // ujemanje z odprtim računom. Vklop prek pravila kolesa `payment.bank_email`
@@ -173,6 +175,43 @@ export function matchOpenInvoice(
   return null;
 }
 
+/** Avans: sklic ali besedilo kaže na številko ponudbe (PONUDBA-…). */
+export async function matchOfferAdvance(
+  parsed: ParsedBankPayment,
+  besedilo: string,
+): Promise<{ offerId: string; offerNumber: string; projectId: string } | null> {
+  const vBesedilu = besedilo.match(/\bPONUDBA-\d{4}-\d+\b/i)?.[0]?.toUpperCase() ?? null;
+  const kandidati: string[] = [];
+  if (vBesedilu) kandidati.push(vBesedilu);
+
+  if (!kandidati.length && parsed.reference) {
+    const groups = (parsed.reference.replace(/^\s*SI\d{2}\s*/i, '').match(/\d+/g) ?? []);
+    if (groups.length >= 2) {
+      const offers = await OfferVersionModel.find({
+        documentNumber: { $regex: `(^|\\D)${groups.map((g) => Number(g)).join('\\D+')}$` },
+      })
+        .select({ _id: 1, documentNumber: 1, projectId: 1 })
+        .limit(5)
+        .lean();
+      const potrjeni = offers.filter(
+        (offer) => offer.documentNumber && referenceMatchesOfferNumber(parsed.reference as string, offer.documentNumber),
+      );
+      if (potrjeni.length === 1) {
+        return { offerId: String(potrjeni[0]._id), offerNumber: String(potrjeni[0].documentNumber), projectId: potrjeni[0].projectId };
+      }
+      return null;
+    }
+  }
+
+  if (kandidati.length) {
+    const offer = await OfferVersionModel.findOne({ documentNumber: kandidati[0] })
+      .select({ _id: 1, documentNumber: 1, projectId: 1 })
+      .lean();
+    if (offer) return { offerId: String(offer._id), offerNumber: String(offer.documentNumber), projectId: offer.projectId };
+  }
+  return null;
+}
+
 /**
  * Obdela bančni mail: zapiše plačilo, ga poskusi ujeti z računom in ustvari
  * opravilo za FINANCE, kjer je potrebna potrditev. Vrne null, če mail ni
@@ -193,21 +232,27 @@ export async function tryRegisterBankPayment(email: EmailMessageDocument): Promi
   const besedilo = `${email.subject ?? ''}\n${email.text ?? ''}`;
   const open = await listOpenInvoices();
   const match = parsed.amount !== null ? matchOpenInvoice(parsed, besedilo, open) : null;
+  // Če priliv ne kaže na račun, morda kaže na ponudbo (avans po UPN sklicu).
+  const advance = !match && parsed.amount !== null ? await matchOfferAdvance(parsed, besedilo) : null;
 
-  const autoConfirm = mode === 'auto' && match?.strong === true;
+  const strong = match?.strong === true || !!advance;
+  const autoConfirm = mode === 'auto' && strong;
   let payment: InvoicePaymentDocument;
   try {
     payment = await InvoicePaymentModel.create({
-      projectId: match?.invoice.projectId ?? null,
+      kind: advance ? 'advance' : 'invoice',
+      projectId: match?.invoice.projectId ?? advance?.projectId ?? null,
       invoiceVersionId: match?.invoice.invoiceVersionId ?? null,
       invoiceNumber: match?.invoice.invoiceNumber ?? null,
+      offerId: advance?.offerId ?? null,
+      offerNumber: advance?.offerNumber ?? null,
       amount: parsed.amount ?? 0.01, // brez zneska ne moremo šteti — ostane unmatched, človek popravi
       receivedAt: email.date ?? new Date(),
       payerName: parsed.payerName,
       reference: parsed.reference,
       source: 'bank_email',
       emailMessageId: String(email._id),
-      status: autoConfirm ? 'confirmed' : match ? 'suggested' : 'unmatched',
+      status: autoConfirm ? 'confirmed' : match || advance ? 'suggested' : 'unmatched',
       confirmedAt: autoConfirm ? new Date() : null,
       note: parsed.amount === null ? 'Zneska ni bilo mogoče prebrati iz obvestila — preveri in popravi.' : null,
     });
@@ -219,6 +264,10 @@ export async function tryRegisterBankPayment(email: EmailMessageDocument): Promi
   }
 
   const znesek = parsed.amount !== null ? `${parsed.amount.toFixed(2)} €` : 'neznan znesek';
+  if (autoConfirm && advance) {
+    // Potrjen avans: prodaja mora potrditi projekt.
+    await createAdvanceReceivedTask(payment);
+  }
   if (!autoConfirm) {
     await ensureRuleTask({
       ruleKey: 'payment.bank_email',
@@ -226,16 +275,22 @@ export async function tryRegisterBankPayment(email: EmailMessageDocument): Promi
       type: 'payment.review',
       title: match
         ? `Potrdi plačilo ${znesek} za račun ${match.invoice.invoiceNumber}`
-        : `Preveri priliv ${znesek} — račun ni najden`,
+        : advance
+          ? `Potrdi avans ${znesek} za ${advance.offerNumber}`
+          : `Preveri priliv ${znesek} — račun ni najden`,
       description: [
         `Plačnik: ${parsed.payerName ?? 'neznan'}`,
         `Sklic: ${parsed.reference ?? '—'}`,
         `Zadeva: ${email.subject || '(brez zadeve)'}`,
-        match ? `Predlagan račun: ${match.invoice.invoiceNumber} (odprto ${match.invoice.outstanding.toFixed(2)} €)` : 'Ujemi ročno v Finance → Računi.',
+        match
+          ? `Predlagan račun: ${match.invoice.invoiceNumber} (odprto ${match.invoice.outstanding.toFixed(2)} €)`
+          : advance
+            ? `Predlagana ponudba: ${advance.offerNumber} (projekt ${advance.projectId})`
+            : 'Ujemi ročno v Finance → Računi.',
       ].join('\n'),
       subject: { kind: 'none', label: `Priliv ${znesek}` },
       assigneeRole: 'FINANCE',
-      priority: match ? 'normal' : 'high',
+      priority: match || advance ? 'normal' : 'high',
       dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
   }

@@ -41,6 +41,16 @@ export function registerCoreConfigNamespaces(): void {
     }),
   });
 
+  // Avans po ponudbi (UPN nakazilo s sklicem na rezultatu konfiguratorja).
+  registerConfigNamespace({
+    namespace: 'finance.advance',
+    description: 'Avans po spletni ponudbi: odstotek in vklop UPN navodil.',
+    schema: v.object({
+      enabled: v.boolean().default(true),
+      percent: v.number({ min: 1, max: 100 }).default(30),
+    }),
+  });
+
   // Popustni pasovi (prag pregleda / količinski popusti) — semenski prostor.
   registerConfigNamespace({
     namespace: 'sales.discounts',

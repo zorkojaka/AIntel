@@ -1,4 +1,5 @@
 import { ProjectModel } from '../projects/schemas/project';
+import { ensureRuleTask } from '../scheduler/rules';
 import { InvoicePaymentModel, type InvoicePaymentDocument } from './invoice-payment.model';
 
 // Toleranca pri primerjavi zneskov (zaokrožitve, bančne provizije ipd.).
@@ -115,6 +116,25 @@ export async function recordManualPayment(input: {
   });
 }
 
+/** Po potrjenem avansu mora prodaja potrditi projekt — poslovni naslednji korak. */
+export async function createAdvanceReceivedTask(payment: InvoicePaymentDocument) {
+  await ensureRuleTask({
+    ruleKey: 'payment.bank_email',
+    dedupeKey: `payment.advance_received:${payment._id}`,
+    type: 'payment.advance_received',
+    title: `Avans prejet (${payment.amount.toFixed(2)} €) za ${payment.offerNumber} — potrdi projekt`,
+    description: [
+      `Plačnik: ${payment.payerName ?? 'neznan'}`,
+      `Sklic: ${payment.reference ?? '—'}`,
+      payment.projectId ? `Projekt: ${payment.projectId}` : null,
+    ].filter(Boolean).join('\n'),
+    subject: { kind: 'none', label: `Avans ${payment.offerNumber}` },
+    assigneeRole: 'SALES',
+    priority: 'high',
+    dueAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
+  });
+}
+
 /** Potrdi plačilo (iz bančnega maila): po potrebi popravi račun, nato šteje v plačano. */
 export async function confirmPayment(
   paymentId: string,
@@ -127,6 +147,17 @@ export async function confirmPayment(
   if (payment.status === 'confirmed') {
     return payment;
   }
+
+  // Avans ni vezan na račun — potrdi se neposredno, prodaja pa dobi opravilo.
+  if (payment.kind === 'advance') {
+    payment.status = 'confirmed';
+    payment.confirmedByUserId = input.actorUserId ?? null;
+    payment.confirmedAt = new Date();
+    await payment.save();
+    await createAdvanceReceivedTask(payment);
+    return payment;
+  }
+
   const requestedNumber = typeof input.invoiceNumber === 'string' && input.invoiceNumber.trim()
     ? input.invoiceNumber.trim()
     : payment.invoiceNumber ?? '';

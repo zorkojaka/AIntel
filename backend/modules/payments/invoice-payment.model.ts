@@ -13,9 +13,13 @@ export type InvoicePaymentSource = 'manual' | 'bank_email';
 export type InvoicePaymentStatus = 'unmatched' | 'suggested' | 'confirmed';
 
 export interface InvoicePaymentDocument extends Document {
+  /** invoice = plačilo izdanega računa; advance = avans po ponudbi. */
+  kind: 'invoice' | 'advance';
   projectId?: string | null;
   invoiceVersionId?: string | null;
   invoiceNumber?: string | null;
+  offerId?: string | null;
+  offerNumber?: string | null;
   amount: number;
   currency: string;
   receivedAt: Date;
@@ -36,9 +40,12 @@ export interface InvoicePaymentDocument extends Document {
 
 const InvoicePaymentSchema = new Schema<InvoicePaymentDocument>(
   {
+    kind: { type: String, required: true, enum: ['invoice', 'advance'], default: 'invoice' },
     projectId: { type: String, default: null, index: true },
     invoiceVersionId: { type: String, default: null },
     invoiceNumber: { type: String, default: null, index: true },
+    offerId: { type: String, default: null },
+    offerNumber: { type: String, default: null, index: true },
     amount: { type: Number, required: true, min: 0.01 },
     currency: { type: String, required: true, default: 'EUR' },
     receivedAt: { type: Date, required: true },
