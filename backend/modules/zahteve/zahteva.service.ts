@@ -699,9 +699,8 @@ export async function nadaljujNaPonudbo(zahtevaId: string, tenantId = 'inteligen
   zahteva.generatedQuoteId = ponudba._id;
   await zahteva.save();
 
-  // Ponudba obstaja → projekt preide iz 'draft' v 'offered', enako kot pot prek
-  // zavihka Ponudbe (offer-version.controller); sicer faza projekta obstane.
-  await ProjectModel.updateOne({ id: projectKey, status: 'draft' }, { $set: { status: 'offered' } });
+  // Projekt ostane v fazi Zahteve — v Ponudbe ga premakne sele POSLANA ponudba
+  // (sendOfferCommunicationEmail nastavi status 'offered' + offerSentAt).
 
   return ponudba;
 }

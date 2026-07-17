@@ -919,7 +919,7 @@ export async function sendOfferCommunicationEmail(input: {
     sentByUserId: input.actorUserId ?? null,
   };
 
-  return sendAndRecordCommunicationEmail({
+  const payload = await sendAndRecordCommunicationEmail({
     senderSettings,
     effectiveSender,
     recipients: resolvedRecipients,
@@ -952,6 +952,17 @@ export async function sendOfferCommunicationEmail(input: {
       },
     },
   });
+
+  // POSLANA ponudba premakne projekt iz faze Zahteve v Ponudbe in nosi datum
+  // za kartico na kanbanu; napaka pri belezenju ne sme razveljaviti posiljanja.
+  try {
+    await ProjectModel.updateOne({ id: input.projectId }, { $set: { offerSentAt: new Date() } });
+    await ProjectModel.updateOne({ id: input.projectId, status: "draft" }, { $set: { status: "offered" } });
+  } catch (error) {
+    logger.error({ err: error, projectId: input.projectId }, "Oznake poslane ponudbe ni bilo mogoce zapisati");
+  }
+
+  return payload;
 }
 
 export async function sendWorkOrderConfirmationCommunicationEmail(input: {

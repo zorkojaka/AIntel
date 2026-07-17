@@ -120,6 +120,11 @@ export function ProjectKanban({ projects, categoryLookup, onSelectProject, onPro
                         <span className="text-xs text-muted-foreground">{formatDate(project.createdAt)}</span>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">{project.customer}</p>
+                      {project.offerSentAt ? (
+                        <p className="mt-0.5 text-xs font-medium" style={{ color: "#185FA5" }}>
+                          Ponudba poslana: {formatDate(project.offerSentAt)}
+                        </p>
+                      ) : null}
                       <div className="mt-2 flex flex-wrap gap-1">
                         {project.categories.map((categorySlug) => {
                           const label = categoryLookup.get(categorySlug);

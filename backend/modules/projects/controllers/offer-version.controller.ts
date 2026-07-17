@@ -1260,10 +1260,8 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
     }
 
     const created = await OfferVersionModel.create(payload);
-    await ProjectModel.updateOne(
-      { id: projectId, status: 'draft' },
-      { $set: { status: 'offered' } },
-    );
+    // Ustvarjena ponudba projekta NE premakne v fazo Ponudbe — tja gre sele
+    // ob poslani ponudbi (sendOfferCommunicationEmail).
     const plain = created.toObject();
     return res.success(serializeOffer(plain as OfferVersion));
   } catch (err) {
