@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 import type { DashboardWidgetDefinition } from '../types';
 
-// Moja razpoložljivost: monter na koledarju poklika dneve, ko je na voljo za
-// montaže. Klik na prazen dan ga označi s privzetim delavnikom; klik na
-// označen dan odpre ure, kjer lahko doda/odvzame posamezno uro ali dan počisti.
-// Iz teh dni sistem stranki ponudi izbiro termina montaže.
+// Moja razpoložljivost: mesečni koledar (pon–ned) s premikanjem po mesecih.
+// Klik na prazen prihodnji dan ga označi s privzetim delavnikom; klik na
+// označen dan odpre ure; križec na dnevu razpoložljivost odstrani.
+// Poleg razpoložljivosti so prikazani tudi razpisani termini montaž
+// (prihodnji oranžno, opravljeni/pretekli sivo s kljukico).
 
 interface ScheduleSettings {
   mode: 'self' | 'fixed';
@@ -19,56 +20,85 @@ interface AvailabilityDay {
   source: 'manual' | 'fixed' | 'none';
 }
 
-const DAYS_SHOWN = 28;
+interface EmployeeTermin {
+  date: string;
+  startHour: number;
+  hours: number;
+  title: string;
+  projectId: string;
+  done: boolean;
+}
+
 const HOUR_CHOICES = Array.from({ length: 15 }, (_, index) => 6 + index); // 6–20
+const WEEKDAYS = ['pon', 'tor', 'sre', 'čet', 'pet', 'sob', 'ned'];
 
 function dateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-function weekdayShort(dateStr: string) {
-  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('sl-SI', { weekday: 'short' });
-}
-
 function MyAvailability() {
   const [schedule, setSchedule] = useState<ScheduleSettings | null>(null);
   const [days, setDays] = useState<AvailabilityDay[]>([]);
+  const [termini, setTermini] = useState<EmployeeTermin[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingDate, setEditingDate] = useState<string | null>(null);
   const [savingDate, setSavingDate] = useState<string | null>(null);
   const [draftStart, setDraftStart] = useState<number>(8);
   const [draftEnd, setDraftEnd] = useState<number>(16);
+  // Prikazani mesec: 0 = tekoči, -1 = prejšnji, 1 = naslednji ...
+  const [monthShift, setMonthShift] = useState(0);
 
-  const fromKey = useMemo(() => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return dateKey(tomorrow);
-  }, []);
+  const todayKey = useMemo(() => dateKey(new Date()), []);
+  const monthStart = useMemo(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() + monthShift, 1);
+  }, [monthShift]);
+  const daysInMonth = useMemo(
+    () => new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate(),
+    [monthStart],
+  );
+  const monthLabel = useMemo(() => {
+    const label = monthStart.toLocaleDateString('sl-SI', { month: 'long', year: 'numeric' });
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }, [monthStart]);
+  // Pon–ned: koliko praznih celic pred 1. dnem meseca (getDay: 0=ned).
+  const leadingBlanks = useMemo(() => (monthStart.getDay() + 6) % 7, [monthStart]);
 
   const reload = useCallback(async () => {
     try {
+      const fromKey = dateKey(monthStart);
       const [scheduleRes, calendarRes] = await Promise.all([
         fetch('/api/availability/my/schedule', { credentials: 'include' }),
-        fetch(`/api/availability/my/calendar?from=${fromKey}&days=${DAYS_SHOWN}`, { credentials: 'include' }),
+        fetch(`/api/availability/my/calendar?from=${fromKey}&days=${daysInMonth}`, { credentials: 'include' }),
       ]);
       const schedulePayload = await parseApiEnvelope<{ schedule: ScheduleSettings }>(scheduleRes, 'Urnika ni bilo mogoče naložiti.');
-      const calendarPayload = await parseApiEnvelope<{ days: AvailabilityDay[] }>(calendarRes, 'Koledarja ni bilo mogoče naložiti.');
+      const calendarPayload = await parseApiEnvelope<{ days: AvailabilityDay[]; termini?: EmployeeTermin[] }>(
+        calendarRes,
+        'Koledarja ni bilo mogoče naložiti.',
+      );
       setSchedule(schedulePayload.schedule);
       setDraftStart(schedulePayload.schedule.dayStartHour);
       setDraftEnd(schedulePayload.schedule.dayEndHour);
       setDays(calendarPayload.days);
+      setTermini(calendarPayload.termini ?? []);
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Napaka pri nalaganju.');
     } finally {
       setLoading(false);
     }
-  }, [fromKey]);
+  }, [daysInMonth, monthStart]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  const terminiByDate = useMemo(() => {
+    const map = new Map<string, EmployeeTermin[]>();
+    termini.forEach((termin) => map.set(termin.date, [...(map.get(termin.date) ?? []), termin]));
+    return map;
+  }, [termini]);
 
   const saveDay = async (date: string, hours: number[]) => {
     setSavingDate(date);
@@ -98,6 +128,7 @@ function MyAvailability() {
 
   const handleDayClick = (day: AvailabilityDay) => {
     if (savingDate) return;
+    if (day.date <= todayKey) return; // pretekli dnevi in danes se ne urejajo
     if (day.hours.length === 0) {
       void saveDay(day.date, defaultHours);
       setEditingDate(day.date);
@@ -156,12 +187,42 @@ function MyAvailability() {
         </div>
       )}
 
+      <div className="razpolozljivost__mesec">
+        <button type="button" className="razpolozljivost__mesec-gumb" aria-label="Prejšnji mesec" onClick={() => setMonthShift((value) => value - 1)}>
+          ‹
+        </button>
+        <strong className="razpolozljivost__mesec-naziv">{monthLabel}</strong>
+        <button type="button" className="razpolozljivost__mesec-gumb" aria-label="Naslednji mesec" onClick={() => setMonthShift((value) => value + 1)}>
+          ›
+        </button>
+        {monthShift !== 0 && (
+          <button type="button" className="razpolozljivost__mesec-danes" onClick={() => setMonthShift(0)}>
+            Danes
+          </button>
+        )}
+      </div>
+
       <div className="razpolozljivost__mreza">
+        {WEEKDAYS.map((weekday) => (
+          <span key={weekday} className="razpolozljivost__mreza-glava">{weekday}</span>
+        ))}
+        {Array.from({ length: leadingBlanks }, (_, index) => (
+          <span key={`prazno-${index}`} className="razpolozljivost__dan--prazen" />
+        ))}
         {days.map((day) => {
           const active = day.hours.length > 0;
-          const label = new Date(`${day.date}T00:00:00`).getDate();
+          const past = day.date <= todayKey;
+          const label = Number(day.date.slice(8, 10));
           const firstHour = day.hours[0] ?? 0;
           const lastHour = (day.hours[day.hours.length - 1] ?? 0) + 1;
+          const dayTermini = terminiByDate.get(day.date) ?? [];
+          const tooltip = [
+            active ? `Na voljo ${firstHour}:00–${lastHour}:00` : null,
+            ...dayTermini.map(
+              (termin) =>
+                `${termin.done || past ? 'Opravljeno' : 'Termin'}: ${termin.title} (${termin.startHour}:00–${termin.startHour + termin.hours}:00)`,
+            ),
+          ].filter(Boolean).join('\n');
           return (
             <button
               key={day.date}
@@ -171,12 +232,13 @@ function MyAvailability() {
                 active ? 'je-aktiven' : '',
                 day.source === 'fixed' ? 'je-fiksen' : '',
                 editingDate === day.date ? 'je-izbran' : '',
+                past ? 'je-pretekli' : '',
               ].filter(Boolean).join(' ')}
-              title={active ? `${day.date}: ${firstHour}:00–${lastHour}:00` : day.date}
+              title={tooltip || day.date}
               disabled={savingDate === day.date}
               onClick={() => handleDayClick(day)}
             >
-              {active && (
+              {active && !past && (
                 <span
                   className="razpolozljivost__dan-x"
                   role="button"
@@ -192,13 +254,20 @@ function MyAvailability() {
                   ×
                 </span>
               )}
-              <span className="razpolozljivost__dan-teden">{weekdayShort(day.date)}</span>
               <span className="razpolozljivost__dan-st">{label}</span>
               {active && (
                 <span className="razpolozljivost__dan-ure">
                   {firstHour}–{lastHour}h
                 </span>
               )}
+              {dayTermini.map((termin, index) => (
+                <span
+                  key={`${day.date}-termin-${index}`}
+                  className={`razpolozljivost__dan-termin${termin.done || past ? ' je-opravljen' : ''}`}
+                >
+                  {termin.done || past ? '✓' : '🔧'} {termin.startHour}–{termin.startHour + termin.hours}h
+                </span>
+              ))}
             </button>
           );
         })}

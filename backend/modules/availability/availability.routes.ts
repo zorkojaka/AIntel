@@ -6,6 +6,7 @@ import {
   AvailabilityError,
   getAvailabilityCalendar,
   getEmployeeSchedule,
+  getEmployeeTermini,
   setAvailabilityDay,
   updateEmployeeSchedule,
 } from './availability.service';
@@ -69,7 +70,11 @@ router.get('/my/calendar', async (req: Request, res: Response) => {
   try {
     const from = typeof req.query.from === 'string' ? req.query.from : new Date().toISOString().slice(0, 10);
     const days = req.query.days ? Number(req.query.days) : 35;
-    return res.success({ days: await getAvailabilityCalendar(employeeId, from, days) });
+    const [calendarDays, termini] = await Promise.all([
+      getAvailabilityCalendar(employeeId, from, days),
+      getEmployeeTermini(employeeId, from, days),
+    ]);
+    return res.success({ days: calendarDays, termini });
   } catch (error) {
     return fail(res, error, 'Koledarja ni bilo mogoče naložiti.');
   }
@@ -120,7 +125,11 @@ router.get('/employees/:employeeId/calendar', planningRead, async (req: Request,
   try {
     const from = typeof req.query.from === 'string' ? req.query.from : new Date().toISOString().slice(0, 10);
     const days = req.query.days ? Number(req.query.days) : 35;
-    return res.success({ days: await getAvailabilityCalendar(req.params.employeeId, from, days) });
+    const [calendarDays, termini] = await Promise.all([
+      getAvailabilityCalendar(req.params.employeeId, from, days),
+      getEmployeeTermini(req.params.employeeId, from, days),
+    ]);
+    return res.success({ days: calendarDays, termini });
   } catch (error) {
     return fail(res, error, 'Koledarja ni bilo mogoče naložiti.');
   }

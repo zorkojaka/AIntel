@@ -18,6 +18,7 @@ import {
   todayKey,
   updateEmployeeSchedule,
 } from '../modules/availability/availability.service';
+import { getEmployeeTermini } from '../modules/availability/availability.service';
 import { chooseBookingDay, getBookingByToken } from '../modules/availability/booking.service';
 import { registerCoreConfigNamespaces } from '../modules/settings/config/config-namespaces';
 
@@ -181,6 +182,41 @@ test('rezervacija: stranka izbere dan, termin se zapiše in potrdi, povezava pos
 
   const project = await ProjectModel.findOne({ id: 'PRJ-401' }).lean();
   assert.ok((project as any)?.timeline?.some((entry: any) => entry.title === 'Stranka izbrala termin montaže'));
+});
+
+test('koledar monterja pokaže razpisane termine z oznako opravljenosti', async () => {
+  const miha = await monter('Miha');
+  const opravljen = addDays(todayKey(), -3);
+  await WorkOrderModel.create({
+    projectId: 'PRJ-410',
+    title: 'Montaža alarma',
+    offerVersionId: new mongoose.Types.ObjectId().toString(),
+    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 2 }],
+    status: 'completed',
+    completedAt: new Date(),
+    scheduledAt: `${opravljen}T08:00:00`,
+    assignedEmployeeIds: [miha._id],
+  });
+  await WorkOrderModel.create({
+    projectId: 'PRJ-411',
+    title: 'Montaža kamer',
+    offerVersionId: new mongoose.Types.ObjectId().toString(),
+    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 3 }],
+    status: 'issued',
+    scheduledAt: `${D1}T10:00:00`,
+    assignedEmployeeIds: [miha._id],
+  });
+
+  const termini = await getEmployeeTermini(String(miha._id), addDays(todayKey(), -5), 20);
+  assert.equal(termini.length, 2);
+  assert.deepEqual(
+    termini.map((t) => ({ date: t.date, startHour: t.startHour, hours: t.hours, done: t.done })),
+    [
+      { date: opravljen, startHour: 8, hours: 2, done: true },
+      { date: D1, startHour: 10, hours: 3, done: false },
+    ],
+  );
+  assert.equal(termini[1].title, 'Montaža kamer');
 });
 
 test('rezervacija: dan, ki ni več prost, vrne 409', async () => {

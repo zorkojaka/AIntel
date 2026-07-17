@@ -1116,7 +1116,14 @@
 .razpolozljivost { display: flex; flex-direction: column; gap: 12px; }
 .razpolozljivost__privzeto { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .razpolozljivost__privzeto select { padding: 4px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--surface, #fff); }
+.razpolozljivost__mesec { display: flex; align-items: center; gap: 10px; }
+.razpolozljivost__mesec-naziv { min-width: 130px; text-align: center; }
+.razpolozljivost__mesec-gumb { width: 28px; height: 28px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--surface, #fff); cursor: pointer; font: inherit; font-size: 16px; line-height: 1; }
+.razpolozljivost__mesec-gumb:hover { border-color: #94a3b8; }
+.razpolozljivost__mesec-danes { padding: 4px 10px; border: 1px solid var(--border, #e2e8f0); border-radius: 999px; background: var(--surface, #fff); cursor: pointer; font: inherit; font-size: 12px; color: #0a6db3; }
 .razpolozljivost__mreza { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.razpolozljivost__mreza-glava { font-size: 10px; text-transform: uppercase; color: #64748b; text-align: center; }
+.razpolozljivost__dan--prazen { min-height: 1px; }
 .razpolozljivost__dan { position: relative; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 2px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--surface, #fff); cursor: pointer; font: inherit; }
 .razpolozljivost__dan-x { position: absolute; top: 1px; right: 3px; font-size: 13px; line-height: 1; color: #94a3b8; padding: 2px; cursor: pointer; }
 .razpolozljivost__dan-x:hover { color: #b91c1c; }
@@ -1125,9 +1132,11 @@
 .razpolozljivost__dan.je-fiksen { background: #eef4fc; border-color: #0a6db3; }
 .razpolozljivost__dan.je-izbran { outline: 2px solid #0a6db3; }
 .razpolozljivost__dan:disabled { opacity: 0.5; cursor: wait; }
-.razpolozljivost__dan-teden { font-size: 10px; text-transform: uppercase; color: #64748b; }
 .razpolozljivost__dan-st { font-weight: 700; }
 .razpolozljivost__dan-ure { font-size: 10px; color: #1a7f4f; font-weight: 600; }
+.razpolozljivost__dan.je-pretekli { opacity: 0.55; cursor: default; }
+.razpolozljivost__dan-termin { font-size: 9px; font-weight: 600; color: #b45309; background: #fef3c7; border-radius: 4px; padding: 0 3px; white-space: nowrap; }
+.razpolozljivost__dan-termin.je-opravljen { color: #475569; background: #e2e8f0; }
 .razpolozljivost__ure { border-top: 1px solid var(--border, #e2e8f0); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
 .razpolozljivost__ure-mreza { display: flex; flex-wrap: wrap; gap: 6px; }
 .razpolozljivost__ura { padding: 5px 10px; border: 1px solid var(--border, #e2e8f0); border-radius: 999px; background: var(--surface, #fff); cursor: pointer; font: inherit; font-size: 13px; }

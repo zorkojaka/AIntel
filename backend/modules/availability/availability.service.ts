@@ -190,6 +190,51 @@ export async function setAvailabilityDay(employeeId: string, date: string, hours
   return { date: dateKey, hours: clean, source: 'manual' };
 }
 
+/* ---------- termini (razpisani delovni nalogi) na koledarju monterja ---------- */
+
+export interface EmployeeTermin {
+  date: string;
+  startHour: number;
+  hours: number;
+  title: string;
+  projectId: string;
+  /** Nalog zaključen (status completed / completedAt). */
+  done: boolean;
+}
+
+/** Razpisani nalogi monterja po dnevih — da koledar pokaže tudi zasedene/opravljene termine. */
+export async function getEmployeeTermini(employeeId: string, from: string, days: number): Promise<EmployeeTermin[]> {
+  if (!mongoose.isValidObjectId(employeeId)) return [];
+  const fromKey = assertDateKey(from);
+  const span = Math.min(MAX_RANGE_DAYS, Math.max(1, Math.floor(days)));
+  const toKey = addDays(fromKey, span - 1);
+  const workOrders = await WorkOrderModel.find({
+    assignedEmployeeIds: new mongoose.Types.ObjectId(employeeId),
+    status: { $ne: 'cancelled' },
+    cancelledAt: null,
+    scheduledAt: { $ne: null, $gte: fromKey, $lte: `${toKey}T23:59:59.999Z` },
+  })
+    .select({ scheduledAt: 1, items: 1, title: 1, projectId: 1, status: 1, completedAt: 1 })
+    .lean();
+
+  const out: EmployeeTermin[] = [];
+  for (const workOrder of workOrders as any[]) {
+    const scheduled = new Date(workOrder.scheduledAt);
+    if (Number.isNaN(scheduled.valueOf())) continue;
+    const dateKey = `${scheduled.getFullYear()}-${String(scheduled.getMonth() + 1).padStart(2, '0')}-${String(scheduled.getDate()).padStart(2, '0')}`;
+    out.push({
+      date: dateKey,
+      startHour: scheduled.getHours(),
+      hours: estimateWorkOrderHours(workOrder.items),
+      title: workOrder.title || workOrder.projectId || 'Montaža',
+      projectId: String(workOrder.projectId ?? ''),
+      done: workOrder.status === 'completed' || !!workOrder.completedAt,
+    });
+  }
+  out.sort((a, b) => (a.date === b.date ? a.startHour - b.startHour : a.date.localeCompare(b.date)));
+  return out;
+}
+
 /* ---------- prosti termini za delovni nalog ---------- */
 
 /** Groba ocena trajanja izvedbe iz časovnih norm postavk naloga (ure, najmanj 1). */
