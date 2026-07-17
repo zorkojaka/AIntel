@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 import type { DashboardWidgetDefinition } from '../types';
 
@@ -76,10 +76,20 @@ function MyAvailability() {
     const label = monthStart.toLocaleDateString('sl-SI', { month: 'long', year: 'numeric' });
     return label.charAt(0).toUpperCase() + label.slice(1);
   }, [monthStart]);
-  // Pon–ned: koliko praznih celic pred 1. dnem meseca (getDay: 0=ned).
-  const leadingBlanks = useMemo(() => (monthStart.getDay() + 6) % 7, [monthStart]);
+  // Pon–ned: prazne celice pred prvim PRIKAZANIM dnem računamo iz podatkov
+  // (days), ne iz izbranega meseca — med menjavo mesecev sta sicer za hip
+  // neusklajena in koledar izriše smetne vrstice.
+  const leadingBlanks = useMemo(() => {
+    if (!days.length) return 0;
+    return (new Date(`${days[0].date}T00:00:00`).getDay() + 6) % 7;
+  }, [days]);
+
+  // Ob hitrem preklapljanju mesecev lahko starejši odgovor prehiti novejšega —
+  // upošteva se samo zadnja sprožena zahteva.
+  const reloadSeq = useRef(0);
 
   const reload = useCallback(async () => {
+    const seq = ++reloadSeq.current;
     try {
       const fromKey = dateKey(monthStart);
       const [scheduleRes, calendarRes] = await Promise.all([
@@ -91,6 +101,7 @@ function MyAvailability() {
         calendarRes,
         'Koledarja ni bilo mogoče naložiti.',
       );
+      if (seq !== reloadSeq.current) return; // medtem je bila sprožena novejša zahteva
       setSchedule(schedulePayload.schedule);
       setDraftStart(schedulePayload.schedule.dayStartHour);
       setDraftEnd(schedulePayload.schedule.dayEndHour);
@@ -99,6 +110,7 @@ function MyAvailability() {
       setWeekLimits(calendarPayload.weekLimits ?? []);
       setError(null);
     } catch (loadError) {
+      if (seq !== reloadSeq.current) return;
       setError(loadError instanceof Error ? loadError.message : 'Napaka pri nalaganju.');
     } finally {
       setLoading(false);
