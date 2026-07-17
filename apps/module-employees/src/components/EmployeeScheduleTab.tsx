@@ -10,6 +10,7 @@ interface ScheduleSettings {
   dayStartHour: number;
   dayEndHour: number;
   fixedWeeklyHours?: Record<string, number[]>;
+  maxWorkdaysPerWeek?: number | null;
 }
 
 const HOUR_CHOICES = Array.from({ length: 15 }, (_, index) => 6 + index); // 6–20
@@ -72,6 +73,7 @@ export function EmployeeScheduleTab({ employeeId }: { employeeId: string }) {
           dayStartHour: schedule.dayStartHour,
           dayEndHour: schedule.dayEndHour,
           fixedWeeklyHours: schedule.fixedWeeklyHours ?? {},
+          maxWorkdaysPerWeek: schedule.maxWorkdaysPerWeek ?? null,
         }),
       });
       const payload = await response.json();
@@ -114,6 +116,18 @@ export function EmployeeScheduleTab({ employeeId }: { employeeId: string }) {
           onChange={(event) => setSchedule({ ...schedule, dayEndHour: Number(event.target.value) })}
         >
           {HOUR_CHOICES.map((hour) => <option key={hour + 1} value={hour + 1}>{hour + 1}:00</option>)}
+        </select>
+        <label className="ml-4 text-sm font-medium text-slate-700">Največ delovnih dni/teden:</label>
+        <select
+          className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+          value={schedule.maxWorkdaysPerWeek ?? ''}
+          title="Ko je v tednu zasedenih toliko dni, se preostali označeni prosti dnevi tistega tedna strankam ne ponujajo več. Izjeme po tednih monter nastavi na svojem koledarju."
+          onChange={(event) =>
+            setSchedule({ ...schedule, maxWorkdaysPerWeek: event.target.value === '' ? null : Number(event.target.value) })
+          }
+        >
+          <option value="">brez omejitve</option>
+          {[1, 2, 3, 4, 5, 6, 7].map((limit) => <option key={limit} value={limit}>{limit}</option>)}
         </select>
       </div>
 

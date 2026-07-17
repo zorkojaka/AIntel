@@ -18,7 +18,8 @@ import {
   todayKey,
   updateEmployeeSchedule,
 } from '../modules/availability/availability.service';
-import { getEmployeeTermini } from '../modules/availability/availability.service';
+import { getEmployeeTermini, getWeekLimits, mondayOf, setWeekLimit } from '../modules/availability/availability.service';
+import { EmployeeWeekLimitModel } from '../modules/availability/availability.model';
 import { chooseBookingDay, getBookingByToken } from '../modules/availability/booking.service';
 import { registerCoreConfigNamespaces } from '../modules/settings/config/config-namespaces';
 
@@ -39,6 +40,7 @@ test.beforeEach(async () => {
   await Promise.all([
     EmployeeModel.deleteMany({}),
     EmployeeAvailabilityDayModel.deleteMany({}),
+    EmployeeWeekLimitModel.deleteMany({}),
     WorkOrderModel.deleteMany({}),
     ProjectModel.deleteMany({}),
   ]);
@@ -182,6 +184,71 @@ test('rezervacija: stranka izbere dan, termin se zapiše in potrdi, povezava pos
 
   const project = await ProjectModel.findOne({ id: 'PRJ-401' }).lean();
   assert.ok((project as any)?.timeline?.some((entry: any) => entry.title === 'Stranka izbrala termin montaže'));
+});
+
+// Ponedeljek čez en teden in pol — cel teden pon–sre je zanesljivo v prihodnosti.
+const PON = addDays(mondayOf(todayKey()), 14);
+const TOR = addDays(PON, 1);
+const SRE = addDays(PON, 2);
+
+async function nalog(projectId: string, date: string, employeeId: unknown, casovnaNorma = 2) {
+  return WorkOrderModel.create({
+    projectId,
+    offerVersionId: new mongoose.Types.ObjectId().toString(),
+    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma }],
+    status: 'issued',
+    scheduledAt: `${date}T08:00:00`,
+    assignedEmployeeIds: [employeeId],
+  });
+}
+
+test('tedenska omejitev: ob dosegu se preostali prosti dnevi tedna skrijejo', async () => {
+  const miha = await monter('Miha', { mode: 'self', dayStartHour: 8, dayEndHour: 16, maxWorkdaysPerWeek: 2 });
+  // Točno 2 uri na dan: razpisan nalog (2 uri norm) dan v celoti zasede.
+  for (const day of [PON, TOR, SRE]) await setAvailabilityDay(String(miha._id), day, [8, 9]);
+
+  const prosto = () => findFreeDays({ employeeIds: [String(miha._id)], durationHours: 2, from: PON, days: 7 });
+
+  // 0 zasedenih: vsi trije dnevi na voljo.
+  assert.deepEqual((await prosto()).map((d) => d.date), [PON, TOR, SRE]);
+
+  // 1 zaseden dan (od 2 dovoljenih): preostala dva še na voljo.
+  await nalog('PRJ-420', PON, miha._id);
+  assert.deepEqual((await prosto()).map((d) => d.date), [TOR, SRE]);
+
+  // 2 zasedena dneva: tretji dan se skrije, čeprav je označen kot prost.
+  await nalog('PRJ-421', TOR, miha._id);
+  assert.deepEqual((await prosto()).map((d) => d.date), [], 'omejitev 2/teden je dosežena');
+
+  // Dva naloga ISTI dan štejeta kot en delovni dan — druga dva dneva ostaneta.
+  await WorkOrderModel.deleteMany({ projectId: 'PRJ-421' });
+  await nalog('PRJ-422', PON, miha._id, 1);
+  assert.deepEqual((await prosto()).map((d) => d.date), [TOR, SRE], 'isti dan = en delovni dan');
+});
+
+test('tedenska izjema prepiše privzetek; brez omejitve ni skrivanja', async () => {
+  const miha = await monter('Miha', { mode: 'self', dayStartHour: 8, dayEndHour: 16, maxWorkdaysPerWeek: 1 });
+  for (const day of [PON, TOR, SRE]) await setAvailabilityDay(String(miha._id), day, [8, 9]);
+  await nalog('PRJ-430', PON, miha._id);
+
+  const prosto = () => findFreeDays({ employeeIds: [String(miha._id)], durationHours: 2, from: PON, days: 7 });
+  assert.deepEqual((await prosto()).map((d) => d.date), [], 'privzetek 1/teden že dosežen');
+
+  // Izjema za ta teden: 3 dni → torek in sreda spet na voljo.
+  await setWeekLimit(String(miha._id), PON, 3);
+  assert.deepEqual((await prosto()).map((d) => d.date), [TOR, SRE]);
+
+  const limits = await getWeekLimits(String(miha._id), PON, 7);
+  assert.deepEqual(limits[0], { weekStart: PON, maxWorkdays: 3, hasOverride: true });
+
+  // Brisanje izjeme vrne privzetek.
+  await setWeekLimit(String(miha._id), PON, null);
+  assert.deepEqual((await prosto()).map((d) => d.date), []);
+});
+
+test('setWeekLimit zavrne dan, ki ni ponedeljek', async () => {
+  const miha = await monter('Miha');
+  await assert.rejects(setWeekLimit(String(miha._id), TOR, 2), AvailabilityError);
 });
 
 test('koledar monterja pokaže razpisane termine z oznako opravljenosti', async () => {

@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 import { EmployeeModel, type EmployeeScheduleSettings } from '../employees/schemas/employee';
 import { WorkOrderModel } from '../projects/schemas/work-order';
-import { EmployeeAvailabilityDayModel } from './availability.model';
+import { EmployeeAvailabilityDayModel, EmployeeWeekLimitModel } from './availability.model';
 
 // Razpoložljivost monterjev za termine montaž.
 // Efektivne ure dneva: zapis za dan (izjema/klik) > fiksni tedenski vzorec > nič.
@@ -62,6 +62,12 @@ export function todayKey(): string {
   return addDays(new Date().toISOString().slice(0, 10), 0);
 }
 
+/** Ponedeljek tedna, v katerega spada dan (teden je pon–ned). */
+export function mondayOf(date: string): string {
+  const weekday = (dateKeyToWeekday(date) + 6) % 7; // 0 = ponedeljek
+  return addDays(date, -weekday);
+}
+
 /* ---------- urnik zaposlenega ---------- */
 
 export async function getEmployeeSchedule(employeeId: string): Promise<EmployeeScheduleSettings> {
@@ -72,7 +78,7 @@ export async function getEmployeeSchedule(employeeId: string): Promise<EmployeeS
 
 export async function updateEmployeeSchedule(
   employeeId: string,
-  payload: { mode?: unknown; dayStartHour?: unknown; dayEndHour?: unknown; fixedWeeklyHours?: unknown },
+  payload: { mode?: unknown; dayStartHour?: unknown; dayEndHour?: unknown; fixedWeeklyHours?: unknown; maxWorkdaysPerWeek?: unknown },
   options: { allowModeChange: boolean },
 ): Promise<EmployeeScheduleSettings> {
   const current = await getEmployeeSchedule(employeeId);
@@ -96,6 +102,17 @@ export async function updateEmployeeSchedule(
     const hour = Number(payload.dayEndHour);
     if (!Number.isInteger(hour) || hour < 1 || hour > 24) throw new AvailabilityError('Konec delavnika mora biti ura 1–24.');
     next.dayEndHour = hour;
+  }
+  if (payload.maxWorkdaysPerWeek !== undefined) {
+    if (payload.maxWorkdaysPerWeek === null || payload.maxWorkdaysPerWeek === '') {
+      next.maxWorkdaysPerWeek = null;
+    } else {
+      const limit = Number(payload.maxWorkdaysPerWeek);
+      if (!Number.isInteger(limit) || limit < 0 || limit > 7) {
+        throw new AvailabilityError('Največ delovnih dni na teden mora biti število 0–7 ali prazno (brez omejitve).');
+      }
+      next.maxWorkdaysPerWeek = limit;
+    }
   }
   if (next.dayEndHour <= next.dayStartHour) {
     throw new AvailabilityError('Konec delavnika mora biti za začetkom.');
@@ -188,6 +205,64 @@ export async function setAvailabilityDay(employeeId: string, date: string, hours
     { upsert: true },
   );
   return { date: dateKey, hours: clean, source: 'manual' };
+}
+
+/* ---------- tedenska omejitev delovnih dni ---------- */
+
+export interface WeekLimit {
+  weekStart: string;
+  /** Efektivna omejitev (izjema tedna ali privzetek iz urnika); null = brez. */
+  maxWorkdays: number | null;
+  hasOverride: boolean;
+}
+
+/** Efektivne tedenske omejitve za tedne, ki sekajo obseg koledarja. */
+export async function getWeekLimits(employeeId: string, from: string, days: number): Promise<WeekLimit[]> {
+  const fromKey = assertDateKey(from);
+  const span = Math.min(MAX_RANGE_DAYS, Math.max(1, Math.floor(days)));
+  const firstWeek = mondayOf(fromKey);
+  const lastWeek = mondayOf(addDays(fromKey, span - 1));
+  const schedule = await getEmployeeSchedule(employeeId);
+  const overrides = await EmployeeWeekLimitModel.find({
+    employeeId: new mongoose.Types.ObjectId(employeeId),
+    weekStart: { $gte: firstWeek, $lte: lastWeek },
+  }).lean();
+  const overrideByWeek = new Map<string, number>(overrides.map((doc) => [String(doc.weekStart), Number(doc.maxWorkdays)]));
+
+  const out: WeekLimit[] = [];
+  for (let week = firstWeek; week <= lastWeek; week = addDays(week, 7)) {
+    const override = overrideByWeek.get(week);
+    out.push({
+      weekStart: week,
+      maxWorkdays: override ?? schedule.maxWorkdaysPerWeek ?? null,
+      hasOverride: override !== undefined,
+    });
+  }
+  return out;
+}
+
+/** Nastavi izjemo tedna (null pobriše izjemo → velja privzetek iz urnika). */
+export async function setWeekLimit(employeeId: string, weekStart: string, maxWorkdays: unknown): Promise<WeekLimit> {
+  const weekKey = assertDateKey(weekStart);
+  if (mondayOf(weekKey) !== weekKey) {
+    throw new AvailabilityError('Teden se označi s ponedeljkom (YYYY-MM-DD).');
+  }
+  const id = new mongoose.Types.ObjectId(employeeId);
+  if (maxWorkdays === null || maxWorkdays === '' || maxWorkdays === undefined) {
+    await EmployeeWeekLimitModel.deleteOne({ employeeId: id, weekStart: weekKey });
+    const schedule = await getEmployeeSchedule(employeeId);
+    return { weekStart: weekKey, maxWorkdays: schedule.maxWorkdaysPerWeek ?? null, hasOverride: false };
+  }
+  const limit = Number(maxWorkdays);
+  if (!Number.isInteger(limit) || limit < 0 || limit > 7) {
+    throw new AvailabilityError('Omejitev tedna mora biti število 0–7 ali prazno.');
+  }
+  await EmployeeWeekLimitModel.updateOne(
+    { employeeId: id, weekStart: weekKey },
+    { $set: { maxWorkdays: limit } },
+    { upsert: true },
+  );
+  return { weekStart: weekKey, maxWorkdays: limit, hasOverride: true };
 }
 
 /* ---------- termini (razpisani delovni nalogi) na koledarju monterja ---------- */
@@ -308,17 +383,47 @@ export async function findFreeDays(input: {
   const toKey = addDays(fromKey, span - 1);
 
   const objectIds = employeeIds.map((id) => new mongoose.Types.ObjectId(id));
-  const [calendars, busy] = await Promise.all([
+  // Zasedenost beremo za CELE tedne obsega, da tedenska omejitev delovnih dni
+  // pravilno šteje tudi naloge tik pred/za obsegom.
+  const weekFrom = mondayOf(fromKey);
+  const weekTo = addDays(mondayOf(toKey), 6);
+  const [calendars, busy, weekLimits] = await Promise.all([
     Promise.all(employeeIds.map((id) => getAvailabilityCalendar(id, fromKey, span))),
-    busyByEmployeeAndDate(objectIds, fromKey, toKey, input.excludeWorkOrderId),
+    busyByEmployeeAndDate(objectIds, weekFrom, weekTo, input.excludeWorkOrderId),
+    Promise.all(employeeIds.map((id) => getWeekLimits(id, fromKey, span))),
   ]);
+
+  // Zasedeni DNEVI po monterju in tednu (dva naloga isti dan = en delovni dan).
+  const busyDatesByEmployeeWeek = new Map<string, Set<string>>();
+  for (const key of busy.keys()) {
+    const [employeeId, date] = key.split(':');
+    const weekKey = `${employeeId}:${mondayOf(date)}`;
+    const set = busyDatesByEmployeeWeek.get(weekKey) ?? new Set<string>();
+    set.add(date);
+    busyDatesByEmployeeWeek.set(weekKey, set);
+  }
+  const limitByEmployeeWeek = new Map<string, number | null>();
+  employeeIds.forEach((employeeId, index) => {
+    for (const limit of weekLimits[index]) {
+      limitByEmployeeWeek.set(`${employeeId}:${limit.weekStart}`, limit.maxWorkdays);
+    }
+  });
 
   const out: FreeDay[] = [];
   for (let index = 0; index < span; index += 1) {
     const date = addDays(fromKey, index);
+    const week = mondayOf(date);
     // Presek prostih ur vseh monterjev (skupaj izvajajo montažo).
     let common: Set<number> | null = null;
     for (let e = 0; e < employeeIds.length; e += 1) {
+      // Tedenska omejitev: ko ima monter v tednu zasedenih toliko dni, kolikor
+      // jih dovoli omejitev, njegovi preostali prosti dnevi tega tedna odpadejo.
+      const limit = limitByEmployeeWeek.get(`${employeeIds[e]}:${week}`) ?? null;
+      const busyDates = busyDatesByEmployeeWeek.get(`${employeeIds[e]}:${week}`);
+      if (limit !== null && !busyDates?.has(date) && (busyDates?.size ?? 0) >= limit) {
+        common = new Set();
+        break;
+      }
       const day = calendars[e][index];
       const free = new Set(day.hours);
       for (const interval of busy.get(`${employeeIds[e]}:${date}`) ?? []) {

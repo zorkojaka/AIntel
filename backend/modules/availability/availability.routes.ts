@@ -7,7 +7,9 @@ import {
   getAvailabilityCalendar,
   getEmployeeSchedule,
   getEmployeeTermini,
+  getWeekLimits,
   setAvailabilityDay,
+  setWeekLimit,
   updateEmployeeSchedule,
 } from './availability.service';
 
@@ -48,14 +50,19 @@ router.get('/my/schedule', async (req: Request, res: Response) => {
   }
 });
 
-// Monter sme urejati samo svoja privzeta začetek/konec; način in fiksni urnik ureja admin.
+// Monter sme urejati svoja privzeta začetek/konec in privzeto omejitev dni na
+// teden; način in fiksni urnik ureja admin.
 router.put('/my/schedule', async (req: Request, res: Response) => {
   const employeeId = requireMyEmployee(req, res);
   if (!employeeId) return;
   try {
     const schedule = await updateEmployeeSchedule(
       employeeId,
-      { dayStartHour: req.body?.dayStartHour, dayEndHour: req.body?.dayEndHour },
+      {
+        dayStartHour: req.body?.dayStartHour,
+        dayEndHour: req.body?.dayEndHour,
+        maxWorkdaysPerWeek: req.body?.maxWorkdaysPerWeek,
+      },
       { allowModeChange: false },
     );
     return res.success({ schedule });
@@ -70,11 +77,12 @@ router.get('/my/calendar', async (req: Request, res: Response) => {
   try {
     const from = typeof req.query.from === 'string' ? req.query.from : new Date().toISOString().slice(0, 10);
     const days = req.query.days ? Number(req.query.days) : 35;
-    const [calendarDays, termini] = await Promise.all([
+    const [calendarDays, termini, weekLimits] = await Promise.all([
       getAvailabilityCalendar(employeeId, from, days),
       getEmployeeTermini(employeeId, from, days),
+      getWeekLimits(employeeId, from, days),
     ]);
-    return res.success({ days: calendarDays, termini });
+    return res.success({ days: calendarDays, termini, weekLimits });
   } catch (error) {
     return fail(res, error, 'Koledarja ni bilo mogoče naložiti.');
   }
@@ -87,6 +95,16 @@ router.put('/my/days/:date', async (req: Request, res: Response) => {
     return res.success({ day: await setAvailabilityDay(employeeId, req.params.date, req.body?.hours) });
   } catch (error) {
     return fail(res, error, 'Dneva ni bilo mogoče shraniti.');
+  }
+});
+
+router.put('/my/weeks/:weekStart', async (req: Request, res: Response) => {
+  const employeeId = requireMyEmployee(req, res);
+  if (!employeeId) return;
+  try {
+    return res.success({ week: await setWeekLimit(employeeId, req.params.weekStart, req.body?.maxWorkdays) });
+  } catch (error) {
+    return fail(res, error, 'Omejitve tedna ni bilo mogoče shraniti.');
   }
 });
 
@@ -112,6 +130,7 @@ router.put('/employees/:employeeId/schedule', adminOnly, async (req: Request, re
         dayStartHour: req.body?.dayStartHour,
         dayEndHour: req.body?.dayEndHour,
         fixedWeeklyHours: req.body?.fixedWeeklyHours,
+        maxWorkdaysPerWeek: req.body?.maxWorkdaysPerWeek,
       },
       { allowModeChange: true },
     );
@@ -125,11 +144,12 @@ router.get('/employees/:employeeId/calendar', planningRead, async (req: Request,
   try {
     const from = typeof req.query.from === 'string' ? req.query.from : new Date().toISOString().slice(0, 10);
     const days = req.query.days ? Number(req.query.days) : 35;
-    const [calendarDays, termini] = await Promise.all([
+    const [calendarDays, termini, weekLimits] = await Promise.all([
       getAvailabilityCalendar(req.params.employeeId, from, days),
       getEmployeeTermini(req.params.employeeId, from, days),
+      getWeekLimits(req.params.employeeId, from, days),
     ]);
-    return res.success({ days: calendarDays, termini });
+    return res.success({ days: calendarDays, termini, weekLimits });
   } catch (error) {
     return fail(res, error, 'Koledarja ni bilo mogoče naložiti.');
   }
@@ -140,6 +160,14 @@ router.put('/employees/:employeeId/days/:date', adminOnly, async (req: Request, 
     return res.success({ day: await setAvailabilityDay(req.params.employeeId, req.params.date, req.body?.hours) });
   } catch (error) {
     return fail(res, error, 'Dneva ni bilo mogoče shraniti.');
+  }
+});
+
+router.put('/employees/:employeeId/weeks/:weekStart', adminOnly, async (req: Request, res: Response) => {
+  try {
+    return res.success({ week: await setWeekLimit(req.params.employeeId, req.params.weekStart, req.body?.maxWorkdays) });
+  } catch (error) {
+    return fail(res, error, 'Omejitve tedna ni bilo mogoče shraniti.');
   }
 });
 

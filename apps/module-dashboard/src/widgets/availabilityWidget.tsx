@@ -12,6 +12,13 @@ interface ScheduleSettings {
   mode: 'self' | 'fixed';
   dayStartHour: number;
   dayEndHour: number;
+  maxWorkdaysPerWeek?: number | null;
+}
+
+interface WeekLimit {
+  weekStart: string;
+  maxWorkdays: number | null;
+  hasOverride: boolean;
 }
 
 interface AvailabilityDay {
@@ -36,10 +43,17 @@ function dateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+function mondayKey(date: string) {
+  const d = new Date(`${date}T00:00:00`);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return dateKey(d);
+}
+
 function MyAvailability() {
   const [schedule, setSchedule] = useState<ScheduleSettings | null>(null);
   const [days, setDays] = useState<AvailabilityDay[]>([]);
   const [termini, setTermini] = useState<EmployeeTermin[]>([]);
+  const [weekLimits, setWeekLimits] = useState<WeekLimit[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingDate, setEditingDate] = useState<string | null>(null);
@@ -73,7 +87,7 @@ function MyAvailability() {
         fetch(`/api/availability/my/calendar?from=${fromKey}&days=${daysInMonth}`, { credentials: 'include' }),
       ]);
       const schedulePayload = await parseApiEnvelope<{ schedule: ScheduleSettings }>(scheduleRes, 'Urnika ni bilo mogoče naložiti.');
-      const calendarPayload = await parseApiEnvelope<{ days: AvailabilityDay[]; termini?: EmployeeTermin[] }>(
+      const calendarPayload = await parseApiEnvelope<{ days: AvailabilityDay[]; termini?: EmployeeTermin[]; weekLimits?: WeekLimit[] }>(
         calendarRes,
         'Koledarja ni bilo mogoče naložiti.',
       );
@@ -82,6 +96,7 @@ function MyAvailability() {
       setDraftEnd(schedulePayload.schedule.dayEndHour);
       setDays(calendarPayload.days);
       setTermini(calendarPayload.termini ?? []);
+      setWeekLimits(calendarPayload.weekLimits ?? []);
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Napaka pri nalaganju.');
@@ -160,10 +175,105 @@ function MyAvailability() {
     }
   };
 
+  const saveDefaultWeekLimit = async (value: string) => {
+    try {
+      const response = await fetch('/api/availability/my/schedule', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxWorkdaysPerWeek: value === '' ? null : Number(value) }),
+      });
+      const payload = await parseApiEnvelope<{ schedule: ScheduleSettings }>(response, 'Omejitve ni bilo mogoče shraniti.');
+      setSchedule(payload.schedule);
+      await reload(); // efektivne tedenske omejitve se spremenijo
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Omejitve ni bilo mogoče shraniti.');
+    }
+  };
+
+  const saveWeekLimit = async (weekStart: string, value: string) => {
+    try {
+      const response = await fetch(`/api/availability/my/weeks/${weekStart}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxWorkdays: value === '' ? null : Number(value) }),
+      });
+      const payload = await parseApiEnvelope<{ week: WeekLimit }>(response, 'Omejitve tedna ni bilo mogoče shraniti.');
+      setWeekLimits((current) => current.map((week) => (week.weekStart === weekStart ? payload.week : week)));
+      setError(null);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Omejitve tedna ni bilo mogoče shraniti.');
+    }
+  };
+
   if (loading) return <div className="dashboard-widget__meta">Nalagam razpoložljivost...</div>;
   if (!schedule) return <div className="dashboard-widget__meta">{error ?? 'Urnika ni bilo mogoče naložiti.'}</div>;
 
   const editingDay = days.find((day) => day.date === editingDate) ?? null;
+
+  const renderDay = (day: AvailabilityDay) => {
+    const active = day.hours.length > 0;
+    const past = day.date <= todayKey;
+    const label = Number(day.date.slice(8, 10));
+    const firstHour = day.hours[0] ?? 0;
+    const lastHour = (day.hours[day.hours.length - 1] ?? 0) + 1;
+    const dayTermini = terminiByDate.get(day.date) ?? [];
+    const tooltip = [
+      active ? `Na voljo ${firstHour}:00–${lastHour}:00` : null,
+      ...dayTermini.map(
+        (termin) =>
+          `${termin.done || past ? 'Opravljeno' : 'Termin'}: ${termin.title} (${termin.startHour}:00–${termin.startHour + termin.hours}:00)`,
+      ),
+    ].filter(Boolean).join('\n');
+    return (
+      <button
+        key={day.date}
+        type="button"
+        className={[
+          'razpolozljivost__dan',
+          active ? 'je-aktiven' : '',
+          day.source === 'fixed' ? 'je-fiksen' : '',
+          editingDate === day.date ? 'je-izbran' : '',
+          past ? 'je-pretekli' : '',
+        ].filter(Boolean).join(' ')}
+        title={tooltip || day.date}
+        disabled={savingDate === day.date}
+        onClick={() => handleDayClick(day)}
+      >
+        {active && !past && (
+          <span
+            className="razpolozljivost__dan-x"
+            role="button"
+            aria-label={`Odstrani ${day.date}`}
+            title="Nisem na voljo ta dan"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (savingDate) return;
+              void saveDay(day.date, []);
+              setEditingDate((current) => (current === day.date ? null : current));
+            }}
+          >
+            ×
+          </span>
+        )}
+        <span className="razpolozljivost__dan-st">{label}</span>
+        {active && (
+          <span className="razpolozljivost__dan-ure">
+            {firstHour}–{lastHour}h
+          </span>
+        )}
+        {dayTermini.map((termin, index) => (
+          <span
+            key={`${day.date}-termin-${index}`}
+            className={`razpolozljivost__dan-termin${termin.done || past ? ' je-opravljen' : ''}`}
+          >
+            {termin.done || past ? '✓' : '🔧'} {termin.startHour}–{termin.startHour + termin.hours}h
+          </span>
+        ))}
+      </button>
+    );
+  };
 
   return (
     <div className="razpolozljivost">
@@ -184,6 +294,15 @@ function MyAvailability() {
           {(draftStart !== schedule.dayStartHour || draftEnd !== schedule.dayEndHour) && (
             <button type="button" className="razpolozljivost__gumb" onClick={() => void saveDefaults()}>Shrani</button>
           )}
+          <span className="dashboard-widget__meta">· Največ dni/teden:</span>
+          <select
+            value={schedule.maxWorkdaysPerWeek ?? ''}
+            title="Privzeta omejitev delovnih dni na teden — ko je v tednu zasedenih toliko dni, se preostali prosti dnevi tistega tedna strankam ne ponujajo več. Izjemo za posamezen teden nastaviš v stolpcu ob koledarju."
+            onChange={(event) => void saveDefaultWeekLimit(event.target.value)}
+          >
+            <option value="">brez</option>
+            {[1, 2, 3, 4, 5, 6, 7].map((limit) => <option key={limit} value={limit}>{limit}</option>)}
+          </select>
         </div>
       )}
 
@@ -203,72 +322,45 @@ function MyAvailability() {
       </div>
 
       <div className="razpolozljivost__mreza">
+        <span className="razpolozljivost__mreza-glava" title="Največ delovnih dni v tednu">maks</span>
         {WEEKDAYS.map((weekday) => (
           <span key={weekday} className="razpolozljivost__mreza-glava">{weekday}</span>
         ))}
-        {Array.from({ length: leadingBlanks }, (_, index) => (
-          <span key={`prazno-${index}`} className="razpolozljivost__dan--prazen" />
-        ))}
-        {days.map((day) => {
-          const active = day.hours.length > 0;
-          const past = day.date <= todayKey;
-          const label = Number(day.date.slice(8, 10));
-          const firstHour = day.hours[0] ?? 0;
-          const lastHour = (day.hours[day.hours.length - 1] ?? 0) + 1;
-          const dayTermini = terminiByDate.get(day.date) ?? [];
-          const tooltip = [
-            active ? `Na voljo ${firstHour}:00–${lastHour}:00` : null,
-            ...dayTermini.map(
-              (termin) =>
-                `${termin.done || past ? 'Opravljeno' : 'Termin'}: ${termin.title} (${termin.startHour}:00–${termin.startHour + termin.hours}:00)`,
-            ),
-          ].filter(Boolean).join('\n');
+        {Array.from({ length: Math.ceil((leadingBlanks + days.length) / 7) }, (_, rowIndex) => {
+          const rowDays = days.slice(
+            Math.max(0, rowIndex * 7 - leadingBlanks),
+            (rowIndex + 1) * 7 - leadingBlanks,
+          );
+          const weekStart = rowDays[0] ? mondayKey(rowDays[0].date) : `prazen-${rowIndex}`;
+          const limit = weekLimits.find((week) => week.weekStart === weekStart);
+          const busyDates = new Set(
+            termini.filter((termin) => mondayKey(termin.date) === weekStart).map((termin) => termin.date),
+          );
+          const blanksBefore = rowIndex === 0 ? leadingBlanks : 0;
+          const blanksAfter = 7 - blanksBefore - rowDays.length;
           return (
-            <button
-              key={day.date}
-              type="button"
-              className={[
-                'razpolozljivost__dan',
-                active ? 'je-aktiven' : '',
-                day.source === 'fixed' ? 'je-fiksen' : '',
-                editingDate === day.date ? 'je-izbran' : '',
-                past ? 'je-pretekli' : '',
-              ].filter(Boolean).join(' ')}
-              title={tooltip || day.date}
-              disabled={savingDate === day.date}
-              onClick={() => handleDayClick(day)}
-            >
-              {active && !past && (
-                <span
-                  className="razpolozljivost__dan-x"
-                  role="button"
-                  aria-label={`Odstrani ${day.date}`}
-                  title="Nisem na voljo ta dan"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (savingDate) return;
-                    void saveDay(day.date, []);
-                    setEditingDate((current) => (current === day.date ? null : current));
-                  }}
+            <div key={`vrstica-${weekStart}`} className="razpolozljivost__vrstica">
+              {rowDays[0] ? (
+                <select
+                  className="razpolozljivost__teden"
+                  value={limit?.hasOverride ? String(limit.maxWorkdays) : ''}
+                  title={`Največ delovnih dni v tem tednu (zasedeni: ${busyDates.size}${limit?.maxWorkdays != null ? ` od ${limit.maxWorkdays}` : ''}). »auto« = privzeta vrednost iz nastavitve.`}
+                  onChange={(event) => void saveWeekLimit(weekStart, event.target.value)}
                 >
-                  ×
-                </span>
+                  <option value="">{limit?.maxWorkdays != null && !limit.hasOverride ? `(${limit.maxWorkdays})` : 'auto'}</option>
+                  {[0, 1, 2, 3, 4, 5, 6, 7].map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              ) : (
+                <span className="razpolozljivost__dan--prazen" />
               )}
-              <span className="razpolozljivost__dan-st">{label}</span>
-              {active && (
-                <span className="razpolozljivost__dan-ure">
-                  {firstHour}–{lastHour}h
-                </span>
-              )}
-              {dayTermini.map((termin, index) => (
-                <span
-                  key={`${day.date}-termin-${index}`}
-                  className={`razpolozljivost__dan-termin${termin.done || past ? ' je-opravljen' : ''}`}
-                >
-                  {termin.done || past ? '✓' : '🔧'} {termin.startHour}–{termin.startHour + termin.hours}h
-                </span>
+              {Array.from({ length: blanksBefore }, (_, index) => (
+                <span key={`pred-${index}`} className="razpolozljivost__dan--prazen" />
               ))}
-            </button>
+              {rowDays.map((day) => renderDay(day))}
+              {Array.from({ length: Math.max(0, blanksAfter) }, (_, index) => (
+                <span key={`za-${index}`} className="razpolozljivost__dan--prazen" />
+              ))}
+            </div>
           );
         })}
       </div>

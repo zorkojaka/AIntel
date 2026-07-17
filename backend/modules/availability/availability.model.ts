@@ -28,3 +28,34 @@ EmployeeAvailabilityDaySchema.index({ employeeId: 1, date: 1 }, { unique: true }
 export const EmployeeAvailabilityDayModel: Model<EmployeeAvailabilityDayDocument> =
   (mongoose.models.EmployeeAvailabilityDay as Model<EmployeeAvailabilityDayDocument>) ||
   mongoose.model<EmployeeAvailabilityDayDocument>('EmployeeAvailabilityDay', EmployeeAvailabilityDaySchema);
+
+// Tedenska omejitev števila delovnih dni: monter lahko označi več prostih dni,
+// kot jih dejansko želi delati — ko je v tednu zasedenih toliko dni, kolikor
+// dovoli omejitev, se preostali prosti dnevi tistega tedna ne ponujajo več.
+// Zapis je IZJEMA za konkreten teden; privzeta vrednost je v schedule
+// (maxWorkdaysPerWeek na zaposlenem).
+
+export interface EmployeeWeekLimitDocument extends Document {
+  employeeId: mongoose.Types.ObjectId;
+  /** Ponedeljek tedna v obliki YYYY-MM-DD. */
+  weekStart: string;
+  /** Največ delovnih dni v tem tednu (0 = ta teden ne delam). */
+  maxWorkdays: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const EmployeeWeekLimitSchema = new Schema<EmployeeWeekLimitDocument>(
+  {
+    employeeId: { type: Schema.Types.ObjectId, required: true },
+    weekStart: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
+    maxWorkdays: { type: Number, required: true, min: 0, max: 7 },
+  },
+  { timestamps: true, versionKey: false, collection: 'employee_week_limits' }
+);
+
+EmployeeWeekLimitSchema.index({ employeeId: 1, weekStart: 1 }, { unique: true });
+
+export const EmployeeWeekLimitModel: Model<EmployeeWeekLimitDocument> =
+  (mongoose.models.EmployeeWeekLimit as Model<EmployeeWeekLimitDocument>) ||
+  mongoose.model<EmployeeWeekLimitDocument>('EmployeeWeekLimit', EmployeeWeekLimitSchema);
