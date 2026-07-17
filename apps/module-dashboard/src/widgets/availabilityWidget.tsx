@@ -160,6 +160,8 @@ function MyAvailability() {
         {days.map((day) => {
           const active = day.hours.length > 0;
           const label = new Date(`${day.date}T00:00:00`).getDate();
+          const firstHour = day.hours[0] ?? 0;
+          const lastHour = (day.hours[day.hours.length - 1] ?? 0) + 1;
           return (
             <button
               key={day.date}
@@ -170,13 +172,33 @@ function MyAvailability() {
                 day.source === 'fixed' ? 'je-fiksen' : '',
                 editingDate === day.date ? 'je-izbran' : '',
               ].filter(Boolean).join(' ')}
-              title={active ? `${day.date}: ${day.hours[0]}:00–${(day.hours[day.hours.length - 1] ?? 0) + 1}:00` : day.date}
+              title={active ? `${day.date}: ${firstHour}:00–${lastHour}:00` : day.date}
               disabled={savingDate === day.date}
               onClick={() => handleDayClick(day)}
             >
+              {active && (
+                <span
+                  className="razpolozljivost__dan-x"
+                  role="button"
+                  aria-label={`Odstrani ${day.date}`}
+                  title="Nisem na voljo ta dan"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (savingDate) return;
+                    void saveDay(day.date, []);
+                    setEditingDate((current) => (current === day.date ? null : current));
+                  }}
+                >
+                  ×
+                </span>
+              )}
               <span className="razpolozljivost__dan-teden">{weekdayShort(day.date)}</span>
               <span className="razpolozljivost__dan-st">{label}</span>
-              {active && <span className="razpolozljivost__dan-ure">{day.hours.length} h</span>}
+              {active && (
+                <span className="razpolozljivost__dan-ure">
+                  {firstHour}–{lastHour}h
+                </span>
+              )}
             </button>
           );
         })}
@@ -200,14 +222,6 @@ function MyAvailability() {
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            className="razpolozljivost__gumb razpolozljivost__gumb--pocisti"
-            disabled={savingDate === editingDay.date}
-            onClick={() => { void saveDay(editingDay.date, []); setEditingDate(null); }}
-          >
-            Počisti dan (nisem na voljo)
-          </button>
         </div>
       )}
 

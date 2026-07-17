@@ -1117,7 +1117,9 @@
 .razpolozljivost__privzeto { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .razpolozljivost__privzeto select { padding: 4px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--surface, #fff); }
 .razpolozljivost__mreza { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
-.razpolozljivost__dan { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 2px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--surface, #fff); cursor: pointer; font: inherit; }
+.razpolozljivost__dan { position: relative; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 2px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--surface, #fff); cursor: pointer; font: inherit; }
+.razpolozljivost__dan-x { position: absolute; top: 1px; right: 3px; font-size: 13px; line-height: 1; color: #94a3b8; padding: 2px; cursor: pointer; }
+.razpolozljivost__dan-x:hover { color: #b91c1c; }
 .razpolozljivost__dan:hover { border-color: #94a3b8; }
 .razpolozljivost__dan.je-aktiven { background: #e7f4ec; border-color: #1a7f4f; }
 .razpolozljivost__dan.je-fiksen { background: #eef4fc; border-color: #0a6db3; }
@@ -1132,5 +1134,4 @@
 .razpolozljivost__ura.je-aktivna { background: #1a7f4f; border-color: #1a7f4f; color: #fff; }
 .razpolozljivost__ura:disabled { opacity: 0.5; cursor: wait; }
 .razpolozljivost__gumb { align-self: flex-start; padding: 6px 12px; border: 1px solid #0a6db3; border-radius: 8px; background: #0a6db3; color: #fff; cursor: pointer; font: inherit; font-size: 13px; }
-.razpolozljivost__gumb--pocisti { background: transparent; color: #b91c1c; border-color: #b91c1c; }
 .razpolozljivost__napaka { color: #b91c1c; font-size: 13px; }
