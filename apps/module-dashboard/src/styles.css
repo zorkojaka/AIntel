@@ -1138,6 +1138,8 @@
 .razpolozljivost__dan-st { font-weight: 700; }
 .razpolozljivost__dan-ure { font-size: 10px; color: #1a7f4f; font-weight: 600; }
 .razpolozljivost__dan.je-pretekli { opacity: 0.55; cursor: default; }
+.razpolozljivost__dan.je-danes { border-color: #0a6db3; border-width: 2px; opacity: 1; }
+.razpolozljivost__dan.je-danes .razpolozljivost__dan-st { color: #0a6db3; }
 .razpolozljivost__dan-termin { font-size: 9px; font-weight: 600; color: #b45309; background: #fef3c7; border-radius: 4px; padding: 0 3px; white-space: nowrap; }
 .razpolozljivost__dan-termin.je-opravljen { color: #475569; background: #e2e8f0; }
 .razpolozljivost__ure { border-top: 1px solid var(--border, #e2e8f0); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }

@@ -248,6 +248,7 @@ function MyAvailability() {
           day.source === 'fixed' ? 'je-fiksen' : '',
           editingDate === day.date ? 'je-izbran' : '',
           past ? 'je-pretekli' : '',
+          day.date === todayKey ? 'je-danes' : '',
         ].filter(Boolean).join(' ')}
         title={tooltip || day.date}
         disabled={savingDate === day.date}
