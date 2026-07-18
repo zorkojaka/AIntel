@@ -29,6 +29,8 @@ type SchedulerItem = {
   scheduledAt: string;
   durationMin: number;
   approx: boolean;
+  /** Dodeljeni monterji — prikazano v urniku podjetja (pri lastnem urniku prazno). */
+  assignedNames?: string[];
 };
 
 function getWeekStart(baseDate: Date) {
@@ -86,6 +88,7 @@ function buildItems(workOrders: WorkOrderSummary[], weekStart: Date, weekEnd: Da
       scheduledAt: order.scheduledAt,
       durationMin,
       approx,
+      assignedNames: order.assignedNames ?? [],
     });
   });
 
@@ -365,6 +368,9 @@ export function WeekScheduler({ workOrders, variant = 'standard' }: WeekSchedule
                             <span className="dashboard-week-scheduler__event-title">{headerLabel}</span>
                             <span className="dashboard-week-scheduler__event-subtitle">{projectLine}</span>
                             <span className="dashboard-week-scheduler__event-subtitle">{customerAddress}</span>
+                            {item.assignedNames?.length ? (
+                              <span className="dashboard-week-scheduler__event-subtitle">Ekipa: {item.assignedNames.join(', ')}</span>
+                            ) : null}
                           </div>
                           <div className="dashboard-week-scheduler__event-divider" />
                           <div className="dashboard-week-scheduler__event-body">
