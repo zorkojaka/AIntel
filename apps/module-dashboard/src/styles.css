@@ -1116,6 +1116,36 @@
 .razpolozljivost { display: flex; flex-direction: column; gap: 12px; }
 .razpolozljivost__privzeto { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .razpolozljivost__privzeto select { padding: 4px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--surface, #fff); }
+/* Koledar ekipe (admin/organizator): vrstica = monter, stolpec = dan. */
+.ekipa { display: flex; flex-direction: column; gap: 12px; }
+.ekipa__legenda { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.ekipa__vzorec { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border, #e2e8f0); margin-left: 8px; }
+.ekipa__vzorec.je-prost { background: #e7f4ec; border-color: #1a7f4f; }
+.ekipa__vzorec.je-termin { background: #fef3c7; border-color: #b45309; }
+.ekipa__vzorec.je-opravljen { background: #e2e8f0; border-color: #94a3b8; }
+.ekipa__tabela-ovoj { overflow-x: auto; }
+.ekipa__tabela { border-collapse: separate; border-spacing: 2px; font-size: 11px; }
+.ekipa__monter-glava, .ekipa__monter { position: sticky; left: 0; z-index: 1; background: var(--surface, #fff); text-align: left; padding: 2px 8px 2px 2px; white-space: nowrap; font-weight: 600; }
+.ekipa__monter-meta { display: block; font-size: 10px; font-weight: 400; color: #64748b; }
+.ekipa__dan-glava { min-width: 22px; padding: 2px 0; font-weight: 500; color: #64748b; text-align: center; }
+.ekipa__dan-glava.je-vikend { color: #94a3b8; }
+.ekipa__dan-glava.je-danes { color: #0a6db3; font-weight: 700; }
+.ekipa__dan-teden { display: block; font-size: 9px; text-transform: uppercase; }
+.ekipa__celica { width: 22px; height: 26px; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; background: var(--surface, #fff); text-align: center; cursor: pointer; color: #b45309; font-weight: 700; }
+.ekipa__celica.je-vikend { background: #f8fafc; }
+.ekipa__celica.je-prost { background: #e7f4ec; border-color: #1a7f4f; }
+.ekipa__celica.je-termin { background: #fef3c7; border-color: #b45309; }
+.ekipa__celica.je-opravljen { background: #e2e8f0; border-color: #94a3b8; color: #475569; }
+.ekipa__celica.je-danes { outline: 2px solid #0a6db3; outline-offset: -2px; }
+.ekipa__celica.je-izbran { box-shadow: 0 0 0 2px #0a6db3 inset; }
+.ekipa__celica:hover { border-color: #0a6db3; }
+.ekipa__podrobnosti { border-top: 1px solid var(--border, #e2e8f0); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.ekipa__seznam { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ekipa__seznam li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.ekipa__seznam-ure { font-size: 11px; color: #1a7f4f; }
+.ekipa__seznam-termin { font-size: 11px; font-weight: 600; color: #b45309; background: #fef3c7; border-radius: 4px; padding: 1px 6px; }
+.ekipa__seznam-termin.je-opravljen { color: #475569; background: #e2e8f0; }
+
 .razpolozljivost__mesec { display: flex; align-items: center; gap: 10px; }
 .razpolozljivost__mesec-naziv { min-width: 130px; text-align: center; }
 .razpolozljivost__mesec-gumb { width: 28px; height: 28px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--surface, #fff); cursor: pointer; font: inherit; font-size: 16px; line-height: 1; }

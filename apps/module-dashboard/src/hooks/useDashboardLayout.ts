@@ -14,9 +14,11 @@ function normalizeWidgetList(input: unknown, allowed: Set<DashboardWidgetId>, fa
   return normalized.length > 0 ? normalized : fallback;
 }
 
-export function useDashboardLayout(userId: string | null, role: string = 'installer') {
+export function useDashboardLayout(userId: string | null, roles: string | string[] = 'installer') {
   const storageKey = useMemo(() => getStorageKey(userId), [userId]);
-  const defaultWidgetIds = useMemo(() => getDefaultWidgetIdsForRoles([role]), [role]);
+  // Ključ iz vlog: seznam je ob vsakem izrisu nova referenca, primerjamo vsebino.
+  const rolesKey = Array.isArray(roles) ? roles.join(',') : roles;
+  const defaultWidgetIds = useMemo(() => getDefaultWidgetIdsForRoles(rolesKey.split(',')), [rolesKey]);
   const allowedWidgetIds = useMemo(() => new Set(ALL_WIDGETS.map((widget) => widget.id)), []);
   const [visibleWidgets, setVisibleWidgets] = useState<DashboardWidgetId[]>(defaultWidgetIds);
 

@@ -310,6 +310,35 @@ export async function getEmployeeTermini(employeeId: string, from: string, days:
   return out;
 }
 
+/* ---------- ekipni koledar (pregled za admina/organizatorja) ---------- */
+
+export interface TeamMemberCalendar {
+  employeeId: string;
+  name: string;
+  days: AvailabilityDay[];
+  termini: EmployeeTermin[];
+  weekLimits: WeekLimit[];
+}
+
+/** Razpoložljivost + razpisani termini vseh aktivnih monterjev — za pregled ekipe. */
+export async function getTeamCalendar(from: string, days: number): Promise<TeamMemberCalendar[]> {
+  const employees = await EmployeeModel.find({ deletedAt: null, active: true, roles: 'EXECUTION' })
+    .select({ name: 1 })
+    .sort({ name: 1 })
+    .lean();
+  return Promise.all(
+    employees.map(async (employee: any) => {
+      const employeeId = String(employee._id);
+      const [calendarDays, termini, weekLimits] = await Promise.all([
+        getAvailabilityCalendar(employeeId, from, days),
+        getEmployeeTermini(employeeId, from, days),
+        getWeekLimits(employeeId, from, days),
+      ]);
+      return { employeeId, name: employee.name ?? 'Monter', days: calendarDays, termini, weekLimits };
+    }),
+  );
+}
+
 /* ---------- prosti termini za delovni nalog ---------- */
 
 /** Groba ocena trajanja izvedbe iz časovnih norm postavk naloga (ure, najmanj 1). */

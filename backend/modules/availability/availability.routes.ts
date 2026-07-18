@@ -7,6 +7,7 @@ import {
   getAvailabilityCalendar,
   getEmployeeSchedule,
   getEmployeeTermini,
+  getTeamCalendar,
   getWeekLimits,
   setAvailabilityDay,
   setWeekLimit,
@@ -112,6 +113,17 @@ router.put('/my/weeks/:weekStart', async (req: Request, res: Response) => {
 
 const adminOnly = requireRoles([ROLE_ADMIN]);
 const planningRead = requireRoles([ROLE_ADMIN, ROLE_ORGANIZER]);
+
+// Pregled ekipe: razpoložljivost in termini vseh monterjev na enem mestu.
+router.get('/team/calendar', planningRead, async (req: Request, res: Response) => {
+  try {
+    const from = typeof req.query.from === 'string' ? req.query.from : new Date().toISOString().slice(0, 10);
+    const days = req.query.days ? Number(req.query.days) : 35;
+    return res.success({ members: await getTeamCalendar(from, days) });
+  } catch (error) {
+    return fail(res, error, 'Ekipnega koledarja ni bilo mogoče naložiti.');
+  }
+});
 
 router.get('/employees/:employeeId/schedule', planningRead, async (req: Request, res: Response) => {
   try {
