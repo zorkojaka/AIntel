@@ -355,6 +355,19 @@ export function estimateWorkOrderHours(items: Array<{ casovnaNorma?: number; qua
   return Math.max(1, Math.ceil(totalMinutes / 60));
 }
 
+/** Poln delovni dan (ur) — meja bloka, ki ga stranka rezervira ob izbiri prvega dne. */
+export const SINGLE_DAY_HOURS = 8;
+
+/**
+ * Koliko zaporednih prostih ur mora imeti ekipa PRVI dan, da se dan ponudi.
+ * Daljših montaž ne razbijamo na več dni: stranka izbere prvi dan, ko je ekipa
+ * cel dan prosta, nadaljevanje pa se dogovori na terenu. Krajše montaže
+ * zahtevajo točno svoje trajanje.
+ */
+export function bookingSlotHours(durationHours: number): number {
+  return Math.max(1, Math.min(Math.ceil(durationHours), SINGLE_DAY_HOURS));
+}
+
 interface BusyInterval {
   startHour: number;
   hours: number;

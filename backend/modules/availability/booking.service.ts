@@ -5,7 +5,13 @@ import { EmployeeModel } from '../employees/schemas/employee';
 import { ProjectModel, newTimelineEventId } from '../projects/schemas/project';
 import { sendBookingInviteEmail } from '../communication/services/communication.service';
 import { getConfig } from '../settings/config/config-store.service';
-import { AvailabilityError, estimateWorkOrderHours, findFreeDays, type FreeDay } from './availability.service';
+import {
+  AvailabilityError,
+  bookingSlotHours,
+  estimateWorkOrderHours,
+  findFreeDays,
+  type FreeDay,
+} from './availability.service';
 
 // Rezervacija dneva montaže: interno se ustvari povabilo (žeton + mail),
 // stranka na javni strani izbere dan, izbira zapiše termin na delovni nalog
@@ -16,14 +22,14 @@ const BOOKING_WINDOW_DAYS = 45;
 /** Kateri od dodeljenih monterjev sam po sebi nima nobenega prostega termina. */
 async function imenaMonterjevBrezRazpolozljivosti(
   employeeIds: string[],
-  durationHours: number,
+  slotHours: number,
   excludeWorkOrderId: string,
 ): Promise<string[]> {
   const brez: string[] = [];
   for (const employeeId of employeeIds) {
     const dnevi = await findFreeDays({
       employeeIds: [employeeId],
-      durationHours,
+      durationHours: slotHours,
       days: BOOKING_WINDOW_DAYS,
       excludeWorkOrderId,
     });
@@ -67,19 +73,22 @@ export async function createBookingInvite(input: {
     throw new AvailabilityError('Najprej dodeli monterje na delovni nalog — termini se ponudijo iz njihove razpoložljivosti.');
   }
 
+  // durationHours = celotna ocena (za mail); slotHours = blok, ki ga stranka
+  // dejansko rezervira prvi dan (dolgih montaž ne razbijamo na več dni).
   const durationHours = estimateWorkOrderHours(workOrder.items as any[]);
+  const slotHours = bookingSlotHours(durationHours);
   const freeDays = await findFreeDays({
     employeeIds,
-    durationHours,
+    durationHours: slotHours,
     days: BOOKING_WINDOW_DAYS,
     excludeWorkOrderId: String(workOrder._id),
   });
   if (!freeDays.length) {
     // Povemo, KDO nima označenih dni — brez tega je napaka slepa ulica.
-    const imena = await imenaMonterjevBrezRazpolozljivosti(employeeIds, durationHours, String(workOrder._id));
+    const imena = await imenaMonterjevBrezRazpolozljivosti(employeeIds, slotHours, String(workOrder._id));
     const kdo = imena.length ? ` Brez označenih prostih dni: ${imena.join(', ')}.` : '';
     throw new AvailabilityError(
-      `V naslednjih ${BOOKING_WINDOW_DAYS} dneh ni dneva, ko bi bili vsi dodeljeni monterji hkrati prosti ${durationHours} h.${kdo}` +
+      `V naslednjih ${BOOKING_WINDOW_DAYS} dneh ni dneva, ko bi bili vsi dodeljeni monterji hkrati prosti ${slotHours} h.${kdo}` +
         ' Monter proste dneve označi na nadzorni plošči (widget »Moja razpoložljivost«), admin pa v Zaposleni → Urnik za termine.',
     );
   }
@@ -142,7 +151,7 @@ export async function getBookingByToken(token: string): Promise<BookingView> {
     ? []
     : await findFreeDays({
         employeeIds: (workOrder.assignedEmployeeIds ?? []).map((id: unknown) => String(id)),
-        durationHours,
+        durationHours: bookingSlotHours(durationHours),
         days: BOOKING_WINDOW_DAYS,
         excludeWorkOrderId: String(workOrder._id),
       });
@@ -164,9 +173,11 @@ export async function chooseBookingDay(token: string, date: unknown): Promise<{ 
   const employeeIds = (workOrder.assignedEmployeeIds ?? []).map((id: unknown) => String(id));
 
   // Ponovno preverimo, da je dan še prost (med mailom in klikom je lahko minilo več dni).
+  // Isti blok kot pri ponudbi dni (bookingSlotHours), sicer bi validacija odbila
+  // dan, ki je bil legitimno ponujen.
   const days = await findFreeDays({
     employeeIds,
-    durationHours,
+    durationHours: bookingSlotHours(durationHours),
     days: BOOKING_WINDOW_DAYS,
     excludeWorkOrderId: String(workOrder._id),
   });

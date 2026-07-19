@@ -11,6 +11,7 @@ import { EmployeeAvailabilityDayModel } from '../modules/availability/availabili
 import {
   addDays,
   AvailabilityError,
+  bookingSlotHours,
   estimateWorkOrderHours,
   findFreeDays,
   getAvailabilityCalendar,
@@ -129,6 +130,40 @@ test('ocena trajanja: minute norm → ure, zaokroženo navzgor, najmanj 1, brez 
   assert.equal(estimateWorkOrderHours([{ casovnaNorma: 0, quantity: 5 }]), 4, 'same nicle = brez norm');
   // Realen nalog iz produkcije (PRJ-220): 690 min = 11,5 h → 12 h, ne 690 h.
   assert.equal(estimateWorkOrderHours([{ casovnaNorma: 690, quantity: 1 }]), 12);
+});
+
+// Dolgih montaž ne razbijamo na več dni: rezervira se en poln dan, nadaljevanje
+// se dogovori na terenu. bookingSlotHours omeji iskani blok na delovni dan.
+test('bookingSlotHours: krajše montaže točno svoje trajanje, dolge en delovni dan', () => {
+  assert.equal(bookingSlotHours(3), 3);
+  assert.equal(bookingSlotHours(8), 8);
+  assert.equal(bookingSlotHours(12), 8, 'dolga montaža se skrči na en dan');
+  assert.equal(bookingSlotHours(0), 1, 'najmanj 1 ura');
+});
+
+test('rezervacija: dolga montaža (12 h) se ponudi na dan z označenim polnim dnem', async () => {
+  const miha = await monter('Miha');
+  await setAvailabilityDay(String(miha._id), D1, [8, 9, 10, 11, 12, 13, 14, 15]); // 8 ur (8–16)
+  await ProjectModel.create({
+    id: 'PRJ-403', code: 'PRJ-403', projectNumber: 403, title: 'PRJ-403: Velik videonadzor',
+    customer: { name: 'Testna stranka' }, status: 'in-progress', createdAt: new Date().toISOString(),
+  });
+  await WorkOrderModel.create({
+    projectId: 'PRJ-403',
+    offerVersionId: new mongoose.Types.ObjectId().toString(),
+    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 720 }], // 12 h
+    status: 'issued',
+    scheduledAt: null,
+    assignedEmployeeIds: [miha._id],
+    bookingToken: 'c'.repeat(48),
+  });
+
+  const view = await getBookingByToken('c'.repeat(48));
+  assert.equal(view.durationHours, 12, 'stranki se pokaže celotna ocena');
+  assert.ok(view.days.some((day) => day.date === D1), 'dan s polnim dnem je ponujen kljub 12 h oceni');
+
+  const chosen = await chooseBookingDay('c'.repeat(48), D1);
+  assert.equal(chosen.scheduledAt, `${D1}T08:00:00`);
 });
 
 test('prosti dnevi: presek dveh monterjev + zasedenost z razpisanim nalogom', async () => {
