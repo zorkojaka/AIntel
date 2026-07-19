@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 
 import { WorkOrderModel } from '../projects/schemas/work-order';
+import { EmployeeModel } from '../employees/schemas/employee';
 import { ProjectModel, newTimelineEventId } from '../projects/schemas/project';
 import { sendBookingInviteEmail } from '../communication/services/communication.service';
 import { getConfig } from '../settings/config/config-store.service';
@@ -11,6 +12,28 @@ import { AvailabilityError, estimateWorkOrderHours, findFreeDays, type FreeDay }
 // in ga hkrati POTRDI (scheduledConfirmedAt) — zahtevani korak priprave.
 
 const BOOKING_WINDOW_DAYS = 45;
+
+/** Kateri od dodeljenih monterjev sam po sebi nima nobenega prostega termina. */
+async function imenaMonterjevBrezRazpolozljivosti(
+  employeeIds: string[],
+  durationHours: number,
+  excludeWorkOrderId: string,
+): Promise<string[]> {
+  const brez: string[] = [];
+  for (const employeeId of employeeIds) {
+    const dnevi = await findFreeDays({
+      employeeIds: [employeeId],
+      durationHours,
+      days: BOOKING_WINDOW_DAYS,
+      excludeWorkOrderId,
+    });
+    if (!dnevi.length) {
+      const employee = await EmployeeModel.findById(employeeId).select({ name: 1 }).lean();
+      brez.push((employee as { name?: string } | null)?.name ?? 'monter');
+    }
+  }
+  return brez;
+}
 
 async function bookingPageUrl(): Promise<string> {
   const config = await getConfig<{ bookingPageUrl?: string }>('platform.general');
@@ -52,7 +75,13 @@ export async function createBookingInvite(input: {
     excludeWorkOrderId: String(workOrder._id),
   });
   if (!freeDays.length) {
-    throw new AvailabilityError('Monterji v naslednjih tednih nimajo označene razpoložljivosti — najprej naj označijo proste dneve.');
+    // Povemo, KDO nima označenih dni — brez tega je napaka slepa ulica.
+    const imena = await imenaMonterjevBrezRazpolozljivosti(employeeIds, durationHours, String(workOrder._id));
+    const kdo = imena.length ? ` Brez označenih prostih dni: ${imena.join(', ')}.` : '';
+    throw new AvailabilityError(
+      `V naslednjih ${BOOKING_WINDOW_DAYS} dneh ni dneva, ko bi bili vsi dodeljeni monterji hkrati prosti ${durationHours} h.${kdo}` +
+        ' Monter proste dneve označi na nadzorni plošči (widget »Moja razpoložljivost«), admin pa v Zaposleni → Urnik za termine.',
+    );
   }
 
   const token = workOrder.bookingToken || crypto.randomBytes(24).toString('hex');

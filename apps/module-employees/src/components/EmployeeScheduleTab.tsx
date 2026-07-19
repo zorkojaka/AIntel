@@ -77,7 +77,10 @@ export function EmployeeScheduleTab({ employeeId }: { employeeId: string }) {
         }),
       });
       const payload = await response.json();
-      if (!response.ok || payload?.ok === false) throw new Error(payload?.message || 'Urnika ni bilo mogoče shraniti.');
+      // Ovojnica API-ja je { success, data, error } — razlog napake je v `error`.
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error || payload?.message || 'Urnika ni bilo mogoče shraniti.');
+      }
       setMessage('Urnik je shranjen.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Urnika ni bilo mogoče shraniti.');

@@ -341,13 +341,18 @@ export async function getTeamCalendar(from: string, days: number): Promise<TeamM
 
 /* ---------- prosti termini za delovni nalog ---------- */
 
-/** Groba ocena trajanja izvedbe iz časovnih norm postavk naloga (ure, najmanj 1). */
+/**
+ * Groba ocena trajanja izvedbe iz časovnih norm postavk naloga (ure, najmanj 1).
+ * POZOR: casovnaNorma je v MINUTAH (npr. 60 = ena delovna ura) — enako jo bere
+ * urnik na nadzorni plošči. Brez norm privzamemo 4 ure.
+ */
 export function estimateWorkOrderHours(items: Array<{ casovnaNorma?: number; quantity?: number }> | undefined): number {
-  const total = (items ?? []).reduce(
+  const totalMinutes = (items ?? []).reduce(
     (sum, item) => sum + (Number(item.casovnaNorma) || 0) * (Number(item.quantity) || 1),
     0,
   );
-  return Math.max(1, Math.ceil(total || 4));
+  if (totalMinutes <= 0) return 4;
+  return Math.max(1, Math.ceil(totalMinutes / 60));
 }
 
 interface BusyInterval {

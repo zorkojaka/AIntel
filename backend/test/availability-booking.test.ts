@@ -118,10 +118,17 @@ test('fixed način: tedenski vzorec velja samodejno, zapis dneva je izjema', asy
   assert.equal(calendar[0].source, 'manual');
 });
 
-test('ocena trajanja: vsota časovnih norm, zaokrožena navzgor, najmanj 1, brez norm 4', () => {
-  assert.equal(estimateWorkOrderHours([{ casovnaNorma: 1.5, quantity: 2 }, { casovnaNorma: 0.5, quantity: 1 }]), 4);
-  assert.equal(estimateWorkOrderHours([{ casovnaNorma: 0.2, quantity: 1 }]), 1);
-  assert.equal(estimateWorkOrderHours([]), 4);
+// casovnaNorma je v MINUTAH (60 = ena delovna ura) — tako jo vodi cenik in tako
+// jo bere urnik. Prava napaka iz produkcije: nalog s 690 min je bil ocenjen na
+// 690 UR, kar je stranki skrilo vse termine.
+test('ocena trajanja: minute norm → ure, zaokroženo navzgor, najmanj 1, brez norm 4', () => {
+  assert.equal(estimateWorkOrderHours([{ casovnaNorma: 120, quantity: 1 }, { casovnaNorma: 60, quantity: 8 }]), 10);
+  assert.equal(estimateWorkOrderHours([{ casovnaNorma: 30, quantity: 1 }]), 1, 'pol ure se zaokroži na 1 uro');
+  assert.equal(estimateWorkOrderHours([{ casovnaNorma: 90, quantity: 1 }]), 2, '1,5 h → 2 h');
+  assert.equal(estimateWorkOrderHours([]), 4, 'brez norm privzeto 4 ure');
+  assert.equal(estimateWorkOrderHours([{ casovnaNorma: 0, quantity: 5 }]), 4, 'same nicle = brez norm');
+  // Realen nalog iz produkcije (PRJ-220): 690 min = 11,5 h → 12 h, ne 690 h.
+  assert.equal(estimateWorkOrderHours([{ casovnaNorma: 690, quantity: 1 }]), 12);
 });
 
 test('prosti dnevi: presek dveh monterjev + zasedenost z razpisanim nalogom', async () => {
@@ -135,11 +142,11 @@ test('prosti dnevi: presek dveh monterjev + zasedenost z razpisanim nalogom', as
   const free = await findFreeDays({ employeeIds: [String(miha._id), String(ana._id)], durationHours: 3, from: D1, days: 2 });
   assert.deepEqual(free, [{ date: D1, startHour: 10 }], 'presek 10–12 zadošča za 3 ure');
 
-  // Mihi na D1 razpišemo nalog 10:00 (2 uri norm) → presek razpade, 3 ure ni več
+  // Mihi na D1 razpišemo nalog 10:00 (120 min = 2 uri) → presek razpade, 3 ure ni več
   await WorkOrderModel.create({
     projectId: 'PRJ-400',
     offerVersionId: new mongoose.Types.ObjectId().toString(),
-    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 2 }],
+    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 120 }],
     status: 'issued',
     scheduledAt: `${D1}T10:00:00`,
     assignedEmployeeIds: [miha._id],
@@ -158,7 +165,7 @@ test('rezervacija: stranka izbere dan, termin se zapiše in potrdi, povezava pos
   const workOrder = await WorkOrderModel.create({
     projectId: 'PRJ-401',
     offerVersionId: new mongoose.Types.ObjectId().toString(),
-    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 3 }],
+    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 180 }],
     status: 'issued',
     scheduledAt: null,
     assignedEmployeeIds: [miha._id],
@@ -191,7 +198,7 @@ const PON = addDays(mondayOf(todayKey()), 14);
 const TOR = addDays(PON, 1);
 const SRE = addDays(PON, 2);
 
-async function nalog(projectId: string, date: string, employeeId: unknown, casovnaNorma = 2) {
+async function nalog(projectId: string, date: string, employeeId: unknown, casovnaNorma = 120) {
   return WorkOrderModel.create({
     projectId,
     offerVersionId: new mongoose.Types.ObjectId().toString(),
@@ -222,7 +229,7 @@ test('tedenska omejitev: ob dosegu se preostali prosti dnevi tedna skrijejo', as
 
   // Dva naloga ISTI dan štejeta kot en delovni dan — druga dva dneva ostaneta.
   await WorkOrderModel.deleteMany({ projectId: 'PRJ-421' });
-  await nalog('PRJ-422', PON, miha._id, 1);
+  await nalog('PRJ-422', PON, miha._id, 60);
   assert.deepEqual((await prosto()).map((d) => d.date), [TOR, SRE], 'isti dan = en delovni dan');
 });
 
@@ -258,7 +265,7 @@ test('koledar monterja pokaže razpisane termine z oznako opravljenosti', async 
     projectId: 'PRJ-410',
     title: 'Montaža alarma',
     offerVersionId: new mongoose.Types.ObjectId().toString(),
-    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 2 }],
+    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 120 }],
     status: 'completed',
     completedAt: new Date(),
     scheduledAt: `${opravljen}T08:00:00`,
@@ -268,7 +275,7 @@ test('koledar monterja pokaže razpisane termine z oznako opravljenosti', async 
     projectId: 'PRJ-411',
     title: 'Montaža kamer',
     offerVersionId: new mongoose.Types.ObjectId().toString(),
-    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 3 }],
+    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 180 }],
     status: 'issued',
     scheduledAt: `${D1}T10:00:00`,
     assignedEmployeeIds: [miha._id],
@@ -296,13 +303,13 @@ test('rezervacija: dan, ki ni več prost, vrne 409', async () => {
   await WorkOrderModel.create({
     projectId: 'PRJ-402',
     offerVersionId: new mongoose.Types.ObjectId().toString(),
-    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 5 }],
+    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 300 }],
     status: 'issued',
     scheduledAt: null,
     assignedEmployeeIds: [miha._id],
     bookingToken: 'b'.repeat(48),
   });
-  // 5 ur norm > 2 razpoložljivi uri → D1 sploh ni ponujen
+  // 300 min = 5 ur > 2 razpoložljivi uri → D1 sploh ni ponujen
   await assert.rejects(chooseBookingDay('b'.repeat(48), D1), (error: unknown) =>
     error instanceof AvailabilityError && error.statusCode === 409);
 });

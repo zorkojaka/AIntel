@@ -296,8 +296,9 @@ export function MaterialOrderCard({
         body: JSON.stringify({ previewOnly: true }),
       });
       const payload = await response.json();
-      if (!response.ok || payload?.ok === false) {
-        throw new Error(payload?.message || "Osnutka vabila ni bilo mogoče pripraviti.");
+      // Ovojnica API-ja je { success, data, error } — razlog napake je v `error`.
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error || payload?.message || "Osnutka vabila ni bilo mogoče pripraviti.");
       }
       const data = payload?.data ?? payload;
       setBookingDraft(data.draft ?? { to: "", subject: "", body: "" });
@@ -320,8 +321,8 @@ export function MaterialOrderCard({
         body: JSON.stringify(bookingDraft),
       });
       const payload = await response.json();
-      if (!response.ok || payload?.ok === false) {
-        throw new Error(payload?.message || "Vabila ni bilo mogoče poslati.");
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error || payload?.message || "Vabila ni bilo mogoče poslati.");
       }
       toast.success("Vabilo k izbiri termina je bilo poslano.");
       setBookingResult(
