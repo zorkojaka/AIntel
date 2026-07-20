@@ -11,6 +11,7 @@ import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { ExecutionDateTimePicker } from "./ExecutionDateTimePicker";
 
 type MaterialLine = MaterialOrder["items"][number];
 
@@ -381,10 +382,6 @@ export function MaterialOrderCard({
   const executionTeamCardClass = hasExecutionTeam
     ? "border-green-500/40 shadow-[0_0_0_1px_rgba(34,197,94,0.12)]"
     : "border-orange-400/50 shadow-[0_0_0_1px_rgba(251,146,60,0.14)]";
-  const executionDateInputClass =
-    hasExecutionDate && executionDateConfirmedAt
-      ? "border-green-500/40 focus-visible:border-green-500 focus-visible:ring-green-500/20"
-      : "border-orange-400/50 focus-visible:border-orange-500 focus-visible:ring-orange-500/20";
   const executionDateConfirmationLabel = executionDateConfirmedAt
     ? `Termin potrjen ${formatDateTime(executionDateConfirmedAt)}${executionDateConfirmedBy ? ` (${executionDateConfirmedBy})` : ""}`
     : "Termin še ni potrjen";
@@ -540,9 +537,11 @@ export function MaterialOrderCard({
               <div className="space-y-4">
                 <h4 className="text-sm font-semibold">Termin izvedbe</h4>
                 <div className="flex flex-wrap items-start gap-3">
-                  <label className="min-w-0 flex-1">
-                    <Input type="datetime-local" value={executionDate ?? ""} onChange={(event) => onExecutionDateChange(event.target.value)} className={`h-12 text-lg font-semibold tracking-tight ${executionDateInputClass}`} />
-                  </label>
+                  <ExecutionDateTimePicker
+                    value={executionDate ?? null}
+                    onChange={(next) => onExecutionDateChange(next ?? "")}
+                    disabled={savingWorkOrder}
+                  />
                   {executionDateConfirmedAt ? (
                     <Button type="button" size="sm" variant="outline" onClick={onUnconfirmExecutionDate} disabled={savingWorkOrder}>
                       Prekliči termin
