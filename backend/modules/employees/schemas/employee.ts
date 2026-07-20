@@ -16,6 +16,8 @@ export interface EmployeeScheduleSettings {
   fixedWeeklyHours?: Record<string, number[]>;
   /** Privzeto največ delovnih dni na teden (null/undefined = brez omejitve); izjeme po tednih so v employee_week_limits. */
   maxWorkdaysPerWeek?: number | null;
+  /** Self način: privzeti dnevi v tednu (0–6 kot Date.getDay(), 0=nedelja), ki so samodejno označeni kot razpoložljivi. */
+  defaultWeekdays?: number[];
 }
 
 export interface EmployeeDocument extends Document {
@@ -68,6 +70,7 @@ const EmployeeSchema = new Schema<EmployeeDocument>(
           dayEndHour: { type: Number, required: true, min: 1, max: 24, default: 16 },
           fixedWeeklyHours: { type: Schema.Types.Mixed, default: undefined },
           maxWorkdaysPerWeek: { type: Number, min: 0, max: 7, default: null },
+          defaultWeekdays: { type: [Number], default: undefined },
         },
         { _id: false }
       ),

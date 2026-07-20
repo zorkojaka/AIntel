@@ -97,6 +97,53 @@ test('self način: klik dneva shrani ure, prazen seznam dan pobriše', async () 
   assert.equal(await EmployeeAvailabilityDayModel.countDocuments({}), 0, 'prazen self dan se pobriše');
 });
 
+test('self privzeti dnevi: označeni dnevi v tednu so samodejno na voljo', async () => {
+  const weekdayD1 = new Date(`${D1}T00:00:00`).getDay();
+  const weekdayD2 = new Date(`${D2}T00:00:00`).getDay();
+  // Privzeti samo dan D1 (ne D2).
+  const employee = await monter('Miha', { mode: 'self', dayStartHour: 8, dayEndHour: 12, defaultWeekdays: [weekdayD1] });
+
+  const calendar = await getAvailabilityCalendar(String(employee._id), D1, 2);
+  assert.deepEqual(calendar[0], { date: D1, hours: [8, 9, 10, 11], source: 'fixed' }, 'privzeti dan dobi privzete ure');
+  if (weekdayD2 !== weekdayD1) {
+    assert.equal(calendar[1].source, 'none', 'neprivzeti dan ostane prazen');
+  }
+});
+
+test('self privzeti dan: prazen zapis je izjema (ne delam), ne izbris', async () => {
+  const weekdayD1 = new Date(`${D1}T00:00:00`).getDay();
+  const employee = await monter('Miha', { mode: 'self', dayStartHour: 8, dayEndHour: 12, defaultWeekdays: [weekdayD1] });
+
+  // Prazen zapis na privzeti dan → izjema (ostane prazen, ne vrne se v vzorec).
+  await setAvailabilityDay(String(employee._id), D1, []);
+  let calendar = await getAvailabilityCalendar(String(employee._id), D1, 1);
+  assert.deepEqual(calendar[0], { date: D1, hours: [], source: 'manual' });
+  assert.equal(await EmployeeAvailabilityDayModel.countDocuments({}), 1, 'izjema se shrani, ne izbriše');
+
+  // Zapis drugih ur na privzeti dan → override.
+  await setAvailabilityDay(String(employee._id), D1, [9, 10]);
+  calendar = await getAvailabilityCalendar(String(employee._id), D1, 1);
+  assert.deepEqual(calendar[0].hours, [9, 10]);
+});
+
+test('self brez privzetega dneva: prazen zapis pobriše (kot doslej)', async () => {
+  const employee = await monter('Miha', { mode: 'self', dayStartHour: 8, dayEndHour: 16, defaultWeekdays: [] });
+  await setAvailabilityDay(String(employee._id), D1, [8, 9]);
+  assert.equal(await EmployeeAvailabilityDayModel.countDocuments({}), 1);
+  await setAvailabilityDay(String(employee._id), D1, []);
+  assert.equal(await EmployeeAvailabilityDayModel.countDocuments({}), 0, 'neprivzeti self dan se pobriše');
+});
+
+test('urnik: privzeti dnevi morajo biti 0–6', async () => {
+  const employee = await monter('Miha');
+  await assert.rejects(
+    updateEmployeeSchedule(String(employee._id), { defaultWeekdays: [1, 7] }, { allowModeChange: false }),
+    AvailabilityError,
+  );
+  const schedule = await updateEmployeeSchedule(String(employee._id), { defaultWeekdays: [5, 1, 1] }, { allowModeChange: false });
+  assert.deepEqual(schedule.defaultWeekdays, [1, 5], 'razvrsti in odstrani dvojnike');
+});
+
 test('fixed način: tedenski vzorec velja samodejno, zapis dneva je izjema', async () => {
   const vseDni: Record<string, number[]> = {};
   for (const day of ['0', '1', '2', '3', '4', '5', '6']) vseDni[day] = [8, 9, 10, 11, 12, 13, 14, 15];

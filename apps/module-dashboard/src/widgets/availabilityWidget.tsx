@@ -13,7 +13,19 @@ interface ScheduleSettings {
   dayStartHour: number;
   dayEndHour: number;
   maxWorkdaysPerWeek?: number | null;
+  defaultWeekdays?: number[];
 }
+
+// Dnevi tedna (ključi 0–6 kot Date.getDay(); 0 = nedelja), prikaz pon → ned.
+const WEEKDAY_CHOICES: Array<{ key: number; label: string }> = [
+  { key: 1, label: 'Pon' },
+  { key: 2, label: 'Tor' },
+  { key: 3, label: 'Sre' },
+  { key: 4, label: 'Čet' },
+  { key: 5, label: 'Pet' },
+  { key: 6, label: 'Sob' },
+  { key: 0, label: 'Ned' },
+];
 
 interface WeekLimit {
   weekStart: string;
@@ -187,6 +199,26 @@ function MyAvailability() {
     }
   };
 
+  // Privzeti dnevi v tednu: shranimo in osvežimo koledar (vzorec spremeni
+  // razpoložljivost vseh tednov).
+  const toggleDefaultWeekday = async (weekday: number) => {
+    const current = schedule?.defaultWeekdays ?? [];
+    const next = current.includes(weekday) ? current.filter((day) => day !== weekday) : [...current, weekday].sort((a, b) => a - b);
+    try {
+      const response = await fetch('/api/availability/my/schedule', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultWeekdays: next }),
+      });
+      const payload = await parseApiEnvelope<{ schedule: ScheduleSettings }>(response, 'Privzetih dni ni bilo mogoče shraniti.');
+      setSchedule(payload.schedule);
+      await reload();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Privzetih dni ni bilo mogoče shraniti.');
+    }
+  };
+
   const saveDefaultWeekLimit = async (value: string) => {
     try {
       const response = await fetch('/api/availability/my/schedule', {
@@ -245,7 +277,7 @@ function MyAvailability() {
         className={[
           'razpolozljivost__dan',
           active ? 'je-aktiven' : '',
-          day.source === 'fixed' ? 'je-fiksen' : '',
+          day.source === 'fixed' && schedule.mode === 'fixed' ? 'je-fiksen' : '',
           editingDate === day.date ? 'je-izbran' : '',
           past ? 'je-pretekli' : '',
           day.date === todayKey ? 'je-danes' : '',
@@ -316,6 +348,23 @@ function MyAvailability() {
             <option value="">brez</option>
             {[1, 2, 3, 4, 5, 6, 7].map((limit) => <option key={limit} value={limit}>{limit}</option>)}
           </select>
+          <div className="razpolozljivost__privzeti-dnevi">
+            <span className="dashboard-widget__meta">· Privzeti dnevi:</span>
+            {WEEKDAY_CHOICES.map((weekday) => {
+              const active = (schedule.defaultWeekdays ?? []).includes(weekday.key);
+              return (
+                <button
+                  key={weekday.key}
+                  type="button"
+                  className={`razpolozljivost__dan-gumb ${active ? 'je-aktiven' : ''}`}
+                  title={`${weekday.label} kot privzeto na voljo v vseh tednih`}
+                  onClick={() => void toggleDefaultWeekday(weekday.key)}
+                >
+                  {weekday.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 

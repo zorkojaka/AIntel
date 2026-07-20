@@ -78,7 +78,14 @@ export async function getEmployeeSchedule(employeeId: string): Promise<EmployeeS
 
 export async function updateEmployeeSchedule(
   employeeId: string,
-  payload: { mode?: unknown; dayStartHour?: unknown; dayEndHour?: unknown; fixedWeeklyHours?: unknown; maxWorkdaysPerWeek?: unknown },
+  payload: {
+    mode?: unknown;
+    dayStartHour?: unknown;
+    dayEndHour?: unknown;
+    fixedWeeklyHours?: unknown;
+    maxWorkdaysPerWeek?: unknown;
+    defaultWeekdays?: unknown;
+  },
   options: { allowModeChange: boolean },
 ): Promise<EmployeeScheduleSettings> {
   const current = await getEmployeeSchedule(employeeId);
@@ -117,6 +124,28 @@ export async function updateEmployeeSchedule(
   if (next.dayEndHour <= next.dayStartHour) {
     throw new AvailabilityError('Konec delavnika mora biti za začetkom.');
   }
+  // Privzeti dnevi v tednu (self način): monter jih sme urejati sam. Ključi so
+  // 0–6 kot Date.getDay() (0 = nedelja).
+  if (payload.defaultWeekdays !== undefined) {
+    if (payload.defaultWeekdays === null) {
+      next.defaultWeekdays = [];
+    } else if (Array.isArray(payload.defaultWeekdays)) {
+      const days = Array.from(
+        new Set(
+          payload.defaultWeekdays.map((entry) => {
+            const day = Number(entry);
+            if (!Number.isInteger(day) || day < 0 || day > 6) {
+              throw new AvailabilityError('Dnevi tedna morajo biti cela števila 0–6 (0 = nedelja).');
+            }
+            return day;
+          }),
+        ),
+      ).sort((a, b) => a - b);
+      next.defaultWeekdays = days;
+    } else {
+      throw new AvailabilityError('Privzeti dnevi tedna morajo biti seznam.');
+    }
+  }
   if (payload.fixedWeeklyHours !== undefined) {
     if (!options.allowModeChange) {
       throw new AvailabilityError('Fiksni tedenski urnik lahko spremeni samo administrator.', 403);
@@ -148,18 +177,30 @@ export function defaultHoursFor(schedule: EmployeeScheduleSettings): number[] {
   return hours;
 }
 
+/**
+ * Ure iz tedenskega vzorca za dan v tednu (brez izjem/zapisov dneva):
+ * - fixed način: eksplicitne ure na dan (fixedWeeklyHours),
+ * - self način: privzeti delavnik za dneve, ki jih je monter označil kot
+ *   privzete (defaultWeekdays) — sicer prazno.
+ */
+function weeklyTemplateHours(schedule: EmployeeScheduleSettings, weekday: number): number[] {
+  if (schedule.mode === 'fixed') {
+    return schedule.fixedWeeklyHours?.[String(weekday)] ?? [];
+  }
+  if (Array.isArray(schedule.defaultWeekdays) && schedule.defaultWeekdays.includes(weekday)) {
+    return defaultHoursFor(schedule);
+  }
+  return [];
+}
+
 function effectiveHours(
   schedule: EmployeeScheduleSettings,
   date: string,
   override: number[] | undefined,
 ): { hours: number[]; source: 'manual' | 'fixed' | 'none' } {
   if (override !== undefined) return { hours: override, source: 'manual' };
-  if (schedule.mode === 'fixed') {
-    const weekday = String(dateKeyToWeekday(date));
-    const fixed = schedule.fixedWeeklyHours?.[weekday] ?? [];
-    return { hours: fixed, source: fixed.length ? 'fixed' : 'none' };
-  }
-  return { hours: [], source: 'none' };
+  const template = weeklyTemplateHours(schedule, dateKeyToWeekday(date));
+  return { hours: template, source: template.length ? 'fixed' : 'none' };
 }
 
 export interface AvailabilityDay {
@@ -188,16 +229,24 @@ export async function getAvailabilityCalendar(employeeId: string, from: string, 
   return out;
 }
 
-/** Nastavi ure dneva. Prazen seznam: pri self pobriše zapis, pri fixed zapiše izjemo »ne delam«. */
+/**
+ * Nastavi ure dneva. Prazen seznam: če dan pokriva tedenski vzorec (fixed ure
+ * ali self privzeti dan), se shrani izjema »ta dan nisem na voljo«; sicer se
+ * zapis pobriše (dan se vrne v »ni označeno«).
+ */
 export async function setAvailabilityDay(employeeId: string, date: string, hours: unknown): Promise<AvailabilityDay> {
   const dateKey = assertDateKey(date);
   const clean = sanitizeHours(hours);
   const schedule = await getEmployeeSchedule(employeeId);
   const id = new mongoose.Types.ObjectId(employeeId);
 
-  if (!clean.length && schedule.mode === 'self') {
-    await EmployeeAvailabilityDayModel.deleteOne({ employeeId: id, date: dateKey });
-    return { date: dateKey, hours: [], source: 'none' };
+  if (!clean.length) {
+    const coveredByTemplate = weeklyTemplateHours(schedule, dateKeyToWeekday(dateKey)).length > 0;
+    if (!coveredByTemplate) {
+      await EmployeeAvailabilityDayModel.deleteOne({ employeeId: id, date: dateKey });
+      return { date: dateKey, hours: [], source: 'none' };
+    }
+    // Vzorec ta dan pokrije — prazen zapis pomeni izjemo (ne delam ta dan).
   }
   await EmployeeAvailabilityDayModel.updateOne(
     { employeeId: id, date: dateKey },
