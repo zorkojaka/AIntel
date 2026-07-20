@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 
 import { ProductModel } from '../modules/cenik/product.model';
-import { predlagajDisk, predlagajPoESwitch } from '../modules/zahteve/zahteva.service';
+import { predlagajDisk, predlagajNosilce, predlagajPoESwitch } from '../modules/zahteve/zahteva.service';
 
 // AIN-P1-16: strežniške predloge morajo med enako ustreznimi produkti izbrati
 // najpogosteje prodanega (lastna statistika), ne najcenejšega.
@@ -77,5 +77,36 @@ test('AIN-P1-16 predlogi upoštevajo prodajno statistiko', async (t) => {
     ]);
     const predlog = await predlagajPoESwitch(6);
     assert.match(String(predlog?.ime), /prodajan/);
+  });
+
+  // Reolink »REO Junction - D20« je klasificiran kot 'drugo', a ima izvorni slug
+  // 'nosilci'. Nosilec se mora ponuditi pri kameri po slugu, ne le po productType.
+  await t.test('nosilec: ujame se tudi po slugu nosilci, ne le po productType', async () => {
+    const kamera = await ProductModel.create(
+      baseProduct({
+        ime: 'REO kamera RLC-810WA 8MP Wifi',
+        classification: { productType: 'kamera', cameraTechnology: 'IP video', manufacturer: 'Reolink', compatibleBracketCodes: [] },
+      }),
+    );
+    await ProductModel.create(
+      baseProduct({
+        ime: 'REO Junction - D20',
+        prodajnaCena: 35,
+        categorySlugs: ['drugo', 'nosilci', 'reolink'],
+        classification: { productType: 'drugo', manufacturer: 'Reolink' },
+      }),
+    );
+    // Nosilec drugega proizvajalca se ne sme pojaviti.
+    await ProductModel.create(
+      baseProduct({
+        ime: 'DVC nosilec (tuj proizvajalec)',
+        categorySlugs: ['nosilci'],
+        classification: { productType: 'nosilec', manufacturer: 'DVC' },
+      }),
+    );
+
+    const nosilci = await predlagajNosilce(String(kamera._id));
+    assert.equal(nosilci.length, 1, 'samo Reolink nosilec');
+    assert.equal(nosilci[0]?.ime, 'REO Junction - D20');
   });
 });

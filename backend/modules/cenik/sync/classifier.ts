@@ -82,7 +82,17 @@ function detectProductType(product: AAProductRaw): Classification['productType']
     (text.includes('poe') && /\b(stikalo|stikala|switch)\b/i.test(text))
   ) return 'switch';
   if (category.includes('disk') || category.includes('hdd') || /\d+\s*tb/i.test(text)) return 'disk';
-  if (category.includes('nosilec') || category.includes('mount') || /\b(DAJ|DAM|DBR|DAP)-\d+\b/i.test(product.name)) return 'nosilec';
+  // Nosilci: ednina/množina kategorije + junction/mountcam v imenu (Reolink, Ajax
+  // video mounti, Hikvision DS-serija) + znane kode. Pred alarmom, da Ajax video
+  // nosilci ne pristanejo med alarmnimi komponentami.
+  if (
+    category.includes('nosilec') ||
+    category.includes('nosilci') ||
+    category.includes('mount') ||
+    /junction|mountcam/i.test(product.name) ||
+    /\b(DAJ|DAM|DBR|DAP)-\d+\b/i.test(product.name)
+  )
+    return 'nosilec';
   if (category.includes('kabel') || category.includes('cable')) return 'kabel';
   if (category.includes('programska oprema') || category.includes('software')) return 'pribor';
   if (category.includes('alarm') || text.includes('ajax')) return 'alarm_komponenta';
