@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MaterialOrder } from "@aintel/shared/types/logistics";
-import { Loader2 } from "lucide-react";
+import { Loader2, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import {
@@ -111,6 +111,17 @@ export function SupplierOrderEmailDialog({
 
   const emailOptions = supplier?.emails ?? [];
 
+  // Predogled per-dobavitelj naročilnice v novem zavihku (samo postavke tega dobavitelja).
+  const handlePreviewPdf = () => {
+    const itemIds = lines.map((line) => line.id).filter(Boolean);
+    if (itemIds.length === 0) {
+      toast.error("Naročilo nima postavk za predogled.");
+      return;
+    }
+    const query = new URLSearchParams({ docType: "PURCHASE_ORDER", mode: "inline", itemIds: itemIds.join(",") });
+    window.open(`/api/projects/${projectId}/material-orders/${materialOrderId}/pdf?${query.toString()}`, "_blank", "noopener,noreferrer");
+  };
+
   const handleSend = async () => {
     setSending(true);
     try {
@@ -182,6 +193,15 @@ export function SupplierOrderEmailDialog({
             <span className="font-medium">Vsebina (popis opreme in količine)</span>
             <Textarea rows={12} value={body} onChange={(event) => setBody(event.target.value)} />
           </label>
+          <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <Paperclip className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1">
+              Priloga: <span className="font-medium text-foreground">naročilnica (PDF)</span> samo s postavkami tega dobavitelja.
+            </span>
+            <Button type="button" variant="outline" size="sm" onClick={handlePreviewPdf}>
+              Predogled naročilnice
+            </Button>
+          </div>
           <p className="text-xs text-muted-foreground">
             Po pošiljanju se vse postavke tega dobavitelja samodejno označijo kot naročene. Kopija gre na vaš Bcc naslov.
           </p>

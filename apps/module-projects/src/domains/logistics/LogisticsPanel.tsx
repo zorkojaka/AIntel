@@ -2972,12 +2972,30 @@ export function LogisticsPanel({
               onBulkMarkReady={(items) => {
                 void applyMaterialItemsAndSave(order._id, items);
               }}
+              onOrderBySupplier={(group) =>
+                setSupplierOrderDialog({ materialOrderId: order._id, supplierLabel: group.supplierLabel, lines: group.lines })
+              }
               hasPendingMaterialChanges={Boolean(pendingMaterialOrderIds[order._id])}
               canDownloadPdf={Boolean(order._id)}
               downloadingPdf={materialDownloading}
             />
           ))
         )}
+        {supplierOrderDialog ? (
+          <SupplierOrderEmailDialog
+            open
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) setSupplierOrderDialog(null);
+            }}
+            projectId={projectId}
+            materialOrderId={supplierOrderDialog.materialOrderId}
+            supplierLabel={supplierOrderDialog.supplierLabel}
+            lines={supplierOrderDialog.lines}
+            onSent={() => {
+              void fetchSnapshot();
+            }}
+          />
+        ) : null}
       </div>
 
       <Card>

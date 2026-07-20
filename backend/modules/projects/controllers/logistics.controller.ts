@@ -2938,7 +2938,17 @@ export async function exportMaterialOrderPdf(req: Request, res: Response, next: 
   try {
     const docType = parseMaterialDocType(req.query.docType);
     const mode = parsePdfResponseMode(req.query.mode);
-    const buffer = await generateMaterialOrderDocumentPdf(req.params.projectId, req.params.materialOrderId, docType);
+    // itemIds (za naročilnico enega dobavitelja) — lahko ponovljen ali z vejico.
+    const rawItemIds = req.query.itemIds;
+    const itemIds = (Array.isArray(rawItemIds) ? rawItemIds : typeof rawItemIds === 'string' ? rawItemIds.split(',') : [])
+      .map((id) => String(id).trim())
+      .filter(Boolean);
+    const buffer = await generateMaterialOrderDocumentPdf(
+      req.params.projectId,
+      req.params.materialOrderId,
+      docType,
+      itemIds.length > 0 ? itemIds : undefined,
+    );
     res.setHeader('Content-Type', 'application/pdf');
     const slug = docType === 'DELIVERY_NOTE' ? 'delivery-note' : 'purchase-order';
     res.setHeader('Content-Disposition', `${mode}; filename="${slug}-${req.params.materialOrderId}.pdf"`);
