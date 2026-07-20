@@ -63,6 +63,7 @@ router.put('/my/schedule', async (req: Request, res: Response) => {
         dayStartHour: req.body?.dayStartHour,
         dayEndHour: req.body?.dayEndHour,
         maxWorkdaysPerWeek: req.body?.maxWorkdaysPerWeek,
+        defaultWeekdays: req.body?.defaultWeekdays,
       },
       { allowModeChange: false },
     );
@@ -143,6 +144,7 @@ router.put('/employees/:employeeId/schedule', adminOnly, async (req: Request, re
         dayEndHour: req.body?.dayEndHour,
         fixedWeeklyHours: req.body?.fixedWeeklyHours,
         maxWorkdaysPerWeek: req.body?.maxWorkdaysPerWeek,
+        defaultWeekdays: req.body?.defaultWeekdays,
       },
       { allowModeChange: true },
     );
