@@ -17,6 +17,7 @@ const TEMPLATE_CATEGORY_OPTIONS = [
   { value: 'invoice_send', label: 'Pošiljanje računa' },
   { value: 'installer_preparation_send', label: 'Email monterju (priprava montaže)' },
   { value: 'booking_invite_send', label: 'Vabilo stranki k izbiri termina' },
+  { value: 'booking_confirmation_send', label: 'Potrditev izbranega termina (stranki)' },
 ] as const;
 
 function createEmptyTemplate(): EditableTemplate {

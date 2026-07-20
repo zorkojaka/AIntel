@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { WorkOrderModel } from '../projects/schemas/work-order';
 import { EmployeeModel } from '../employees/schemas/employee';
 import { ProjectModel, newTimelineEventId } from '../projects/schemas/project';
-import { sendBookingInviteEmail } from '../communication/services/communication.service';
+import { sendBookingConfirmationEmail, sendBookingInviteEmail } from '../communication/services/communication.service';
 import { getConfig } from '../settings/config/config-store.service';
 import {
   AvailabilityError,
@@ -209,6 +209,19 @@ export async function chooseBookingDay(token: string, date: unknown): Promise<{ 
       },
     },
   );
+
+  // Potrditveni e-mail z gumbom »Dodaj v koledar« — napaka pri pošiljanju ne sme
+  // razveljaviti izbire termina (ta je že zapisana in potrjena).
+  try {
+    await sendBookingConfirmationEmail({
+      projectId: workOrder.projectId,
+      workOrderId: String(workOrder._id),
+      scheduledAt,
+      durationHours: bookingSlotHours(durationHours),
+    });
+  } catch (error) {
+    console.error('Potrditvenega e-maila termina ni bilo mogoče poslati.', error);
+  }
 
   return { scheduledAt };
 }

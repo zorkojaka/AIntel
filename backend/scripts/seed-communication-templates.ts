@@ -47,6 +47,24 @@ const DEFAULTS = [
     ].join('\n'),
     defaultAttachments: [],
   },
+  {
+    key: 'potrditev-termina-privzeta',
+    name: 'Potrditev izbranega termina (stranki)',
+    category: 'booking_confirmation_send',
+    subjectTemplate: 'Termin montaže potrjen — {{workOrder.schedule}}',
+    bodyTemplate: [
+      'Spoštovani {{customer.name}},',
+      '',
+      'potrjujemo termin montaže: {{workOrder.schedule}}.',
+      'Naša ekipa pride k vam; pred prihodom vas pokličemo.',
+      '',
+      'Termin si lahko s spodnjim gumbom dodate v svoj koledar.',
+      'Če vam termin ne ustreza, nas pokličite in ga prestavimo.',
+      '',
+      'Lep pozdrav',
+    ].join('\n'),
+    defaultAttachments: [],
+  },
 ] as const;
 
 async function seed() {

@@ -31,6 +31,7 @@ import { OfferVersionModel } from "../../projects/schemas/offer-version";
 import { WorkOrderModel } from "../../projects/schemas/work-order";
 import { EmployeeModel } from "../../employees/schemas/employee";
 import { resolveProjectClient } from "../../projects/services/project.service";
+import { buildIcsEvent, googleCalendarLink } from "../../availability/calendar-event";
 import { getActiveSignedConfirmationVersion } from "../../projects/services/work-order-confirmation.service";
 import { getSettings } from "../../settings/settings.service";
 
@@ -402,6 +403,8 @@ async function sendAndRecordCommunicationEmail(input: {
   bodyFinal: string;
   htmlFinal: string;
   attachments: ResolvedAttachment[];
+  /** Generirane priloge (npr. .ics koledarski dogodek) — gredo naravnost v mail. */
+  rawAttachments?: Array<{ filename: string; content: string | Buffer; contentType: string }>;
   inlineCompanyLogo: InlineEmailAttachment;
   baseMessage: Record<string, unknown>;
   actorDisplayName?: string | null;
@@ -419,11 +422,14 @@ async function sendAndRecordCommunicationEmail(input: {
   };
   onSentLoggingFailed?: (error: unknown) => { message: null; sent: true; loggingFailed: true };
 }) {
-  const attachmentFiles = input.attachments.map((attachment) => ({
-    filename: attachment.filename,
-    content: attachment.content,
-    contentType: attachment.contentType,
-  }));
+  const attachmentFiles = [
+    ...input.attachments.map((attachment) => ({
+      filename: attachment.filename,
+      content: attachment.content,
+      contentType: attachment.contentType,
+    })),
+    ...(input.rawAttachments ?? []),
+  ];
   const inlineLogoFiles = input.inlineCompanyLogo
     ? [
         {
@@ -1718,6 +1724,174 @@ export async function sendBookingInviteEmail(input: {
       projectId: input.projectId,
       offerId: null,
       title: "Vabila k izbiri termina ni bilo mogoče poslati",
+      metadata: { to: resolvedRecipients.join(", "), subject: subjectFinal },
+    },
+  });
+}
+
+function escapeHtmlText(value: string): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Telo (besedilo) + gumb za koledar + noga → HTML potrditvenega maila. */
+function renderConfirmationHtml(bodyText: string, calendarLink: string, footerHtml: string | null): string {
+  const bodyHtml = bodyText
+    .split("\n")
+    .map((line) => (line.trim() ? `<div style="margin:0 0 8px 0;">${escapeHtmlText(line)}</div>` : '<div style="height:8px;"></div>'))
+    .join("");
+  const button =
+    `<div style="margin:18px 0;">` +
+    `<a href="${escapeHtmlText(calendarLink)}" target="_blank" rel="noopener" ` +
+    `style="display:inline-block;background:#1d4ed8;color:#ffffff;padding:11px 22px;border-radius:8px;` +
+    `text-decoration:none;font-weight:bold;font-family:Arial,sans-serif;font-size:14px;">📅 Dodaj v koledar</a>` +
+    `<div style="font-size:12px;color:#6b7280;margin-top:6px;">V prilogi je tudi koledarski dogodek (.ics) za Apple in Outlook.</div>` +
+    `</div>`;
+  const footer = footerHtml && footerHtml.trim()
+    ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;">${footerHtml}</div>`
+    : "";
+  return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111827;">${bodyHtml}${button}${footer}</div>`;
+}
+
+/**
+ * Potrditev izbranega termina montaže — stranka po spletni izbiri dneva prejme
+ * e-mail s potrjenim datumom in gumbom »Dodaj v koledar« (+ .ics priloga).
+ * Zabeleži se kot ostala pošta projekta (nit, dnevnik, dogodki).
+ */
+export async function sendBookingConfirmationEmail(input: {
+  projectId: string;
+  workOrderId: string;
+  scheduledAt: string; // lokalni "YYYY-MM-DDTHH:mm:ss"
+  durationHours: number;
+}) {
+  const senderSettings = await getCommunicationSenderSettings();
+  if (!senderSettings.enabled || !senderSettings.senderName || !senderSettings.senderEmail) {
+    throw new Error("Pošiljatelj ni pravilno nastavljen.");
+  }
+
+  const [project, globalSettings] = await Promise.all([ProjectModel.findOne({ id: input.projectId }), getSettings()]);
+  if (!project) throw new Error("Projekt ni najden.");
+
+  const effectiveSender = resolveSenderIdentity(senderSettings, null);
+  const projectClient = await resolveProjectClient(project);
+  const customerEmail = projectClient?.email?.trim() || "";
+  if (!customerEmail) throw new Error("Stranka nima nastavljenega e-naslova.");
+  const resolvedRecipients = [customerEmail.toLowerCase()];
+
+  const startDate = new Date(input.scheduledAt.replace(" ", "T"));
+  const dateLabel = Number.isNaN(startDate.valueOf())
+    ? input.scheduledAt
+    : startDate.toLocaleDateString("sl-SI", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const timeLabel = Number.isNaN(startDate.valueOf())
+    ? ""
+    : `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2, "0")}`;
+  const scheduleLabel = timeLabel ? `${dateLabel} ob ${timeLabel}` : dateLabel;
+  const customerAddress = project.customer?.address ?? projectClient?.address ?? "";
+
+  const templateContext = buildTemplateContext({
+    customerName: project.customer?.name ?? projectClient?.name ?? "",
+    customerEmail: projectClient?.email ?? "",
+    projectName: project.title ?? "",
+    offerNumber: "",
+    offerTotal: "",
+    workOrderSchedule: scheduleLabel,
+    companyName: globalSettings.companyName ?? "",
+    companyWebsite: globalSettings.website ?? "",
+    companyAddress: globalSettings.address ?? "",
+    companyEmail: globalSettings.email ?? "",
+    companyPhone: globalSettings.phone ?? "",
+    companyLogoUrl: toPublicLogoUrl(globalSettings.logoUrl),
+    sender: {
+      ...senderSettings,
+      senderName: effectiveSender.senderName,
+      senderEmail: effectiveSender.senderEmail,
+      senderPhone: effectiveSender.senderPhone,
+      senderRole: formatRoleLabel(effectiveSender.senderRole),
+    },
+  });
+
+  const renderedFooter = renderCommunicationText(senderSettings.emailFooterTemplate, templateContext);
+  const footerUsesLogo = (senderSettings.emailFooterTemplate ?? "").includes("{{company.logo}}");
+  const inlineCompanyLogo = footerUsesLogo ? await resolveInlineCompanyLogo(globalSettings.logoUrl) : null;
+  const renderedFooterHtml = renderCommunicationFooterHtmlForEmail(senderSettings.emailFooterTemplate, templateContext, {
+    logoSrc: inlineCompanyLogo ? `cid:${inlineCompanyLogo.cid}` : toPublicEmailLogoUrl(globalSettings.logoUrl),
+  });
+
+  const customerFirstLine = (project.customer?.name ?? projectClient?.name ?? "").trim();
+  const template = await findActiveTemplate("booking_confirmation_send");
+  const renderedTemplate = template ? renderCommunicationTemplate(template, templateContext) : null;
+  const subjectFinal = renderedTemplate?.subject || `Termin montaže potrjen — ${scheduleLabel}`;
+  const defaultBody = [
+    customerFirstLine ? `Spoštovani ${customerFirstLine},` : "Spoštovani,",
+    "",
+    `potrjujemo termin montaže: ${scheduleLabel}.`,
+    "Naša ekipa pride k vam; pred prihodom vas pokličemo.",
+    "",
+    "Termin si lahko s spodnjim gumbom dodate v svoj koledar.",
+    "Če vam termin ne ustreza, nas pokličite in ga prestavimo.",
+    "",
+    "Lep pozdrav",
+  ].join("\n");
+  const bodyWithoutFooter = renderedTemplate?.body || defaultBody;
+  const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
+
+  const calendarInput = {
+    start: input.scheduledAt,
+    durationHours: input.durationHours,
+    summary: `Montaža — ${project.title ?? input.projectId}`,
+    description: `Izvedba montaže (${project.title ?? input.projectId}).`,
+    location: customerAddress,
+    uid: `booking-${input.workOrderId}@inteligent.si`,
+  };
+  const icsContent = buildIcsEvent(calendarInput);
+  const htmlFinal = renderConfirmationHtml(bodyWithoutFooter, googleCalendarLink(calendarInput), renderedFooterHtml);
+
+  const baseMessage = {
+    projectId: input.projectId,
+    offerId: null,
+    workOrderId: input.workOrderId,
+    customerId: projectClient?.id ?? null,
+    direction: "outbound" as const,
+    channel: "email" as const,
+    to: resolvedRecipients,
+    cc: [] as string[],
+    bcc: [] as string[],
+    subjectFinal,
+    bodyFinal,
+    templateId: template?._id ? String(template._id) : null,
+    templateKey: template?.key ?? null,
+    selectedAttachments: [] as CommunicationAttachmentRecord[],
+    sentByUserId: null,
+  };
+
+  return sendAndRecordCommunicationEmail({
+    senderSettings,
+    effectiveSender,
+    recipients: resolvedRecipients,
+    cc: [],
+    bcc: [],
+    subjectFinal,
+    bodyFinal,
+    htmlFinal,
+    attachments: [],
+    rawAttachments: [{ filename: "termin-montaze.ics", content: icsContent, contentType: "text/calendar; charset=utf-8; method=PUBLISH" }],
+    inlineCompanyLogo,
+    baseMessage,
+    actorDisplayName: "Stranka (spletna izbira)",
+    successEvent: {
+      projectId: input.projectId,
+      offerId: null,
+      title: "Potrditev termina poslana stranki",
+      metadata: { to: resolvedRecipients.join(", "), subject: subjectFinal },
+    },
+    failureEvent: {
+      projectId: input.projectId,
+      offerId: null,
+      title: "Potrditve termina ni bilo mogoče poslati",
       metadata: { to: resolvedRecipients.join(", "), subject: subjectFinal },
     },
   });
