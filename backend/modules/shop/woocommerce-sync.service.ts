@@ -47,6 +47,20 @@ export function mapSolutions(categorySlugs: string[]): string[] {
   return out;
 }
 
+// Kuracija trgovine: rešitev "Pametni dom" prikazuje samo pametni dom teh znamk
+// (Blebox, SmartLife, Yale). Ajaxova linija LightCore nosi generično oznako
+// 'pametne-hise' — enako kot Yale — zato izbire ne moremo narediti po oznaki,
+// ampak po znamki. Ajax v trgovini sodi pod alarm, ne pod pametni dom; brez
+// pametni-dom obdrži alarm (preverjeno: 0 produktov ostane brez rešitve).
+const PAMETNI_DOM_IZKLJUCENE_ZNAMKE = new Set(['ajax']);
+
+export function curateSolutions(solutions: string[], brandSlug: string | null): string[] {
+  if (brandSlug && PAMETNI_DOM_IZKLJUCENE_ZNAMKE.has(brandSlug)) {
+    return solutions.filter((s) => s !== 'pametni-dom');
+  }
+  return solutions;
+}
+
 export function normalizeBrand(proizvajalec: unknown): { slug: string; label: string } | null {
   const raw = String(proizvajalec ?? '').trim();
   if (!raw) return null;
@@ -102,8 +116,8 @@ export function textToHtml(value: string): string {
 }
 
 export function buildProductPayload(product: any, slug: string, menuOrder: number): ShopProductPayload {
-  const solutions = mapSolutions(product?.categorySlugs ?? []);
   const brand = normalizeBrand(product?.proizvajalec);
+  const solutions = curateSolutions(mapSolutions(product?.categorySlugs ?? []), brand?.slug ?? null);
   const categoryKeys = [...solutions];
   if (brand) categoryKeys.push(brand.slug);
   return {

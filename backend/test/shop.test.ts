@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { buildProductPayload, textToHtml, mapSolutions, normalizeBrand } from '../modules/shop/woocommerce-sync.service';
+import { buildProductPayload, curateSolutions, textToHtml, mapSolutions, normalizeBrand } from '../modules/shop/woocommerce-sync.service';
 
 describe('shop woocommerce sync', () => {
   it('textToHtml pretvori golo besedilo v odstavke in ubeži HTML', () => {
@@ -44,6 +44,37 @@ describe('shop woocommerce sync', () => {
     assert.deepEqual(mapSolutions(['domofoni-in-video-domofoni']), ['domofon']);
     assert.deepEqual(mapSolutions(['blebox', 'wifi-krmilniki']), ['pametni-dom']);
     assert.deepEqual(mapSolutions(['neznano-nekaj']), []);
+  });
+
+  it('curateSolutions umakne Ajax iz pametni-dom (LightCore sodi pod alarm)', () => {
+    // Ajaxova LightCore nosi generično 'pametne-hise' → mapSolutions ga da v pametni-dom.
+    const solutions = mapSolutions(['ajax', 'alarm', 'pametne-hise', 'protivlomni-sistemi']);
+    assert.ok(solutions.includes('pametni-dom'), 'brez kuracije je Ajax v pametni-dom');
+    const curated = curateSolutions(solutions, 'ajax');
+    assert.ok(!curated.includes('pametni-dom'), 'Ajax se umakne iz pametni-dom');
+    assert.ok(curated.includes('alarm'), 'a obdrži alarm — ne ostane brez rešitve');
+  });
+
+  it('curateSolutions pusti Blebox, SmartLife in Yale v pametni-dom', () => {
+    assert.deepEqual(curateSolutions(mapSolutions(['blebox']), 'blebox'), ['pametni-dom']);
+    assert.deepEqual(curateSolutions(mapSolutions(['smartlife']), 'smartlife'), ['pametni-dom']);
+    // Yale pride v pametni-dom prek iste 'pametne-hise' kot Ajax, a ostane.
+    assert.ok(curateSolutions(mapSolutions(['yale', 'pametne-hise']), 'yale').includes('pametni-dom'));
+  });
+
+  it('buildProductPayload: Ajax stikalo ni pod pametni-dom, Blebox je', () => {
+    const ajax = buildProductPayload(
+      { _id: 'a1', ime: 'Ajax CenterButton', prodajnaCena: 20, proizvajalec: 'Ajax', categorySlugs: ['ajax', 'alarm', 'pametne-hise'] },
+      'ajax-centerbutton', 0,
+    );
+    assert.ok(!ajax.categoryKeys.includes('pametni-dom'));
+    assert.ok(ajax.categoryKeys.includes('alarm') && ajax.categoryKeys.includes('ajax'));
+
+    const blebox = buildProductPayload(
+      { _id: 'b1', ime: 'BleBox wLightBox', prodajnaCena: 30, proizvajalec: 'BleBox', categorySlugs: ['blebox', 'wifi-krmilniki'] },
+      'blebox-wlightbox', 1,
+    );
+    assert.ok(blebox.categoryKeys.includes('pametni-dom') && blebox.categoryKeys.includes('blebox'));
   });
 
   it('normalizeBrand poenoti različne zapise proizvajalca', () => {

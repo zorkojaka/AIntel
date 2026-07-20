@@ -211,7 +211,6 @@ const ProductSchema = new Schema<ProductDocument>(
   }
 );
 
-ProductSchema.index({ externalKey: 1 }, { unique: true });
 ProductSchema.index({ externalSource: 1, 'classification.productType': 1 });
 ProductSchema.index({ 'classification.manufacturer': 1, 'classification.cameraHousing': 1 });
 ProductSchema.index({ 'classification.maxResolutionMP': 1 });
@@ -221,7 +220,8 @@ ProductSchema.index(
     unique: true,
     partialFilterExpression: {
       externalSource: 'aa_api',
-      externalId: { $type: 'string', $ne: '' }
+      // partial indexes ne podpirajo $ne; $gt: '' zajame vse neprazne nize
+      externalId: { $type: 'string', $gt: '' }
     }
   }
 );
