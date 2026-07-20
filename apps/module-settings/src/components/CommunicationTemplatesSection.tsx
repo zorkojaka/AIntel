@@ -15,6 +15,9 @@ const TEMPLATE_CATEGORY_OPTIONS = [
   { value: 'offer_send', label: 'Pošiljanje ponudbe' },
   { value: 'work_order_confirmation_send', label: 'Pošiljanje potrdila delovnega naloga' },
   { value: 'invoice_send', label: 'Pošiljanje računa' },
+  { value: 'installer_preparation_send', label: 'Email monterju (priprava montaže)' },
+  { value: 'booking_invite_send', label: 'Vabilo stranki k izbiri termina' },
+  { value: 'booking_confirmation_send', label: 'Potrditev izbranega termina (stranki)' },
 ] as const;
 
 function createEmptyTemplate(): EditableTemplate {
@@ -192,7 +195,9 @@ export const CommunicationTemplatesSection: React.FC<CommunicationTemplatesSecti
             Placeholderji: {'{{customer.name}}'}, {'{{customer.email}}'}, {'{{project.name}}'}, {'{{offer.number}}'}, {'{{offer.total}}'},
             {' {{invoice.number}}'}, {'{{invoice.total}}'}, {'{{review.link}}'},
             {' {{workOrder.identifier}}'}, {'{{confirmation.date}}'}, {'{{company.name}}'}, {'{{sender.name}}'}, {'{{sender.email}}'},
-            {'{{sender.phone}}'}, {'{{sender.role}}'}
+            {'{{sender.phone}}'}, {'{{sender.role}}'}.
+            Email monterju: {'{{installer.name}}'}, {'{{workOrder.schedule}}'}, {'{{workOrder.details}}'} (podatki naloga — termin, stranka,
+            postavke). Vabilo k terminu: {'{{booking.link}}'}, {'{{booking.duration}}'}.
           </div>
           <div className="flex items-center gap-3">
             <Button type="submit" disabled={savingDraft}>

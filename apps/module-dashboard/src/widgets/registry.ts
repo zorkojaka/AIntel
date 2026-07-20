@@ -1,5 +1,8 @@
 import type { DashboardWidgetDefinition, DashboardWidgetId } from '../types';
 import { agendaWidget } from './agendaWidget';
+import { availabilityWidget } from './availabilityWidget';
+import { teamAvailabilityWidget } from './teamAvailabilityWidget';
+import { companyAgendaWidget } from './companyAgendaWidget';
 import { earningsForecastWidget } from './earningsForecastWidget';
 import { agendaWeekWidget } from './agendaWeekWidget';
 import { agendaAdaptiveWidget } from './agendaAdaptiveWidget';
@@ -9,12 +12,15 @@ import { upcomingProjectsWidget } from './upcomingProjectsWidget';
 import { workOrdersWidget } from './workOrdersWidget';
 
 export const ALL_WIDGETS: DashboardWidgetDefinition[] = [
+  companyAgendaWidget,
   agendaWidget,
   agendaWeekWidget,
   agendaAdaptiveWidget,
   projectSummaryWidget,
   upcomingProjectsWidget,
   earningsForecastWidget,
+  availabilityWidget,
+  teamAvailabilityWidget,
   materialOrdersWidget,
   workOrdersWidget,
 ];

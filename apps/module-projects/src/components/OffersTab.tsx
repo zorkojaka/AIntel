@@ -21,7 +21,7 @@ import type { Employee } from "@aintel/shared/types/employee";
 import type { CommunicationMessage } from "@aintel/shared/types/communication";
 import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 
-import { ArrowDown, ArrowUp, Loader2, Trash } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Loader2, Trash } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
@@ -33,6 +33,7 @@ import {
   calculateProjectKm,
   fetchExecutionRuleSettings,
   fetchRouteCalculationSettings,
+  type ProjectKmCalculation,
   type RouteCalculationSettings,
 } from "../api";
 import { useProjectMutationRefresh } from "../domains/core/useProjectMutationRefresh";
@@ -93,6 +94,10 @@ export function OffersTab({
   const [title, setTitle] = useState("Ponudba");
   const [paymentTerms, setPaymentTerms] = useState<string>("");
   const [comment, setComment] = useState<string>("");
+  // null = ponudba še nima lastnega izbora → veljajo privzete opombe iz nastavitev.
+  const [selectedNoteIds, setSelectedNoteIds] = useState<string[] | null>(null);
+  // Privzeto zaprto: opombe so večinoma privzete, odpre se le za posebne primere.
+  const [notesExpanded, setNotesExpanded] = useState(false);
 
   const [currentOffer, setCurrentOffer] = useState<OfferVersion | null>(null);
 
@@ -235,6 +240,27 @@ export function OffersTab({
     return paymentNotes;
   }, [settings]);
   const defaultPaymentTerms = paymentTermsOptions[0]?.value ?? settings?.defaultPaymentTerms ?? "";
+  const offerNotes = useMemo(() => {
+    const notes = Array.isArray(settings?.notes) ? settings.notes : [];
+    return notes.slice().sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  }, [settings]);
+  const defaultOfferNoteIds = useMemo(() => {
+    const validIds = new Set(offerNotes.map((note) => note.id));
+    return (settings?.noteDefaultsByDoc?.offer ?? []).filter((id) => validIds.has(id));
+  }, [settings, offerNotes]);
+  const effectiveSelectedNoteIds = selectedNoteIds ?? defaultOfferNoteIds;
+  const toggleOfferNote = useCallback(
+    (noteId: string) => {
+      const next = new Set(selectedNoteIds ?? defaultOfferNoteIds);
+      if (next.has(noteId)) {
+        next.delete(noteId);
+      } else {
+        next.add(noteId);
+      }
+      setSelectedNoteIds(offerNotes.map((note) => note.id).filter((id) => next.has(id)));
+    },
+    [selectedNoteIds, defaultOfferNoteIds, offerNotes]
+  );
   const selectedTemplate = useMemo(
     () => templates.find((entry) => entry._id === selectedTemplateId) ?? null,
     [templates, selectedTemplateId]
@@ -318,6 +344,7 @@ export function OffersTab({
     setTitle("Ponudba");
     setPaymentTerms(defaultPaymentTerms);
     setComment("");
+    setSelectedNoteIds(null);
     setItems(ensureTrailingBlank([]));
     setGlobalDiscountPercent(0);
     setUseGlobalDiscount(false);
@@ -336,6 +363,7 @@ export function OffersTab({
         title: "Ponudba",
         paymentTerms: defaultPaymentTerms,
         comment: "",
+        selectedNoteIds: defaultOfferNoteIds,
         items: [],
         useGlobalDiscount: false,
         usePerItemDiscount: false,
@@ -346,7 +374,7 @@ export function OffersTab({
     setLinkedServiceSuggestions({});
     setLoadingLinkedServiceSuggestions({});
     setManualKmQuantities({});
-  }, [defaultPaymentTerms]);
+  }, [defaultPaymentTerms, defaultOfferNoteIds]);
 
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
 
@@ -397,6 +425,8 @@ const loadOfferById = useCallback(async (offerId: string) => {
         setPaymentTerms(offer.paymentTerms ?? "");
       }
       setComment(offer.comment ?? "");
+      const offerNoteIds = Array.isArray(offer.selectedNoteIds) ? offer.selectedNoteIds : null;
+      setSelectedNoteIds(offerNoteIds);
 
       setUseGlobalDiscount(offer.useGlobalDiscount ?? false);
       setUsePerItemDiscount(offer.usePerItemDiscount ?? false);
@@ -440,6 +470,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
           title: offer.baseTitle || "Ponudba",
           paymentTerms: effectivePaymentTerms,
           comment: offer.comment ?? "",
+          selectedNoteIds: offerNoteIds ?? defaultOfferNoteIds,
           items: mapped,
           useGlobalDiscount: offer.useGlobalDiscount ?? false,
           usePerItemDiscount: offer.usePerItemDiscount ?? false,
@@ -1026,6 +1057,8 @@ const loadOfferById = useCallback(async (offerId: string) => {
       validUntil: null,
       paymentTerms,
       comment,
+      // Dokler nastavitve niso naložene, izbora ne pošiljamo (backend obdrži obstoječega).
+      selectedNoteIds: settings ? effectiveSelectedNoteIds : selectedNoteIds ?? undefined,
       items: cleanItems,
       // kompatibilnost s starimi polji
       discountPercent: effectiveGlobalPercent,
@@ -1042,13 +1075,14 @@ const loadOfferById = useCallback(async (offerId: string) => {
         title,
         paymentTerms,
         comment,
+        selectedNoteIds: effectiveSelectedNoteIds,
         items,
         useGlobalDiscount,
         usePerItemDiscount,
         vatMode,
         globalDiscountPercent,
       }),
-    [title, paymentTerms, comment, items, useGlobalDiscount, usePerItemDiscount, vatMode, globalDiscountPercent]
+    [title, paymentTerms, comment, effectiveSelectedNoteIds, items, useGlobalDiscount, usePerItemDiscount, vatMode, globalDiscountPercent]
   );
   const isDirty = currentOfferSnapshot !== lastSavedSnapshot;
 
@@ -1443,6 +1477,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
 
       setPaymentTerms(template.paymentTerms ?? "");
       setComment(template.comment ?? "");
+      setSelectedNoteIds(null);
       setVatMode(template.vatMode ?? 22);
       if (template.applyGlobalDiscount) {
         setUseGlobalDiscount(template.useGlobalDiscount ?? false);
@@ -1888,6 +1923,9 @@ const loadOfferById = useCallback(async (offerId: string) => {
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              Na PDF se izpiše v glavi kot »Rok plačila«.
+            </p>
           </div>
           <div className="space-y-2 md:col-span-2">
             <label className="text-sm font-medium">Komentar (vidno na PDF)</label>
@@ -1901,6 +1939,68 @@ const loadOfferById = useCallback(async (offerId: string) => {
             />
           </div>
         </div>
+
+        {offerNotes.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-sm font-medium"
+                onClick={() => setNotesExpanded((prev) => !prev)}
+                aria-expanded={notesExpanded}
+              >
+                <ChevronDown
+                  className={`size-4 shrink-0 text-muted-foreground transition-transform ${
+                    notesExpanded ? "" : "-rotate-90"
+                  }`}
+                />
+                Opombe v nogi ponudbe
+                <span className="font-normal text-muted-foreground">
+                  ({effectiveSelectedNoteIds.length}/{offerNotes.length})
+                </span>
+              </button>
+              {notesExpanded && selectedNoteIds !== null && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedNoteIds(null)}
+                >
+                  Ponastavi na privzete
+                </Button>
+              )}
+            </div>
+            {notesExpanded && (
+            <div className="grid gap-1.5 md:grid-cols-2">
+              {offerNotes.map((note) => {
+                const checked = effectiveSelectedNoteIds.includes(note.id);
+                const isDefault = defaultOfferNoteIds.includes(note.id);
+                return (
+                  <label
+                    key={note.id}
+                    className={`flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 ${
+                      checked ? "border-primary/40 bg-primary/5" : "bg-background"
+                    }`}
+                  >
+                    <Checkbox checked={checked} onChange={() => toggleOfferNote(note.id)} />
+                    <span className="min-w-0">
+                      <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+                        {note.title}
+                        {isDefault && (
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+                            privzeta
+                          </span>
+                        )}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">{note.text}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            )}
+          </div>
+        )}
       </div>
 
         <div className="rounded-lg border bg-muted/25 px-4 py-3">

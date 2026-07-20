@@ -259,32 +259,43 @@ export async function predlagajDisk(tb: number, surveillance = true) {
     .lean();
 }
 
+// Izdelek je nosilec, če ima productType 'nosilec' ALI če ga je vir uvrstil v
+// kategorijo »nosilci« (slug). Slednje ujame nosilce, ki jih je klasifikator
+// zgrešil (npr. Reolink »REO Junction - D20«, Hikvision DS-serija) — brez tega
+// se pri kameri ne ponudijo, čeprav v ceniku obstajajo.
+const NOSILEC_MATCH = {
+  $or: [{ 'classification.productType': 'nosilec' }, { categorySlugs: 'nosilci' }],
+};
+
 export async function predlagajNosilce(kameraId: string) {
   if (!isObjectId(kameraId)) return [];
   const kamera = await ProductModel.findById(kameraId).lean();
   if (!kamera) return [];
 
+  const sortByPopularity = { 'salesStats.soldQty365': -1, prodajnaCena: 1 } as const;
   const compatibleCodes = Array.isArray(kamera.classification?.compatibleBracketCodes)
     ? kamera.classification.compatibleBracketCodes.filter(Boolean)
     : [];
 
   if (compatibleCodes.length > 0) {
-    return ProductModel.find({
-      'classification.productType': 'nosilec',
+    const byCode = await ProductModel.find({
+      ...NOSILEC_MATCH,
       'classification.bracketCodeOwn': { $in: compatibleCodes },
       isActive: true,
     })
-      .sort({ 'salesStats.soldQty365': -1, prodajnaCena: 1 })
+      .sort(sortByPopularity)
       .lean();
+    // Če po kodah ni zadetka, pademo na ujemanje po proizvajalcu (spodaj).
+    if (byCode.length > 0) return byCode;
   }
 
   const manufacturer = productManufacturer(kamera);
   return ProductModel.find({
-    'classification.productType': 'nosilec',
+    ...NOSILEC_MATCH,
     ...(manufacturer ? { 'classification.manufacturer': manufacturer } : {}),
     isActive: true,
   })
-    .sort({ 'salesStats.soldQty365': -1, prodajnaCena: 1 })
+    .sort(sortByPopularity)
     .lean();
 }
 
@@ -699,9 +710,8 @@ export async function nadaljujNaPonudbo(zahtevaId: string, tenantId = 'inteligen
   zahteva.generatedQuoteId = ponudba._id;
   await zahteva.save();
 
-  // Ponudba obstaja → projekt preide iz 'draft' v 'offered', enako kot pot prek
-  // zavihka Ponudbe (offer-version.controller); sicer faza projekta obstane.
-  await ProjectModel.updateOne({ id: projectKey, status: 'draft' }, { $set: { status: 'offered' } });
+  // Projekt ostane v fazi Zahteve — v Ponudbe ga premakne sele POSLANA ponudba
+  // (sendOfferCommunicationEmail nastavi status 'offered' + offerSentAt).
 
   return ponudba;
 }

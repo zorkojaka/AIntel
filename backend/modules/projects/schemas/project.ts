@@ -130,6 +130,8 @@ export interface Project {
   quotedTotalWithVat: number;
   invoiceAmount: number;
   createdAt: string;
+  /** Kdaj je bila ponudba nazadnje poslana stranki — takrat projekt preide v fazo Ponudbe. */
+  offerSentAt?: Date | string | null;
   requirementsText?: string;
   salesUserId?: string | null;
   assignedEmployeeIds?: string[];
@@ -320,6 +322,7 @@ const ProjectSchema = new Schema<ProjectDocument>(
     quotedTotalWithVat: { type: Number, required: true, default: 0 },
     invoiceAmount: { type: Number, required: true, default: 0 },
     createdAt: { type: String, required: true },
+    offerSentAt: { type: Date, default: null },
     salesUserId: { type: Schema.Types.ObjectId, default: null },
     assignedEmployeeIds: { type: [Schema.Types.ObjectId], default: [] },
     requestIds: { type: [Schema.Types.ObjectId], ref: 'Zahteva', default: [] },
@@ -397,6 +400,7 @@ export function summarizeProject(project: Project | ProjectDocument) {
     quotedTotalWithVat: project.quotedTotalWithVat ?? 0,
     invoiceAmount: project.invoiceAmount,
     createdAt: project.createdAt,
+    offerSentAt: project.offerSentAt ? new Date(project.offerSentAt).toISOString() : null,
     categories: project.categories ?? [],
     archivedAt: project.archivedAt ? new Date(project.archivedAt).toISOString() : null,
     archivedBy: project.archivedBy ?? null,

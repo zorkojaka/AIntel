@@ -4,6 +4,7 @@ import {
   getInstallerPreparationMessagesController,
   getOfferMessagesController,
   getProjectCommunicationFeedController,
+  getProjectThreadController,
 } from "../controllers/project-communication.controller";
 import { ProjectModel } from "../../projects/schemas/project";
 import { ensureReviewLinkForProject } from "../../reviews/review.service";
@@ -23,6 +24,7 @@ router.get("/:projectId/review-link", async (req, res) => {
 });
 
 router.get("/:projectId/communication/feed", getProjectCommunicationFeedController);
+router.get("/:projectId/communication/thread", getProjectThreadController);
 router.get("/:projectId/offers/:offerVersionId/messages", getOfferMessagesController);
 router.get("/:projectId/work-orders/:workOrderId/installer-preparation-messages", getInstallerPreparationMessagesController);
 router.get("/:projectId/messages/:messageId", getCommunicationMessageController);

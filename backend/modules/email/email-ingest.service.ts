@@ -10,6 +10,7 @@ import { ensureRuleTask } from '../scheduler/rules';
 import { getRuleMode } from '../scheduler/wheel-config';
 import { TaskModel } from '../tasks/task.model';
 import { EmailIngestStateModel, EmailMessageModel, type EmailMessageDocument } from './email-message.model';
+import { getBankIngestConfig, isBankPaymentEmail, tryRegisterBankPayment } from '../payments/bank-email.service';
 
 // AIN-P1-14 F1–F4: branje namenskega nabiralnika (prodaja@) prek IMAP.
 // Samo beremo — nabiralnika nikoli ne spreminjamo (read-only mailbox open),
@@ -197,6 +198,9 @@ export async function ingestInboundEmail() {
 
   let stored = 0;
   let matched = 0;
+  // Bančna obvestila o prilivu obdela modul plačil (pravilo payment.bank_email);
+  // če je pravilo izklopljeno ali pošiljatelji niso nastavljeni, se nič ne spremeni.
+  const bankConfig = (await getRuleMode('payment.bank_email')) !== 'off' ? await getBankIngestConfig() : null;
   try {
     await client.connect();
     const mailbox = await client.mailboxOpen(FOLDER, { readOnly: true });
@@ -252,6 +256,21 @@ export async function ingestInboundEmail() {
           folder: FOLDER,
           uid: message.uid,
         });
+
+        // Bančno obvestilo o prilivu ni korespondenca s stranko: shrani se kot
+        // 'ignored' (revizijska sled), plačilo pa obdela modul plačil.
+        if (bankConfig && isBankPaymentEmail(doc, bankConfig)) {
+          doc.status = 'ignored';
+          try {
+            await doc.save();
+            stored += 1;
+            await tryRegisterBankPayment(doc);
+          } catch (error: any) {
+            if (error?.code !== 11000) throw error;
+          }
+          state.lastUid = Math.max(state.lastUid, message.uid);
+          continue;
+        }
 
         const match = await matchInboundEmail(doc);
         if (match) {

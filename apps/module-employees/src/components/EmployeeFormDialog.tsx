@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 import type { Employee, EmployeePayload } from '../types';
 
+import { EmployeeScheduleTab } from './EmployeeScheduleTab';
+
 interface EmployeeFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -47,7 +49,7 @@ const contractTypeOptions = ['zaposlitvena', 'podjemna', 's.p.', 'student', 'zun
 const shirtSizeOptions = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'] as const;
 const roleOptions = ['ADMIN', 'SALES', 'EXECUTION', 'FINANCE', 'ORGANIZER'] as const;
 
-type FormTab = 'osnovno' | 'cenik';
+type FormTab = 'osnovno' | 'cenik' | 'urnik';
 
 async function parseEnvelope<T>(response: Response): Promise<T> {
   return parseApiEnvelope<T>(response, 'Zahteva ni uspela.');
@@ -427,7 +429,22 @@ export function EmployeeFormDialog({
                 Cenik storitev
               </button>
             ) : null}
+            {initialData?.id ? (
+              <button
+                type="button"
+                onClick={() => setActiveTab('urnik')}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                  activeTab === 'urnik' ? 'bg-primary text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Urnik za termine
+              </button>
+            ) : null}
           </div>
+
+          {activeTab === 'urnik' && initialData?.id ? (
+            <EmployeeScheduleTab employeeId={initialData.id} />
+          ) : null}
 
           {activeTab === 'osnovno' ? (
             <form className="space-y-4" onSubmit={handleSubmit}>

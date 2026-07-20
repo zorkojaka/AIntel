@@ -1,4 +1,4 @@
-import { MemoryStick, Package } from "lucide-react";
+import { MemoryStick } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
@@ -20,14 +20,6 @@ function isMicroSdCard(product: CenikProduct) {
   return /\b(micro\s*sd|microsd)\b/.test(name) && /\b(128|256|512)\s*gb\b/.test(name);
 }
 
-function isReolinkJunctionBox(product: CenikProduct) {
-  const text = `${product.ime ?? ""} ${product.proizvajalec ?? ""} ${product.classification?.manufacturer ?? ""} ${(product.categorySlugs ?? []).join(" ")}`.toLocaleLowerCase("sl-SI");
-  const isReolink = /\b(reolink|reo)\b/.test(text);
-  const isJunctionBox = /junction\s*box|junctionbox|\bd20\b|doza|podnož|podnoz|nosilec/.test(text);
-  const isCamera = product.classification?.productType === "kamera" || /\bkamera|camera\b/.test(text);
-  return isReolink && isJunctionBox && !isCamera;
-}
-
 function selectedQuantity(items: Array<{ productId: string; kolicina: number }>, productId: string) {
   return items.find((item) => item.productId === productId)?.kolicina ?? 0;
 }
@@ -45,14 +37,6 @@ export function SekcijaReolinkDodatnaOprema({ videonadzor, productById, onChange
         .sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || a.prodajnaCena - b.prodajnaCena || a.ime.localeCompare(b.ime, "sl")),
     [productById],
   );
-  const junctionBoxes = useMemo(
-    () =>
-      Array.from(productById.values())
-        .filter(isReolinkJunctionBox)
-        .sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || a.prodajnaCena - b.prodajnaCena || a.ime.localeCompare(b.ime, "sl")),
-    [productById],
-  );
-
   const setQuantity = (productId: string, quantity: number) => {
     const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
     const byId = new Map((videonadzor.dodatnaOprema ?? []).map((item) => [item.productId, item.kolicina]));
@@ -71,15 +55,6 @@ export function SekcijaReolinkDodatnaOprema({ videonadzor, productById, onChange
         title="MicroSD pomnilniška kartica"
         products={microSdCards}
         emptyText="V ceniku ni MicroSD kartic 128GB, 256GB ali 512GB."
-        items={videonadzor.dodatnaOprema ?? []}
-        suggestedQuantity={Math.max(1, assignedCameraCount(videonadzor))}
-        onSetQuantity={setQuantity}
-      />
-      <AccessorySection
-        icon={<Package className="h-4 w-4" aria-hidden />}
-        title="Reolink nosilec / junction box"
-        products={junctionBoxes}
-        emptyText="V ceniku ni Reolink D20/JunctionBox nosilca."
         items={videonadzor.dodatnaOprema ?? []}
         suggestedQuantity={Math.max(1, assignedCameraCount(videonadzor))}
         onSetQuantity={setQuantity}

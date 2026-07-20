@@ -12,7 +12,9 @@ interface TemplateContext {
   project: { name: string };
   offer: { number: string; total: string };
   invoice: { number: string; total: string };
-  workOrder: { identifier: string; confirmationDate: string };
+  workOrder: { identifier: string; confirmationDate: string; schedule: string; details: string };
+  installer: { name: string };
+  booking: { link: string; duration: string };
   company: {
     name: string;
     website: string;
@@ -33,6 +35,11 @@ const TOKEN_MAP: Record<string, (context: TemplateContext) => string> = {
   "{{invoice.number}}": (context) => context.invoice.number,
   "{{invoice.total}}": (context) => context.invoice.total,
   "{{workOrder.identifier}}": (context) => context.workOrder.identifier,
+  "{{workOrder.schedule}}": (context) => context.workOrder.schedule,
+  "{{workOrder.details}}": (context) => context.workOrder.details,
+  "{{installer.name}}": (context) => context.installer.name,
+  "{{booking.link}}": (context) => context.booking.link,
+  "{{booking.duration}}": (context) => context.booking.duration,
   "{{confirmation.date}}": (context) => context.workOrder.confirmationDate,
   "{{company.name}}": (context) => context.company.name,
   "{{company.website}}": (context) => context.company.website,
@@ -129,6 +136,11 @@ export function buildTemplateContext(input: {
   invoiceTotal?: string;
   workOrderIdentifier?: string;
   confirmationDate?: string;
+  workOrderSchedule?: string;
+  workOrderDetails?: string;
+  installerName?: string;
+  bookingLink?: string;
+  bookingDuration?: string;
   companyName: string;
   companyWebsite?: string;
   companyAddress?: string;
@@ -145,7 +157,11 @@ export function buildTemplateContext(input: {
     workOrder: {
       identifier: input.workOrderIdentifier || "",
       confirmationDate: input.confirmationDate || "",
+      schedule: input.workOrderSchedule || "",
+      details: input.workOrderDetails || "",
     },
+    installer: { name: input.installerName || "" },
+    booking: { link: input.bookingLink || "", duration: input.bookingDuration || "" },
     company: {
       name: input.companyName || "",
       website: input.companyWebsite || "",

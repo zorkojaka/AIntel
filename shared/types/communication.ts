@@ -2,7 +2,13 @@ export type CommunicationChannel = "email";
 
 export type CommunicationDirection = "outbound" | "inbound";
 
-export type CommunicationCategory = "offer_send" | "work_order_confirmation_send" | "invoice_send";
+export type CommunicationCategory =
+  | "offer_send"
+  | "work_order_confirmation_send"
+  | "invoice_send"
+  | "installer_preparation_send"
+  | "booking_invite_send"
+  | "booking_confirmation_send";
 
 export type CommunicationAttachmentType = "offer_pdf" | "project_pdf" | "work_order_pdf" | "work_order_confirmation_pdf" | "invoice_pdf";
 
@@ -10,6 +16,7 @@ export type CommunicationMessageStatus = "sent" | "failed";
 
 export type CommunicationEventType =
   | "email_sent"
+  | "email_received"
   | "email_failed"
   | "offer_confirmed"
   | "signature_completed"

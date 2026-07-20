@@ -112,14 +112,18 @@ function buildCompanyProfile(company: CompanySettingsResult, settings: GlobalSet
   };
 }
 
-function buildSelectedNotes(
+export function buildSelectedNotes(
   settings: GlobalSettingsResult,
   docType: DocumentNumberingKind,
   pdfSettings: Awaited<ReturnType<typeof getPdfDocumentSettings>>,
   overrides?: { paymentTerms?: string | null; disclaimer?: string | null },
+  /** Izbor opomb s same ponudbe; null/manjkajoče = privzete iz nastavitev. */
+  explicitNoteIds?: string[] | null,
 ) {
   const settingsKey = DOC_KIND_TO_SETTINGS_KEY[docType] ?? 'offer';
-  const selectedIds = settings.noteDefaultsByDoc?.[settingsKey] ?? [];
+  const selectedIds = Array.isArray(explicitNoteIds)
+    ? explicitNoteIds
+    : settings.noteDefaultsByDoc?.[settingsKey] ?? [];
   const noteLookup = new Map((settings.notes ?? []).map((note) => [note.id, note]));
 
   const selectedNotes = selectedIds
@@ -128,8 +132,10 @@ function buildSelectedNotes(
     .map((note) => note.text?.trim() || note.title?.trim() || '')
     .filter((text): text is string => !!text);
 
+  // Pri ponudbi se plačilni pogoji izpišejo že v glavi kot "Rok plačila",
+  // zato jih v nogo ne podvajamo.
   const payments = docType === 'OFFER'
-    ? overrides?.paymentTerms
+    ? null
     : overrides?.paymentTerms ?? pdfSettings.defaultTexts.paymentTerms;
   const disclaimer = docType === 'OFFER'
     ? overrides?.disclaimer
@@ -368,10 +374,16 @@ export async function buildOfferPdfPreviewPayload(
     vatPercent: item.vatRate ?? 22,
   }));
 
-  const notes = buildSelectedNotes(globalSettings, docType, documentSettings, {
-    paymentTerms: overrides?.paymentTerms ?? offerWithTexts.paymentTerms,
-    disclaimer: overrides?.disclaimer ?? null,
-  });
+  const notes = buildSelectedNotes(
+    globalSettings,
+    docType,
+    documentSettings,
+    {
+      paymentTerms: overrides?.paymentTerms ?? offerWithTexts.paymentTerms,
+      disclaimer: overrides?.disclaimer ?? null,
+    },
+    docType === 'OFFER' ? offer.selectedNoteIds ?? null : null,
+  );
 
   const totals = buildOfferPdfTotals(offerWithTexts);
 

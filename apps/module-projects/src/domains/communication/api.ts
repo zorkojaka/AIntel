@@ -86,6 +86,13 @@ export async function fetchFollowUpDefaults() {
   return parseEnvelope<{ mode: 'off' | 'manual' | 'auto'; days: number }>(response);
 }
 
+// Zadeva obstoječe niti projekta. Nova verzija ponudbe jo prevzame, sicer
+// Gmail ob spremenjeni zadevi odpre novo nit kljub pravilnim glavam.
+export async function fetchProjectThread(projectId: string) {
+  const response = await fetch(`/api/projects/${projectId}/communication/thread`);
+  return parseEnvelope<{ subject: string | null; hasThread: boolean }>(response);
+}
+
 export async function sendOfferCommunicationEmail(
   projectId: string,
   offerId: string,

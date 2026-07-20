@@ -1033,6 +1033,7 @@ function serializeOffer(offer: OfferVersion) {
     vatAmount: offer.vatAmount ?? offer.totalVat ?? 0,
     totalWithVat: offer.totalWithVat ?? offer.totalGrossAfterDiscount ?? offer.totalGross ?? 0,
     comment: offer.comment ?? null,
+    selectedNoteIds: Array.isArray(offer.selectedNoteIds) ? offer.selectedNoteIds : null,
   } as OfferVersion;
 }
 
@@ -1111,6 +1112,20 @@ function buildOfferSnapshotPayload(input: {
     vatAmount: input.totals.vatAmount ?? input.totals.totalVat ?? 0,
     totalWithVat: input.totals.totalWithVat ?? input.totals.totalGrossAfterDiscount ?? input.totals.totalGross ?? 0,
   };
+}
+
+/** null/manjkajoče pusti nedotaknjeno (privzete opombe), polje pa počisti in odstrani dvojnike. */
+function parseSelectedNoteIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const raw of value) {
+    const id = typeof raw === 'string' ? raw.trim() : '';
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
 }
 
 async function parseOfferItemsFromBody(body: Record<string, unknown>) {
@@ -1232,6 +1247,11 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
       updatedAt: now.toISOString(),
     };
 
+    const selectedNoteIds = parseSelectedNoteIds(body?.selectedNoteIds);
+    if (selectedNoteIds !== undefined) {
+      payload.selectedNoteIds = selectedNoteIds;
+    }
+
     try {
       const numbering = await generateOfferDocumentNumber(now);
       payload.documentNumber = numbering.number;
@@ -1240,10 +1260,8 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
     }
 
     const created = await OfferVersionModel.create(payload);
-    await ProjectModel.updateOne(
-      { id: projectId, status: 'draft' },
-      { $set: { status: 'offered' } },
-    );
+    // Ustvarjena ponudba projekta NE premakne v fazo Ponudbe — tja gre sele
+    // ob poslani ponudbi (sendOfferCommunicationEmail).
     const plain = created.toObject();
     return res.success(serializeOffer(plain as OfferVersion));
   } catch (err) {
@@ -1494,6 +1512,10 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
     existing.paymentTerms = body.paymentTerms ?? existing.paymentTerms ?? null;
     const normalizedComment = normalizeText(body?.comment, existing.comment ?? '');
     existing.comment = normalizedComment || null;
+    const updatedNoteIds = parseSelectedNoteIds(body?.selectedNoteIds);
+    if (updatedNoteIds !== undefined) {
+      existing.selectedNoteIds = updatedNoteIds;
+    }
     existing.items = itemsWithNorma;
     existing.totalNet = totals.totalNet;
     existing.totalVat22 = totals.totalVat22;

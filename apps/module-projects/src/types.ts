@@ -72,6 +72,7 @@ export interface ProjectSummary {
   quotedTotalWithVat: number;
   invoiceAmount: number;
   createdAt: string;
+  offerSentAt?: string | null;
   archivedAt?: string | null;
   archivedBy?: string | null;
   closedAt?: string | null;

@@ -272,6 +272,7 @@ export function createOfferEditorSnapshot(input: {
   title: string;
   paymentTerms: string | null;
   comment: string | null;
+  selectedNoteIds: string[];
   items: OfferLineItemForm[];
   useGlobalDiscount: boolean;
   usePerItemDiscount: boolean;
@@ -299,6 +300,7 @@ export function createOfferEditorSnapshot(input: {
     title: input.title.trim() || "Ponudba",
     paymentTerms: input.paymentTerms ?? "",
     comment: input.comment ?? "",
+    selectedNoteIds: input.selectedNoteIds,
     items: cleanItems,
     discountPercent: input.useGlobalDiscount ? input.globalDiscountPercent : 0,
     globalDiscountPercent: input.useGlobalDiscount ? input.globalDiscountPercent : 0,
@@ -312,6 +314,7 @@ export const EMPTY_OFFER_SNAPSHOT = createOfferEditorSnapshot({
   title: "Ponudba",
   paymentTerms: "",
   comment: "",
+  selectedNoteIds: [],
   items: [],
   useGlobalDiscount: false,
   usePerItemDiscount: false,

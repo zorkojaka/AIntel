@@ -14,6 +14,8 @@ import { CommunicationSenderSettingsModel } from "../schemas/sender-settings";
 import { CommunicationTemplateModel } from "../schemas/template";
 import { CommunicationMessageModel } from "../schemas/message";
 import { CommunicationEventModel } from "../schemas/event";
+import { EmailMessageModel } from "../../email/email-message.model";
+import { buildThreadHeaders, type ThreadHeaders } from "./thread.service";
 import {
   appendCommunicationFooter,
   renderCommunicationBodyHtml,
@@ -29,6 +31,7 @@ import { OfferVersionModel } from "../../projects/schemas/offer-version";
 import { WorkOrderModel } from "../../projects/schemas/work-order";
 import { EmployeeModel } from "../../employees/schemas/employee";
 import { resolveProjectClient } from "../../projects/services/project.service";
+import { buildIcsEvent, googleCalendarLink } from "../../availability/calendar-event";
 import { getActiveSignedConfirmationVersion } from "../../projects/services/work-order-confirmation.service";
 import { getSettings } from "../../settings/settings.service";
 
@@ -309,6 +312,14 @@ export async function updateCommunicationSenderSettings(payload: Partial<Communi
   return serializeSenderSettings(doc.toObject());
 }
 
+/**
+ * Zadnja aktivna predloga kategorije — za maile, kjer osnutek sestavi streznik
+ * (mail monterju, vabilo k terminu) in uporabnik predloge ne izbira rocno.
+ */
+async function findActiveTemplate(category: CommunicationCategory) {
+  return CommunicationTemplateModel.findOne({ category, isActive: true }).sort({ updatedAt: -1 }).lean();
+}
+
 export async function listCommunicationTemplates(category?: CommunicationCategory) {
   const filter = category ? { category } : {};
   const templates = await CommunicationTemplateModel.find(filter).sort({ name: 1, updatedAt: -1 }).lean();
@@ -392,6 +403,8 @@ async function sendAndRecordCommunicationEmail(input: {
   bodyFinal: string;
   htmlFinal: string;
   attachments: ResolvedAttachment[];
+  /** Generirane priloge (npr. .ics koledarski dogodek) — gredo naravnost v mail. */
+  rawAttachments?: Array<{ filename: string; content: string | Buffer; contentType: string }>;
   inlineCompanyLogo: InlineEmailAttachment;
   baseMessage: Record<string, unknown>;
   actorDisplayName?: string | null;
@@ -409,11 +422,14 @@ async function sendAndRecordCommunicationEmail(input: {
   };
   onSentLoggingFailed?: (error: unknown) => { message: null; sent: true; loggingFailed: true };
 }) {
-  const attachmentFiles = input.attachments.map((attachment) => ({
-    filename: attachment.filename,
-    content: attachment.content,
-    contentType: attachment.contentType,
-  }));
+  const attachmentFiles = [
+    ...input.attachments.map((attachment) => ({
+      filename: attachment.filename,
+      content: attachment.content,
+      contentType: attachment.contentType,
+    })),
+    ...(input.rawAttachments ?? []),
+  ];
   const inlineLogoFiles = input.inlineCompanyLogo
     ? [
         {
@@ -426,6 +442,21 @@ async function sendAndRecordCommunicationEmail(input: {
       ]
     : [];
 
+  // Nit pogovora: novo sporocilo se pripne na zadnji clen (nase ali strankin).
+  // Interna posta (monterji) ne nosi glav niti s stranko — monter referenciranega
+  // sporocila nima, nit pa je pogovor s stranko, ne z ekipo.
+  // Napaka pri branju niti ne sme ustaviti posiljanja — sporocilo raje odide
+  // brez nitenja, kot da ne odide.
+  const internalAudience = (input.baseMessage as { audience?: string }).audience === "internal";
+  let thread: ThreadHeaders = {};
+  if (!internalAudience) {
+    try {
+      thread = await buildThreadHeaders(input.successEvent.projectId);
+    } catch (error) {
+      console.error("Nitenja ni bilo mogoce sestaviti, posiljam brez njega.", error);
+    }
+  }
+
   let providerMessageId: string | null = null;
   try {
     const info = await sendEmail({
@@ -435,6 +466,8 @@ async function sendAndRecordCommunicationEmail(input: {
       bcc: input.bcc.length > 0 ? input.bcc.join(", ") : undefined,
       replyTo: input.senderSettings.replyToEmail || undefined,
       subject: input.subjectFinal,
+      inReplyTo: thread.inReplyTo,
+      references: thread.references,
       text: input.bodyFinal,
       html: input.htmlFinal,
       attachments: [...attachmentFiles, ...inlineLogoFiles],
@@ -467,6 +500,7 @@ async function sendAndRecordCommunicationEmail(input: {
       status: "sent",
       sentAt: new Date(),
       providerMessageId,
+      references: thread.references ?? [],
     });
 
     await createCommunicationEvent({
@@ -891,7 +925,7 @@ export async function sendOfferCommunicationEmail(input: {
     sentByUserId: input.actorUserId ?? null,
   };
 
-  return sendAndRecordCommunicationEmail({
+  const payload = await sendAndRecordCommunicationEmail({
     senderSettings,
     effectiveSender,
     recipients: resolvedRecipients,
@@ -924,6 +958,17 @@ export async function sendOfferCommunicationEmail(input: {
       },
     },
   });
+
+  // POSLANA ponudba premakne projekt iz faze Zahteve v Ponudbe in nosi datum
+  // za kartico na kanbanu; napaka pri belezenju ne sme razveljaviti posiljanja.
+  try {
+    await ProjectModel.updateOne({ id: input.projectId }, { $set: { offerSentAt: new Date() } });
+    await ProjectModel.updateOne({ id: input.projectId, status: "draft" }, { $set: { status: "offered" } });
+  } catch (error) {
+    logger.error({ err: error, projectId: input.projectId }, "Oznake poslane ponudbe ni bilo mogoce zapisati");
+  }
+
+  return payload;
 }
 
 export async function sendWorkOrderConfirmationCommunicationEmail(input: {
@@ -1255,24 +1300,22 @@ export async function sendInstallerPreparationEmail(input: {
   const projectIdentifier = project.code || project.id || input.projectId;
   const workOrderIdentifier = workOrder.code || workOrder.title || String(workOrder._id);
 
-  const bodyLines: string[] = [
-    `Pozdravljen ${primaryInstaller?.name || "monter"},`,
-    "",
-    `Pošiljamo podatke za pripravo na montažo in potrditev termina za projekt ${projectIdentifier}${project.title ? ` - ${project.title}` : ""}.`,
-  ];
-  appendSection(bodyLines, "Termin", [
+  // Podatkovni blok naloga gre v predlogo kot {{workOrder.details}} — predloga
+  // ureja nagovor in okvir, podatke pa vedno sestavi streznik iz naloga.
+  const detailsLines: string[] = [];
+  appendSection(detailsLines, "Termin", [
     schedule ? `Termin izvedbe: ${schedule}` : "Termin izvedbe: ni določen",
     workOrder.scheduledConfirmedAt ? `Termin potrjen: ${formatDateTime(workOrder.scheduledConfirmedAt)}` : null,
     teamNames.length > 0 ? `Ekipa: ${teamNames.join(", ")}` : null,
   ]);
-  appendSection(bodyLines, "Stranka", [
+  appendSection(detailsLines, "Stranka", [
     customerName,
     customerAddress,
     customerEmail ? `Email: ${customerEmail}` : null,
     customerPhone ? `Telefon: ${customerPhone}` : null,
     project.customer?.taxId ? `Davčna: ${project.customer.taxId}` : null,
   ]);
-  appendSection(bodyLines, "Opombe", [
+  appendSection(detailsLines, "Opombe", [
     project.requirementsText ? `Projekt: ${project.requirementsText}` : null,
     offer?.comment ? `Ponudba: ${offer.comment}` : null,
     workOrder.notes ? `Delovni nalog: ${workOrder.notes}` : null,
@@ -1282,12 +1325,24 @@ export async function sendInstallerPreparationEmail(input: {
     const quantity = typeof item.quantity === "number" ? item.quantity : item.plannedQuantity ?? "";
     return `- ${item.name || "Postavka"} (${quantity} ${item.unit || ""})`;
   });
-  appendSection(bodyLines, "Postavke delovnega naloga", itemLines);
-  appendSection(bodyLines, "Definicija izvedbe", formatWorkOrderExecutionDefinition(workOrder));
-  appendSection(bodyLines, "Povezava", [
+  appendSection(detailsLines, "Postavke delovnega naloga", itemLines);
+  appendSection(detailsLines, "Definicija izvedbe", formatWorkOrderExecutionDefinition(workOrder));
+  appendSection(detailsLines, "Povezava", [
     input.projectLink ? `Projekt/delovni nalog: ${input.projectLink}` : null,
   ]);
-  bodyLines.push("", "Delovni nalog je priložen v PDF priponki.", "", "Lep pozdrav");
+  const workOrderDetails = detailsLines.join("\n").trim();
+
+  const bodyLines: string[] = [
+    `Pozdravljen ${primaryInstaller?.name || "monter"},`,
+    "",
+    `Pošiljamo podatke za pripravo na montažo in potrditev termina za projekt ${projectIdentifier}${project.title ? ` - ${project.title}` : ""}.`,
+    "",
+    workOrderDetails,
+    "",
+    "Delovni nalog je priložen v PDF priponki.",
+    "",
+    "Lep pozdrav",
+  ];
 
   const templateContext = buildTemplateContext({
     customerName,
@@ -1297,6 +1352,9 @@ export async function sendInstallerPreparationEmail(input: {
     offerTotal: "",
     workOrderIdentifier,
     confirmationDate: schedule,
+    workOrderSchedule: schedule,
+    workOrderDetails,
+    installerName: sanitizeString(primaryInstaller?.name) || "monter",
     companyName: globalSettings.companyName ?? "",
     companyWebsite: globalSettings.website ?? "",
     companyAddress: globalSettings.address ?? "",
@@ -1319,8 +1377,15 @@ export async function sendInstallerPreparationEmail(input: {
     logoSrc: inlineCompanyLogo ? `cid:${inlineCompanyLogo.cid}` : toPublicEmailLogoUrl(globalSettings.logoUrl),
   });
 
-  const subjectFinal = sanitizeString(input.subject) || `Priprava montaže: ${projectIdentifier}${schedule ? ` - ${schedule}` : ""}`;
-  const bodyWithoutFooter = input.body?.toString().trim() || bodyLines.join("\n");
+  // Aktivna predloga (Nastavitve → Komunikacija) doloci privzeti osnutek;
+  // rocno vpisana zadeva/vsebina iz predogleda imata vedno prednost.
+  const template = await findActiveTemplate("installer_preparation_send");
+  const renderedTemplate = template ? renderCommunicationTemplate(template, templateContext) : null;
+  const subjectFinal =
+    sanitizeString(input.subject) ||
+    renderedTemplate?.subject ||
+    `Priprava montaže: ${projectIdentifier}${schedule ? ` - ${schedule}` : ""}`;
+  const bodyWithoutFooter = input.body?.toString().trim() || renderedTemplate?.body || bodyLines.join("\n");
   const resolvedRecipients = selectedRecipients.length > 0 ? selectedRecipients : [String(primaryInstaller.email).toLowerCase()];
   const cc = sanitizeEmailList(input.cc);
   const bcc = sanitizeEmailList(input.bcc);
@@ -1354,6 +1419,7 @@ export async function sendInstallerPreparationEmail(input: {
     offerId: workOrder.offerVersionId ?? null,
     workOrderId,
     customerId: projectClient?.id ?? null,
+    audience: "internal" as const,
     direction: "outbound" as const,
     channel: "email" as const,
     to: resolvedRecipients,
@@ -1361,8 +1427,8 @@ export async function sendInstallerPreparationEmail(input: {
     bcc,
     subjectFinal,
     bodyFinal,
-    templateId: null,
-    templateKey: null,
+    templateId: template?._id ? String(template._id) : null,
+    templateKey: template?.key ?? null,
     selectedAttachments: selectedAttachmentRecords,
     sentByUserId: input.actorUserId ?? null,
   };
@@ -1409,9 +1475,41 @@ export async function sendInstallerPreparationEmail(input: {
   return { ...payload, sent: true };
 }
 
+/** Strankin odgovor (email_messages) v obliki dogodka za potek komunikacije. */
+function serializeInboundEmailEvent(doc: any): CommunicationEvent {
+  const from = doc?.fromName ? `${doc.fromName} <${doc.fromAddress}>` : (doc?.fromAddress ?? "");
+  return {
+    id: `email-${String(doc?._id)}`,
+    projectId: doc?.match?.projectId ?? "",
+    offerId: null,
+    messageId: null,
+    type: "email_received",
+    title: "Odgovor stranke",
+    description: doc?.subject || "(brez zadeve)",
+    timestamp: doc?.date ? new Date(doc.date).toISOString() : "",
+    user: from || null,
+    metadata: {
+      from,
+      subject: doc?.subject ?? "",
+      snippet: String(doc?.text ?? "").slice(0, 800),
+    },
+  };
+}
+
 export async function listProjectCommunicationFeed(projectId: string, limit = 20) {
-  const events = await CommunicationEventModel.find({ projectId }).sort({ timestamp: -1 }).limit(limit).lean();
-  return events.map(serializeEvent);
+  // Potek je cel pogovor s stranko: nasa posta (events) + strankini odgovori
+  // (dohodni maili, povezani na projekt) — sicer se v projektu vidi le ena smer.
+  const [events, inbound] = await Promise.all([
+    CommunicationEventModel.find({ projectId }).sort({ timestamp: -1 }).limit(limit).lean(),
+    EmailMessageModel.find({ "match.projectId": projectId, status: "matched" })
+      .sort({ date: -1 })
+      .limit(limit)
+      .select({ fromAddress: 1, fromName: 1, subject: 1, text: 1, date: 1, "match.projectId": 1 })
+      .lean(),
+  ]);
+  return [...events.map(serializeEvent), ...inbound.map(serializeInboundEmailEvent)]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, limit);
 }
 
 export async function listOfferMessages(projectId: string, offerId: string) {
@@ -1465,5 +1563,336 @@ export async function recordSignatureCompletedCommunicationEvent(input: {
     title: "Podpis zaključen",
     description: `Podpisal: ${input.signerName}`,
     user: input.user ?? null,
+  });
+}
+
+/**
+ * Vabilo stranki, da si sama izbere dan montaže (rezervacijska povezava).
+ * Brez predloge in prilog — kratko sporočilo s povezavo; zabeleži se kot vsa
+ * ostala pošta projekta (nit, dnevnik, dogodki).
+ */
+export async function sendBookingInviteEmail(input: {
+  projectId: string;
+  workOrderId: string;
+  bookingLink: string;
+  durationHours: number;
+  to?: unknown;
+  subject?: string | null;
+  body?: string | null;
+  previewOnly?: boolean;
+  actorUserId?: string | null;
+  actorDisplayName?: string | null;
+  actorProfile?: {
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    role?: string | null;
+  } | null;
+}) {
+  const senderSettings = await getCommunicationSenderSettings();
+  if (!senderSettings.enabled) {
+    throw new Error("Komunikacija po emailu ni omogočena.");
+  }
+  if (!senderSettings.senderName || !senderSettings.senderEmail) {
+    throw new Error("Pošiljatelj ni pravilno nastavljen.");
+  }
+
+  const [project, globalSettings] = await Promise.all([
+    ProjectModel.findOne({ id: input.projectId }),
+    getSettings(),
+  ]);
+  if (!project) {
+    throw new Error("Projekt ni najden.");
+  }
+
+  const effectiveSender = resolveSenderIdentity(senderSettings, input.actorProfile);
+  const projectClient = await resolveProjectClient(project);
+  const customerEmail = projectClient?.email?.trim() || "";
+  const to = sanitizeEmailList(input.to);
+  const resolvedRecipients = to.length > 0 ? to : customerEmail ? [customerEmail.toLowerCase()] : [];
+  if (resolvedRecipients.length === 0) {
+    throw new Error("Stranka nima nastavljenega e-naslova.");
+  }
+
+  const durationLabel = `${input.durationHours} ${input.durationHours === 1 ? "ura" : input.durationHours === 2 ? "uri" : "ure"}`;
+  const templateContext = buildTemplateContext({
+    customerName: project.customer?.name ?? projectClient?.name ?? "",
+    customerEmail: projectClient?.email ?? "",
+    projectName: project.title ?? "",
+    offerNumber: "",
+    offerTotal: "",
+    bookingLink: input.bookingLink,
+    bookingDuration: durationLabel,
+    companyName: globalSettings.companyName ?? "",
+    companyWebsite: globalSettings.website ?? "",
+    companyAddress: globalSettings.address ?? "",
+    companyEmail: globalSettings.email ?? "",
+    companyPhone: globalSettings.phone ?? "",
+    companyLogoUrl: toPublicLogoUrl(globalSettings.logoUrl),
+    sender: {
+      ...senderSettings,
+      senderName: effectiveSender.senderName,
+      senderEmail: effectiveSender.senderEmail,
+      senderPhone: effectiveSender.senderPhone,
+      senderRole: formatRoleLabel(effectiveSender.senderRole),
+    },
+  });
+
+  const renderedFooter = renderCommunicationText(senderSettings.emailFooterTemplate, templateContext);
+  const footerUsesLogo = (senderSettings.emailFooterTemplate ?? "").includes("{{company.logo}}");
+  const inlineCompanyLogo = footerUsesLogo ? await resolveInlineCompanyLogo(globalSettings.logoUrl) : null;
+  const renderedFooterHtml = renderCommunicationFooterHtmlForEmail(senderSettings.emailFooterTemplate, templateContext, {
+    logoSrc: inlineCompanyLogo ? `cid:${inlineCompanyLogo.cid}` : toPublicEmailLogoUrl(globalSettings.logoUrl),
+  });
+
+  const customerFirstLine = (project.customer?.name ?? projectClient?.name ?? "").trim();
+  // Aktivna predloga (Nastavitve → Komunikacija) doloci privzeti osnutek;
+  // rocno vpisana zadeva/vsebina iz predogleda imata vedno prednost.
+  const template = await findActiveTemplate("booking_invite_send");
+  const renderedTemplate = template ? renderCommunicationTemplate(template, templateContext) : null;
+  const subjectFinal =
+    sanitizeString(input.subject) || renderedTemplate?.subject || `Izbira termina montaže — ${project.title ?? input.projectId}`;
+  const defaultBody = [
+    customerFirstLine ? `Spoštovani ${customerFirstLine},` : "Spoštovani,",
+    "",
+    "vaša montaža je pripravljena. Prosimo, izberite dan, ki vam najbolj ustreza — na spodnji povezavi so samo dnevi, ko je naša ekipa res na voljo:",
+    "",
+    input.bookingLink,
+    "",
+    `Predvideno trajanje izvedbe: približno ${durationLabel}.`,
+    "Z izbiro dneva je termin potrjen; če vam noben termin ne ustreza, nas pokličite.",
+    "",
+    "Lep pozdrav",
+  ].join("\n");
+  let bodyWithoutFooter = input.body?.toString().trim() || renderedTemplate?.body || defaultBody;
+  // Varovalo: brez povezave je vabilo neuporabno — ce jo predloga ali rocni
+  // popravek izpusti ({{booking.link}} manjka), jo pripnemo na konec.
+  if (!bodyWithoutFooter.includes(input.bookingLink)) {
+    bodyWithoutFooter = `${bodyWithoutFooter}\n\nPovezava za izbiro termina: ${input.bookingLink}`;
+  }
+  if (input.previewOnly) {
+    return {
+      draft: {
+        to: resolvedRecipients.join(", "),
+        subject: subjectFinal,
+        body: bodyWithoutFooter,
+      },
+    };
+  }
+  const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
+  const bodyMainText = stripAppendedFooter(bodyWithoutFooter, renderedFooter);
+  const htmlFinal = renderCommunicationBodyHtml(bodyMainText, renderedFooterHtml);
+
+  const baseMessage = {
+    projectId: input.projectId,
+    offerId: null,
+    workOrderId: input.workOrderId,
+    customerId: projectClient?.id ?? null,
+    direction: "outbound" as const,
+    channel: "email" as const,
+    to: resolvedRecipients,
+    cc: [] as string[],
+    bcc: [] as string[],
+    subjectFinal,
+    bodyFinal,
+    templateId: template?._id ? String(template._id) : null,
+    templateKey: template?.key ?? null,
+    selectedAttachments: [] as CommunicationAttachmentRecord[],
+    sentByUserId: input.actorUserId ?? null,
+  };
+
+  return sendAndRecordCommunicationEmail({
+    senderSettings,
+    effectiveSender,
+    recipients: resolvedRecipients,
+    cc: [],
+    bcc: [],
+    subjectFinal,
+    bodyFinal,
+    htmlFinal,
+    attachments: [],
+    inlineCompanyLogo,
+    baseMessage,
+    actorDisplayName: input.actorDisplayName ?? null,
+    successEvent: {
+      projectId: input.projectId,
+      offerId: null,
+      title: "Vabilo k izbiri termina poslano",
+      metadata: { to: resolvedRecipients.join(", "), subject: subjectFinal },
+    },
+    failureEvent: {
+      projectId: input.projectId,
+      offerId: null,
+      title: "Vabila k izbiri termina ni bilo mogoče poslati",
+      metadata: { to: resolvedRecipients.join(", "), subject: subjectFinal },
+    },
+  });
+}
+
+function escapeHtmlText(value: string): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Telo (besedilo) + gumb za koledar + noga → HTML potrditvenega maila. */
+function renderConfirmationHtml(bodyText: string, calendarLink: string, footerHtml: string | null): string {
+  const bodyHtml = bodyText
+    .split("\n")
+    .map((line) => (line.trim() ? `<div style="margin:0 0 8px 0;">${escapeHtmlText(line)}</div>` : '<div style="height:8px;"></div>'))
+    .join("");
+  const button =
+    `<div style="margin:18px 0;">` +
+    `<a href="${escapeHtmlText(calendarLink)}" target="_blank" rel="noopener" ` +
+    `style="display:inline-block;background:#1d4ed8;color:#ffffff;padding:11px 22px;border-radius:8px;` +
+    `text-decoration:none;font-weight:bold;font-family:Arial,sans-serif;font-size:14px;">📅 Dodaj v koledar</a>` +
+    `<div style="font-size:12px;color:#6b7280;margin-top:6px;">V prilogi je tudi koledarski dogodek (.ics) za Apple in Outlook.</div>` +
+    `</div>`;
+  const footer = footerHtml && footerHtml.trim()
+    ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;">${footerHtml}</div>`
+    : "";
+  return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111827;">${bodyHtml}${button}${footer}</div>`;
+}
+
+/**
+ * Potrditev izbranega termina montaže — stranka po spletni izbiri dneva prejme
+ * e-mail s potrjenim datumom in gumbom »Dodaj v koledar« (+ .ics priloga).
+ * Zabeleži se kot ostala pošta projekta (nit, dnevnik, dogodki).
+ */
+export async function sendBookingConfirmationEmail(input: {
+  projectId: string;
+  workOrderId: string;
+  scheduledAt: string; // lokalni "YYYY-MM-DDTHH:mm:ss"
+  durationHours: number;
+}) {
+  const senderSettings = await getCommunicationSenderSettings();
+  if (!senderSettings.enabled || !senderSettings.senderName || !senderSettings.senderEmail) {
+    throw new Error("Pošiljatelj ni pravilno nastavljen.");
+  }
+
+  const [project, globalSettings] = await Promise.all([ProjectModel.findOne({ id: input.projectId }), getSettings()]);
+  if (!project) throw new Error("Projekt ni najden.");
+
+  const effectiveSender = resolveSenderIdentity(senderSettings, null);
+  const projectClient = await resolveProjectClient(project);
+  const customerEmail = projectClient?.email?.trim() || "";
+  if (!customerEmail) throw new Error("Stranka nima nastavljenega e-naslova.");
+  const resolvedRecipients = [customerEmail.toLowerCase()];
+
+  const startDate = new Date(input.scheduledAt.replace(" ", "T"));
+  const dateLabel = Number.isNaN(startDate.valueOf())
+    ? input.scheduledAt
+    : startDate.toLocaleDateString("sl-SI", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const timeLabel = Number.isNaN(startDate.valueOf())
+    ? ""
+    : `${startDate.getHours()}:${String(startDate.getMinutes()).padStart(2, "0")}`;
+  const scheduleLabel = timeLabel ? `${dateLabel} ob ${timeLabel}` : dateLabel;
+  const customerAddress = project.customer?.address ?? projectClient?.address ?? "";
+
+  const templateContext = buildTemplateContext({
+    customerName: project.customer?.name ?? projectClient?.name ?? "",
+    customerEmail: projectClient?.email ?? "",
+    projectName: project.title ?? "",
+    offerNumber: "",
+    offerTotal: "",
+    workOrderSchedule: scheduleLabel,
+    companyName: globalSettings.companyName ?? "",
+    companyWebsite: globalSettings.website ?? "",
+    companyAddress: globalSettings.address ?? "",
+    companyEmail: globalSettings.email ?? "",
+    companyPhone: globalSettings.phone ?? "",
+    companyLogoUrl: toPublicLogoUrl(globalSettings.logoUrl),
+    sender: {
+      ...senderSettings,
+      senderName: effectiveSender.senderName,
+      senderEmail: effectiveSender.senderEmail,
+      senderPhone: effectiveSender.senderPhone,
+      senderRole: formatRoleLabel(effectiveSender.senderRole),
+    },
+  });
+
+  const renderedFooter = renderCommunicationText(senderSettings.emailFooterTemplate, templateContext);
+  const footerUsesLogo = (senderSettings.emailFooterTemplate ?? "").includes("{{company.logo}}");
+  const inlineCompanyLogo = footerUsesLogo ? await resolveInlineCompanyLogo(globalSettings.logoUrl) : null;
+  const renderedFooterHtml = renderCommunicationFooterHtmlForEmail(senderSettings.emailFooterTemplate, templateContext, {
+    logoSrc: inlineCompanyLogo ? `cid:${inlineCompanyLogo.cid}` : toPublicEmailLogoUrl(globalSettings.logoUrl),
+  });
+
+  const customerFirstLine = (project.customer?.name ?? projectClient?.name ?? "").trim();
+  const template = await findActiveTemplate("booking_confirmation_send");
+  const renderedTemplate = template ? renderCommunicationTemplate(template, templateContext) : null;
+  const subjectFinal = renderedTemplate?.subject || `Termin montaže potrjen — ${scheduleLabel}`;
+  const defaultBody = [
+    customerFirstLine ? `Spoštovani ${customerFirstLine},` : "Spoštovani,",
+    "",
+    `potrjujemo termin montaže: ${scheduleLabel}.`,
+    "Naša ekipa pride k vam; pred prihodom vas pokličemo.",
+    "",
+    "Termin si lahko s spodnjim gumbom dodate v svoj koledar.",
+    "Če vam termin ne ustreza, nas pokličite in ga prestavimo.",
+    "",
+    "Lep pozdrav",
+  ].join("\n");
+  const bodyWithoutFooter = renderedTemplate?.body || defaultBody;
+  const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
+
+  const calendarInput = {
+    start: input.scheduledAt,
+    durationHours: input.durationHours,
+    summary: `Montaža — ${project.title ?? input.projectId}`,
+    description: `Izvedba montaže (${project.title ?? input.projectId}).`,
+    location: customerAddress,
+    uid: `booking-${input.workOrderId}@inteligent.si`,
+  };
+  const icsContent = buildIcsEvent(calendarInput);
+  const htmlFinal = renderConfirmationHtml(bodyWithoutFooter, googleCalendarLink(calendarInput), renderedFooterHtml);
+
+  const baseMessage = {
+    projectId: input.projectId,
+    offerId: null,
+    workOrderId: input.workOrderId,
+    customerId: projectClient?.id ?? null,
+    direction: "outbound" as const,
+    channel: "email" as const,
+    to: resolvedRecipients,
+    cc: [] as string[],
+    bcc: [] as string[],
+    subjectFinal,
+    bodyFinal,
+    templateId: template?._id ? String(template._id) : null,
+    templateKey: template?.key ?? null,
+    selectedAttachments: [] as CommunicationAttachmentRecord[],
+    sentByUserId: null,
+  };
+
+  return sendAndRecordCommunicationEmail({
+    senderSettings,
+    effectiveSender,
+    recipients: resolvedRecipients,
+    cc: [],
+    bcc: [],
+    subjectFinal,
+    bodyFinal,
+    htmlFinal,
+    attachments: [],
+    rawAttachments: [{ filename: "termin-montaze.ics", content: icsContent, contentType: "text/calendar; charset=utf-8; method=PUBLISH" }],
+    inlineCompanyLogo,
+    baseMessage,
+    actorDisplayName: "Stranka (spletna izbira)",
+    successEvent: {
+      projectId: input.projectId,
+      offerId: null,
+      title: "Potrditev termina poslana stranki",
+      metadata: { to: resolvedRecipients.join(", "), subject: subjectFinal },
+    },
+    failureEvent: {
+      projectId: input.projectId,
+      offerId: null,
+      title: "Potrditve termina ni bilo mogoče poslati",
+      metadata: { to: resolvedRecipients.join(", "), subject: subjectFinal },
+    },
   });
 }

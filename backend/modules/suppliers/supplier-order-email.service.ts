@@ -10,6 +10,7 @@ import {
   renderCommunicationText,
 } from '../communication/services/template-render.service';
 import { getSettings } from '../settings/settings.service';
+import { generateMaterialOrderDocumentPdf } from '../projects/services/project-document-pdf.service';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -97,6 +98,18 @@ export async function sendSupplierOrderEmail(input: {
   const bodyFinal = appendCommunicationFooter(body, renderedFooter);
   const htmlFinal = renderCommunicationBodyHtml(body, renderedFooterHtml);
 
+  // Priloga: naročilnica (PDF) samo za postavke tega dobavitelja. Če je generiranje
+  // spodletelo, naročilo vseeno odide (besedilni popis je v telesu) — priloga ne
+  // sme blokirati pošiljanja.
+  const attachments: Array<{ filename: string; content: Buffer; contentType: string }> = [];
+  try {
+    const pdf = await generateMaterialOrderDocumentPdf(input.projectId, input.materialOrderId, 'PURCHASE_ORDER', itemIds);
+    const safeSupplier = supplierName.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'dobavitelj';
+    attachments.push({ filename: `narocilnica-${input.projectId}-${safeSupplier}.pdf`, content: pdf, contentType: 'application/pdf' });
+  } catch (error) {
+    console.error('Naročilnice (PDF) ni bilo mogoče pripeti k naročilu dobavitelju.', error);
+  }
+
   await sendEmail({
     from: `"${senderSettings.senderName || 'Inteligent'}" <${senderSettings.senderEmail}>`,
     to,
@@ -105,6 +118,7 @@ export async function sendSupplierOrderEmail(input: {
     subject,
     text: bodyFinal,
     html: htmlFinal,
+    attachments: attachments.length > 0 ? attachments : undefined,
   });
 
   order.items = applySupplierOrderToItems(order.items as any, itemIds) as any;

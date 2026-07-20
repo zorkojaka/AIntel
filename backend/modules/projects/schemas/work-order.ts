@@ -102,6 +102,9 @@ export interface WorkOrderDocument extends Document {
   scheduledAt: string | null;
   scheduledConfirmedAt?: Date | null;
   scheduledConfirmedBy?: string | null;
+  /** Žeton povezave, prek katere stranka sama izbere dan montaže. */
+  bookingToken?: string | null;
+  bookingInviteSentAt?: Date | null;
   mainInstallerId?: string | null;
   assignedEmployeeIds?: string[];
   location?: string;
@@ -270,6 +273,9 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
     scheduledAt: { type: String, default: null },
     scheduledConfirmedAt: { type: Date, default: null },
     scheduledConfirmedBy: { type: String, default: null },
+    // default undefined (ne null) — unikatni sparse indeks null vrednosti šteje.
+    bookingToken: { type: String, default: undefined },
+    bookingInviteSentAt: { type: Date, default: null },
     mainInstallerId: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
     assignedEmployeeIds: { type: [Schema.Types.ObjectId], default: [] },
     location: { type: String },
@@ -297,6 +303,7 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
   { timestamps: true }
 );
 
+workOrderSchema.index({ bookingToken: 1 }, { unique: true, sparse: true });
 workOrderSchema.index({ projectId: 1, offerVersionId: 1 });
 workOrderSchema.index({ projectId: 1, cancelledAt: 1 });
 workOrderSchema.index({ assignedEmployeeIds: 1, projectId: 1 });

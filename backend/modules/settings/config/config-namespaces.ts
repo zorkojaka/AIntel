@@ -24,6 +24,32 @@ export function registerCoreConfigNamespaces(): void {
         .default('Strokovni ogled objekta (50 € z DDV; ob izvedbi se prizna kot popust).'),
       // Informativna opomba o roku izvedbe.
       executionLeadText: v.string({ max: 300 }).default('praviloma v 14 dneh po potrditvi in plačilu avansa'),
+      // Javna stran, kjer stranka izbere dan montaže (OB CUTOVERU: inteligent.si/izbira-termina).
+      bookingPageUrl: v.string({ max: 300 }).default('https://dev.inteligent.si/predogled/izbira-termina'),
+    }),
+  });
+
+  // Prepoznava bančnih obvestil o prilivu v dohodni pošti (payment.bank_email).
+  // senders: podnizi pošiljateljevega naslova (npr. "nlb.si") — prazno = neaktivno.
+  registerConfigNamespace({
+    namespace: 'finance.bank',
+    description: 'Prepoznava bančnih obvestil o prilivu za samodejno ujemanje plačil računov.',
+    schema: v.object({
+      senders: v.array(v.string({ max: 120 }), { max: 20 }).default([]),
+      // Vsaj ena od teh besed mora biti v zadevi ali telesu, da mail štejemo za obvestilo o prilivu.
+      keywords: v
+        .array(v.string({ max: 60 }), { max: 20 })
+        .default(['priliv', 'nakazil', 'prejeli', 'dobro pisan', 'knjižen']),
+    }),
+  });
+
+  // Avans po ponudbi (UPN nakazilo s sklicem na rezultatu konfiguratorja).
+  registerConfigNamespace({
+    namespace: 'finance.advance',
+    description: 'Avans po spletni ponudbi: odstotek in vklop UPN navodil.',
+    schema: v.object({
+      enabled: v.boolean().default(true),
+      percent: v.number({ min: 1, max: 100 }).default(30),
     }),
   });
 

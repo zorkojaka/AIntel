@@ -15,6 +15,7 @@ export const WHEEL_RULE_KEYS = [
   'email.ingest',
   'maintenance.due',
   'service.ticket_intake',
+  'payment.bank_email',
 ] as const;
 export type WheelRuleKey = (typeof WHEEL_RULE_KEYS)[number];
 

@@ -1,5 +1,23 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
+/**
+ * Urnik razpoložljivosti monterja (za termine montaž):
+ * - self:  monter sam klika proste dneve na koledarju; dayStart/EndHour sta
+ *          njegova privzeta delavnika ob kliku na dan;
+ * - fixed: admin vnese tedenski delavnik (fixedWeeklyHours), dnevi se
+ *          označijo samodejno, izjeme monter/admin uredi po dnevih.
+ * hours = cele ure začetkov (8 pomeni 8:00–9:00).
+ */
+export interface EmployeeScheduleSettings {
+  mode: 'self' | 'fixed';
+  dayStartHour: number;
+  dayEndHour: number;
+  /** Ključi 0–6 kot pri Date.getDay(): 0=nedelja, 1=ponedeljek … 6=sobota. */
+  fixedWeeklyHours?: Record<string, number[]>;
+  /** Privzeto največ delovnih dni na teden (null/undefined = brez omejitve); izjeme po tednih so v employee_week_limits. */
+  maxWorkdaysPerWeek?: number | null;
+}
+
 export interface EmployeeDocument extends Document {
   tenantId: string;
   name: string;
@@ -14,6 +32,7 @@ export interface EmployeeDocument extends Document {
   shoeSize?: number | null;
   notes?: string;
   hourRateWithoutVat: number;
+  schedule?: EmployeeScheduleSettings | null;
   active: boolean;
   appAccess: boolean;
   deletedAt?: Date | null;
@@ -41,6 +60,19 @@ const EmployeeSchema = new Schema<EmployeeDocument>(
     shoeSize: { type: Number, default: null },
     notes: { type: String, trim: true, default: '' },
     hourRateWithoutVat: { type: Number, required: true, default: 0, min: 0 },
+    schedule: {
+      type: new Schema<EmployeeScheduleSettings>(
+        {
+          mode: { type: String, enum: ['self', 'fixed'], required: true, default: 'self' },
+          dayStartHour: { type: Number, required: true, min: 0, max: 23, default: 8 },
+          dayEndHour: { type: Number, required: true, min: 1, max: 24, default: 16 },
+          fixedWeeklyHours: { type: Schema.Types.Mixed, default: undefined },
+          maxWorkdaysPerWeek: { type: Number, min: 0, max: 7, default: null },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
     active: { type: Boolean, required: true, default: true },
     appAccess: { type: Boolean, required: true, default: true },
     deletedAt: { type: Date, default: null },

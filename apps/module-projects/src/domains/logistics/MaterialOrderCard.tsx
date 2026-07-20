@@ -3,11 +3,15 @@ import type { Employee } from "@aintel/shared/types/employee";
 import type { MaterialOrder, MaterialPickupMethod, MaterialStep } from "@aintel/shared/types/logistics";
 import { Camera, ChevronDown, ChevronRight, Download, Loader2, Mail } from "lucide-react";
 import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
+import { toast } from "sonner";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { ExecutionDateTimePicker } from "./ExecutionDateTimePicker";
 
 type MaterialLine = MaterialOrder["items"][number];
 
@@ -271,6 +275,67 @@ export function MaterialOrderCard({
   defaultCollapsed = false,
 }: MaterialOrderCardProps) {
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+  const [bookingSending, setBookingSending] = useState(false);
+  const [bookingPreparing, setBookingPreparing] = useState(false);
+  const [bookingDialogOpen, setBookingDialogOpen] = useState(false);
+  const [bookingDraft, setBookingDraft] = useState({ to: "", subject: "", body: "" });
+  const [bookingMeta, setBookingMeta] = useState<{ durationHours?: number; freeDaysCount?: number } | null>(null);
+  const [bookingResult, setBookingResult] = useState<string | null>(null);
+
+  const bookingEndpoint = materialOrder?.workOrderId
+    ? `/api/projects/${encodeURIComponent(projectId)}/work-orders/${encodeURIComponent(materialOrder.workOrderId)}/booking-invite`
+    : null;
+
+  // Kot pri mailu monterju: najprej predogled (strežnik pripravi osnutek), šele nato pošiljanje.
+  const openBookingDialog = async () => {
+    if (!bookingEndpoint || bookingPreparing) return;
+    setBookingPreparing(true);
+    try {
+      const response = await fetch(bookingEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ previewOnly: true }),
+      });
+      const payload = await response.json();
+      // Ovojnica API-ja je { success, data, error } — razlog napake je v `error`.
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error || payload?.message || "Osnutka vabila ni bilo mogoče pripraviti.");
+      }
+      const data = payload?.data ?? payload;
+      setBookingDraft(data.draft ?? { to: "", subject: "", body: "" });
+      setBookingMeta({ durationHours: data.durationHours, freeDaysCount: data.freeDaysCount });
+      setBookingDialogOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Osnutka vabila ni bilo mogoče pripraviti.");
+    } finally {
+      setBookingPreparing(false);
+    }
+  };
+
+  const sendBookingInvite = async () => {
+    if (!bookingEndpoint || bookingSending) return;
+    setBookingSending(true);
+    try {
+      const response = await fetch(bookingEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bookingDraft),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error || payload?.message || "Vabila ni bilo mogoče poslati.");
+      }
+      toast.success("Vabilo k izbiri termina je bilo poslano.");
+      setBookingResult(
+        `Vabilo poslano (${new Date().toLocaleTimeString("sl-SI", { hour: "2-digit", minute: "2-digit" })}). Na voljo ${bookingMeta?.freeDaysCount ?? "?"} prostih dni.`,
+      );
+      setBookingDialogOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Vabila ni bilo mogoče poslati.");
+    } finally {
+      setBookingSending(false);
+    }
+  };
 
   if (!materialOrder) {
     return <p className="text-sm text-muted-foreground">Naročilo za material bo ustvarjeno ob potrditvi ponudbe.</p>;
@@ -317,10 +382,6 @@ export function MaterialOrderCard({
   const executionTeamCardClass = hasExecutionTeam
     ? "border-green-500/40 shadow-[0_0_0_1px_rgba(34,197,94,0.12)]"
     : "border-orange-400/50 shadow-[0_0_0_1px_rgba(251,146,60,0.14)]";
-  const executionDateInputClass =
-    hasExecutionDate && executionDateConfirmedAt
-      ? "border-green-500/40 focus-visible:border-green-500 focus-visible:ring-green-500/20"
-      : "border-orange-400/50 focus-visible:border-orange-500 focus-visible:ring-orange-500/20";
   const executionDateConfirmationLabel = executionDateConfirmedAt
     ? `Termin potrjen ${formatDateTime(executionDateConfirmedAt)}${executionDateConfirmedBy ? ` (${executionDateConfirmedBy})` : ""}`
     : "Termin še ni potrjen";
@@ -476,9 +537,11 @@ export function MaterialOrderCard({
               <div className="space-y-4">
                 <h4 className="text-sm font-semibold">Termin izvedbe</h4>
                 <div className="flex flex-wrap items-start gap-3">
-                  <label className="min-w-0 flex-1">
-                    <Input type="datetime-local" value={executionDate ?? ""} onChange={(event) => onExecutionDateChange(event.target.value)} className={`h-12 text-lg font-semibold tracking-tight ${executionDateInputClass}`} />
-                  </label>
+                  <ExecutionDateTimePicker
+                    value={executionDate ?? null}
+                    onChange={(next) => onExecutionDateChange(next ?? "")}
+                    disabled={savingWorkOrder}
+                  />
                   {executionDateConfirmedAt ? (
                     <Button type="button" size="sm" variant="outline" onClick={onUnconfirmExecutionDate} disabled={savingWorkOrder}>
                       Prekliči termin
@@ -494,6 +557,24 @@ export function MaterialOrderCard({
                   <span className="text-sm text-muted-foreground">
                     Ocena trajanja izvedbe: <span className="font-medium text-foreground">{executionDurationLabel}</span>
                   </span>
+                ) : null}
+                {!executionDateConfirmedAt && materialOrder?.workOrderId ? (
+                  <div className="space-y-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={bookingPreparing || savingWorkOrder}
+                      onClick={() => void openBookingDialog()}
+                    >
+                      {bookingPreparing ? "Pripravljam..." : "Povabi stranko k izbiri termina"}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      {bookingResult
+                        ? bookingResult
+                        : "Stranka po e-mailu dobi povezavo s prostimi dnevi monterjev; z izbiro dneva je termin hkrati potrjen. Pred pošiljanjem vidiš in urediš vsebino."}
+                    </p>
+                  </div>
                 ) : null}
               </div>
             </div>
@@ -775,6 +856,53 @@ export function MaterialOrderCard({
           </>
         ) : null}
       </div>
+
+      <Dialog open={bookingDialogOpen} onOpenChange={(open) => !bookingSending && setBookingDialogOpen(open)}>
+        <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Povabi stranko k izbiri termina</DialogTitle>
+            <DialogDescription>
+              Preglej in po potrebi uredi sporočilo. Povezava v vsebini stranki pokaže samo dneve, ko so dodeljeni monterji
+              prosti{bookingMeta?.durationHours ? ` (predvideno trajanje ${bookingMeta.durationHours} h` : ""}
+              {bookingMeta?.freeDaysCount !== undefined ? `, trenutno ${bookingMeta.freeDaysCount} prostih dni)` : bookingMeta?.durationHours ? ")" : ""}.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Prejemnik</span>
+            <Input
+              value={bookingDraft.to}
+              onChange={(event) => setBookingDraft((prev) => ({ ...prev, to: event.target.value }))}
+              disabled={bookingSending}
+            />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Zadeva</span>
+            <Input
+              value={bookingDraft.subject}
+              onChange={(event) => setBookingDraft((prev) => ({ ...prev, subject: event.target.value }))}
+              disabled={bookingSending}
+            />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Vsebina</span>
+            <Textarea
+              rows={12}
+              value={bookingDraft.body}
+              onChange={(event) => setBookingDraft((prev) => ({ ...prev, body: event.target.value }))}
+              disabled={bookingSending}
+            />
+          </label>
+          <p className="text-xs text-muted-foreground">Podpis (noga) se doda samodejno, enako kot pri ostali pošti.</p>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setBookingDialogOpen(false)} disabled={bookingSending}>
+              Prekliči
+            </Button>
+            <Button type="button" onClick={() => void sendBookingInvite()} disabled={bookingSending || !bookingDraft.to.trim()}>
+              {bookingSending ? "Pošiljam..." : "Pošlji vabilo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -10,18 +10,35 @@ import type { DashboardWidgetId } from './types';
 const DEFAULT_AUTH = {
   userId: null as string | null,
   employeeId: null as string | null,
+  roles: [] as string[],
 };
 
 type DashboardAuthPayload = {
+  roles?: string[] | null;
   user?: { id?: string | null } | null;
   employee?: { id?: string | null } | null;
 };
+
+// Zaledne vloge (ADMIN, ORGANIZER, EXECUTION …) → oznake vlog na widgetih.
+function toWidgetRoles(roles: string[]): string[] {
+  const out = new Set<string>();
+  for (const role of roles) {
+    const normalized = String(role).toUpperCase();
+    if (normalized === 'ADMIN') out.add('admin');
+    if (normalized === 'ORGANIZER') out.add('organizer');
+    if (normalized === 'EXECUTION') out.add('installer');
+  }
+  // Brez znanih vlog ostane privzeti monterski pogled (kot doslej).
+  if (!out.size) out.add('installer');
+  return [...out];
+}
 
 export function DashboardPage() {
   const [auth, setAuth] = useState(DEFAULT_AUTH);
   const [isEditing, setIsEditing] = useState(false);
   const { data, isLoading, error } = useInstallerDashboardData();
-  const { visibleWidgets, toggleWidget, reorderWidget } = useDashboardLayout(auth.userId, 'installer');
+  const widgetRoles = useMemo(() => toWidgetRoles(auth.roles), [auth.roles]);
+  const { visibleWidgets, toggleWidget, reorderWidget } = useDashboardLayout(auth.userId, widgetRoles);
   const [draggingWidgetId, setDraggingWidgetId] = useState<DashboardWidgetId | null>(null);
 
   useEffect(() => {
@@ -37,6 +54,7 @@ export function DashboardPage() {
         setAuth({
           userId: data?.user?.id ?? null,
           employeeId: data?.employee?.id ?? null,
+          roles: Array.isArray(data?.roles) ? data.roles : [],
         });
       } catch {
         if (!active) {
@@ -54,8 +72,8 @@ export function DashboardPage() {
   }, []);
 
   const availableWidgets = useMemo(
-    () => ALL_WIDGETS.filter((widget) => !widget.roles || widget.roles.includes('installer')),
-    [],
+    () => ALL_WIDGETS.filter((widget) => !widget.roles || widget.roles.some((role) => widgetRoles.includes(role))),
+    [widgetRoles],
   );
   const selectedWidgets = useMemo(
     () =>

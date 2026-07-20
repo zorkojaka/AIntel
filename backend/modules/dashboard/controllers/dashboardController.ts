@@ -5,6 +5,7 @@ import { getDefaultDashboardStats, DashboardStats } from '../schemas/dashboardSt
 import { ProjectModel } from '../../projects/schemas/project';
 import { MaterialOrderModel } from '../../projects/schemas/material-order';
 import { WorkOrderModel } from '../../projects/schemas/work-order';
+import { EmployeeModel } from '../../employees/schemas/employee';
 
 type UpcomingProjectSummary = {
   id: string;
@@ -41,6 +42,8 @@ type WorkOrderSummary = {
   status: string;
   itemCount: number;
   createdAt: string;
+  /** Imena dodeljenih monterjev — izpolnjeno samo v pregledu podjetja. */
+  assignedNames?: string[];
 };
 
 type InstallerDashboardResponse = {
@@ -222,4 +225,67 @@ export async function getInstallerDashboard(req: Request, res: Response) {
   };
 
   return res.success(payload);
+}
+
+/**
+ * Urnik podjetja: VSI razpisani delovni nalogi z imeni dodeljenih monterjev.
+ * Namenjen adminu/organizatorju — monter na svoji plosci vidi samo svoje.
+ */
+export async function getCompanyDashboard(req: Request, res: Response) {
+  const workOrders = await WorkOrderModel.find({
+    status: { $ne: 'cancelled' },
+    cancelledAt: null,
+    scheduledAt: { $ne: null },
+  })
+    .select({ projectId: 1, scheduledAt: 1, title: 1, items: 1, status: 1, assignedEmployeeIds: 1 })
+    .sort({ scheduledAt: -1 })
+    .limit(500)
+    .lean();
+
+  const projectIds = Array.from(new Set(workOrders.map((order) => order.projectId).filter(Boolean)));
+  const employeeIds = Array.from(
+    new Set(workOrders.flatMap((order: any) => (order.assignedEmployeeIds ?? []).map((id: unknown) => String(id)))),
+  );
+
+  const [projects, employees] = await Promise.all([
+    projectIds.length
+      ? ProjectModel.find({ id: { $in: projectIds } }).select({ id: 1, code: 1, title: 1, customer: 1 }).lean()
+      : [],
+    employeeIds.length ? EmployeeModel.find({ _id: { $in: employeeIds } }).select({ name: 1 }).lean() : [],
+  ]);
+
+  const projectById = new Map<string, any>(projects.map((project: any) => [project.id, project]));
+  const employeeNameById = new Map<string, string>(
+    employees.map((employee: any) => [String(employee._id), employee.name ?? 'Monter']),
+  );
+
+  const companyWorkOrders: WorkOrderSummary[] = workOrders.map((order: any) => {
+    const project = projectById.get(order.projectId);
+    return {
+      id: String(order._id),
+      projectId: order.projectId,
+      projectCode: project?.code ?? order.projectId,
+      scheduledAt: order.scheduledAt ?? null,
+      title: order.title ?? null,
+      projectTitle: project?.title ?? null,
+      projectAddress: project?.customer?.address ?? null,
+      customerName: project?.customer?.name ?? null,
+      customerAddress: project?.customer?.address ?? null,
+      materialStatus: null,
+      casovnaNorma: Array.isArray(order.items)
+        ? order.items.reduce((sum: number, item: any) => {
+            const value = item?.casovnaNorma;
+            return typeof value === 'number' && Number.isFinite(value) ? sum + value : sum;
+          }, 0)
+        : 0,
+      status: order.status,
+      itemCount: order.items?.length ?? 0,
+      createdAt: formatDate(order.createdAt),
+      assignedNames: (order.assignedEmployeeIds ?? [])
+        .map((id: unknown) => employeeNameById.get(String(id)))
+        .filter((name: string | undefined): name is string => !!name),
+    };
+  });
+
+  return res.success({ workOrders: companyWorkOrders });
 }

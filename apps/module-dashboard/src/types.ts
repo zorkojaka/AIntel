@@ -8,7 +8,10 @@ export type DashboardWidgetId =
   | 'upcoming-projects'
   | 'material-orders'
   | 'work-orders'
-  | 'earnings-forecast';
+  | 'earnings-forecast'
+  | 'my-availability'
+  | 'team-availability'
+  | 'company-agenda';
 export type DashboardWidgetSize = 'sm' | 'md' | 'lg';
 
 export interface DashboardWidgetDefinition {
@@ -60,6 +63,8 @@ export interface WorkOrderSummary {
   status: string;
   itemCount: number;
   createdAt: string;
+  /** Imena dodeljenih monterjev — izpolnjeno v urniku podjetja. */
+  assignedNames?: string[];
 }
 
 export interface ForecastProject {

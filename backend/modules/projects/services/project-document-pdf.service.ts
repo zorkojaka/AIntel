@@ -356,7 +356,14 @@ async function resolveWorkOrderExecutorLabel(
   return companyName;
 }
 
-export async function generateMaterialOrderDocumentPdf(projectId: string, materialOrderId: string, docType: MaterialDocType) {
+export async function generateMaterialOrderDocumentPdf(
+  projectId: string,
+  materialOrderId: string,
+  docType: MaterialDocType,
+  // Če je podan, naročilnica vsebuje samo te postavke — za naročilo enemu
+  // dobavitelju (drugi dobavitelji ne smejo videti tujih postavk).
+  filterItemIds?: string[],
+) {
   const [project, materialOrder] = await Promise.all([
     ProjectModel.findOne({ id: projectId }).lean(),
     MaterialOrderModel.findOne({ _id: materialOrderId, projectId }).lean(),
@@ -373,11 +380,14 @@ export async function generateMaterialOrderDocumentPdf(projectId: string, materi
   const companyProfile = buildCompanyProfile(company, globalSettings);
   const customer = buildCustomer(existingProject);
 
-  const items: DocumentPreviewContext['items'] = (existingOrder.items ?? []).map((item) => ({
-    name: item.name ?? 'Neimenovana postavka',
-    quantity: Number(item.quantity ?? 0),
-    unit: item.unit ?? '',
-  }));
+  const idFilter = Array.isArray(filterItemIds) && filterItemIds.length > 0 ? new Set(filterItemIds.map(String)) : null;
+  const items: DocumentPreviewContext['items'] = (existingOrder.items ?? [])
+    .filter((item) => !idFilter || idFilter.has(String((item as { id?: unknown }).id)))
+    .map((item) => ({
+      name: item.name ?? 'Neimenovana postavka',
+      quantity: Number(item.quantity ?? 0),
+      unit: item.unit ?? '',
+    }));
 
   const statusNote =
     typeof existingOrder.materialStatus === 'string' && existingOrder.materialStatus.trim().length > 0

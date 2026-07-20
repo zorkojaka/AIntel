@@ -44,6 +44,7 @@ import {
   sendWorkOrderConfirmationCommunicationController,
 } from '../../communication/controllers/project-communication.controller';
 import { supplierOrderEmailController } from '../../suppliers/supplier.routes';
+import { bookingInviteController } from '../../availability/availability.routes';
 
 const router = Router();
 const requireProjectWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]);
@@ -90,6 +91,7 @@ router.put('/:projectId/execution-definition', requireWorkOrderWrite, logisticsC
 router.post('/:projectId/logistics/cancel-confirmation', requireOfferConfirmationWrite, cancelOfferConfirmation);
 router.get('/:projectId/logistics', logisticsController.getProjectLogistics);
 router.get('/:projectId/logistics/installer-availability/:employeeId', requirePreparationAccess, logisticsController.getInstallerAvailability);
+router.post('/:projectId/work-orders/:workOrderId/booking-invite', requirePreparationAccess, bookingInviteController);
 router.put('/:projectId/work-orders/:workOrderId', requireWorkOrderWrite, logisticsController.updateWorkOrder);
 router.post('/:projectId/work-orders/:workOrderId/start-correction', requireWorkOrderWrite, logisticsController.startWorkOrderConfirmationCorrection);
 router.post('/:projectId/material-orders/:materialOrderId/advance', requirePreparationAccess, logisticsController.advanceMaterialOrderStep);
