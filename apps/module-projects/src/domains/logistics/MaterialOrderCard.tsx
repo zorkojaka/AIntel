@@ -64,6 +64,7 @@ interface MaterialOrderCardProps {
   onDeliveredQtyCommit: (itemId: string, deliveredQty: number) => void;
   onMaterialItemsChange: (items: MaterialLine[]) => void;
   onSaveMaterialChanges: () => void;
+  onMarkEquipmentReady: () => void;
   onBulkMarkOrdered: (items: MaterialLine[]) => void;
   onBulkMarkReady: (items: MaterialLine[]) => void;
   onOrderBySupplier?: (group: { supplierLabel: string; lines: MaterialLine[] }) => void;
@@ -258,6 +259,7 @@ export function MaterialOrderCard({
   onDeliveredQtyCommit,
   onMaterialItemsChange,
   onSaveMaterialChanges,
+  onMarkEquipmentReady,
   onBulkMarkOrdered,
   onBulkMarkReady,
   onOrderBySupplier,
@@ -335,6 +337,19 @@ export function MaterialOrderCard({
   const allPlannedItemsOrdered = plannedLines.every((item) => resolveOrderedStatus(item) === "DA");
   const allPlannedItemsReady =
     plannedLines.every((item) => resolvePlanQty(item) <= 0 || (resolveOrderedStatus(item) === "DA" && isReadyForPickup(resolveMaterialStep(item.materialStep))));
+  const materialLines = materialOrder.items ?? [];
+  const allMaterialItemsReceived =
+    materialLines.every((item) => {
+      const plannedQty = resolvePlanQty(item);
+      const requiredQty = item.isExtra
+        ? Math.max(plannedQty, resolveOrderedQty(item), resolveDeliveredQty(item))
+        : plannedQty;
+      return (
+        resolveOrderedQty(item) >= requiredQty &&
+        resolveDeliveredQty(item) >= requiredQty &&
+        resolveMaterialStep(item.materialStep) === "Prevzeto"
+      );
+    });
 
   const updateMaterialStep = (itemId: string, nextOrderedStatus: "DA" | "NE", nextReady: boolean) => {
     const nextItems = (materialOrder.items ?? []).map((item) => {
@@ -752,6 +767,16 @@ export function MaterialOrderCard({
             )}
           </div>
           <div className="flex flex-wrap gap-2">
+            {!isExecutionMode ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={onMarkEquipmentReady}
+                disabled={savingWorkOrder || materialLines.length === 0 || allMaterialItemsReceived}
+              >
+                Oprema pripravljena
+              </Button>
+            ) : null}
             {canDownloadPdf ? (
               <div className="inline-flex h-8 items-center rounded-md border border-border/70 bg-background">
                 <Button type="button" variant="ghost" size="sm" className="h-8 rounded-none border-r border-border/70 px-3" onClick={onPreviewPurchaseOrder} disabled={downloadingPdf !== null && downloadingPdf !== "PURCHASE_ORDER"}>
