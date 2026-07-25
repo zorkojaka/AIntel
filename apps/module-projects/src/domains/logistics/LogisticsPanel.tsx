@@ -2748,6 +2748,38 @@ export function LogisticsPanel({
     await handleAdvanceMaterialStep(materialOrderId, targetStep);
   };
 
+  const handleMarkEquipmentReady = async (materialOrderId: string) => {
+    setSavingWorkOrder(true);
+    try {
+      const response = await fetch(
+        `/api/projects/${projectId}/material-orders/${materialOrderId}/mark-equipment-ready`,
+        { method: "POST" },
+      );
+      const payload = await parseApiEnvelope<{ materialOrders?: MaterialOrder[] }>(
+        response,
+        "Opreme ni mogoče označiti kot pripravljene.",
+      );
+      if (payload.materialOrders) {
+        setSnapshot((prev) =>
+          prev
+            ? {
+                ...prev,
+                materialOrders: payload.materialOrders ?? [],
+                materialOrder: payload.materialOrders?.[0] ?? prev.materialOrder,
+              }
+            : prev,
+        );
+      }
+      setPendingMaterialOrderIds((prev) => ({ ...prev, [materialOrderId]: false }));
+      toast.success("Vsa oprema je označena kot naročena in prevzeta.");
+      await refreshAfterMutation(fetchSnapshot);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Opreme ni mogoče označiti kot pripravljene.");
+    } finally {
+      setSavingWorkOrder(false);
+    }
+  };
+
   const shouldShowOfferSelector = confirmedOffers.length > 0;
   const shouldRenderOfferDropdown = confirmedOffers.length > 1;
 
@@ -2830,6 +2862,9 @@ export function LogisticsPanel({
                   }}
                   onSaveMaterialChanges={() => {
                     void saveMaterialOrderChanges(order._id);
+                  }}
+                  onMarkEquipmentReady={() => {
+                    void handleMarkEquipmentReady(order._id);
                   }}
                   onBulkMarkOrdered={(items) => {
                     void applyMaterialItemsAndSave(order._id, items);
@@ -2965,6 +3000,9 @@ export function LogisticsPanel({
               }}
               onSaveMaterialChanges={() => {
                 void saveMaterialOrderChanges(order._id);
+              }}
+              onMarkEquipmentReady={() => {
+                void handleMarkEquipmentReady(order._id);
               }}
               onBulkMarkOrdered={(items) => {
                 void applyMaterialItemsAndSave(order._id, items);

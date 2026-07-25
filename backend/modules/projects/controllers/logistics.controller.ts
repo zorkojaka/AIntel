@@ -2733,6 +2733,103 @@ function parsePdfResponseMode(value?: string | string[] | null): 'inline' | 'dow
   return 'download';
 }
 
+export async function markEquipmentReady(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { projectId, materialOrderId } = req.params;
+    const materialOrder = await MaterialOrderModel.findOne({
+      _id: materialOrderId,
+      projectId,
+      status: { $ne: 'cancelled' },
+      cancelledAt: null,
+    });
+    if (!materialOrder) {
+      return res.fail('Naročilo materiala ni najdeno.', 404);
+    }
+
+    const contextRoles = getContextRoles(req);
+    if (!canEditPreparation(contextRoles)) {
+      if (!contextRoles.includes(ROLE_EXECUTION)) {
+        return res.fail('Ni dostopa do faze Priprava.', 403);
+      }
+      const actorEmployeeId = resolveActorEmployeeId(req);
+      if (!actorEmployeeId) {
+        return res.fail('Uporabnik ni povezan z monterjem.', 403);
+      }
+      const workOrderId = materialOrder.workOrderId ? String(materialOrder.workOrderId) : null;
+      const [projectAssigned, workOrderAssigned, materialOrderAssigned] = await Promise.all([
+        ProjectModel.exists({ id: projectId, assignedEmployeeIds: actorEmployeeId }),
+        workOrderId
+          ? WorkOrderModel.exists({ _id: workOrderId, projectId, assignedEmployeeIds: actorEmployeeId })
+          : Promise.resolve(null),
+        MaterialOrderModel.exists({ _id: materialOrderId, projectId, assignedEmployeeIds: actorEmployeeId }),
+      ]);
+      if (!projectAssigned && !workOrderAssigned && !materialOrderAssigned) {
+        return res.fail('Ni dostopa do faze Priprava za to naročilo materiala.', 403);
+      }
+    }
+
+    materialOrder.items = (materialOrder.items ?? []).map((item: any) => {
+      const current = item.toObject ? item.toObject() : item;
+      const quantity =
+        typeof current.quantity === 'number' && Number.isFinite(current.quantity)
+          ? Math.max(0, current.quantity)
+          : 0;
+      const effectiveQuantity = current.isExtra
+        ? Math.max(
+            quantity,
+            typeof current.orderedQty === 'number' && Number.isFinite(current.orderedQty) ? current.orderedQty : 0,
+            typeof current.deliveredQty === 'number' && Number.isFinite(current.deliveredQty) ? current.deliveredQty : 0,
+          )
+        : quantity;
+      return {
+        ...current,
+        orderedQty: effectiveQuantity,
+        deliveredQty: effectiveQuantity,
+        isOrdered: effectiveQuantity > 0,
+        materialStep: 'Prevzeto',
+      };
+    });
+    materialOrder.status = 'received';
+    materialOrder.materialStatus = 'Prevzeto';
+    materialOrder.pickupConfirmedAt = new Date();
+    materialOrder.pickupConfirmedBy = resolveActorId(req);
+    await materialOrder.save();
+
+    const project = await ProjectModel.findOne({ id: projectId });
+    if (project) {
+      addTimeline(project, {
+        type: 'edit',
+        title: 'Oprema pripravljena',
+        description: 'Vsa oprema je bila označena kot naročena in prevzeta.',
+        timestamp: new Date().toISOString(),
+        user: 'system',
+        metadata: {
+          actorEmployeeId: resolveActorEmployeeId(req) ?? '',
+          projectId,
+          materialOrderId,
+        },
+      });
+      await project.save();
+    }
+
+    const workOrderId = materialOrder.workOrderId ? String(materialOrder.workOrderId) : null;
+    if (workOrderId) {
+      await applyAutomaticPreparationProgression(projectId, workOrderId, req);
+    }
+
+    const materialOrders = await MaterialOrderModel.find({
+      projectId,
+      status: { $ne: 'cancelled' },
+      cancelledAt: null,
+    }).sort({ createdAt: 1 }).lean();
+    return res.success({
+      materialOrders: materialOrders.map(serializeMaterialOrder).filter(Boolean),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function advanceMaterialOrderStep(req: Request, res: Response, next: NextFunction) {
   try {
     const { projectId, materialOrderId } = req.params;
