@@ -94,6 +94,7 @@ router.get('/:projectId/logistics/installer-availability/:employeeId', requirePr
 router.post('/:projectId/work-orders/:workOrderId/booking-invite', requirePreparationAccess, bookingInviteController);
 router.put('/:projectId/work-orders/:workOrderId', requireWorkOrderWrite, logisticsController.updateWorkOrder);
 router.post('/:projectId/work-orders/:workOrderId/start-correction', requireWorkOrderWrite, logisticsController.startWorkOrderConfirmationCorrection);
+router.post('/:projectId/material-orders/:materialOrderId/mark-equipment-ready', requireWorkOrderWrite, logisticsController.markEquipmentReady);
 router.post('/:projectId/material-orders/:materialOrderId/advance', requirePreparationAccess, logisticsController.advanceMaterialOrderStep);
 router.post('/:projectId/material-orders/:materialOrderId/supplier-order-email', requirePreparationAccess, supplierOrderEmailController);
 router.get('/:projectId/work-orders/:workOrderId/pdf', logisticsController.exportWorkOrderPdf);
