@@ -217,6 +217,40 @@
   margin-bottom: 0;
 }
 
+.finance-document-actions {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.finance-document-actions .finance-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  text-decoration: none;
+}
+
+.finance-document-actions__preview {
+  border-radius: 8px 0 0 8px;
+}
+
+.finance-document-actions__download {
+  width: 36px;
+  padding: 8px;
+  margin-left: -1px;
+  border-radius: 0 8px 8px 0;
+}
+
+.finance-document-actions__download svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .finance-btn--danger {
   color: var(--finance-danger, #cf3d35);
   border-color: rgba(207, 61, 53, 0.35);
