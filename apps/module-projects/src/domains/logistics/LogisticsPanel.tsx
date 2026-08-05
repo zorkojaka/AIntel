@@ -466,6 +466,7 @@ export function LogisticsPanel({
   const [preparingInstallerEmail, setPreparingInstallerEmail] = useState(false);
   const [installerEmailDialogOpen, setInstallerEmailDialogOpen] = useState(false);
   const [installerEmailDraft, setInstallerEmailDraft] = useState({ to: "", cc: "", bcc: "", subject: "", body: "" });
+  const [installerEmailPreparationError, setInstallerEmailPreparationError] = useState<string | null>(null);
   const [installerEmailMessages, setInstallerEmailMessages] = useState<CommunicationMessage[]>([]);
   const [installerEmailStatusLoading, setInstallerEmailStatusLoading] = useState(false);
   const [advancingMaterialOrderId, setAdvancingMaterialOrderId] = useState<string | null>(null);
@@ -1370,26 +1371,19 @@ export function LogisticsPanel({
     };
   };
 
-  const openInstallerPreparationEmailDialog = async () => {
-    if (!selectedWorkOrder?._id || preparingInstallerEmail || sendingInstallerEmail) return;
-    setInstallerEmailDraft(buildInstallerPreparationEmailDraft(selectedWorkOrder));
-    setInstallerEmailDialogOpen(true);
+  const prepareInstallerPreparationEmail = async (workOrder: LogisticsWorkOrder) => {
     setPreparingInstallerEmail(true);
     try {
-      const currentConfirmedAt =
-        typeof workOrderForm.scheduledConfirmedAt === "string"
-          ? workOrderForm.scheduledConfirmedAt
-          : selectedWorkOrder.scheduledConfirmedAt ?? null;
-      const confirmationPatch =
-        resolvedSchedule && !currentConfirmedAt ? { scheduledConfirmedAt: new Date().toISOString() } : undefined;
-      if (confirmationPatch) {
-        setWorkOrderForm((prev) => ({ ...prev, scheduledConfirmedAt: confirmationPatch.scheduledConfirmedAt }));
+      const saved = await handleSaveWorkOrder();
+      if (!saved) {
+        setInstallerEmailPreparationError("Podatkov delovnega naloga ni bilo mogoče shraniti. Emaila ni mogoče poslati.");
+        return;
       }
-      const saved = await handleSaveWorkOrder(undefined, confirmationPatch);
-      if (!saved) return;
-      const workOrderId = typeof saved === "object" && saved._id ? saved._id : selectedWorkOrder._id;
+      const workOrderId = typeof saved === "object" && saved._id ? saved._id : workOrder._id;
       if (!workOrderId) {
-        toast.error("Delovni nalog ni pripravljen za pošiljanje emaila.");
+        const message = "Delovni nalog ni pripravljen za pošiljanje emaila.";
+        setInstallerEmailPreparationError(message);
+        toast.error(message);
         return;
       }
       const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrderId}/send-installer-preparation`, {
@@ -1402,18 +1396,34 @@ export function LogisticsPanel({
       });
       const payload = await readJsonEnvelope(response);
       if (!payload.success) {
-        toast.error(payload.error ?? "Emaila monterju ni bilo mogoče pripraviti.");
+        const message = payload.error ?? "Emaila monterju ni bilo mogoče pripraviti.";
+        setInstallerEmailPreparationError(message);
+        toast.error(message);
         return;
       }
       const draft = payload.data?.draft ?? payload.draft;
-      setInstallerEmailDraft(draft ?? buildInstallerPreparationEmailDraft(typeof saved === "object" ? saved : selectedWorkOrder));
+      setInstallerEmailDraft(draft ?? buildInstallerPreparationEmailDraft(typeof saved === "object" ? saved : workOrder));
+      setInstallerEmailPreparationError(null);
       void refreshInstallerEmailStatus();
     } catch (error) {
       console.error(error);
-      toast.error("Emaila monterju ni bilo mogoče pripraviti.");
+      const message = "Emaila monterju ni bilo mogoče pripraviti.";
+      setInstallerEmailPreparationError(message);
+      toast.error(message);
     } finally {
       setPreparingInstallerEmail(false);
     }
+  };
+
+  const openInstallerPreparationEmailDialog = () => {
+    if (!selectedWorkOrder?._id || preparingInstallerEmail || sendingInstallerEmail) return;
+    const workOrder = selectedWorkOrder;
+    setInstallerEmailDraft(buildInstallerPreparationEmailDraft(workOrder));
+    setInstallerEmailPreparationError(null);
+    setInstallerEmailDialogOpen(true);
+    window.setTimeout(() => {
+      void prepareInstallerPreparationEmail(workOrder);
+    }, 0);
   };
 
   const handleSendInstallerPreparationEmail = async () => {
@@ -1435,8 +1445,16 @@ export function LogisticsPanel({
         return;
       }
       const loggingFailed = payload.data?.loggingFailed || payload.loggingFailed;
+      const sentMessage = payload.data?.message ?? payload.message;
+      if (sentMessage?.id) {
+        setInstallerEmailMessages((current) => [
+          sentMessage,
+          ...current.filter((message) => message.id !== sentMessage.id),
+        ]);
+      } else {
+        await refreshInstallerEmailStatus();
+      }
       toast.success(loggingFailed ? "Email monterju je bil poslan, zapis v komunikacijah pa ni uspel." : "Email monterju je bil poslan.");
-      await refreshInstallerEmailStatus();
       setInstallerEmailDialogOpen(false);
     } catch (error) {
       console.error(error);
@@ -3099,6 +3117,11 @@ export function LogisticsPanel({
               Pripravljam končni osnutek emaila ...
             </div>
           ) : null}
+          {installerEmailPreparationError ? (
+            <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700">
+              {installerEmailPreparationError}
+            </div>
+          ) : null}
           <div className="grid gap-4 md:grid-cols-3">
             <label className="space-y-2 text-sm">
               <span className="font-medium">To</span>
@@ -3152,7 +3175,7 @@ export function LogisticsPanel({
             <Button
               type="button"
               onClick={() => void handleSendInstallerPreparationEmail()}
-              disabled={preparingInstallerEmail || sendingInstallerEmail || !installerEmailDraft.to.trim() || !installerEmailDraft.subject.trim() || !installerEmailDraft.body.trim()}
+              disabled={Boolean(installerEmailPreparationError) || preparingInstallerEmail || sendingInstallerEmail || !installerEmailDraft.to.trim() || !installerEmailDraft.subject.trim() || !installerEmailDraft.body.trim()}
             >
               {sendingInstallerEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
               Pošlji
