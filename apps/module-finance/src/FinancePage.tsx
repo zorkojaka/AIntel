@@ -320,6 +320,11 @@ function paymentStateBadgeClass(state: FinanceInvoiceRow['paymentState']) {
   return 'is-cancelled';
 }
 
+function invoicePdfUrl(invoice: FinanceInvoiceRow, inline = false) {
+  const baseUrl = `/api/projects/${encodeURIComponent(invoice.projectId)}/invoices/${encodeURIComponent(invoice.invoiceVersionId)}/pdf`;
+  return inline ? `${baseUrl}?mode=inline` : baseUrl;
+}
+
 function detailKey(employeeIdValue: string, snapshotId: string) {
   return `${employeeIdValue}:${snapshotId}`;
 }
@@ -1346,8 +1351,27 @@ export const FinancePage: React.FC = () => {
                           </td>
                           <td>
                             <div className="finance-row-actions finance-row-actions--compact">
+                              <div className="finance-document-actions">
+                                <button
+                                  type="button"
+                                  className="finance-btn finance-document-actions__preview"
+                                  onClick={() => window.open(invoicePdfUrl(invoice, true), '_blank', 'noopener,noreferrer')}
+                                >
+                                  Poglej
+                                </button>
+                                <a
+                                  className="finance-btn finance-document-actions__download"
+                                  href={invoicePdfUrl(invoice)}
+                                  aria-label={`Prenesi račun ${invoice.invoiceNumber}`}
+                                  title="Prenesi račun PDF"
+                                >
+                                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14" />
+                                  </svg>
+                                </a>
+                              </div>
                               <button type="button" className="finance-btn" onClick={() => { window.location.href = `/projects/${invoice.projectId}`; }}>
-                                Odpri
+                                Odpri projekt
                               </button>
                               {invoice.status === 'issued' && invoice.paymentState !== 'paid' && (
                                 <button
