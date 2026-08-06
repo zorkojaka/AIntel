@@ -692,7 +692,6 @@ export async function nadaljujNaPonudbo(zahtevaId: string, tenantId = 'inteligen
     requestId: String(zahteva._id),
     baseTitle: 'Ponudba',
     items,
-    comment: 'Ponudba ustvarjena iz zahteve.',
   });
 
   zahteva.status = 'koncana';

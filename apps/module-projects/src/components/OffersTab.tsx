@@ -314,6 +314,9 @@ export function OffersTab({
   }, [paymentTermsOptions, defaultPaymentTerms, paymentTerms]);
 
   const resetToEmptyOffer = useCallback(() => {
+    selectedOfferIdRef.current = null;
+    offerLoadRequestIdRef.current += 1;
+    offerRefreshRequestIdRef.current += 1;
     setSelectedOfferId(null);
     setTitle("Ponudba");
     setPaymentTerms(defaultPaymentTerms);
@@ -378,11 +381,12 @@ export function OffersTab({
 
 const loadOfferById = useCallback(async (offerId: string) => {
     if (!projectId) return;
+    const requestId = ++offerLoadRequestIdRef.current;
 
     try {
       const response = await fetch(`/api/projects/${projectId}/offers/${offerId}`);
       const offer = await parseApiEnvelope<OfferVersion>(response, "Ponudbe ni mogoče naložiti.");
-      if (!offer) return;
+      if (!offer || requestId !== offerLoadRequestIdRef.current) return;
 
       setTitle(offer.baseTitle || "Ponudba");
       const offerKey = (offer as any)?._id ?? (offer as any)?.id ?? offerId;
@@ -454,6 +458,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
 
   const refreshOffers = useCallback(
     async (preferredId?: string | null, fallbackToLatest = true) => {
+      const requestId = ++offerRefreshRequestIdRef.current;
       if (!projectId) {
         setVersions([]);
         resetToEmptyOffer();
@@ -463,6 +468,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
       try {
         const res = await fetch(`/api/projects/${projectId}/offers`);
         const list = await parseApiEnvelope<OfferVersionSummary[]>(res, "Ponudb ni mogoče naložiti.");
+        if (requestId !== offerRefreshRequestIdRef.current) return;
         setVersions(list);
 
         if (list.length === 0) {
@@ -481,6 +487,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
         }
 
         if (nextId) {
+          selectedOfferIdRef.current = nextId;
           setSelectedOfferId(nextId);
           await loadOfferById(nextId);
         } else {
@@ -514,6 +521,8 @@ const loadOfferById = useCallback(async (offerId: string) => {
   }, [projectId]);
 
   const selectedOfferIdRef = useRef<string | null>(null);
+  const offerLoadRequestIdRef = useRef(0);
+  const offerRefreshRequestIdRef = useRef(0);
   useEffect(() => {
     selectedOfferIdRef.current = selectedOfferId;
   }, [selectedOfferId]);
@@ -1148,6 +1157,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
   };
 
   const handleCreateNewVersion = () => {
+    selectedOfferIdRef.current = null;
     setSelectedOfferId(null);
     resetToEmptyOffer();
   };
@@ -1493,6 +1503,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
   };
 
   const handleChangeVersion = async (value: string) => {
+    selectedOfferIdRef.current = value;
     setSelectedOfferId(value);
     await loadOfferById(value);
   };
