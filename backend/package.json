@@ -45,6 +45,7 @@
     "node-cron": "^4.6.0",
     "nodemailer": "^6.10.0",
     "pdfkit": "^0.15.0",
+    "pdf-lib": "^1.17.1",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "playwright": "^1.57.0",

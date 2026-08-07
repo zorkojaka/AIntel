@@ -850,16 +850,29 @@ export async function sendOfferCommunicationEmail(input: {
       ? input.selectedAttachments
       : template?.defaultAttachments ?? [];
 
-  const offerAttachmentTypes = selectedAttachments.filter((type) => type === "offer_pdf" || type === "project_pdf");
+  const includeOfferPdf = selectedAttachments.includes("offer_pdf");
+  const includeProductDescriptions = selectedAttachments.includes("project_pdf");
   const otherAttachmentTypes = selectedAttachments.filter((type) => type !== "offer_pdf" && type !== "project_pdf");
-  const attachmentRequests = [
-    ...offerAttachmentTypes.flatMap((type) =>
-      selectedOfferIds.map((selectedOfferId) => ({
-        type,
+  type AttachmentRequest = Parameters<typeof resolveCommunicationAttachment>[0];
+  const offerAttachmentRequests: AttachmentRequest[] = [];
+  for (const selectedOfferId of selectedOfferIds) {
+    if (includeOfferPdf) {
+      offerAttachmentRequests.push({
+        type: "offer_pdf",
         projectId: input.projectId,
         offerId: selectedOfferId,
-      }))
-    ),
+        includeProductDescriptions,
+      });
+    } else if (includeProductDescriptions) {
+      offerAttachmentRequests.push({
+        type: "project_pdf",
+        projectId: input.projectId,
+        offerId: selectedOfferId,
+      });
+    }
+  }
+  const attachmentRequests: AttachmentRequest[] = [
+    ...offerAttachmentRequests,
     ...otherAttachmentTypes.map((type) => ({
       type,
       projectId: input.projectId,

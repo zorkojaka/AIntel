@@ -366,6 +366,10 @@ export async function buildOfferPdfPreviewPayload(
 
   const totals = buildOfferPdfTotals(offerWithTexts);
 
+  const offerProjectTitle = offerWithTexts.baseTitle ?? offerWithTexts.title ?? project?.title ?? 'Projekt';
+  const versionedProjectTitle = docType === 'OFFER' && offerWithTexts.versionNumber
+    ? `${offerProjectTitle} - V${offerWithTexts.versionNumber}`
+    : offerProjectTitle;
   const context: DocumentPreviewContext = {
     docType,
     documentNumber: generatedNumber,
@@ -374,7 +378,7 @@ export async function buildOfferPdfPreviewPayload(
     customer: project
       ? { name: project.customerName, address: project.customerAddress, taxId: project.customerTaxId }
       : undefined,
-    projectTitle: offerWithTexts.baseTitle ?? offerWithTexts.title ?? project?.title ?? 'Projekt',
+    projectTitle: versionedProjectTitle,
     validUntil: offerWithTexts.validUntil ?? null,
     paymentTerms: offerWithTexts.paymentTerms ?? null,
     items,
