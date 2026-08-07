@@ -747,6 +747,11 @@ export function OfferCommunicationComposeDialog({
                   </label>
                 ))}
               </div>
+              {selectedAttachments.includes('offer_pdf') && selectedAttachments.includes('project_pdf') ? (
+                <p className="text-xs text-muted-foreground">
+                  Ponudba in opisi produktov bodo za vsako verzijo združeni v en jasno označen PDF.
+                </p>
+              ) : null}
               {attachmentsDisabled ? (
                 <p className="text-xs text-muted-foreground">Priloge bodo na voljo po shranjevanju ponudbe.</p>
               ) : null}

@@ -393,7 +393,7 @@ export async function generateOfferDescriptionsPdf(offer: OfferVersion) {
   ]);
   const html = renderProductDescriptionsHtml(entries, {
     companyName: companySettings.companyName,
-    projectTitle: offer.baseTitle ?? offer.title ?? offer.documentNumber ?? project?.title ?? offer.projectId,
+    projectTitle: `${offer.baseTitle ?? offer.title ?? offer.documentNumber ?? project?.title ?? offer.projectId} - V${offer.versionNumber}`,
     headerText: documentSettings.appearance?.headerText ?? "",
     footerText: documentSettings.appearance?.footerText ?? "",
   });
