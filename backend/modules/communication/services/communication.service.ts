@@ -1233,6 +1233,10 @@ export function normalizeWorkOrderObjectId(value: unknown) {
   return normalized && isValidObjectId(normalized) ? normalized : null;
 }
 
+export function isInstallerPreparationSendConfirmed(value: unknown) {
+  return value === true;
+}
+
 export async function sendInstallerPreparationEmail(input: {
   projectId: string;
   workOrderId: string;
@@ -1243,6 +1247,7 @@ export async function sendInstallerPreparationEmail(input: {
   body?: string | null;
   projectLink?: string | null;
   previewOnly?: boolean;
+  confirmSend?: boolean;
   actorUserId?: string | null;
   actorDisplayName?: string | null;
   actorProfile?: {
@@ -1412,6 +1417,9 @@ export async function sendInstallerPreparationEmail(input: {
         body: bodyWithoutFooter,
       },
     };
+  }
+  if (!isInstallerPreparationSendConfirmed(input.confirmSend)) {
+    throw new Error("Email pred pošiljanjem zahteva potrditev v predogledu.");
   }
   const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
   const htmlFinal = renderCommunicationBodyHtml(bodyWithoutFooter, renderedFooterHtml);

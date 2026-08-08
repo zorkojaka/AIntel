@@ -195,6 +195,7 @@ export async function sendInstallerPreparationCommunicationController(req: Reque
           ? req.body.projectLink.trim()
           : `${req.protocol}://${req.get("host")}/projects/${encodeURIComponent(req.params.projectId)}`,
       previewOnly: req.body?.previewOnly === true,
+      confirmSend: req.body?.confirmSend === true,
       actorUserId: (req as any)?.context?.actorUserId ?? null,
       actorDisplayName: buildActorDisplayName(req as any),
       actorProfile: resolveActorProfile(req),

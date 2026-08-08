@@ -1436,6 +1436,7 @@ export function LogisticsPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...installerEmailDraft,
+          confirmSend: true,
           projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
         }),
       });
