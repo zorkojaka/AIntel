@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  isInstallerPreparationSendConfirmed,
   normalizeWorkOrderObjectId,
   sendInstallerPreparationEmail,
 } from '../modules/communication/services/communication.service';
@@ -20,6 +21,13 @@ test('normalizeWorkOrderObjectId returns a trimmed ObjectId string', () => {
     normalizeWorkOrderObjectId('  507f1f77bcf86cd799439011  '),
     '507f1f77bcf86cd799439011'
   );
+});
+
+test('installer email requires an explicit boolean send confirmation', () => {
+  assert.equal(isInstallerPreparationSendConfirmed(true), true);
+  assert.equal(isInstallerPreparationSendConfirmed(false), false);
+  assert.equal(isInstallerPreparationSendConfirmed(undefined), false);
+  assert.equal(isInstallerPreparationSendConfirmed('true'), false);
 });
 
 test('sendInstallerPreparationEmail rejects invalid workOrderId before querying Mongo', async () => {
