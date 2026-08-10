@@ -236,7 +236,7 @@ export function ProjectList({
               {!hideFinancials ? renderSortableHeader("ponudba", "Ponudba", "w-32 text-right") : null}
               {renderSortableHeader("racuni", "Računi", "text-right")}
               {renderSortableHeader("datum", "Datum", "w-28")}
-              {!readOnly ? <TableHead className="w-40 text-right">Akcije</TableHead> : null}
+              {!readOnly ? <TableHead className="w-56 text-right">Akcije</TableHead> : null}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -279,13 +279,14 @@ export function ProjectList({
                       {renderLifecycleActions(project)}
                       <button
                         type="button"
-                        className={lifecycleButtonClasses}
+                        className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-border/70 bg-card px-2.5 text-xs font-medium text-foreground transition hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                         onClick={() => onCloneProject?.(project)}
                         disabled={cloningProjectId === project.id}
                         title="Kopiraj projekt"
                         aria-label={`Kopiraj ${project.title}`}
                       >
                         {cloningProjectId === project.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                        Kopiraj
                       </button>
                       <TableRowActions
                         onEdit={() => onEditProject(project)}
