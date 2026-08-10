@@ -408,8 +408,9 @@
 
 .finance-chart-tooltip {
   display: grid;
-  gap: 4px;
-  padding: 10px 12px;
+  gap: 10px;
+  min-width: 240px;
+  padding: 12px 14px;
   border: 1px solid var(--finance-border, #dbe4f0);
   border-radius: 8px;
   background: #fff;
@@ -418,8 +419,55 @@
   box-shadow: var(--finance-shadow, 0 8px 22px rgba(16, 44, 84, 0.08));
 }
 
-.finance-chart-tooltip strong {
+.finance-chart-tooltip__title {
   font-size: 13px;
+}
+
+.finance-chart-tooltip__rows {
+  display: grid;
+  gap: 7px;
+}
+
+.finance-chart-tooltip__row,
+.finance-chart-tooltip__total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.finance-chart-tooltip__row > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.finance-chart-tooltip__row i {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 2px;
+}
+
+.finance-chart-tooltip__row strong,
+.finance-chart-tooltip__total strong {
+  white-space: nowrap;
+}
+
+.finance-chart-tooltip__total {
+  padding-top: 9px;
+  border-top: 1px solid var(--finance-border, #dbe4f0);
+  font-size: 13px;
+}
+
+.finance-monthly-cash-flow-chart {
+  width: 100%;
+  height: 390px;
+  margin-top: 12px;
+}
+
+.finance-monthly-cash-flow-scroll {
+  overflow-x: auto;
 }
 
 .finance-state {
@@ -451,6 +499,10 @@
 }
 
 @media (max-width: 900px) {
+  .finance-monthly-cash-flow-chart {
+    min-width: 760px;
+  }
+
   .finance-page {
     padding: 12px;
     gap: 12px;
