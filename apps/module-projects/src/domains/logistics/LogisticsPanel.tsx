@@ -1096,6 +1096,7 @@ export function LogisticsPanel({
   const handleSaveWorkOrder = async (
     materialOverrides?: Partial<MaterialOrder>,
     workOrderOverrides?: Partial<LogisticsWorkOrder>,
+    options?: { refreshAfterSave?: boolean; showSuccessToast?: boolean },
   ) => {
     if (!selectedWorkOrder) return false;
     const currentMaterial = materialOrderForm ?? selectedMaterialOrder ?? null;
@@ -1220,8 +1221,12 @@ export function LogisticsPanel({
       if (onWorkOrderUpdated) {
         onWorkOrderUpdated(mergedWorkOrder);
       }
-      await refreshAfterMutation(fetchSnapshot);
-      toast.success("Delovni nalog posodobljen.");
+      if (options?.refreshAfterSave !== false) {
+        await refreshAfterMutation(fetchSnapshot);
+      }
+      if (options?.showSuccessToast !== false) {
+        toast.success("Delovni nalog posodobljen.");
+      }
       return mergedWorkOrder;
     } catch (error) {
       toast.error("Delovnega naloga ni mogoce shraniti.");
@@ -1374,7 +1379,10 @@ export function LogisticsPanel({
   const prepareInstallerPreparationEmail = async (workOrder: LogisticsWorkOrder) => {
     setPreparingInstallerEmail(true);
     try {
-      const saved = await handleSaveWorkOrder();
+      const saved = await handleSaveWorkOrder(undefined, undefined, {
+        refreshAfterSave: false,
+        showSuccessToast: false,
+      });
       if (!saved) {
         setInstallerEmailPreparationError("Podatkov delovnega naloga ni bilo mogoče shraniti. Emaila ni mogoče poslati.");
         return;
