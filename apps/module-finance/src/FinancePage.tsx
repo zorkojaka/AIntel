@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
-import { Bar, CartesianGrid, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, CartesianGrid, ComposedChart, LabelList, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import './FinancePage.css';
 
 type Role = 'ADMIN' | 'FINANCE' | 'EXECUTION' | 'SALES' | 'ORGANIZER';
@@ -48,6 +48,7 @@ interface FinanceSnapshot {
     totalSaleWithoutVat: number;
     totalPurchase: number;
     totalMargin: number;
+    totalVat: number;
   };
   items: FinanceSnapshotItem[];
   employeeEarnings: SnapshotEmployeeEarning[];
@@ -82,14 +83,6 @@ interface EmployeeSummary {
   totalEarned: number;
   totalPaid: number;
   totalUnpaid: number;
-}
-
-interface MonthlySummary {
-  month: number;
-  totalSaleWithVat: number;
-  totalSaleWithoutVat: number;
-  totalPurchase: number;
-  totalMargin: number;
 }
 
 interface ProductFrequency {
@@ -328,11 +321,13 @@ function getSnapshotLaborCost(snapshot: FinanceSnapshot) {
   return snapshot.employeeEarnings.reduce((sum, earning) => sum + (Number(earning.earnings) || 0), 0);
 }
 
-function formatMonthLabel(month: number) {
-  return new Date(Date.UTC(new Date().getFullYear(), month - 1, 1)).toLocaleString('sl-SI', { month: 'long' });
+function getSnapshotInstallerPurchase(snapshot: FinanceSnapshot) {
+  return snapshot.items
+    .filter((item) => item.isService === true)
+    .reduce((sum, item) => sum + (Number(item.totalPurchase) || 0), 0);
 }
 
-function FinanceRevenueTooltip({
+function MonthlyCashFlowTooltip({
   active,
   payload,
   label,
@@ -345,20 +340,44 @@ function FinanceRevenueTooltip({
   const row = payload?.[0]?.payload;
   if (!row) return null;
 
-  const totalSaleWithoutVat = Number(row.totalSaleWithoutVat) || 0;
-  const totalPurchase = Number(row.totalPurchase) || 0;
-  const totalMargin = Number(row.totalMargin) || 0;
-  const marginPct = Number(row.marginPct) || 0;
+  const totalInflow = Number(row.totalInflow) || 0;
+  const materialCost = Number(row.materialCost) || 0;
+  const installerCost = Number(row.installerCost) || 0;
+  const vat = Number(row.vat) || 0;
+  const profit = Number(row.profit) || 0;
 
   return (
     <div className="finance-chart-tooltip">
-      <strong>{label}</strong>
-      <span>Prodajna cena: {currency.format(totalSaleWithoutVat)}</span>
-      <span>Nabavna cena: {currency.format(totalPurchase)}</span>
-      <span>Profit: {currency.format(totalMargin)}</span>
-      <span>Marža: {marginPct.toFixed(2)}%</span>
+      <strong className="finance-chart-tooltip__title">{label}</strong>
+      <div className="finance-chart-tooltip__rows">
+        <div className="finance-chart-tooltip__row">
+          <span><i style={{ backgroundColor: '#f97316' }}/>Material</span>
+          <strong>{currency.format(materialCost)}</strong>
+        </div>
+        <div className="finance-chart-tooltip__row">
+          <span><i style={{ backgroundColor: '#3b82f6' }}/>Monterji</span>
+          <strong>{currency.format(installerCost)}</strong>
+        </div>
+        <div className="finance-chart-tooltip__row">
+          <span><i style={{ backgroundColor: '#94a3b8' }}/>DDV</span>
+          <strong>{currency.format(vat)}</strong>
+        </div>
+        <div className="finance-chart-tooltip__row">
+          <span><i style={{ backgroundColor: '#16a34a' }}/>Profit</span>
+          <strong>{currency.format(profit)}</strong>
+        </div>
+      </div>
+      <div className="finance-chart-tooltip__total">
+        <span>Skupaj prilivi</span>
+        <strong>{currency.format(totalInflow)}</strong>
+      </div>
     </div>
   );
+}
+
+function formatChartTotal(value: unknown) {
+  const total = Number(value) || 0;
+  return total > 0 ? currency.format(total) : '';
 }
 
 export const FinancePage: React.FC = () => {
@@ -767,36 +786,56 @@ export const FinancePage: React.FC = () => {
     return Array.from(byProduct.values()).sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 10);
   }, [periodSnapshots]);
 
-  const periodChartRows = useMemo(() => {
-    const rows = new Map<string, MonthlySummary & { name: string; marginPct: number; projectIds: Set<string> }>();
-    periodSnapshots.forEach((snapshot) => {
-      const key = periodMode === 'monthly' ? toMonthKey(snapshot.issuedAt) : String(toYear(snapshot.issuedAt) ?? '');
-      if (!key) return;
-      const current = rows.get(key) ?? {
-        month: periodMode === 'monthly' ? Number(key.slice(5, 7)) : 1,
-        name: periodMode === 'monthly' ? formatMonthKeyLabel(key) : key,
-        totalSaleWithVat: 0,
-        totalSaleWithoutVat: 0,
-        totalPurchase: 0,
-        totalMargin: 0,
-        marginPct: 0,
-        projectIds: new Set<string>(),
+  const monthlyCashFlowRows = useMemo(() => {
+    type MonthlyCashFlowRow = {
+      monthKey: string;
+      name: string;
+      totalInflow: number;
+      materialCost: number;
+      installerCost: number;
+      vat: number;
+      profit: number;
+    };
+    const rows = new Map<string, MonthlyCashFlowRow>();
+    const ensureRow = (monthKey: string) => {
+      const existing = rows.get(monthKey);
+      if (existing) return existing;
+      const row = {
+        monthKey,
+        name: formatMonthKeyLabel(monthKey),
+        totalInflow: 0,
+        materialCost: 0,
+        installerCost: 0,
+        vat: 0,
+        profit: 0,
       };
-      current.totalSaleWithVat += snapshot.summary.totalSaleWithVat;
-      current.totalSaleWithoutVat += snapshot.summary.totalSaleWithoutVat;
-      current.totalPurchase += snapshot.summary.totalPurchase;
-      current.totalMargin += snapshot.summary.totalMargin;
-      current.projectIds.add(snapshot.projectId);
-      rows.set(key, current);
+      rows.set(monthKey, row);
+      return row;
+    };
+
+    if (periodMode === 'yearly' && selectedYears.length > 0) {
+      [...selectedYears].sort((a, b) => a - b).forEach((year) => {
+        for (let month = 1; month <= 12; month += 1) {
+          ensureRow(`${year}-${String(month).padStart(2, '0')}`);
+        }
+      });
+    } else if (periodMode === 'monthly' && selectedMonths.length > 0) {
+      selectedMonths.forEach(ensureRow);
+    }
+
+    periodSnapshots.forEach((snapshot) => {
+      const monthKey = toMonthKey(snapshot.issuedAt);
+      if (!monthKey) return;
+      const row = ensureRow(monthKey);
+      row.totalInflow += Number(snapshot.summary.totalSaleWithVat) || 0;
+      row.materialCost += getSnapshotMaterialPurchase(snapshot);
+      row.installerCost += getSnapshotInstallerPurchase(snapshot);
+      row.vat += Number(snapshot.summary.totalVat) || Math.max(0, (Number(snapshot.summary.totalSaleWithVat) || 0) - (Number(snapshot.summary.totalSaleWithoutVat) || 0));
+      row.profit += Number(snapshot.summary.totalMargin) || 0;
     });
-    return Array.from(rows.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([, row]) => ({
-        ...row,
-        marginPct: row.totalSaleWithoutVat > 0 ? (row.totalMargin / row.totalSaleWithoutVat) * 100 : 0,
-        projectCount: row.projectIds.size,
-      }));
-  }, [periodMode, periodSnapshots]);
+
+    return Array.from(rows.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+  }, [periodMode, periodSnapshots, selectedMonths, selectedYears]);
 
   const pairRows = useMemo<ProductCooccurrenceRow[]>(() => {
     const pairMap = new Map<string, ProductCooccurrenceRow>();
@@ -875,7 +914,6 @@ export const FinancePage: React.FC = () => {
     };
   }, [periodProjects]);
 
-  const monthly = periodChartRows;
   const products = productRows;
 
   if (loading) {
@@ -1338,7 +1376,8 @@ export const FinancePage: React.FC = () => {
         const offersValue = offerRows.reduce((a,b)=>a+Number(b.quotedTotalWithVat ?? b.offerAmount ?? 0),0);
         const acceptedOffers = offerRows.filter((p)=>['confirmed','accepted'].includes(String(p.status ?? ''))).length;
         const productRows = [...(products ?? [])].sort((a,b)=>(b?.totalRevenue ?? 0)-(a?.totalRevenue ?? 0)).slice(0,10);
-        const monthlyChart = (monthly ?? []).map((m: any)=>({ ...m, marginPct: (m?.totalSaleWithoutVat ?? 0)>0 ? ((m?.totalMargin ?? 0)/(m?.totalSaleWithoutVat ?? 0))*100 : 0, name: m?.name ?? formatMonthLabel(m?.month ?? 1)}));
+        const monthlyChart = monthlyCashFlowRows;
+        const hasMonthlyCashFlow = monthlyChart.some((month) => month.totalInflow !== 0);
         return (<section className="space-y-4">
           <div className="finance-section-title"><h2>Pregled podjetja</h2><span>{periodLabel}</span></div>
           <section className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -1347,7 +1386,35 @@ export const FinancePage: React.FC = () => {
             <article className="finance-card"><span>Število projektov</span><strong>{projectRows.length}</strong></article>
             <article className="finance-card"><span>Število izdanih računov</span><strong>{invoiceCount}</strong></article>
           </section>
-          <article className="finance-panel"><h2>Mesečni prihodki</h2>{monthlyChart.length===0?<div className="finance-state">Ni podatkov za izbrano leto.</div>:<div className="h-72"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={monthlyChart}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis yAxisId="left"/><Tooltip content={<FinanceRevenueTooltip />}/><Bar yAxisId="left" dataKey="totalPurchase" name="Nabavna cena" stackId="sale" fill="#f97316"/><Bar yAxisId="left" dataKey="totalMargin" name="Profit" stackId="sale" fill="#16a34a"/></ComposedChart></ResponsiveContainer></div>}</article>
+          <article className="finance-panel">
+            <div className="finance-section-title">
+              <div>
+                <h2>Mesečni razrez prihodkov</h2>
+                <span>Celoten stolpec je prihodek z DDV; barve pokažejo, kam je razdeljen.</span>
+              </div>
+            </div>
+            {!hasMonthlyCashFlow ? <div className="finance-state">Ni podatkov za izbrano obdobje.</div> : (
+              <div className="finance-monthly-cash-flow-scroll">
+                <div className="finance-monthly-cash-flow-chart">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={monthlyChart} margin={{ top: 28, right: 16, left: 8, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false}/>
+                      <XAxis dataKey="name" interval={0} angle={-25} textAnchor="end" height={72}/>
+                      <YAxis yAxisId="left" tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k €`}/>
+                      <Tooltip content={<MonthlyCashFlowTooltip />} cursor={{ fill: 'rgba(59, 130, 246, 0.08)' }}/>
+                      <Legend verticalAlign="bottom"/>
+                      <Bar yAxisId="left" dataKey="materialCost" name="Material" stackId="inflow" fill="#f97316"/>
+                      <Bar yAxisId="left" dataKey="installerCost" name="Monterji" stackId="inflow" fill="#3b82f6"/>
+                      <Bar yAxisId="left" dataKey="vat" name="DDV" stackId="inflow" fill="#94a3b8"/>
+                      <Bar yAxisId="left" dataKey="profit" name="Profit" stackId="inflow" fill="#16a34a">
+                        <LabelList dataKey="totalInflow" position="top" formatter={formatChartTotal}/>
+                      </Bar>
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+          </article>
           <article className="finance-panel"><h2>Top 10 produktov</h2>{productRows?.length ? <div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Naziv</th><th>Količina</th><th>Prihodek</th><th>Marža</th></tr></thead><tbody>{productRows?.map((p)=><tr key={`${p?.productId ?? 'x'}-${p?.name ?? 'izdelek'}`}><td>{p?.name ?? '-'}</td><td>{p?.totalQuantity ?? 0}</td><td>{currency.format(p?.totalRevenue ?? 0)}</td><td>{currency.format(p?.totalMargin ?? 0)}</td></tr>) ?? []}</tbody></table></div> : <div className="finance-state">Ni produktnih podatkov.</div>}</article>
           <article className="finance-panel"><h2>Pipeline funnel</h2><div className="pipeline-cards"><div className="pipeline-card"><span>Osnutki</span><strong>{draftCount}</strong></div><div className="pipeline-card"><span>Poslane ponudbe</span><strong>{sentCount}</strong></div><div className="pipeline-card"><span>Sprejeto</span><strong>{confirmedCount}</strong></div><div className="pipeline-card"><span>Zavrnjeno</span><strong>{rejectedCount}</strong></div></div><div className="pipeline-highlight">Win rate: {winRate.toFixed(2)}%</div></article>
           <article className="finance-panel"><h2>Pregled projektov</h2>{projectRows?.length ? <div className="finance-table-wrap"><table className="finance-table"><thead><tr><th>Projekt</th><th>Stranka</th><th>Status</th><th>Vrednost ponudbe</th><th>Datum</th></tr></thead><tbody>{projectRows?.map((r)=><tr key={r?.id ?? `${r?.title ?? 'projekt'}-${r?.updatedAt ?? ''}`} className="is-clickable" onClick={()=> r?.id && (window.location.href=`/projects/${r.id}`)}><td>{r?.title ?? '-'}</td><td>{getProjectCustomerName(r)}</td><td>{r?.status ?? '-'}</td><td>{currency.format(Number(r?.quotedTotalWithVat ?? r?.offerAmount ?? 0))}</td><td>{new Date(r?.updatedAt ?? r?.createdAt ?? '').toLocaleDateString('sl-SI')}</td></tr>) ?? []}</tbody></table></div> : <div className="finance-state">Ni projektov za izbrano obdobje.</div>}</article>
