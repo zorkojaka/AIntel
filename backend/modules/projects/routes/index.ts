@@ -6,8 +6,10 @@ import {
   addItem,
   addItemFromCenik,
   createProject,
+  cloneProject,
   deleteItem,
   getProject,
+  listClientProjects,
   listProjects,
   receiveDelivery,
   saveSignature,
@@ -59,7 +61,9 @@ router.post('/', requireProjectWrite, createProject);
 // iz delovnega naloga; zapis se shrani na stranko, projekt je le izvor.
 router.get('/:projectId/client-notes', getProjectClientNotes);
 router.post('/:projectId/client-notes', requireWorkOrderWrite, postProjectClientNote);
+router.post('/:id/clone', requireProjectWrite, cloneProject);
 router.get('/:id', getProject);
+router.get('/:id/client-projects', listClientProjects);
 router.patch('/:id/assignments', requireProjectWrite, updateProjectAssignments);
 router.post('/:id/lifecycle', requireProjectWrite, updateProjectLifecycle);
 router.post('/:id/status', requireProjectWrite, updateStatus);
