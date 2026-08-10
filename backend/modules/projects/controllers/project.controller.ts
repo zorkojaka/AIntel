@@ -39,6 +39,7 @@ import {
 } from '../services/work-order-confirmation.service';
 import { calculateProjectRouteDistance } from '../services/route-distance.service';
 import { requestReviewForProject } from '../../reviews/review.service';
+import { generateOfferDocumentNumber } from '../services/document-numbering.service';
 
 function normalizeSlug(value: string) {
   return value
@@ -66,6 +67,11 @@ function validateProjectPayload(body: any) {
     return 'Manjka podatek o stranki (customer.name).';
   }
   return null;
+}
+
+export function buildCopiedProjectTitle(sourceTitle: string, newProjectCode: string) {
+  const titleWithoutProjectCode = sourceTitle.replace(/^PRJ-\d+\s*:\s*/i, '').trim();
+  return titleWithoutProjectCode ? `${newProjectCode}: ${titleWithoutProjectCode}` : `${newProjectCode}: Kopija projekta`;
 }
 
 async function resolveProjectClientId(rawClientId: unknown) {
@@ -595,6 +601,63 @@ export async function listProjects(_req: Request, res: Response) {
   return res.success(summaries);
 }
 
+export async function listClientProjects(req: Request, res: Response) {
+  const sourceProject = await findProjectById(req.params.id);
+  if (!sourceProject) {
+    return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+  }
+
+  let accessQuery: any = {};
+  if (isExecutionOnlyViewer(req)) {
+    const actorEmployeeId = getActorEmployeeId(req);
+    if (!actorEmployeeId) {
+      return res.fail('Ni dostopa do projekta.', 403);
+    }
+    const assignedProjectIds = await getExecutionAssignedProjectIds(actorEmployeeId);
+    const canAccessSource =
+      (Array.isArray((sourceProject as any).assignedEmployeeIds) &&
+        (sourceProject as any).assignedEmployeeIds.some((value: any) => String(value) === actorEmployeeId)) ||
+      assignedProjectIds.includes(sourceProject.id);
+    if (!canAccessSource) {
+      return res.fail('Ni dostopa do projekta.', 403);
+    }
+    accessQuery = {
+      $or: [
+        { assignedEmployeeIds: actorEmployeeId },
+        ...(assignedProjectIds.length > 0 ? [{ id: { $in: assignedProjectIds } }] : []),
+      ],
+    };
+  }
+
+  let clientQuery: any;
+  if (sourceProject.clientId) {
+    clientQuery = { clientId: sourceProject.clientId };
+  } else if (sourceProject.customer?.taxId?.trim()) {
+    clientQuery = { 'customer.taxId': sourceProject.customer.taxId.trim() };
+  } else {
+    clientQuery = { 'customer.name': sourceProject.customer.name };
+  }
+
+  const projects = await ProjectModel.find(combineProjectFilters(clientQuery, accessQuery))
+    .sort({ projectNumber: -1, createdAt: -1 })
+    .select('id code projectNumber title status createdAt categories archivedAt closedAt')
+    .lean();
+
+  return res.success(
+    projects.map((project: any) => ({
+      id: project.id,
+      code: project.code,
+      projectNumber: project.projectNumber,
+      title: project.title,
+      status: project.status,
+      createdAt: project.createdAt,
+      categories: project.categories ?? [],
+      archivedAt: project.archivedAt ? new Date(project.archivedAt).toISOString() : null,
+      closedAt: project.closedAt ? new Date(project.closedAt).toISOString() : null,
+    })),
+  );
+}
+
 export async function updateProjectAssignments(req: Request, res: Response) {
   const project = await ProjectModel.findOne({ id: req.params.id });
   if (!project) return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
@@ -808,6 +871,90 @@ export async function createProject(req: Request, res: Response) {
   await ProjectModel.create(project);
 
   return res.success(await responseProject(project), 201);
+}
+
+export async function cloneProject(req: Request, res: Response) {
+  const sourceProject = await ProjectModel.findOne({ id: req.params.id }).lean();
+  if (!sourceProject) {
+    return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
+  }
+
+  const sourceOffers = await OfferVersionModel.find({ projectId: sourceProject.id })
+    .sort({ baseTitle: 1, versionNumber: 1, createdAt: 1 })
+    .lean();
+  const { id, code, projectNumber } = await generateProjectIdentifiers();
+  const createdAt = toISODate();
+  const copiedProject: Project = {
+    id,
+    code,
+    projectNumber,
+    clientId: sourceProject.clientId ?? null,
+    title: buildCopiedProjectTitle(sourceProject.title, code),
+    customer: { ...sourceProject.customer },
+    status: sourceOffers.length > 0 ? 'offered' : 'draft',
+    offerAmount: 0,
+    quotedTotal: 0,
+    quotedVat: 0,
+    quotedTotalWithVat: 0,
+    invoiceAmount: 0,
+    createdAt,
+    requirementsTemplateVariantSlug: sourceProject.requirementsTemplateVariantSlug,
+    requirementsText: sourceProject.requirementsText ?? '',
+    requirements: sourceProject.requirements ?? [],
+    items: sourceProject.items ?? [],
+    offers: [],
+    workOrders: [],
+    purchaseOrders: [],
+    deliveryNotes: [],
+    timeline: [],
+    templates: sourceProject.templates ?? [],
+    categories: sourceProject.categories ?? [],
+    requestIds: [],
+    activeRequestId: null,
+    confirmedOfferVersionId: null,
+    assignedEmployeeIds: [],
+    invoiceVersions: [],
+    executionDefinitions: [],
+    executionLocations: [],
+  };
+
+  addTimeline(copiedProject, {
+    type: 'edit',
+    title: 'Projekt kopiran',
+    description: `Kopija projekta ${sourceProject.code || sourceProject.id}`,
+    timestamp: new Date().toISOString(),
+    user: buildActorDisplayName(req as any),
+  });
+
+  await ProjectModel.create(copiedProject);
+  try {
+    for (const sourceOffer of sourceOffers) {
+      const { _id, __v, createdAt: offerCreatedAt, updatedAt, ...offerData } = sourceOffer as any;
+      let documentNumber: string | null = null;
+      try {
+        documentNumber = (await generateOfferDocumentNumber(new Date())).number;
+      } catch (numberingError) {
+        logger.error({ err: numberingError, sourceOfferId: String(_id) }, 'Failed to number cloned offer');
+      }
+      await OfferVersionModel.create({
+        ...offerData,
+        projectId: id,
+        requestId: null,
+        documentNumber,
+        status: 'draft',
+        sentAt: null,
+        sentByUserId: null,
+        sentVia: null,
+      });
+    }
+  } catch (error) {
+    await OfferVersionModel.deleteMany({ projectId: id });
+    await ProjectModel.deleteOne({ id });
+    throw error;
+  }
+
+  const createdProject = await ProjectModel.findOne({ id });
+  return res.success(await responseProject(createdProject ?? copiedProject), 201);
 }
 
 export async function updateProject(req: Request, res: Response) {

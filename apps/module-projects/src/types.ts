@@ -100,6 +100,11 @@ export interface ProjectSummary {
   }>;
 }
 
+export type ClientProjectSummary = Pick<
+  ProjectSummary,
+  "id" | "code" | "projectNumber" | "title" | "status" | "createdAt" | "categories" | "archivedAt" | "closedAt"
+>;
+
 export interface PurchaseOrder {
   id: string;
   supplier: string;

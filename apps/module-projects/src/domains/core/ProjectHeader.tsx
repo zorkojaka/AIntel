@@ -1,4 +1,4 @@
-import { ArrowLeft, Plus, Save } from "lucide-react";
+import { ArrowLeft, Copy, Loader2, Plus, Save } from "lucide-react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ProjectDetails, ProjectStatus } from "../../types";
@@ -9,6 +9,8 @@ export type ProjectHeaderProps = {
   onBack: () => void;
   onPrimaryAction: () => void;
   onNewProject: () => void;
+  onCloneProject: () => void;
+  cloningProject?: boolean;
   primaryActionLabel?: string;
   showPrimaryAction?: boolean;
 };
@@ -37,6 +39,8 @@ export function ProjectHeader({
   onBack,
   onPrimaryAction,
   onNewProject,
+  onCloneProject,
+  cloningProject = false,
   primaryActionLabel = "Shrani",
   showPrimaryAction = true,
 }: ProjectHeaderProps) {
@@ -60,6 +64,10 @@ export function ProjectHeader({
           <Button onClick={onNewProject}>
             <Plus className="mr-2 h-4 w-4" />
             Nov projekt
+          </Button>
+          <Button variant="outline" onClick={onCloneProject} disabled={cloningProject}>
+            {cloningProject ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
+            Kopiraj projekt
           </Button>
           {showPrimaryAction ? (
             <Button variant="outline" onClick={onPrimaryAction}>

@@ -8,13 +8,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import { TaskSubjectStrip } from "@aintel/module-tasks";
 import { clearMobileTopbar, setMobileTopbar } from "@aintel/shared/utils/mobileTopbar";
-import { Check, Pencil, X } from "lucide-react";
+import { Check, Copy, Loader2, Pencil, X } from "lucide-react";
 import { OfferVersion } from "../domains/offers/OfferVersionCard";
 import type { WorkOrder as LogisticsWorkOrder } from "@aintel/shared/types/logistics";
 import type { ProjectLogistics } from "@aintel/shared/types/projects/Logistics";
 import { renderTemplate, openPreview, downloadHTML } from "../domains/offers/TemplateRenderer";
 import { toast } from "sonner";
-import { ProjectClient, ProjectDetails, ProjectOffer, ProjectOfferItem, Template } from "../types";
+import { ClientProjectSummary, ProjectClient, ProjectDetails, ProjectOffer, ProjectOfferItem, Template } from "../types";
 import { fetchRequirementVariants } from "../api";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
 import { LogisticsPanel } from "../domains/logistics/LogisticsPanel";
@@ -196,6 +196,9 @@ interface ProjectWorkspaceProps {
   onBack: () => void;
   onProjectUpdate: (path: string, options?: RequestInit) => Promise<ProjectDetails | null>;
   onNewProject: () => void;
+  onOpenProject: (projectId: string) => void;
+  onCloneProject: (projectId: string) => Promise<void>;
+  cloningProject?: boolean;
   brandColor?: string | null;
 }
 
@@ -208,6 +211,9 @@ export function ProjectWorkspace({
   onBack,
   onProjectUpdate,
   onNewProject,
+  onOpenProject,
+  onCloneProject,
+  cloningProject = false,
   brandColor,
 }: ProjectWorkspaceProps) {
   const allowedTabValues = useMemo<WorkspaceTabValue[]>(
@@ -265,6 +271,8 @@ export function ProjectWorkspace({
   const [clientSavedDraft, setClientSavedDraft] = useState<ClientPanelDraft>(() => buildClientPanelDraft(initialProject?.client, initialProject?.customerDetail));
   const [clientSaving, setClientSaving] = useState(false);
   const [clientSavedVisible, setClientSavedVisible] = useState(false);
+  const [clientProjects, setClientProjects] = useState<ClientProjectSummary[]>([]);
+  const [clientProjectsLoading, setClientProjectsLoading] = useState(false);
   const [isRequirementsSummaryEditing, setIsRequirementsSummaryEditing] = useState(false);
   const [requirementsSummaryDraft, setRequirementsSummaryDraft] = useState(project?.requirementsText ?? "");
   const [requirementsSummarySavedVisible, setRequirementsSummarySavedVisible] = useState(false);
@@ -467,6 +475,36 @@ export function ProjectWorkspace({
       cancelled = true;
     };
   }, [project, inlineClient]);
+
+  useEffect(() => {
+    if (!project?.id) {
+      setClientProjects([]);
+      return;
+    }
+    let cancelled = false;
+    const fetchClientProjects = async () => {
+      setClientProjectsLoading(true);
+      try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/client-projects`);
+        const payload = await parseApiEnvelope<ClientProjectSummary[]>(response, "Projektov stranke ni mogoče naložiti.");
+        if (!cancelled) {
+          setClientProjects(Array.isArray(payload) ? payload : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setClientProjects([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setClientProjectsLoading(false);
+        }
+      }
+    };
+    void fetchClientProjects();
+    return () => {
+      cancelled = true;
+    };
+  }, [project?.id]);
 
   useEffect(() => {
     if (!project) {
@@ -1376,6 +1414,8 @@ export function ProjectWorkspace({
     };
 
     const handleNewProjectWithGuard = () => requestOfferNavigation(onNewProject);
+    const handleCloneProjectWithGuard = () => requestOfferNavigation(() => onCloneProject(project.id));
+    const handleOpenClientProject = (projectId: string) => requestOfferNavigation(() => onOpenProject(projectId));
     const handleTabChangeWithGuard = (next: WorkspaceTabValue) => {
       if (!allowedTabValues.includes(next)) {
         return;
@@ -1419,6 +1459,8 @@ export function ProjectWorkspace({
           onBack={handleBackWithGuard}
           onPrimaryAction={handleHeaderPrimaryAction}
           onNewProject={handleNewProjectWithGuard}
+          onCloneProject={handleCloneProjectWithGuard}
+          cloningProject={cloningProject}
           primaryActionLabel={activeTab === "offers" || activeTab === "logistics" || activeTab === "execution" ? "Shrani" : "Osveži"}
           showPrimaryAction={activeTab !== "zahteva"}
         />
@@ -1516,6 +1558,64 @@ export function ProjectWorkspace({
                     {displayedClient.notes?.trim() ? <div className="text-muted-foreground">{displayedClient.notes.trim()}</div> : null}
                     {project.customerDetail.paymentTerms?.trim() ? <div>{project.customerDetail.paymentTerms.trim()}</div> : null}
                   </div>
+                )}
+                <div className="mt-4 border-t border-border pt-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-center"
+                    onClick={handleCloneProjectWithGuard}
+                    disabled={cloningProject}
+                  >
+                    {cloningProject ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                    Kopiraj ta projekt
+                  </Button>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Kopija ohrani ponudbe kot osnutke, brez računov in izvedbe.
+                  </p>
+                </div>
+              </Card>
+
+              <Card className="p-4">
+                <h3>Projekti stranke</h3>
+                {clientProjectsLoading ? (
+                  <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Nalaganje...
+                  </div>
+                ) : clientProjects.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    {clientProjects.map((clientProject) => {
+                      const isCurrent = clientProject.id === project.id;
+                      return (
+                        <button
+                          key={clientProject.id}
+                          type="button"
+                          className={`w-full rounded-lg border px-3 py-2 text-left transition ${
+                            isCurrent ? "border-primary/40 bg-primary/5" : "border-border hover:border-primary hover:bg-muted"
+                          }`}
+                          onClick={() => {
+                            if (!isCurrent) handleOpenClientProject(clientProject.id);
+                          }}
+                          disabled={isCurrent}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-xs font-semibold">{clientProject.code || clientProject.id}</span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {isCurrent ? "Ta projekt" : getProjectStatusLabel(clientProject.status)}
+                            </span>
+                          </div>
+                          <div className="mt-1 line-clamp-2 text-sm">{clientProject.title}</div>
+                          <div className="mt-1 text-[11px] text-muted-foreground">
+                            {new Date(clientProject.createdAt).toLocaleDateString("sl-SI")}
+                            {clientProject.archivedAt ? " · Arhiviran" : clientProject.closedAt ? " · Zaključen" : ""}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-muted-foreground">Za to stranko še ni drugih projektov.</p>
                 )}
               </Card>
 

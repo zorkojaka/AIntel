@@ -5,8 +5,10 @@ import {
   addItem,
   addItemFromCenik,
   createProject,
+  cloneProject,
   deleteItem,
   getProject,
+  listClientProjects,
   listProjects,
   receiveDelivery,
   saveSignature,
@@ -53,7 +55,9 @@ const requireOfferConfirmationWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE
 router.get('/', listProjects);
 router.get('/offer-templates', listOfferTemplates);
 router.post('/', requireProjectWrite, createProject);
+router.post('/:id/clone', requireProjectWrite, cloneProject);
 router.get('/:id', getProject);
+router.get('/:id/client-projects', listClientProjects);
 router.patch('/:id/assignments', requireProjectWrite, updateProjectAssignments);
 router.post('/:id/lifecycle', requireProjectWrite, updateProjectLifecycle);
 router.post('/:id/status', requireProjectWrite, updateStatus);
