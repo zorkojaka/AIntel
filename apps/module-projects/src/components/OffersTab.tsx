@@ -2025,8 +2025,8 @@ const loadOfferById = useCallback(async (offerId: string) => {
       </div>
 
         <div className="rounded-lg border bg-muted/25 px-4 py-3">
-          <div className="flex flex-wrap items-start gap-4 lg:items-center lg:justify-between">
-            <div className="flex min-w-[180px] items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 xl:flex-nowrap">
+            <div className="flex shrink-0 items-center gap-2">
               <span className="text-sm text-muted-foreground">DDV način</span>
               <Select
                 value={String(vatMode)}
@@ -2034,7 +2034,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
                   handleVatModeChange(Number(value) as 0 | 9.5 | 22)
                 }
               >
-                <SelectTrigger className="w-[130px] bg-background">
+                <SelectTrigger className="h-9 w-[110px] bg-background">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -2045,20 +2045,20 @@ const loadOfferById = useCallback(async (offerId: string) => {
               </Select>
             </div>
 
-            <div className="flex flex-1 flex-wrap items-center gap-4">
-              <label className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-2 xl:flex-nowrap">
+              <label className="flex shrink-0 items-center gap-2">
                 <Checkbox
                   checked={useGlobalDiscount}
                   onChange={(e) =>
                     handleToggleGlobalDiscount(e.target.checked)
                   }
                 />
-                <span className="text-sm">Popust na celotno ponudbo</span>
+                <span className="whitespace-nowrap text-sm">Popust na celotno ponudbo</span>
                 {useGlobalDiscount && (
                   <>
                     <Input
                       type="number"
-                      className="w-20 bg-background text-right"
+                      className="h-9 w-16 bg-background px-2 text-right"
                       inputMode="decimal"
                       value={globalDiscountPercent}
                       onChange={(e) =>
@@ -2072,21 +2072,21 @@ const loadOfferById = useCallback(async (offerId: string) => {
                 )}
               </label>
 
-              <label className="flex flex-wrap items-center gap-2">
+              <label className="flex shrink-0 items-center gap-2">
                 <Checkbox
                   checked={usePerItemDiscount}
                   onChange={(e) =>
                     setUsePerItemDiscount(e.target.checked)
                   }
                 />
-                <span className="text-sm">Popust po produktih</span>
+                <span className="whitespace-nowrap text-sm">Popust po produktih</span>
               </label>
 
-              <label className="flex flex-wrap items-center gap-2">
-                <span className="text-sm">Fiksni popust</span>
+              <label className="flex shrink-0 items-center gap-2">
+                <span className="whitespace-nowrap text-sm">Fiksni popust</span>
                 <Input
                   type="number"
-                  className="w-28 bg-background text-right"
+                  className="h-9 w-20 bg-background px-2 text-right"
                   inputMode="decimal"
                   min={0}
                   step="0.01"
