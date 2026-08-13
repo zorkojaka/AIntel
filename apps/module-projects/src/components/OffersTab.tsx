@@ -518,6 +518,13 @@ const loadOfferById = useCallback(async (offerId: string) => {
           nextId = preferredId;
         }
 
+        if (!nextId) {
+          const currentId = selectedOfferIdRef.current;
+          if (currentId && list.some((entry) => entry._id === currentId)) {
+            nextId = currentId;
+          }
+        }
+
         if (!nextId && fallbackToLatest && list.length > 0) {
           nextId = list[list.length - 1]._id;
         }
@@ -1173,12 +1180,13 @@ const loadOfferById = useCallback(async (offerId: string) => {
         selectedOfferIdRef.current = savedOfferId;
         setSelectedOfferId(savedOfferId);
       }
-      await refreshAfterMutation(
-        () => refreshOffers(savedOfferId, !savedOfferId),
-        async () => {
-          await fetchProjectDetails();
-        },
-      );
+      // Navadno shranjevanje ponudbe ne spremeni faze projekta. Splošna osvežitev
+      // projekta bi odmontirala urejevalnik in ob ponovnem prikazu izbrala zadnjo
+      // verzijo namesto pravkar shranjene.
+      await Promise.all([
+        refreshOffers(savedOfferId, !savedOfferId),
+        fetchProjectDetails(),
+      ]);
       toast.success("Ponudba shranjena.");
       setLastSavedSnapshot(currentOfferSnapshot);
       return created;
