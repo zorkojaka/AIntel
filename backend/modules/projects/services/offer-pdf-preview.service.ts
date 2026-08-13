@@ -195,7 +195,10 @@ function firstPositiveNumber(...values: Array<number | null | undefined>) {
 
 function buildOfferPdfTotals(offer: OfferVersion) {
   const subtotalAfterDiscount = firstPositiveNumber(offer.baseAfterDiscount, offer.totalNetAfterDiscount, offer.totalNet);
-  const combinedDiscount = firstNumber(offer.perItemDiscountAmount) + firstNumber(offer.globalDiscountAmount);
+  const perItemDiscount = firstNumber(offer.perItemDiscountAmount);
+  const globalDiscount = firstNumber(offer.globalDiscountAmount);
+  const fixedDiscount = firstNumber(offer.fixedDiscountAmount);
+  const combinedDiscount = perItemDiscount + globalDiscount + fixedDiscount;
   const storedDiscount = firstNumber(offer.discountAmount);
   const derivedDiscount = Math.max(0, firstPositiveNumber(offer.baseWithoutVat, offer.totalNet) - subtotalAfterDiscount);
   const discount = Math.max(0, combinedDiscount > 0 ? combinedDiscount : storedDiscount > 0 ? storedDiscount : derivedDiscount);
@@ -205,7 +208,6 @@ function buildOfferPdfTotals(offer: OfferVersion) {
   // Odstotek izpišemo samo, kadar je popust IZKLJUČNO globalni. Če so zraven še
   // popusti po postavkah, je zgornji znesek njihova vsota in odstotek ob njem
   // ne bi držal.
-  const perItemDiscount = firstNumber(offer.perItemDiscountAmount);
   const globalPercent = offer.useGlobalDiscount
     ? firstPositiveNumber(offer.globalDiscountPercent, offer.discountPercent)
     : 0;
@@ -213,7 +215,11 @@ function buildOfferPdfTotals(offer: OfferVersion) {
   return {
     subtotal,
     discount,
-    discountPercent: perItemDiscount > 0 ? 0 : globalPercent,
+    discountPercent: perItemDiscount > 0 || fixedDiscount > 0 ? 0 : globalPercent,
+    perItemDiscount,
+    globalDiscount,
+    globalDiscountPercent: firstNumber(offer.globalDiscountPercent, offer.discountPercent),
+    fixedDiscount,
     subtotalAfterDiscount,
     vat: firstPositiveNumber(offer.vatAmount, offer.totalVat),
     total: firstPositiveNumber(offer.totalWithVat, offer.totalGrossAfterDiscount, offer.totalGross),
@@ -252,6 +258,7 @@ function buildDemoOffer(): OfferVersion {
     baseWithoutVat: totalNet,
     perItemDiscountAmount: 0,
     globalDiscountAmount: 0,
+    fixedDiscountAmount: 0,
     baseAfterDiscount: totalNet,
     vatAmount: totalVat,
     totalWithVat: totalGross,

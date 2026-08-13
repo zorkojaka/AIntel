@@ -58,6 +58,7 @@ export interface OfferVersion {
   baseWithoutVat?: number;
   perItemDiscountAmount?: number;
   globalDiscountAmount?: number;
+  fixedDiscountAmount?: number;
   baseAfterDiscount?: number;
   vatAmount?: number;
   totalWithVat?: number;
@@ -105,6 +106,7 @@ export interface OfferTemplate {
   baseWithoutVat?: number;
   perItemDiscountAmount?: number;
   globalDiscountAmount?: number;
+  fixedDiscountAmount?: number;
   baseAfterDiscount?: number;
   vatAmount?: number;
   totalWithVat?: number;

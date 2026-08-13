@@ -43,6 +43,10 @@ export interface PreviewTotals {
   discount?: number;
   /** Odstotek globalnega popusta; izpiše se ob znesku popusta (npr. "Popust (10 %)"). */
   discountPercent?: number;
+  perItemDiscount?: number;
+  globalDiscount?: number;
+  globalDiscountPercent?: number;
+  fixedDiscount?: number;
   subtotalAfterDiscount?: number;
   vat?: number;
   total?: number;
@@ -532,14 +536,25 @@ export function renderOfferPdf(context: DocumentPreviewContext) {
     : `<tr><td colspan="${showPerItemDiscount ? 5 : 4}" style="text-align:center; color:#94a3b8;">Ni postavk za prikaz.</td></tr>`;
 
   const totals = context.totals ?? {};
-  const discount = totals.discount ?? 0;
+  const perItemDiscount = totals.perItemDiscount ?? 0;
+  const globalDiscount = totals.globalDiscount ?? 0;
+  const fixedDiscount = totals.fixedDiscount ?? 0;
+  const hasDetailedDiscounts = perItemDiscount > 0 || globalDiscount > 0 || fixedDiscount > 0;
+  const discount = hasDetailedDiscounts ? 0 : totals.discount ?? 0;
   const totalRows = [
     { label: 'Skupaj brez DDV', value: totals.subtotal ?? 0 },
+    ...(perItemDiscount > 0 ? [{ label: 'Popust po produktih', value: -perItemDiscount }] : []),
+    ...(globalDiscount > 0
+      ? [{ label: `Popust na celotno ponudbo (${totals.globalDiscountPercent ?? 0}%)`, value: -globalDiscount }]
+      : []),
+    ...(fixedDiscount > 0 ? [{ label: 'Fiksni popust', value: -fixedDiscount }] : []),
     ...(discount > 0
       ? [
-          { label: formatDiscountLabel(totals.discountPercent), value: discount },
-          { label: 'Cena s popustom brez DDV', value: totals.subtotalAfterDiscount ?? totals.subtotal ?? 0 },
+          { label: formatDiscountLabel(totals.discountPercent), value: -discount },
         ]
+      : []),
+    ...((hasDetailedDiscounts || discount > 0)
+      ? [{ label: 'Cena s popustom brez DDV', value: totals.subtotalAfterDiscount ?? totals.subtotal ?? 0 }]
       : []),
     { label: 'DDV', value: totals.vat ?? 0 },
     { label: 'Skupaj z DDV', value: totals.total ?? totals.subtotal ?? 0 },
@@ -606,14 +621,25 @@ export function renderInvoicePdf(context: DocumentPreviewContext) {
     : `<tr><td colspan="6" style="text-align:center; color:#94a3b8;">Ni postavk za prikaz.</td></tr>`;
 
   const totals = context.totals ?? {};
-  const discount = totals.discount ?? 0;
+  const perItemDiscount = totals.perItemDiscount ?? 0;
+  const globalDiscount = totals.globalDiscount ?? 0;
+  const fixedDiscount = totals.fixedDiscount ?? 0;
+  const hasDetailedDiscounts = perItemDiscount > 0 || globalDiscount > 0 || fixedDiscount > 0;
+  const discount = hasDetailedDiscounts ? 0 : totals.discount ?? 0;
   const totalRows = [
     { label: 'Skupaj brez DDV', value: totals.subtotal ?? 0 },
+    ...(perItemDiscount > 0 ? [{ label: 'Popust po postavkah', value: -perItemDiscount }] : []),
+    ...(globalDiscount > 0
+      ? [{ label: `Globalni popust (${totals.globalDiscountPercent ?? 0}%)`, value: -globalDiscount }]
+      : []),
+    ...(fixedDiscount > 0 ? [{ label: 'Fiksni popust', value: -fixedDiscount }] : []),
     ...(discount > 0
       ? [
-          { label: formatDiscountLabel(totals.discountPercent), value: discount },
-          { label: 'Cena s popustom brez DDV', value: totals.subtotalAfterDiscount ?? totals.subtotal ?? 0 },
+          { label: formatDiscountLabel(totals.discountPercent), value: -discount },
         ]
+      : []),
+    ...((hasDetailedDiscounts || discount > 0)
+      ? [{ label: 'Cena s popustom brez DDV', value: totals.subtotalAfterDiscount ?? totals.subtotal ?? 0 }]
       : []),
     { label: 'DDV', value: totals.vat ?? 0 },
     { label: 'Skupaj z DDV', value: totals.total ?? totals.subtotal ?? 0 },

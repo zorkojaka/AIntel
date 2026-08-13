@@ -25,6 +25,7 @@ type OfferItemsMobileTotals = {
   baseWithoutVat: number;
   perItemDiscountAmount: number;
   globalDiscountAmount: number;
+  fixedDiscountAmount: number;
   baseAfterDiscount: number;
   vatAmount: number;
   totalWithVat: number;
@@ -290,6 +291,12 @@ export function OfferItemsMobile({
                 Popust na celotno ponudbo ({globalDiscountPercent || 0}%)
               </span>
               <span>-{formatCurrency(totals.globalDiscountAmount ?? 0)}</span>
+            </div>
+          )}
+          {(totals.fixedDiscountAmount ?? 0) > 0 && (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Fiksni popust</span>
+              <span>-{formatCurrency(totals.fixedDiscountAmount ?? 0)}</span>
             </div>
           )}
           <div className="flex items-center justify-between gap-3">

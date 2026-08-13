@@ -124,6 +124,7 @@ function clampPercent(value: unknown) {
 
 interface DiscountSettings {
   discountPercent: number;
+  fixedDiscountAmount: number;
   useGlobalDiscount: boolean;
   usePerItemDiscount: boolean;
 }
@@ -152,6 +153,11 @@ function calculateSummary(items: InvoiceItem[], discount: DiscountSettings): Inv
   const baseWithoutVat = round(prepared.reduce((sum, item) => sum + item.baseWithoutVat, 0));
   const perItemDiscountedBase = round(prepared.reduce((sum, item) => sum + item.lineAfterPerItemDiscount, 0));
   const globalDiscountAmount = round(perItemDiscountedBase * (globalDiscountPercent / 100));
+  const fixedDiscountAmount = round(Math.min(
+    Math.max(0, perItemDiscountedBase - globalDiscountAmount),
+    Math.max(0, Number(discount.fixedDiscountAmount) || 0),
+  ));
+  const documentDiscountAmount = round(globalDiscountAmount + fixedDiscountAmount);
   const candidates = prepared.filter((item) => item.lineAfterPerItemDiscount > 0);
   const lastCandidate = candidates[candidates.length - 1];
 
@@ -161,11 +167,11 @@ function calculateSummary(items: InvoiceItem[], discount: DiscountSettings): Inv
 
   prepared.forEach((item) => {
     let itemGlobalDiscount = 0;
-    if (globalDiscountPercent > 0 && item.lineAfterPerItemDiscount > 0) {
+    if (documentDiscountAmount > 0 && item.lineAfterPerItemDiscount > 0) {
       if (item === lastCandidate) {
-        itemGlobalDiscount = round(globalDiscountAmount - allocatedGlobalDiscount);
+        itemGlobalDiscount = round(documentDiscountAmount - allocatedGlobalDiscount);
       } else if (perItemDiscountedBase > 0) {
-        itemGlobalDiscount = round(globalDiscountAmount * (item.lineAfterPerItemDiscount / perItemDiscountedBase));
+        itemGlobalDiscount = round(documentDiscountAmount * (item.lineAfterPerItemDiscount / perItemDiscountedBase));
         allocatedGlobalDiscount = round(allocatedGlobalDiscount + itemGlobalDiscount);
       }
     }
@@ -176,6 +182,9 @@ function calculateSummary(items: InvoiceItem[], discount: DiscountSettings): Inv
 
   return {
     baseWithoutVat,
+    perItemDiscountAmount: round(baseWithoutVat - perItemDiscountedBase),
+    globalDiscountAmount,
+    fixedDiscountAmount,
     discountedBase,
     vatAmount,
     totalWithVat: round(discountedBase + vatAmount),
@@ -245,13 +254,14 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
   const discountPercent = draftVersion?.discountPercent ?? 0;
   const useGlobalDiscount = draftVersion?.useGlobalDiscount ?? false;
   const usePerItemDiscount = draftVersion?.usePerItemDiscount ?? false;
+  const fixedDiscountAmount = draftVersion?.fixedDiscountAmount ?? 0;
   const calculatedSummary = useMemo(
-    () => calculateSummary(items, { discountPercent, useGlobalDiscount, usePerItemDiscount }),
-    [items, discountPercent, useGlobalDiscount, usePerItemDiscount],
+    () => calculateSummary(items, { discountPercent, fixedDiscountAmount, useGlobalDiscount, usePerItemDiscount }),
+    [items, discountPercent, fixedDiscountAmount, useGlobalDiscount, usePerItemDiscount],
   );
   // Med urejanjem povzetek strežnika zastara — takrat prikažemo lokalni predogled.
   const summary = dirty ? calculatedSummary : draftVersion?.summary ?? calculatedSummary;
-  const discountAmount = round(Math.max(0, summary.baseWithoutVat - summary.discountedBase));
+  const globalDiscountAmount = summary.globalDiscountAmount ?? 0;
   const invoiceNumberChanged = (invoiceNumberDraft.trim() || "") !== (activeVersion?.invoiceNumber?.trim() || "");
   const canSaveDraft = dirty || invoiceNumberChanged;
 
@@ -589,9 +599,15 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
               <span className="text-muted-foreground">Osnova brez DDV</span>
               <span>{formatCurrency(summary.baseWithoutVat)}</span>
             </div>
+            {(summary.perItemDiscountAmount ?? 0) > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Popust po postavkah</span>
+                <span>-{formatCurrency(summary.perItemDiscountAmount ?? 0)}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-2 text-muted-foreground">
-                Popust
+                Globalni popust
                 {canEdit ? (
                   <span className="flex items-center gap-1">
                     <Input
@@ -610,12 +626,18 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
                   <span>({percentFormatter.format(discountPercent)} %)</span>
                 )}
               </span>
-              <span>{discountAmount > 0 ? `– ${formatCurrency(discountAmount)}` : formatCurrency(0)}</span>
+              <span>{globalDiscountAmount > 0 ? `– ${formatCurrency(globalDiscountAmount)}` : formatCurrency(0)}</span>
             </div>
             {usePerItemDiscount && (
               <p className="text-xs text-muted-foreground m-0">
                 Ponudba ima popuste po postavkah — zgornji odstotek se obračuna dodatno na že popustirane postavke.
               </p>
+            )}
+            {(summary.fixedDiscountAmount ?? draftVersion.fixedDiscountAmount ?? 0) > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Fiksni popust</span>
+                <span>-{formatCurrency(summary.fixedDiscountAmount ?? draftVersion.fixedDiscountAmount ?? 0)}</span>
+              </div>
             )}
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Osnova po popustih</span>

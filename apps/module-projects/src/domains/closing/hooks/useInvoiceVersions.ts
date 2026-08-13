@@ -20,6 +20,9 @@ export interface InvoiceItem {
 
 export interface InvoiceSummary {
   baseWithoutVat: number;
+  perItemDiscountAmount?: number;
+  globalDiscountAmount?: number;
+  fixedDiscountAmount?: number;
   discountedBase: number;
   vatAmount: number;
   totalWithVat: number;
@@ -37,6 +40,7 @@ export interface InvoiceVersion {
   discountPercent?: number;
   useGlobalDiscount?: boolean;
   usePerItemDiscount?: boolean;
+  fixedDiscountAmount?: number;
   items: InvoiceItem[];
   summary: InvoiceSummary;
 }

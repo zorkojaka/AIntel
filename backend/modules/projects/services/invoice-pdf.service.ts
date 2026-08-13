@@ -15,6 +15,8 @@ export interface InvoiceVersion {
   createdAt: string;
   issuedAt: string | null;
   servicePerformedAt?: string | null;
+  discountPercent?: number;
+  fixedDiscountAmount?: number;
   items: {
     name: string;
     unit: string;
@@ -27,11 +29,13 @@ export interface InvoiceVersion {
   }[];
   summary: {
     baseWithoutVat: number;
+    perItemDiscountAmount?: number;
+    globalDiscountAmount?: number;
+    fixedDiscountAmount?: number;
     discountedBase: number;
     vatAmount: number;
     totalWithVat: number;
   };
-  discountPercent?: number;
   useGlobalDiscount?: boolean;
   usePerItemDiscount?: boolean;
   invoiceNumber?: string;
@@ -85,6 +89,10 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
     subtotal: summary.baseWithoutVat ?? 0,
     discount: discountValue,
     discountPercent: invoice.useGlobalDiscount && !imaPopustPoPostavkah ? invoice.discountPercent ?? 0 : 0,
+    perItemDiscount: summary.perItemDiscountAmount ?? 0,
+    globalDiscount: summary.globalDiscountAmount ?? 0,
+    globalDiscountPercent: invoice.discountPercent ?? 0,
+    fixedDiscount: summary.fixedDiscountAmount ?? invoice.fixedDiscountAmount ?? 0,
     subtotalAfterDiscount: summary.discountedBase ?? summary.baseWithoutVat ?? 0,
     vat: summary.vatAmount ?? 0,
     total: summary.totalWithVat ?? 0,

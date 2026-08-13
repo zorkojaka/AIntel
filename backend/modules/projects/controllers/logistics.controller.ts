@@ -44,6 +44,7 @@ function calculateOfferTotalsFromSnapshot(offer: {
   useGlobalDiscount?: boolean;
   globalDiscountPercent?: number;
   discountPercent?: number;
+  fixedDiscountAmount?: number;
   vatMode?: number;
 }) {
   const items = offer.items || [];
@@ -68,8 +69,13 @@ function calculateOfferTotalsFromSnapshot(offer: {
 
   const normalizedGlobalPct = useGlobalDiscount ? Math.min(100, Math.max(0, Number(globalDiscountPercent) || 0)) : 0;
   const globalDiscountAmount = normalizedGlobalPct > 0 ? (baseAfterPerItem * normalizedGlobalPct) / 100 : 0;
+  const baseAfterPercentageDiscount = Math.max(0, baseAfterPerItem - globalDiscountAmount);
+  const fixedDiscountAmount = Math.min(
+    baseAfterPercentageDiscount,
+    Math.max(0, Number(offer.fixedDiscountAmount) || 0),
+  );
 
-  const baseAfterDiscount = baseAfterPerItem - globalDiscountAmount;
+  const baseAfterDiscount = baseAfterPercentageDiscount - fixedDiscountAmount;
 
   const vatMultiplier = vatMode === 22 ? 0.22 : vatMode === 9.5 ? 0.095 : 0;
   const vatAmount = baseAfterDiscount * vatMultiplier;
@@ -79,6 +85,7 @@ function calculateOfferTotalsFromSnapshot(offer: {
     baseWithoutVat: round2(baseWithoutVat),
     perItemDiscountAmount: round2(perItemDiscountAmount),
     globalDiscountAmount: round2(globalDiscountAmount),
+    fixedDiscountAmount: round2(fixedDiscountAmount),
     baseAfterDiscount: round2(baseAfterDiscount),
     vatAmount: round2(vatAmount),
     totalWithVat: round2(totalWithVat),

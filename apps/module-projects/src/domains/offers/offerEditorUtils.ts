@@ -221,6 +221,7 @@ export function calculateOfferTotals(input: {
   usePerItemDiscount: boolean;
   useGlobalDiscount: boolean;
   globalDiscountPercent: number;
+  fixedDiscountAmount: number;
   vatMode: 0 | 9.5 | 22;
 }) {
   const baseWithoutVat = input.validItems.reduce(
@@ -241,7 +242,11 @@ export function calculateOfferTotals(input: {
     ? Math.min(100, Math.max(0, input.globalDiscountPercent || 0))
     : 0;
   const globalDiscountAmount = Number((baseAfterPerItem * (normalizedDiscount / 100)).toFixed(2));
-  const baseAfterDiscount = Number((baseAfterPerItem - globalDiscountAmount).toFixed(2));
+  const baseAfterPercentageDiscount = Math.max(0, baseAfterPerItem - globalDiscountAmount);
+  const fixedDiscountAmount = Number(
+    Math.min(baseAfterPercentageDiscount, clampPositive(input.fixedDiscountAmount, 0)).toFixed(2)
+  );
+  const baseAfterDiscount = Number((baseAfterPercentageDiscount - fixedDiscountAmount).toFixed(2));
   const vatRate = input.vatMode === 22 ? 0.22 : input.vatMode === 9.5 ? 0.095 : 0;
   const vatAmount = Number((baseAfterDiscount * vatRate).toFixed(2));
   const totalWithVat = Number((baseAfterDiscount + vatAmount).toFixed(2));
@@ -250,6 +255,7 @@ export function calculateOfferTotals(input: {
     baseWithoutVat,
     perItemDiscountAmount,
     globalDiscountAmount,
+    fixedDiscountAmount,
     baseAfterDiscount,
     vatAmount,
     totalWithVat,
@@ -278,6 +284,7 @@ export function createOfferEditorSnapshot(input: {
   usePerItemDiscount: boolean;
   vatMode: 0 | 9.5 | 22;
   globalDiscountPercent: number;
+  fixedDiscountAmount: number;
 }) {
   const cleanItems = input.items
     .filter((i) => !isEmptyOfferItem(i))
@@ -304,6 +311,7 @@ export function createOfferEditorSnapshot(input: {
     items: cleanItems,
     discountPercent: input.useGlobalDiscount ? input.globalDiscountPercent : 0,
     globalDiscountPercent: input.useGlobalDiscount ? input.globalDiscountPercent : 0,
+    fixedDiscountAmount: clampPositive(input.fixedDiscountAmount, 0),
     useGlobalDiscount: input.useGlobalDiscount,
     usePerItemDiscount: input.usePerItemDiscount,
     vatMode: input.vatMode,
@@ -320,6 +328,7 @@ export const EMPTY_OFFER_SNAPSHOT = createOfferEditorSnapshot({
   usePerItemDiscount: false,
   vatMode: 22,
   globalDiscountPercent: 0,
+  fixedDiscountAmount: 0,
 });
 
 export const sanitizeFilenamePart = (value: string) =>

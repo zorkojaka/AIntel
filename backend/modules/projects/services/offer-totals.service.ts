@@ -30,6 +30,7 @@ export function calculateOfferTotals(offer: {
   usePerItemDiscount: boolean;
   useGlobalDiscount: boolean;
   globalDiscountPercent: number;
+  fixedDiscountAmount?: number;
   vatMode: number;
 }) {
   const { items, usePerItemDiscount, useGlobalDiscount, globalDiscountPercent, vatMode } = offer;
@@ -47,8 +48,13 @@ export function calculateOfferTotals(offer: {
 
   const normalizedGlobalPct = useGlobalDiscount ? Math.min(100, Math.max(0, Number(globalDiscountPercent) || 0)) : 0;
   const globalDiscountAmount = normalizedGlobalPct > 0 ? (baseAfterPerItem * normalizedGlobalPct) / 100 : 0;
+  const baseAfterPercentageDiscount = Math.max(0, baseAfterPerItem - globalDiscountAmount);
+  const fixedDiscountAmount = Math.min(
+    baseAfterPercentageDiscount,
+    clampNumber(offer.fixedDiscountAmount, 0, 0),
+  );
 
-  const baseAfterDiscount = baseAfterPerItem - globalDiscountAmount;
+  const baseAfterDiscount = baseAfterPercentageDiscount - fixedDiscountAmount;
 
   const vatMultiplier = vatMode === 22 ? 0.22 : vatMode === 9.5 ? 0.095 : 0;
   const vatAmount = baseAfterDiscount * vatMultiplier;
@@ -60,6 +66,7 @@ export function calculateOfferTotals(offer: {
     baseWithoutVat: round2(baseWithoutVat),
     perItemDiscountAmount: round2(perItemDiscountAmount),
     globalDiscountAmount: round2(globalDiscountAmount),
+    fixedDiscountAmount: round2(fixedDiscountAmount),
     baseAfterDiscount: round2(baseAfterDiscount),
     vatAmount: round2(vatAmount),
     totalNet: round2(baseAfterDiscount),
@@ -68,7 +75,7 @@ export function calculateOfferTotals(offer: {
     totalVat: round2(vatAmount),
     totalGross: round2(totalGrossAfterDiscount),
     discountPercent: normalizedGlobalPct,
-    discountAmount: round2(perItemDiscountAmount + globalDiscountAmount),
+    discountAmount: round2(perItemDiscountAmount + globalDiscountAmount + fixedDiscountAmount),
     totalNetAfterDiscount: round2(totalNetAfterDiscount),
     totalGrossAfterDiscount: round2(totalGrossAfterDiscount),
     totalWithVat: round2(totalGrossAfterDiscount),

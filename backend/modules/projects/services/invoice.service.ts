@@ -42,6 +42,9 @@ interface InvoiceItemPayload {
 
 interface InvoiceSummary {
   baseWithoutVat: number;
+  perItemDiscountAmount: number;
+  globalDiscountAmount: number;
+  fixedDiscountAmount: number;
   discountedBase: number;
   vatAmount: number;
   totalWithVat: number;
@@ -58,6 +61,7 @@ interface InvoiceVersion {
   servicePerformedAt?: string | null;
   correctedFromInvoiceVersionId?: string | null;
   discountPercent: number;
+  fixedDiscountAmount: number;
   useGlobalDiscount: boolean;
   usePerItemDiscount: boolean;
   items: InvoiceItem[];
@@ -272,6 +276,7 @@ function buildInvoiceItemsFromConfirmedOffer(offer: { items?: OfferLineItem[]; v
 async function aggregateClosingItems(project: ProjectDocument): Promise<{
   items: InvoiceItemPayload[];
   discountPercent: number;
+  fixedDiscountAmount: number;
   useGlobalDiscount: boolean;
   usePerItemDiscount: boolean;
   vatMode: number | null;
@@ -374,6 +379,7 @@ async function aggregateClosingItems(project: ProjectDocument): Promise<{
   return {
     items: resolvedItems,
     discountPercent: toNumber(offerIndex.offer?.globalDiscountPercent ?? offerIndex.offer?.discountPercent, 0),
+    fixedDiscountAmount: toNumber(offerIndex.offer?.fixedDiscountAmount, 0),
     useGlobalDiscount: Boolean(offerIndex.offer?.useGlobalDiscount ?? true),
     usePerItemDiscount: Boolean(offerIndex.offer?.usePerItemDiscount ?? false),
     vatMode: offerIndex.offer ? toNumber(offerIndex.offer.vatMode, 22) : null,
@@ -422,6 +428,7 @@ export async function createInvoiceFromClosing(projectId: string): Promise<Invoi
   const source = await aggregateClosingItems(project);
   const { items, summary } = recalculateItems(source.items, {
     discountPercent: source.discountPercent,
+    fixedDiscountAmount: source.fixedDiscountAmount,
     useGlobalDiscount: source.useGlobalDiscount,
     usePerItemDiscount: source.usePerItemDiscount,
     vatMode: source.vatMode,
@@ -435,6 +442,7 @@ export async function createInvoiceFromClosing(projectId: string): Promise<Invoi
     issuedAt: null,
     servicePerformedAt,
     discountPercent: source.discountPercent,
+    fixedDiscountAmount: summary.fixedDiscountAmount,
     useGlobalDiscount: source.useGlobalDiscount,
     usePerItemDiscount: source.usePerItemDiscount,
     items,
@@ -497,6 +505,7 @@ export async function updateInvoiceVersion(
   });
   const { items, summary } = recalculateItems(mergedInputItems, {
     discountPercent: toNumber(version.discountPercent, 0),
+    fixedDiscountAmount: toNumber(version.fixedDiscountAmount, 0),
     useGlobalDiscount: Boolean(version.useGlobalDiscount),
     usePerItemDiscount: Boolean(version.usePerItemDiscount),
   });
@@ -647,6 +656,7 @@ export async function cloneInvoiceVersion(projectId: string, versionId: string):
     servicePerformedAt: version.servicePerformedAt ?? (await resolveServicePerformedAt(project.id)),
     correctedFromInvoiceVersionId: version._id,
     discountPercent: version.discountPercent ?? 0,
+    fixedDiscountAmount: version.fixedDiscountAmount ?? 0,
     useGlobalDiscount: version.useGlobalDiscount ?? false,
     usePerItemDiscount: version.usePerItemDiscount ?? false,
     items: clonedItems,
@@ -682,6 +692,7 @@ export async function cancelInvoiceVersion(projectId: string, versionId: string)
 }
 interface RecalculateOptions {
   discountPercent?: number;
+  fixedDiscountAmount?: number;
   useGlobalDiscount?: boolean;
   usePerItemDiscount?: boolean;
   vatMode?: number | null;
@@ -721,6 +732,11 @@ function recalculateItems(items: InvoiceItemPayload[], options: RecalculateOptio
     preparedItems.reduce((sum, current) => sum + current.lineAfterPerItemDiscount, 0),
   );
   const globalDiscountAmount = round(perItemDiscountedBase * (globalDiscountPercent / 100));
+  const fixedDiscountAmount = round(Math.min(
+    Math.max(0, perItemDiscountedBase - globalDiscountAmount),
+    Math.max(0, toNumber(options.fixedDiscountAmount, 0)),
+  ));
+  const documentDiscountAmount = round(globalDiscountAmount + fixedDiscountAmount);
   const globalDiscountCandidates = preparedItems.filter((item) => item.lineAfterPerItemDiscount > 0);
   let allocatedGlobalDiscount = 0;
 
@@ -730,12 +746,12 @@ function recalculateItems(items: InvoiceItemPayload[], options: RecalculateOptio
       globalDiscountCandidates.length > 0 &&
       item.id === globalDiscountCandidates[globalDiscountCandidates.length - 1].id;
 
-    if (globalDiscountPercent > 0 && item.lineAfterPerItemDiscount > 0) {
+    if (documentDiscountAmount > 0 && item.lineAfterPerItemDiscount > 0) {
       if (isLastCandidate) {
-        itemGlobalDiscount = round(globalDiscountAmount - allocatedGlobalDiscount);
+        itemGlobalDiscount = round(documentDiscountAmount - allocatedGlobalDiscount);
       } else if (perItemDiscountedBase > 0) {
         itemGlobalDiscount = round(
-          globalDiscountAmount * (item.lineAfterPerItemDiscount / perItemDiscountedBase),
+          documentDiscountAmount * (item.lineAfterPerItemDiscount / perItemDiscountedBase),
         );
         allocatedGlobalDiscount = round(allocatedGlobalDiscount + itemGlobalDiscount);
       }
@@ -798,6 +814,9 @@ function recalculateItems(items: InvoiceItemPayload[], options: RecalculateOptio
     items: updatedItems,
     summary: {
       baseWithoutVat,
+      perItemDiscountAmount: round(baseWithoutVat - perItemDiscountedBase),
+      globalDiscountAmount,
+      fixedDiscountAmount,
       discountedBase,
       vatAmount,
       totalWithVat,
