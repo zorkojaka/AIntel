@@ -9,6 +9,7 @@ import {
   OfferPdfPreviewPayload,
   PdfCompanySettingsDto,
   PdfDocumentSettingsDto,
+  InvoiceNumberCounterDto,
   SettingsDto,
 } from './types';
 import type { RequirementTemplateGroup, RequirementTemplateVariant, OfferGenerationRule } from '@aintel/shared/types/project';
@@ -280,6 +281,20 @@ export async function savePdfDocumentSettings(
     body: JSON.stringify(payload),
   });
   return parseEnvelope<PdfDocumentSettingsDto>(response);
+}
+
+export async function fetchInvoiceNumberCounter(): Promise<InvoiceNumberCounterDto> {
+  const response = await fetch('/api/settings/invoice-counter');
+  return parseEnvelope<InvoiceNumberCounterDto>(response);
+}
+
+export async function saveInvoiceNumberCounter(currentSequence: number): Promise<InvoiceNumberCounterDto> {
+  const response = await fetch('/api/settings/invoice-counter', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ currentSequence }),
+  });
+  return parseEnvelope<InvoiceNumberCounterDto>(response);
 }
 
 export async function fetchOfferPdfPreview(offerVersionId: string, options?: { allowDemo?: boolean; docType?: string }) {

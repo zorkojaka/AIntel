@@ -171,6 +171,7 @@ test('AIN-P0-02 finance and settings authorization gates sensitive routes', asyn
       requestJson<any>(server, '/api/settings', executionUser.cookie, { method: 'PUT', body: JSON.stringify({ companyName: 'X', address: 'Y' }) }),
       requestJson<any>(server, '/api/settings/company', executionUser.cookie, { method: 'PUT', body: JSON.stringify({ companyName: 'X', address: 'Y' }) }),
       requestJson<any>(server, '/api/settings/pdf-documents?docType=OFFER', executionUser.cookie, { method: 'PUT', body: JSON.stringify({}) }),
+      requestJson<any>(server, '/api/settings/invoice-counter', executionUser.cookie, { method: 'PUT', body: JSON.stringify({ currentSequence: 12 }) }),
       requestJson<any>(server, '/api/settings/communication', executionUser.cookie, { method: 'PUT', body: JSON.stringify({}) }),
     ]);
     settingsWrites.forEach(({ response }) => assert.equal(response.status, 403));
