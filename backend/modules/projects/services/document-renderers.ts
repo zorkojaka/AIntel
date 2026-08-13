@@ -50,6 +50,8 @@ export interface PreviewTotals {
   subtotalAfterDiscount?: number;
   vat?: number;
   total?: number;
+  paid?: number;
+  remaining?: number;
   dueDays?: number;
 }
 
@@ -643,6 +645,8 @@ export function renderInvoicePdf(context: DocumentPreviewContext) {
       : []),
     { label: 'DDV', value: totals.vat ?? 0 },
     { label: 'Skupaj z DDV', value: totals.total ?? totals.subtotal ?? 0 },
+    { label: 'Že plačano', value: totals.paid ?? 0 },
+    { label: 'Za plačilo preostane', value: totals.remaining ?? totals.total ?? totals.subtotal ?? 0 },
   ]
     .map(
       (row) => `<tr>

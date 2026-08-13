@@ -42,6 +42,8 @@ export interface InvoiceVersion {
   useGlobalDiscount?: boolean;
   usePerItemDiscount?: boolean;
   fixedDiscountAmount?: number;
+  paidAmount?: number;
+  remainingAmount?: number;
   items: InvoiceItem[];
   summary: InvoiceSummary;
 }
@@ -49,6 +51,7 @@ export interface InvoiceVersion {
 export interface InvoiceDiscountPayload {
   discountPercent: number;
   useGlobalDiscount: boolean;
+  paidAmount: number;
 }
 
 interface InvoiceApiResponse {

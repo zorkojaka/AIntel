@@ -275,6 +275,9 @@ export function InvoiceVersionEditor({
   );
   // Med urejanjem povzetek strežnika zastara — takrat prikažemo lokalni predogled.
   const summary = dirty ? calculatedSummary : draftVersion?.summary ?? calculatedSummary;
+  const paidAmount = Math.max(0, Number(draftVersion?.paidAmount ?? 0) || 0);
+  const remainingAmount = round(Math.max(0, summary.totalWithVat - paidAmount));
+  const paidAmountIsValid = paidAmount <= summary.totalWithVat;
   const globalDiscountAmount = summary.globalDiscountAmount ?? 0;
   const invoiceNumberChanged = (invoiceNumberDraft.trim() || "") !== (activeVersion?.invoiceNumber?.trim() || "");
   const canSaveDraft = dirty || invoiceNumberChanged;
@@ -296,6 +299,18 @@ export function InvoiceVersionEditor({
       item.id === itemId ? recalculateItem({ ...item, ...updates }) : item,
     );
     setDraftVersion({ ...draftVersion, items: nextItems });
+    setDirty(true);
+  };
+
+  const handlePaidAmountChange = (value: string) => {
+    if (!draftVersion || !canEdit) return;
+    const parsed = Number(value);
+    const nextPaidAmount = Number.isFinite(parsed) ? Math.max(0, round(parsed)) : 0;
+    setDraftVersion({
+      ...draftVersion,
+      paidAmount: nextPaidAmount,
+      remainingAmount: round(Math.max(0, summary.totalWithVat - nextPaidAmount)),
+    });
     setDirty(true);
   };
 
@@ -337,9 +352,14 @@ export function InvoiceVersionEditor({
 
   const handleSave = async () => {
     if (!draftVersion || !canEdit) return false;
+    if (!paidAmountIsValid) {
+      toast.error("Že plačani znesek ne sme biti višji od skupnega zneska računa.");
+      return false;
+    }
     const success = await saveDraft(draftVersion.items, invoiceNumberDraft, {
       discountPercent: draftVersion.discountPercent ?? 0,
       useGlobalDiscount: draftVersion.useGlobalDiscount ?? false,
+      paidAmount,
     });
     if (success) {
       setDirty(false);
@@ -679,6 +699,35 @@ export function InvoiceVersionEditor({
               <span>Skupaj za plačilo (z DDV)</span>
               <span>{formatCurrency(summary.totalWithVat)}</span>
             </div>
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <span className="text-muted-foreground">Že plačano</span>
+              {canEdit ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={summary.totalWithVat}
+                    step={0.01}
+                    className="h-8 w-32 text-right"
+                    value={paidAmount}
+                    onChange={(event) => handlePaidAmountChange(event.target.value)}
+                    aria-label="Že plačani znesek"
+                  />
+                  <span>€</span>
+                </div>
+              ) : (
+                <span>{formatCurrency(paidAmount)}</span>
+              )}
+            </div>
+            <div className="flex items-center justify-between border-t border-border pt-2 font-semibold">
+              <span>Za plačilo preostane</span>
+              <span>{formatCurrency(remainingAmount)}</span>
+            </div>
+            {!paidAmountIsValid && (
+              <p className="m-0 text-right text-xs text-destructive">
+                Že plačani znesek ne sme biti višji od skupnega zneska računa.
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2 justify-between">
             <div className="flex gap-2">
@@ -710,7 +759,7 @@ export function InvoiceVersionEditor({
                   <Button
                     variant="outline"
                     onClick={handleSave}
-                    disabled={!canSaveDraft || saving}
+                    disabled={!canSaveDraft || !paidAmountIsValid || saving}
                   >
                     {saving ? (
                       <span className="flex items-center gap-2">
@@ -721,7 +770,7 @@ export function InvoiceVersionEditor({
                       "Shrani račun"
                     )}
                   </Button>
-                  <Button onClick={handleIssue} disabled={saving}>
+                  <Button onClick={handleIssue} disabled={!paidAmountIsValid || saving}>
                     Izdaj račun
                   </Button>
                 </>

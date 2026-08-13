@@ -103,3 +103,19 @@ test('invoice PDF keeps the transferred fixed discount as a separate row', () =>
   assert.match(html, /Fiksni popust/);
   assert.match(html, /Cena s popustom brez DDV/);
 });
+
+test('invoice PDF shows paid and remaining amounts below the total', () => {
+  const html = renderInvoicePdf({
+    docType: 'INVOICE',
+    documentNumber: '2/8/2026',
+    issueDate: '13. 8. 2026',
+    company: { companyName: 'Inteligent d.o.o.', address: 'Testna 1, Ljubljana' },
+    items: [],
+    totals: { subtotal: 100, vat: 22, total: 122, paid: 50, remaining: 72 },
+  });
+
+  assert.match(html, /Že plačano/);
+  assert.match(html, /Za plačilo preostane/);
+  assert.ok(html.indexOf('Skupaj z DDV') < html.indexOf('Že plačano'));
+  assert.ok(html.indexOf('Že plačano') < html.indexOf('Za plačilo preostane'));
+});

@@ -66,6 +66,8 @@ interface InvoiceVersion {
   fixedDiscountAmount: number;
   useGlobalDiscount: boolean;
   usePerItemDiscount: boolean;
+  paidAmount: number;
+  remainingAmount: number;
   items: InvoiceItem[];
   summary: InvoiceSummary;
 }
@@ -114,6 +116,15 @@ function toNumber(value: unknown, fallback = 0) {
 
 function clampPercent(value: unknown) {
   return Math.min(100, Math.max(0, round(toNumber(value, 0))));
+}
+
+export function calculateInvoicePaymentAmounts(totalWithVat: number, paidAmount: unknown) {
+  const total = Math.max(0, round(toNumber(totalWithVat, 0)));
+  const paid = round(toNumber(paidAmount, 0));
+  if (paid < 0 || paid > total) {
+    throw new Error(`Že plačani znesek mora biti med 0 in ${total.toFixed(2)} EUR.`);
+  }
+  return { paidAmount: paid, remainingAmount: round(total - paid) };
 }
 
 function selectActiveVersionId(versions: InvoiceVersion[]): string | null {
@@ -438,6 +449,9 @@ export async function createInvoiceFromClosing(projectId: string): Promise<Invoi
     existingDraft.items = items;
     existingDraft.summary = summary;
     existingDraft.fixedDiscountAmount = summary.fixedDiscountAmount;
+    const paymentAmounts = calculateInvoicePaymentAmounts(summary.totalWithVat, existingDraft.paidAmount ?? 0);
+    existingDraft.paidAmount = paymentAmounts.paidAmount;
+    existingDraft.remainingAmount = paymentAmounts.remainingAmount;
     markInvoiceVersionsModified(project);
     await project.save();
     return buildInvoiceResponse(project, { activeVersionId: existingDraft._id, updatedVersionId: existingDraft._id });
@@ -461,6 +475,8 @@ export async function createInvoiceFromClosing(projectId: string): Promise<Invoi
     fixedDiscountAmount: summary.fixedDiscountAmount,
     useGlobalDiscount: source.useGlobalDiscount,
     usePerItemDiscount: source.usePerItemDiscount,
+    paidAmount: 0,
+    remainingAmount: summary.totalWithVat,
     items,
     summary,
   };
@@ -487,6 +503,7 @@ export async function updateInvoiceVersion(
     invoiceNumber?: unknown;
     discountPercent?: unknown;
     useGlobalDiscount?: unknown;
+    paidAmount?: unknown;
   },
 ): Promise<InvoiceListResponse> {
   const project = await findProjectOrFail(projectId);
@@ -536,6 +553,12 @@ export async function updateInvoiceVersion(
   });
   version.items = items;
   version.summary = summary;
+  const paymentAmounts = calculateInvoicePaymentAmounts(
+    summary.totalWithVat,
+    payload.paidAmount !== undefined ? payload.paidAmount : version.paidAmount ?? 0,
+  );
+  version.paidAmount = paymentAmounts.paidAmount;
+  version.remainingAmount = paymentAmounts.remainingAmount;
   markInvoiceVersionsModified(project);
   await project.save();
   return serializeResponse(project);
@@ -577,6 +600,9 @@ export async function issueInvoiceVersion(projectId: string, versionId: string, 
   version.invoiceNumber = numbering.invoiceNumber;
   version.invoiceSequence = numbering.invoiceSequence;
   version.servicePerformedAt = version.servicePerformedAt ?? (await resolveServicePerformedAt(project.id));
+  const paymentAmounts = calculateInvoicePaymentAmounts(version.summary?.totalWithVat ?? 0, version.paidAmount ?? 0);
+  version.paidAmount = paymentAmounts.paidAmount;
+  version.remainingAmount = paymentAmounts.remainingAmount;
   const fallbackCorrectedFromInvoiceVersionId =
     version.correctedFromInvoiceVersionId ??
     cancelledIssuedVersionIds[0] ??
@@ -685,6 +711,8 @@ export async function cloneInvoiceVersion(projectId: string, versionId: string):
     fixedDiscountAmount: version.fixedDiscountAmount ?? 0,
     useGlobalDiscount: version.useGlobalDiscount ?? false,
     usePerItemDiscount: version.usePerItemDiscount ?? false,
+    paidAmount: version.paidAmount ?? 0,
+    remainingAmount: version.remainingAmount ?? version.summary?.totalWithVat ?? 0,
     items: clonedItems,
     summary: { ...version.summary },
   };

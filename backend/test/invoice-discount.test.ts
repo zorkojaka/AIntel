@@ -166,3 +166,24 @@ test('PDF računa: oznaka popusta pokaže odstotek', () => {
   assert.equal(formatDiscountLabel(0), 'Popust');
   assert.equal(formatDiscountLabel(undefined), 'Popust');
 });
+
+test('račun: že plačani znesek se shrani in backend izračuna preostanek', async () => {
+  const mongo = await MongoMemoryServer.create();
+  await mongoose.connect(mongo.getUri(), { dbName: 'aintel_invoice_paid_amount' });
+  try {
+    await createProjectWithInvoiceDraft('P9', { discountPercent: 10, useGlobalDiscount: true });
+
+    const version = findVersion(await updateInvoiceVersion('P9', VERSION_ID, { items: ITEMS, paidAmount: 50 }));
+    assert.equal(version.summary.totalWithVat, 219.6);
+    assert.equal(version.paidAmount, 50);
+    assert.equal(version.remainingAmount, 169.6);
+
+    await assert.rejects(
+      () => updateInvoiceVersion('P9', VERSION_ID, { items: ITEMS, paidAmount: 220 }),
+      /Že plačani znesek mora biti med 0 in 219\.60 EUR/,
+    );
+  } finally {
+    await mongoose.disconnect();
+    await mongo.stop();
+  }
+});

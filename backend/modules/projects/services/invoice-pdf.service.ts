@@ -17,6 +17,8 @@ export interface InvoiceVersion {
   servicePerformedAt?: string | null;
   discountPercent?: number;
   fixedDiscountAmount?: number;
+  paidAmount?: number;
+  remainingAmount?: number;
   items: {
     name: string;
     unit: string;
@@ -96,6 +98,8 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
     subtotalAfterDiscount: summary.discountedBase ?? summary.baseWithoutVat ?? 0,
     vat: summary.vatAmount ?? 0,
     total: summary.totalWithVat ?? 0,
+    paid: invoice.paidAmount ?? 0,
+    remaining: Math.max(0, invoice.remainingAmount ?? (summary.totalWithVat ?? 0) - (invoice.paidAmount ?? 0)),
     dueDays,
   };
 
@@ -103,7 +107,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
   const paymentInfo = await buildPaymentInfo({
     recipient: company.companyName ?? 'Podjetje',
     iban: company.iban ?? '',
-    amount: totals.total ?? 0,
+    amount: totals.remaining ?? totals.total ?? 0,
     reference: documentNumber,
     purpose: `Plačilo računa ${documentNumber}`,
   });
