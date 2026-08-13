@@ -192,7 +192,12 @@ async function resolveRequirementLocationPhotos(
     }
 
     const note = typeof unit?.note === "string" && unit.note.trim() ? unit.note.trim() : undefined;
-    locations.push({ name: locationName, note, photos: photoDataUrls });
+    const locationId = typeof unit?.projectLocationId === "string" && unit.projectLocationId.trim()
+      ? unit.projectLocationId.trim()
+      : typeof unit?.locationId === "string" && unit.locationId.trim()
+        ? unit.locationId.trim()
+        : sourcePhotoItemId;
+    locations.push({ id: locationId || undefined, name: locationName, note, photos: photoDataUrls });
   }
 
   return locations;
@@ -279,7 +284,7 @@ async function resolveProjectExecutionDefinitionLocations(
       continue;
     }
 
-    locations.push({ name: locationName, note: note || undefined, photos: photoDataUrls });
+    locations.push({ id: locationKey || undefined, name: locationName, note: note || undefined, photos: photoDataUrls });
   }
 
   return locations;
@@ -349,8 +354,13 @@ export async function buildOfferDescriptionEntries(offer: OfferVersion): Promise
     const title = isCameraInstallationServiceName(item.name) && definitionLocations.length > 0
       ? "Predlog izvedbe"
       : product?.ime || item.name;
+    const hasStoredRequirementLocations = Array.isArray(item?.requirementsLocationUnits)
+      && item.requirementsLocationUnits.length > 0;
     const shouldResolveRequirementLocations =
-      supportsLocationDescriptions(product) || definitionLocations.length > 0 || fallbackUnits.length > 0;
+      supportsLocationDescriptions(product)
+      || hasStoredRequirementLocations
+      || definitionLocations.length > 0
+      || fallbackUnits.length > 0;
     const locations = definitionLocations.length > 0
       ? definitionLocations
       : shouldResolveRequirementLocations

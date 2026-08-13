@@ -1013,6 +1013,7 @@ export type ProductDescriptionEntry = {
   imageUrl?: string;
   projectPlanPhotos?: string[];
   locations?: Array<{
+    id?: string;
     name: string;
     note?: string;
     photos: string[];
@@ -1035,8 +1036,15 @@ export function renderProductDescriptionsHtml(
     .descriptions-header { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #dbe2ea; break-inside: avoid; page-break-inside: avoid; }
     .descriptions-header h1 { margin: 0 0 4px 0; font-size: 20px; }
     .descriptions-header p { margin: 0; color: #475569; font-size: 11px; white-space: pre-wrap; }
-    .product { margin: 0 0 12px 0; break-inside: avoid; page-break-inside: avoid; }
-    .title { margin: 0 0 7px 0; font-size: 16px; font-weight: 700; }
+    .location-section { margin: 0 0 16px 0; padding: 0 0 12px 0; border-bottom: 1px solid #cbd5e1; }
+    .location-overview { break-inside: avoid; page-break-inside: avoid; }
+    .location-title { margin: 0 0 7px 0; font-size: 17px; font-weight: 700; color: #0f172a; break-after: avoid; page-break-after: avoid; }
+    .location-note { margin: 0 0 8px 0; padding: 7px 9px; background: #f8fafc; border-left: 3px solid #94a3b8; font-size: 10.5px; color: #334155; line-height: 1.35; white-space: pre-wrap; break-inside: avoid; page-break-inside: avoid; }
+    .location-photos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 0 0 10px 0; }
+    .location-photos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #dbe2ea; border-radius: 3px; break-inside: avoid; page-break-inside: avoid; }
+    .equipment-title { margin: 9px 0 6px 0; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: .04em; break-after: avoid; page-break-after: avoid; }
+    .product { margin: 0 0 10px 0; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px; break-inside: avoid; page-break-inside: avoid; }
+    .title { margin: 0 0 7px 0; font-size: 13px; font-weight: 700; }
     .row { display: flex; gap: 12px; align-items: flex-start; flex-direction: row-reverse; }
     .col.image { flex: 0 0 38%; }
     .col.desc { flex: 1 1 62%; }
@@ -1046,18 +1054,8 @@ export function renderProductDescriptionsHtml(
     .product.noImage .col.desc { font-size: 10.5px; }
     .product.noDesc .row { display: block; }
     .product.noDesc .col.image { width: 45%; }
-    .locations { margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb; break-inside: avoid; page-break-inside: avoid; }
-    .locations-title { margin: 0 0 5px 0; font-size: 11px; font-weight: 700; color: #334155; }
-    .locations-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
-    .locations-list { display: block; margin: 0; padding: 0; }
-    .location { min-width: 0; break-inside: avoid; page-break-inside: avoid; }
-    .location-row { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; border-bottom: 1px solid #eef2f7; }
-    .location-name { margin: 0 0 4px 0; font-size: 10.5px; font-weight: 700; color: #111827; }
-    .location-row .location-name { flex: 0 0 34%; margin: 0; }
-    .location-note { margin: 0; font-size: 10.5px; color: #475569; line-height: 1.25; }
-    .location-row .location-note { flex: 1 1 auto; }
-    .location-photos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-    .location-photos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #dbe2ea; border-radius: 3px; }
+    .unassigned { margin-top: 14px; }
+    .unassigned-title { margin: 0 0 8px 0; font-size: 15px; color: #334155; }
     .project-plan { margin: 10px 0 12px 0; break-inside: avoid; page-break-inside: avoid; }
     .project-plan-title { margin: 0 0 7px 0; font-size: 13px; font-weight: 700; color: #111827; }
     .project-plan-photos { display: flex; flex-direction: column; gap: 10px; }
@@ -1082,48 +1080,61 @@ export function renderProductDescriptionsHtml(
     ? `<footer class="descriptions-footer">${escapeHtml(options.footerText.trim())}</footer>`
     : "";
 
-  const buildLocationsBlock = (locations: NonNullable<ProductDescriptionEntry["locations"]>) => {
-    const filteredLocations = locations.filter((location) => location.name || location.note || location.photos.length > 0);
-    const hasLocationPhotos = filteredLocations.some((location) => location.photos.length > 0);
-    return filteredLocations.length
-      ? `<div class="locations">
-          <p class="locations-title">Lokacije</p>
-          <div class="${hasLocationPhotos ? 'locations-grid' : 'locations-list'}">
-            ${filteredLocations
-              .map((location) => {
-                const photos = location.photos
-                  .map((photo) => `<img src="${photo}" alt="" />`)
-                  .join('');
-                const note = location.note ? `<p class="location-note">${escapeHtml(location.note)}</p>` : '';
-                if (!photos) {
-                  return `<div class="location-row">
-                    <p class="location-name">${escapeHtml(location.name)}</p>
-                    ${note}
-                  </div>`;
-                }
-                return `<div class="location">
-                  <p class="location-name">${escapeHtml(location.name)}</p>
-                  ${note}
-                  ${photos ? `<div class="location-photos">${photos}</div>` : ''}
-                </div>`;
-              })
-              .join('')}
-          </div>
-        </div>`
-      : '';
+  const renderProduct = (entry: ProductDescriptionEntry) => {
+    const title = escapeHtml(entry.title);
+    const description = entry.description ? escapeHtml(entry.description) : '';
+    const hasImage = !!entry.imageUrl;
+    const hasDesc = !!description;
+    if (!hasImage && !hasDesc) return `<section class="product noImage noDesc"><h3 class="title">${title}</h3></section>`;
+    const classes = ['product', hasImage ? 'hasImage' : 'noImage', hasDesc ? 'hasDesc' : 'noDesc'].join(' ');
+    const imageBlock = hasImage ? `<div class="col image"><img src="${entry.imageUrl}" alt="" /></div>` : '';
+    const descBlock = hasDesc ? `<div class="col desc">${description}</div>` : '';
+    return `<section class="${classes}">
+        <h3 class="title">${title}</h3>
+        <div class="row">${imageBlock}${descBlock}</div>
+      </section>`;
   };
 
-  const locationSections = entries
-    .map((entry) => {
-      const locationsBlock = buildLocationsBlock(entry.locations ?? []);
-      return locationsBlock
-        ? `<section class="product location-summary">
-            <h2 class="title">${escapeHtml(entry.title)}</h2>
-            ${locationsBlock}
-          </section>`
+  type LocationGroup = {
+    name: string;
+    notes: string[];
+    photos: string[];
+    products: ProductDescriptionEntry[];
+  };
+  const locationGroups = new Map<string, LocationGroup>();
+  for (const entry of entries) {
+    for (const location of entry.locations ?? []) {
+      if (!location.name && !location.note && location.photos.length === 0) continue;
+      const key = location.id?.trim() || `name:${location.name.trim().toLocaleLowerCase('sl-SI')}`;
+      const group = locationGroups.get(key) ?? { name: location.name || 'Neimenovana lokacija', notes: [], photos: [], products: [] };
+      if (location.name.trim()) group.name = location.name.trim();
+      if (location.note?.trim() && !group.notes.includes(location.note.trim())) group.notes.push(location.note.trim());
+      for (const photo of location.photos) {
+        if (!group.photos.includes(photo)) group.photos.push(photo);
+      }
+      if (!group.products.includes(entry)) group.products.push(entry);
+      locationGroups.set(key, group);
+    }
+  }
+
+  const locationSections = Array.from(locationGroups.values())
+    .map((location) => {
+      const notes = location.notes.length
+        ? `<div class="location-note">${location.notes.map((note) => escapeHtml(note)).join('<br />')}</div>`
         : '';
+      const photos = location.photos.length
+        ? `<div class="location-photos">${location.photos.map((photo) => `<img src="${photo}" alt="" />`).join('')}</div>`
+        : '';
+      const products = location.products.map(renderProduct).join('');
+      return `<section class="location-section">
+          <div class="location-overview">
+            <h2 class="location-title">${escapeHtml(location.name)}</h2>
+            ${notes}
+            ${photos}
+          </div>
+          ${products ? `<p class="equipment-title">Oprema in izvedba</p>${products}` : ''}
+        </section>`;
     })
-    .filter(Boolean)
     .join('');
 
   const projectPlanSections = entries
@@ -1141,37 +1152,16 @@ export function renderProductDescriptionsHtml(
     .filter(Boolean)
     .join('');
 
-  const content = entries.length
-    ? entries
-        .map((entry) => {
-          const title = escapeHtml(entry.title);
-          const description = entry.description ? escapeHtml(entry.description) : '';
-          const hasImage = !!entry.imageUrl;
-          const hasDesc = !!description;
-          if (!hasImage && !hasDesc) return '';
-          const classes = [
-            'product',
-            hasImage ? 'hasImage' : 'noImage',
-            hasDesc ? 'hasDesc' : 'noDesc',
-          ].join(' ');
-          const imageBlock = hasImage
-            ? `<div class="col image"><img src="${entry.imageUrl}" alt="" /></div>`
-            : '';
-          const descBlock = hasDesc
-            ? `<div class="col desc">${description}</div>`
-            : '';
-          return `<section class="${classes}">
-              <h2 class="title">${title}</h2>
-              <div class="row">
-                ${imageBlock}
-                ${descBlock}
-              </div>
-            </section>`;
-        })
-        .join('') + projectPlanSections + locationSections
-    : `<section class="product">
-        <h2 class="title">Ni produktnih opisov za izbrane postavke.</h2>
-      </section>`;
+  const unassignedEntries = entries.filter((entry) => !entry.projectPlanPhotos?.length && !(entry.locations?.length));
+  const unassignedSections = unassignedEntries.length
+    ? `<section class="unassigned">
+        <h2 class="unassigned-title">Postavke brez določene lokacije</h2>
+        ${unassignedEntries.map(renderProduct).join('')}
+      </section>`
+    : '';
+  const content = locationSections || projectPlanSections || unassignedSections
+    ? locationSections + projectPlanSections + unassignedSections
+    : `<section class="product"><h2 class="title">Ni opisov lokacij za izbrane postavke.</h2></section>`;
 
-  return wrapDocument('Produktni opisi', `<div>${headerHtml}${content}${footerHtml}</div>`, extraStyles);
+  return wrapDocument('Opisi lokacij', `<div>${headerHtml}${content}${footerHtml}</div>`, extraStyles);
 }
