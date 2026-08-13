@@ -525,18 +525,29 @@ export function InvoiceVersionEditor({
               </p>
             ) : null}
           </div>
-          <div className="overflow-x-auto">
-            <Table className="min-w-[1180px]">
+          <div>
+            <Table className="w-full table-fixed">
+              <colgroup>
+                <col style={{ width: canEdit ? "32%" : "35%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "10%" }} />
+                {canEdit && <col style={{ width: "5%" }} />}
+              </colgroup>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[360px] min-w-[360px]">Naziv</TableHead>
-                  <TableHead>Enota</TableHead>
-                  <TableHead className="text-right">Količina</TableHead>
-                  <TableHead className="text-right">Cena</TableHead>
-                  <TableHead className="text-right">DDV %</TableHead>
-                  <TableHead className="text-right">Brez DDV</TableHead>
-                  <TableHead className="text-right">Z DDV</TableHead>
-                  <TableHead>Tip</TableHead>
+                  <TableHead className="px-1">Naziv</TableHead>
+                  <TableHead className="px-1">Enota</TableHead>
+                  <TableHead className="px-1 text-right">Količina</TableHead>
+                  <TableHead className="px-1 text-right">Cena (€)</TableHead>
+                  <TableHead className="px-1 text-right">DDV (%)</TableHead>
+                  <TableHead className="px-1 text-right">Brez DDV (€)</TableHead>
+                  <TableHead className="px-1 text-right">Z DDV (€)</TableHead>
+                  <TableHead className="px-1">Tip</TableHead>
                   {canEdit && <TableHead className="w-12 text-center">Akcije</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -550,26 +561,27 @@ export function InvoiceVersionEditor({
                 )}
                 {items.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell className="w-[360px] min-w-[360px]">
+                    <TableCell className="whitespace-normal px-1">
                       <PriceListProductAutocomplete
                         value={item.name}
                         placeholder="Naziv ali iskanje v ceniku"
-                        inputClassName="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                        inputClassName="min-h-14 rounded-md border border-input bg-background px-2 py-1 text-sm leading-5 shadow-sm"
+                        multiline
                         disabled={!canEdit}
                         onChange={(name) => handleItemChange(item.id, { name, productId: null })}
                         onCustomSelected={() => handleItemChange(item.id, { productId: null })}
                         onProductSelected={(product) => handleProductSelected(item.id, product)}
                       />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="px-1">
                       <Input
                         value={item.unit}
                         onChange={(event) => handleItemChange(item.id, { unit: event.target.value })}
                         readOnly={!canEdit}
-                        className="w-24"
+                        className="h-9 min-w-0 px-1"
                       />
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="px-1 text-right">
                       <Input
                         type="number"
                         value={item.quantity}
@@ -577,34 +589,40 @@ export function InvoiceVersionEditor({
                           handleItemChange(item.id, { quantity: Number(event.target.value) })
                         }
                         readOnly={!canEdit}
-                        className="text-right"
+                        className="h-9 min-w-0 px-1 text-right"
                       />
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Input
-                        type="number"
-                        value={item.unitPrice}
-                        onChange={(event) =>
-                          handleItemChange(item.id, { unitPrice: Number(event.target.value) })
-                        }
-                        readOnly={!canEdit}
-                        className="text-right"
-                      />
+                    <TableCell className="px-1 text-right">
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          value={item.unitPrice}
+                          onChange={(event) =>
+                            handleItemChange(item.id, { unitPrice: Number(event.target.value) })
+                          }
+                          readOnly={!canEdit}
+                          className="h-9 min-w-0 px-1 text-right"
+                        />
+                        <span>€</span>
+                      </div>
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Input
-                        type="number"
-                        value={item.vatPercent}
-                        onChange={(event) =>
-                          handleItemChange(item.id, { vatPercent: Number(event.target.value) })
-                        }
-                        readOnly={!canEdit}
-                        className="text-right"
-                      />
+                    <TableCell className="px-1 text-right">
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          value={item.vatPercent}
+                          onChange={(event) =>
+                            handleItemChange(item.id, { vatPercent: Number(event.target.value) })
+                          }
+                          readOnly={!canEdit}
+                          className="h-9 min-w-0 px-1 text-right"
+                        />
+                        <span>%</span>
+                      </div>
                     </TableCell>
-                    <TableCell className="text-right">{numberFormatter.format(item.totalWithoutVat)}</TableCell>
-                    <TableCell className="text-right">{numberFormatter.format(item.totalWithVat)}</TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-normal px-1 text-right">{formatCurrency(item.totalWithoutVat)}</TableCell>
+                    <TableCell className="whitespace-normal px-1 text-right">{formatCurrency(item.totalWithVat)}</TableCell>
+                    <TableCell className="px-1">
                       {canEdit ? (
                         <Select value={item.type} onValueChange={(value) => handleItemChange(item.id, { type: value as InvoiceItem["type"] })}>
                           <SelectTrigger>
