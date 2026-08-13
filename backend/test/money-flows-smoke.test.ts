@@ -199,6 +199,11 @@ test('AIN-P1-04 smoke: inquiry offer, confirmation, preparation, signature, invo
     assert.equal(invoiceDraftVersion?.fixedDiscountAmount, 50, 'fixed offer discount is copied to the invoice');
     assert.equal(invoiceDraftVersion?.summary.fixedDiscountAmount, 50);
     assert.equal(invoiceDraftVersion?.summary.discountedBase, discountedTotals.baseAfterDiscount);
+    assert.equal(
+      invoiceDraftVersion?.items.find((item) => item.id === workOrder!.items[0].offerItemId)?.productId,
+      workOrder!.items[0].productId,
+      'the price-list product link is preserved on invoice items',
+    );
 
     const completedWorkOrder = await WorkOrderModel.findById(workOrder!._id);
     assert.ok(completedWorkOrder);

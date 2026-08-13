@@ -28,6 +28,8 @@ import { downloadPdf } from "../../../api";
 import { toast } from "sonner";
 import { useProjectMutationRefresh } from "../../core/useProjectMutationRefresh";
 import { InvoiceCommunicationComposeDialog } from "../../communication/InvoiceCommunicationComposeDialog";
+import { PriceListProductAutocomplete } from "../../../components/PriceListProductAutocomplete";
+import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
 
 interface InvoiceVersionEditorProps {
   projectId?: string | null;
@@ -297,6 +299,16 @@ export function InvoiceVersionEditor({
     setDirty(true);
   };
 
+  const handleProductSelected = (itemId: string, product: PriceListSearchItem) => {
+    handleItemChange(itemId, {
+      productId: product.id,
+      name: product.name,
+      unit: product.unit ?? "kos",
+      unitPrice: product.unitPrice,
+      vatPercent: product.vatRate ?? 22,
+    });
+  };
+
   const handleRemoveItem = (itemId: string) => {
     if (!draftVersion || !canEdit) return;
     setDraftVersion({
@@ -519,10 +531,14 @@ export function InvoiceVersionEditor({
                 {items.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell>
-                      <Input
+                      <PriceListProductAutocomplete
                         value={item.name}
-                        onChange={(event) => handleItemChange(item.id, { name: event.target.value })}
-                        readOnly={!canEdit}
+                        placeholder="Naziv ali iskanje v ceniku"
+                        inputClassName="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                        disabled={!canEdit}
+                        onChange={(name) => handleItemChange(item.id, { name, productId: null })}
+                        onCustomSelected={() => handleItemChange(item.id, { productId: null })}
+                        onProductSelected={(product) => handleProductSelected(item.id, product)}
                       />
                     </TableCell>
                     <TableCell>

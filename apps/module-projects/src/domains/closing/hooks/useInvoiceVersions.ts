@@ -7,6 +7,7 @@ export type InvoiceStatus = "draft" | "issued" | "cancelled";
 
 export interface InvoiceItem {
   id: string;
+  productId?: string | null;
   name: string;
   unit: string;
   quantity: number;

@@ -18,6 +18,7 @@ type InvoiceItemType = 'Osnovno' | 'Dodatno' | 'Manj';
 
 interface InvoiceItem {
   id: string;
+  productId?: string | null;
   name: string;
   unit: string;
   quantity: number;
@@ -31,6 +32,7 @@ interface InvoiceItem {
 
 interface InvoiceItemPayload {
   id?: string;
+  productId?: string | null;
   name: string;
   unit: string;
   quantity: number;
@@ -263,6 +265,7 @@ function buildInvoiceItemsFromConfirmedOffer(offer: { items?: OfferLineItem[]; v
     .filter((item) => toNumber(item.quantity, 0) > 0)
     .map((item) => ({
       id: item.id,
+      productId: item.productId ?? null,
       name: sanitizeText(item.name, 'Neimenovana postavka'),
       unit: sanitizeText(item.unit, ''),
       quantity: toNumber(item.quantity, 0),
@@ -365,6 +368,7 @@ async function aggregateClosingItems(project: ProjectDocument): Promise<{
     const vatPercent = offerVatMode ?? (matchedOfferItem ? toNumber(matchedOfferItem.vatRate, 22) : toNumber(matchedProduct?.aaData?.vat, 22));
     invoiceItems.push({
       id: entry.offerItemId ?? entry.productId ?? `${entry.name}:${entry.unit}:${type}`,
+      productId: entry.productId ?? null,
       name: entry.name || 'Neimenovana postavka',
       unit: entry.unit || '',
       quantity: entry.executed,
@@ -736,6 +740,7 @@ function recalculateItems(items: InvoiceItemPayload[], options: RecalculateOptio
 
     return {
       id: item.id ?? new Types.ObjectId().toString(),
+      productId: typeof item.productId === 'string' && item.productId.trim() ? item.productId.trim() : null,
       name: sanitizeText(item.name, 'Neimenovana postavka'),
       unit: sanitizeText(item.unit, ''),
       quantity,
@@ -784,6 +789,7 @@ function recalculateItems(items: InvoiceItemPayload[], options: RecalculateOptio
 
     return {
       id: item.id,
+      productId: item.productId,
       name: item.name,
       unit: item.unit,
       quantity: item.quantity,
