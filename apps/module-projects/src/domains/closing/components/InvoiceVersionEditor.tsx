@@ -116,6 +116,9 @@ function calculateSummary(items: InvoiceItem[]): InvoiceSummary {
   const vatAmount = round(totalWithVat - baseWithoutVat);
   return {
     baseWithoutVat,
+    perItemDiscountAmount: 0,
+    globalDiscountAmount: 0,
+    fixedDiscountAmount: 0,
     discountedBase: baseWithoutVat,
     vatAmount,
     totalWithVat,
@@ -507,6 +510,24 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
               <span className="text-muted-foreground">Osnova brez DDV</span>
               <span>{formatCurrency(summary.baseWithoutVat)}</span>
             </div>
+            {(summary.perItemDiscountAmount ?? 0) > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Popust po postavkah</span>
+                <span>-{formatCurrency(summary.perItemDiscountAmount ?? 0)}</span>
+              </div>
+            )}
+            {(summary.globalDiscountAmount ?? 0) > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Globalni popust ({draftVersion.discountPercent ?? 0}%)</span>
+                <span>-{formatCurrency(summary.globalDiscountAmount ?? 0)}</span>
+              </div>
+            )}
+            {(summary.fixedDiscountAmount ?? draftVersion.fixedDiscountAmount ?? 0) > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Fiksni popust</span>
+                <span>-{formatCurrency(summary.fixedDiscountAmount ?? draftVersion.fixedDiscountAmount ?? 0)}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Osnova po popustih</span>
               <span>{formatCurrency(summary.discountedBase)}</span>

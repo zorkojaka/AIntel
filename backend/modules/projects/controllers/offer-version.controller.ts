@@ -1029,6 +1029,7 @@ function serializeOffer(offer: OfferVersion) {
     baseWithoutVat: offer.baseWithoutVat ?? 0,
     perItemDiscountAmount: offer.perItemDiscountAmount ?? 0,
     globalDiscountAmount: offer.globalDiscountAmount ?? offer.discountAmount ?? 0,
+    fixedDiscountAmount: offer.fixedDiscountAmount ?? 0,
     baseAfterDiscount: offer.baseAfterDiscount ?? offer.totalNetAfterDiscount ?? 0,
     vatAmount: offer.vatAmount ?? offer.totalVat ?? 0,
     totalWithVat: offer.totalWithVat ?? offer.totalGrossAfterDiscount ?? offer.totalGross ?? 0,
@@ -1062,6 +1063,7 @@ function serializeTemplate(template: OfferTemplate) {
     baseWithoutVat: template.baseWithoutVat ?? 0,
     perItemDiscountAmount: template.perItemDiscountAmount ?? 0,
     globalDiscountAmount: template.globalDiscountAmount ?? template.discountAmount ?? 0,
+    fixedDiscountAmount: template.fixedDiscountAmount ?? 0,
     baseAfterDiscount: template.baseAfterDiscount ?? template.totalNetAfterDiscount ?? 0,
     vatAmount: template.vatAmount ?? template.totalVat ?? 0,
     totalWithVat: template.totalWithVat ?? template.totalGrossAfterDiscount ?? template.totalGross ?? 0,
@@ -1107,6 +1109,7 @@ function buildOfferSnapshotPayload(input: {
     baseWithoutVat: input.totals.baseWithoutVat ?? input.totals.totalNet ?? 0,
     perItemDiscountAmount: input.totals.perItemDiscountAmount ?? 0,
     globalDiscountAmount: input.totals.globalDiscountAmount ?? 0,
+    fixedDiscountAmount: input.totals.fixedDiscountAmount ?? 0,
     baseAfterDiscount: input.totals.baseAfterDiscount ?? input.totals.totalNetAfterDiscount ?? 0,
     vatAmount: input.totals.vatAmount ?? input.totals.totalVat ?? 0,
     totalWithVat: input.totals.totalWithVat ?? input.totals.totalGrossAfterDiscount ?? input.totals.totalGross ?? 0,
@@ -1184,6 +1187,7 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
       usePerItemDiscount: body?.usePerItemDiscount ?? false,
       useGlobalDiscount: body?.useGlobalDiscount ?? true,
       globalDiscountPercent: body?.globalDiscountPercent ?? body?.discountPercent ?? 0,
+      fixedDiscountAmount: body?.fixedDiscountAmount ?? 0,
       vatMode: body?.vatMode ?? 22,
     });
 
@@ -1224,6 +1228,7 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
       baseWithoutVat: totals.baseWithoutVat ?? totals.totalNet ?? 0,
       perItemDiscountAmount: totals.perItemDiscountAmount ?? 0,
       globalDiscountAmount: totals.globalDiscountAmount ?? 0,
+      fixedDiscountAmount: totals.fixedDiscountAmount ?? 0,
       baseAfterDiscount: totals.baseAfterDiscount ?? totals.totalNetAfterDiscount ?? 0,
       vatAmount: totals.vatAmount ?? totals.totalVat ?? 0,
       totalWithVat: totals.totalWithVat ?? totals.totalGrossAfterDiscount ?? totals.totalGross ?? 0,
@@ -1322,6 +1327,7 @@ export async function saveOfferTemplate(req: Request, res: Response, next: NextF
       usePerItemDiscount: body?.usePerItemDiscount ?? false,
       useGlobalDiscount: body?.useGlobalDiscount ?? true,
       globalDiscountPercent: body?.globalDiscountPercent ?? body?.discountPercent ?? 0,
+      fixedDiscountAmount: body?.fixedDiscountAmount ?? 0,
       vatMode: body?.vatMode ?? 22,
     });
     const normalizedTitle = normalizeText(body?.title);
@@ -1407,6 +1413,7 @@ export async function renameOfferTemplate(req: Request, res: Response, next: Nex
       usePerItemDiscount: nextUsePerItemDiscount,
       useGlobalDiscount: nextUseGlobalDiscount,
       globalDiscountPercent: nextGlobalDiscountPercent,
+      fixedDiscountAmount: req.body?.fixedDiscountAmount ?? template.fixedDiscountAmount ?? 0,
       vatMode: nextVatMode,
     });
 
@@ -1423,6 +1430,7 @@ export async function renameOfferTemplate(req: Request, res: Response, next: Nex
     template.baseWithoutVat = totals.baseWithoutVat ?? totals.totalNet ?? 0;
     template.perItemDiscountAmount = totals.perItemDiscountAmount ?? 0;
     template.globalDiscountAmount = totals.globalDiscountAmount ?? 0;
+    template.fixedDiscountAmount = totals.fixedDiscountAmount ?? 0;
     template.baseAfterDiscount = totals.baseAfterDiscount ?? totals.totalNetAfterDiscount ?? 0;
     template.vatAmount = totals.vatAmount ?? totals.totalVat ?? 0;
     template.totalWithVat = totals.totalWithVat ?? totals.totalGrossAfterDiscount ?? totals.totalGross ?? 0;
@@ -1477,6 +1485,7 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
       usePerItemDiscount: body?.usePerItemDiscount ?? false,
       useGlobalDiscount: body?.useGlobalDiscount ?? true,
       globalDiscountPercent: body?.globalDiscountPercent ?? body?.discountPercent ?? 0,
+      fixedDiscountAmount: body?.fixedDiscountAmount ?? 0,
       vatMode: body?.vatMode ?? 22,
     });
 
@@ -1511,6 +1520,7 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
     existing.baseWithoutVat = totals.baseWithoutVat ?? existing.baseWithoutVat ?? 0;
     existing.perItemDiscountAmount = totals.perItemDiscountAmount ?? existing.perItemDiscountAmount ?? 0;
     existing.globalDiscountAmount = totals.globalDiscountAmount ?? existing.globalDiscountAmount ?? 0;
+    existing.fixedDiscountAmount = totals.fixedDiscountAmount ?? 0;
     existing.baseAfterDiscount = totals.baseAfterDiscount ?? existing.baseAfterDiscount ?? 0;
     existing.vatAmount = totals.vatAmount ?? existing.vatAmount ?? 0;
     existing.totalWithVat = totals.totalWithVat ?? existing.totalWithVat ?? existing.totalGrossAfterDiscount ?? 0;

@@ -13,6 +13,7 @@ import { WorkOrderModel } from '../modules/projects/schemas/work-order';
 import * as logisticsController from '../modules/projects/controllers/logistics.controller';
 import { saveSignature } from '../modules/projects/controllers/project.controller';
 import { createInvoiceFromClosing, issueInvoiceVersion } from '../modules/projects/services/invoice.service';
+import { calculateOfferTotals } from '../modules/projects/services/offer-totals.service';
 import { WebInquirySettingsModel } from '../modules/web-inquiries/web-inquiry-settings.model';
 import { processWebInquiry } from '../modules/web-inquiries/web-inquiry.service';
 
@@ -131,6 +132,23 @@ test('AIN-P1-04 smoke: inquiry offer, confirmation, preparation, signature, invo
     const offerId = String(inquiryResult.inquiry.offerId);
     const offer = await OfferVersionModel.findById(offerId).lean();
     assert.equal(offer?.items.length, 2, 'offer contains inquiry products');
+    const discountedTotals = calculateOfferTotals({
+      items: offer!.items,
+      usePerItemDiscount: false,
+      useGlobalDiscount: false,
+      globalDiscountPercent: 0,
+      fixedDiscountAmount: 50,
+      vatMode: 22,
+    });
+    await OfferVersionModel.updateOne(
+      { _id: offerId },
+      {
+        $set: {
+          ...discountedTotals,
+          fixedDiscountAmount: discountedTotals.fixedDiscountAmount,
+        },
+      },
+    );
 
     const confirmResult = await callController(logisticsController.confirmOffer, {
       params: { projectId, offerId },
@@ -177,6 +195,10 @@ test('AIN-P1-04 smoke: inquiry offer, confirmation, preparation, signature, invo
     const invoiceDraft = await createInvoiceFromClosing(projectId);
     const invoiceVersionId = invoiceDraft.activeVersionId;
     assert.ok(invoiceVersionId, 'invoice draft was created');
+    const invoiceDraftVersion = invoiceDraft.versions.find((version) => version._id === invoiceVersionId);
+    assert.equal(invoiceDraftVersion?.fixedDiscountAmount, 50, 'fixed offer discount is copied to the invoice');
+    assert.equal(invoiceDraftVersion?.summary.fixedDiscountAmount, 50);
+    assert.equal(invoiceDraftVersion?.summary.discountedBase, discountedTotals.baseAfterDiscount);
 
     const issued = await issueInvoiceVersion(projectId, invoiceVersionId!);
     const issuedVersion = issued.versions.find((version) => version._id === invoiceVersionId);

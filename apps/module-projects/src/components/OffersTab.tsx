@@ -97,6 +97,7 @@ export function OffersTab({
   const [currentOffer, setCurrentOffer] = useState<OfferVersion | null>(null);
 
   const [globalDiscountPercent, setGlobalDiscountPercent] = useState<number>(0);
+  const [fixedDiscountAmount, setFixedDiscountAmount] = useState<number>(0);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [totalNetAfterDiscount, setTotalNetAfterDiscount] = useState<number>(0);
   const [totalGrossAfterDiscount, setTotalGrossAfterDiscount] = useState<number>(0);
@@ -323,6 +324,7 @@ export function OffersTab({
     setComment("");
     setItems(ensureTrailingBlank([]));
     setGlobalDiscountPercent(0);
+    setFixedDiscountAmount(0);
     setUseGlobalDiscount(false);
     setUsePerItemDiscount(false);
     setVatMode(22);
@@ -344,6 +346,7 @@ export function OffersTab({
         usePerItemDiscount: false,
         vatMode: 22,
         globalDiscountPercent: 0,
+        fixedDiscountAmount: 0,
       })
     );
     setLinkedServiceSuggestions({});
@@ -408,6 +411,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
 
       const gPercent = offer.globalDiscountPercent ?? offer.discountPercent ?? 0;
       setGlobalDiscountPercent(gPercent);
+      setFixedDiscountAmount(offer.fixedDiscountAmount ?? 0);
 
       setBaseWithoutVat(offer.baseWithoutVat ?? offer.totalNet ?? 0);
       setPerItemDiscountAmount(offer.perItemDiscountAmount ?? 0);
@@ -449,6 +453,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
           usePerItemDiscount: offer.usePerItemDiscount ?? false,
           vatMode: ((offer.vatMode as 0 | 9.5 | 22) ?? 22),
           globalDiscountPercent: gPercent,
+          fixedDiscountAmount: offer.fixedDiscountAmount ?? 0,
         })
       );
     } catch (error) {
@@ -719,9 +724,10 @@ const loadOfferById = useCallback(async (offerId: string) => {
         usePerItemDiscount,
         useGlobalDiscount,
         globalDiscountPercent,
+        fixedDiscountAmount,
         vatMode,
       }),
-    [validItems, usePerItemDiscount, useGlobalDiscount, globalDiscountPercent, vatMode]
+    [validItems, usePerItemDiscount, useGlobalDiscount, globalDiscountPercent, fixedDiscountAmount, vatMode]
   );
 
   useEffect(() => {
@@ -1039,6 +1045,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
       // kompatibilnost s starimi polji
       discountPercent: effectiveGlobalPercent,
       globalDiscountPercent: effectiveGlobalPercent,
+      fixedDiscountAmount,
       useGlobalDiscount,
       usePerItemDiscount,
       vatMode,
@@ -1056,8 +1063,9 @@ const loadOfferById = useCallback(async (offerId: string) => {
         usePerItemDiscount,
         vatMode,
         globalDiscountPercent,
+        fixedDiscountAmount,
       }),
-    [title, paymentTerms, comment, items, useGlobalDiscount, usePerItemDiscount, vatMode, globalDiscountPercent]
+    [title, paymentTerms, comment, items, useGlobalDiscount, usePerItemDiscount, vatMode, globalDiscountPercent, fixedDiscountAmount]
   );
   const isDirty = currentOfferSnapshot !== lastSavedSnapshot;
 
@@ -1447,6 +1455,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
         usePerItemDiscount: boolean;
         vatMode: 0 | 9.5 | 22;
         globalDiscountPercent?: number;
+        fixedDiscountAmount?: number;
         discountPercent: number;
         items: OfferLineItem[];
       }>(response, "Template podatkov ni bilo mogoče prenesti.");
@@ -1454,6 +1463,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
       setPaymentTerms(template.paymentTerms ?? "");
       setComment(template.comment ?? "");
       setVatMode(template.vatMode ?? 22);
+      setFixedDiscountAmount(template.fixedDiscountAmount ?? 0);
       if (template.applyGlobalDiscount) {
         setUseGlobalDiscount(template.useGlobalDiscount ?? false);
         setGlobalDiscountPercent(template.globalDiscountPercent ?? template.discountPercent ?? 0);
@@ -1971,6 +1981,20 @@ const loadOfferById = useCallback(async (offerId: string) => {
                 />
                 <span className="text-sm">Popust po produktih</span>
               </label>
+
+              <label className="flex flex-wrap items-center gap-2">
+                <span className="text-sm">Fiksni popust</span>
+                <Input
+                  type="number"
+                  className="w-28 bg-background text-right"
+                  inputMode="decimal"
+                  min={0}
+                  step="0.01"
+                  value={fixedDiscountAmount}
+                  onChange={(event) => setFixedDiscountAmount(Math.max(0, Number(event.target.value) || 0))}
+                />
+                <span className="text-muted-foreground">€</span>
+              </label>
             </div>
           </div>
         </div>
@@ -2242,6 +2266,17 @@ const loadOfferById = useCallback(async (offerId: string) => {
                 </TableCell>
                 <TableCell className={totalFooterColumnClassName}>
                   -{formatCurrency(totals.globalDiscountAmount ?? 0)}
+                </TableCell>
+              </TableRow>
+            )}
+
+            {(totals.fixedDiscountAmount ?? 0) > 0 && (
+              <TableRow>
+                <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
+                  Fiksni popust
+                </TableCell>
+                <TableCell className={totalFooterColumnClassName}>
+                  -{formatCurrency(totals.fixedDiscountAmount ?? 0)}
                 </TableCell>
               </TableRow>
             )}
