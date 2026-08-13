@@ -5,6 +5,11 @@
   min-height: 100vh;
   background: var(--color-surface);
   color: var(--color-text);
+  transition: grid-template-columns 0.2s ease;
+}
+
+.core-shell[data-sidebar-collapsed='true'] {
+  grid-template-columns: 72px minmax(0, 1fr);
 }
 
 .core-shell__topbar {
@@ -93,6 +98,9 @@
   padding: var(--space-lg);
   background: var(--color-surface);
   z-index: 20;
+  display: flex;
+  flex-direction: column;
+  transition: padding 0.2s ease;
 }
 
 .core-shell__logo {
@@ -113,6 +121,7 @@
   list-style: none;
   padding: 0;
   margin: var(--space-md) 0 0 0;
+  flex: 1;
 }
 
 .core-shell__sidebar li {
@@ -166,10 +175,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
+}
+
+.core-shell__sidebar-footer {
+  margin-top: auto;
+  display: grid;
+  gap: var(--space-sm);
 }
 
 .core-shell__logout {
-  margin-top: var(--space-lg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -182,6 +197,47 @@
   color: var(--color-text);
   cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.core-shell__collapse-toggle {
+  border: 1px solid var(--color-border) !important;
+  background: color-mix(in srgb, var(--color-surface) 88%, var(--color-border) 12%) !important;
+}
+
+.core-shell__collapse-toggle:hover {
+  border-color: var(--color-primary) !important;
+}
+
+@media (min-width: 768px) {
+  .core-shell__sidebar[data-collapsed='true'] {
+    padding: var(--space-md) 10px;
+  }
+
+  .core-shell__sidebar[data-collapsed='true'] .core-shell__logo {
+    width: 36px;
+    height: 36px;
+    margin: 0 auto;
+    object-fit: contain;
+  }
+
+  .core-shell__sidebar[data-collapsed='true'] > h2,
+  .core-shell__sidebar[data-collapsed='true'] .core-shell__user,
+  .core-shell__sidebar[data-collapsed='true'] .core-shell__nav-label {
+    display: none;
+  }
+
+  .core-shell__sidebar[data-collapsed='true'] button {
+    position: relative;
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .core-shell__sidebar[data-collapsed='true'] .core-shell__nav-badge {
+    position: absolute;
+    top: 3px;
+    right: 2px;
+    margin-left: 0;
+  }
 }
 
 .core-shell__logout:hover {
@@ -197,6 +253,10 @@
   .core-shell {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .core-shell[data-sidebar-collapsed='true'] {
+    grid-template-columns: 1fr;
   }
 
   .core-shell__topbar {
@@ -244,6 +304,11 @@
     padding: 0;
     background: rgba(0, 0, 0, 0.28);
     z-index: 40;
+  }
+
+
+  .core-shell__collapse-toggle {
+    display: none !important;
   }
 }
 

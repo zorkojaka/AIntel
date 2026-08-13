@@ -1,5 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, FolderKanban, LayoutGrid, List, ListChecks, Mail, Menu, Settings, User, Users, Wallet, Wrench } from 'lucide-react';
+import {
+  ArrowLeft,
+  FolderKanban,
+  LayoutGrid,
+  List,
+  ListChecks,
+  LogOut,
+  Mail,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+  User,
+  Users,
+  Wallet,
+  Wrench,
+} from 'lucide-react';
 import {
   MOBILE_TOPBAR_CLEAR_EVENT,
   MOBILE_TOPBAR_SET_EVENT,
@@ -48,6 +64,8 @@ const iconMap: Record<string, React.ReactNode> = {
   settings: <Settings size={16} />,
 };
 
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'aintel.sidebar.collapsed';
+
 const CoreLayout: React.FC<CoreLayoutProps> = ({
   children,
   modules,
@@ -58,6 +76,14 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
   userInfo,
 }) => {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
   // AIN-P1-09: badge z odprtimi opravili ob navigacijski postavki "Opravila".
   const hasTasksModule = modules.some((module) => module.id === 'tasks');
   const [taskBadge, setTaskBadge] = useState(0);
@@ -87,6 +113,14 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
   useEffect(() => {
     setMobileTopbarConfig(null);
   }, [activeModule]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(isSidebarCollapsed));
+    } catch {
+      // Meni še vedno deluje tudi, kadar brskalnik blokira lokalno shrambo.
+    }
+  }, [isSidebarCollapsed]);
 
   useEffect(() => {
     const handleSet = (event: Event) => {
@@ -135,7 +169,7 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
   );
 
   return (
-    <div className="core-shell">
+    <div className="core-shell" data-sidebar-collapsed={isSidebarCollapsed}>
       <header className="core-shell__topbar">
         {mobileTopbarLeadingAction?.kind === 'back' ? (
           <button
@@ -163,7 +197,12 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
           {mobileTopbarActions.map(renderMobileAction)}
         </div>
       </header>
-      <aside id="core-shell-sidebar" className="core-shell__sidebar" data-open={isMobileSidebarOpen}>
+      <aside
+        id="core-shell-sidebar"
+        className="core-shell__sidebar"
+        data-open={isMobileSidebarOpen}
+        data-collapsed={isSidebarCollapsed}
+      >
       {logoUrl ? <img src={logoUrl} alt="Logo podjetja" className="core-shell__logo" /> : <h2>AIntel</h2>}
       <ul>
         {modules.map((item) => {
@@ -185,10 +224,12 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
                 <button
                   type="button"
                   data-active={item.id === activeModule}
+                  aria-label={label}
+                  title={isSidebarCollapsed ? label : undefined}
                   onClick={() => onModuleChange(item.id)}
                 >
                   {icon ? <span className="core-shell__nav-icon">{icon}</span> : null}
-                  <span>{label}</span>
+                  <span className="core-shell__nav-label">{label}</span>
                   {item.id === 'tasks' && taskBadge > 0 ? (
                     <span className="core-shell__nav-badge">{taskBadge}</span>
                   ) : null}
@@ -198,11 +239,31 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
           );
         })}
       </ul>
-      {onLogout ? (
-        <button type="button" className="core-shell__logout" onClick={onLogout}>
-          Odjava
+      <div className="core-shell__sidebar-footer">
+        {onLogout ? (
+          <button
+            type="button"
+            className="core-shell__logout"
+            onClick={onLogout}
+            aria-label="Odjava"
+            title={isSidebarCollapsed ? 'Odjava' : undefined}
+          >
+            <LogOut className="core-shell__nav-icon" size={16} />
+            <span className="core-shell__nav-label">Odjava</span>
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="core-shell__collapse-toggle"
+          onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+          aria-label={isSidebarCollapsed ? 'Razširi meni' : 'Skrči meni'}
+          aria-expanded={!isSidebarCollapsed}
+          title={isSidebarCollapsed ? 'Razširi meni' : 'Skrči meni'}
+        >
+          {isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          <span className="core-shell__nav-label">{isSidebarCollapsed ? 'Razširi meni' : 'Skrči meni'}</span>
         </button>
-      ) : null}
+      </div>
       </aside>
       {isMobileSidebarOpen ? <button className="core-shell__backdrop" type="button" onClick={() => setIsMobileSidebarOpen(false)} /> : null}
       <main className="core-shell__content">{children}</main>
