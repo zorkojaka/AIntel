@@ -600,6 +600,7 @@ export async function issueInvoiceVersion(projectId: string, versionId: string, 
         issuedAt: version.issuedAt,
         items: version.items.map((item) => ({
           id: item.id,
+          productId: item.productId ?? null,
           name: item.name,
           unit: item.unit,
           quantity: item.quantity,

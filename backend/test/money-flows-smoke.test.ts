@@ -12,7 +12,12 @@ import { ProjectModel } from '../modules/projects/schemas/project';
 import { WorkOrderModel } from '../modules/projects/schemas/work-order';
 import * as logisticsController from '../modules/projects/controllers/logistics.controller';
 import { saveSignature } from '../modules/projects/controllers/project.controller';
-import { createInvoiceFromClosing, issueInvoiceVersion } from '../modules/projects/services/invoice.service';
+import {
+  cloneInvoiceVersion,
+  createInvoiceFromClosing,
+  issueInvoiceVersion,
+  refreshDraftInvoiceFromClosing,
+} from '../modules/projects/services/invoice.service';
 import { calculateOfferTotals } from '../modules/projects/services/offer-totals.service';
 import { WebInquirySettingsModel } from '../modules/web-inquiries/web-inquiry-settings.model';
 import { processWebInquiry } from '../modules/web-inquiries/web-inquiry.service';
@@ -237,6 +242,27 @@ test('AIN-P1-04 smoke: inquiry offer, confirmation, preparation, signature, invo
     assert.ok(snapshot, 'invoice issue created a finance snapshot');
     assert.equal(snapshot?.invoiceVersionId, invoiceVersionId);
     assert.equal(snapshot?.invoiceNumber, issuedVersion?.invoiceNumber);
+
+    completedWorkOrder!.items[0].executedQuantity = 3;
+    await completedWorkOrder!.save();
+    const unchangedIssued = await refreshDraftInvoiceFromClosing(projectId);
+    assert.equal(
+      unchangedIssued.versions.find((version) => version._id === invoiceVersionId)?.items
+        .find((item) => item.id === completedWorkOrder!.items[0].offerItemId)?.quantity,
+      2,
+      'an issued invoice is not changed by later work-order corrections',
+    );
+
+    const correction = await cloneInvoiceVersion(projectId, invoiceVersionId!);
+    const correctionId = correction.activeVersionId;
+    assert.ok(correctionId);
+    const refreshedCorrection = await createInvoiceFromClosing(projectId);
+    assert.equal(
+      refreshedCorrection.versions.find((version) => version._id === correctionId)?.items
+        .find((item) => item.id === completedWorkOrder!.items[0].offerItemId)?.quantity,
+      3,
+      'a correction draft follows the current work-order quantity',
+    );
   } finally {
     await mongoose.disconnect();
     await mongo.stop();
