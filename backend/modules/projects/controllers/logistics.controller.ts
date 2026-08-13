@@ -31,7 +31,7 @@ import {
 } from '../services/work-order-confirmation.service';
 import { canEditPreparation } from '../../../../shared/utils/preparationAccess';
 import { getSettings } from '../../settings/settings.service';
-import { createInvoiceFromClosing } from '../services/invoice.service';
+import { createInvoiceFromClosing, refreshDraftInvoiceFromClosing } from '../services/invoice.service';
 import {
   buildActorDisplayName,
   recordOfferConfirmedCommunicationEvent,
@@ -2649,6 +2649,8 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       });
       await project.save();
     }
+  } else if (nextWorkOrderStatus === 'completed' && Array.isArray(payload.items)) {
+    await refreshDraftInvoiceFromClosing(projectId);
   }
 
   if (normalizedUpdated && Array.isArray(payload.items)) {

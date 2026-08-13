@@ -200,6 +200,30 @@ test('AIN-P1-04 smoke: inquiry offer, confirmation, preparation, signature, invo
     assert.equal(invoiceDraftVersion?.summary.fixedDiscountAmount, 50);
     assert.equal(invoiceDraftVersion?.summary.discountedBase, discountedTotals.baseAfterDiscount);
 
+    const completedWorkOrder = await WorkOrderModel.findById(workOrder!._id);
+    assert.ok(completedWorkOrder);
+    completedWorkOrder!.items[0].executedQuantity = 2;
+    completedWorkOrder!.items.push({
+      id: 'extra-after-completion',
+      productId: null,
+      name: 'Dodatna postavka po izvedbi',
+      quantity: 1,
+      unit: 'kos',
+      offeredQuantity: 0,
+      plannedQuantity: 1,
+      executedQuantity: 1,
+      isExtra: true,
+    });
+    await completedWorkOrder!.save();
+
+    const refreshedDraft = await createInvoiceFromClosing(projectId);
+    assert.equal(refreshedDraft.activeVersionId, invoiceVersionId, 'the existing draft is refreshed instead of duplicated');
+    const refreshedDraftVersion = refreshedDraft.versions.find((version) => version._id === invoiceVersionId);
+    assert.equal(refreshedDraftVersion?.items.find((item) => item.id === completedWorkOrder!.items[0].offerItemId)?.quantity, 2);
+    const refreshedExtra = refreshedDraftVersion?.items.find((item) => item.name === 'Dodatna postavka po izvedbi');
+    assert.equal(refreshedExtra?.quantity, 1);
+    assert.equal(refreshedExtra?.type, 'Dodatno');
+
     const issued = await issueInvoiceVersion(projectId, invoiceVersionId!);
     const issuedVersion = issued.versions.find((version) => version._id === invoiceVersionId);
     assert.equal(issuedVersion?.status, 'issued');

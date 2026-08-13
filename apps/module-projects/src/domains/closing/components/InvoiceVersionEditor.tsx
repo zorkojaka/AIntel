@@ -34,6 +34,7 @@ interface InvoiceVersionEditorProps {
   customerName?: string;
   customerEmail?: string;
   projectName?: string;
+  sourceRevision?: string;
 }
 
 const TYPE_OPTIONS: InvoiceItem["type"][] = ["Osnovno", "Dodatno", "Manj"];
@@ -207,7 +208,13 @@ function filenameSafe(value: string) {
   return value.trim().replace(/[^\w.-]+/g, "-").replace(/-+/g, "-");
 }
 
-export function InvoiceVersionEditor({ projectId, customerName = "", customerEmail = "", projectName = "" }: InvoiceVersionEditorProps) {
+export function InvoiceVersionEditor({
+  projectId,
+  customerName = "",
+  customerEmail = "",
+  projectName = "",
+  sourceRevision = "",
+}: InvoiceVersionEditorProps) {
   const {
     versions,
     activeVersion,
@@ -235,6 +242,11 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
     setInvoiceNumberDraft(activeVersion?.invoiceNumber ?? "");
     setDirty(false);
   }, [activeVersion]);
+
+  useEffect(() => {
+    if (!sourceRevision || dirty) return;
+    void refresh();
+  }, [sourceRevision, dirty, refresh]);
 
   useEffect(() => {
     let cancelled = false;

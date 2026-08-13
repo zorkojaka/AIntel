@@ -422,10 +422,22 @@ export async function getNextInvoiceNumber(projectId: string) {
 export async function createInvoiceFromClosing(projectId: string): Promise<InvoiceListResponse> {
   const project = await findProjectOrFail(projectId);
   const existingDraft = findDraftVersion(project);
+  const source = await aggregateClosingItems(project);
   if (existingDraft) {
+    const { items, summary } = recalculateItems(source.items, {
+      discountPercent: toNumber(existingDraft.discountPercent, source.discountPercent),
+      fixedDiscountAmount: toNumber(existingDraft.fixedDiscountAmount, source.fixedDiscountAmount),
+      useGlobalDiscount: existingDraft.useGlobalDiscount ?? source.useGlobalDiscount,
+      usePerItemDiscount: existingDraft.usePerItemDiscount ?? source.usePerItemDiscount,
+      vatMode: source.vatMode,
+    });
+    existingDraft.items = items;
+    existingDraft.summary = summary;
+    existingDraft.fixedDiscountAmount = summary.fixedDiscountAmount;
+    markInvoiceVersionsModified(project);
+    await project.save();
     return buildInvoiceResponse(project, { activeVersionId: existingDraft._id, updatedVersionId: existingDraft._id });
   }
-  const source = await aggregateClosingItems(project);
   const { items, summary } = recalculateItems(source.items, {
     discountPercent: source.discountPercent,
     fixedDiscountAmount: source.fixedDiscountAmount,
@@ -452,6 +464,15 @@ export async function createInvoiceFromClosing(projectId: string): Promise<Invoi
   markInvoiceVersionsModified(project);
   await project.save();
   return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id });
+}
+
+export async function refreshDraftInvoiceFromClosing(projectId: string): Promise<InvoiceListResponse> {
+  const project = await findProjectOrFail(projectId);
+  const existingDraft = findDraftVersion(project);
+  if (!existingDraft) {
+    return serializeResponse(project);
+  }
+  return createInvoiceFromClosing(projectId);
 }
 
 export async function updateInvoiceVersion(
