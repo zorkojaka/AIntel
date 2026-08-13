@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderProductDescriptionsHtml } from '../modules/projects/services/document-renderers';
+import { buildLocationPhotoFilters } from '../modules/projects/services/offer-description-pdf.service';
 
 test('description PDF presents products first and only assigns their names to locations', () => {
   const html = renderProductDescriptionsHtml([
@@ -38,4 +39,22 @@ test('description PDF still presents products without a location', () => {
   assert.match(html, /Napajalnik/);
   assert.match(html, /Opis napajalnika/);
   assert.doesNotMatch(html, /class="locations-heading"/);
+});
+
+test('location photos use the same location key from requirements and offer steps', () => {
+  const requirementItemId = 'zahteva-location:req-1:sys-1:loc-1';
+  const offerLocationId = 'project-location-offer-1';
+  const [filter] = buildLocationPhotoFilters('project-object-id', [requirementItemId, offerLocationId, requirementItemId]);
+
+  assert.deepEqual((filter as any).phase.$in, ['requirements', 'offer', 'preparation']);
+  assert.deepEqual((filter as any).itemId.$in, [requirementItemId, offerLocationId]);
+  assert.equal((filter as any).unitIndex, undefined);
+});
+
+test('legacy offer location photos still fall back to offer item and unit index', () => {
+  const [filter] = buildLocationPhotoFilters('project-object-id', [], { itemId: 'offer-item-1', unitIndex: 2 });
+
+  assert.deepEqual((filter as any).phase.$in, ['requirements', 'offer', 'preparation']);
+  assert.equal((filter as any).itemId, 'offer-item-1');
+  assert.equal((filter as any).unitIndex, 2);
 });
