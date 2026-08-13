@@ -1798,18 +1798,6 @@ const loadOfferById = useCallback(async (offerId: string) => {
     <Card className="p-4 space-y-4">
       {/* VERZIJE + DDV + POPUSTI */}
       <div className="mb-4 border-b pb-4">
-        <OfferVersionSelector
-          versions={versions}
-          selectedOfferId={selectedOfferId}
-          formatCurrency={formatCurrency}
-          onChangeVersion={handleChangeVersion}
-          onCreateNewVersion={handleCreateNewVersion}
-          onCloneVersion={handleCloneVersion}
-          onDeleteVersion={handleDeleteVersion}
-        />
-
-        <hr className="my-4 border-border" />
-
         <OfferTemplatePicker
           templates={templates}
           selectedTemplate={selectedTemplate}
@@ -1826,6 +1814,18 @@ const loadOfferById = useCallback(async (offerId: string) => {
           onDeleteTemplate={openDeleteTemplateDialogForItem}
           onCreateTemplate={openCreateTemplateDialog}
           onApplyTemplate={handleApplyTemplate}
+        />
+
+        <hr className="my-4 border-border" />
+
+        <OfferVersionSelector
+          versions={versions}
+          selectedOfferId={selectedOfferId}
+          formatCurrency={formatCurrency}
+          onChangeVersion={handleChangeVersion}
+          onCreateNewVersion={handleCreateNewVersion}
+          onCloneVersion={handleCloneVersion}
+          onDeleteVersion={handleDeleteVersion}
         />
 
         <div className="hidden mt-3 flex-wrap items-center justify-between gap-3 text-sm">
