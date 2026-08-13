@@ -702,7 +702,27 @@ export function InvoiceVersionEditor({
             <div className="flex items-center justify-between gap-3 pt-1">
               <span className="text-muted-foreground">Že plačano</span>
               {canEdit ? (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    disabled={summary.totalWithVat <= 0}
+                    onClick={() => handlePaidAmountChange(String(round(summary.totalWithVat * 0.5)))}
+                  >
+                    50 %
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    disabled={summary.totalWithVat <= 0}
+                    onClick={() => handlePaidAmountChange(String(round(summary.totalWithVat)))}
+                  >
+                    V celoti
+                  </Button>
                   <Input
                     type="number"
                     min={0}
