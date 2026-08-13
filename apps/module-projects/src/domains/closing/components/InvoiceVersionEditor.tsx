@@ -719,10 +719,12 @@ export function InvoiceVersionEditor({
                 <span>{formatCurrency(paidAmount)}</span>
               )}
             </div>
-            <div className="flex items-center justify-between border-t border-border pt-2 font-semibold">
-              <span>Za plačilo preostane</span>
-              <span>{formatCurrency(remainingAmount)}</span>
-            </div>
+            {paidAmount > 0 && (
+              <div className="flex items-center justify-between border-t border-border pt-2 font-semibold">
+                <span>Za plačilo preostane</span>
+                <span>{formatCurrency(remainingAmount)}</span>
+              </div>
+            )}
             {!paidAmountIsValid && (
               <p className="m-0 text-right text-xs text-destructive">
                 Že plačani znesek ne sme biti višji od skupnega zneska računa.

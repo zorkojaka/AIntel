@@ -645,8 +645,12 @@ export function renderInvoicePdf(context: DocumentPreviewContext) {
       : []),
     { label: 'DDV', value: totals.vat ?? 0 },
     { label: 'Skupaj z DDV', value: totals.total ?? totals.subtotal ?? 0 },
-    { label: 'Že plačano', value: totals.paid ?? 0 },
-    { label: 'Za plačilo preostane', value: totals.remaining ?? totals.total ?? totals.subtotal ?? 0 },
+    ...((totals.paid ?? 0) > 0
+      ? [
+          { label: 'Že plačano', value: totals.paid ?? 0 },
+          { label: 'Za plačilo preostane', value: totals.remaining ?? totals.total ?? totals.subtotal ?? 0 },
+        ]
+      : []),
   ]
     .map(
       (row) => `<tr>
