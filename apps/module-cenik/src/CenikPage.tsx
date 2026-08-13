@@ -2453,7 +2453,7 @@ export const CenikPage: React.FC = () => {
                 {importLoading ? 'Analiziram ...' : 'Analiziraj uvoz'}
               </Button>
               <Button type="button" onClick={runImportApply} disabled={!canApplyImport}>
-                {importLoading ? 'UvaÅ¾am ...' : 'Potrdi uvoz'}
+                {importLoading ? 'Uvažam ...' : 'Potrdi uvoz'}
               </Button>
             </div>
 
