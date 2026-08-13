@@ -526,10 +526,10 @@ export function InvoiceVersionEditor({
             ) : null}
           </div>
           <div className="overflow-x-auto">
-            <Table>
+            <Table className="min-w-[1180px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Naziv</TableHead>
+                  <TableHead className="w-[360px] min-w-[360px]">Naziv</TableHead>
                   <TableHead>Enota</TableHead>
                   <TableHead className="text-right">Količina</TableHead>
                   <TableHead className="text-right">Cena</TableHead>
@@ -550,7 +550,7 @@ export function InvoiceVersionEditor({
                 )}
                 {items.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell>
+                    <TableCell className="w-[360px] min-w-[360px]">
                       <PriceListProductAutocomplete
                         value={item.name}
                         placeholder="Naziv ali iskanje v ceniku"
