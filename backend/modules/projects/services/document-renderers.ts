@@ -1036,15 +1036,18 @@ export function renderProductDescriptionsHtml(
     .descriptions-header { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #dbe2ea; break-inside: avoid; page-break-inside: avoid; }
     .descriptions-header h1 { margin: 0 0 4px 0; font-size: 20px; }
     .descriptions-header p { margin: 0; color: #475569; font-size: 11px; white-space: pre-wrap; }
+    .locations-heading { margin: 16px 0 10px 0; padding-top: 10px; border-top: 2px solid #cbd5e1; font-size: 18px; color: #0f172a; break-after: avoid; page-break-after: avoid; }
     .location-section { margin: 0 0 16px 0; padding: 0 0 12px 0; border-bottom: 1px solid #cbd5e1; }
     .location-overview { break-inside: avoid; page-break-inside: avoid; }
     .location-title { margin: 0 0 7px 0; font-size: 17px; font-weight: 700; color: #0f172a; break-after: avoid; page-break-after: avoid; }
     .location-note { margin: 0 0 8px 0; padding: 7px 9px; background: #f8fafc; border-left: 3px solid #94a3b8; font-size: 10.5px; color: #334155; line-height: 1.35; white-space: pre-wrap; break-inside: avoid; page-break-inside: avoid; }
     .location-photos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 0 0 10px 0; }
     .location-photos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #dbe2ea; border-radius: 3px; break-inside: avoid; page-break-inside: avoid; }
-    .equipment-title { margin: 9px 0 6px 0; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: .04em; break-after: avoid; page-break-after: avoid; }
-    .product { margin: 0 0 10px 0; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px; break-inside: avoid; page-break-inside: avoid; }
-    .title { margin: 0 0 7px 0; font-size: 13px; font-weight: 700; }
+    .equipment-title { margin: 9px 0 4px 0; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: .04em; break-after: avoid; page-break-after: avoid; }
+    .equipment-list { margin: 0; padding: 0 0 0 18px; font-size: 10.5px; color: #1f2937; line-height: 1.45; }
+    .equipment-list li { margin: 1px 0; }
+    .product { margin: 0 0 12px 0; break-inside: avoid; page-break-inside: avoid; }
+    .title { margin: 0 0 7px 0; font-size: 16px; font-weight: 700; }
     .row { display: flex; gap: 12px; align-items: flex-start; flex-direction: row-reverse; }
     .col.image { flex: 0 0 38%; }
     .col.desc { flex: 1 1 62%; }
@@ -1054,8 +1057,6 @@ export function renderProductDescriptionsHtml(
     .product.noImage .col.desc { font-size: 10.5px; }
     .product.noDesc .row { display: block; }
     .product.noDesc .col.image { width: 45%; }
-    .unassigned { margin-top: 14px; }
-    .unassigned-title { margin: 0 0 8px 0; font-size: 15px; color: #334155; }
     .project-plan { margin: 10px 0 12px 0; break-inside: avoid; page-break-inside: avoid; }
     .project-plan-title { margin: 0 0 7px 0; font-size: 13px; font-weight: 700; color: #111827; }
     .project-plan-photos { display: flex; flex-direction: column; gap: 10px; }
@@ -1085,7 +1086,7 @@ export function renderProductDescriptionsHtml(
     const description = entry.description ? escapeHtml(entry.description) : '';
     const hasImage = !!entry.imageUrl;
     const hasDesc = !!description;
-    if (!hasImage && !hasDesc) return `<section class="product noImage noDesc"><h3 class="title">${title}</h3></section>`;
+    if (!hasImage && !hasDesc) return '';
     const classes = ['product', hasImage ? 'hasImage' : 'noImage', hasDesc ? 'hasDesc' : 'noDesc'].join(' ');
     const imageBlock = hasImage ? `<div class="col image"><img src="${entry.imageUrl}" alt="" /></div>` : '';
     const descBlock = hasDesc ? `<div class="col desc">${description}</div>` : '';
@@ -1125,14 +1126,18 @@ export function renderProductDescriptionsHtml(
       const photos = location.photos.length
         ? `<div class="location-photos">${location.photos.map((photo) => `<img src="${photo}" alt="" />`).join('')}</div>`
         : '';
-      const products = location.products.map(renderProduct).join('');
+      const productNames = Array.from(new Set(location.products.map((product) => product.title.trim()).filter(Boolean)));
+      const products = productNames.length
+        ? `<p class="equipment-title">Dodeljene naprave</p>
+          <ul class="equipment-list">${productNames.map((name) => `<li>${escapeHtml(name)}</li>`).join('')}</ul>`
+        : '';
       return `<section class="location-section">
           <div class="location-overview">
             <h2 class="location-title">${escapeHtml(location.name)}</h2>
             ${notes}
             ${photos}
           </div>
-          ${products ? `<p class="equipment-title">Oprema in izvedba</p>${products}` : ''}
+          ${products}
         </section>`;
     })
     .join('');
@@ -1152,16 +1157,13 @@ export function renderProductDescriptionsHtml(
     .filter(Boolean)
     .join('');
 
-  const unassignedEntries = entries.filter((entry) => !entry.projectPlanPhotos?.length && !(entry.locations?.length));
-  const unassignedSections = unassignedEntries.length
-    ? `<section class="unassigned">
-        <h2 class="unassigned-title">Postavke brez določene lokacije</h2>
-        ${unassignedEntries.map(renderProduct).join('')}
-      </section>`
+  const productSections = entries.map(renderProduct).join('');
+  const locationsBlock = locationSections
+    ? `<h2 class="locations-heading">Lokacije</h2>${locationSections}`
     : '';
-  const content = locationSections || projectPlanSections || unassignedSections
-    ? locationSections + projectPlanSections + unassignedSections
-    : `<section class="product"><h2 class="title">Ni opisov lokacij za izbrane postavke.</h2></section>`;
+  const content = productSections || projectPlanSections || locationsBlock
+    ? productSections + projectPlanSections + locationsBlock
+    : `<section class="product"><h2 class="title">Ni produktnih opisov za izbrane postavke.</h2></section>`;
 
-  return wrapDocument('Opisi lokacij', `<div>${headerHtml}${content}${footerHtml}</div>`, extraStyles);
+  return wrapDocument('Produktni opisi', `<div>${headerHtml}${content}${footerHtml}</div>`, extraStyles);
 }
