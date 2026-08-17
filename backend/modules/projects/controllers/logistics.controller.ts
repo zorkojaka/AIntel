@@ -38,6 +38,10 @@ import {
 } from '../../communication/services/communication.service';
 import { normalizeSupplierFields, normalizeSupplierKey } from '../services/supplier-normalization.service';
 import { OfferBookingModel } from '../../availability/offer-booking.model';
+import {
+  acceptInstallerAssignmentInSystem,
+  InstallerAcceptanceError,
+} from '../services/installer-acceptance.service';
 
 function calculateOfferTotalsFromSnapshot(offer: {
   items: OfferLineItem[];
@@ -1304,6 +1308,12 @@ function serializeWorkOrder(order: any): WorkOrder | null {
     assignedEmployeeIds: Array.isArray(order.assignedEmployeeIds)
       ? order.assignedEmployeeIds.map((id: any) => String(id))
       : [],
+    installerAcceptances: (order.installerAcceptances ?? []).map((entry: any) => ({
+      employeeId: String(entry.employeeId),
+      emailSentAt: entry.emailSentAt ? new Date(entry.emailSentAt).toISOString() : null,
+      acceptedAt: entry.acceptedAt ? new Date(entry.acceptedAt).toISOString() : null,
+      acceptedVia: entry.acceptedVia === 'system' || entry.acceptedVia === 'email' ? entry.acceptedVia : null,
+    })),
     location: order.location,
     notes: order.notes,
     customerName: order.customerName ?? '',
@@ -1484,13 +1494,21 @@ async function getPreparationReadiness(projectId: string, workOrderId: string) {
 
   const assignedEmployeeIds = Array.isArray(workOrder.assignedEmployeeIds) ? workOrder.assignedEmployeeIds : [];
   const hasAssignedTeam = assignedEmployeeIds.length > 0;
+  const acceptedEmployeeIds = new Set(
+    (workOrder.installerAcceptances ?? [])
+      .filter((entry: any) => Boolean(entry.acceptedAt))
+      .map((entry: any) => String(entry.employeeId)),
+  );
+  const hasInstallerAcceptance = hasAssignedTeam && assignedEmployeeIds.every((employeeId: any) =>
+    acceptedEmployeeIds.has(String(employeeId)),
+  );
   const hasSchedule = typeof workOrder.scheduledAt === 'string' && workOrder.scheduledAt.trim().length > 0;
   const hasConfirmedSchedule = Boolean(workOrder.scheduledConfirmedAt);
   const materialItems = materialOrders.flatMap((order: any) => (order.items ?? []).filter((item: any) => !item.isExtra));
   const materialReady = materialItems.length === 0 || materialItems.every(isMaterialItemReadyForIssue);
 
   return {
-    ready: hasAssignedTeam && hasSchedule && hasConfirmedSchedule && materialReady,
+    ready: hasAssignedTeam && hasInstallerAcceptance && hasSchedule && hasConfirmedSchedule && materialReady,
     workOrder,
   };
 }
@@ -1498,7 +1516,9 @@ async function getPreparationReadiness(projectId: string, workOrderId: string) {
 async function moveProjectToExecution(params: {
   projectId: string;
   workOrderId: string;
-  req: Request;
+  req?: Request;
+  actorDisplayName?: string;
+  actorEmployeeId?: string;
   mode: 'automatic' | 'manual';
 }) {
   const { projectId, workOrderId, req, mode } = params;
@@ -1514,18 +1534,23 @@ async function moveProjectToExecution(params: {
         ? "Projekt je samodejno prešel v fazo 'Izvedba', ker so zahteve priprave izpolnjene."
         : "Projekt prešel v fazo 'Izvedba' po izdaji delovnega naloga.",
     timestamp: new Date().toISOString(),
-    user: buildActorDisplayName(req as any),
+    user: params.actorDisplayName ?? (req ? buildActorDisplayName(req as any) : 'Monter'),
     metadata: {
       workOrderId,
       mode,
-      actorEmployeeId: resolveActorEmployeeId(req) ?? '',
+      actorEmployeeId: params.actorEmployeeId ?? (req ? resolveActorEmployeeId(req) : '') ?? '',
     },
   });
   await project.save();
   return true;
 }
 
-async function applyAutomaticPreparationProgression(projectId: string, workOrderId: string, req: Request) {
+export async function applyAutomaticPreparationProgression(
+  projectId: string,
+  workOrderId: string,
+  req?: Request,
+  actor?: { displayName?: string; employeeId?: string },
+) {
   const settings = await getSettings();
   if (settings.phaseProgressionMode !== 'automatic') return false;
 
@@ -1538,7 +1563,14 @@ async function applyAutomaticPreparationProgression(projectId: string, workOrder
   }
   workOrder.status = 'issued';
   await workOrder.save();
-  return moveProjectToExecution({ projectId, workOrderId, req, mode: 'automatic' });
+  return moveProjectToExecution({
+    projectId,
+    workOrderId,
+    req,
+    actorDisplayName: actor?.displayName,
+    actorEmployeeId: actor?.employeeId,
+    mode: 'automatic',
+  });
 }
 
 async function resolveEmployeeIdForTenant(tenantId: string, value: unknown) {
@@ -2252,6 +2284,18 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       }
       updates.mainInstallerId = resolved.id;
     }
+    if ('assignedEmployeeIds' in payload || 'mainInstallerId' in payload) {
+      const nextAssignedEmployeeIds = Array.isArray(updates.assignedEmployeeIds)
+        ? updates.assignedEmployeeIds.map(String)
+        : (existing.assignedEmployeeIds ?? []).map(String);
+      const nextMainInstallerId = 'mainInstallerId' in updates
+        ? (updates.mainInstallerId ? String(updates.mainInstallerId) : '')
+        : (existing.mainInstallerId ? String(existing.mainInstallerId) : '');
+      const nextInstallerIds = new Set([nextMainInstallerId, ...nextAssignedEmployeeIds].filter(Boolean));
+      updates.installerAcceptances = (existing.installerAcceptances ?? []).filter((entry: any) =>
+        nextInstallerIds.has(String(entry.employeeId)),
+      );
+    }
     if ('location' in payload) updates.location = payload.location;
     if ('notes' in payload) updates.notes = payload.notes;
     if ('executionNote' in payload) {
@@ -2697,6 +2741,26 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
   return res.success(serializeWorkOrder(responseOrder));
   } catch (err) {
     next(err);
+  }
+}
+
+export async function acceptInstallerAssignment(req: Request, res: Response) {
+  try {
+    const employeeId = resolveActorEmployeeId(req);
+    if (!employeeId) return res.fail('Uporabnik ni povezan z monterjem.', 403);
+    const result = await acceptInstallerAssignmentInSystem({
+      projectId: req.params.projectId,
+      workOrderId: req.params.workOrderId,
+      employeeId,
+    });
+    await applyAutomaticPreparationProgression(req.params.projectId, req.params.workOrderId, req);
+    return res.success({
+      employeeId: result.employeeId,
+      acceptedAt: result.acceptedAt.toISOString(),
+    });
+  } catch (error) {
+    if (error instanceof InstallerAcceptanceError) return res.fail(error.message, error.statusCode);
+    return res.fail('Sprejema projekta ni bilo mogoče shraniti.', 500);
   }
 }
 

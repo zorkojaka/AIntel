@@ -1,4 +1,4 @@
-import { Schema, model, type Document } from 'mongoose';
+import mongoose, { Schema, model, type Document } from 'mongoose';
 
 interface WorkOrderItem {
   id: string;
@@ -57,6 +57,14 @@ export interface WorkLogEntry {
   hours: number;
 }
 
+export interface InstallerAcceptance {
+  employeeId: mongoose.Types.ObjectId;
+  token: string;
+  emailSentAt?: Date | null;
+  acceptedAt?: Date | null;
+  acceptedVia?: 'system' | 'email' | null;
+}
+
 export type WorkOrderConfirmationState = 'unsigned' | 'signed_active' | 'resign_required';
 export type WorkOrderConfirmationVersionState = 'active' | 'archived' | 'superseded';
 
@@ -83,6 +91,7 @@ export interface WorkOrderConfirmationVersion {
   scheduledAt?: string | null;
   mainInstallerId?: string | null;
   assignedEmployeeIds?: string[];
+  installerAcceptances?: InstallerAcceptance[];
   location?: string | null;
   workOrderCode?: string | null;
   workOrderTitle?: string | null;
@@ -221,6 +230,17 @@ const workLogSchema = new Schema<WorkLogEntry>(
   { _id: false }
 );
 
+const installerAcceptanceSchema = new Schema<InstallerAcceptance>(
+  {
+    employeeId: { type: Schema.Types.ObjectId, ref: 'Employee', required: true },
+    token: { type: String, required: true },
+    emailSentAt: { type: Date, default: null },
+    acceptedAt: { type: Date, default: null },
+    acceptedVia: { type: String, enum: ['system', 'email'], default: undefined },
+  },
+  { _id: false },
+);
+
 const workOrderConfirmationVersionSchema = new Schema<WorkOrderConfirmationVersion>(
   {
     id: { type: String, required: true },
@@ -278,6 +298,7 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
     bookingInviteSentAt: { type: Date, default: null },
     mainInstallerId: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
     assignedEmployeeIds: { type: [Schema.Types.ObjectId], default: [] },
+    installerAcceptances: { type: [installerAcceptanceSchema], default: [] },
     location: { type: String },
     notes: { type: String },
     customerName: { type: String },
@@ -307,5 +328,6 @@ workOrderSchema.index({ bookingToken: 1 }, { unique: true, sparse: true });
 workOrderSchema.index({ projectId: 1, offerVersionId: 1 });
 workOrderSchema.index({ projectId: 1, cancelledAt: 1 });
 workOrderSchema.index({ assignedEmployeeIds: 1, projectId: 1 });
+workOrderSchema.index({ 'installerAcceptances.token': 1 }, { unique: true, sparse: true });
 
 export const WorkOrderModel = model<WorkOrderDocument>('WorkOrder', workOrderSchema);

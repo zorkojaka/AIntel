@@ -143,6 +143,9 @@ test('AIN-P0-01 browser public routes still use the browser key', async () => {
   try {
     const baseUrl = await listen(server);
 
+    const installerAcceptanceResponse = await fetch(`${baseUrl}/api/public/installer-accept/${'f'.repeat(48)}`);
+    assert.equal(installerAcceptanceResponse.status, 404, 'potrditev monterja uporablja žeton in ne zahteva javnega API ključa');
+
     const internalResponse = await fetch(`${baseUrl}/api/public/options`, { headers: { 'X-API-Key': INTERNAL_KEY } });
     assert.equal(internalResponse.status, 401);
 

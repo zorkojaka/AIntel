@@ -111,7 +111,11 @@ export function appendCommunicationFooter(body: string, renderedFooter: string) 
   return appendSharedCommunicationFooter(body, renderedFooter);
 }
 
-export function renderCommunicationBodyHtml(body: string, renderedFooterHtml?: string | null) {
+export function renderCommunicationBodyHtml(
+  body: string,
+  renderedFooterHtml?: string | null,
+  options?: { actions?: Array<{ href: string; label: string }> },
+) {
   const escapedMainHtml = normalizeMultiline(body ?? "")
     .split("\n")
     .map((line) =>
@@ -121,7 +125,12 @@ export function renderCommunicationBodyHtml(body: string, renderedFooterHtml?: s
     )
     .join("");
   const footerHtml = normalizeMultiline(renderedFooterHtml ?? "");
+  const actionsHtml = (options?.actions ?? []).map((action) =>
+    `<a href="${escapeHtml(action.href)}" style="display:inline-block;margin:8px 8px 8px 0;padding:11px 18px;border-radius:8px;background:#0a6db3;color:#fff;text-decoration:none;font-weight:700;">${escapeHtml(action.label)}</a>`,
+  ).join('');
   return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111827;">${escapedMainHtml}${
+    actionsHtml ? `<div style="margin:16px 0;">${actionsHtml}</div>` : ""
+  }${
     footerHtml ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;">${footerHtml}</div>` : ""
   }</div>`;
 }

@@ -205,6 +205,7 @@ export async function sendInstallerPreparationCommunicationController(req: Reque
         typeof req.body?.projectLink === "string" && req.body.projectLink.trim()
           ? req.body.projectLink.trim()
           : `${req.protocol}://${req.get("host")}/projects/${encodeURIComponent(req.params.projectId)}`,
+      acceptanceBaseUrl: `${req.protocol}://${req.get("host")}/api/public/installer-accept`,
       previewOnly: req.body?.previewOnly === true,
       confirmSend: req.body?.confirmSend === true,
       actorUserId: (req as any)?.context?.actorUserId ?? null,

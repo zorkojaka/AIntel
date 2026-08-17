@@ -88,6 +88,7 @@ router.get('/:projectId/offers/:offerVersionId/pdf', exportOfferPdf);
 router.post('/:projectId/offers/:offerVersionId/send', requireProjectWrite, sendOfferCommunicationController);
 router.post('/:projectId/work-orders/:workOrderId/send-confirmation', requireWorkOrderWrite, sendWorkOrderConfirmationCommunicationController);
 router.post('/:projectId/work-orders/:workOrderId/send-installer-preparation', requireWorkOrderWrite, sendInstallerPreparationCommunicationController);
+router.post('/:projectId/work-orders/:workOrderId/accept-assignment', requireWorkOrderWrite, logisticsController.acceptInstallerAssignment);
 router.get('/:projectId/offer', getActiveOffer);
 router.post('/:projectId/offers/:offerId/confirm', requireProjectWrite, logisticsController.confirmOffer);
 router.get('/:projectId/execution-definition', logisticsController.getProjectExecutionDefinition);

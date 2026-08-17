@@ -1256,13 +1256,20 @@ export function LogisticsPanel({
   );
   const isTermConfirmed = Boolean(resolvedScheduleConfirmedAt);
   const canConfirmSchedule = Boolean(resolvedSchedule && !isTermConfirmed);
-  const hasAssignedTeam = (workOrderForm.assignedEmployeeIds ?? selectedWorkOrder?.assignedEmployeeIds ?? []).length > 0;
+  const assignedTeamIds = workOrderForm.assignedEmployeeIds ?? selectedWorkOrder?.assignedEmployeeIds ?? [];
+  const hasAssignedTeam = assignedTeamIds.length > 0;
+  const acceptedInstallerIds = new Set(
+    (selectedWorkOrder?.installerAcceptances ?? [])
+      .filter((entry) => Boolean(entry.acceptedAt))
+      .map((entry) => entry.employeeId),
+  );
+  const hasInstallerAcceptance = hasAssignedTeam && assignedTeamIds.every((employeeId) => acceptedInstallerIds.has(employeeId));
   const currentIssueMaterialOrder = materialOrderForm ?? selectedMaterialOrder ?? null;
   const currentIssueMaterialItems = (currentIssueMaterialOrder?.items ?? []).filter((item) => !item.isExtra);
   const isMaterialReadyForIssue =
     currentIssueMaterialItems.length === 0 || currentIssueMaterialItems.every((item) => isMaterialPreviewItemReady(item));
 
-  const canIssueOrder = Boolean(resolvedSchedule && hasAssignedTeam && isTermConfirmed);
+  const canIssueOrder = Boolean(resolvedSchedule && hasAssignedTeam && hasInstallerAcceptance && isTermConfirmed);
   const canIssueWorkOrder = canIssueOrder && isMaterialReadyForIssue;
   const isManualPhaseProgression = (settings.phaseProgressionMode ?? "manual") === "manual";
   const issueRequirements = [
@@ -1270,6 +1277,11 @@ export function LogisticsPanel({
       label: "Izvedbena ekipa",
       met: hasAssignedTeam,
       missingText: "Manjka izvedbena ekipa",
+    },
+    {
+      label: "Monter sprejel projekt",
+      met: hasInstallerAcceptance,
+      missingText: "Monter še ni sprejel projekta",
     },
     {
       label: "Termin izvedbe",
@@ -2391,6 +2403,27 @@ export function LogisticsPanel({
                 <div className="space-y-1">
                   <p className="text-muted-foreground">Ekipa</p>
                   <p className="font-medium">{previewTeamNames.length > 0 ? previewTeamNames.join(", ") : "Ni določena"}</p>
+                  {previewTeamIds.length > 0 ? (
+                    <Badge
+                      className={
+                        previewTeamIds.every((employeeId) =>
+                          (previewWorkOrder?.installerAcceptances ?? []).some(
+                            (entry) => entry.employeeId === employeeId && Boolean(entry.acceptedAt),
+                          ),
+                        )
+                          ? "border-green-500/30 bg-green-500/10 text-green-700"
+                          : "border-amber-500/30 bg-amber-500/10 text-amber-700"
+                      }
+                    >
+                      {previewTeamIds.every((employeeId) =>
+                        (previewWorkOrder?.installerAcceptances ?? []).some(
+                          (entry) => entry.employeeId === employeeId && Boolean(entry.acceptedAt),
+                        ),
+                      )
+                        ? "Projekt sprejet"
+                        : "Čaka na sprejem monterja"}
+                    </Badge>
+                  ) : null}
                 </div>
                 <div className="space-y-1">
                   <p className="text-muted-foreground">Število produktov</p>
