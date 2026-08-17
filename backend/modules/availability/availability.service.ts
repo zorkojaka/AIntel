@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 import { EmployeeModel, type EmployeeScheduleSettings } from '../employees/schemas/employee';
 import { WorkOrderModel } from '../projects/schemas/work-order';
+import { OfferBookingModel } from './offer-booking.model';
 import { EmployeeAvailabilityDayModel, EmployeeWeekLimitModel } from './availability.model';
 
 // Razpoložljivost monterjev za termine montaž.
@@ -427,6 +428,7 @@ async function busyByEmployeeAndDate(
   fromKey: string,
   toKey: string,
   excludeWorkOrderId?: string,
+  excludeOfferBookingId?: string,
 ): Promise<Map<string, BusyInterval[]>> {
   const query: Record<string, unknown> = {
     assignedEmployeeIds: { $in: employeeIds },
@@ -440,6 +442,17 @@ async function busyByEmployeeAndDate(
   const workOrders = await WorkOrderModel.find(query)
     .select({ scheduledAt: 1, assignedEmployeeIds: 1, items: 1 })
     .lean();
+  const offerBookingQuery: Record<string, unknown> = {
+    selectedEmployeeId: { $in: employeeIds },
+    selectedAt: { $ne: null },
+    scheduledAt: { $ne: null, $gte: fromKey, $lte: `${toKey}T23:59:59.999Z` },
+  };
+  if (excludeOfferBookingId && mongoose.isValidObjectId(excludeOfferBookingId)) {
+    offerBookingQuery._id = { $ne: new mongoose.Types.ObjectId(excludeOfferBookingId) };
+  }
+  const offerBookings = await OfferBookingModel.find(offerBookingQuery)
+    .select({ scheduledAt: 1, selectedEmployeeId: 1, durationHours: 1 })
+    .lean();
 
   const busy = new Map<string, BusyInterval[]>();
   for (const workOrder of workOrders as any[]) {
@@ -451,6 +464,16 @@ async function busyByEmployeeAndDate(
       const key = `${employeeId}:${dateKey}`;
       busy.set(key, [...(busy.get(key) ?? []), interval]);
     }
+  }
+  for (const booking of offerBookings as any[]) {
+    const scheduled = new Date(booking.scheduledAt);
+    if (Number.isNaN(scheduled.valueOf()) || !booking.selectedEmployeeId) continue;
+    const dateKey = `${scheduled.getFullYear()}-${String(scheduled.getMonth() + 1).padStart(2, '0')}-${String(scheduled.getDate()).padStart(2, '0')}`;
+    const key = `${booking.selectedEmployeeId}:${dateKey}`;
+    busy.set(key, [
+      ...(busy.get(key) ?? []),
+      { startHour: scheduled.getHours(), hours: bookingSlotHours(Number(booking.durationHours) || 4) },
+    ]);
   }
   return busy;
 }
@@ -470,6 +493,7 @@ export async function findFreeDays(input: {
   from?: string;
   days?: number;
   excludeWorkOrderId?: string;
+  excludeOfferBookingId?: string;
 }): Promise<FreeDay[]> {
   const employeeIds = input.employeeIds.filter((id) => mongoose.isValidObjectId(id));
   if (!employeeIds.length) return [];
@@ -485,7 +509,7 @@ export async function findFreeDays(input: {
   const weekTo = addDays(mondayOf(toKey), 6);
   const [calendars, busy, weekLimits] = await Promise.all([
     Promise.all(employeeIds.map((id) => getAvailabilityCalendar(id, fromKey, span))),
-    busyByEmployeeAndDate(objectIds, weekFrom, weekTo, input.excludeWorkOrderId),
+    busyByEmployeeAndDate(objectIds, weekFrom, weekTo, input.excludeWorkOrderId, input.excludeOfferBookingId),
     Promise.all(employeeIds.map((id) => getWeekLimits(id, fromKey, span))),
   ]);
 

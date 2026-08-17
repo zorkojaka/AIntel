@@ -2471,6 +2471,8 @@ const loadOfferById = useCallback(async (offerId: string) => {
         offerTotal={Number(currentOffer?.totalWithVat ?? currentOffer?.totalGrossAfterDiscount ?? currentOffer?.totalGross ?? 0)}
         offerVersions={versions}
         companyName={settings?.companyName ?? ""}
+        employees={employees}
+        initialEmployeeIds={assignedEmployeeIds}
         onSent={handleCommunicationSent}
       />
 

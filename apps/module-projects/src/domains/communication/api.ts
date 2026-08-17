@@ -107,6 +107,7 @@ export async function sendOfferCommunicationEmail(
     selectedAttachments: Array<'offer_pdf' | 'project_pdf'>;
     selectedOfferIds?: string[];
     followUp?: { enabled: boolean; days: number };
+    booking?: { enabled: boolean; employeeIds: string[] };
   }
 ) {
   const response = await fetch(`/api/projects/${projectId}/offers/${offerId}/send`, {

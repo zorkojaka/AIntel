@@ -7,6 +7,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EmployeeModel } from '../modules/employees/schemas/employee';
 import { WorkOrderModel } from '../modules/projects/schemas/work-order';
 import { ProjectModel } from '../modules/projects/schemas/project';
+import { OfferVersionModel } from '../modules/projects/schemas/offer-version';
 import { EmployeeAvailabilityDayModel } from '../modules/availability/availability.model';
 import {
   addDays,
@@ -22,6 +23,7 @@ import {
 import { getEmployeeTermini, getWeekLimits, mondayOf, setWeekLimit } from '../modules/availability/availability.service';
 import { EmployeeWeekLimitModel } from '../modules/availability/availability.model';
 import { chooseBookingDay, getBookingByToken } from '../modules/availability/booking.service';
+import { OfferBookingModel } from '../modules/availability/offer-booking.model';
 import { registerCoreConfigNamespaces } from '../modules/settings/config/config-namespaces';
 
 let mongod: MongoMemoryServer;
@@ -43,6 +45,8 @@ test.beforeEach(async () => {
     EmployeeAvailabilityDayModel.deleteMany({}),
     EmployeeWeekLimitModel.deleteMany({}),
     WorkOrderModel.deleteMany({}),
+    OfferBookingModel.deleteMany({}),
+    OfferVersionModel.deleteMany({}),
     ProjectModel.deleteMany({}),
   ]);
 });
@@ -273,6 +277,48 @@ test('rezervacija: stranka izbere dan, termin se zapiše in potrdi, povezava pos
 
   const project = await ProjectModel.findOne({ id: 'PRJ-401' }).lean();
   assert.ok((project as any)?.timeline?.some((entry: any) => entry.title === 'Stranka izbrala termin montaže'));
+});
+
+test('rezervacija iz ponudbe: združi termine kandidatov in ob izbiri dodeli prostega monterja', async () => {
+  const miha = await monter('Miha');
+  const ana = await monter('Ana');
+  await setAvailabilityDay(String(miha._id), D1, [8, 9]);
+  await setAvailabilityDay(String(ana._id), D2, [10, 11]);
+  await ProjectModel.create({
+    id: 'PRJ-404', code: 'PRJ-404', projectNumber: 404, title: 'PRJ-404: Izbira monterja',
+    customer: { name: 'Testna stranka' }, status: 'offered', createdAt: new Date().toISOString(),
+  });
+  const offer = await OfferVersionModel.create({
+    projectId: 'PRJ-404', baseTitle: 'Ponudba', versionNumber: 1, title: 'Ponudba', status: 'sent', items: [],
+  });
+  const offerVersionId = offer._id;
+  await OfferBookingModel.create({
+    projectId: 'PRJ-404',
+    offerVersionId,
+    candidateEmployeeIds: [miha._id, ana._id],
+    bookingToken: 'd'.repeat(48),
+    durationHours: 2,
+  });
+
+  const view = await getBookingByToken('d'.repeat(48));
+  assert.deepEqual(
+    view.days.filter((day) => day.date === D1 || day.date === D2),
+    [{ date: D1, startHour: 8 }, { date: D2, startHour: 10 }],
+    'stranka vidi unijo terminov obeh monterjev',
+  );
+
+  const chosen = await chooseBookingDay('d'.repeat(48), D2);
+  assert.equal(chosen.scheduledAt, `${D2}T10:00:00`);
+  const project = await ProjectModel.findOne({ id: 'PRJ-404' }).lean();
+  assert.deepEqual((project as any)?.assignedEmployeeIds?.map(String), [String(ana._id)]);
+  const booking = await OfferBookingModel.findOne({ projectId: 'PRJ-404', offerVersionId }).lean();
+  assert.equal(String(booking?.selectedEmployeeId), String(ana._id));
+  assert.equal(booking?.bookingToken, undefined, 'povezava po izbiri ni več veljavna');
+  assert.deepEqual(
+    await findFreeDays({ employeeIds: [String(ana._id)], durationHours: 2, from: D2, days: 1 }),
+    [],
+    'izbrani termin iz ponudbe takoj zasede monterjev koledar',
+  );
 });
 
 // Ponedeljek čez en teden in pol — cel teden pon–sre je zanesljivo v prihodnosti.

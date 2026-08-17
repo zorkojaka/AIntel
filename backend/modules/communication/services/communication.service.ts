@@ -786,6 +786,7 @@ export async function sendOfferCommunicationEmail(input: {
   subject?: string | null;
   body?: string | null;
   selectedAttachments?: CommunicationAttachmentType[];
+  bookingLink?: string | null;
   actorUserId?: string | null;
   actorDisplayName?: string | null;
   actorProfile?: {
@@ -870,7 +871,11 @@ export async function sendOfferCommunicationEmail(input: {
   });
 
   const subjectFinal = sanitizeString(input.subject) || renderedTemplate.subject;
-  const bodyWithoutFooter = input.body?.toString().trim() || renderedTemplate.body;
+  const baseBodyWithoutFooter = input.body?.toString().trim() || renderedTemplate.body;
+  const bookingLink = sanitizeString(input.bookingLink);
+  const bodyWithoutFooter = bookingLink
+    ? `${baseBodyWithoutFooter}\n\nTermin montaže lahko izberete na naslednji povezavi. Prikazani so združeni prosti termini izbranih monterjev:\n${bookingLink}`
+    : baseBodyWithoutFooter;
   const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
   if (!subjectFinal || !bodyFinal) {
     throw new Error("Zadeva in vsebina emaila sta obvezni.");

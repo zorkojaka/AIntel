@@ -37,6 +37,7 @@ import {
   recordOfferConfirmedCommunicationEvent,
 } from '../../communication/services/communication.service';
 import { normalizeSupplierFields, normalizeSupplierKey } from '../services/supplier-normalization.service';
+import { OfferBookingModel } from '../../availability/offer-booking.model';
 
 function calculateOfferTotalsFromSnapshot(offer: {
   items: OfferLineItem[];
@@ -989,8 +990,21 @@ async function ensureWorkOrderForOffer(params: {
   customerPhone: string;
   customerAddress: string;
   productDefaultsById: Map<string, any>;
+  assignedEmployeeIds?: string[];
+  scheduledAt?: string | null;
 }) {
-  const { projectId, offerId, items, customerName, customerEmail, customerPhone, customerAddress, productDefaultsById } = params;
+  const {
+    projectId,
+    offerId,
+    items,
+    customerName,
+    customerEmail,
+    customerPhone,
+    customerAddress,
+    productDefaultsById,
+    assignedEmployeeIds = [],
+    scheduledAt = null,
+  } = params;
   let workOrder = await WorkOrderModel.findOne({ projectId, offerVersionId: offerId }).sort({ sequence: 1, createdAt: 1 });
 
   if (workOrder) {
@@ -1004,6 +1018,14 @@ async function ensureWorkOrderForOffer(params: {
     workOrder.customerEmail = customerEmail;
     workOrder.customerPhone = customerPhone;
     workOrder.customerAddress = customerAddress;
+    if (assignedEmployeeIds.length > 0) {
+      workOrder.assignedEmployeeIds = assignedEmployeeIds as any;
+    }
+    if (scheduledAt) {
+      workOrder.scheduledAt = scheduledAt;
+      workOrder.scheduledConfirmedAt = workOrder.scheduledConfirmedAt ?? new Date();
+      workOrder.scheduledConfirmedBy = workOrder.scheduledConfirmedBy ?? 'Stranka (spletna izbira)';
+    }
     if (typeof workOrder.sequence !== 'number') {
       workOrder.sequence = 1;
     }
@@ -1018,11 +1040,14 @@ async function ensureWorkOrderForOffer(params: {
     items,
     status: 'draft',
     reopened: false,
-    scheduledAt: null,
     customerName,
     customerEmail,
     customerPhone,
     customerAddress,
+    assignedEmployeeIds,
+    scheduledAt,
+    scheduledConfirmedAt: scheduledAt ? new Date() : null,
+    scheduledConfirmedBy: scheduledAt ? 'Stranka (spletna izbira)' : null,
   });
 }
 
@@ -1876,6 +1901,13 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
     const customerEmail = projectClient?.email ?? '';
     const customerPhone = projectClient?.phone ?? '';
     const customerAddress = formatClientAddress(projectClient, project.customer?.address ?? '');
+    const offerBooking = await OfferBookingModel.findOne({ projectId, offerVersionId: offer._id }).lean();
+    const bookingEmployeeId = offerBooking?.selectedEmployeeId ? String(offerBooking.selectedEmployeeId) : null;
+    const assignedEmployeeIds = bookingEmployeeId
+      ? [bookingEmployeeId]
+      : Array.isArray((project as any).assignedEmployeeIds)
+        ? (project as any).assignedEmployeeIds.map((id: unknown) => String(id)).filter(Boolean)
+        : [];
 
     const workOrder = await ensureWorkOrderForOffer({
       projectId,
@@ -1886,6 +1918,8 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       customerPhone,
       customerAddress,
       productDefaultsById,
+      assignedEmployeeIds,
+      scheduledAt: offerBooking?.scheduledAt ?? null,
     });
 
     await syncProjectExecutionDefinitionsFromWorkOrder(projectId, workOrder);
