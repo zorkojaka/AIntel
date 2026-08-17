@@ -22,8 +22,9 @@ import {
 } from '../modules/availability/availability.service';
 import { getEmployeeTermini, getWeekLimits, mondayOf, setWeekLimit } from '../modules/availability/availability.service';
 import { EmployeeWeekLimitModel } from '../modules/availability/availability.model';
-import { chooseBookingDay, getBookingByToken } from '../modules/availability/booking.service';
+import { chooseBookingDay, createBookingPreviewLink, getBookingByToken } from '../modules/availability/booking.service';
 import { OfferBookingModel } from '../modules/availability/offer-booking.model';
+import { BookingPreviewModel } from '../modules/availability/booking-preview.model';
 import { registerCoreConfigNamespaces } from '../modules/settings/config/config-namespaces';
 
 let mongod: MongoMemoryServer;
@@ -46,6 +47,7 @@ test.beforeEach(async () => {
     EmployeeWeekLimitModel.deleteMany({}),
     WorkOrderModel.deleteMany({}),
     OfferBookingModel.deleteMany({}),
+    BookingPreviewModel.deleteMany({}),
     OfferVersionModel.deleteMany({}),
     ProjectModel.deleteMany({}),
   ]);
@@ -319,6 +321,25 @@ test('rezervacija iz ponudbe: združi termine kandidatov in ob izbiri dodeli pro
     [],
     'izbrani termin iz ponudbe takoj zasede monterjev koledar',
   );
+});
+
+test('administrativni predogled združi termine izbranih monterjev in ne dovoli rezervacije', async () => {
+  const miha = await monter('Miha');
+  const ana = await monter('Ana');
+  await setAvailabilityDay(String(miha._id), D1, [8]);
+  await setAvailabilityDay(String(ana._id), D2, [10]);
+  const { url } = await createBookingPreviewLink({ employeeIds: [String(miha._id), String(ana._id)] });
+  const token = new URL(url).searchParams.get('t');
+  assert.ok(token);
+
+  const view = await getBookingByToken(token);
+  assert.equal(view.previewOnly, true);
+  assert.deepEqual(
+    view.days.filter((day) => day.date === D1 || day.date === D2),
+    [{ date: D1, startHour: 8 }, { date: D2, startHour: 10 }],
+  );
+  await assert.rejects(chooseBookingDay(token, D1), (error: unknown) =>
+    error instanceof AvailabilityError && error.statusCode === 403);
 });
 
 // Ponedeljek čez en teden in pol — cel teden pon–sre je zanesljivo v prihodnosti.

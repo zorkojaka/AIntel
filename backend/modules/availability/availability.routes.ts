@@ -13,6 +13,7 @@ import {
   setWeekLimit,
   updateEmployeeSchedule,
 } from './availability.service';
+import { createBookingPreviewLink } from './booking.service';
 
 // Razpoložljivost monterjev: /my/* za prijavljenega (monter klika svoj koledar),
 // /employees/* za administracijo (fiksni urniki, pregled pri planiranju).
@@ -123,6 +124,18 @@ router.get('/team/calendar', planningRead, async (req: Request, res: Response) =
     return res.success({ members: await getTeamCalendar(from, days) });
   } catch (error) {
     return fail(res, error, 'Ekipnega koledarja ni bilo mogoče naložiti.');
+  }
+});
+
+router.get('/team/booking-preview', planningRead, async (req: Request, res: Response) => {
+  try {
+    const employeeIds = typeof req.query.employeeIds === 'string'
+      ? req.query.employeeIds.split(',').map((id) => id.trim()).filter(Boolean)
+      : [];
+    const { url } = await createBookingPreviewLink({ employeeIds });
+    return res.redirect(url);
+  } catch (error) {
+    return fail(res, error, 'Predogleda terminov ni bilo mogoče odpreti.');
   }
 });
 

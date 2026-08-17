@@ -14,6 +14,7 @@ import {
   type FreeDay,
 } from './availability.service';
 import { OfferBookingModel } from './offer-booking.model';
+import { BookingPreviewModel } from './booking-preview.model';
 
 // Rezervacija dneva montaže: interno se ustvari povabilo (žeton + mail),
 // stranka na javni strani izbere dan, izbira zapiše termin na delovni nalog
@@ -144,6 +145,39 @@ export async function prepareOfferBookingLink(input: {
   };
 }
 
+export async function createBookingPreviewLink(input: { employeeIds: string[] }) {
+  const employeeIds = Array.from(
+    new Set((input.employeeIds ?? []).map((id) => String(id).trim()).filter((id) => /^[a-f0-9]{24}$/i.test(id))),
+  );
+  if (!employeeIds.length) throw new AvailabilityError('Izberi vsaj enega monterja.');
+
+  const employees = await EmployeeModel.find({
+    _id: { $in: employeeIds },
+    active: true,
+    deletedAt: null,
+    roles: 'EXECUTION',
+  })
+    .select({ _id: 1, name: 1 })
+    .lean();
+  if (employees.length !== employeeIds.length) {
+    throw new AvailabilityError('Eden ali več izbranih monterjev ni aktivnih.');
+  }
+
+  const token = crypto.randomBytes(24).toString('hex');
+  const label = employees.length === 1
+    ? `Prosti termini — ${employees[0].name}`
+    : 'Prosti termini ekipe';
+  await BookingPreviewModel.create({
+    employeeIds,
+    bookingToken: token,
+    durationHours: 1,
+    label,
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+  });
+
+  return { url: bookingLinkFor(token, await bookingPageUrl()) };
+}
+
 export async function createBookingInvite(input: {
   projectId: string;
   workOrderId: string;
@@ -226,6 +260,7 @@ export interface BookingView {
   durationHours: number;
   alreadyChosen: string | null;
   days: FreeDay[];
+  previewOnly?: boolean;
 }
 
 async function findByToken(token: string) {
@@ -242,11 +277,27 @@ async function findByToken(token: string) {
     });
     if (offerExists) return { kind: 'offer' as const, offerBooking };
   }
+  const preview = await BookingPreviewModel.findOne({ bookingToken: clean, expiresAt: { $gt: new Date() } });
+  if (preview) return { kind: 'preview' as const, preview };
   throw new AvailabilityError('Povezava ni veljavna ali je termin že izbran.', 404);
 }
 
 export async function getBookingByToken(token: string): Promise<BookingView> {
   const booking = await findByToken(token);
+  if (booking.kind === 'preview') {
+    const days = await findFreeDaysForAnyEmployee({
+      employeeIds: (booking.preview.employeeIds ?? []).map((id: unknown) => String(id)),
+      durationHours: booking.preview.durationHours,
+      days: BOOKING_WINDOW_DAYS,
+    });
+    return {
+      projectLabel: booking.preview.label,
+      durationHours: booking.preview.durationHours,
+      alreadyChosen: null,
+      days: days.map(({ date, startHour }) => ({ date, startHour })),
+      previewOnly: true,
+    };
+  }
   if (booking.kind === 'offer') {
     const { offerBooking } = booking;
     const project = await ProjectModel.findOne({ id: offerBooking.projectId }).select({ title: 1 }).lean();
@@ -285,6 +336,9 @@ export async function getBookingByToken(token: string): Promise<BookingView> {
 
 export async function chooseBookingDay(token: string, date: unknown): Promise<{ scheduledAt: string }> {
   const booking = await findByToken(token);
+  if (booking.kind === 'preview') {
+    throw new AvailabilityError('Predogled ne omogoča izbire termina.', 403);
+  }
   if (booking.kind === 'offer') {
     const { offerBooking } = booking;
     if (offerBooking.selectedAt && offerBooking.scheduledAt) {

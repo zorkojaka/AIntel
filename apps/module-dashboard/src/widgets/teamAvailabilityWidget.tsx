@@ -48,6 +48,10 @@ function isWeekend(date: string) {
   return day === 0 || day === 6;
 }
 
+function bookingPreviewUrl(employeeIds: string[]) {
+  return `/api/availability/team/booking-preview?employeeIds=${encodeURIComponent(employeeIds.join(','))}`;
+}
+
 function TeamAvailability() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -139,6 +143,14 @@ function TeamAvailability() {
           <span className="ekipa__vzorec je-termin" /> razpisan termin
           <span className="ekipa__vzorec je-opravljen" /> opravljeno
         </span>
+        <a
+          className="ekipa__predogled-gumb"
+          href={bookingPreviewUrl(members.map((member) => member.employeeId))}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Vsi termini kot stranka
+        </a>
       </div>
 
       <div className="ekipa__tabela-ovoj">
@@ -173,8 +185,21 @@ function TeamAvailability() {
               return (
                 <tr key={member.employeeId}>
                   <th className="ekipa__monter" title={`${zasedenihDni} zasedenih dni v prikazanem mesecu`}>
-                    {member.name}
-                    <span className="ekipa__monter-meta">{zasedenihDni} dni</span>
+                    <span className="ekipa__monter-vsebina">
+                      <span>
+                        {member.name}
+                        <span className="ekipa__monter-meta">{zasedenihDni} dni</span>
+                      </span>
+                      <a
+                        className="ekipa__monter-predogled"
+                        href={bookingPreviewUrl([member.employeeId])}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`Poglej proste termine za ${member.name} kot stranka`}
+                      >
+                        Termini
+                      </a>
+                    </span>
                   </th>
                   {member.days.map((day) => {
                     const dayTermini = terminiByDate.get(day.date) ?? [];
