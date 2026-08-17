@@ -11,6 +11,7 @@ import {
   bookingSlotHours,
   estimateWorkOrderHours,
   findFreeDays,
+  reservedSlotHours,
   type FreeDay,
 } from './availability.service';
 import { OfferBookingModel } from './offer-booking.model';
@@ -108,7 +109,7 @@ export async function prepareOfferBookingLink(input: {
   }
 
   const durationHours = estimateWorkOrderHours(offer.items as any[]);
-  const slotHours = bookingSlotHours(durationHours);
+  const slotHours = reservedSlotHours(durationHours);
   const existing = await OfferBookingModel.findOne({ projectId: input.projectId, offerVersionId: offer._id });
   const freeDays = await findFreeDaysForAnyEmployee({
     employeeIds,
@@ -118,7 +119,7 @@ export async function prepareOfferBookingLink(input: {
   });
   if (!freeDays.length) {
     throw new AvailabilityError(
-      `Izbrani monterji v naslednjih ${BOOKING_WINDOW_DAYS} dneh nimajo prostega termina za ${slotHours} h.`,
+      `Izbrani monterji v naslednjih ${BOOKING_WINDOW_DAYS} dneh nimajo prostega termina za ${slotHours} h, vključno z rezervo za pot.`,
     );
   }
 
@@ -201,10 +202,10 @@ export async function createBookingInvite(input: {
     throw new AvailabilityError('Najprej dodeli monterje na delovni nalog — termini se ponudijo iz njihove razpoložljivosti.');
   }
 
-  // durationHours = celotna ocena (za mail); slotHours = blok, ki ga stranka
-  // dejansko rezervira prvi dan (dolgih montaž ne razbijamo na več dni).
+  // durationHours = celotna ocena (za mail); slotHours = blok prvega dne skupaj
+  // z rezervo za pot (dolgih montaž ne razbijamo na več dni).
   const durationHours = estimateWorkOrderHours(workOrder.items as any[]);
-  const slotHours = bookingSlotHours(durationHours);
+  const slotHours = reservedSlotHours(durationHours);
   const freeDays = await findFreeDays({
     employeeIds,
     durationHours: slotHours,
@@ -216,7 +217,7 @@ export async function createBookingInvite(input: {
     const imena = await imenaMonterjevBrezRazpolozljivosti(employeeIds, slotHours, String(workOrder._id));
     const kdo = imena.length ? ` Brez označenih prostih dni: ${imena.join(', ')}.` : '';
     throw new AvailabilityError(
-      `V naslednjih ${BOOKING_WINDOW_DAYS} dneh ni dneva, ko bi bili vsi dodeljeni monterji hkrati prosti ${slotHours} h.${kdo}` +
+      `V naslednjih ${BOOKING_WINDOW_DAYS} dneh ni dneva, ko bi bili vsi dodeljeni monterji hkrati prosti ${slotHours} h, vključno z rezervo za pot.${kdo}` +
         ' Monter proste dneve označi na nadzorni plošči (widget »Moja razpoložljivost«), admin pa v Zaposleni → Urnik za termine.',
     );
   }
@@ -287,7 +288,7 @@ export async function getBookingByToken(token: string): Promise<BookingView> {
   if (booking.kind === 'preview') {
     const days = await findFreeDaysForAnyEmployee({
       employeeIds: (booking.preview.employeeIds ?? []).map((id: unknown) => String(id)),
-      durationHours: booking.preview.durationHours,
+      durationHours: reservedSlotHours(booking.preview.durationHours),
       days: BOOKING_WINDOW_DAYS,
     });
     return {
@@ -303,7 +304,7 @@ export async function getBookingByToken(token: string): Promise<BookingView> {
     const project = await ProjectModel.findOne({ id: offerBooking.projectId }).select({ title: 1 }).lean();
     const days = await findFreeDaysForAnyEmployee({
       employeeIds: (offerBooking.candidateEmployeeIds ?? []).map((id: unknown) => String(id)),
-      durationHours: bookingSlotHours(offerBooking.durationHours),
+      durationHours: reservedSlotHours(offerBooking.durationHours),
       days: BOOKING_WINDOW_DAYS,
     });
     return {
@@ -322,7 +323,7 @@ export async function getBookingByToken(token: string): Promise<BookingView> {
     ? []
     : await findFreeDays({
         employeeIds: (workOrder.assignedEmployeeIds ?? []).map((id: unknown) => String(id)),
-        durationHours: bookingSlotHours(durationHours),
+        durationHours: reservedSlotHours(durationHours),
         days: BOOKING_WINDOW_DAYS,
         excludeWorkOrderId: String(workOrder._id),
       });
@@ -348,7 +349,7 @@ export async function chooseBookingDay(token: string, date: unknown): Promise<{ 
     const employeeIds = (offerBooking.candidateEmployeeIds ?? []).map((id: unknown) => String(id));
     const freeDays = await findFreeDaysForAnyEmployee({
       employeeIds,
-      durationHours: bookingSlotHours(offerBooking.durationHours),
+      durationHours: reservedSlotHours(offerBooking.durationHours),
       days: BOOKING_WINDOW_DAYS,
     });
     const chosen = freeDays.find((day) => day.date === dateKey);
@@ -392,11 +393,11 @@ export async function chooseBookingDay(token: string, date: unknown): Promise<{ 
   const employeeIds = (workOrder.assignedEmployeeIds ?? []).map((id: unknown) => String(id));
 
   // Ponovno preverimo, da je dan še prost (med mailom in klikom je lahko minilo več dni).
-  // Isti blok kot pri ponudbi dni (bookingSlotHours), sicer bi validacija odbila
+  // Isti blok kot pri ponudbi dni (reservedSlotHours), sicer bi validacija odbila
   // dan, ki je bil legitimno ponujen.
   const days = await findFreeDays({
     employeeIds,
-    durationHours: bookingSlotHours(durationHours),
+    durationHours: reservedSlotHours(durationHours),
     days: BOOKING_WINDOW_DAYS,
     excludeWorkOrderId: String(workOrder._id),
   });

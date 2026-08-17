@@ -321,6 +321,7 @@ export interface EmployeeTermin {
   date: string;
   startHour: number;
   hours: number;
+  bufferHours: number;
   title: string;
   projectId: string;
   /** Nalog zaključen (status completed / completedAt). */
@@ -351,6 +352,7 @@ export async function getEmployeeTermini(employeeId: string, from: string, days:
       date: dateKey,
       startHour: scheduled.getHours(),
       hours: estimateWorkOrderHours(workOrder.items),
+      bufferHours: PROJECT_TRAVEL_BUFFER_HOURS,
       title: workOrder.title || workOrder.projectId || 'Montaža',
       projectId: String(workOrder.projectId ?? ''),
       done: workOrder.status === 'completed' || !!workOrder.completedAt,
@@ -407,6 +409,7 @@ export function estimateWorkOrderHours(items: Array<{ casovnaNorma?: number; qua
 
 /** Poln delovni dan (ur) — meja bloka, ki ga stranka rezervira ob izbiri prvega dne. */
 export const SINGLE_DAY_HOURS = 8;
+export const PROJECT_TRAVEL_BUFFER_HOURS = 1;
 
 /**
  * Koliko zaporednih prostih ur mora imeti ekipa PRVI dan, da se dan ponudi.
@@ -416,6 +419,11 @@ export const SINGLE_DAY_HOURS = 8;
  */
 export function bookingSlotHours(durationHours: number): number {
   return Math.max(1, Math.min(Math.ceil(durationHours), SINGLE_DAY_HOURS));
+}
+
+/** Čas, ki ga termin zasede v urniku: izvedba + rezerva za pot, največ en delovni dan. */
+export function reservedSlotHours(durationHours: number): number {
+  return Math.min(bookingSlotHours(durationHours) + PROJECT_TRAVEL_BUFFER_HOURS, SINGLE_DAY_HOURS);
 }
 
 interface BusyInterval {
@@ -459,7 +467,7 @@ async function busyByEmployeeAndDate(
     const scheduled = new Date(workOrder.scheduledAt);
     if (Number.isNaN(scheduled.valueOf())) continue;
     const dateKey = `${scheduled.getFullYear()}-${String(scheduled.getMonth() + 1).padStart(2, '0')}-${String(scheduled.getDate()).padStart(2, '0')}`;
-    const interval: BusyInterval = { startHour: scheduled.getHours(), hours: estimateWorkOrderHours(workOrder.items) };
+    const interval: BusyInterval = { startHour: scheduled.getHours(), hours: reservedSlotHours(estimateWorkOrderHours(workOrder.items)) };
     for (const employeeId of workOrder.assignedEmployeeIds ?? []) {
       const key = `${employeeId}:${dateKey}`;
       busy.set(key, [...(busy.get(key) ?? []), interval]);
@@ -472,7 +480,7 @@ async function busyByEmployeeAndDate(
     const key = `${booking.selectedEmployeeId}:${dateKey}`;
     busy.set(key, [
       ...(busy.get(key) ?? []),
-      { startHour: scheduled.getHours(), hours: bookingSlotHours(Number(booking.durationHours) || 4) },
+      { startHour: scheduled.getHours(), hours: reservedSlotHours(Number(booking.durationHours) || 4) },
     ]);
   }
   return busy;

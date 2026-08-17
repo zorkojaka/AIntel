@@ -13,6 +13,7 @@ import {
   addDays,
   AvailabilityError,
   bookingSlotHours,
+  reservedSlotHours,
   estimateWorkOrderHours,
   findFreeDays,
   getAvailabilityCalendar,
@@ -192,6 +193,8 @@ test('bookingSlotHours: krajše montaže točno svoje trajanje, dolge en delovni
   assert.equal(bookingSlotHours(8), 8);
   assert.equal(bookingSlotHours(12), 8, 'dolga montaža se skrči na en dan');
   assert.equal(bookingSlotHours(0), 1, 'najmanj 1 ura');
+  assert.equal(reservedSlotHours(3), 4, 'terminu doda eno uro za pot');
+  assert.equal(reservedSlotHours(8), 8, 'celodnevni termin ostane omejen na delovni dan');
 });
 
 test('rezervacija: dolga montaža (12 h) se ponudi na dan z označenim polnim dnem', async () => {
@@ -281,11 +284,27 @@ test('rezervacija: stranka izbere dan, termin se zapiše in potrdi, povezava pos
   assert.ok((project as any)?.timeline?.some((entry: any) => entry.title === 'Stranka izbrala termin montaže'));
 });
 
+test('prosti termini: po projektu je ena ura rezerve za pot', async () => {
+  const miha = await monter('Miha');
+  await setAvailabilityDay(String(miha._id), D1, [8, 9, 10, 11, 12, 13, 14, 15]);
+  await WorkOrderModel.create({
+    projectId: 'PRJ-TRAVEL',
+    offerVersionId: new mongoose.Types.ObjectId().toString(),
+    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 360 }],
+    status: 'issued',
+    scheduledAt: `${D1}T08:00:00`,
+    assignedEmployeeIds: [miha._id],
+  });
+
+  const free = await findFreeDays({ employeeIds: [String(miha._id)], durationHours: 2, from: D1, days: 1 });
+  assert.deepEqual(free, [], 'projekt 8–14 zasede še 14–15, zato servis 14–16 ni dovoljen');
+});
+
 test('rezervacija iz ponudbe: združi termine kandidatov in ob izbiri dodeli prostega monterja', async () => {
   const miha = await monter('Miha');
   const ana = await monter('Ana');
-  await setAvailabilityDay(String(miha._id), D1, [8, 9]);
-  await setAvailabilityDay(String(ana._id), D2, [10, 11]);
+  await setAvailabilityDay(String(miha._id), D1, [8, 9, 10]);
+  await setAvailabilityDay(String(ana._id), D2, [10, 11, 12]);
   await ProjectModel.create({
     id: 'PRJ-404', code: 'PRJ-404', projectNumber: 404, title: 'PRJ-404: Izbira monterja',
     customer: { name: 'Testna stranka' }, status: 'offered', createdAt: new Date().toISOString(),
@@ -326,8 +345,8 @@ test('rezervacija iz ponudbe: združi termine kandidatov in ob izbiri dodeli pro
 test('administrativni predogled združi termine izbranih monterjev in ne dovoli rezervacije', async () => {
   const miha = await monter('Miha');
   const ana = await monter('Ana');
-  await setAvailabilityDay(String(miha._id), D1, [8]);
-  await setAvailabilityDay(String(ana._id), D2, [10]);
+  await setAvailabilityDay(String(miha._id), D1, [8, 9]);
+  await setAvailabilityDay(String(ana._id), D2, [10, 11]);
   const { url } = await createBookingPreviewLink({ employeeIds: [String(miha._id), String(ana._id)] });
   const token = new URL(url).searchParams.get('t');
   assert.ok(token);

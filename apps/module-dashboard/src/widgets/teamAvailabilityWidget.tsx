@@ -16,6 +16,7 @@ interface EmployeeTermin {
   date: string;
   startHour: number;
   hours: number;
+  bufferHours: number;
   title: string;
   projectId: string;
   done: boolean;
@@ -208,7 +209,7 @@ function TeamAvailability() {
                       `${member.name} — ${day.date}`,
                       day.hours.length ? `Na voljo ${day.hours[0]}:00–${(day.hours[day.hours.length - 1] ?? 0) + 1}:00` : 'Ni označene razpoložljivosti',
                       ...dayTermini.map(
-                        (termin) => `${termin.done ? '✓' : '🔧'} ${termin.title} (${termin.startHour}:00–${termin.startHour + termin.hours}:00)`,
+                        (termin) => `${termin.done ? '✓' : '🔧'} ${termin.title} (${termin.startHour}:00–${termin.startHour + termin.hours}:00 + ${termin.bufferHours} h rezerve)`,
                       ),
                     ].join('\n');
                     return (
@@ -257,7 +258,7 @@ function TeamAvailability() {
                   )}
                   {entry.termini.map((termin, index) => (
                     <span key={index} className={`ekipa__seznam-termin${termin.done ? ' je-opravljen' : ''}`}>
-                      {termin.done ? '✓' : '🔧'} {termin.startHour}:00–{termin.startHour + termin.hours}:00 · {termin.title}
+                      {termin.done ? '✓' : '🔧'} {termin.startHour}:00–{termin.startHour + termin.hours}:00 · {termin.title} · +{termin.bufferHours} h za pot
                       {termin.projectId ? ` (${termin.projectId})` : ''}
                     </span>
                   ))}
