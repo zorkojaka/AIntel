@@ -19,6 +19,10 @@ function validatePayload(body: unknown): SettingsUpdate {
     typeof payload.documentNumbering === 'object' && payload.documentNumbering !== null
       ? (payload.documentNumbering as Record<string, unknown>)
       : undefined;
+  const schedulingRaw =
+    typeof payload.scheduling === 'object' && payload.scheduling !== null
+      ? (payload.scheduling as Record<string, unknown>)
+      : undefined;
 
   const parseNumberingConfig = (raw?: Record<string, unknown> | null) => {
     if (!raw) return null;
@@ -82,6 +86,18 @@ function validatePayload(body: unknown): SettingsUpdate {
       payload.workOrderCompletionSignatureMode === 'required'
         ? payload.workOrderCompletionSignatureMode
         : undefined,
+    scheduling: schedulingRaw
+      ? {
+          minimumLeadDays:
+            typeof schedulingRaw.minimumLeadDays === 'number' ? schedulingRaw.minimumLeadDays : undefined,
+          maximumAdvanceDays:
+            typeof schedulingRaw.maximumAdvanceDays === 'number' ? schedulingRaw.maximumAdvanceDays : undefined,
+          showDurationToCustomer:
+            typeof schedulingRaw.showDurationToCustomer === 'boolean'
+              ? schedulingRaw.showDurationToCustomer
+              : undefined,
+        }
+      : undefined,
     notes: Array.isArray(payload.notes) ? (payload.notes as SettingsUpdate['notes']) : undefined,
     noteDefaultsByDoc:
       typeof payload.noteDefaultsByDoc === 'object' && payload.noteDefaultsByDoc !== null

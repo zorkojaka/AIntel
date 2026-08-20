@@ -37,6 +37,7 @@ import {
   recordOfferConfirmedCommunicationEvent,
 } from '../../communication/services/communication.service';
 import { normalizeSupplierFields, normalizeSupplierKey } from '../services/supplier-normalization.service';
+import { isSchedulingDateAllowed } from '../services/scheduling-window.service';
 
 function calculateOfferTotalsFromSnapshot(offer: {
   items: OfferLineItem[];
@@ -2184,6 +2185,18 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     const updates: Record<string, unknown> = {};
 
     if ('scheduledAt' in payload) {
+      const schedulingSettings = (await getSettings()).scheduling;
+      if (
+        typeof payload.scheduledAt === 'string' &&
+        payload.scheduledAt.trim().length > 0 &&
+        payload.scheduledAt !== existing.scheduledAt &&
+        !isSchedulingDateAllowed(payload.scheduledAt, new Date(), schedulingSettings)
+      ) {
+        return res.fail(
+          `Termin izvedbe mora biti med ${schedulingSettings.minimumLeadDays} in ${schedulingSettings.maximumAdvanceDays} dni od danes.`,
+          400,
+        );
+      }
       updates.scheduledAt = typeof payload.scheduledAt === 'string' ? payload.scheduledAt : null;
     }
     const scheduledConfirmedValue =

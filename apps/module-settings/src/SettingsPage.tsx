@@ -17,6 +17,7 @@ import { ExecutionRulesSection } from './ExecutionRulesSection';
 import { RequirementTemplatesSection } from './RequirementTemplatesSection';
 import { TasksSettingsSection } from './TasksSettingsSection';
 import { SuppliersSettingsSection } from './SuppliersSettingsSection';
+import { SchedulingSettingsSection } from './SchedulingSettingsSection';
 import { WebInquiriesSection } from './WebInquiriesSection';
 import { CommunicationSenderSection } from './components/CommunicationSenderSection';
 import { CommunicationTemplatesSection } from './components/CommunicationTemplatesSection';
@@ -38,9 +39,9 @@ interface StatusBanner {
   text: string;
 }
 
-type FormSaveScope = 'company' | 'documents' | 'sales' | 'system';
+type FormSaveScope = 'company' | 'documents' | 'sales' | 'scheduling' | 'system';
 type DocumentTabKey = DocumentTypeKey;
-type SettingsSectionKey = 'company' | 'documents' | 'communication' | 'sales' | 'tasks' | 'suppliers' | 'system';
+type SettingsSectionKey = 'company' | 'documents' | 'communication' | 'sales' | 'scheduling' | 'tasks' | 'suppliers' | 'system';
 
 const SECTION_QUERY_PARAM = 'section';
 const SETTINGS_SECTIONS: Array<{
@@ -72,6 +73,12 @@ const SETTINGS_SECTIONS: Array<{
     label: 'Prodaja',
     title: 'Prodaja',
     description: 'Prodajna pravila, predloge zahtev in prodajni privzeti teksti.',
+  },
+  {
+    key: 'scheduling',
+    label: 'Termini',
+    title: 'Termini',
+    description: 'Pravila za obdobje izbire terminov in podatke, ki jih vidi stranka.',
   },
   {
     key: 'tasks',
@@ -424,6 +431,15 @@ export const SettingsPage: React.FC = () => {
     await persistSettings('sales');
   };
 
+  const handleSchedulingSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (form.scheduling.maximumAdvanceDays < form.scheduling.minimumLeadDays) {
+      setStatus({ variant: 'error', text: 'Največje obdobje mora biti enako ali daljše od začetnega zamika.' });
+      return;
+    }
+    await persistSettings('scheduling');
+  };
+
   const handleSaveCommunicationSettings = async (payload: CommunicationSenderSettings) => {
     try {
       const updated = await saveCommunicationSettings(payload);
@@ -615,6 +631,16 @@ export const SettingsPage: React.FC = () => {
         );
       case 'tasks':
         return <TasksSettingsSection />;
+      case 'scheduling':
+        return (
+          <SchedulingSettingsSection
+            value={form.scheduling}
+            onChange={(scheduling) => setForm((current) => ({ ...current, scheduling }))}
+            onSubmit={handleSchedulingSubmit}
+            saving={savingScope === 'scheduling'}
+            loading={loading}
+          />
+        );
       case 'suppliers':
         return <SuppliersSettingsSection />;
       case 'system':

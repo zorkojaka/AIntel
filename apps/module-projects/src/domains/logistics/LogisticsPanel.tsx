@@ -2839,6 +2839,7 @@ export function LogisticsPanel({
                       : selectedWorkOrder?.scheduledConfirmedBy ?? null
                   }
                   executionDurationLabel={selectedExecutionDurationLabel}
+                  schedulingSettings={settings.scheduling}
                   mainInstallerId={
                     typeof workOrderForm.mainInstallerId === "string"
                       ? workOrderForm.mainInstallerId
@@ -2977,6 +2978,7 @@ export function LogisticsPanel({
                   : selectedWorkOrder?.scheduledConfirmedBy ?? null
               }
               executionDurationLabel={selectedExecutionDurationLabel}
+              schedulingSettings={settings.scheduling}
               mainInstallerId={
                 typeof workOrderForm.mainInstallerId === "string"
                   ? workOrderForm.mainInstallerId

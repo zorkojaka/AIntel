@@ -8,6 +8,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import { getSchedulingDateTimeRange, isSchedulingDateTimeAllowed } from "../../utils/schedulingWindow";
 
 type MaterialLine = MaterialOrder["items"][number];
 
@@ -37,6 +38,10 @@ interface MaterialOrderCardProps {
   executionDateConfirmedAt: string | null;
   executionDateConfirmedBy?: string | null;
   executionDurationLabel?: string | null;
+  schedulingSettings?: {
+    minimumLeadDays?: number;
+    maximumAdvanceDays?: number;
+  };
   mainInstallerId: string | null;
   executionTeamIds: string[];
   installerAvailability: InstallerAvailabilityEntry[];
@@ -240,6 +245,7 @@ export function MaterialOrderCard({
   executionDateConfirmedAt,
   executionDateConfirmedBy,
   executionDurationLabel,
+  schedulingSettings,
   mainInstallerId,
   executionTeamIds,
   installerAvailability,
@@ -272,6 +278,7 @@ export function MaterialOrderCard({
   collapsible = false,
   defaultCollapsed = false,
 }: MaterialOrderCardProps) {
+  const schedulingDateTimeRange = getSchedulingDateTimeRange(schedulingSettings);
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
 
   if (!materialOrder) {
@@ -492,7 +499,17 @@ export function MaterialOrderCard({
                 <h4 className="text-sm font-semibold">Termin izvedbe</h4>
                 <div className="flex flex-wrap items-start gap-3">
                   <label className="min-w-0 flex-1">
-                    <Input type="datetime-local" value={executionDate ?? ""} onChange={(event) => onExecutionDateChange(event.target.value)} className={`h-12 text-lg font-semibold tracking-tight ${executionDateInputClass}`} />
+                    <Input
+                      type="datetime-local"
+                      min={schedulingDateTimeRange.min}
+                      max={schedulingDateTimeRange.max}
+                      value={executionDate ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (!value || isSchedulingDateTimeAllowed(value, schedulingSettings)) onExecutionDateChange(value);
+                      }}
+                      className={`h-12 text-lg font-semibold tracking-tight ${executionDateInputClass}`}
+                    />
                   </label>
                   {executionDateConfirmedAt ? (
                     <Button type="button" size="sm" variant="outline" onClick={onUnconfirmExecutionDate} disabled={savingWorkOrder}>

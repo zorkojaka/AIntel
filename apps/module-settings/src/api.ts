@@ -197,6 +197,11 @@ export const DEFAULT_SETTINGS: SettingsDto = {
   disclaimer: '',
   phaseProgressionMode: 'manual',
   workOrderCompletionSignatureMode: 'optional',
+  scheduling: {
+    minimumLeadDays: 3,
+    maximumAdvanceDays: 90,
+    showDurationToCustomer: false,
+  },
 };
 
 export const DOCUMENT_PREFIX_LABELS: Record<DocumentPrefixKey, string> = {
@@ -224,6 +229,10 @@ function mergeWithDefaults(partial?: Partial<SettingsDto>): SettingsDto {
     notes,
     noteDefaultsByDoc: noteDefaults,
     documentNumbering,
+    scheduling: {
+      ...DEFAULT_SETTINGS.scheduling,
+      ...(partial?.scheduling ?? {}),
+    },
   };
 }
 

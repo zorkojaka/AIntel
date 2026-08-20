@@ -9,6 +9,7 @@ import {
   LegacyOfferClause,
   DocumentNumberingSettings,
   DocumentNumberingConfig,
+  SchedulingSettings,
 } from './Settings';
 import {
   buildPatternFromPrefix,
@@ -23,9 +24,10 @@ import {
   ensureDocumentNumberingConfig,
 } from './document-numbering.util';
 
-export type SettingsUpdate = Partial<Omit<Settings, 'documentPrefix'>> & {
+export type SettingsUpdate = Partial<Omit<Settings, 'documentPrefix' | 'scheduling'>> & {
   documentPrefix?: Partial<DocumentPrefix>;
   documentNumbering?: DocumentNumberingSettings;
+  scheduling?: Partial<SchedulingSettings>;
 };
 
 const DOCUMENT_TYPE_KEYS: DocumentTypeKey[] = [
@@ -97,6 +99,11 @@ const DEFAULT_SETTINGS: Settings = {
   offerClauses: [],
   phaseProgressionMode: 'manual',
   workOrderCompletionSignatureMode: 'optional',
+  scheduling: {
+    minimumLeadDays: 3,
+    maximumAdvanceDays: 90,
+    showDurationToCustomer: false,
+  },
 };
 
 let cachedSettings: Settings | null = null;
@@ -261,6 +268,26 @@ function sanitizeString(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value.trim() : fallback;
 }
 
+function sanitizeInteger(value: unknown, fallback: number, min: number, max: number) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(max, Math.max(min, Math.round(value)))
+    : fallback;
+}
+
+function normalizeSchedulingSettings(input: Partial<SchedulingSettings> | undefined, base: Settings): SchedulingSettings {
+  const fallback = base.scheduling ?? DEFAULT_SETTINGS.scheduling;
+  const minimumLeadDays = sanitizeInteger(input?.minimumLeadDays, fallback.minimumLeadDays, 0, 365);
+  const maximumAdvanceDays = sanitizeInteger(input?.maximumAdvanceDays, fallback.maximumAdvanceDays, 0, 3650);
+  return {
+    minimumLeadDays,
+    maximumAdvanceDays: Math.max(minimumLeadDays, maximumAdvanceDays),
+    showDurationToCustomer:
+      typeof input?.showDurationToCustomer === 'boolean'
+        ? input.showDurationToCustomer
+        : fallback.showDurationToCustomer,
+  };
+}
+
 function normalizeDocumentNumbering(
   input: DocumentNumberingSettings | undefined,
   base: Settings,
@@ -348,6 +375,7 @@ function sanitizeSettings(payload: SettingsUpdate, baseOverride?: Settings): Set
       payload.workOrderCompletionSignatureMode === 'required'
         ? payload.workOrderCompletionSignatureMode
         : base.workOrderCompletionSignatureMode ?? DEFAULT_SETTINGS.workOrderCompletionSignatureMode,
+    scheduling: normalizeSchedulingSettings(payload.scheduling, base),
   };
 }
 

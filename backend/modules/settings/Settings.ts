@@ -41,6 +41,12 @@ export interface LegacyOfferClause {
 export type DocumentNumberingReset = 'never' | 'yearly';
 export type WorkOrderCompletionSignatureMode = 'none' | 'optional' | 'required';
 
+export interface SchedulingSettings {
+  minimumLeadDays: number;
+  maximumAdvanceDays: number;
+  showDurationToCustomer: boolean;
+}
+
 export interface DocumentNumberingConfig {
   pattern: string;
   reset?: DocumentNumberingReset;
@@ -82,6 +88,7 @@ export interface Settings {
   offerClauses?: LegacyOfferClause[];
   phaseProgressionMode?: 'automatic' | 'manual';
   workOrderCompletionSignatureMode?: WorkOrderCompletionSignatureMode;
+  scheduling: SchedulingSettings;
 }
 
 export interface SettingsDocument extends Document, Settings {
@@ -163,6 +170,15 @@ const DocumentNumberingSchema = new Schema<DocumentNumberingSettings>(
   { _id: false }
 );
 
+const SchedulingSettingsSchema = new Schema<SchedulingSettings>(
+  {
+    minimumLeadDays: { type: Number, default: 3, min: 0, max: 365 },
+    maximumAdvanceDays: { type: Number, default: 90, min: 0, max: 3650 },
+    showDurationToCustomer: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
 const SettingsSchema = new Schema<SettingsDocument>(
   {
     key: { type: String, required: true, unique: true, default: 'global' },
@@ -199,7 +215,8 @@ const SettingsSchema = new Schema<SettingsDocument>(
     disclaimer: { type: String },
     offerClauses: { type: [LegacyClauseSchema], default: [] },
     phaseProgressionMode: { type: String, enum: ['automatic', 'manual'], default: 'manual' },
-    workOrderCompletionSignatureMode: { type: String, enum: ['none', 'optional', 'required'], default: 'optional' }
+    workOrderCompletionSignatureMode: { type: String, enum: ['none', 'optional', 'required'], default: 'optional' },
+    scheduling: { type: SchedulingSettingsSchema, default: () => ({}) }
   },
   {
     timestamps: true,

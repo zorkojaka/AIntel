@@ -30,6 +30,7 @@ import type { Employee } from "@aintel/shared/types/employee";
 import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
 import { WorkOrderConfirmationComposeDialog } from "../communication/WorkOrderConfirmationComposeDialog";
 import { useSettingsData } from "@aintel/module-settings";
+import { getSchedulingDateTimeRange, isSchedulingDateTimeAllowed } from "../../utils/schedulingWindow";
 
 interface ExecutionPanelProps {
   projectId: string;
@@ -595,6 +596,7 @@ export function ExecutionPanel({
   const materialOrders = logistics?.materialOrders ?? [];
   const refreshAfterMutation = useProjectMutationRefresh(projectId);
   const { settings } = useSettingsData({ applyTheme: false });
+  const schedulingDateTimeRange = getSchedulingDateTimeRange(settings.scheduling);
   const [pendingWorkOrders, setPendingWorkOrders] = useState<Record<string, WorkOrderDraft>>({});
   const [pendingMaterialOrders, setPendingMaterialOrders] = useState<Record<string, MaterialOrder>>({});
   const [completingId, setCompletingId] = useState<string | null>(null);
@@ -2306,6 +2308,7 @@ export function ExecutionPanel({
                           executionDateConfirmedAt={draft.scheduledConfirmedAt ?? null}
                           executionDateConfirmedBy={draft.scheduledConfirmedBy ?? null}
                           executionDurationLabel={null}
+                          schedulingSettings={settings.scheduling}
                           mainInstallerId={order.mainInstallerId ?? null}
                           executionTeamIds={order.assignedEmployeeIds ?? []}
                           installerAvailability={[]}
@@ -2399,8 +2402,13 @@ export function ExecutionPanel({
                               </label>
                               <Input
                                 type="datetime-local"
+                                min={schedulingDateTimeRange.min}
+                                max={schedulingDateTimeRange.max}
                                 value={draft.scheduledAt ?? ""}
-                                onChange={(event) => applyScheduleChange(order, event.target.value)}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  if (!value || isSchedulingDateTimeAllowed(value, settings.scheduling)) applyScheduleChange(order, value);
+                                }}
                                 disabled={isConfirmationLocked || isSavingOrder}
                                 className="max-w-sm"
                               />
@@ -3132,7 +3140,7 @@ export function ExecutionPanel({
                 <div className="space-y-1">
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">Termin izvedbe</p>
                   <p className="text-sm font-medium">{selectedSignoffExecutionDateLabel ?? "Ni določen"}</p>
-                  {selectedSignoffExecutionDurationLabel ? (
+                  {settings.scheduling.showDurationToCustomer && selectedSignoffExecutionDurationLabel ? (
                     <p className="text-xs text-muted-foreground">
                       Ocena trajanja izvedbe: {selectedSignoffExecutionDurationLabel}
                     </p>

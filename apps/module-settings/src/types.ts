@@ -71,6 +71,11 @@ export interface SettingsDto {
   disclaimer?: string;
   phaseProgressionMode?: 'automatic' | 'manual';
   workOrderCompletionSignatureMode?: 'none' | 'optional' | 'required';
+  scheduling: {
+    minimumLeadDays: number;
+    maximumAdvanceDays: number;
+    showDurationToCustomer: boolean;
+  };
   orsApiConfigured?: boolean;
 }
 
