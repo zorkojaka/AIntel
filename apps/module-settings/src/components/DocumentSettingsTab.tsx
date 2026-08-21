@@ -1,6 +1,6 @@
-import React, { FormEvent, useMemo, useState } from 'react';
+import React, { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Input, Textarea } from '@aintel/ui';
-import { DocumentTypeKey, NoteCategory, NoteDto } from '../types';
+import { DocumentTypeKey, InvoiceNumberCounterDto, NoteCategory, NoteDto } from '../types';
 
 interface DocumentSettingsTabProps {
   docType: DocumentTypeKey;
@@ -18,6 +18,9 @@ interface DocumentSettingsTabProps {
   previewVisible: boolean;
   onTogglePreview: () => void;
   preview: React.ReactNode;
+  invoiceCounter?: InvoiceNumberCounterDto | null;
+  invoiceCounterSaving?: boolean;
+  onSaveInvoiceCounter?: (currentSequence: number) => Promise<void>;
 }
 
 const NUMBERING_TOKENS = '{YYYY}, {YY}, {MM}, {DD}, {SEQ:000}'
@@ -50,8 +53,22 @@ export const DocumentSettingsTab: React.FC<DocumentSettingsTabProps> = ({
   previewVisible,
   onTogglePreview,
   preview,
+  invoiceCounter,
+  invoiceCounterSaving = false,
+  onSaveInvoiceCounter,
 }) => {
   const [showNumberingHelp, setShowNumberingHelp] = useState(false);
+  const [invoiceSequenceDraft, setInvoiceSequenceDraft] = useState('0');
+  const parsedInvoiceSequence = Number(invoiceSequenceDraft);
+  const invoiceSequenceIsValid = Number.isInteger(parsedInvoiceSequence)
+    && parsedInvoiceSequence >= 0
+    && parsedInvoiceSequence <= 999999999;
+
+  useEffect(() => {
+    if (invoiceCounter) {
+      setInvoiceSequenceDraft(String(invoiceCounter.currentSequence));
+    }
+  }, [invoiceCounter]);
 
   const sortedNotes = useMemo(
     () =>
@@ -101,6 +118,45 @@ export const DocumentSettingsTab: React.FC<DocumentSettingsTabProps> = ({
             </div>
           )}
         </div>
+
+        {docType === 'invoice' && (
+          <div className="space-y-3 rounded-md border border-border bg-muted/30 p-4">
+            <div>
+              <label className="text-sm font-medium text-foreground" htmlFor="invoice-current-sequence">
+                Zadnja uporabljena zaporedna številka računa
+              </label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Če je bil račun izdan zunaj sistema, vpiši njegovo zaporedno številko. Naslednji račun bo dobil številko +1.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+              <Input
+                id="invoice-current-sequence"
+                type="number"
+                min={0}
+                step={1}
+                className="w-44"
+                value={invoiceSequenceDraft}
+                onChange={(event) => setInvoiceSequenceDraft(event.target.value)}
+              />
+              <Button
+                type="button"
+                disabled={invoiceCounterSaving || !invoiceCounter || !onSaveInvoiceCounter || !invoiceSequenceIsValid}
+                onClick={() => {
+                  if (invoiceSequenceIsValid) void onSaveInvoiceCounter?.(parsedInvoiceSequence);
+                }}
+              >
+                {invoiceCounterSaving ? 'Shranjujem ...' : 'Shrani številko'}
+              </Button>
+            </div>
+            {invoiceCounter && (
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                <span>Trenutna vrednost števca: <strong className="font-mono text-foreground">{invoiceCounter.currentSequence}</strong></span>
+                <span>Naslednji račun: <strong className="font-mono text-foreground">{invoiceCounter.nextNumber}</strong></span>
+              </div>
+            )}
+          </div>
+        )}
 
         <NotesManager
           notes={sortedNotes}

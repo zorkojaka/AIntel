@@ -5,6 +5,10 @@ import {
   getPdfDocumentSettings,
   updatePdfDocumentSettings,
 } from '../services/pdf-settings.service';
+import {
+  getInvoiceSequentialCounterState,
+  setInvoiceSequentialCounter,
+} from '../services/document-numbering.service';
 import { buildOfferPdfPreviewPayload } from '../services/offer-pdf-preview.service';
 
 function parseDocType(req: Request) {
@@ -49,6 +53,26 @@ export async function updatePdfDocumentSettingsController(req: Request, res: Res
     const docType = parseDocType(req);
     const updated = await updatePdfDocumentSettings(docType, req.body ?? {});
     res.success(updated);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getInvoiceCounterController(_req: Request, res: Response, next: NextFunction) {
+  try {
+    res.success(await getInvoiceSequentialCounterState());
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateInvoiceCounterController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const currentSequence = req.body?.currentSequence;
+    if (typeof currentSequence !== 'number' || !Number.isInteger(currentSequence) || currentSequence < 0 || currentSequence > 999999999) {
+      return res.fail('Zaporedna številka računa mora biti celo število med 0 in 999999999.', 400);
+    }
+    res.success(await setInvoiceSequentialCounter(currentSequence));
   } catch (error) {
     next(error);
   }

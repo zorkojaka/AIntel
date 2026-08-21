@@ -6,8 +6,10 @@ import {
   addItem,
   addItemFromCenik,
   createProject,
+  cloneProject,
   deleteItem,
   getProject,
+  listClientProjects,
   listProjects,
   receiveDelivery,
   saveSignature,
@@ -59,7 +61,9 @@ router.post('/', requireProjectWrite, createProject);
 // iz delovnega naloga; zapis se shrani na stranko, projekt je le izvor.
 router.get('/:projectId/client-notes', getProjectClientNotes);
 router.post('/:projectId/client-notes', requireWorkOrderWrite, postProjectClientNote);
+router.post('/:id/clone', requireProjectWrite, cloneProject);
 router.get('/:id', getProject);
+router.get('/:id/client-projects', listClientProjects);
 router.patch('/:id/assignments', requireProjectWrite, updateProjectAssignments);
 router.post('/:id/lifecycle', requireProjectWrite, updateProjectLifecycle);
 router.post('/:id/status', requireProjectWrite, updateStatus);
@@ -84,6 +88,7 @@ router.get('/:projectId/offers/:offerVersionId/pdf', exportOfferPdf);
 router.post('/:projectId/offers/:offerVersionId/send', requireProjectWrite, sendOfferCommunicationController);
 router.post('/:projectId/work-orders/:workOrderId/send-confirmation', requireWorkOrderWrite, sendWorkOrderConfirmationCommunicationController);
 router.post('/:projectId/work-orders/:workOrderId/send-installer-preparation', requireWorkOrderWrite, sendInstallerPreparationCommunicationController);
+router.post('/:projectId/work-orders/:workOrderId/accept-assignment', requireWorkOrderWrite, logisticsController.acceptInstallerAssignment);
 router.get('/:projectId/offer', getActiveOffer);
 router.post('/:projectId/offers/:offerId/confirm', requireProjectWrite, logisticsController.confirmOffer);
 router.get('/:projectId/execution-definition', logisticsController.getProjectExecutionDefinition);
@@ -94,6 +99,7 @@ router.get('/:projectId/logistics/installer-availability/:employeeId', requirePr
 router.post('/:projectId/work-orders/:workOrderId/booking-invite', requirePreparationAccess, bookingInviteController);
 router.put('/:projectId/work-orders/:workOrderId', requireWorkOrderWrite, logisticsController.updateWorkOrder);
 router.post('/:projectId/work-orders/:workOrderId/start-correction', requireWorkOrderWrite, logisticsController.startWorkOrderConfirmationCorrection);
+router.post('/:projectId/material-orders/:materialOrderId/mark-equipment-ready', requireWorkOrderWrite, logisticsController.markEquipmentReady);
 router.post('/:projectId/material-orders/:materialOrderId/advance', requirePreparationAccess, logisticsController.advanceMaterialOrderStep);
 router.post('/:projectId/material-orders/:materialOrderId/supplier-order-email', requirePreparationAccess, supplierOrderEmailController);
 router.get('/:projectId/work-orders/:workOrderId/pdf', logisticsController.exportWorkOrderPdf);

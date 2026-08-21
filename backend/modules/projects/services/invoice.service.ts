@@ -18,6 +18,7 @@ type InvoiceItemType = 'Osnovno' | 'Dodatno' | 'Manj';
 
 interface InvoiceItem {
   id: string;
+  productId?: string | null;
   name: string;
   unit: string;
   quantity: number;
@@ -31,6 +32,7 @@ interface InvoiceItem {
 
 interface InvoiceItemPayload {
   id?: string;
+  productId?: string | null;
   name: string;
   unit: string;
   quantity: number;
@@ -42,6 +44,9 @@ interface InvoiceItemPayload {
 
 interface InvoiceSummary {
   baseWithoutVat: number;
+  perItemDiscountAmount: number;
+  globalDiscountAmount: number;
+  fixedDiscountAmount: number;
   discountedBase: number;
   vatAmount: number;
   totalWithVat: number;
@@ -58,8 +63,11 @@ interface InvoiceVersion {
   servicePerformedAt?: string | null;
   correctedFromInvoiceVersionId?: string | null;
   discountPercent: number;
+  fixedDiscountAmount: number;
   useGlobalDiscount: boolean;
   usePerItemDiscount: boolean;
+  paidAmount: number;
+  remainingAmount: number;
   items: InvoiceItem[];
   summary: InvoiceSummary;
 }
@@ -108,6 +116,15 @@ function toNumber(value: unknown, fallback = 0) {
 
 function clampPercent(value: unknown) {
   return Math.min(100, Math.max(0, round(toNumber(value, 0))));
+}
+
+export function calculateInvoicePaymentAmounts(totalWithVat: number, paidAmount: unknown) {
+  const total = Math.max(0, round(toNumber(totalWithVat, 0)));
+  const paid = round(toNumber(paidAmount, 0));
+  if (paid < 0 || paid > total) {
+    throw new Error(`Že plačani znesek mora biti med 0 in ${total.toFixed(2)} EUR.`);
+  }
+  return { paidAmount: paid, remainingAmount: round(total - paid) };
 }
 
 function selectActiveVersionId(versions: InvoiceVersion[]): string | null {
@@ -259,6 +276,7 @@ function buildInvoiceItemsFromConfirmedOffer(offer: { items?: OfferLineItem[]; v
     .filter((item) => toNumber(item.quantity, 0) > 0)
     .map((item) => ({
       id: item.id,
+      productId: item.productId ?? null,
       name: sanitizeText(item.name, 'Neimenovana postavka'),
       unit: sanitizeText(item.unit, ''),
       quantity: toNumber(item.quantity, 0),
@@ -272,6 +290,7 @@ function buildInvoiceItemsFromConfirmedOffer(offer: { items?: OfferLineItem[]; v
 async function aggregateClosingItems(project: ProjectDocument): Promise<{
   items: InvoiceItemPayload[];
   discountPercent: number;
+  fixedDiscountAmount: number;
   useGlobalDiscount: boolean;
   usePerItemDiscount: boolean;
   vatMode: number | null;
@@ -360,6 +379,7 @@ async function aggregateClosingItems(project: ProjectDocument): Promise<{
     const vatPercent = offerVatMode ?? (matchedOfferItem ? toNumber(matchedOfferItem.vatRate, 22) : toNumber(matchedProduct?.aaData?.vat, 22));
     invoiceItems.push({
       id: entry.offerItemId ?? entry.productId ?? `${entry.name}:${entry.unit}:${type}`,
+      productId: entry.productId ?? null,
       name: entry.name || 'Neimenovana postavka',
       unit: entry.unit || '',
       quantity: entry.executed,
@@ -374,6 +394,7 @@ async function aggregateClosingItems(project: ProjectDocument): Promise<{
   return {
     items: resolvedItems,
     discountPercent: toNumber(offerIndex.offer?.globalDiscountPercent ?? offerIndex.offer?.discountPercent, 0),
+    fixedDiscountAmount: toNumber(offerIndex.offer?.fixedDiscountAmount, 0),
     useGlobalDiscount: Boolean(offerIndex.offer?.useGlobalDiscount ?? true),
     usePerItemDiscount: Boolean(offerIndex.offer?.usePerItemDiscount ?? false),
     vatMode: offerIndex.offer ? toNumber(offerIndex.offer.vatMode, 22) : null,
@@ -416,12 +437,28 @@ export async function getNextInvoiceNumber(projectId: string) {
 export async function createInvoiceFromClosing(projectId: string): Promise<InvoiceListResponse> {
   const project = await findProjectOrFail(projectId);
   const existingDraft = findDraftVersion(project);
+  const source = await aggregateClosingItems(project);
   if (existingDraft) {
+    const { items, summary } = recalculateItems(source.items, {
+      discountPercent: toNumber(existingDraft.discountPercent, source.discountPercent),
+      fixedDiscountAmount: toNumber(existingDraft.fixedDiscountAmount, source.fixedDiscountAmount),
+      useGlobalDiscount: existingDraft.useGlobalDiscount ?? source.useGlobalDiscount,
+      usePerItemDiscount: existingDraft.usePerItemDiscount ?? source.usePerItemDiscount,
+      vatMode: source.vatMode,
+    });
+    existingDraft.items = items;
+    existingDraft.summary = summary;
+    existingDraft.fixedDiscountAmount = summary.fixedDiscountAmount;
+    const paymentAmounts = calculateInvoicePaymentAmounts(summary.totalWithVat, existingDraft.paidAmount ?? 0);
+    existingDraft.paidAmount = paymentAmounts.paidAmount;
+    existingDraft.remainingAmount = paymentAmounts.remainingAmount;
+    markInvoiceVersionsModified(project);
+    await project.save();
     return buildInvoiceResponse(project, { activeVersionId: existingDraft._id, updatedVersionId: existingDraft._id });
   }
-  const source = await aggregateClosingItems(project);
   const { items, summary } = recalculateItems(source.items, {
     discountPercent: source.discountPercent,
+    fixedDiscountAmount: source.fixedDiscountAmount,
     useGlobalDiscount: source.useGlobalDiscount,
     usePerItemDiscount: source.usePerItemDiscount,
     vatMode: source.vatMode,
@@ -435,8 +472,11 @@ export async function createInvoiceFromClosing(projectId: string): Promise<Invoi
     issuedAt: null,
     servicePerformedAt,
     discountPercent: source.discountPercent,
+    fixedDiscountAmount: summary.fixedDiscountAmount,
     useGlobalDiscount: source.useGlobalDiscount,
     usePerItemDiscount: source.usePerItemDiscount,
+    paidAmount: 0,
+    remainingAmount: summary.totalWithVat,
     items,
     summary,
   };
@@ -444,6 +484,15 @@ export async function createInvoiceFromClosing(projectId: string): Promise<Invoi
   markInvoiceVersionsModified(project);
   await project.save();
   return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id });
+}
+
+export async function refreshDraftInvoiceFromClosing(projectId: string): Promise<InvoiceListResponse> {
+  const project = await findProjectOrFail(projectId);
+  const existingDraft = findDraftVersion(project);
+  if (!existingDraft) {
+    return serializeResponse(project);
+  }
+  return createInvoiceFromClosing(projectId);
 }
 
 export async function updateInvoiceVersion(
@@ -454,6 +503,7 @@ export async function updateInvoiceVersion(
     invoiceNumber?: unknown;
     discountPercent?: unknown;
     useGlobalDiscount?: unknown;
+    paidAmount?: unknown;
   },
 ): Promise<InvoiceListResponse> {
   const project = await findProjectOrFail(projectId);
@@ -497,11 +547,18 @@ export async function updateInvoiceVersion(
   });
   const { items, summary } = recalculateItems(mergedInputItems, {
     discountPercent: toNumber(version.discountPercent, 0),
+    fixedDiscountAmount: toNumber(version.fixedDiscountAmount, 0),
     useGlobalDiscount: Boolean(version.useGlobalDiscount),
     usePerItemDiscount: Boolean(version.usePerItemDiscount),
   });
   version.items = items;
   version.summary = summary;
+  const paymentAmounts = calculateInvoicePaymentAmounts(
+    summary.totalWithVat,
+    payload.paidAmount !== undefined ? payload.paidAmount : version.paidAmount ?? 0,
+  );
+  version.paidAmount = paymentAmounts.paidAmount;
+  version.remainingAmount = paymentAmounts.remainingAmount;
   markInvoiceVersionsModified(project);
   await project.save();
   return serializeResponse(project);
@@ -543,6 +600,9 @@ export async function issueInvoiceVersion(projectId: string, versionId: string, 
   version.invoiceNumber = numbering.invoiceNumber;
   version.invoiceSequence = numbering.invoiceSequence;
   version.servicePerformedAt = version.servicePerformedAt ?? (await resolveServicePerformedAt(project.id));
+  const paymentAmounts = calculateInvoicePaymentAmounts(version.summary?.totalWithVat ?? 0, version.paidAmount ?? 0);
+  version.paidAmount = paymentAmounts.paidAmount;
+  version.remainingAmount = paymentAmounts.remainingAmount;
   const fallbackCorrectedFromInvoiceVersionId =
     version.correctedFromInvoiceVersionId ??
     cancelledIssuedVersionIds[0] ??
@@ -566,6 +626,7 @@ export async function issueInvoiceVersion(projectId: string, versionId: string, 
         issuedAt: version.issuedAt,
         items: version.items.map((item) => ({
           id: item.id,
+          productId: item.productId ?? null,
           name: item.name,
           unit: item.unit,
           quantity: item.quantity,
@@ -647,8 +708,11 @@ export async function cloneInvoiceVersion(projectId: string, versionId: string):
     servicePerformedAt: version.servicePerformedAt ?? (await resolveServicePerformedAt(project.id)),
     correctedFromInvoiceVersionId: version._id,
     discountPercent: version.discountPercent ?? 0,
+    fixedDiscountAmount: version.fixedDiscountAmount ?? 0,
     useGlobalDiscount: version.useGlobalDiscount ?? false,
     usePerItemDiscount: version.usePerItemDiscount ?? false,
+    paidAmount: version.paidAmount ?? 0,
+    remainingAmount: version.remainingAmount ?? version.summary?.totalWithVat ?? 0,
     items: clonedItems,
     summary: { ...version.summary },
   };
@@ -682,6 +746,7 @@ export async function cancelInvoiceVersion(projectId: string, versionId: string)
 }
 interface RecalculateOptions {
   discountPercent?: number;
+  fixedDiscountAmount?: number;
   useGlobalDiscount?: boolean;
   usePerItemDiscount?: boolean;
   vatMode?: number | null;
@@ -704,6 +769,7 @@ function recalculateItems(items: InvoiceItemPayload[], options: RecalculateOptio
 
     return {
       id: item.id ?? new Types.ObjectId().toString(),
+      productId: typeof item.productId === 'string' && item.productId.trim() ? item.productId.trim() : null,
       name: sanitizeText(item.name, 'Neimenovana postavka'),
       unit: sanitizeText(item.unit, ''),
       quantity,
@@ -721,6 +787,11 @@ function recalculateItems(items: InvoiceItemPayload[], options: RecalculateOptio
     preparedItems.reduce((sum, current) => sum + current.lineAfterPerItemDiscount, 0),
   );
   const globalDiscountAmount = round(perItemDiscountedBase * (globalDiscountPercent / 100));
+  const fixedDiscountAmount = round(Math.min(
+    Math.max(0, perItemDiscountedBase - globalDiscountAmount),
+    Math.max(0, toNumber(options.fixedDiscountAmount, 0)),
+  ));
+  const documentDiscountAmount = round(globalDiscountAmount + fixedDiscountAmount);
   const globalDiscountCandidates = preparedItems.filter((item) => item.lineAfterPerItemDiscount > 0);
   let allocatedGlobalDiscount = 0;
 
@@ -730,12 +801,12 @@ function recalculateItems(items: InvoiceItemPayload[], options: RecalculateOptio
       globalDiscountCandidates.length > 0 &&
       item.id === globalDiscountCandidates[globalDiscountCandidates.length - 1].id;
 
-    if (globalDiscountPercent > 0 && item.lineAfterPerItemDiscount > 0) {
+    if (documentDiscountAmount > 0 && item.lineAfterPerItemDiscount > 0) {
       if (isLastCandidate) {
-        itemGlobalDiscount = round(globalDiscountAmount - allocatedGlobalDiscount);
+        itemGlobalDiscount = round(documentDiscountAmount - allocatedGlobalDiscount);
       } else if (perItemDiscountedBase > 0) {
         itemGlobalDiscount = round(
-          globalDiscountAmount * (item.lineAfterPerItemDiscount / perItemDiscountedBase),
+          documentDiscountAmount * (item.lineAfterPerItemDiscount / perItemDiscountedBase),
         );
         allocatedGlobalDiscount = round(allocatedGlobalDiscount + itemGlobalDiscount);
       }
@@ -747,6 +818,7 @@ function recalculateItems(items: InvoiceItemPayload[], options: RecalculateOptio
 
     return {
       id: item.id,
+      productId: item.productId,
       name: item.name,
       unit: item.unit,
       quantity: item.quantity,
@@ -798,6 +870,9 @@ function recalculateItems(items: InvoiceItemPayload[], options: RecalculateOptio
     items: updatedItems,
     summary: {
       baseWithoutVat,
+      perItemDiscountAmount: round(baseWithoutVat - perItemDiscountedBase),
+      globalDiscountAmount,
+      fixedDiscountAmount,
       discountedBase,
       vatAmount,
       totalWithVat,

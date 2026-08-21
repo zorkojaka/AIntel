@@ -7,6 +7,7 @@ export type InvoiceStatus = "draft" | "issued" | "cancelled";
 
 export interface InvoiceItem {
   id: string;
+  productId?: string | null;
   name: string;
   unit: string;
   quantity: number;
@@ -20,6 +21,9 @@ export interface InvoiceItem {
 
 export interface InvoiceSummary {
   baseWithoutVat: number;
+  perItemDiscountAmount?: number;
+  globalDiscountAmount?: number;
+  fixedDiscountAmount?: number;
   discountedBase: number;
   vatAmount: number;
   totalWithVat: number;
@@ -37,6 +41,9 @@ export interface InvoiceVersion {
   discountPercent?: number;
   useGlobalDiscount?: boolean;
   usePerItemDiscount?: boolean;
+  fixedDiscountAmount?: number;
+  paidAmount?: number;
+  remainingAmount?: number;
   items: InvoiceItem[];
   summary: InvoiceSummary;
 }
@@ -44,6 +51,7 @@ export interface InvoiceVersion {
 export interface InvoiceDiscountPayload {
   discountPercent: number;
   useGlobalDiscount: boolean;
+  paidAmount: number;
 }
 
 interface InvoiceApiResponse {

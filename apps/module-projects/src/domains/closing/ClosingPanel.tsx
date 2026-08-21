@@ -134,6 +134,10 @@ export function ClosingPanel({ logistics }: ClosingPanelProps) {
   );
 
   const aggregatedRows = useMemo(() => buildAggregation(workOrders), [workOrders]);
+  const invoiceSourceRevision = useMemo(
+    () => JSON.stringify(aggregatedRows.map((row) => [row.key, row.name, row.unit, row.offered, row.executed, row.type])),
+    [aggregatedRows],
+  );
   const derivedProjectId =
     workOrders[0]?.projectId ??
     logistics?.materialOrders?.[0]?.projectId ??
@@ -194,6 +198,7 @@ export function ClosingPanel({ logistics }: ClosingPanelProps) {
         customerName={primaryWorkOrder?.customerName ?? ""}
         customerEmail={primaryWorkOrder?.customerEmail ?? ""}
         projectName={derivedProjectId ?? ""}
+        sourceRevision={invoiceSourceRevision}
       />
     </div>
   );

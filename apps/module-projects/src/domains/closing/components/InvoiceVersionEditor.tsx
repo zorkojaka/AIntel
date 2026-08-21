@@ -28,12 +28,15 @@ import { downloadPdf } from "../../../api";
 import { toast } from "sonner";
 import { useProjectMutationRefresh } from "../../core/useProjectMutationRefresh";
 import { InvoiceCommunicationComposeDialog } from "../../communication/InvoiceCommunicationComposeDialog";
+import { PriceListProductAutocomplete } from "../../../components/PriceListProductAutocomplete";
+import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
 
 interface InvoiceVersionEditorProps {
   projectId?: string | null;
   customerName?: string;
   customerEmail?: string;
   projectName?: string;
+  sourceRevision?: string;
 }
 
 const TYPE_OPTIONS: InvoiceItem["type"][] = ["Osnovno", "Dodatno", "Manj"];
@@ -124,6 +127,7 @@ function clampPercent(value: unknown) {
 
 interface DiscountSettings {
   discountPercent: number;
+  fixedDiscountAmount: number;
   useGlobalDiscount: boolean;
   usePerItemDiscount: boolean;
 }
@@ -152,6 +156,11 @@ function calculateSummary(items: InvoiceItem[], discount: DiscountSettings): Inv
   const baseWithoutVat = round(prepared.reduce((sum, item) => sum + item.baseWithoutVat, 0));
   const perItemDiscountedBase = round(prepared.reduce((sum, item) => sum + item.lineAfterPerItemDiscount, 0));
   const globalDiscountAmount = round(perItemDiscountedBase * (globalDiscountPercent / 100));
+  const fixedDiscountAmount = round(Math.min(
+    Math.max(0, perItemDiscountedBase - globalDiscountAmount),
+    Math.max(0, Number(discount.fixedDiscountAmount) || 0),
+  ));
+  const documentDiscountAmount = round(globalDiscountAmount + fixedDiscountAmount);
   const candidates = prepared.filter((item) => item.lineAfterPerItemDiscount > 0);
   const lastCandidate = candidates[candidates.length - 1];
 
@@ -161,11 +170,11 @@ function calculateSummary(items: InvoiceItem[], discount: DiscountSettings): Inv
 
   prepared.forEach((item) => {
     let itemGlobalDiscount = 0;
-    if (globalDiscountPercent > 0 && item.lineAfterPerItemDiscount > 0) {
+    if (documentDiscountAmount > 0 && item.lineAfterPerItemDiscount > 0) {
       if (item === lastCandidate) {
-        itemGlobalDiscount = round(globalDiscountAmount - allocatedGlobalDiscount);
+        itemGlobalDiscount = round(documentDiscountAmount - allocatedGlobalDiscount);
       } else if (perItemDiscountedBase > 0) {
-        itemGlobalDiscount = round(globalDiscountAmount * (item.lineAfterPerItemDiscount / perItemDiscountedBase));
+        itemGlobalDiscount = round(documentDiscountAmount * (item.lineAfterPerItemDiscount / perItemDiscountedBase));
         allocatedGlobalDiscount = round(allocatedGlobalDiscount + itemGlobalDiscount);
       }
     }
@@ -176,6 +185,9 @@ function calculateSummary(items: InvoiceItem[], discount: DiscountSettings): Inv
 
   return {
     baseWithoutVat,
+    perItemDiscountAmount: round(baseWithoutVat - perItemDiscountedBase),
+    globalDiscountAmount,
+    fixedDiscountAmount,
     discountedBase,
     vatAmount,
     totalWithVat: round(discountedBase + vatAmount),
@@ -198,7 +210,13 @@ function filenameSafe(value: string) {
   return value.trim().replace(/[^\w.-]+/g, "-").replace(/-+/g, "-");
 }
 
-export function InvoiceVersionEditor({ projectId, customerName = "", customerEmail = "", projectName = "" }: InvoiceVersionEditorProps) {
+export function InvoiceVersionEditor({
+  projectId,
+  customerName = "",
+  customerEmail = "",
+  projectName = "",
+  sourceRevision = "",
+}: InvoiceVersionEditorProps) {
   const {
     versions,
     activeVersion,
@@ -228,6 +246,11 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
   }, [activeVersion]);
 
   useEffect(() => {
+    if (!sourceRevision || dirty) return;
+    void refresh();
+  }, [sourceRevision, dirty, refresh]);
+
+  useEffect(() => {
     let cancelled = false;
     if (!activeVersion || activeVersion.status !== "draft" || activeVersion.invoiceNumber) return;
     fetchNextInvoiceNumber().then((next) => {
@@ -245,13 +268,17 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
   const discountPercent = draftVersion?.discountPercent ?? 0;
   const useGlobalDiscount = draftVersion?.useGlobalDiscount ?? false;
   const usePerItemDiscount = draftVersion?.usePerItemDiscount ?? false;
+  const fixedDiscountAmount = draftVersion?.fixedDiscountAmount ?? 0;
   const calculatedSummary = useMemo(
-    () => calculateSummary(items, { discountPercent, useGlobalDiscount, usePerItemDiscount }),
-    [items, discountPercent, useGlobalDiscount, usePerItemDiscount],
+    () => calculateSummary(items, { discountPercent, fixedDiscountAmount, useGlobalDiscount, usePerItemDiscount }),
+    [items, discountPercent, fixedDiscountAmount, useGlobalDiscount, usePerItemDiscount],
   );
   // Med urejanjem povzetek strežnika zastara — takrat prikažemo lokalni predogled.
   const summary = dirty ? calculatedSummary : draftVersion?.summary ?? calculatedSummary;
-  const discountAmount = round(Math.max(0, summary.baseWithoutVat - summary.discountedBase));
+  const paidAmount = Math.max(0, Number(draftVersion?.paidAmount ?? 0) || 0);
+  const remainingAmount = round(Math.max(0, summary.totalWithVat - paidAmount));
+  const paidAmountIsValid = paidAmount <= summary.totalWithVat;
+  const globalDiscountAmount = summary.globalDiscountAmount ?? 0;
   const invoiceNumberChanged = (invoiceNumberDraft.trim() || "") !== (activeVersion?.invoiceNumber?.trim() || "");
   const canSaveDraft = dirty || invoiceNumberChanged;
 
@@ -273,6 +300,28 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
     );
     setDraftVersion({ ...draftVersion, items: nextItems });
     setDirty(true);
+  };
+
+  const handlePaidAmountChange = (value: string) => {
+    if (!draftVersion || !canEdit) return;
+    const parsed = Number(value);
+    const nextPaidAmount = Number.isFinite(parsed) ? Math.max(0, round(parsed)) : 0;
+    setDraftVersion({
+      ...draftVersion,
+      paidAmount: nextPaidAmount,
+      remainingAmount: round(Math.max(0, summary.totalWithVat - nextPaidAmount)),
+    });
+    setDirty(true);
+  };
+
+  const handleProductSelected = (itemId: string, product: PriceListSearchItem) => {
+    handleItemChange(itemId, {
+      productId: product.id,
+      name: product.name,
+      unit: product.unit ?? "kos",
+      unitPrice: product.unitPrice,
+      vatPercent: product.vatRate ?? 22,
+    });
   };
 
   const handleRemoveItem = (itemId: string) => {
@@ -303,9 +352,14 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
 
   const handleSave = async () => {
     if (!draftVersion || !canEdit) return false;
+    if (!paidAmountIsValid) {
+      toast.error("Že plačani znesek ne sme biti višji od skupnega zneska računa.");
+      return false;
+    }
     const success = await saveDraft(draftVersion.items, invoiceNumberDraft, {
       discountPercent: draftVersion.discountPercent ?? 0,
       useGlobalDiscount: draftVersion.useGlobalDiscount ?? false,
+      paidAmount,
     });
     if (success) {
       setDirty(false);
@@ -471,18 +525,29 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
               </p>
             ) : null}
           </div>
-          <div className="overflow-x-auto">
-            <Table>
+          <div>
+            <Table className="w-full table-fixed">
+              <colgroup>
+                <col style={{ width: canEdit ? "32%" : "35%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "10%" }} />
+                {canEdit && <col style={{ width: "5%" }} />}
+              </colgroup>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Naziv</TableHead>
-                  <TableHead>Enota</TableHead>
-                  <TableHead className="text-right">Količina</TableHead>
-                  <TableHead className="text-right">Cena</TableHead>
-                  <TableHead className="text-right">DDV %</TableHead>
-                  <TableHead className="text-right">Brez DDV</TableHead>
-                  <TableHead className="text-right">Z DDV</TableHead>
-                  <TableHead>Tip</TableHead>
+                  <TableHead className="px-1">Naziv</TableHead>
+                  <TableHead className="px-1">Enota</TableHead>
+                  <TableHead className="px-1 text-right">Količina</TableHead>
+                  <TableHead className="px-1 text-right">Cena (€)</TableHead>
+                  <TableHead className="px-1 text-right">DDV (%)</TableHead>
+                  <TableHead className="px-1 text-right">Brez DDV (€)</TableHead>
+                  <TableHead className="px-1 text-right">Z DDV (€)</TableHead>
+                  <TableHead className="px-1">Tip</TableHead>
                   {canEdit && <TableHead className="w-12 text-center">Akcije</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -496,22 +561,27 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
                 )}
                 {items.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell>
-                      <Input
+                    <TableCell className="whitespace-normal px-1">
+                      <PriceListProductAutocomplete
                         value={item.name}
-                        onChange={(event) => handleItemChange(item.id, { name: event.target.value })}
-                        readOnly={!canEdit}
+                        placeholder="Naziv ali iskanje v ceniku"
+                        inputClassName="min-h-14 rounded-md border border-input bg-background px-2 py-1 text-sm leading-5 shadow-sm"
+                        multiline
+                        disabled={!canEdit}
+                        onChange={(name) => handleItemChange(item.id, { name, productId: null })}
+                        onCustomSelected={() => handleItemChange(item.id, { productId: null })}
+                        onProductSelected={(product) => handleProductSelected(item.id, product)}
                       />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="px-1">
                       <Input
                         value={item.unit}
                         onChange={(event) => handleItemChange(item.id, { unit: event.target.value })}
                         readOnly={!canEdit}
-                        className="w-24"
+                        className="h-9 min-w-0 px-1"
                       />
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="px-1 text-right">
                       <Input
                         type="number"
                         value={item.quantity}
@@ -519,34 +589,40 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
                           handleItemChange(item.id, { quantity: Number(event.target.value) })
                         }
                         readOnly={!canEdit}
-                        className="text-right"
+                        className="h-9 min-w-0 px-1 text-right"
                       />
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Input
-                        type="number"
-                        value={item.unitPrice}
-                        onChange={(event) =>
-                          handleItemChange(item.id, { unitPrice: Number(event.target.value) })
-                        }
-                        readOnly={!canEdit}
-                        className="text-right"
-                      />
+                    <TableCell className="px-1 text-right">
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          value={item.unitPrice}
+                          onChange={(event) =>
+                            handleItemChange(item.id, { unitPrice: Number(event.target.value) })
+                          }
+                          readOnly={!canEdit}
+                          className="h-9 min-w-0 px-1 text-right"
+                        />
+                        <span>€</span>
+                      </div>
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Input
-                        type="number"
-                        value={item.vatPercent}
-                        onChange={(event) =>
-                          handleItemChange(item.id, { vatPercent: Number(event.target.value) })
-                        }
-                        readOnly={!canEdit}
-                        className="text-right"
-                      />
+                    <TableCell className="px-1 text-right">
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          value={item.vatPercent}
+                          onChange={(event) =>
+                            handleItemChange(item.id, { vatPercent: Number(event.target.value) })
+                          }
+                          readOnly={!canEdit}
+                          className="h-9 min-w-0 px-1 text-right"
+                        />
+                        <span>%</span>
+                      </div>
                     </TableCell>
-                    <TableCell className="text-right">{numberFormatter.format(item.totalWithoutVat)}</TableCell>
-                    <TableCell className="text-right">{numberFormatter.format(item.totalWithVat)}</TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-normal px-1 text-right">{formatCurrency(item.totalWithoutVat)}</TableCell>
+                    <TableCell className="whitespace-normal px-1 text-right">{formatCurrency(item.totalWithVat)}</TableCell>
+                    <TableCell className="px-1">
                       {canEdit ? (
                         <Select value={item.type} onValueChange={(value) => handleItemChange(item.id, { type: value as InvoiceItem["type"] })}>
                           <SelectTrigger>
@@ -589,9 +665,15 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
               <span className="text-muted-foreground">Osnova brez DDV</span>
               <span>{formatCurrency(summary.baseWithoutVat)}</span>
             </div>
+            {(summary.perItemDiscountAmount ?? 0) > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Popust po postavkah</span>
+                <span>-{formatCurrency(summary.perItemDiscountAmount ?? 0)}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-2 text-muted-foreground">
-                Popust
+                Globalni popust
                 {canEdit ? (
                   <span className="flex items-center gap-1">
                     <Input
@@ -610,12 +692,18 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
                   <span>({percentFormatter.format(discountPercent)} %)</span>
                 )}
               </span>
-              <span>{discountAmount > 0 ? `– ${formatCurrency(discountAmount)}` : formatCurrency(0)}</span>
+              <span>{globalDiscountAmount > 0 ? `– ${formatCurrency(globalDiscountAmount)}` : formatCurrency(0)}</span>
             </div>
             {usePerItemDiscount && (
               <p className="text-xs text-muted-foreground m-0">
                 Ponudba ima popuste po postavkah — zgornji odstotek se obračuna dodatno na že popustirane postavke.
               </p>
+            )}
+            {(summary.fixedDiscountAmount ?? draftVersion.fixedDiscountAmount ?? 0) > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Fiksni popust</span>
+                <span>-{formatCurrency(summary.fixedDiscountAmount ?? draftVersion.fixedDiscountAmount ?? 0)}</span>
+              </div>
             )}
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Osnova po popustih</span>
@@ -629,6 +717,57 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
               <span>Skupaj za plačilo (z DDV)</span>
               <span>{formatCurrency(summary.totalWithVat)}</span>
             </div>
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <span className="text-muted-foreground">Že plačano</span>
+              {canEdit ? (
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    disabled={summary.totalWithVat <= 0}
+                    onClick={() => handlePaidAmountChange(String(round(summary.totalWithVat * 0.5)))}
+                  >
+                    50 %
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    disabled={summary.totalWithVat <= 0}
+                    onClick={() => handlePaidAmountChange(String(round(summary.totalWithVat)))}
+                  >
+                    V celoti
+                  </Button>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={summary.totalWithVat}
+                    step={0.01}
+                    className="h-8 w-32 text-right"
+                    value={paidAmount}
+                    onChange={(event) => handlePaidAmountChange(event.target.value)}
+                    aria-label="Že plačani znesek"
+                  />
+                  <span>€</span>
+                </div>
+              ) : (
+                <span>{formatCurrency(paidAmount)}</span>
+              )}
+            </div>
+            {paidAmount > 0 && (
+              <div className="flex items-center justify-between border-t border-border pt-2 font-semibold">
+                <span>Za plačilo preostane</span>
+                <span>{formatCurrency(remainingAmount)}</span>
+              </div>
+            )}
+            {!paidAmountIsValid && (
+              <p className="m-0 text-right text-xs text-destructive">
+                Že plačani znesek ne sme biti višji od skupnega zneska računa.
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2 justify-between">
             <div className="flex gap-2">
@@ -660,7 +799,7 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
                   <Button
                     variant="outline"
                     onClick={handleSave}
-                    disabled={!canSaveDraft || saving}
+                    disabled={!canSaveDraft || !paidAmountIsValid || saving}
                   >
                     {saving ? (
                       <span className="flex items-center gap-2">
@@ -671,7 +810,7 @@ export function InvoiceVersionEditor({ projectId, customerName = "", customerEma
                       "Shrani račun"
                     )}
                   </Button>
-                  <Button onClick={handleIssue} disabled={saving}>
+                  <Button onClick={handleIssue} disabled={!paidAmountIsValid || saving}>
                     Izdaj račun
                   </Button>
                 </>

@@ -102,6 +102,7 @@ export function OffersTab({
   const [currentOffer, setCurrentOffer] = useState<OfferVersion | null>(null);
 
   const [globalDiscountPercent, setGlobalDiscountPercent] = useState<number>(0);
+  const [fixedDiscountAmount, setFixedDiscountAmount] = useState<number>(0);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [totalNetAfterDiscount, setTotalNetAfterDiscount] = useState<number>(0);
   const [totalGrossAfterDiscount, setTotalGrossAfterDiscount] = useState<number>(0);
@@ -340,6 +341,9 @@ export function OffersTab({
   }, [paymentTermsOptions, defaultPaymentTerms, paymentTerms]);
 
   const resetToEmptyOffer = useCallback(() => {
+    selectedOfferIdRef.current = null;
+    offerLoadRequestIdRef.current += 1;
+    offerRefreshRequestIdRef.current += 1;
     setSelectedOfferId(null);
     setTitle("Ponudba");
     setPaymentTerms(defaultPaymentTerms);
@@ -347,6 +351,7 @@ export function OffersTab({
     setSelectedNoteIds(null);
     setItems(ensureTrailingBlank([]));
     setGlobalDiscountPercent(0);
+    setFixedDiscountAmount(0);
     setUseGlobalDiscount(false);
     setUsePerItemDiscount(false);
     setVatMode(22);
@@ -369,6 +374,7 @@ export function OffersTab({
         usePerItemDiscount: false,
         vatMode: 22,
         globalDiscountPercent: 0,
+        fixedDiscountAmount: 0,
       })
     );
     setLinkedServiceSuggestions({});
@@ -406,11 +412,12 @@ export function OffersTab({
 
 const loadOfferById = useCallback(async (offerId: string) => {
     if (!projectId) return;
+    const requestId = ++offerLoadRequestIdRef.current;
 
     try {
       const response = await fetch(`/api/projects/${projectId}/offers/${offerId}`);
       const offer = await parseApiEnvelope<OfferVersion>(response, "Ponudbe ni mogoče naložiti.");
-      if (!offer) return;
+      if (!offer || requestId !== offerLoadRequestIdRef.current) return;
 
       setTitle(offer.baseTitle || "Ponudba");
       const offerKey = (offer as any)?._id ?? (offer as any)?.id ?? offerId;
@@ -434,6 +441,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
 
       const gPercent = offer.globalDiscountPercent ?? offer.discountPercent ?? 0;
       setGlobalDiscountPercent(gPercent);
+      setFixedDiscountAmount(offer.fixedDiscountAmount ?? 0);
 
       setBaseWithoutVat(offer.baseWithoutVat ?? offer.totalNet ?? 0);
       setPerItemDiscountAmount(offer.perItemDiscountAmount ?? 0);
@@ -476,6 +484,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
           usePerItemDiscount: offer.usePerItemDiscount ?? false,
           vatMode: ((offer.vatMode as 0 | 9.5 | 22) ?? 22),
           globalDiscountPercent: gPercent,
+          fixedDiscountAmount: offer.fixedDiscountAmount ?? 0,
         })
       );
     } catch (error) {
@@ -485,6 +494,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
 
   const refreshOffers = useCallback(
     async (preferredId?: string | null, fallbackToLatest = true) => {
+      const requestId = ++offerRefreshRequestIdRef.current;
       if (!projectId) {
         setVersions([]);
         resetToEmptyOffer();
@@ -494,6 +504,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
       try {
         const res = await fetch(`/api/projects/${projectId}/offers`);
         const list = await parseApiEnvelope<OfferVersionSummary[]>(res, "Ponudb ni mogoče naložiti.");
+        if (requestId !== offerRefreshRequestIdRef.current) return;
         setVersions(list);
 
         if (list.length === 0) {
@@ -507,11 +518,19 @@ const loadOfferById = useCallback(async (offerId: string) => {
           nextId = preferredId;
         }
 
+        if (!nextId) {
+          const currentId = selectedOfferIdRef.current;
+          if (currentId && list.some((entry) => entry._id === currentId)) {
+            nextId = currentId;
+          }
+        }
+
         if (!nextId && fallbackToLatest && list.length > 0) {
           nextId = list[list.length - 1]._id;
         }
 
         if (nextId) {
+          selectedOfferIdRef.current = nextId;
           setSelectedOfferId(nextId);
           await loadOfferById(nextId);
         } else {
@@ -545,6 +564,8 @@ const loadOfferById = useCallback(async (offerId: string) => {
   }, [projectId]);
 
   const selectedOfferIdRef = useRef<string | null>(null);
+  const offerLoadRequestIdRef = useRef(0);
+  const offerRefreshRequestIdRef = useRef(0);
   useEffect(() => {
     selectedOfferIdRef.current = selectedOfferId;
   }, [selectedOfferId]);
@@ -741,9 +762,10 @@ const loadOfferById = useCallback(async (offerId: string) => {
         usePerItemDiscount,
         useGlobalDiscount,
         globalDiscountPercent,
+        fixedDiscountAmount,
         vatMode,
       }),
-    [validItems, usePerItemDiscount, useGlobalDiscount, globalDiscountPercent, vatMode]
+    [validItems, usePerItemDiscount, useGlobalDiscount, globalDiscountPercent, fixedDiscountAmount, vatMode]
   );
 
   useEffect(() => {
@@ -1063,6 +1085,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
       // kompatibilnost s starimi polji
       discountPercent: effectiveGlobalPercent,
       globalDiscountPercent: effectiveGlobalPercent,
+      fixedDiscountAmount,
       useGlobalDiscount,
       usePerItemDiscount,
       vatMode,
@@ -1081,8 +1104,9 @@ const loadOfferById = useCallback(async (offerId: string) => {
         usePerItemDiscount,
         vatMode,
         globalDiscountPercent,
+        fixedDiscountAmount,
       }),
-    [title, paymentTerms, comment, effectiveSelectedNoteIds, items, useGlobalDiscount, usePerItemDiscount, vatMode, globalDiscountPercent]
+    [title, paymentTerms, comment, effectiveSelectedNoteIds, items, useGlobalDiscount, usePerItemDiscount, vatMode, globalDiscountPercent, fixedDiscountAmount]
   );
   const isDirty = currentOfferSnapshot !== lastSavedSnapshot;
 
@@ -1156,12 +1180,13 @@ const loadOfferById = useCallback(async (offerId: string) => {
         selectedOfferIdRef.current = savedOfferId;
         setSelectedOfferId(savedOfferId);
       }
-      await refreshAfterMutation(
-        () => refreshOffers(savedOfferId, !savedOfferId),
-        async () => {
-          await fetchProjectDetails();
-        },
-      );
+      // Navadno shranjevanje ponudbe ne spremeni faze projekta. Splošna osvežitev
+      // projekta bi odmontirala urejevalnik in ob ponovnem prikazu izbrala zadnjo
+      // verzijo namesto pravkar shranjene.
+      await Promise.all([
+        refreshOffers(savedOfferId, !savedOfferId),
+        fetchProjectDetails(),
+      ]);
       toast.success("Ponudba shranjena.");
       setLastSavedSnapshot(currentOfferSnapshot);
       return created;
@@ -1182,6 +1207,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
   };
 
   const handleCreateNewVersion = () => {
+    selectedOfferIdRef.current = null;
     setSelectedOfferId(null);
     resetToEmptyOffer();
   };
@@ -1471,6 +1497,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
         usePerItemDiscount: boolean;
         vatMode: 0 | 9.5 | 22;
         globalDiscountPercent?: number;
+        fixedDiscountAmount?: number;
         discountPercent: number;
         items: OfferLineItem[];
       }>(response, "Template podatkov ni bilo mogoče prenesti.");
@@ -1479,6 +1506,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
       setComment(template.comment ?? "");
       setSelectedNoteIds(null);
       setVatMode(template.vatMode ?? 22);
+      setFixedDiscountAmount(template.fixedDiscountAmount ?? 0);
       if (template.applyGlobalDiscount) {
         setUseGlobalDiscount(template.useGlobalDiscount ?? false);
         setGlobalDiscountPercent(template.globalDiscountPercent ?? template.discountPercent ?? 0);
@@ -1528,6 +1556,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
   };
 
   const handleChangeVersion = async (value: string) => {
+    selectedOfferIdRef.current = value;
     setSelectedOfferId(value);
     await loadOfferById(value);
   };
@@ -1769,18 +1798,6 @@ const loadOfferById = useCallback(async (offerId: string) => {
     <Card className="p-4 space-y-4">
       {/* VERZIJE + DDV + POPUSTI */}
       <div className="mb-4 border-b pb-4">
-        <OfferVersionSelector
-          versions={versions}
-          selectedOfferId={selectedOfferId}
-          formatCurrency={formatCurrency}
-          onChangeVersion={handleChangeVersion}
-          onCreateNewVersion={handleCreateNewVersion}
-          onCloneVersion={handleCloneVersion}
-          onDeleteVersion={handleDeleteVersion}
-        />
-
-        <hr className="my-4 border-border" />
-
         <OfferTemplatePicker
           templates={templates}
           selectedTemplate={selectedTemplate}
@@ -1797,6 +1814,18 @@ const loadOfferById = useCallback(async (offerId: string) => {
           onDeleteTemplate={openDeleteTemplateDialogForItem}
           onCreateTemplate={openCreateTemplateDialog}
           onApplyTemplate={handleApplyTemplate}
+        />
+
+        <hr className="my-4 border-border" />
+
+        <OfferVersionSelector
+          versions={versions}
+          selectedOfferId={selectedOfferId}
+          formatCurrency={formatCurrency}
+          onChangeVersion={handleChangeVersion}
+          onCreateNewVersion={handleCreateNewVersion}
+          onCloneVersion={handleCloneVersion}
+          onDeleteVersion={handleDeleteVersion}
         />
 
         <div className="hidden mt-3 flex-wrap items-center justify-between gap-3 text-sm">
@@ -2004,8 +2033,8 @@ const loadOfferById = useCallback(async (offerId: string) => {
       </div>
 
         <div className="rounded-lg border bg-muted/25 px-4 py-3">
-          <div className="flex flex-wrap items-start gap-4 lg:items-center lg:justify-between">
-            <div className="flex min-w-[180px] items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 xl:flex-nowrap">
+            <div className="flex shrink-0 items-center gap-2">
               <span className="text-sm text-muted-foreground">DDV način</span>
               <Select
                 value={String(vatMode)}
@@ -2013,7 +2042,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
                   handleVatModeChange(Number(value) as 0 | 9.5 | 22)
                 }
               >
-                <SelectTrigger className="w-[130px] bg-background">
+                <SelectTrigger className="h-9 w-[110px] bg-background">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -2024,20 +2053,20 @@ const loadOfferById = useCallback(async (offerId: string) => {
               </Select>
             </div>
 
-            <div className="flex flex-1 flex-wrap items-center gap-4">
-              <label className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-2 xl:flex-nowrap">
+              <label className="flex shrink-0 items-center gap-2">
                 <Checkbox
                   checked={useGlobalDiscount}
                   onChange={(e) =>
                     handleToggleGlobalDiscount(e.target.checked)
                   }
                 />
-                <span className="text-sm">Popust na celotno ponudbo</span>
+                <span className="whitespace-nowrap text-sm">Popust na celotno ponudbo</span>
                 {useGlobalDiscount && (
                   <>
                     <Input
                       type="number"
-                      className="w-20 bg-background text-right"
+                      className="h-9 w-16 bg-background px-2 text-right"
                       inputMode="decimal"
                       value={globalDiscountPercent}
                       onChange={(e) =>
@@ -2051,14 +2080,28 @@ const loadOfferById = useCallback(async (offerId: string) => {
                 )}
               </label>
 
-              <label className="flex flex-wrap items-center gap-2">
+              <label className="flex shrink-0 items-center gap-2">
                 <Checkbox
                   checked={usePerItemDiscount}
                   onChange={(e) =>
                     setUsePerItemDiscount(e.target.checked)
                   }
                 />
-                <span className="text-sm">Popust po produktih</span>
+                <span className="whitespace-nowrap text-sm">Popust po produktih</span>
+              </label>
+
+              <label className="flex shrink-0 items-center gap-2">
+                <span className="whitespace-nowrap text-sm">Fiksni popust</span>
+                <Input
+                  type="number"
+                  className="h-9 w-20 bg-background px-2 text-right"
+                  inputMode="decimal"
+                  min={0}
+                  step="0.01"
+                  value={fixedDiscountAmount}
+                  onChange={(event) => setFixedDiscountAmount(Math.max(0, Number(event.target.value) || 0))}
+                />
+                <span className="text-muted-foreground">€</span>
               </label>
             </div>
           </div>
@@ -2335,6 +2378,17 @@ const loadOfferById = useCallback(async (offerId: string) => {
               </TableRow>
             )}
 
+            {(totals.fixedDiscountAmount ?? 0) > 0 && (
+              <TableRow>
+                <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
+                  Fiksni popust
+                </TableCell>
+                <TableCell className={totalFooterColumnClassName}>
+                  -{formatCurrency(totals.fixedDiscountAmount ?? 0)}
+                </TableCell>
+              </TableRow>
+            )}
+
             <TableRow>
               <TableCell colSpan={summaryLabelColSpan} className="text-right text-sm text-muted-foreground pr-4">
                 Osnova po popustih
@@ -2417,6 +2471,8 @@ const loadOfferById = useCallback(async (offerId: string) => {
         offerTotal={Number(currentOffer?.totalWithVat ?? currentOffer?.totalGrossAfterDiscount ?? currentOffer?.totalGross ?? 0)}
         offerVersions={versions}
         companyName={settings?.companyName ?? ""}
+        employees={employees}
+        initialEmployeeIds={assignedEmployeeIds}
         onSent={handleCommunicationSent}
       />
 

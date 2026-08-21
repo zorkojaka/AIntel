@@ -13,6 +13,7 @@ type PriceListProductAutocompleteProps = {
   placeholder?: string;
   inputClassName?: string;
   inputRef?: (node: HTMLInputElement | null) => void;
+  multiline?: boolean;
 };
 
 const formatCurrency = (value: number) =>
@@ -27,6 +28,7 @@ export function PriceListProductAutocomplete({
   placeholder,
   inputClassName,
   inputRef,
+  multiline = false,
 }: PriceListProductAutocompleteProps) {
   const [inputValue, setInputValue] = useState(value ?? "");
   const [isOpen, setIsOpen] = useState(false);
@@ -36,7 +38,7 @@ export function PriceListProductAutocomplete({
   const fetchAbortRef = useRef<AbortController | null>(null);
   const blurTimeoutRef = useRef<number | null>(null);
   const dropdownInteractionRef = useRef(false);
-  const internalInputRef = useRef<HTMLInputElement | null>(null);
+  const internalInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
   const assignInputRef = useCallback(
     (node: HTMLInputElement | null) => {
@@ -45,6 +47,10 @@ export function PriceListProductAutocomplete({
     },
     [inputRef],
   );
+
+  const assignTextareaRef = useCallback((node: HTMLTextAreaElement | null) => {
+    internalInputRef.current = node;
+  }, []);
 
   useEffect(() => {
     setInputValue(value ?? "");
@@ -184,22 +190,41 @@ export function PriceListProductAutocomplete({
 
   return (
     <div className="relative">
-      <input
-        ref={assignInputRef}
-        type="text"
-        value={inputValue}
-        placeholder={placeholder}
-        disabled={disabled}
-        className={cn("w-full text-left", inputClassName)}
-        onChange={(event) => handleInputChange(event.target.value)}
-        onFocus={() => {
-          if (blurTimeoutRef.current) {
-            window.clearTimeout(blurTimeoutRef.current);
-          }
-          openDropdown();
-        }}
-        onBlur={handleBlur}
-      />
+      {multiline ? (
+        <textarea
+          ref={assignTextareaRef}
+          rows={2}
+          value={inputValue}
+          placeholder={placeholder}
+          disabled={disabled}
+          className={cn("w-full resize-y whitespace-normal text-left", inputClassName)}
+          onChange={(event) => handleInputChange(event.target.value)}
+          onFocus={() => {
+            if (blurTimeoutRef.current) {
+              window.clearTimeout(blurTimeoutRef.current);
+            }
+            openDropdown();
+          }}
+          onBlur={handleBlur}
+        />
+      ) : (
+        <input
+          ref={assignInputRef}
+          type="text"
+          value={inputValue}
+          placeholder={placeholder}
+          disabled={disabled}
+          className={cn("w-full text-left", inputClassName)}
+          onChange={(event) => handleInputChange(event.target.value)}
+          onFocus={() => {
+            if (blurTimeoutRef.current) {
+              window.clearTimeout(blurTimeoutRef.current);
+            }
+            openDropdown();
+          }}
+          onBlur={handleBlur}
+        />
+      )}
 
       {isOpen && !disabled && anchorRect && dropdownMetrics && portalTarget
         ? createPortal(

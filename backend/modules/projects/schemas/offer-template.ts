@@ -55,6 +55,7 @@ const OfferTemplateSchema = new Schema<OfferTemplateDocument>(
     baseWithoutVat: { type: Number, required: true, default: 0 },
     perItemDiscountAmount: { type: Number, required: true, default: 0 },
     globalDiscountAmount: { type: Number, required: true, default: 0 },
+    fixedDiscountAmount: { type: Number, required: true, default: 0 },
     baseAfterDiscount: { type: Number, required: true, default: 0 },
     vatAmount: { type: Number, required: true, default: 0 },
     totalWithVat: { type: Number, required: true, default: 0 },

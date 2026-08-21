@@ -157,6 +157,33 @@ export async function previewInvoiceSequentialNumber(referenceDate: Date = new D
   };
 }
 
+export async function getInvoiceSequentialCounterState(referenceDate: Date = new Date()) {
+  const { config, date, effectiveYear, counterKey, baseSequence } = await resolveInvoiceCounterContext(referenceDate);
+  const counter = await DocumentCounterModel.findById(counterKey).lean();
+  const currentSequence = counter?.value ?? baseSequence - 1;
+  const nextSequence = counter ? currentSequence + 1 : baseSequence;
+  return {
+    currentSequence,
+    nextSequence,
+    nextNumber: formatInvoiceSequentialNumber(nextSequence, date, config.yearOverride),
+    month: date.getMonth() + 1,
+    year: effectiveYear,
+  };
+}
+
+export async function setInvoiceSequentialCounter(currentSequence: number, referenceDate: Date = new Date()) {
+  if (!Number.isInteger(currentSequence) || currentSequence < 0 || currentSequence > 999999999) {
+    throw new Error('Zaporedna številka računa mora biti celo število med 0 in 999999999.');
+  }
+  const { counterKey } = await resolveInvoiceCounterContext(referenceDate);
+  await DocumentCounterModel.findOneAndUpdate(
+    { _id: counterKey },
+    { $set: { value: currentSequence } },
+    { new: true, upsert: true },
+  );
+  return getInvoiceSequentialCounterState(referenceDate);
+}
+
 export async function generateInvoiceSequentialNumber(referenceDate: Date = new Date()) {
   const { config, date, effectiveYear, counterKey, baseSequence } = await resolveInvoiceCounterContext(referenceDate);
   const updatePipeline: PipelineStage[] = [

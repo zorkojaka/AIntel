@@ -7,6 +7,7 @@ import { generateOfferDescriptionsPdf } from "../../projects/services/offer-desc
 import { generateWorkOrderDocumentPdf } from "../../projects/services/project-document-pdf.service";
 import { getActiveSignedConfirmationVersion } from "../../projects/services/work-order-confirmation.service";
 import { generateInvoicePdf } from "../../projects/services/invoice-pdf.service";
+import { mergePdfBuffers } from "./pdf-merge.service";
 
 export interface ResolvedAttachment {
   type: CommunicationAttachmentType;
@@ -26,16 +27,16 @@ function sanitizeFilePart(value: string) {
   return normalized.slice(0, 120);
 }
 
-function buildOfferFileCore(offer: any, project: any, offerId: string) {
+export function buildOfferFileCore(offer: any, project: any, offerId: string) {
   const projectIdentifier = String(project.projectNumber ?? project.code ?? project.id ?? offer.projectId ?? "")
     .trim()
     .replace(/^PRJ-/i, "");
   const offerTitle = offer.baseTitle?.trim() || offer.title?.trim() || "Ponudba";
-  const customerName = project.customerName?.trim() || project.customer?.name?.trim() || "";
-  const parts = [offerTitle, customerName || offerId].filter(Boolean);
+  const versionNumber = Number(offer.versionNumber);
+  const versionSuffix = Number.isFinite(versionNumber) && versionNumber > 0 ? `_${versionNumber}` : "";
   return {
-    projectIdentifier: sanitizeFilePart(projectIdentifier || offerId) || "projekt",
-    suffix: sanitizeFilePart(parts.join(" - ")) || sanitizeFilePart(offerId) || "Ponudba",
+    projectIdentifier: `${sanitizeFilePart(projectIdentifier || offerId) || "projekt"}${versionSuffix}`,
+    suffix: sanitizeFilePart(offerTitle) || sanitizeFilePart(offerId) || "Ponudba",
   };
 }
 
@@ -45,8 +46,9 @@ export async function resolveCommunicationAttachment(params: {
   offerId?: string | null;
   workOrderId?: string | null;
   invoiceVersionId?: string | null;
+  includeProductDescriptions?: boolean;
 }): Promise<ResolvedAttachment> {
-  const { type, projectId, offerId, workOrderId, invoiceVersionId } = params;
+  const { type, projectId, offerId, workOrderId, invoiceVersionId, includeProductDescriptions } = params;
 
   if (type === "invoice_pdf") {
     if (!invoiceVersionId) {
@@ -155,7 +157,10 @@ export async function resolveCommunicationAttachment(params: {
   const offerFileCore = buildOfferFileCore(offer, project, offerId);
 
   if (type === "offer_pdf") {
-    const buffer = await generateOfferDocumentPdf(offerId, "OFFER");
+    const offerBuffer = await generateOfferDocumentPdf(offerId, "OFFER");
+    const buffer = includeProductDescriptions
+      ? await mergePdfBuffers([offerBuffer, await generateOfferDescriptionsPdf(offer as any)])
+      : offerBuffer;
     const offerLabel = sanitizeFilePart(`Ponudba-${offerFileCore.projectIdentifier} - ${offerFileCore.suffix}`) || "Ponudba";
     return {
       type,

@@ -57,6 +57,16 @@ function resolveActorProfile(req: Request) {
 
 export async function sendOfferCommunicationController(req: Request, res: Response) {
   try {
+    const bookingRequest = req.body?.booking;
+    const booking = bookingRequest?.enabled === true
+      ? await import("../../availability/booking.service").then(({ prepareOfferBookingLink }) =>
+          prepareOfferBookingLink({
+            projectId: req.params.projectId,
+            offerId: req.params.offerVersionId,
+            employeeIds: sanitizeOfferIds(bookingRequest?.employeeIds),
+          }),
+        )
+      : null;
     const input = {
       projectId: req.params.projectId,
       offerId: req.params.offerVersionId,
@@ -69,6 +79,7 @@ export async function sendOfferCommunicationController(req: Request, res: Respon
       body: typeof req.body?.body === "string" ? req.body.body : null,
       selectedAttachments: sanitizeAttachmentTypes(req.body?.selectedAttachments),
       selectedOfferIds: sanitizeOfferIds(req.body?.selectedOfferIds),
+      bookingLink: booking?.link ?? null,
       actorUserId: (req as any)?.context?.actorUserId ?? null,
       actorDisplayName: buildActorDisplayName(req as any),
       actorProfile: resolveActorProfile(req),
@@ -194,7 +205,9 @@ export async function sendInstallerPreparationCommunicationController(req: Reque
         typeof req.body?.projectLink === "string" && req.body.projectLink.trim()
           ? req.body.projectLink.trim()
           : `${req.protocol}://${req.get("host")}/projects/${encodeURIComponent(req.params.projectId)}`,
+      acceptanceBaseUrl: `${req.protocol}://${req.get("host")}/api/public/installer-accept`,
       previewOnly: req.body?.previewOnly === true,
+      confirmSend: req.body?.confirmSend === true,
       actorUserId: (req as any)?.context?.actorUserId ?? null,
       actorDisplayName: buildActorDisplayName(req as any),
       actorProfile: resolveActorProfile(req),

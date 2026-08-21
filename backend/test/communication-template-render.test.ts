@@ -68,3 +68,12 @@ test('S8 communication template HTML appends already-rendered escaped footer HTM
   assert.match(html, /&lt;b&gt;Inteligent&lt;\/b&gt;/);
   assert.doesNotMatch(html, /<b>Inteligent<\/b>/);
 });
+
+test('communication email HTML renders a safe clickable action button', () => {
+  const html = renderCommunicationBodyHtml('Projekt je pripravljen.', null, {
+    actions: [{ href: 'https://example.test/accept?t=1&x=2', label: 'Sprejmi projekt' }],
+  });
+
+  assert.match(html, /href="https:\/\/example\.test\/accept\?t=1&amp;x=2"/);
+  assert.match(html, />Sprejmi projekt<\/a>/);
+});

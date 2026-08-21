@@ -7,8 +7,10 @@ import {
   fetchCommunicationSettings,
   fetchCommunicationTemplates,
   fetchPdfDocumentSettings,
+  fetchInvoiceNumberCounter,
   saveCommunicationSettings,
   savePdfDocumentSettings,
+  saveInvoiceNumberCounter,
   saveSettings,
   updateCommunicationTemplate,
 } from './api';
@@ -29,6 +31,7 @@ import {
   CommunicationTemplate,
   DocumentTypeKey,
   InvoiceSignatureMode,
+  InvoiceNumberCounterDto,
   NoteDto,
   OfferPdfPreviewPayload,
   PdfDocumentSettingsDto,
@@ -233,6 +236,8 @@ export const SettingsPage: React.FC = () => {
   const [activeDocumentTab, setActiveDocumentTab] = useState<DocumentTabKey>('offer');
   const [activeSection, setActiveSection] = useState<SettingsSectionKey>(getInitialSection);
   const [projectPdfSettings, setProjectPdfSettings] = useState<PdfDocumentSettingsDto | null>(null);
+  const [invoiceCounter, setInvoiceCounter] = useState<InvoiceNumberCounterDto | null>(null);
+  const [invoiceCounterSaving, setInvoiceCounterSaving] = useState(false);
 
   useEffect(() => {
     setForm(settings);
@@ -265,6 +270,24 @@ export const SettingsPage: React.FC = () => {
       }
     };
     void loadCommunication();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetchInvoiceNumberCounter()
+      .then((counter) => {
+        if (active) setInvoiceCounter(counter);
+      })
+      .catch((counterError) => {
+        if (!active) return;
+        setStatus({
+          variant: 'error',
+          text: counterError instanceof Error ? counterError.message : 'Številke računa ni mogoče naložiti.',
+        });
+      });
     return () => {
       active = false;
     };
@@ -523,6 +546,22 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const handleSaveInvoiceCounter = async (currentSequence: number) => {
+    setInvoiceCounterSaving(true);
+    try {
+      const updated = await saveInvoiceNumberCounter(currentSequence);
+      setInvoiceCounter(updated);
+      setStatus({ variant: 'success', text: `Števec računa je shranjen. Naslednji račun: ${updated.nextNumber}.` });
+    } catch (counterError) {
+      setStatus({
+        variant: 'error',
+        text: counterError instanceof Error ? counterError.message : 'Številke računa ni mogoče shraniti.',
+      });
+    } finally {
+      setInvoiceCounterSaving(false);
+    }
+  };
+
   const renderActiveSection = () => {
     switch (activeSection) {
       case 'company':
@@ -575,6 +614,9 @@ export const SettingsPage: React.FC = () => {
                   previewVisible={previewVisible}
                   onTogglePreview={() => setPreviewVisible((prev) => !prev)}
                   preview={<DocumentPreview docType={DOCUMENT_PREVIEW_TYPES[activeDocumentTab]} visible={previewVisible} />}
+                  invoiceCounter={invoiceCounter}
+                  invoiceCounterSaving={invoiceCounterSaving}
+                  onSaveInvoiceCounter={handleSaveInvoiceCounter}
                 />
                 <ProjectPdfSettingsSection
                   value={projectPdfSettings}

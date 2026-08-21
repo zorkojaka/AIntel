@@ -28,6 +28,7 @@ import {
   sendOfferCommunicationEmail,
 } from './api';
 import type { OfferVersionSummary } from '@aintel/shared/types/offers';
+import type { Employee } from '@aintel/shared/types/employee';
 
 type SendStatus = 'idle' | 'sending' | 'queued' | 'sent' | 'failed';
 type SendProgressContext = { offerId: string; subject: string; startedAtMs: number };
@@ -40,6 +41,8 @@ type SavedOfferEmailDraft = {
   body: string;
   selectedAttachments: CommunicationAttachmentType[];
   selectedOfferIds: string[];
+  bookingEnabled?: boolean;
+  bookingEmployeeIds?: string[];
   savedAt: string;
 };
 
@@ -55,6 +58,8 @@ interface OfferCommunicationComposeDialogProps {
   offerTotal: number;
   offerVersions: OfferVersionSummary[];
   companyName: string;
+  employees: Employee[];
+  initialEmployeeIds: string[];
   onSent: (result?: { queued?: boolean }, context?: SendProgressContext) => Promise<CommunicationMessage | null | void> | CommunicationMessage | null | void;
 }
 
@@ -112,6 +117,10 @@ function readSavedOfferEmailDraft(key: string): SavedOfferEmailDraft | null {
       selectedOfferIds: Array.isArray(parsed.selectedOfferIds)
         ? parsed.selectedOfferIds.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
         : [],
+      bookingEnabled: parsed.bookingEnabled === true,
+      bookingEmployeeIds: Array.isArray(parsed.bookingEmployeeIds)
+        ? parsed.bookingEmployeeIds.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+        : [],
       savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : '',
     };
   } catch {
@@ -149,6 +158,8 @@ export function OfferCommunicationComposeDialog({
   offerTotal,
   offerVersions,
   companyName,
+  employees,
+  initialEmployeeIds,
   onSent,
 }: OfferCommunicationComposeDialogProps) {
   const [templates, setTemplates] = useState<CommunicationTemplate[]>([]);
@@ -178,9 +189,16 @@ export function OfferCommunicationComposeDialog({
   const [followUpMode, setFollowUpMode] = useState<'off' | 'manual' | 'auto'>('off');
   const [followUpEnabled, setFollowUpEnabled] = useState(false);
   const [followUpDays, setFollowUpDays] = useState(7);
+  const [bookingEnabled, setBookingEnabled] = useState(false);
+  const [bookingEmployeeIds, setBookingEmployeeIds] = useState<string[]>([]);
 
   const normalizedCustomerEmail = useMemo(() => customerEmail.trim(), [customerEmail]);
   const savedDraftKey = useMemo(() => buildSavedDraftKey(projectId, offerId), [offerId, projectId]);
+  const availableInstallers = useMemo(
+    () => employees.filter((employee) => employee.active && (employee.roles ?? []).includes('EXECUTION')),
+    [employees],
+  );
+  const availableInstallerIds = useMemo(() => new Set(availableInstallers.map((employee) => employee.id)), [availableInstallers]);
 
   const placeholderContext = useMemo(
     () => ({
@@ -282,6 +300,12 @@ export function OfferCommunicationComposeDialog({
         setBody(savedDraft?.body ?? (defaultTemplate ? replacePlaceholders(defaultTemplate.bodyTemplate, initialContext) : ''));
         setSelectedAttachments(savedDraft?.selectedAttachments ?? defaultTemplate?.defaultAttachments ?? ['offer_pdf']);
         setSelectedOfferIds(savedDraft?.selectedOfferIds.length ? savedDraft.selectedOfferIds : offerId ? [offerId] : []);
+        setBookingEnabled(savedDraft?.bookingEnabled === true);
+        setBookingEmployeeIds(
+          (savedDraft?.bookingEmployeeIds?.length ? savedDraft.bookingEmployeeIds : initialEmployeeIds).filter((id) =>
+            availableInstallerIds.has(id),
+          ),
+        );
         setSavedDraftAt(savedDraft?.savedAt || null);
         setIsDirty(Boolean(savedDraft));
         setSendError(null);
@@ -300,6 +324,8 @@ export function OfferCommunicationComposeDialog({
         setBody('');
         setSelectedAttachments(['offer_pdf']);
         setSelectedOfferIds(offerId ? [offerId] : []);
+        setBookingEnabled(false);
+        setBookingEmployeeIds(initialEmployeeIds.filter((id) => availableInstallerIds.has(id)));
         setSavedDraftAt(null);
         setIsDirty(false);
         setSendError(null);
@@ -317,7 +343,7 @@ export function OfferCommunicationComposeDialog({
     return () => {
       active = false;
     };
-  }, [companyName, customerName, normalizedCustomerEmail, offerId, offerNumber, offerTotal, open, projectName, reloadKey, savedDraftKey]);
+  }, [availableInstallerIds, companyName, customerName, initialEmployeeIds, normalizedCustomerEmail, offerId, offerNumber, offerTotal, open, projectName, reloadKey, savedDraftKey]);
 
   const selectedTemplate = useMemo(
     () => templates.find((entry) => entry.id === selectedTemplateId) ?? null,
@@ -421,6 +447,8 @@ export function OfferCommunicationComposeDialog({
       body,
       selectedAttachments,
       selectedOfferIds,
+      bookingEnabled,
+      bookingEmployeeIds,
       savedAt,
     };
     try {
@@ -473,6 +501,7 @@ export function OfferCommunicationComposeDialog({
         ...(followUpMode !== 'off'
           ? { followUp: { enabled: followUpEnabled, days: followUpDays } }
           : {}),
+        booking: { enabled: bookingEnabled, employeeIds: bookingEmployeeIds },
       });
       if (result.queued) {
         // Okno se zapre takoj — napredek in potrditev (vsaj 5 s) kaže stransko
@@ -747,6 +776,11 @@ export function OfferCommunicationComposeDialog({
                   </label>
                 ))}
               </div>
+              {selectedAttachments.includes('offer_pdf') && selectedAttachments.includes('project_pdf') ? (
+                <p className="text-xs text-muted-foreground">
+                  Ponudba in opisi produktov bodo za vsako verzijo združeni v en jasno označen PDF.
+                </p>
+              ) : null}
               {attachmentsDisabled ? (
                 <p className="text-xs text-muted-foreground">Priloge bodo na voljo po shranjevanju ponudbe.</p>
               ) : null}
@@ -774,6 +808,54 @@ export function OfferCommunicationComposeDialog({
                 </label>
               </div>
             ) : null}
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Izbira termina montaže</div>
+              <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={bookingEnabled}
+                  onChange={(event) => {
+                    setBookingEnabled(event.target.checked);
+                    setIsDirty(true);
+                  }}
+                />
+                <span>V email dodaj odstavek in povezavo za izbiro termina</span>
+              </label>
+              {bookingEnabled ? (
+                <div className="space-y-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-3 text-sm">
+                  <div className="font-medium text-sky-950">Monterji, katerih prosti termini bodo prikazani</div>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {availableInstallers.map((employee) => (
+                      <label key={employee.id} className="flex items-center gap-2 rounded border bg-background px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={bookingEmployeeIds.includes(employee.id)}
+                          onChange={(event) => {
+                            setBookingEmployeeIds((current) =>
+                              event.target.checked
+                                ? Array.from(new Set([...current, employee.id]))
+                                : current.filter((id) => id !== employee.id),
+                            );
+                            setIsDirty(true);
+                          }}
+                        />
+                        <span>{employee.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {availableInstallers.length === 0 ? (
+                    <p className="m-0 text-destructive">Ni aktivnih monterjev za izbiro.</p>
+                  ) : null}
+                  {bookingEmployeeIds.length === 0 ? (
+                    <p className="m-0 text-destructive">Izberi vsaj enega monterja.</p>
+                  ) : (
+                    <p className="m-0 text-xs text-sky-900">
+                      Stranka bo videla združen seznam prostih terminov vseh izbranih monterjev. Po izbiri bo sistem dodelil prostega monterja.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+            </div>
           </div>
         )}
         </div>
@@ -799,6 +881,7 @@ export function OfferCommunicationComposeDialog({
               !subject.trim() ||
               !body.trim() ||
               (hasOfferAttachment && selectedOfferIds.length === 0)
+              || (bookingEnabled && bookingEmployeeIds.length === 0)
             }
           >
             {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

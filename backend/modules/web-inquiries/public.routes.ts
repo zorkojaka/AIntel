@@ -24,6 +24,11 @@ import { buildAdvanceInstructions } from '../payments/advance-payment.service';
 import { chooseBookingDay, getBookingByToken } from '../availability/booking.service';
 import { AvailabilityError } from '../availability/availability.service';
 import { OfferVersionModel } from '../projects/schemas/offer-version';
+import {
+  acceptInstallerAssignmentByToken,
+  InstallerAcceptanceError,
+} from '../projects/services/installer-acceptance.service';
+import { applyAutomaticPreparationProgression } from '../projects/controllers/logistics.controller';
 
 const UPLOAD_BASE_DIR = '/var/www/aintel/uploads/web-inquiries';
 const PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -120,6 +125,23 @@ const router = Router();
 // Mounted before the browser-wide CORS + key guard so /clients/* never falls through
 // to the permissive browser configuration.
 router.use('/clients', internalRouter);
+
+// Monter potrdi sprejem neposredno iz emaila. Naključni žeton je avtorizacija;
+// ta pot je namenoma pred API-key zaščito javnega spletnega obrazca.
+router.get('/installer-accept/:token', async (req: Request, res: Response) => {
+  try {
+    const accepted = await acceptInstallerAssignmentByToken(req.params.token);
+    await applyAutomaticPreparationProgression(accepted.projectId, accepted.workOrderId, undefined, {
+      displayName: 'Monter (potrditev iz emaila)',
+      employeeId: accepted.employeeId,
+    });
+    return res.status(200).type('html').send(`<!doctype html><html lang="sl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Projekt sprejet</title></head><body style="margin:0;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a"><main style="max-width:560px;margin:80px auto;padding:32px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;text-align:center"><h1 style="color:#15803d">Projekt je sprejet</h1><p>Potrdili ste, da ste projekt videli in ga sprejemate.</p><p>To stran lahko zaprete.</p></main></body></html>`);
+  } catch (error) {
+    const status = error instanceof InstallerAcceptanceError ? error.statusCode : 500;
+    const message = error instanceof InstallerAcceptanceError ? error.message : 'Potrditve ni bilo mogoče shraniti.';
+    return res.status(status).type('html').send(`<!doctype html><html lang="sl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Potrditev ni uspela</title></head><body style="font-family:Arial,sans-serif;padding:40px"><h1>Potrditev ni uspela</h1><p>${message}</p></body></html>`);
+  }
+});
 
 // The website widget calls these endpoints directly from the browser, so they
 // need their own permissive CORS (the global allowlist covers only aintel origins).

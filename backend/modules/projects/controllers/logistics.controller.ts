@@ -31,12 +31,17 @@ import {
 } from '../services/work-order-confirmation.service';
 import { canEditPreparation } from '../../../../shared/utils/preparationAccess';
 import { getSettings } from '../../settings/settings.service';
-import { createInvoiceFromClosing } from '../services/invoice.service';
+import { createInvoiceFromClosing, refreshDraftInvoiceFromClosing } from '../services/invoice.service';
 import {
   buildActorDisplayName,
   recordOfferConfirmedCommunicationEvent,
 } from '../../communication/services/communication.service';
 import { normalizeSupplierFields, normalizeSupplierKey } from '../services/supplier-normalization.service';
+import { OfferBookingModel } from '../../availability/offer-booking.model';
+import {
+  acceptInstallerAssignmentInSystem,
+  InstallerAcceptanceError,
+} from '../services/installer-acceptance.service';
 
 function calculateOfferTotalsFromSnapshot(offer: {
   items: OfferLineItem[];
@@ -44,6 +49,7 @@ function calculateOfferTotalsFromSnapshot(offer: {
   useGlobalDiscount?: boolean;
   globalDiscountPercent?: number;
   discountPercent?: number;
+  fixedDiscountAmount?: number;
   vatMode?: number;
 }) {
   const items = offer.items || [];
@@ -68,8 +74,13 @@ function calculateOfferTotalsFromSnapshot(offer: {
 
   const normalizedGlobalPct = useGlobalDiscount ? Math.min(100, Math.max(0, Number(globalDiscountPercent) || 0)) : 0;
   const globalDiscountAmount = normalizedGlobalPct > 0 ? (baseAfterPerItem * normalizedGlobalPct) / 100 : 0;
+  const baseAfterPercentageDiscount = Math.max(0, baseAfterPerItem - globalDiscountAmount);
+  const fixedDiscountAmount = Math.min(
+    baseAfterPercentageDiscount,
+    Math.max(0, Number(offer.fixedDiscountAmount) || 0),
+  );
 
-  const baseAfterDiscount = baseAfterPerItem - globalDiscountAmount;
+  const baseAfterDiscount = baseAfterPercentageDiscount - fixedDiscountAmount;
 
   const vatMultiplier = vatMode === 22 ? 0.22 : vatMode === 9.5 ? 0.095 : 0;
   const vatAmount = baseAfterDiscount * vatMultiplier;
@@ -79,6 +90,7 @@ function calculateOfferTotalsFromSnapshot(offer: {
     baseWithoutVat: round2(baseWithoutVat),
     perItemDiscountAmount: round2(perItemDiscountAmount),
     globalDiscountAmount: round2(globalDiscountAmount),
+    fixedDiscountAmount: round2(fixedDiscountAmount),
     baseAfterDiscount: round2(baseAfterDiscount),
     vatAmount: round2(vatAmount),
     totalWithVat: round2(totalWithVat),
@@ -982,8 +994,21 @@ async function ensureWorkOrderForOffer(params: {
   customerPhone: string;
   customerAddress: string;
   productDefaultsById: Map<string, any>;
+  assignedEmployeeIds?: string[];
+  scheduledAt?: string | null;
 }) {
-  const { projectId, offerId, items, customerName, customerEmail, customerPhone, customerAddress, productDefaultsById } = params;
+  const {
+    projectId,
+    offerId,
+    items,
+    customerName,
+    customerEmail,
+    customerPhone,
+    customerAddress,
+    productDefaultsById,
+    assignedEmployeeIds = [],
+    scheduledAt = null,
+  } = params;
   let workOrder = await WorkOrderModel.findOne({ projectId, offerVersionId: offerId }).sort({ sequence: 1, createdAt: 1 });
 
   if (workOrder) {
@@ -997,6 +1022,14 @@ async function ensureWorkOrderForOffer(params: {
     workOrder.customerEmail = customerEmail;
     workOrder.customerPhone = customerPhone;
     workOrder.customerAddress = customerAddress;
+    if (assignedEmployeeIds.length > 0) {
+      workOrder.assignedEmployeeIds = assignedEmployeeIds as any;
+    }
+    if (scheduledAt) {
+      workOrder.scheduledAt = scheduledAt;
+      workOrder.scheduledConfirmedAt = workOrder.scheduledConfirmedAt ?? new Date();
+      workOrder.scheduledConfirmedBy = workOrder.scheduledConfirmedBy ?? 'Stranka (spletna izbira)';
+    }
     if (typeof workOrder.sequence !== 'number') {
       workOrder.sequence = 1;
     }
@@ -1011,11 +1044,14 @@ async function ensureWorkOrderForOffer(params: {
     items,
     status: 'draft',
     reopened: false,
-    scheduledAt: null,
     customerName,
     customerEmail,
     customerPhone,
     customerAddress,
+    assignedEmployeeIds,
+    scheduledAt,
+    scheduledConfirmedAt: scheduledAt ? new Date() : null,
+    scheduledConfirmedBy: scheduledAt ? 'Stranka (spletna izbira)' : null,
   });
 }
 
@@ -1272,6 +1308,12 @@ function serializeWorkOrder(order: any): WorkOrder | null {
     assignedEmployeeIds: Array.isArray(order.assignedEmployeeIds)
       ? order.assignedEmployeeIds.map((id: any) => String(id))
       : [],
+    installerAcceptances: (order.installerAcceptances ?? []).map((entry: any) => ({
+      employeeId: String(entry.employeeId),
+      emailSentAt: entry.emailSentAt ? new Date(entry.emailSentAt).toISOString() : null,
+      acceptedAt: entry.acceptedAt ? new Date(entry.acceptedAt).toISOString() : null,
+      acceptedVia: entry.acceptedVia === 'system' || entry.acceptedVia === 'email' ? entry.acceptedVia : null,
+    })),
     location: order.location,
     notes: order.notes,
     customerName: order.customerName ?? '',
@@ -1452,13 +1494,21 @@ async function getPreparationReadiness(projectId: string, workOrderId: string) {
 
   const assignedEmployeeIds = Array.isArray(workOrder.assignedEmployeeIds) ? workOrder.assignedEmployeeIds : [];
   const hasAssignedTeam = assignedEmployeeIds.length > 0;
+  const acceptedEmployeeIds = new Set(
+    (workOrder.installerAcceptances ?? [])
+      .filter((entry: any) => Boolean(entry.acceptedAt))
+      .map((entry: any) => String(entry.employeeId)),
+  );
+  const hasInstallerAcceptance = hasAssignedTeam && assignedEmployeeIds.every((employeeId: any) =>
+    acceptedEmployeeIds.has(String(employeeId)),
+  );
   const hasSchedule = typeof workOrder.scheduledAt === 'string' && workOrder.scheduledAt.trim().length > 0;
   const hasConfirmedSchedule = Boolean(workOrder.scheduledConfirmedAt);
   const materialItems = materialOrders.flatMap((order: any) => (order.items ?? []).filter((item: any) => !item.isExtra));
   const materialReady = materialItems.length === 0 || materialItems.every(isMaterialItemReadyForIssue);
 
   return {
-    ready: hasAssignedTeam && hasSchedule && hasConfirmedSchedule && materialReady,
+    ready: hasAssignedTeam && hasInstallerAcceptance && hasSchedule && hasConfirmedSchedule && materialReady,
     workOrder,
   };
 }
@@ -1466,7 +1516,9 @@ async function getPreparationReadiness(projectId: string, workOrderId: string) {
 async function moveProjectToExecution(params: {
   projectId: string;
   workOrderId: string;
-  req: Request;
+  req?: Request;
+  actorDisplayName?: string;
+  actorEmployeeId?: string;
   mode: 'automatic' | 'manual';
 }) {
   const { projectId, workOrderId, req, mode } = params;
@@ -1482,18 +1534,23 @@ async function moveProjectToExecution(params: {
         ? "Projekt je samodejno prešel v fazo 'Izvedba', ker so zahteve priprave izpolnjene."
         : "Projekt prešel v fazo 'Izvedba' po izdaji delovnega naloga.",
     timestamp: new Date().toISOString(),
-    user: buildActorDisplayName(req as any),
+    user: params.actorDisplayName ?? (req ? buildActorDisplayName(req as any) : 'Monter'),
     metadata: {
       workOrderId,
       mode,
-      actorEmployeeId: resolveActorEmployeeId(req) ?? '',
+      actorEmployeeId: params.actorEmployeeId ?? (req ? resolveActorEmployeeId(req) : '') ?? '',
     },
   });
   await project.save();
   return true;
 }
 
-async function applyAutomaticPreparationProgression(projectId: string, workOrderId: string, req: Request) {
+export async function applyAutomaticPreparationProgression(
+  projectId: string,
+  workOrderId: string,
+  req?: Request,
+  actor?: { displayName?: string; employeeId?: string },
+) {
   const settings = await getSettings();
   if (settings.phaseProgressionMode !== 'automatic') return false;
 
@@ -1506,7 +1563,14 @@ async function applyAutomaticPreparationProgression(projectId: string, workOrder
   }
   workOrder.status = 'issued';
   await workOrder.save();
-  return moveProjectToExecution({ projectId, workOrderId, req, mode: 'automatic' });
+  return moveProjectToExecution({
+    projectId,
+    workOrderId,
+    req,
+    actorDisplayName: actor?.displayName,
+    actorEmployeeId: actor?.employeeId,
+    mode: 'automatic',
+  });
 }
 
 async function resolveEmployeeIdForTenant(tenantId: string, value: unknown) {
@@ -1869,6 +1933,13 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
     const customerEmail = projectClient?.email ?? '';
     const customerPhone = projectClient?.phone ?? '';
     const customerAddress = formatClientAddress(projectClient, project.customer?.address ?? '');
+    const offerBooking = await OfferBookingModel.findOne({ projectId, offerVersionId: offer._id }).lean();
+    const bookingEmployeeId = offerBooking?.selectedEmployeeId ? String(offerBooking.selectedEmployeeId) : null;
+    const assignedEmployeeIds = bookingEmployeeId
+      ? [bookingEmployeeId]
+      : Array.isArray((project as any).assignedEmployeeIds)
+        ? (project as any).assignedEmployeeIds.map((id: unknown) => String(id)).filter(Boolean)
+        : [];
 
     const workOrder = await ensureWorkOrderForOffer({
       projectId,
@@ -1879,6 +1950,8 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       customerPhone,
       customerAddress,
       productDefaultsById,
+      assignedEmployeeIds,
+      scheduledAt: offerBooking?.scheduledAt ?? null,
     });
 
     await syncProjectExecutionDefinitionsFromWorkOrder(projectId, workOrder);
@@ -2210,6 +2283,18 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         return res.fail(resolved.error, 400);
       }
       updates.mainInstallerId = resolved.id;
+    }
+    if ('assignedEmployeeIds' in payload || 'mainInstallerId' in payload) {
+      const nextAssignedEmployeeIds = Array.isArray(updates.assignedEmployeeIds)
+        ? updates.assignedEmployeeIds.map(String)
+        : (existing.assignedEmployeeIds ?? []).map(String);
+      const nextMainInstallerId = 'mainInstallerId' in updates
+        ? (updates.mainInstallerId ? String(updates.mainInstallerId) : '')
+        : (existing.mainInstallerId ? String(existing.mainInstallerId) : '');
+      const nextInstallerIds = new Set([nextMainInstallerId, ...nextAssignedEmployeeIds].filter(Boolean));
+      updates.installerAcceptances = (existing.installerAcceptances ?? []).filter((entry: any) =>
+        nextInstallerIds.has(String(entry.employeeId)),
+      );
     }
     if ('location' in payload) updates.location = payload.location;
     if ('notes' in payload) updates.notes = payload.notes;
@@ -2642,6 +2727,8 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
       });
       await project.save();
     }
+  } else if (nextWorkOrderStatus === 'completed' && Array.isArray(payload.items)) {
+    await refreshDraftInvoiceFromClosing(projectId);
   }
 
   if (normalizedUpdated && Array.isArray(payload.items)) {
@@ -2654,6 +2741,26 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
   return res.success(serializeWorkOrder(responseOrder));
   } catch (err) {
     next(err);
+  }
+}
+
+export async function acceptInstallerAssignment(req: Request, res: Response) {
+  try {
+    const employeeId = resolveActorEmployeeId(req);
+    if (!employeeId) return res.fail('Uporabnik ni povezan z monterjem.', 403);
+    const result = await acceptInstallerAssignmentInSystem({
+      projectId: req.params.projectId,
+      workOrderId: req.params.workOrderId,
+      employeeId,
+    });
+    await applyAutomaticPreparationProgression(req.params.projectId, req.params.workOrderId, req);
+    return res.success({
+      employeeId: result.employeeId,
+      acceptedAt: result.acceptedAt.toISOString(),
+    });
+  } catch (error) {
+    if (error instanceof InstallerAcceptanceError) return res.fail(error.message, error.statusCode);
+    return res.fail('Sprejema projekta ni bilo mogoče shraniti.', 500);
   }
 }
 
@@ -2731,6 +2838,103 @@ function parsePdfResponseMode(value?: string | string[] | null): 'inline' | 'dow
     return 'inline';
   }
   return 'download';
+}
+
+export async function markEquipmentReady(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { projectId, materialOrderId } = req.params;
+    const materialOrder = await MaterialOrderModel.findOne({
+      _id: materialOrderId,
+      projectId,
+      status: { $ne: 'cancelled' },
+      cancelledAt: null,
+    });
+    if (!materialOrder) {
+      return res.fail('Naročilo materiala ni najdeno.', 404);
+    }
+
+    const contextRoles = getContextRoles(req);
+    if (!canEditPreparation(contextRoles)) {
+      if (!contextRoles.includes(ROLE_EXECUTION)) {
+        return res.fail('Ni dostopa do faze Priprava.', 403);
+      }
+      const actorEmployeeId = resolveActorEmployeeId(req);
+      if (!actorEmployeeId) {
+        return res.fail('Uporabnik ni povezan z monterjem.', 403);
+      }
+      const workOrderId = materialOrder.workOrderId ? String(materialOrder.workOrderId) : null;
+      const [projectAssigned, workOrderAssigned, materialOrderAssigned] = await Promise.all([
+        ProjectModel.exists({ id: projectId, assignedEmployeeIds: actorEmployeeId }),
+        workOrderId
+          ? WorkOrderModel.exists({ _id: workOrderId, projectId, assignedEmployeeIds: actorEmployeeId })
+          : Promise.resolve(null),
+        MaterialOrderModel.exists({ _id: materialOrderId, projectId, assignedEmployeeIds: actorEmployeeId }),
+      ]);
+      if (!projectAssigned && !workOrderAssigned && !materialOrderAssigned) {
+        return res.fail('Ni dostopa do faze Priprava za to naročilo materiala.', 403);
+      }
+    }
+
+    materialOrder.items = (materialOrder.items ?? []).map((item: any) => {
+      const current = item.toObject ? item.toObject() : item;
+      const quantity =
+        typeof current.quantity === 'number' && Number.isFinite(current.quantity)
+          ? Math.max(0, current.quantity)
+          : 0;
+      const effectiveQuantity = current.isExtra
+        ? Math.max(
+            quantity,
+            typeof current.orderedQty === 'number' && Number.isFinite(current.orderedQty) ? current.orderedQty : 0,
+            typeof current.deliveredQty === 'number' && Number.isFinite(current.deliveredQty) ? current.deliveredQty : 0,
+          )
+        : quantity;
+      return {
+        ...current,
+        orderedQty: effectiveQuantity,
+        deliveredQty: effectiveQuantity,
+        isOrdered: effectiveQuantity > 0,
+        materialStep: 'Prevzeto',
+      };
+    });
+    materialOrder.status = 'received';
+    materialOrder.materialStatus = 'Prevzeto';
+    materialOrder.pickupConfirmedAt = new Date();
+    materialOrder.pickupConfirmedBy = resolveActorId(req);
+    await materialOrder.save();
+
+    const project = await ProjectModel.findOne({ id: projectId });
+    if (project) {
+      addTimeline(project, {
+        type: 'edit',
+        title: 'Oprema pripravljena',
+        description: 'Vsa oprema je bila označena kot naročena in prevzeta.',
+        timestamp: new Date().toISOString(),
+        user: 'system',
+        metadata: {
+          actorEmployeeId: resolveActorEmployeeId(req) ?? '',
+          projectId,
+          materialOrderId,
+        },
+      });
+      await project.save();
+    }
+
+    const workOrderId = materialOrder.workOrderId ? String(materialOrder.workOrderId) : null;
+    if (workOrderId) {
+      await applyAutomaticPreparationProgression(projectId, workOrderId, req);
+    }
+
+    const materialOrders = await MaterialOrderModel.find({
+      projectId,
+      status: { $ne: 'cancelled' },
+      cancelledAt: null,
+    }).sort({ createdAt: 1 }).lean();
+    return res.success({
+      materialOrders: materialOrders.map(serializeMaterialOrder).filter(Boolean),
+    });
+  } catch (err) {
+    next(err);
+  }
 }
 
 export async function advanceMaterialOrderStep(req: Request, res: Response, next: NextFunction) {

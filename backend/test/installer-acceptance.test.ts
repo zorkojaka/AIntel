@@ -1,0 +1,103 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import mongoose from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+
+import { EmployeeModel } from '../modules/employees/schemas/employee';
+import { ProjectModel } from '../modules/projects/schemas/project';
+import { WorkOrderModel } from '../modules/projects/schemas/work-order';
+import {
+  acceptInstallerAssignmentByToken,
+  acceptInstallerAssignmentInSystem,
+  ensureInstallerAcceptanceTokens,
+  InstallerAcceptanceError,
+} from '../modules/projects/services/installer-acceptance.service';
+
+let mongod: MongoMemoryServer;
+
+test.before(async () => {
+  mongod = await MongoMemoryServer.create();
+  await mongoose.connect(mongod.getUri(), { dbName: 'aintel_installer_acceptance' });
+});
+
+test.after(async () => {
+  await mongoose.disconnect();
+  await mongod.stop();
+});
+
+test.beforeEach(async () => {
+  await Promise.all([
+    EmployeeModel.deleteMany({}),
+    ProjectModel.deleteMany({}),
+    WorkOrderModel.deleteMany({}),
+  ]);
+});
+
+async function createInstaller(name: string) {
+  return EmployeeModel.create({
+    tenantId: 'inteligent',
+    name,
+    roles: ['EXECUTION'],
+    hourRateWithoutVat: 20,
+  });
+}
+
+test('vsak dodeljeni monter lahko projekt sprejme v sistemu ali prek svojega email žetona', async () => {
+  const miha = await createInstaller('Miha');
+  const ana = await createInstaller('Ana');
+  await ProjectModel.create({
+    id: 'PRJ-ACCEPT',
+    code: 'PRJ-ACCEPT',
+    projectNumber: 501,
+    title: 'Projekt za sprejem',
+    customer: { name: 'Testna stranka' },
+    status: 'ordered',
+    createdAt: new Date().toISOString(),
+  });
+  const workOrder = await WorkOrderModel.create({
+    projectId: 'PRJ-ACCEPT',
+    offerVersionId: new mongoose.Types.ObjectId().toString(),
+    items: [],
+    assignedEmployeeIds: [miha._id, ana._id],
+  });
+
+  const entries = await ensureInstallerAcceptanceTokens(workOrder);
+  assert.equal(entries.length, 2);
+  assert.notEqual(entries[0].token, entries[1].token);
+
+  await acceptInstallerAssignmentInSystem({
+    projectId: 'PRJ-ACCEPT',
+    workOrderId: String(workOrder._id),
+    employeeId: String(miha._id),
+  });
+  const anaEntry = entries.find((entry) => String(entry.employeeId) === String(ana._id));
+  assert.ok(anaEntry?.token);
+  await acceptInstallerAssignmentByToken(anaEntry.token);
+
+  const updated = await WorkOrderModel.findById(workOrder._id).lean();
+  assert.equal(updated?.installerAcceptances?.length, 2);
+  assert.equal(updated?.installerAcceptances?.find((entry) => String(entry.employeeId) === String(miha._id))?.acceptedVia, 'system');
+  assert.equal(updated?.installerAcceptances?.find((entry) => String(entry.employeeId) === String(ana._id))?.acceptedVia, 'email');
+  assert.ok(updated?.installerAcceptances?.every((entry) => entry.acceptedAt));
+});
+
+test('monter, ki ni dodeljen delovnemu nalogu, projekta ne more sprejeti', async () => {
+  const miha = await createInstaller('Miha');
+  const ana = await createInstaller('Ana');
+  const workOrder = await WorkOrderModel.create({
+    projectId: 'PRJ-OTHER',
+    offerVersionId: new mongoose.Types.ObjectId().toString(),
+    items: [],
+    assignedEmployeeIds: [miha._id],
+  });
+
+  await assert.rejects(
+    acceptInstallerAssignmentInSystem({
+      projectId: 'PRJ-OTHER',
+      workOrderId: String(workOrder._id),
+      employeeId: String(ana._id),
+    }),
+    (error: unknown) => error instanceof InstallerAcceptanceError && error.statusCode === 403,
+  );
+});

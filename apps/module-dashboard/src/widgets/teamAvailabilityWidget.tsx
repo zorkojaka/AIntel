@@ -16,6 +16,7 @@ interface EmployeeTermin {
   date: string;
   startHour: number;
   hours: number;
+  bufferHours: number;
   title: string;
   projectId: string;
   done: boolean;
@@ -46,6 +47,10 @@ function weekdayShort(date: string) {
 function isWeekend(date: string) {
   const day = new Date(`${date}T00:00:00`).getDay();
   return day === 0 || day === 6;
+}
+
+function bookingPreviewUrl(employeeIds: string[]) {
+  return `/api/availability/team/booking-preview?employeeIds=${encodeURIComponent(employeeIds.join(','))}`;
 }
 
 function TeamAvailability() {
@@ -139,6 +144,14 @@ function TeamAvailability() {
           <span className="ekipa__vzorec je-termin" /> razpisan termin
           <span className="ekipa__vzorec je-opravljen" /> opravljeno
         </span>
+        <a
+          className="ekipa__predogled-gumb"
+          href={bookingPreviewUrl(members.map((member) => member.employeeId))}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Vsi termini kot stranka
+        </a>
       </div>
 
       <div className="ekipa__tabela-ovoj">
@@ -173,8 +186,21 @@ function TeamAvailability() {
               return (
                 <tr key={member.employeeId}>
                   <th className="ekipa__monter" title={`${zasedenihDni} zasedenih dni v prikazanem mesecu`}>
-                    {member.name}
-                    <span className="ekipa__monter-meta">{zasedenihDni} dni</span>
+                    <span className="ekipa__monter-vsebina">
+                      <span>
+                        {member.name}
+                        <span className="ekipa__monter-meta">{zasedenihDni} dni</span>
+                      </span>
+                      <a
+                        className="ekipa__monter-predogled"
+                        href={bookingPreviewUrl([member.employeeId])}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`Poglej proste termine za ${member.name} kot stranka`}
+                      >
+                        Termini
+                      </a>
+                    </span>
                   </th>
                   {member.days.map((day) => {
                     const dayTermini = terminiByDate.get(day.date) ?? [];
@@ -183,7 +209,7 @@ function TeamAvailability() {
                       `${member.name} — ${day.date}`,
                       day.hours.length ? `Na voljo ${day.hours[0]}:00–${(day.hours[day.hours.length - 1] ?? 0) + 1}:00` : 'Ni označene razpoložljivosti',
                       ...dayTermini.map(
-                        (termin) => `${termin.done ? '✓' : '🔧'} ${termin.title} (${termin.startHour}:00–${termin.startHour + termin.hours}:00)`,
+                        (termin) => `${termin.done ? '✓' : '🔧'} ${termin.title} (${termin.startHour}:00–${termin.startHour + termin.hours}:00 + ${termin.bufferHours} h rezerve)`,
                       ),
                     ].join('\n');
                     return (
@@ -232,7 +258,7 @@ function TeamAvailability() {
                   )}
                   {entry.termini.map((termin, index) => (
                     <span key={index} className={`ekipa__seznam-termin${termin.done ? ' je-opravljen' : ''}`}>
-                      {termin.done ? '✓' : '🔧'} {termin.startHour}:00–{termin.startHour + termin.hours}:00 · {termin.title}
+                      {termin.done ? '✓' : '🔧'} {termin.startHour}:00–{termin.startHour + termin.hours}:00 · {termin.title} · +{termin.bufferHours} h za pot
                       {termin.projectId ? ` (${termin.projectId})` : ''}
                     </span>
                   ))}

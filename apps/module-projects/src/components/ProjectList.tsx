@@ -1,4 +1,4 @@
-import { Archive, CalendarDays, CheckCircle2, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, CalendarDays, CheckCircle2, Copy, Loader2, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { TableRowActions } from "@aintel/ui";
 import { Badge } from "./ui/badge";
@@ -12,6 +12,8 @@ interface ProjectListProps {
   categories: Category[];
   onEditProject: (project: ProjectSummary) => void;
   onDeleteProject: (project: ProjectSummary) => void;
+  onCloneProject?: (project: ProjectSummary) => void;
+  cloningProjectId?: string | null;
   onArchiveProject?: (project: ProjectSummary) => void;
   onUnarchiveProject?: (project: ProjectSummary) => void;
   onCloseProject?: (project: ProjectSummary) => void;
@@ -86,6 +88,8 @@ export function ProjectList({
   categories,
   onEditProject,
   onDeleteProject,
+  onCloneProject,
+  cloningProjectId = null,
   onArchiveProject,
   onUnarchiveProject,
   onCloseProject,
@@ -234,7 +238,7 @@ export function ProjectList({
               {!hideFinancials ? renderSortableHeader("ponudba", "Ponudba", "w-32 text-right") : null}
               {renderSortableHeader("racuni", "Računi", "text-right")}
               {renderSortableHeader("datum", "Datum", "w-28")}
-              {!readOnly ? <TableHead className="w-40 text-right">Akcije</TableHead> : null}
+              {!readOnly ? <TableHead className="w-56 text-right">Akcije</TableHead> : null}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -275,6 +279,17 @@ export function ProjectList({
                   <TableCell className="text-right align-top" onClick={(event) => event.stopPropagation()}>
                     <div className="flex shrink-0 justify-end gap-1">
                       {renderLifecycleActions(project)}
+                      <button
+                        type="button"
+                        className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-border/70 bg-card px-2.5 text-xs font-medium text-foreground transition hover:border-primary hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                        onClick={() => onCloneProject?.(project)}
+                        disabled={cloningProjectId === project.id}
+                        title="Kopiraj projekt"
+                        aria-label={`Kopiraj ${project.title}`}
+                      >
+                        {cloningProjectId === project.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                        Kopiraj
+                      </button>
                       <TableRowActions
                         onEdit={() => onEditProject(project)}
                         onDelete={() => onDeleteProject(project)}
@@ -309,6 +324,16 @@ export function ProjectList({
               {!readOnly ? (
                 <div className="flex shrink-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
                   {renderLifecycleActions(project)}
+                  <button
+                    type="button"
+                    onClick={() => onCloneProject?.(project)}
+                    disabled={cloningProjectId === project.id}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white text-foreground transition hover:border-primary hover:bg-muted"
+                    aria-label={`Kopiraj ${project.title}`}
+                    title="Kopiraj projekt"
+                  >
+                    {cloningProjectId === project.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                  </button>
                   <button
                     type="button"
                     onClick={() => onEditProject(project)}

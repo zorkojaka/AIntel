@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 import { EmployeeModel, type EmployeeScheduleSettings } from '../employees/schemas/employee';
 import { WorkOrderModel } from '../projects/schemas/work-order';
+import { OfferBookingModel } from './offer-booking.model';
 import { EmployeeAvailabilityDayModel, EmployeeWeekLimitModel } from './availability.model';
 
 // Razpoložljivost monterjev za termine montaž.
@@ -320,6 +321,7 @@ export interface EmployeeTermin {
   date: string;
   startHour: number;
   hours: number;
+  bufferHours: number;
   title: string;
   projectId: string;
   /** Nalog zaključen (status completed / completedAt). */
@@ -350,6 +352,7 @@ export async function getEmployeeTermini(employeeId: string, from: string, days:
       date: dateKey,
       startHour: scheduled.getHours(),
       hours: estimateWorkOrderHours(workOrder.items),
+      bufferHours: PROJECT_TRAVEL_BUFFER_HOURS,
       title: workOrder.title || workOrder.projectId || 'Montaža',
       projectId: String(workOrder.projectId ?? ''),
       done: workOrder.status === 'completed' || !!workOrder.completedAt,
@@ -406,6 +409,7 @@ export function estimateWorkOrderHours(items: Array<{ casovnaNorma?: number; qua
 
 /** Poln delovni dan (ur) — meja bloka, ki ga stranka rezervira ob izbiri prvega dne. */
 export const SINGLE_DAY_HOURS = 8;
+export const PROJECT_TRAVEL_BUFFER_HOURS = 1;
 
 /**
  * Koliko zaporednih prostih ur mora imeti ekipa PRVI dan, da se dan ponudi.
@@ -415,6 +419,11 @@ export const SINGLE_DAY_HOURS = 8;
  */
 export function bookingSlotHours(durationHours: number): number {
   return Math.max(1, Math.min(Math.ceil(durationHours), SINGLE_DAY_HOURS));
+}
+
+/** Čas, ki ga termin zasede v urniku: izvedba + rezerva za pot, največ en delovni dan. */
+export function reservedSlotHours(durationHours: number): number {
+  return Math.min(bookingSlotHours(durationHours) + PROJECT_TRAVEL_BUFFER_HOURS, SINGLE_DAY_HOURS);
 }
 
 interface BusyInterval {
@@ -427,6 +436,7 @@ async function busyByEmployeeAndDate(
   fromKey: string,
   toKey: string,
   excludeWorkOrderId?: string,
+  excludeOfferBookingId?: string,
 ): Promise<Map<string, BusyInterval[]>> {
   const query: Record<string, unknown> = {
     assignedEmployeeIds: { $in: employeeIds },
@@ -440,17 +450,38 @@ async function busyByEmployeeAndDate(
   const workOrders = await WorkOrderModel.find(query)
     .select({ scheduledAt: 1, assignedEmployeeIds: 1, items: 1 })
     .lean();
+  const offerBookingQuery: Record<string, unknown> = {
+    selectedEmployeeId: { $in: employeeIds },
+    selectedAt: { $ne: null },
+    scheduledAt: { $ne: null, $gte: fromKey, $lte: `${toKey}T23:59:59.999Z` },
+  };
+  if (excludeOfferBookingId && mongoose.isValidObjectId(excludeOfferBookingId)) {
+    offerBookingQuery._id = { $ne: new mongoose.Types.ObjectId(excludeOfferBookingId) };
+  }
+  const offerBookings = await OfferBookingModel.find(offerBookingQuery)
+    .select({ scheduledAt: 1, selectedEmployeeId: 1, durationHours: 1 })
+    .lean();
 
   const busy = new Map<string, BusyInterval[]>();
   for (const workOrder of workOrders as any[]) {
     const scheduled = new Date(workOrder.scheduledAt);
     if (Number.isNaN(scheduled.valueOf())) continue;
     const dateKey = `${scheduled.getFullYear()}-${String(scheduled.getMonth() + 1).padStart(2, '0')}-${String(scheduled.getDate()).padStart(2, '0')}`;
-    const interval: BusyInterval = { startHour: scheduled.getHours(), hours: estimateWorkOrderHours(workOrder.items) };
+    const interval: BusyInterval = { startHour: scheduled.getHours(), hours: reservedSlotHours(estimateWorkOrderHours(workOrder.items)) };
     for (const employeeId of workOrder.assignedEmployeeIds ?? []) {
       const key = `${employeeId}:${dateKey}`;
       busy.set(key, [...(busy.get(key) ?? []), interval]);
     }
+  }
+  for (const booking of offerBookings as any[]) {
+    const scheduled = new Date(booking.scheduledAt);
+    if (Number.isNaN(scheduled.valueOf()) || !booking.selectedEmployeeId) continue;
+    const dateKey = `${scheduled.getFullYear()}-${String(scheduled.getMonth() + 1).padStart(2, '0')}-${String(scheduled.getDate()).padStart(2, '0')}`;
+    const key = `${booking.selectedEmployeeId}:${dateKey}`;
+    busy.set(key, [
+      ...(busy.get(key) ?? []),
+      { startHour: scheduled.getHours(), hours: reservedSlotHours(Number(booking.durationHours) || 4) },
+    ]);
   }
   return busy;
 }
@@ -470,6 +501,7 @@ export async function findFreeDays(input: {
   from?: string;
   days?: number;
   excludeWorkOrderId?: string;
+  excludeOfferBookingId?: string;
 }): Promise<FreeDay[]> {
   const employeeIds = input.employeeIds.filter((id) => mongoose.isValidObjectId(id));
   if (!employeeIds.length) return [];
@@ -485,7 +517,7 @@ export async function findFreeDays(input: {
   const weekTo = addDays(mondayOf(toKey), 6);
   const [calendars, busy, weekLimits] = await Promise.all([
     Promise.all(employeeIds.map((id) => getAvailabilityCalendar(id, fromKey, span))),
-    busyByEmployeeAndDate(objectIds, weekFrom, weekTo, input.excludeWorkOrderId),
+    busyByEmployeeAndDate(objectIds, weekFrom, weekTo, input.excludeWorkOrderId, input.excludeOfferBookingId),
     Promise.all(employeeIds.map((id) => getWeekLimits(id, fromKey, span))),
   ]);
 

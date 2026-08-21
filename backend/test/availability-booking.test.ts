@@ -7,11 +7,13 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EmployeeModel } from '../modules/employees/schemas/employee';
 import { WorkOrderModel } from '../modules/projects/schemas/work-order';
 import { ProjectModel } from '../modules/projects/schemas/project';
+import { OfferVersionModel } from '../modules/projects/schemas/offer-version';
 import { EmployeeAvailabilityDayModel } from '../modules/availability/availability.model';
 import {
   addDays,
   AvailabilityError,
   bookingSlotHours,
+  reservedSlotHours,
   estimateWorkOrderHours,
   findFreeDays,
   getAvailabilityCalendar,
@@ -21,7 +23,9 @@ import {
 } from '../modules/availability/availability.service';
 import { getEmployeeTermini, getWeekLimits, mondayOf, setWeekLimit } from '../modules/availability/availability.service';
 import { EmployeeWeekLimitModel } from '../modules/availability/availability.model';
-import { chooseBookingDay, getBookingByToken } from '../modules/availability/booking.service';
+import { chooseBookingDay, createBookingPreviewLink, getBookingByToken } from '../modules/availability/booking.service';
+import { OfferBookingModel } from '../modules/availability/offer-booking.model';
+import { BookingPreviewModel } from '../modules/availability/booking-preview.model';
 import { registerCoreConfigNamespaces } from '../modules/settings/config/config-namespaces';
 
 let mongod: MongoMemoryServer;
@@ -43,6 +47,9 @@ test.beforeEach(async () => {
     EmployeeAvailabilityDayModel.deleteMany({}),
     EmployeeWeekLimitModel.deleteMany({}),
     WorkOrderModel.deleteMany({}),
+    OfferBookingModel.deleteMany({}),
+    BookingPreviewModel.deleteMany({}),
+    OfferVersionModel.deleteMany({}),
     ProjectModel.deleteMany({}),
   ]);
 });
@@ -186,6 +193,8 @@ test('bookingSlotHours: krajše montaže točno svoje trajanje, dolge en delovni
   assert.equal(bookingSlotHours(8), 8);
   assert.equal(bookingSlotHours(12), 8, 'dolga montaža se skrči na en dan');
   assert.equal(bookingSlotHours(0), 1, 'najmanj 1 ura');
+  assert.equal(reservedSlotHours(3), 4, 'terminu doda eno uro za pot');
+  assert.equal(reservedSlotHours(8), 8, 'celodnevni termin ostane omejen na delovni dan');
 });
 
 test('rezervacija: dolga montaža (12 h) se ponudi na dan z označenim polnim dnem', async () => {
@@ -273,6 +282,83 @@ test('rezervacija: stranka izbere dan, termin se zapiše in potrdi, povezava pos
 
   const project = await ProjectModel.findOne({ id: 'PRJ-401' }).lean();
   assert.ok((project as any)?.timeline?.some((entry: any) => entry.title === 'Stranka izbrala termin montaže'));
+});
+
+test('prosti termini: po projektu je ena ura rezerve za pot', async () => {
+  const miha = await monter('Miha');
+  await setAvailabilityDay(String(miha._id), D1, [8, 9, 10, 11, 12, 13, 14, 15]);
+  await WorkOrderModel.create({
+    projectId: 'PRJ-TRAVEL',
+    offerVersionId: new mongoose.Types.ObjectId().toString(),
+    items: [{ id: 'i1', name: 'Montaža', quantity: 1, unit: 'kos', casovnaNorma: 360 }],
+    status: 'issued',
+    scheduledAt: `${D1}T08:00:00`,
+    assignedEmployeeIds: [miha._id],
+  });
+
+  const free = await findFreeDays({ employeeIds: [String(miha._id)], durationHours: 2, from: D1, days: 1 });
+  assert.deepEqual(free, [], 'projekt 8–14 zasede še 14–15, zato servis 14–16 ni dovoljen');
+});
+
+test('rezervacija iz ponudbe: združi termine kandidatov in ob izbiri dodeli prostega monterja', async () => {
+  const miha = await monter('Miha');
+  const ana = await monter('Ana');
+  await setAvailabilityDay(String(miha._id), D1, [8, 9, 10]);
+  await setAvailabilityDay(String(ana._id), D2, [10, 11, 12]);
+  await ProjectModel.create({
+    id: 'PRJ-404', code: 'PRJ-404', projectNumber: 404, title: 'PRJ-404: Izbira monterja',
+    customer: { name: 'Testna stranka' }, status: 'offered', createdAt: new Date().toISOString(),
+  });
+  const offer = await OfferVersionModel.create({
+    projectId: 'PRJ-404', baseTitle: 'Ponudba', versionNumber: 1, title: 'Ponudba', status: 'sent', items: [],
+  });
+  const offerVersionId = offer._id;
+  await OfferBookingModel.create({
+    projectId: 'PRJ-404',
+    offerVersionId,
+    candidateEmployeeIds: [miha._id, ana._id],
+    bookingToken: 'd'.repeat(48),
+    durationHours: 2,
+  });
+
+  const view = await getBookingByToken('d'.repeat(48));
+  assert.deepEqual(
+    view.days.filter((day) => day.date === D1 || day.date === D2),
+    [{ date: D1, startHour: 8 }, { date: D2, startHour: 10 }],
+    'stranka vidi unijo terminov obeh monterjev',
+  );
+
+  const chosen = await chooseBookingDay('d'.repeat(48), D2);
+  assert.equal(chosen.scheduledAt, `${D2}T10:00:00`);
+  const project = await ProjectModel.findOne({ id: 'PRJ-404' }).lean();
+  assert.deepEqual((project as any)?.assignedEmployeeIds?.map(String), [String(ana._id)]);
+  const booking = await OfferBookingModel.findOne({ projectId: 'PRJ-404', offerVersionId }).lean();
+  assert.equal(String(booking?.selectedEmployeeId), String(ana._id));
+  assert.equal(booking?.bookingToken, undefined, 'povezava po izbiri ni več veljavna');
+  assert.deepEqual(
+    await findFreeDays({ employeeIds: [String(ana._id)], durationHours: 2, from: D2, days: 1 }),
+    [],
+    'izbrani termin iz ponudbe takoj zasede monterjev koledar',
+  );
+});
+
+test('administrativni predogled združi termine izbranih monterjev in ne dovoli rezervacije', async () => {
+  const miha = await monter('Miha');
+  const ana = await monter('Ana');
+  await setAvailabilityDay(String(miha._id), D1, [8, 9]);
+  await setAvailabilityDay(String(ana._id), D2, [10, 11]);
+  const { url } = await createBookingPreviewLink({ employeeIds: [String(miha._id), String(ana._id)] });
+  const token = new URL(url).searchParams.get('t');
+  assert.ok(token);
+
+  const view = await getBookingByToken(token);
+  assert.equal(view.previewOnly, true);
+  assert.deepEqual(
+    view.days.filter((day) => day.date === D1 || day.date === D2),
+    [{ date: D1, startHour: 8 }, { date: D2, startHour: 10 }],
+  );
+  await assert.rejects(chooseBookingDay(token, D1), (error: unknown) =>
+    error instanceof AvailabilityError && error.statusCode === 403);
 });
 
 // Ponedeljek čez en teden in pol — cel teden pon–sre je zanesljivo v prihodnosti.

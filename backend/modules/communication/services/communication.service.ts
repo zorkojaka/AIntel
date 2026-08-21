@@ -34,6 +34,10 @@ import { resolveProjectClient } from "../../projects/services/project.service";
 import { buildIcsEvent, googleCalendarLink } from "../../availability/calendar-event";
 import { getActiveSignedConfirmationVersion } from "../../projects/services/work-order-confirmation.service";
 import { getSettings } from "../../settings/settings.service";
+import {
+  ensureInstallerAcceptanceTokens,
+  markInstallerAcceptanceEmailSent,
+} from "../../projects/services/installer-acceptance.service";
 
 const DEFAULT_SENDER_SETTINGS: CommunicationSenderSettings = {
   senderName: "",
@@ -786,6 +790,7 @@ export async function sendOfferCommunicationEmail(input: {
   subject?: string | null;
   body?: string | null;
   selectedAttachments?: CommunicationAttachmentType[];
+  bookingLink?: string | null;
   actorUserId?: string | null;
   actorDisplayName?: string | null;
   actorProfile?: {
@@ -870,7 +875,11 @@ export async function sendOfferCommunicationEmail(input: {
   });
 
   const subjectFinal = sanitizeString(input.subject) || renderedTemplate.subject;
-  const bodyWithoutFooter = input.body?.toString().trim() || renderedTemplate.body;
+  const baseBodyWithoutFooter = input.body?.toString().trim() || renderedTemplate.body;
+  const bookingLink = sanitizeString(input.bookingLink);
+  const bodyWithoutFooter = bookingLink
+    ? `${baseBodyWithoutFooter}\n\nTermin montaže lahko izberete na naslednji povezavi. Prikazani so združeni prosti termini izbranih monterjev:\n${bookingLink}`
+    : baseBodyWithoutFooter;
   const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
   if (!subjectFinal || !bodyFinal) {
     throw new Error("Zadeva in vsebina emaila sta obvezni.");
@@ -884,16 +893,29 @@ export async function sendOfferCommunicationEmail(input: {
       ? input.selectedAttachments
       : template?.defaultAttachments ?? [];
 
-  const offerAttachmentTypes = selectedAttachments.filter((type) => type === "offer_pdf" || type === "project_pdf");
+  const includeOfferPdf = selectedAttachments.includes("offer_pdf");
+  const includeProductDescriptions = selectedAttachments.includes("project_pdf");
   const otherAttachmentTypes = selectedAttachments.filter((type) => type !== "offer_pdf" && type !== "project_pdf");
-  const attachmentRequests = [
-    ...offerAttachmentTypes.flatMap((type) =>
-      selectedOfferIds.map((selectedOfferId) => ({
-        type,
+  type AttachmentRequest = Parameters<typeof resolveCommunicationAttachment>[0];
+  const offerAttachmentRequests: AttachmentRequest[] = [];
+  for (const selectedOfferId of selectedOfferIds) {
+    if (includeOfferPdf) {
+      offerAttachmentRequests.push({
+        type: "offer_pdf",
         projectId: input.projectId,
         offerId: selectedOfferId,
-      }))
-    ),
+        includeProductDescriptions,
+      });
+    } else if (includeProductDescriptions) {
+      offerAttachmentRequests.push({
+        type: "project_pdf",
+        projectId: input.projectId,
+        offerId: selectedOfferId,
+      });
+    }
+  }
+  const attachmentRequests: AttachmentRequest[] = [
+    ...offerAttachmentRequests,
     ...otherAttachmentTypes.map((type) => ({
       type,
       projectId: input.projectId,
@@ -1220,6 +1242,10 @@ export function normalizeWorkOrderObjectId(value: unknown) {
   return normalized && isValidObjectId(normalized) ? normalized : null;
 }
 
+export function isInstallerPreparationSendConfirmed(value: unknown) {
+  return value === true;
+}
+
 export async function sendInstallerPreparationEmail(input: {
   projectId: string;
   workOrderId: string;
@@ -1229,7 +1255,9 @@ export async function sendInstallerPreparationEmail(input: {
   subject?: string | null;
   body?: string | null;
   projectLink?: string | null;
+  acceptanceBaseUrl?: string | null;
   previewOnly?: boolean;
+  confirmSend?: boolean;
   actorUserId?: string | null;
   actorDisplayName?: string | null;
   actorProfile?: {
@@ -1276,6 +1304,18 @@ export async function sendInstallerPreparationEmail(input: {
 
   const installers = await EmployeeModel.find({ _id: { $in: installerIds }, deletedAt: null }).lean();
   const installerById = new Map<string, any>(installers.map((installer: any) => [String(installer._id), installer]));
+  const acceptanceEntries = await ensureInstallerAcceptanceTokens(workOrder);
+  const acceptanceBaseUrl = sanitizeString(input.acceptanceBaseUrl).replace(/\/$/, '');
+  const acceptanceLinks = acceptanceEntries
+    .map((entry: any) => {
+      const employeeId = String(entry.employeeId);
+      return {
+        employeeId,
+        name: sanitizeString(installerById.get(employeeId)?.name) || 'Monter',
+        url: acceptanceBaseUrl ? `${acceptanceBaseUrl}/${entry.token}` : '',
+      };
+    })
+    .filter((entry) => entry.url);
   const selectedRecipients = sanitizeEmailList(input.to);
   const primaryInstaller = installerIds.map((id) => installerById.get(id)).find((installer) => sanitizeString(installer?.email));
   if (!primaryInstaller && selectedRecipients.length === 0) {
@@ -1330,6 +1370,9 @@ export async function sendInstallerPreparationEmail(input: {
   appendSection(detailsLines, "Povezava", [
     input.projectLink ? `Projekt/delovni nalog: ${input.projectLink}` : null,
   ]);
+  appendSection(detailsLines, "Potrditev sprejema projekta", acceptanceLinks.map((entry) =>
+    `${entry.name}: ${entry.url}`,
+  ));
   const workOrderDetails = detailsLines.join("\n").trim();
 
   const bodyLines: string[] = [
@@ -1385,7 +1428,11 @@ export async function sendInstallerPreparationEmail(input: {
     sanitizeString(input.subject) ||
     renderedTemplate?.subject ||
     `Priprava montaže: ${projectIdentifier}${schedule ? ` - ${schedule}` : ""}`;
-  const bodyWithoutFooter = input.body?.toString().trim() || renderedTemplate?.body || bodyLines.join("\n");
+  const bodyBase = input.body?.toString().trim() || renderedTemplate?.body || bodyLines.join("\n");
+  const missingAcceptanceLinks = acceptanceLinks.filter((entry) => !bodyBase.includes(entry.url));
+  const bodyWithoutFooter = missingAcceptanceLinks.length > 0
+    ? `${bodyBase}\n\nPotrditev sprejema projekta\n${missingAcceptanceLinks.map((entry) => `${entry.name}: ${entry.url}`).join("\n")}`
+    : bodyBase;
   const resolvedRecipients = selectedRecipients.length > 0 ? selectedRecipients : [String(primaryInstaller.email).toLowerCase()];
   const cc = sanitizeEmailList(input.cc);
   const bcc = sanitizeEmailList(input.bcc);
@@ -1400,8 +1447,13 @@ export async function sendInstallerPreparationEmail(input: {
       },
     };
   }
+  if (!isInstallerPreparationSendConfirmed(input.confirmSend)) {
+    throw new Error("Email pred pošiljanjem zahteva potrditev v predogledu.");
+  }
   const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
-  const htmlFinal = renderCommunicationBodyHtml(bodyWithoutFooter, renderedFooterHtml);
+  const htmlFinal = renderCommunicationBodyHtml(bodyWithoutFooter, renderedFooterHtml, {
+    actions: acceptanceLinks.map((entry) => ({ href: entry.url, label: `${entry.name}: Sprejmi projekt` })),
+  });
 
   const attachment = await resolveCommunicationAttachment({
     type: "work_order_pdf",
@@ -1471,6 +1523,9 @@ export async function sendInstallerPreparationEmail(input: {
       logger.error({ err: loggingError }, "Installer preparation email was sent, but communication logging failed");
       return { message: null, sent: true, loggingFailed: true };
     },
+  });
+  await markInstallerAcceptanceEmailSent(workOrderId, acceptanceLinks.map((entry) => entry.employeeId)).catch((error) => {
+    logger.error({ err: error }, "Installer email was sent, but acceptance delivery status could not be saved");
   });
   return { ...payload, sent: true };
 }

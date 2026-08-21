@@ -137,6 +137,13 @@ export interface WorkLogEntry {
   hours: number;
 }
 
+export interface InstallerAcceptance {
+  employeeId: string;
+  emailSentAt?: string | null;
+  acceptedAt?: string | null;
+  acceptedVia?: "system" | "email" | null;
+}
+
 export interface WorkOrderConfirmationVersionSummary {
   id: string;
   versionNumber: number;
@@ -162,6 +169,7 @@ export interface WorkOrder {
   scheduledConfirmedBy?: string | null;
   mainInstallerId?: string | null;
   assignedEmployeeIds?: string[];
+  installerAcceptances?: InstallerAcceptance[];
   location?: string;
   notes?: string;
   cancelledAt?: string | null;

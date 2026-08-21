@@ -13,6 +13,7 @@ import { getCompanySettings, getPdfDocumentSettings } from "./pdf-settings.servi
 
 const PHOTO_UPLOAD_BASE_DIR = "/var/www/aintel/uploads";
 const PROJECT_PLAN_PHOTO_ITEM_ID = "project-plan";
+const LOCATION_PHOTO_PHASES = ["requirements", "offer", "preparation"] as const;
 
 function sanitizeDescriptionForHtml(value: string) {
   const withoutControls = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
@@ -66,14 +67,52 @@ function absolutePhotoPath(uploadUrl?: string | null) {
 }
 
 async function readPhotoDataUrl(photo: { url?: string | null; thumbnailUrl?: string | null; mimeType?: string | null }) {
-  const filePath = absolutePhotoPath(photo.thumbnailUrl ?? photo.url);
-  if (!filePath) return undefined;
-  try {
-    const buffer = await fs.readFile(filePath);
-    return `data:${photo.mimeType || "image/jpeg"};base64,${buffer.toString("base64")}`;
-  } catch {
-    return undefined;
+  const candidates = Array.from(new Set([photo.thumbnailUrl, photo.url].filter((value): value is string => Boolean(value))));
+  for (const candidate of candidates) {
+    const filePath = absolutePhotoPath(candidate);
+    if (!filePath) continue;
+    try {
+      const buffer = await fs.readFile(filePath);
+      return `data:${photo.mimeType || "image/jpeg"};base64,${buffer.toString("base64")}`;
+    } catch {
+      // Če predogledna slika manjka, poskusi še izvirnik.
+    }
   }
+  return undefined;
+}
+
+function uniqueLocationPhotos<T extends { _id?: unknown; url?: string | null }>(photos: T[]) {
+  const byKey = new Map<string, T>();
+  for (const photo of photos) {
+    const key = typeof photo.url === "string" && photo.url ? photo.url : String(photo._id ?? "");
+    if (key && !byKey.has(key)) byKey.set(key, photo);
+  }
+  return Array.from(byKey.values());
+}
+
+export function buildLocationPhotoFilters(
+  projectObjectId: unknown,
+  itemIds: Array<string | null | undefined>,
+  fallback?: { itemId: string; unitIndex: number },
+) {
+  const uniqueItemIds = Array.from(new Set(itemIds.map((value) => value?.trim() ?? "").filter(Boolean)));
+  if (uniqueItemIds.length > 0) {
+    return [{
+      projectId: projectObjectId,
+      phase: { $in: LOCATION_PHOTO_PHASES },
+      itemId: { $in: uniqueItemIds },
+      deletedAt: { $exists: false },
+    }];
+  }
+  return fallback?.itemId
+    ? [{
+        projectId: projectObjectId,
+        phase: { $in: LOCATION_PHOTO_PHASES },
+        itemId: fallback.itemId,
+        unitIndex: fallback.unitIndex,
+        deletedAt: { $exists: false },
+      }]
+    : [];
 }
 
 function supportsLocationDescriptions(product: any) {
@@ -168,16 +207,14 @@ async function resolveRequirementLocationPhotos(
         ? unit.locationId
         : "Lokacija";
 
-    const photos = sourcePhotoItemId
-      ? await PhotoModel.find({
-          projectId: projectObjectId,
-          phase: "requirements",
-          itemId: sourcePhotoItemId,
-          deletedAt: { $exists: false },
-        })
-          .sort({ uploadedAt: 1 })
-          .lean()
-      : [];
+    const photoFilters = buildLocationPhotoFilters(projectObjectId, [
+      sourcePhotoItemId,
+      typeof unit?.projectLocationId === "string" ? unit.projectLocationId : "",
+    ]);
+    const photoGroups = await Promise.all(
+      photoFilters.map((filter) => PhotoModel.find(filter).sort({ uploadedAt: 1 }).lean()),
+    );
+    const photos = uniqueLocationPhotos(photoGroups.flat());
 
     const photoDataUrls = (
       await Promise.all(photos.map((photo) => readPhotoDataUrl({
@@ -192,7 +229,12 @@ async function resolveRequirementLocationPhotos(
     }
 
     const note = typeof unit?.note === "string" && unit.note.trim() ? unit.note.trim() : undefined;
-    locations.push({ name: locationName, note, photos: photoDataUrls });
+    const locationId = typeof unit?.projectLocationId === "string" && unit.projectLocationId.trim()
+      ? unit.projectLocationId.trim()
+      : typeof unit?.locationId === "string" && unit.locationId.trim()
+        ? unit.locationId.trim()
+        : sourcePhotoItemId;
+    locations.push({ id: locationId || undefined, name: locationName, note, photos: photoDataUrls });
   }
 
   return locations;
@@ -249,23 +291,21 @@ async function resolveProjectExecutionDefinitionLocations(
       ? unit.sourcePhotoItemId.trim()
       : "";
 
-    const photoFilters = sourcePhotoItemId
-      ? [
-          { projectId: projectObjectId, phase: "requirements", itemId: sourcePhotoItemId, deletedAt: { $exists: false } },
-          { projectId: projectObjectId, phase: "preparation", itemId: sourcePhotoItemId, deletedAt: { $exists: false } },
-        ]
-      : [
-          { projectId: projectObjectId, phase: "preparation", itemId, unitIndex, deletedAt: { $exists: false } },
-        ];
+    const photoFilters = buildLocationPhotoFilters(
+      projectObjectId,
+      [
+        sourcePhotoItemId,
+        typeof unit?.projectLocationId === "string" ? unit.projectLocationId : "",
+        typeof projectLocation?.sourcePhotoItemId === "string" ? projectLocation.sourcePhotoItemId : "",
+        typeof projectLocation?.id === "string" ? projectLocation.id : "",
+        locationKey,
+      ],
+      { itemId, unitIndex },
+    );
     const photoGroups = await Promise.all(
       photoFilters.map((filter) => PhotoModel.find(filter).sort({ uploadedAt: 1 }).lean()),
     );
-    const photosByUrl = new Map<string, (typeof photoGroups)[number][number]>();
-    for (const photo of photoGroups.flat()) {
-      const key = typeof photo.url === "string" && photo.url ? photo.url : String(photo._id);
-      if (!photosByUrl.has(key)) photosByUrl.set(key, photo);
-    }
-    const photos = Array.from(photosByUrl.values());
+    const photos = uniqueLocationPhotos(photoGroups.flat());
 
     const photoDataUrls = (
       await Promise.all(photos.map((photo) => readPhotoDataUrl({
@@ -279,7 +319,7 @@ async function resolveProjectExecutionDefinitionLocations(
       continue;
     }
 
-    locations.push({ name: locationName, note: note || undefined, photos: photoDataUrls });
+    locations.push({ id: locationKey || undefined, name: locationName, note: note || undefined, photos: photoDataUrls });
   }
 
   return locations;
@@ -349,8 +389,13 @@ export async function buildOfferDescriptionEntries(offer: OfferVersion): Promise
     const title = isCameraInstallationServiceName(item.name) && definitionLocations.length > 0
       ? "Predlog izvedbe"
       : product?.ime || item.name;
+    const hasStoredRequirementLocations = Array.isArray(item?.requirementsLocationUnits)
+      && item.requirementsLocationUnits.length > 0;
     const shouldResolveRequirementLocations =
-      supportsLocationDescriptions(product) || definitionLocations.length > 0 || fallbackUnits.length > 0;
+      supportsLocationDescriptions(product)
+      || hasStoredRequirementLocations
+      || definitionLocations.length > 0
+      || fallbackUnits.length > 0;
     const locations = definitionLocations.length > 0
       ? definitionLocations
       : shouldResolveRequirementLocations
@@ -393,7 +438,7 @@ export async function generateOfferDescriptionsPdf(offer: OfferVersion) {
   ]);
   const html = renderProductDescriptionsHtml(entries, {
     companyName: companySettings.companyName,
-    projectTitle: offer.baseTitle ?? offer.title ?? offer.documentNumber ?? project?.title ?? offer.projectId,
+    projectTitle: `${offer.baseTitle ?? offer.title ?? offer.documentNumber ?? project?.title ?? offer.projectId} - V${offer.versionNumber}`,
     headerText: documentSettings.appearance?.headerText ?? "",
     footerText: documentSettings.appearance?.footerText ?? "",
   });

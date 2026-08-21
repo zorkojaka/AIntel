@@ -136,6 +136,14 @@ export interface PdfDocumentSettingsDto {
   templateHtml?: string | null;
 }
 
+export interface InvoiceNumberCounterDto {
+  currentSequence: number;
+  nextSequence: number;
+  nextNumber: string;
+  month: number;
+  year: number;
+}
+
 export interface PdfPreviewProjectInfo {
   id: string;
   code: string;

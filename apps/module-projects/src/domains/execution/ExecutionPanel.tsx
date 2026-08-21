@@ -629,6 +629,7 @@ export function ExecutionPanel({
   const [installerEmailDraft, setInstallerEmailDraft] = useState({ to: "", cc: "", bcc: "", subject: "", body: "" });
   const [preparingInstallerEmailId, setPreparingInstallerEmailId] = useState<string | null>(null);
   const [sendingInstallerEmail, setSendingInstallerEmail] = useState(false);
+  const [acceptingAssignmentId, setAcceptingAssignmentId] = useState<string | null>(null);
 
   const workOrders = useMemo(() => rawWorkOrders, [rawWorkOrders]);
 
@@ -705,6 +706,24 @@ export function ExecutionPanel({
     () => viewerRoles.includes("ADMIN") || viewerRoles.includes("ORGANIZER"),
     [viewerRoles],
   );
+
+  const acceptProjectAssignment = async (order: WorkOrder) => {
+    if (acceptingAssignmentId) return;
+    setAcceptingAssignmentId(order._id);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/work-orders/${order._id}/accept-assignment`, {
+        method: "POST",
+        credentials: "include",
+      });
+      await parseApiEnvelope(response, "Sprejema projekta ni bilo mogoče shraniti.");
+      toast.success("Projekt ste sprejeli.");
+      await refreshAfterMutation();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Sprejema projekta ni bilo mogoče shraniti.");
+    } finally {
+      setAcceptingAssignmentId(null);
+    }
+  };
   const signatureMode = settings.workOrderCompletionSignatureMode ?? "optional";
   const isSignatureDisabled = signatureMode === "none";
   const isSignatureRequired = signatureMode === "required";
@@ -1295,6 +1314,7 @@ export function ExecutionPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...installerEmailDraft,
+          confirmSend: true,
           projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
         }),
       });
@@ -2301,6 +2321,21 @@ export function ExecutionPanel({
                     .map((employeeId) => employeeNameById.get(employeeId) ?? null)
                     .filter((name): name is string => Boolean(name))
                     .join(", ");
+                  const currentInstallerIsAssigned = Boolean(currentEmployeeId) && (
+                    order.mainInstallerId === currentEmployeeId || (order.assignedEmployeeIds ?? []).includes(currentEmployeeId as string)
+                  );
+                  const currentInstallerAccepted = Boolean(currentEmployeeId) && (order.installerAcceptances ?? []).some(
+                    (entry) => entry.employeeId === currentEmployeeId && Boolean(entry.acceptedAt),
+                  );
+                  const assignedInstallerIds = Array.from(new Set([
+                    order.mainInstallerId ?? "",
+                    ...(order.assignedEmployeeIds ?? []),
+                  ].filter(Boolean)));
+                  const allInstallersAccepted = assignedInstallerIds.length > 0 && assignedInstallerIds.every((employeeId) =>
+                    (order.installerAcceptances ?? []).some(
+                      (entry) => entry.employeeId === employeeId && Boolean(entry.acceptedAt),
+                    ),
+                  );
                   return (
                     <div key={order._id} className="space-y-4">
                       {materialOrder ? (
@@ -2393,9 +2428,33 @@ export function ExecutionPanel({
                               </div>
                             </div>
                           </div>
-                          <Badge className={workOrderBadgeClass}>
-                            {isOrderCompleted ? "Zaključeno" : "V teku"}
-                          </Badge>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            {assignedInstallerIds.length > 0 ? (
+                              <Badge
+                                className={
+                                  allInstallersAccepted
+                                    ? "border-green-500/30 bg-green-500/10 text-green-700"
+                                    : "border-amber-500/30 bg-amber-500/10 text-amber-700"
+                                }
+                              >
+                                {allInstallersAccepted ? "Projekt sprejet" : "Čaka na sprejem monterja"}
+                              </Badge>
+                            ) : null}
+                            {currentInstallerIsAssigned && !currentInstallerAccepted && !isWorkOrderStatusCompleted ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => void acceptProjectAssignment(order)}
+                                disabled={acceptingAssignmentId === order._id}
+                              >
+                                {acceptingAssignmentId === order._id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                Sprejmi projekt
+                              </Button>
+                            ) : null}
+                            <Badge className={workOrderBadgeClass}>
+                              {isOrderCompleted ? "Zaključeno" : "V teku"}
+                            </Badge>
+                          </div>
                         </CardHeader>
                         <CardContent className="space-y-4">
                         {!isWorkOrderStatusCompleted ? (

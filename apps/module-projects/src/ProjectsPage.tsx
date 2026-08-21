@@ -113,6 +113,7 @@ export function ProjectsPage() {
   const [isClientModalOpen, setClientModalOpen] = useState(false);
   const [isNewProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [cloningProjectId, setCloningProjectId] = useState<string | null>(null);
   const [projectFormInitial, setProjectFormInitial] = useState<ProjectDetails | null>(null);
   const [crmClients, setCrmClients] = useState<Client[]>([]);
   const [clientsLoading, setClientsLoading] = useState(false);
@@ -406,6 +407,32 @@ export function ProjectsPage() {
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Napaka pri brisanju projekta.");
+    }
+  };
+
+  const handleCloneProject = async (projectId: string) => {
+    const sourceProject = projects.find((project) => project.id === projectId);
+    const sourceLabel = sourceProject?.title ?? projectDetails?.title ?? projectId;
+    if (!globalThis.confirm(`Kopiram projekt ${sourceLabel}? Kopija bo dobila novo številko in nove osnutke ponudb.`)) {
+      return;
+    }
+
+    setCloningProjectId(projectId);
+    try {
+      const response = await fetch(`${API_PREFIX}/${encodeURIComponent(projectId)}/clone`, { method: "POST" });
+      const result = await parseApiEnvelope<any>(response, "Projekta ni bilo mogoče kopirati.");
+      const mapped = mapProject(result);
+      setProjects((current) => [toSummary(mapped), ...current.filter((project) => project.id !== mapped.id)]);
+      setProjectDetails(mapped);
+      setTemplates(mapped.templates);
+      setSelectedProjectId(mapped.id);
+      setInitialWorkspaceTab("offers");
+      setCurrentView("workspace");
+      toast.success(`Projekt je kopiran kot ${mapped.id}.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Projekta ni bilo mogoče kopirati.");
+    } finally {
+      setCloningProjectId(null);
     }
   };
 
@@ -789,6 +816,8 @@ export function ProjectsPage() {
                 categories={categories}
                 onEditProject={handleEditProject}
                 onDeleteProject={handleDeleteProject}
+                onCloneProject={(project) => void handleCloneProject(project.id)}
+                cloningProjectId={cloningProjectId}
                 onArchiveProject={(project) => handleLifecycleProject(project, "archive")}
                 onUnarchiveProject={(project) => handleLifecycleProject(project, "unarchive")}
                 onCloseProject={(project) => handleLifecycleProject(project, "close")}
@@ -825,6 +854,9 @@ export function ProjectsPage() {
           onBack={handleBackToList}
           onProjectUpdate={handleProjectUpdate}
           onNewProject={openNewProjectDialog}
+          onOpenProject={handleSelectProject}
+          onCloneProject={handleCloneProject}
+          cloningProject={cloningProjectId === projectDetails.id}
           brandColor={globalSettings?.primaryColor}
           allowedTabs={allowedWorkspaceTabs}
         />
