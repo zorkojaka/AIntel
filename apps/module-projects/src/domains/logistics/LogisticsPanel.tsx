@@ -456,6 +456,8 @@ export function LogisticsPanel({
   const [workOrderForm, setWorkOrderForm] = useState<Partial<LogisticsWorkOrder>>({});
   const [materialOrderForm, setMaterialOrderForm] = useState<MaterialOrder | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [currentEmployeeId, setCurrentEmployeeId] = useState<string | null>(null);
+  const [acceptingAssignmentId, setAcceptingAssignmentId] = useState<string | null>(null);
   const [installerAvailability, setInstallerAvailability] = useState<InstallerAvailabilityEntry[]>([]);
   const [emailTouched, setEmailTouched] = useState(false);
   const [phoneTouched, setPhoneTouched] = useState(false);
@@ -652,6 +654,25 @@ export function LogisticsPanel({
       alive = false;
     };
   }, [projectId]);
+
+  useEffect(() => {
+    let alive = true;
+    const fetchCurrentEmployee = async () => {
+      try {
+        const response = await fetch("/api/auth/me", { credentials: "include" });
+        const payload = await parseApiEnvelope<any>(response, "Prijave ni mogoče preveriti.");
+        if (!alive) return;
+        setCurrentEmployeeId(typeof payload?.employee?.id === "string" ? payload.employee.id : null);
+      } catch {
+        if (!alive) return;
+        setCurrentEmployeeId(null);
+      }
+    };
+    void fetchCurrentEmployee();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (confirmedOffers.length === 0) {
@@ -2285,6 +2306,28 @@ export function LogisticsPanel({
     const previewServiceCount = previewItems.filter((item) => isServiceWorkOrderItem(item)).length;
     const previewProductCount = previewItems.length - previewServiceCount;
     const previewDurationLabel = formatExecutionDuration(previewItems);
+    const currentInstallerIsAssigned = Boolean(currentEmployeeId) && previewTeamIds.includes(currentEmployeeId as string);
+    const currentInstallerAccepted = Boolean(currentEmployeeId) && (previewWorkOrder?.installerAcceptances ?? []).some(
+      (entry) => entry.employeeId === currentEmployeeId && Boolean(entry.acceptedAt),
+    );
+
+    const acceptProjectAssignment = async () => {
+      if (!previewWorkOrder?._id || acceptingAssignmentId) return;
+      setAcceptingAssignmentId(previewWorkOrder._id);
+      try {
+        const response = await fetch(`/api/projects/${projectId}/work-orders/${previewWorkOrder._id}/accept-assignment`, {
+          method: "POST",
+          credentials: "include",
+        });
+        await parseApiEnvelope(response, "Sprejema projekta ni bilo mogoče shraniti.");
+        toast.success("Projekt ste sprejeli.");
+        await refreshAfterMutation(fetchSnapshot);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Sprejema projekta ni bilo mogoče shraniti.");
+      } finally {
+        setAcceptingAssignmentId(null);
+      }
+    };
 
     const formatSchedule = (value?: string | null) =>
       value
@@ -2404,25 +2447,39 @@ export function LogisticsPanel({
                   <p className="text-muted-foreground">Ekipa</p>
                   <p className="font-medium">{previewTeamNames.length > 0 ? previewTeamNames.join(", ") : "Ni določena"}</p>
                   {previewTeamIds.length > 0 ? (
-                    <Badge
-                      className={
-                        previewTeamIds.every((employeeId) =>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge
+                        className={
+                          previewTeamIds.every((employeeId) =>
+                            (previewWorkOrder?.installerAcceptances ?? []).some(
+                              (entry) => entry.employeeId === employeeId && Boolean(entry.acceptedAt),
+                            ),
+                          )
+                            ? "border-green-500/30 bg-green-500/10 text-green-700"
+                            : "border-amber-500/30 bg-amber-500/10 text-amber-700"
+                        }
+                      >
+                        {previewTeamIds.every((employeeId) =>
                           (previewWorkOrder?.installerAcceptances ?? []).some(
                             (entry) => entry.employeeId === employeeId && Boolean(entry.acceptedAt),
                           ),
                         )
-                          ? "border-green-500/30 bg-green-500/10 text-green-700"
-                          : "border-amber-500/30 bg-amber-500/10 text-amber-700"
-                      }
-                    >
-                      {previewTeamIds.every((employeeId) =>
-                        (previewWorkOrder?.installerAcceptances ?? []).some(
-                          (entry) => entry.employeeId === employeeId && Boolean(entry.acceptedAt),
-                        ),
-                      )
-                        ? "Projekt sprejet"
-                        : "Čaka na sprejem monterja"}
-                    </Badge>
+                          ? "Projekt sprejet"
+                          : "Čaka na sprejem monterja"}
+                      </Badge>
+                      {currentInstallerIsAssigned && !currentInstallerAccepted ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8"
+                          onClick={() => void acceptProjectAssignment()}
+                          disabled={acceptingAssignmentId === previewWorkOrder?._id}
+                        >
+                          {acceptingAssignmentId === previewWorkOrder?._id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          Sprejmi projekt
+                        </Button>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
                 <div className="space-y-1">
