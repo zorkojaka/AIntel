@@ -1,5 +1,7 @@
+import { Archive, CheckCircle2, ChevronDown, Copy, Loader2, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "./ui/badge";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { ProjectSummary } from "../types";
 import {
   compareProjectsNewestFirst,
@@ -15,6 +17,15 @@ interface ProjectKanbanProps {
   categoryLookup: Map<string, string>;
   onSelectProject: (projectId: string) => void;
   onProjectDrop: (projectId: string, nextStatus: ProjectSummary["status"]) => Promise<void>;
+  onEditProject: (project: ProjectSummary) => void;
+  onDeleteProject: (project: ProjectSummary) => void;
+  onCloneProject: (project: ProjectSummary) => void;
+  onArchiveProject: (project: ProjectSummary) => void;
+  onUnarchiveProject: (project: ProjectSummary) => void;
+  onCloseProject: (project: ProjectSummary) => void;
+  onReopenProject: (project: ProjectSummary) => void;
+  cloningProjectId?: string | null;
+  readOnly?: boolean;
   hideFinancials?: boolean;
 }
 
@@ -32,7 +43,26 @@ function formatAmount(value: number) {
   return `${currencyFormatter.format(value)} EUR`;
 }
 
-export function ProjectKanban({ projects, categoryLookup, onSelectProject, onProjectDrop, hideFinancials = false }: ProjectKanbanProps) {
+function canCloseProject(project: ProjectSummary) {
+  return project.status === "invoiced" || project.phaseSignals?.hasIssuedInvoice === true;
+}
+
+export function ProjectKanban({
+  projects,
+  categoryLookup,
+  onSelectProject,
+  onProjectDrop,
+  onEditProject,
+  onDeleteProject,
+  onCloneProject,
+  onArchiveProject,
+  onUnarchiveProject,
+  onCloseProject,
+  onReopenProject,
+  cloningProjectId = null,
+  readOnly = false,
+  hideFinancials = false,
+}: ProjectKanbanProps) {
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [dragOverPhase, setDragOverPhase] = useState<ProjectPhase | null>(null);
 
@@ -117,7 +147,86 @@ export function ProjectKanban({ projects, categoryLookup, onSelectProject, onPro
                     >
                       <div className="flex items-start justify-between gap-2">
                         <strong className="text-sm leading-5">{project.title}</strong>
-                        <span className="text-xs text-muted-foreground">{formatDate(project.createdAt)}</span>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <span className="text-xs text-muted-foreground">{formatDate(project.createdAt)}</span>
+                          {!readOnly ? (
+                            <div
+                              draggable={false}
+                              onClick={(event) => event.stopPropagation()}
+                              onDragStart={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                              }}
+                            >
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                                    aria-label={`Odpri akcije za ${project.title}`}
+                                    title="Akcije projekta"
+                                  >
+                                    <ChevronDown className="h-4 w-4" />
+                                  </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+                                  {project.closedAt ? (
+                                    <DropdownMenuItem onSelect={() => onReopenProject(project)}>
+                                      <RotateCcw className="h-4 w-4" />
+                                      Ponovno odpri
+                                    </DropdownMenuItem>
+                                  ) : canCloseProject(project) ? (
+                                    <DropdownMenuItem onSelect={() => onCloseProject(project)}>
+                                      <CheckCircle2 className="h-4 w-4" />
+                                      Zaključi projekt
+                                    </DropdownMenuItem>
+                                  ) : null}
+                                  {project.archivedAt ? (
+                                    <DropdownMenuItem onSelect={() => onUnarchiveProject(project)}>
+                                      <RotateCcw className="h-4 w-4" />
+                                      Vrni iz arhiva
+                                    </DropdownMenuItem>
+                                  ) : (
+                                    <DropdownMenuItem onSelect={() => onArchiveProject(project)}>
+                                      <Archive className="h-4 w-4" />
+                                      Arhiviraj projekt
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuItem
+                                    disabled={cloningProjectId === project.id}
+                                    onSelect={() => onCloneProject(project)}
+                                  >
+                                    {cloningProjectId === project.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Copy className="h-4 w-4" />
+                                    )}
+                                    Kopiraj projekt
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onSelect={() => onEditProject(project)}>
+                                    <Pencil className="h-4 w-4" />
+                                    Uredi projekt
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
+                                    onSelect={() => {
+                                      if (
+                                        globalThis.confirm(
+                                          `Izbriši projekt ${project.title}? Tega dejanja ni mogoče razveljaviti.`,
+                                        )
+                                      ) {
+                                        onDeleteProject(project);
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    Izbriši projekt
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">{project.customer}</p>
                       {project.offerSentAt ? (

@@ -831,6 +831,15 @@ export function ProjectsPage() {
                 categoryLookup={categoryLookup}
                 onSelectProject={handleSelectProject}
                 onProjectDrop={handleProjectDrop}
+                onEditProject={handleEditProject}
+                onDeleteProject={handleDeleteProject}
+                onCloneProject={(project) => void handleCloneProject(project.id)}
+                onArchiveProject={(project) => void handleLifecycleProject(project, "archive")}
+                onUnarchiveProject={(project) => void handleLifecycleProject(project, "unarchive")}
+                onCloseProject={(project) => void handleLifecycleProject(project, "close")}
+                onReopenProject={(project) => void handleLifecycleProject(project, "reopen")}
+                cloningProjectId={cloningProjectId}
+                readOnly={isExecutionOnlyViewer}
                 hideFinancials={isExecutionOnlyViewer}
               />
             ) : (
