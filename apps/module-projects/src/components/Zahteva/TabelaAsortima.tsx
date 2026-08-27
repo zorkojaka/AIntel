@@ -17,8 +17,8 @@ type TabelaAsortimaProps = {
   onRemoveVarianta: (variantId: string) => void;
 };
 
-export function buildZahtevaLocationPhotoItemId(zahtevaId: string, sistemId: string, lokacijaId: string) {
-  return `zahteva-location:${zahtevaId}:${sistemId}:${lokacijaId}`;
+export function buildZahtevaLocationPhotoItemId(zahtevaId: string, sistemId: string, lokacijaId: string, sourcePhotoItemId?: string | null) {
+  return sourcePhotoItemId?.trim() || `zahteva-location:${zahtevaId}:${sistemId}:${lokacijaId}`;
 }
 
 export function TabelaAsortima({
@@ -182,9 +182,10 @@ function LokacijaRow({
     () => ({
       projectId,
       phase: "requirements",
-      itemId: buildZahtevaLocationPhotoItemId(zahtevaId, sistemId, lokacija.id),
+      itemId: buildZahtevaLocationPhotoItemId(zahtevaId, sistemId, lokacija.id, lokacija.sourcePhotoItemId),
+      linkedLocationPhotos: true,
     }),
-    [lokacija.id, projectId, sistemId, zahtevaId],
+    [lokacija.id, lokacija.sourcePhotoItemId, projectId, sistemId, zahtevaId],
   );
 
   return (

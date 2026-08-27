@@ -17,8 +17,8 @@ type TabelaAlarmProps = {
   onRemoveSenzor: (senzorId: string) => void;
 };
 
-export function buildAlarmLocationPhotoItemId(zahtevaId: string, sistemId: string, lokacijaId: string) {
-  return `zahteva-alarm-location:${zahtevaId}:${sistemId}:${lokacijaId}`;
+export function buildAlarmLocationPhotoItemId(zahtevaId: string, sistemId: string, lokacijaId: string, sourcePhotoItemId?: string | null) {
+  return sourcePhotoItemId?.trim() || `zahteva-alarm-location:${zahtevaId}:${sistemId}:${lokacijaId}`;
 }
 
 export function TabelaAlarm({
@@ -157,9 +157,10 @@ function LokacijaRow({
     () => ({
       projectId,
       phase: "requirements",
-      itemId: buildAlarmLocationPhotoItemId(zahtevaId, sistemId, lokacija.id),
+      itemId: buildAlarmLocationPhotoItemId(zahtevaId, sistemId, lokacija.id, lokacija.sourcePhotoItemId),
+      linkedLocationPhotos: true,
     }),
-    [lokacija.id, projectId, sistemId, zahtevaId],
+    [lokacija.id, lokacija.sourcePhotoItemId, projectId, sistemId, zahtevaId],
   );
 
   return (

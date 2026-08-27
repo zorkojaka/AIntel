@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { resolveActorId } from '../../utils/tenant';
 import { resolveTenantId } from '../../utils/tenant';
 import { ProjectModel } from '../projects/schemas/project';
+import { syncCanonicalLocationsFromZahteva } from '../projects/services/project-locations.service';
 import { ZahtevaModel } from './zahteva.model';
 import {
   createDefaultVideonadzorSystem,
@@ -92,8 +93,9 @@ export async function createZahteva(req: Request, res: Response, next: NextFunct
         $set: { activeRequestId: zahteva._id },
       }
     );
-
-    return res.success(zahteva, 201);
+    await syncCanonicalLocationsFromZahteva(zahteva);
+    const synchronized = await ZahtevaModel.findById(zahteva._id);
+    return res.success(synchronized ?? zahteva, 201);
   } catch (error) {
     next(error);
   }
@@ -118,7 +120,9 @@ export async function updateZahteva(req: Request, res: Response, next: NextFunct
     const update = Object.fromEntries(Object.entries(payload ?? {}).filter(([key]) => !blocked.has(key)));
     const zahteva = await ZahtevaModel.findByIdAndUpdate(req.params.id, { $set: update }, { new: true, runValidators: true });
     if (!zahteva) return res.fail('Zahteva ni najdena.', 404);
-    return res.success(zahteva);
+    await syncCanonicalLocationsFromZahteva(zahteva);
+    const synchronized = await ZahtevaModel.findById(zahteva._id);
+    return res.success(synchronized ?? zahteva);
   } catch (error) {
     next(error);
   }

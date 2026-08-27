@@ -30,6 +30,10 @@ import {
   resolveConfirmationState,
 } from '../services/work-order-confirmation.service';
 import { canEditPreparation } from '../../../../shared/utils/preparationAccess';
+import {
+  propagateCanonicalProjectLocations,
+  syncCanonicalLocationsFromExecutionItems,
+} from '../services/project-locations.service';
 import { getSettings } from '../../settings/settings.service';
 import { createInvoiceFromClosing, refreshDraftInvoiceFromClosing } from '../services/invoice.service';
 import {
@@ -504,8 +508,14 @@ function buildRequirementLocationUnitsByProductId(zahteva: any) {
         appendUnit(variant?.kameraProductId, {
           locationId,
           locationName: normalizeRequirementLocationName(location?.ime, locationId),
-          sourcePhotoItemId: buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
-          projectLocationId: buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          sourcePhotoItemId: typeof location?.sourcePhotoItemId === 'string' && location.sourcePhotoItemId.trim()
+            ? location.sourcePhotoItemId.trim()
+            : buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          projectLocationId: typeof location?.projectLocationId === 'string' && location.projectLocationId.trim()
+            ? location.projectLocationId.trim()
+            : typeof location?.sourcePhotoItemId === 'string' && location.sourcePhotoItemId.trim()
+              ? location.sourcePhotoItemId.trim()
+              : buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
         });
       }
     }
@@ -520,8 +530,14 @@ function buildRequirementLocationUnitsByProductId(zahteva: any) {
         appendUnit(sensor?.senzorProductId, {
           locationId,
           locationName: normalizeRequirementLocationName(location?.ime, locationId),
-          sourcePhotoItemId: buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
-          projectLocationId: buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          sourcePhotoItemId: typeof location?.sourcePhotoItemId === 'string' && location.sourcePhotoItemId.trim()
+            ? location.sourcePhotoItemId.trim()
+            : buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          projectLocationId: typeof location?.projectLocationId === 'string' && location.projectLocationId.trim()
+            ? location.projectLocationId.trim()
+            : typeof location?.sourcePhotoItemId === 'string' && location.sourcePhotoItemId.trim()
+              ? location.sourcePhotoItemId.trim()
+              : buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
         });
       }
     }
@@ -1854,6 +1870,7 @@ export async function updateProjectExecutionDefinition(req: Request, res: Respon
       ? sanitizeProjectExecutionLocations(req.body.locations)
       : mergeProjectExecutionLocations(result.project.executionLocations ?? [], incomingDefinitions);
     await result.project.save();
+    await propagateCanonicalProjectLocations(result.project);
     await syncWorkOrdersFromProjectExecutionDefinitions(projectId, offerVersionId);
 
     const items = offerVersionId
@@ -2462,6 +2479,9 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
 
   const updated = await WorkOrderModel.findOneAndUpdate({ _id: workOrderId, projectId }, { $set: updates }, { new: true });
   const [normalizedUpdated] = await normalizeAndPersistWorkOrdersServiceFlags(updated ? [updated] : []);
+  if (normalizedUpdated?.items) {
+    await syncCanonicalLocationsFromExecutionItems(projectId, normalizedUpdated.items);
+  }
 
   const materialOrderId = typeof payload.materialOrderId === 'string' ? payload.materialOrderId : null;
   if (materialOrderId) {

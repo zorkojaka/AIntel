@@ -98,7 +98,7 @@ function PreparationUnitPhotoButton({
   onOpen: (context: PhotoContext) => void;
 }) {
   const context = useMemo<PhotoContext>(
-    () => ({ projectId, phase: "preparation", itemId, unitIndex }),
+    () => ({ projectId, phase: "preparation", itemId, unitIndex, linkedLocationPhotos: true }),
     [itemId, projectId, unitIndex],
   );
   const { count, refresh } = usePhotoCount(context);

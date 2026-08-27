@@ -155,6 +155,14 @@ function getWorkOrderItemPhotoId(item: WorkOrderItemDraft) {
   return candidate._id || candidate.id;
 }
 
+function getUnitLocationPhotoItemId(fallbackItemId: string, unit: Pick<WorkOrderExecutionUnit, "projectLocationId" | "sourcePhotoItemId">) {
+  return unit.projectLocationId?.trim() || unit.sourcePhotoItemId?.trim() || fallbackItemId;
+}
+
+function getUnitLocationPhotoIndex(unit: Pick<WorkOrderExecutionUnit, "projectLocationId" | "sourcePhotoItemId">, fallbackIndex: number) {
+  return unit.projectLocationId?.trim() || unit.sourcePhotoItemId?.trim() ? undefined : fallbackIndex;
+}
+
 function buildPhotoQuery(context: PhotoContext) {
   const params = new URLSearchParams();
   params.set("projectId", context.projectId);
@@ -162,6 +170,7 @@ function buildPhotoQuery(context: PhotoContext) {
   if (context.itemId) params.set("itemId", context.itemId);
   if (typeof context.unitIndex === "number") params.set("unitIndex", String(context.unitIndex));
   if (context.tag) params.set("tag", context.tag);
+  if (context.linkedLocationPhotos) params.set("linkedLocationPhotos", "true");
   return params.toString();
 }
 
@@ -191,13 +200,13 @@ function PreparationPhotoThumbnails({
 }: {
   projectId: string;
   itemId: string;
-  unitIndex: number;
+  unitIndex?: number;
   className?: string;
 }) {
   const [photos, setPhotos] = useState<PreparationPhoto[]>([]);
   const [previewPhoto, setPreviewPhoto] = useState<PreparationPhoto | null>(null);
   const context = useMemo<PhotoContext>(
-    () => ({ projectId, phase: "preparation", itemId, unitIndex }),
+    () => ({ projectId, phase: "preparation", itemId, unitIndex, linkedLocationPhotos: true }),
     [itemId, projectId, unitIndex],
   );
   const queryString = useMemo(() => buildPhotoQuery(context), [context]);
@@ -292,7 +301,7 @@ function ExecutionUnitPhotoButton({
   className?: string;
 }) {
   const context = useMemo<PhotoContext>(
-    () => ({ projectId, phase: "execution", itemId, unitIndex }),
+    () => ({ projectId, phase: "execution", itemId, unitIndex, linkedLocationPhotos: true }),
     [itemId, projectId, unitIndex],
   );
   const { count, refresh } = usePhotoCount(context);
@@ -1857,8 +1866,8 @@ export function ExecutionPanel({
                 {renderUnitCompletedByMeta(order, item, unit, isLocked)}
                 <PreparationPhotoThumbnails
                   projectId={projectId}
-                  itemId={getWorkOrderItemPhotoId(item)}
-                  unitIndex={index}
+                  itemId={getUnitLocationPhotoItemId(getWorkOrderItemPhotoId(item), unit)}
+                  unitIndex={getUnitLocationPhotoIndex(unit, index)}
                   className="mt-2"
                 />
               </div>
@@ -1884,8 +1893,8 @@ export function ExecutionPanel({
                 </Button>
                 <ExecutionUnitPhotoButton
                   projectId={projectId}
-                  itemId={getWorkOrderItemPhotoId(item)}
-                  unitIndex={index}
+                  itemId={getUnitLocationPhotoItemId(getWorkOrderItemPhotoId(item), unit)}
+                  unitIndex={getUnitLocationPhotoIndex(unit, index)}
                   refreshKey={photoCountRefreshKey}
                   onOpen={openPhotoManager}
                 />
@@ -1983,8 +1992,8 @@ export function ExecutionPanel({
                       {renderUnitCompletedByMeta(order, item, unit, isLocked)}
                       <PreparationPhotoThumbnails
                         projectId={projectId}
-                        itemId={getWorkOrderItemPhotoId(item)}
-                        unitIndex={index}
+                        itemId={getUnitLocationPhotoItemId(getWorkOrderItemPhotoId(item), unit)}
+                        unitIndex={getUnitLocationPhotoIndex(unit, index)}
                         className="pt-1"
                       />
                     </div>

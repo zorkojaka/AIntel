@@ -292,7 +292,12 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       deletedAt: { $exists: false },
     };
 
-    if (phase) filter.phase = phase;
+    const linkedLocationPhotos = String(req.query.linkedLocationPhotos ?? '').toLowerCase() === 'true';
+    if (linkedLocationPhotos) {
+      filter.phase = { $in: ['requirements', 'preparation', 'execution'] };
+    } else if (phase) {
+      filter.phase = phase;
+    }
     if (typeof req.query.itemId === 'string' && req.query.itemId.trim().length > 0) {
       filter.itemId = req.query.itemId.trim();
     }

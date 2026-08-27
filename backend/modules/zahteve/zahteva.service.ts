@@ -526,7 +526,7 @@ async function buildOfferItems(zahteva: ZahtevaDocument, tenantId = 'inteligent'
           requirementsLocationUnits: senzorLokacije.map((lokacija: any) => ({
             locationId: lokacija.id,
             locationName: normalizeText(lokacija.ime, lokacija.id) || lokacija.id,
-            sourcePhotoItemId: buildAlarmLocationPhotoItemId(String(zahteva._id), sistem.id, lokacija.id),
+            sourcePhotoItemId: normalizeText(lokacija.sourcePhotoItemId) || buildAlarmLocationPhotoItemId(String(zahteva._id), sistem.id, lokacija.id),
           })),
         });
       }
@@ -575,7 +575,7 @@ async function buildOfferItems(zahteva: ZahtevaDocument, tenantId = 'inteligent'
         requirementsLocationUnits: variantLokacije.map((lokacija) => ({
           locationId: lokacija.id,
           locationName: normalizeText(lokacija.ime, lokacija.id) || lokacija.id,
-          sourcePhotoItemId: buildZahtevaLocationPhotoItemId(String(zahteva._id), sistem.id, lokacija.id),
+          sourcePhotoItemId: normalizeText(lokacija.sourcePhotoItemId) || buildZahtevaLocationPhotoItemId(String(zahteva._id), sistem.id, lokacija.id),
         })),
       });
       addProductRequest(productRequests, variant.nosilecProductId, kolicina, 'material');

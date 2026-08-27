@@ -10,6 +10,7 @@ export interface PhotoContext {
   itemId?: string;
   unitIndex?: number;
   tag?: string;
+  linkedLocationPhotos?: boolean;
 }
 
 export interface PhotoManagerProps {
@@ -87,6 +88,7 @@ function buildPhotoQuery(context: PhotoContext) {
   if (context.itemId) params.set('itemId', context.itemId);
   if (typeof context.unitIndex === 'number') params.set('unitIndex', String(context.unitIndex));
   if (context.tag) params.set('tag', context.tag);
+  if (context.linkedLocationPhotos) params.set('linkedLocationPhotos', 'true');
   return params.toString();
 }
 
@@ -430,10 +432,10 @@ export function PhotoManager({
   const photosRef = useRef<ManagedPhoto[]>([]);
   const onPhotoCountChangeRef = useRef(onPhotoCountChange);
   const lastNotifiedCountRef = useRef<number | null>(null);
-  const { projectId, phase, itemId, unitIndex, tag } = context;
+  const { projectId, phase, itemId, unitIndex, tag, linkedLocationPhotos } = context;
   const queryString = useMemo(
-    () => buildPhotoQuery({ projectId, phase, itemId, unitIndex, tag }),
-    [itemId, phase, projectId, tag, unitIndex],
+    () => buildPhotoQuery({ projectId, phase, itemId, unitIndex, tag, linkedLocationPhotos }),
+    [itemId, linkedLocationPhotos, phase, projectId, tag, unitIndex],
   );
 
   const photos = useMemo(() => tiles.filter((tile): tile is Extract<PhotoTile, { kind: 'photo' }> => tile.kind === 'photo').map((tile) => tile.photo), [tiles]);

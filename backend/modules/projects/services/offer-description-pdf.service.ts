@@ -13,7 +13,7 @@ import { getCompanySettings, getPdfDocumentSettings } from "./pdf-settings.servi
 
 const PHOTO_UPLOAD_BASE_DIR = "/var/www/aintel/uploads";
 const PROJECT_PLAN_PHOTO_ITEM_ID = "project-plan";
-const LOCATION_PHOTO_PHASES = ["requirements", "offer", "preparation"] as const;
+const LOCATION_PHOTO_PHASES = ["requirements", "offer", "preparation", "execution"] as const;
 
 function sanitizeDescriptionForHtml(value: string) {
   const withoutControls = value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
@@ -164,7 +164,9 @@ function buildRequirementLocationUnitsFromRequest(zahteva: any) {
         appendUnit(assignedVariant?.kameraProductId, {
           locationId,
           locationName: typeof lokacija?.ime === "string" && lokacija.ime.trim() ? lokacija.ime.trim() : locationId,
-          sourcePhotoItemId: buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          sourcePhotoItemId: typeof lokacija?.sourcePhotoItemId === "string" && lokacija.sourcePhotoItemId.trim()
+            ? lokacija.sourcePhotoItemId.trim()
+            : buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
           note: typeof lokacija?.opomba === "string" && lokacija.opomba.trim() ? lokacija.opomba.trim() : undefined,
         });
       }
@@ -179,7 +181,9 @@ function buildRequirementLocationUnitsFromRequest(zahteva: any) {
         appendUnit(assignedSensor?.senzorProductId, {
           locationId,
           locationName: typeof lokacija?.ime === "string" && lokacija.ime.trim() ? lokacija.ime.trim() : locationId,
-          sourcePhotoItemId: buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          sourcePhotoItemId: typeof lokacija?.sourcePhotoItemId === "string" && lokacija.sourcePhotoItemId.trim()
+            ? lokacija.sourcePhotoItemId.trim()
+            : buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
           note: typeof lokacija?.opomba === "string" && lokacija.opomba.trim() ? lokacija.opomba.trim() : undefined,
         });
       }
@@ -193,15 +197,26 @@ async function resolveRequirementLocationPhotos(
   projectObjectId: unknown,
   item: any,
   fallbackUnits: Array<{ locationId: string; locationName: string; sourcePhotoItemId: string; note?: string }> = [],
+  projectLocations: any[] = [],
 ) {
   const units = Array.isArray(item?.requirementsLocationUnits) ? item.requirementsLocationUnits : [];
   const resolvedUnits = units.length > 0 ? units : fallbackUnits;
   if (!projectObjectId || resolvedUnits.length === 0) return [];
 
   const locations: NonNullable<ProductDescriptionEntry["locations"]> = [];
+  const canonicalByKey = new Map<string, any>();
+  for (const location of projectLocations) {
+    for (const key of [location?.id, location?.sourcePhotoItemId]) {
+      if (typeof key === "string" && key.trim()) canonicalByKey.set(key.trim(), location);
+    }
+  }
   for (const unit of resolvedUnits) {
     const sourcePhotoItemId = typeof unit?.sourcePhotoItemId === "string" ? unit.sourcePhotoItemId.trim() : "";
-    const locationName = typeof unit?.locationName === "string" && unit.locationName.trim()
+    const canonical = canonicalByKey.get(sourcePhotoItemId)
+      ?? canonicalByKey.get(typeof unit?.projectLocationId === "string" ? unit.projectLocationId.trim() : "");
+    const locationName = typeof canonical?.name === "string" && canonical.name.trim()
+      ? canonical.name.trim()
+      : typeof unit?.locationName === "string" && unit.locationName.trim()
       ? unit.locationName.trim()
       : typeof unit?.locationId === "string"
         ? unit.locationId
@@ -228,7 +243,9 @@ async function resolveRequirementLocationPhotos(
       continue;
     }
 
-    const note = typeof unit?.note === "string" && unit.note.trim() ? unit.note.trim() : undefined;
+    const note = typeof canonical?.note === "string" && canonical.note.trim()
+      ? canonical.note.trim()
+      : typeof unit?.note === "string" && unit.note.trim() ? unit.note.trim() : undefined;
     const locationId = typeof unit?.projectLocationId === "string" && unit.projectLocationId.trim()
       ? unit.projectLocationId.trim()
       : typeof unit?.locationId === "string" && unit.locationId.trim()
@@ -399,7 +416,12 @@ export async function buildOfferDescriptionEntries(offer: OfferVersion): Promise
     const locations = definitionLocations.length > 0
       ? definitionLocations
       : shouldResolveRequirementLocations
-        ? await resolveRequirementLocationPhotos(project?._id, item, fallbackUnits)
+        ? await resolveRequirementLocationPhotos(
+            project?._id,
+            item,
+            fallbackUnits,
+            Array.isArray((project as any)?.executionLocations) ? (project as any).executionLocations : [],
+          )
         : [];
     if (!imageUrl && !description && locations.length === 0) {
       continue;
