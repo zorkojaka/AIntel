@@ -3,6 +3,7 @@ import { Button } from "./ui/button";
 import { Tabs, TabsContent } from "./ui/tabs";
 import { Card } from "./ui/card";
 import { Input } from "./ui/input";
+import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
@@ -84,6 +85,8 @@ function formatProjectDisplayId(project?: Pick<ProjectDetails, "projectNumber" |
 
 type ClientPanelDraft = {
   name: string;
+  isCompany: boolean;
+  taxId: string;
   street: string;
   postalCode: string;
   postalCity: string;
@@ -94,8 +97,11 @@ type ClientPanelDraft = {
 };
 
 function buildClientPanelDraft(client?: ProjectClient | null, fallback?: ProjectDetails["customerDetail"] | null): ClientPanelDraft {
+  const isCompany = client?.type ? client.type === "company" : Boolean(client?.vatNumber ?? fallback?.taxId);
   return {
     name: client?.name ?? fallback?.name ?? "",
+    isCompany,
+    taxId: isCompany ? client?.vatNumber ?? fallback?.taxId ?? "" : "",
     street: client?.street ?? fallback?.address ?? "",
     postalCode: client?.postalCode ?? "",
     postalCity: client?.postalCity ?? client?.city ?? client?.mesto ?? "",
@@ -107,7 +113,12 @@ function buildClientPanelDraft(client?: ProjectClient | null, fallback?: Project
 }
 
 function areClientPanelDraftsEqual(a: ClientPanelDraft, b: ClientPanelDraft) {
-  return (Object.keys(a) as Array<keyof ClientPanelDraft>).every((key) => a[key].trim() === b[key].trim());
+  return (
+    a.isCompany === b.isCompany &&
+    (Object.keys(a) as Array<keyof ClientPanelDraft>)
+      .filter((key) => key !== "isCompany")
+      .every((key) => String(a[key]).trim() === String(b[key]).trim())
+  );
 }
 
 function getProjectStatusLabel(status: ProjectStatus) {
@@ -753,6 +764,15 @@ export function ProjectWorkspace({
 
   const saveClientPanelCore = useCallback(async () => {
     if (!project || clientSaving) return false;
+    const taxId = clientDraft.taxId.trim().toUpperCase();
+    if (clientDraft.isCompany && !taxId) {
+      toast.error("Davčna številka je obvezna za podjetja.");
+      return false;
+    }
+    if (clientDraft.isCompany && !/^SI\d{8}$/.test(taxId)) {
+      toast.error("Davčna številka mora biti v obliki SI12345678.");
+      return false;
+    }
     setClientSaving(true);
     try {
       const street = clientDraft.street.trim();
@@ -764,8 +784,8 @@ export function ProjectWorkspace({
       if (clientId) {
         const payload = {
           name: clientDraft.name.trim(),
-          type: displayedClient.type ?? (displayedClient.vatNumber || project.customerDetail.taxId ? "company" : "individual"),
-          vatNumber: displayedClient.vatNumber ?? project.customerDetail.taxId,
+          type: clientDraft.isCompany ? "company" : "individual",
+          vatNumber: clientDraft.isCompany ? taxId : undefined,
           address,
           street,
           postalCode,
@@ -790,6 +810,7 @@ export function ProjectWorkspace({
             ...prev.customerDetail,
             id: result?.id ?? prev.customerDetail.id,
             name: result?.name ?? prev.customerDetail.name,
+            taxId: result?.vatNumber ?? "",
             address: result?.address ?? address,
             email: result?.email ?? clientDraft.email,
             phone: result?.phone ?? clientDraft.phone,
@@ -803,6 +824,7 @@ export function ProjectWorkspace({
             customer: {
               ...project.customerDetail,
               name: clientDraft.name.trim(),
+              taxId: clientDraft.isCompany ? taxId : "",
               address,
             },
             status: project.status,
@@ -1501,6 +1523,30 @@ export function ProjectWorkspace({
                       <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ime</label>
                       <Input value={clientDraft.name} onChange={(event) => setClientDraft((prev) => ({ ...prev, name: event.target.value }))} />
                     </div>
+                    <label className="flex h-10 items-center gap-2 rounded-md border border-border bg-background px-3 font-medium">
+                      <Checkbox
+                        checked={clientDraft.isCompany}
+                        onChange={(event) =>
+                          setClientDraft((prev) => ({
+                            ...prev,
+                            isCompany: event.target.checked,
+                            taxId: event.target.checked ? prev.taxId : "",
+                          }))
+                        }
+                      />
+                      <span>Podjetje</span>
+                    </label>
+                    {clientDraft.isCompany ? (
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Davčna številka</label>
+                        <Input
+                          value={clientDraft.taxId}
+                          onChange={(event) => setClientDraft((prev) => ({ ...prev, taxId: event.target.value }))}
+                          placeholder="SI12345678"
+                          autoCapitalize="characters"
+                        />
+                      </div>
+                    ) : null}
                     <div className="space-y-1">
                       <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ulica</label>
                       <Input value={clientDraft.street} onChange={(event) => setClientDraft((prev) => ({ ...prev, street: event.target.value }))} />

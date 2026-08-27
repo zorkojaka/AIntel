@@ -21,6 +21,8 @@ export interface PhotoManagerProps {
   canDelete?: boolean;
   onPhotoCountChange?: (count: number) => void;
   inlineCameraCapture?: boolean;
+  showCaptureCount?: boolean;
+  alwaysShowDeleteActions?: boolean;
 }
 
 export interface ManagedPhoto {
@@ -409,6 +411,8 @@ export function PhotoManager({
   canDelete = true,
   onPhotoCountChange,
   inlineCameraCapture = false,
+  showCaptureCount = false,
+  alwaysShowDeleteActions = false,
 }: PhotoManagerProps) {
   const [tiles, setTiles] = useState<PhotoTile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -418,6 +422,7 @@ export function PhotoManager({
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraLoading, setCameraLoading] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraSessionCaptureCount, setCameraSessionCaptureCount] = useState(0);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -474,6 +479,7 @@ export function PhotoManager({
       return;
     }
 
+    setCameraSessionCaptureCount(0);
     setCameraOpen(true);
     setCameraLoading(true);
     setCameraError(null);
@@ -719,6 +725,7 @@ export function PhotoManager({
         type: 'image/jpeg',
         lastModified: Date.now(),
       });
+      setCameraSessionCaptureCount((count) => count + 1);
       void uploadFile(file);
     }, 'image/jpeg', COMPRESSION_QUALITY);
   }, []);
@@ -832,6 +839,15 @@ export function PhotoManager({
                       <Loader2 className="h-8 w-8 animate-spin" />
                     </div>
                   ) : null}
+                  {showCaptureCount ? (
+                    <div
+                      className="absolute right-3 top-3 rounded-full bg-black/75 px-3 py-1.5 text-sm font-semibold tabular-nums text-white shadow-sm"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      Zajeto: {cameraSessionCaptureCount}
+                    </div>
+                  ) : null}
                 </div>
                 {cameraError ? (
                   <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -866,10 +882,12 @@ export function PhotoManager({
                         <button
                           type="button"
                           onClick={() => void deletePhoto(tile.photo)}
-                          className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-black/70 text-white opacity-100 shadow-sm transition hover:bg-red-600 md:opacity-0 md:group-hover:opacity-100"
+                          className={`absolute right-2 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-black/80 text-white opacity-100 shadow-md transition hover:bg-red-600 ${alwaysShowDeleteActions ? '' : 'md:opacity-0 md:group-hover:opacity-100'}`}
+                          style={alwaysShowDeleteActions ? { opacity: 1, visibility: 'visible', pointerEvents: 'auto' } : undefined}
                           aria-label="Izbriši fotografijo"
+                          title="Izbriši fotografijo"
                         >
-                          <X className="h-4 w-4" />
+                          <span aria-hidden className="text-2xl font-semibold leading-none">×</span>
                         </button>
                       ) : null}
                     </div>
@@ -941,7 +959,15 @@ export function PhotoManager({
       </Dialog.Portal>
 
       {previewPhoto ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4" onMouseDown={() => setPreviewIndex(null)}>
+        <Dialog.Portal>
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black/85 p-4"
+          style={{ zIndex: 100, pointerEvents: 'auto' }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Predogled fotografije"
+          onMouseDown={() => setPreviewIndex(null)}
+        >
           <button type="button" className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80" onClick={() => setPreviewIndex(null)} aria-label="Zapri predogled">
             <X className="h-5 w-5" />
           </button>
@@ -964,6 +990,7 @@ export function PhotoManager({
             </figcaption>
           </figure>
         </div>
+        </Dialog.Portal>
       ) : null}
     </Dialog.Root>
   );

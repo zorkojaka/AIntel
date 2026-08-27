@@ -93,7 +93,10 @@ export function TabelaAsortima({
           context={photoDialog.context}
           title={`Slike lokacije: ${photoDialog.lokacija.ime || photoDialog.lokacija.id}`}
           description="Fotografije se prenesejo v Pripravo pri kameri na tej lokaciji."
+          canDelete
           inlineCameraCapture
+          showCaptureCount
+          alwaysShowDeleteActions
           onPhotoCountChange={() => setPhotoCountRefreshKey((value) => value + 1)}
         />
       ) : null}
