@@ -882,19 +882,19 @@ export function PhotoManager({
                         <button
                           type="button"
                           onClick={() => void deletePhoto(tile.photo)}
-                          className={`absolute flex items-center justify-center rounded-full text-white shadow-md transition hover:bg-red-700 ${alwaysShowDeleteActions ? '' : 'right-2 top-2 bg-black/80 opacity-100 md:opacity-0 md:group-hover:opacity-100'}`}
+                          className={`absolute flex items-center justify-center rounded-full shadow-md transition ${alwaysShowDeleteActions ? '' : 'right-2 top-2 bg-black/80 text-white opacity-100 hover:bg-red-700 md:opacity-0 md:group-hover:opacity-100'}`}
                           style={
                             alwaysShowDeleteActions
                               ? {
                                   position: 'absolute',
-                                  left: '0.5rem',
+                                  right: '0.5rem',
                                   top: '0.5rem',
                                   zIndex: 1000,
                                   width: '2.25rem',
                                   height: '2.25rem',
-                                  border: '2px solid white',
-                                  backgroundColor: '#dc2626',
-                                  color: '#ffffff',
+                                  border: '2px solid #dc2626',
+                                  backgroundColor: 'rgba(255, 255, 255, 0.72)',
+                                  color: '#dc2626',
                                   opacity: 1,
                                   visibility: 'visible',
                                   pointerEvents: 'auto',
