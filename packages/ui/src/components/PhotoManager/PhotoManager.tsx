@@ -750,7 +750,7 @@ export function PhotoManager({
   };
 
   const deletePhoto = async (photo: ManagedPhoto) => {
-    if (!window.confirm('Zbrisati sliko?')) return;
+    if (!window.confirm('Ali res želite izbrisati sliko?')) return;
     const photoId = getPhotoId(photo);
     try {
       const response = await fetch(`/api/photos/${photoId}`, {
@@ -882,8 +882,25 @@ export function PhotoManager({
                         <button
                           type="button"
                           onClick={() => void deletePhoto(tile.photo)}
-                          className={`absolute right-2 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-black/80 text-white opacity-100 shadow-md transition hover:bg-red-600 ${alwaysShowDeleteActions ? '' : 'md:opacity-0 md:group-hover:opacity-100'}`}
-                          style={alwaysShowDeleteActions ? { opacity: 1, visibility: 'visible', pointerEvents: 'auto' } : undefined}
+                          className={`absolute flex items-center justify-center rounded-full text-white shadow-md transition hover:bg-red-700 ${alwaysShowDeleteActions ? '' : 'right-2 top-2 bg-black/80 opacity-100 md:opacity-0 md:group-hover:opacity-100'}`}
+                          style={
+                            alwaysShowDeleteActions
+                              ? {
+                                  position: 'absolute',
+                                  left: '0.5rem',
+                                  top: '0.5rem',
+                                  zIndex: 1000,
+                                  width: '2.25rem',
+                                  height: '2.25rem',
+                                  border: '2px solid white',
+                                  backgroundColor: '#dc2626',
+                                  color: '#ffffff',
+                                  opacity: 1,
+                                  visibility: 'visible',
+                                  pointerEvents: 'auto',
+                                }
+                              : undefined
+                          }
                           aria-label="Izbriši fotografijo"
                           title="Izbriši fotografijo"
                         >
