@@ -959,7 +959,15 @@ export function PhotoManager({
       </Dialog.Portal>
 
       {previewPhoto ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4" onMouseDown={() => setPreviewIndex(null)}>
+        <Dialog.Portal>
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black/85 p-4"
+          style={{ zIndex: 100, pointerEvents: 'auto' }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Predogled fotografije"
+          onMouseDown={() => setPreviewIndex(null)}
+        >
           <button type="button" className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80" onClick={() => setPreviewIndex(null)} aria-label="Zapri predogled">
             <X className="h-5 w-5" />
           </button>
@@ -982,6 +990,7 @@ export function PhotoManager({
             </figcaption>
           </figure>
         </div>
+        </Dialog.Portal>
       ) : null}
     </Dialog.Root>
   );
