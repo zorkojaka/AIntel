@@ -882,10 +882,12 @@ export function PhotoManager({
                         <button
                           type="button"
                           onClick={() => void deletePhoto(tile.photo)}
-                          className={`absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-black/70 text-white opacity-100 shadow-sm transition hover:bg-red-600 ${alwaysShowDeleteActions ? '' : 'md:opacity-0 md:group-hover:opacity-100'}`}
+                          className={`absolute right-2 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-black/80 text-white opacity-100 shadow-md transition hover:bg-red-600 ${alwaysShowDeleteActions ? '' : 'md:opacity-0 md:group-hover:opacity-100'}`}
+                          style={alwaysShowDeleteActions ? { opacity: 1, visibility: 'visible', pointerEvents: 'auto' } : undefined}
                           aria-label="Izbriši fotografijo"
+                          title="Izbriši fotografijo"
                         >
-                          <X className="h-4 w-4" />
+                          <span aria-hidden className="text-2xl font-semibold leading-none">×</span>
                         </button>
                       ) : null}
                     </div>
