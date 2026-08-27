@@ -94,6 +94,8 @@ export function TabelaAlarm({
           title={`Slike lokacije: ${photoDialog.lokacija.ime || photoDialog.lokacija.id}`}
           description="Fotografije se shranijo k lokaciji alarmnega senzorja."
           inlineCameraCapture
+          showCaptureCount
+          alwaysShowDeleteActions
           onPhotoCountChange={() => setPhotoCountRefreshKey((value) => value + 1)}
         />
       ) : null}
