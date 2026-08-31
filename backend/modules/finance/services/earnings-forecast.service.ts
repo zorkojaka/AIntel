@@ -14,6 +14,7 @@ import { isValidObjectId } from 'mongoose';
 
 import { ProductModel } from '../../cenik/product.model';
 import { EmployeeServiceRateModel } from '../../employee-profiles/schemas/employee-service-rate';
+import { EmployeeProfileModel } from '../../employee-profiles/schemas/employee-profile';
 import { OfferVersionModel } from '../../projects/schemas/offer-version';
 import { ProjectModel } from '../../projects/schemas/project';
 import { WorkOrderModel } from '../../projects/schemas/work-order';
@@ -132,6 +133,7 @@ export async function getEarningsForecast(employeeId: string): Promise<EarningsF
   }
 
   const rateCache = new Map<string, { defaultPercent: number; overridePrice: number | null } | null>();
+  const customServiceRateCache = new Map<string, { defaultPercent: number; overridePrice: number | null } | null>();
   const getRate = async (productId: string) => {
     const rateProductId = await resolveRateProductId(productId);
     const key = `${employeeId}:${rateProductId}`;
@@ -147,6 +149,16 @@ export async function getEarningsForecast(employeeId: string): Promise<EarningsF
       : null;
     rateCache.set(key, normalized);
     return normalized;
+  };
+
+  const getCustomServiceRate = async () => {
+    if (customServiceRateCache.has(employeeId)) return customServiceRateCache.get(employeeId) ?? null;
+    const profile = await EmployeeProfileModel.findOne({ employeeId }).select('profitSharePercent').lean();
+    const rate = profile
+      ? { defaultPercent: toNumber(profile.profitSharePercent, 0), overridePrice: null }
+      : null;
+    customServiceRateCache.set(employeeId, rate);
+    return rate;
   };
 
   const forecastProjects: ForecastProject[] = [];
@@ -168,9 +180,10 @@ export async function getEarningsForecast(employeeId: string): Promise<EarningsF
 
     for (const item of offer.items ?? []) {
       const productId = normalizeId((item as any).productId);
-      if (!productId || !serviceIds.has(productId)) continue;
+      const isCustomService = !productId && (item as any).isService === true;
+      if (!isCustomService && (!productId || !serviceIds.has(productId))) continue;
 
-      const rate = await getRate(productId);
+      const rate = isCustomService ? await getCustomServiceRate() : await getRate(productId);
       if (!rate) {
         servicesWithoutRate.push((item as any).name ?? 'Neimenovana storitev');
         continue;

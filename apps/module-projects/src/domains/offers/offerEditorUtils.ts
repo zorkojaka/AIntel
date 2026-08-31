@@ -6,6 +6,7 @@ import type { ProjectKmCalculation } from "../../api";
 export type OfferLineItemForm = {
   id: string;
   productId: string | null;
+  isService: boolean;
   name: string;
   quantity: number;
   unit: string;
@@ -73,6 +74,7 @@ export function sleep(ms: number) {
 export const createEmptyItem = (): OfferLineItemForm => ({
   id: crypto.randomUUID(),
   productId: null,
+  isService: false,
   name: "",
   quantity: 0,
   unit: "kos",
@@ -292,6 +294,7 @@ export function createOfferEditorSnapshot(input: {
     .map((i) => ({
       id: i.id,
       productId: i.productId,
+      isService: i.isService === true,
       name: i.name.trim(),
       quantity: i.quantity,
       unit: i.unit,

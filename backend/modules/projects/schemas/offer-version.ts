@@ -9,6 +9,7 @@ const OfferLineItemSchema = new Schema<OfferLineItemDocument>(
   {
     id: { type: String, required: true },
     productId: { type: String, default: null },
+    isService: { type: Boolean, default: false },
     name: { type: String, required: true, trim: true },
     quantity: { type: Number, required: true, min: 0, default: 1 },
     unit: { type: String, required: true, trim: true, default: 'kos' },

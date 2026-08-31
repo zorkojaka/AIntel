@@ -671,9 +671,9 @@ function mapOfferItemsToWorkOrderItems(
     const quantity = typeof item.quantity === 'number' ? item.quantity : 0;
     const generatedId = item.id ?? new Types.ObjectId().toString();
     const note = (item as any).note ?? undefined;
-    const isService =
-      Boolean((item as any).isService) ||
-      (item.productId ? serviceProductIds.has(String(item.productId)) : false);
+    const isService = item.productId
+      ? serviceProductIds.has(String(item.productId))
+      : item.isService === true;
     const productDefaults = item.productId ? productDefaultsById.get(String(item.productId)) : null;
     return {
       id: generatedId,

@@ -466,6 +466,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
         totalVat: item.totalVat,
         totalGross: item.totalGross,
         productId: item.productId ?? null,
+        isService: item.isService === true,
         imageUrl: undefined,
       }));
 
@@ -812,6 +813,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
     updateItem(rowId, {
       name: product.name,
       productId: product.id,
+      isService: product.isService === true,
       imageUrl: product.imageUrl,
       unit: product.unit ?? "kos",
       unitPrice: product.unitPrice,
@@ -820,8 +822,8 @@ const loadOfferById = useCallback(async (offerId: string) => {
     void loadLinkedServiceSuggestions(rowId, product.id);
   };
 
-  const handleSelectCustomItem = (rowId: string) => {
-    updateItem(rowId, { productId: null, imageUrl: undefined });
+  const handleSelectCustomItem = (rowId: string, isService: boolean) => {
+    updateItem(rowId, { productId: null, isService, imageUrl: undefined });
   };
 
   const loadLinkedServiceSuggestions = useCallback(async (rowId: string, productId: string) => {
@@ -898,6 +900,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
           const nextItem = recalcItem({
             id: crypto.randomUUID(),
             productId: link.serviceProductId,
+            isService: true,
             name: serviceName,
             quantity,
             unit: "kos",
@@ -1018,6 +1021,7 @@ const loadOfferById = useCallback(async (offerId: string) => {
         const baseItem: OfferLineItemForm = {
           id: crypto.randomUUID(),
           productId: product.productId,
+          isService: product.isService === true,
           name: rowName,
           quantity: row.qty > 0 ? row.qty : 1,
           unit: rowUnit,
@@ -2237,9 +2241,9 @@ const loadOfferById = useCallback(async (offerId: string) => {
                       placeholder="Naziv ali iskanje v ceniku"
                       inputClassName="text-left h-9 min-w-0 truncate"
                       onChange={(name) => {
-                        updateItem(item.id, { name, productId: null, imageUrl: undefined });
+                        updateItem(item.id, { name, productId: null, isService: false, imageUrl: undefined });
                       }}
-                      onCustomSelected={() => handleSelectCustomItem(item.id)}
+                      onCustomSelected={(isService) => handleSelectCustomItem(item.id, isService)}
                       onProductSelected={(product) => handleSelectProduct(item.id, product, index)}
                     />
                     </div>

@@ -94,6 +94,7 @@ function sanitizeLineItem(raw: unknown): LineItemParseResult {
     item: {
     id: item?.id ? String(item.id) : new Types.ObjectId().toString(),
     productId: item?.productId ? String(item.productId) : null,
+    isService: item?.productId ? false : item?.isService === true,
     name,
     quantity,
     unit,
