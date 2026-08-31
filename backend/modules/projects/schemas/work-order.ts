@@ -62,7 +62,7 @@ export interface InstallerAcceptance {
   token: string;
   emailSentAt?: Date | null;
   acceptedAt?: Date | null;
-  acceptedVia?: 'system' | 'email' | null;
+  acceptedVia?: 'system' | 'email' | 'admin' | null;
 }
 
 export type WorkOrderConfirmationState = 'unsigned' | 'signed_active' | 'resign_required';
@@ -236,7 +236,7 @@ const installerAcceptanceSchema = new Schema<InstallerAcceptance>(
     token: { type: String, required: true },
     emailSentAt: { type: Date, default: null },
     acceptedAt: { type: Date, default: null },
-    acceptedVia: { type: String, enum: ['system', 'email'], default: undefined },
+    acceptedVia: { type: String, enum: ['system', 'email', 'admin'], default: undefined },
   },
   { _id: false },
 );

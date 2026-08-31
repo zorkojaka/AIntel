@@ -48,7 +48,7 @@ export async function markInstallerAcceptanceEmailSent(workOrderId: string, empl
   );
 }
 
-async function recordAcceptance(workOrder: any, employeeId: string, via: 'system' | 'email') {
+async function recordAcceptance(workOrder: any, employeeId: string, via: 'system' | 'email' | 'admin') {
   const entry = (workOrder.installerAcceptances ?? []).find((item: any) => String(item.employeeId) === employeeId);
   if (!entry) throw new InstallerAcceptanceError('Monter ni dodeljen temu projektu.', 403);
   if (!entry.acceptedAt) {
@@ -91,6 +91,51 @@ export async function acceptInstallerAssignmentInSystem(input: {
   if (!workOrder) throw new InstallerAcceptanceError('Delovni nalog ni najden.', 404);
   await ensureInstallerAcceptanceTokens(workOrder);
   return recordAcceptance(workOrder, input.employeeId, 'system');
+}
+
+export async function confirmAllInstallerAssignmentsByAdmin(input: {
+  projectId: string;
+  workOrderId: string;
+  actorName: string;
+}) {
+  const workOrder = await WorkOrderModel.findOne({
+    _id: input.workOrderId,
+    projectId: input.projectId,
+    cancelledAt: null,
+  });
+  if (!workOrder) throw new InstallerAcceptanceError('Delovni nalog ni najden.', 404);
+
+  const entries = await ensureInstallerAcceptanceTokens(workOrder);
+  if (entries.length === 0) throw new InstallerAcceptanceError('Delovni nalog nima dodeljenih monterjev.', 409);
+
+  const acceptedAt = new Date();
+  const confirmedEmployeeIds: string[] = [];
+  for (const entry of entries) {
+    if (entry.acceptedAt) continue;
+    entry.acceptedAt = acceptedAt;
+    entry.acceptedVia = 'admin';
+    confirmedEmployeeIds.push(String(entry.employeeId));
+  }
+  if (confirmedEmployeeIds.length > 0) {
+    await workOrder.save();
+    const [employees, project] = await Promise.all([
+      EmployeeModel.find({ _id: { $in: confirmedEmployeeIds } }).select({ name: 1 }).lean(),
+      ProjectModel.findOne({ id: workOrder.projectId }),
+    ]);
+    if (project) {
+      const names = employees.map((employee) => employee.name).filter(Boolean).join(', ') || 'dodeljeni monterji';
+      addTimeline(project, {
+        type: 'edit',
+        title: 'Administrator ročno potrdil monterje',
+        description: `${input.actorName} je potrdil, da so projekt videli in sprejeli: ${names}.`,
+        timestamp: acceptedAt.toLocaleString('sl-SI'),
+        user: input.actorName,
+        metadata: { workOrderId: String(workOrder._id), employeeIds: confirmedEmployeeIds.join(','), via: 'admin' },
+      });
+      await project.save();
+    }
+  }
+  return { confirmedEmployeeIds, acceptedAt };
 }
 
 export async function acceptInstallerAssignmentByToken(token: unknown) {

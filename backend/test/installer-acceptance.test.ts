@@ -10,6 +10,7 @@ import { WorkOrderModel } from '../modules/projects/schemas/work-order';
 import {
   acceptInstallerAssignmentByToken,
   acceptInstallerAssignmentInSystem,
+  confirmAllInstallerAssignmentsByAdmin,
   ensureInstallerAcceptanceTokens,
   InstallerAcceptanceError,
 } from '../modules/projects/services/installer-acceptance.service';
@@ -100,4 +101,35 @@ test('monter, ki ni dodeljen delovnemu nalogu, projekta ne more sprejeti', async
     }),
     (error: unknown) => error instanceof InstallerAcceptanceError && error.statusCode === 403,
   );
+});
+
+test('administrator lahko ročno potrdi vse še nepotrjene dodeljene monterje', async () => {
+  const miha = await createInstaller('Miha');
+  const ana = await createInstaller('Ana');
+  await ProjectModel.create({
+    id: 'PRJ-ADMIN-ACCEPT',
+    code: 'PRJ-ADMIN-ACCEPT',
+    projectNumber: 502,
+    title: 'Projekt za ročno potrditev',
+    customer: { name: 'Testna stranka' },
+    status: 'ordered',
+    createdAt: new Date().toISOString(),
+  });
+  const workOrder = await WorkOrderModel.create({
+    projectId: 'PRJ-ADMIN-ACCEPT',
+    offerVersionId: new mongoose.Types.ObjectId().toString(),
+    items: [],
+    assignedEmployeeIds: [miha._id, ana._id],
+  });
+
+  const result = await confirmAllInstallerAssignmentsByAdmin({
+    projectId: 'PRJ-ADMIN-ACCEPT',
+    workOrderId: String(workOrder._id),
+    actorName: 'Administrator',
+  });
+  assert.equal(result.confirmedEmployeeIds.length, 2);
+
+  const updated = await WorkOrderModel.findById(workOrder._id).lean();
+  assert.ok(updated?.installerAcceptances?.every((entry) => entry.acceptedAt));
+  assert.ok(updated?.installerAcceptances?.every((entry) => entry.acceptedVia === 'admin'));
 });

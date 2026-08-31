@@ -457,7 +457,9 @@ export function LogisticsPanel({
   const [materialOrderForm, setMaterialOrderForm] = useState<MaterialOrder | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [currentEmployeeId, setCurrentEmployeeId] = useState<string | null>(null);
+  const [viewerRoles, setViewerRoles] = useState<string[]>([]);
   const [acceptingAssignmentId, setAcceptingAssignmentId] = useState<string | null>(null);
+  const [adminConfirmingAssignmentId, setAdminConfirmingAssignmentId] = useState<string | null>(null);
   const [installerAvailability, setInstallerAvailability] = useState<InstallerAvailabilityEntry[]>([]);
   const [emailTouched, setEmailTouched] = useState(false);
   const [phoneTouched, setPhoneTouched] = useState(false);
@@ -663,9 +665,12 @@ export function LogisticsPanel({
         const payload = await parseApiEnvelope<any>(response, "Prijave ni mogoče preveriti.");
         if (!alive) return;
         setCurrentEmployeeId(typeof payload?.employee?.id === "string" ? payload.employee.id : null);
+        const roles = Array.isArray(payload?.employee?.roles) ? payload.employee.roles : [];
+        setViewerRoles(roles.filter((role: unknown): role is string => typeof role === "string"));
       } catch {
         if (!alive) return;
         setCurrentEmployeeId(null);
+        setViewerRoles([]);
       }
     };
     void fetchCurrentEmployee();
@@ -2327,6 +2332,8 @@ export function LogisticsPanel({
         emailSentAt: acceptance?.emailSentAt ?? null,
       };
     });
+    const canAdminConfirmInstallers = viewerRoles.includes("ADMIN");
+    const hasPendingInstallerAcceptance = previewInstallerAcceptances.some((installer) => !installer.acceptedAt);
 
     const acceptProjectAssignment = async () => {
       if (!previewWorkOrder?._id || acceptingAssignmentId) return;
@@ -2343,6 +2350,26 @@ export function LogisticsPanel({
         toast.error(error instanceof Error ? error.message : "Sprejema projekta ni bilo mogoče shraniti.");
       } finally {
         setAcceptingAssignmentId(null);
+      }
+    };
+
+    const confirmAllInstallerAssignments = async () => {
+      if (!previewWorkOrder?._id || adminConfirmingAssignmentId) return;
+      if (!window.confirm("Potrdiš, da so vsi dodeljeni monterji videli in sprejeli projekt?")) return;
+      setAdminConfirmingAssignmentId(previewWorkOrder._id);
+      try {
+        const response = await fetch(`/api/projects/${projectId}/work-orders/${previewWorkOrder._id}/confirm-all-installer-assignments`, {
+          method: "POST",
+          credentials: "include",
+        });
+        const result = await parseApiEnvelope<{ confirmedEmployeeIds: string[] }>(response, "Ročne potrditve monterjev ni bilo mogoče shraniti.");
+        const count = result?.confirmedEmployeeIds?.length ?? 0;
+        toast.success(count > 0 ? `Ročno potrjenih monterjev: ${count}.` : "Vsi dodeljeni monterji so že potrjeni.");
+        await refreshAfterMutation(fetchSnapshot);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Ročne potrditve monterjev ni bilo mogoče shraniti.");
+      } finally {
+        setAdminConfirmingAssignmentId(null);
       }
     };
 
@@ -2496,7 +2523,7 @@ export function LogisticsPanel({
                             }
                           >
                             {installer.name}: {installer.acceptedAt
-                              ? `potrdil ${formatCommunicationTimestamp(installer.acceptedAt)}${installer.acceptedVia ? ` (${installer.acceptedVia === "email" ? "email" : "v sistemu"})` : ""}`
+                              ? `potrdil ${formatCommunicationTimestamp(installer.acceptedAt)}${installer.acceptedVia ? ` (${installer.acceptedVia === "email" ? "email" : installer.acceptedVia === "admin" ? "ročno potrdil admin" : "v sistemu"})` : ""}`
                               : installer.emailSentAt
                                 ? "čaka na potrditev"
                                 : "email še ni poslan"}
@@ -2513,6 +2540,19 @@ export function LogisticsPanel({
                         >
                           {acceptingAssignmentId === previewWorkOrder?._id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                           Sprejmi projekt
+                        </Button>
+                      ) : null}
+                      {canAdminConfirmInstallers && hasPendingInstallerAcceptance ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          onClick={() => void confirmAllInstallerAssignments()}
+                          disabled={adminConfirmingAssignmentId === previewWorkOrder?._id}
+                        >
+                          {adminConfirmingAssignmentId === previewWorkOrder?._id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                          Admin: ročno potrdi vse
                         </Button>
                       ) : null}
                     </div>

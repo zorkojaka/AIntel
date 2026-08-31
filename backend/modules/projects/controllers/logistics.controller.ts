@@ -44,6 +44,7 @@ import { normalizeSupplierFields, normalizeSupplierKey } from '../services/suppl
 import { OfferBookingModel } from '../../availability/offer-booking.model';
 import {
   acceptInstallerAssignmentInSystem,
+  confirmAllInstallerAssignmentsByAdmin as confirmAllInstallerAssignmentsByAdminService,
   InstallerAcceptanceError,
 } from '../services/installer-acceptance.service';
 
@@ -1328,7 +1329,7 @@ function serializeWorkOrder(order: any): WorkOrder | null {
       employeeId: String(entry.employeeId),
       emailSentAt: entry.emailSentAt ? new Date(entry.emailSentAt).toISOString() : null,
       acceptedAt: entry.acceptedAt ? new Date(entry.acceptedAt).toISOString() : null,
-      acceptedVia: entry.acceptedVia === 'system' || entry.acceptedVia === 'email' ? entry.acceptedVia : null,
+      acceptedVia: entry.acceptedVia === 'system' || entry.acceptedVia === 'email' || entry.acceptedVia === 'admin' ? entry.acceptedVia : null,
     })),
     location: order.location,
     notes: order.notes,
@@ -2781,6 +2782,24 @@ export async function acceptInstallerAssignment(req: Request, res: Response) {
   } catch (error) {
     if (error instanceof InstallerAcceptanceError) return res.fail(error.message, error.statusCode);
     return res.fail('Sprejema projekta ni bilo mogoče shraniti.', 500);
+  }
+}
+
+export async function confirmAllInstallerAssignmentsByAdmin(req: Request, res: Response) {
+  try {
+    const result = await confirmAllInstallerAssignmentsByAdminService({
+      projectId: req.params.projectId,
+      workOrderId: req.params.workOrderId,
+      actorName: resolveScheduleConfirmerLabel(req),
+    });
+    await applyAutomaticPreparationProgression(req.params.projectId, req.params.workOrderId, req);
+    return res.success({
+      confirmedEmployeeIds: result.confirmedEmployeeIds,
+      acceptedAt: result.acceptedAt.toISOString(),
+    });
+  } catch (error) {
+    if (error instanceof InstallerAcceptanceError) return res.fail(error.message, error.statusCode);
+    return res.fail('Ročne potrditve monterjev ni bilo mogoče shraniti.', 500);
   }
 }
 

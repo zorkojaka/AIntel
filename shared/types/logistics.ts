@@ -141,7 +141,7 @@ export interface InstallerAcceptance {
   employeeId: string;
   emailSentAt?: string | null;
   acceptedAt?: string | null;
-  acceptedVia?: "system" | "email" | null;
+  acceptedVia?: "system" | "email" | "admin" | null;
 }
 
 export interface WorkOrderConfirmationVersionSummary {

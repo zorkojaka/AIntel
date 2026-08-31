@@ -89,6 +89,7 @@ router.post('/:projectId/offers/:offerVersionId/send', requireProjectWrite, send
 router.post('/:projectId/work-orders/:workOrderId/send-confirmation', requireWorkOrderWrite, sendWorkOrderConfirmationCommunicationController);
 router.post('/:projectId/work-orders/:workOrderId/send-installer-preparation', requireWorkOrderWrite, sendInstallerPreparationCommunicationController);
 router.post('/:projectId/work-orders/:workOrderId/accept-assignment', requireWorkOrderWrite, logisticsController.acceptInstallerAssignment);
+router.post('/:projectId/work-orders/:workOrderId/confirm-all-installer-assignments', requireRoles([ROLE_ADMIN]), logisticsController.confirmAllInstallerAssignmentsByAdmin);
 router.get('/:projectId/offer', getActiveOffer);
 router.post('/:projectId/offers/:offerId/confirm', requireProjectWrite, logisticsController.confirmOffer);
 router.get('/:projectId/execution-definition', logisticsController.getProjectExecutionDefinition);
