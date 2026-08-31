@@ -402,14 +402,27 @@ export function ProjectWorkspace({
         setIsUnsavedPanelDialogOpen(true);
         return;
       }
-      if (activeTab === "offers" && isOfferEditorDirty) {
-        pendingOfferNavigationRef.current = action;
-        setIsUnsavedOfferDialogOpen(true);
-        return;
+      if (activeTab === "offers") {
+        const saveOfferIfDirty = offerSaveHandlerRef.current;
+        if (saveOfferIfDirty) {
+          pendingOfferNavigationRef.current = action;
+          void (async () => {
+            const saved = await saveOfferIfDirty();
+            if (!saved) return;
+            setIsOfferEditorDirty(false);
+            await runPendingOfferNavigation();
+          })();
+          return;
+        }
+        if (isOfferEditorDirty) {
+          pendingOfferNavigationRef.current = action;
+          setIsUnsavedOfferDialogOpen(true);
+          return;
+        }
       }
       void action();
     },
-    [activeTab, isOfferEditorDirty],
+    [activeTab, isOfferEditorDirty, runPendingOfferNavigation],
   );
 
   const handleSaveDirtyOfferAndContinue = useCallback(async () => {

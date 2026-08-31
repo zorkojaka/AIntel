@@ -1109,6 +1109,11 @@ const loadOfferById = useCallback(async (offerId: string) => {
     [title, paymentTerms, comment, effectiveSelectedNoteIds, items, useGlobalDiscount, usePerItemDiscount, vatMode, globalDiscountPercent, fixedDiscountAmount]
   );
   const isDirty = currentOfferSnapshot !== lastSavedSnapshot;
+  // The workspace may be asked to leave this tab in the same event that changed
+  // an input. Keep the current value in a ref so that navigation cannot observe
+  // a stale parent dirty-state update and discard the just-entered offer.
+  const isDirtyRef = useRef(isDirty);
+  isDirtyRef.current = isDirty;
 
   useEffect(() => {
     onDirtyChange?.(isDirty);
@@ -1199,6 +1204,13 @@ const loadOfferById = useCallback(async (offerId: string) => {
     }
   };
 
+  const latestOfferSaveRef = useRef(handleSave);
+  latestOfferSaveRef.current = handleSave;
+  const saveOfferIfDirty = useCallback(async () => {
+    if (!isDirtyRef.current) return true;
+    return Boolean(await latestOfferSaveRef.current());
+  }, []);
+
   const ensureSavedOffer = async () => {
     if (currentOffer?._id && !isDirty) {
       return currentOffer;
@@ -1288,9 +1300,9 @@ const loadOfferById = useCallback(async (offerId: string) => {
 
   useEffect(() => {
     if (!onRegisterSaveHandler) return;
-    onRegisterSaveHandler(async () => Boolean(await handleSave()));
+    onRegisterSaveHandler(saveOfferIfDirty);
     return () => onRegisterSaveHandler(null);
-  }, [onRegisterSaveHandler, handleSave]);
+  }, [onRegisterSaveHandler, saveOfferIfDirty]);
 
   const openCreateTemplateDialog = () => {
     if (!validItems.length) {
