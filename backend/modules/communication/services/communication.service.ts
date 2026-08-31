@@ -1318,7 +1318,10 @@ export async function sendInstallerPreparationEmail(input: {
     .filter((entry) => entry.url);
   const selectedRecipients = sanitizeEmailList(input.to);
   const primaryInstaller = installerIds.map((id) => installerById.get(id)).find((installer) => sanitizeString(installer?.email));
-  if (!primaryInstaller && selectedRecipients.length === 0) {
+  const assignedInstallerRecipients = installerIds
+    .map((id) => sanitizeString(installerById.get(id)?.email).toLowerCase())
+    .filter(Boolean);
+  if (assignedInstallerRecipients.length === 0 && selectedRecipients.length === 0) {
     throw new Error("Monter nima nastavljenega emaila.");
   }
 
@@ -1433,7 +1436,10 @@ export async function sendInstallerPreparationEmail(input: {
   const bodyWithoutFooter = missingAcceptanceLinks.length > 0
     ? `${bodyBase}\n\nPotrditev sprejema projekta\n${missingAcceptanceLinks.map((entry) => `${entry.name}: ${entry.url}`).join("\n")}`
     : bodyBase;
-  const resolvedRecipients = selectedRecipients.length > 0 ? selectedRecipients : [String(primaryInstaller.email).toLowerCase()];
+  // Delovni nalog je zavezujoč za celotno dodeljeno ekipo. Tudi če je v
+  // predogledu ročno spremenjeno polje »To«, naj vsak dodeljeni monter z
+  // nastavljenim emailom prejme isti email in svojo povezavo za potrditev.
+  const resolvedRecipients = Array.from(new Set([...assignedInstallerRecipients, ...selectedRecipients]));
   const cc = sanitizeEmailList(input.cc);
   const bcc = sanitizeEmailList(input.bcc);
   if (input.previewOnly) {
@@ -1524,7 +1530,11 @@ export async function sendInstallerPreparationEmail(input: {
       return { message: null, sent: true, loggingFailed: true };
     },
   });
-  await markInstallerAcceptanceEmailSent(workOrderId, acceptanceLinks.map((entry) => entry.employeeId)).catch((error) => {
+  const notifiedInstallerIds = installerIds.filter((employeeId) => {
+    const email = sanitizeString(installerById.get(employeeId)?.email).toLowerCase();
+    return email && resolvedRecipients.includes(email);
+  });
+  await markInstallerAcceptanceEmailSent(workOrderId, notifiedInstallerIds).catch((error) => {
     logger.error({ err: error }, "Installer email was sent, but acceptance delivery status could not be saved");
   });
   return { ...payload, sent: true };

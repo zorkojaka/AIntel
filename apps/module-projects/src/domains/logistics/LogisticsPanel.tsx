@@ -1359,6 +1359,9 @@ export function LogisticsPanel({
     const primaryInstaller = installerIds
       .map((id) => employees.find((employee) => employee.id === id))
       .find((employee) => employee?.email?.trim());
+    const installerEmails = installerIds
+      .map((id) => employees.find((employee) => employee.id === id)?.email?.trim().toLowerCase() ?? "")
+      .filter((email): email is string => Boolean(email));
     const teamNames = installerIds
       .map((id) => employees.find((employee) => employee.id === id)?.name)
       .filter((name): name is string => Boolean(name?.trim()));
@@ -1401,7 +1404,7 @@ export function LogisticsPanel({
     ].filter((line, index, lines) => line || lines[index - 1] !== "").join("\n");
 
     return {
-      to: primaryInstaller?.email?.trim() ?? "",
+      to: Array.from(new Set(installerEmails)).join(", "),
       cc: "",
       bcc: "",
       subject: `Priprava montaže: ${projectId}${schedule ? ` - ${schedule}` : ""}`,
@@ -2310,6 +2313,20 @@ export function LogisticsPanel({
     const currentInstallerAccepted = Boolean(currentEmployeeId) && (previewWorkOrder?.installerAcceptances ?? []).some(
       (entry) => entry.employeeId === currentEmployeeId && Boolean(entry.acceptedAt),
     );
+    const installerAcceptanceByEmployeeId = new Map(
+      (previewWorkOrder?.installerAcceptances ?? []).map((entry) => [entry.employeeId, entry]),
+    );
+    const previewInstallerAcceptances = previewTeamIds.map((employeeId) => {
+      const acceptance = installerAcceptanceByEmployeeId.get(employeeId);
+      const employee = employees.find((entry) => entry.id === employeeId);
+      return {
+        employeeId,
+        name: employee?.name || "Monter",
+        acceptedAt: acceptance?.acceptedAt ?? null,
+        acceptedVia: acceptance?.acceptedVia ?? null,
+        emailSentAt: acceptance?.emailSentAt ?? null,
+      };
+    });
 
     const acceptProjectAssignment = async () => {
       if (!previewWorkOrder?._id || acceptingAssignmentId) return;
@@ -2447,7 +2464,7 @@ export function LogisticsPanel({
                   <p className="text-muted-foreground">Ekipa</p>
                   <p className="font-medium">{previewTeamNames.length > 0 ? previewTeamNames.join(", ") : "Ni določena"}</p>
                   {previewTeamIds.length > 0 ? (
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="space-y-2">
                       <Badge
                         className={
                           previewTeamIds.every((employeeId) =>
@@ -2467,6 +2484,25 @@ export function LogisticsPanel({
                           ? "Projekt sprejet"
                           : "Čaka na sprejem monterja"}
                       </Badge>
+                      <div className="flex flex-wrap gap-2">
+                        {previewInstallerAcceptances.map((installer) => (
+                          <Badge
+                            key={installer.employeeId}
+                            variant="outline"
+                            className={
+                              installer.acceptedAt
+                                ? "border-green-500/30 bg-green-500/10 text-green-700"
+                                : "border-amber-500/30 bg-amber-500/10 text-amber-700"
+                            }
+                          >
+                            {installer.name}: {installer.acceptedAt
+                              ? `potrdil ${formatCommunicationTimestamp(installer.acceptedAt)}${installer.acceptedVia ? ` (${installer.acceptedVia === "email" ? "email" : "v sistemu"})` : ""}`
+                              : installer.emailSentAt
+                                ? "čaka na potrditev"
+                                : "email še ni poslan"}
+                          </Badge>
+                        ))}
+                      </div>
                       {currentInstallerIsAssigned && !currentInstallerAccepted ? (
                         <Button
                           type="button"
