@@ -53,6 +53,9 @@ type ExistingProduct = {
   externalSource?: string;
   externalId?: string;
   externalKey?: string;
+  sourceImportedAt?: Date;
+  sourceLastSyncedAt?: Date;
+  createdAt?: Date;
   ime?: string;
   kategorija?: string;
   categorySlugs?: string[];
@@ -136,6 +139,7 @@ export type ImportUpdateRow = PlanRowBase & {
   productId: string;
   matchType: Exclude<MatchType, 'new_product'>;
   changedFields: string[];
+  changes: Array<{ field: string; currentValue: unknown; incomingValue: unknown }>;
 };
 
 export type ImportSkipRow = PlanRowBase & {
@@ -186,6 +190,33 @@ export type ImportApplySummary = ImportPlanSummary & {
 
 export type AppliedImportPlan = ImportPlan & {
   applied: ImportApplySummary;
+};
+
+export const AA_SELECTABLE_IMPORT_FIELDS = [
+  'ime',
+  'purchasePriceWithoutVat',
+  'nabavnaCena',
+  'prodajnaCena',
+  'kratekOpis',
+  'dolgOpis',
+  'povezavaDoSlike',
+  'povezavaDoProdukta',
+  'kategorija',
+  'categorySlugs',
+  'proizvajalec',
+  'dobavitelj',
+  'naslovDobavitelja',
+  'aaData',
+  'classification',
+] as const;
+
+export type AASelectableImportField = (typeof AA_SELECTABLE_IMPORT_FIELDS)[number];
+
+export type ProductImportSelection = {
+  createExternalKeys?: string[];
+  updateExternalKeys?: string[];
+  createFields?: AASelectableImportField[];
+  updateFields?: AASelectableImportField[];
 };
 
 export type SyncReport = {
@@ -590,34 +621,45 @@ function toPlanRowBase(product: NormalizedProduct): PlanRowBase {
   };
 }
 
-function mapSetFields(product: NormalizedProduct) {
+const ALWAYS_SYNCED_IDENTITY_FIELDS = new Set(['externalSource', 'externalId', 'externalKey', 'isService']);
+const AA_REQUIRED_CREATE_FIELDS = new Set<AASelectableImportField>([
+  'ime',
+  'purchasePriceWithoutVat',
+  'nabavnaCena',
+  'prodajnaCena',
+  'categorySlugs',
+  'dobavitelj',
+]);
+
+function mapSetFields(product: NormalizedProduct, allowedFields?: Set<string>) {
+  const canSet = (field: string) => !allowedFields || ALWAYS_SYNCED_IDENTITY_FIELDS.has(field) || allowedFields.has(field);
   return removeUndefined({
-    externalSource: hasProvidedField(product, 'externalSource') ? product.externalSource : undefined,
-    externalId: hasProvidedField(product, 'externalId') ? product.externalId : undefined,
-    externalKey: hasProvidedField(product, 'externalKey') ? product.externalKey : undefined,
-    ime: hasProvidedField(product, 'ime') ? product.ime : undefined,
-    kategorija: hasProvidedField(product, 'kategorija') ? product.kategorija : undefined,
-    categorySlugs: hasProvidedField(product, 'categorySlugs') ? product.categorySlugs : undefined,
-    purchasePriceWithoutVat: hasProvidedField(product, 'purchasePriceWithoutVat')
+    externalSource: canSet('externalSource') && hasProvidedField(product, 'externalSource') ? product.externalSource : undefined,
+    externalId: canSet('externalId') && hasProvidedField(product, 'externalId') ? product.externalId : undefined,
+    externalKey: canSet('externalKey') && hasProvidedField(product, 'externalKey') ? product.externalKey : undefined,
+    ime: canSet('ime') && hasProvidedField(product, 'ime') ? product.ime : undefined,
+    kategorija: canSet('kategorija') && hasProvidedField(product, 'kategorija') ? product.kategorija : undefined,
+    categorySlugs: canSet('categorySlugs') && hasProvidedField(product, 'categorySlugs') ? product.categorySlugs : undefined,
+    purchasePriceWithoutVat: canSet('purchasePriceWithoutVat') && hasProvidedField(product, 'purchasePriceWithoutVat')
       ? product.purchasePriceWithoutVat ?? product.nabavnaCena
       : undefined,
-    nabavnaCena: hasProvidedField(product, 'nabavnaCena') ? product.nabavnaCena : undefined,
-    prodajnaCena: hasProvidedField(product, 'prodajnaCena') ? product.prodajnaCena : undefined,
-    kratekOpis: hasProvidedField(product, 'kratekOpis') ? product.kratekOpis : undefined,
-    dolgOpis: hasProvidedField(product, 'dolgOpis') ? product.dolgOpis : undefined,
-    povezavaDoSlike: hasProvidedField(product, 'povezavaDoSlike') ? product.povezavaDoSlike : undefined,
-    povezavaDoProdukta: hasProvidedField(product, 'povezavaDoProdukta') ? product.povezavaDoProdukta : undefined,
-    proizvajalec: hasProvidedField(product, 'proizvajalec') ? product.proizvajalec : undefined,
-    dobavitelj: hasProvidedField(product, 'dobavitelj') ? product.dobavitelj : undefined,
-    naslovDobavitelja: hasProvidedField(product, 'naslovDobavitelja') ? product.naslovDobavitelja : undefined,
-    casovnaNorma: hasProvidedField(product, 'casovnaNorma') ? product.casovnaNorma : undefined,
-    isService: hasProvidedField(product, 'isService') ? product.isService : undefined,
-    defaultExecutionMode: hasProvidedField(product, 'defaultExecutionMode') ? product.defaultExecutionMode : undefined,
-    defaultInstructionsTemplate: hasProvidedField(product, 'defaultInstructionsTemplate')
+    nabavnaCena: canSet('nabavnaCena') && hasProvidedField(product, 'nabavnaCena') ? product.nabavnaCena : undefined,
+    prodajnaCena: canSet('prodajnaCena') && hasProvidedField(product, 'prodajnaCena') ? product.prodajnaCena : undefined,
+    kratekOpis: canSet('kratekOpis') && hasProvidedField(product, 'kratekOpis') ? product.kratekOpis : undefined,
+    dolgOpis: canSet('dolgOpis') && hasProvidedField(product, 'dolgOpis') ? product.dolgOpis : undefined,
+    povezavaDoSlike: canSet('povezavaDoSlike') && hasProvidedField(product, 'povezavaDoSlike') ? product.povezavaDoSlike : undefined,
+    povezavaDoProdukta: canSet('povezavaDoProdukta') && hasProvidedField(product, 'povezavaDoProdukta') ? product.povezavaDoProdukta : undefined,
+    proizvajalec: canSet('proizvajalec') && hasProvidedField(product, 'proizvajalec') ? product.proizvajalec : undefined,
+    dobavitelj: canSet('dobavitelj') && hasProvidedField(product, 'dobavitelj') ? product.dobavitelj : undefined,
+    naslovDobavitelja: canSet('naslovDobavitelja') && hasProvidedField(product, 'naslovDobavitelja') ? product.naslovDobavitelja : undefined,
+    casovnaNorma: canSet('casovnaNorma') && hasProvidedField(product, 'casovnaNorma') ? product.casovnaNorma : undefined,
+    isService: canSet('isService') && hasProvidedField(product, 'isService') ? product.isService : undefined,
+    defaultExecutionMode: canSet('defaultExecutionMode') && hasProvidedField(product, 'defaultExecutionMode') ? product.defaultExecutionMode : undefined,
+    defaultInstructionsTemplate: canSet('defaultInstructionsTemplate') && hasProvidedField(product, 'defaultInstructionsTemplate')
       ? product.defaultInstructionsTemplate
       : undefined,
-    aaData: hasProvidedField(product, 'aaData') ? product.aaData : undefined,
-    classification: hasProvidedField(product, 'classification') ? product.classification : undefined,
+    aaData: canSet('aaData') && hasProvidedField(product, 'aaData') ? product.aaData : undefined,
+    classification: canSet('classification') && hasProvidedField(product, 'classification') ? product.classification : undefined,
     isActive: product.providedFields ? undefined : true,
   });
 }
@@ -691,6 +733,18 @@ function getChangedFields(product: NormalizedProduct, existing: ExistingProduct)
   if (!product.providedFields && existing.isActive !== true) changedFields.push('isActive');
 
   return changedFields;
+}
+
+function getFieldValue(record: NormalizedProduct | ExistingProduct, field: string) {
+  return (record as unknown as Record<string, unknown>)[field];
+}
+
+function getFieldChanges(product: NormalizedProduct, existing: ExistingProduct, changedFields: string[]) {
+  return changedFields.map((field) => ({
+    field,
+    currentValue: getFieldValue(existing, field),
+    incomingValue: getFieldValue(product, field),
+  }));
 }
 
 function summarizePlan(plan: Omit<ImportPlan, 'summary'>): ImportPlanSummary {
@@ -1176,6 +1230,7 @@ function resolveRowWithStoredDecision(
     productId: String(target._id),
     matchType: 'resolution_link',
     changedFields,
+    changes: getFieldChanges(row, target, changedFields),
   };
 }
 
@@ -1262,6 +1317,7 @@ async function analyzeProducts(source: string, items: unknown[]): Promise<{ plan
           productId: String(existing._id),
           matchType: 'external_key',
           changedFields,
+          changes: getFieldChanges(row, existing, changedFields),
         });
       }
       continue;
@@ -1290,6 +1346,7 @@ async function analyzeProducts(source: string, items: unknown[]): Promise<{ plan
           productId: String(existing._id),
           matchType: 'source_identifier',
           changedFields,
+          changes: getFieldChanges(row, existing, changedFields),
         });
       }
       continue;
@@ -1319,6 +1376,7 @@ async function analyzeProducts(source: string, items: unknown[]): Promise<{ plan
           productId: String(existing._id),
           matchType: 'strict_business_match',
           changedFields,
+          changes: getFieldChanges(row, existing, changedFields),
         });
       }
       continue;
@@ -1554,9 +1612,11 @@ export async function precheckProductCandidate(input: {
 export async function applyProductImportFromItems({
   source,
   items,
+  selection,
 }: {
   source: string;
   items: unknown[];
+  selection?: ProductImportSelection;
 }): Promise<AppliedImportPlan> {
   const lockAcquired = await acquireLock(source);
   if (!lockAcquired) {
@@ -1567,17 +1627,36 @@ export async function applyProductImportFromItems({
     const prepared = await prepareImportItems(source, items);
     const { plan, normalizedRows } = await analyzeProducts(source, prepared.items);
     const rowMap = new Map(normalizedRows.map((row) => [row.externalKey, row]));
+    const selectableFields = new Set<string>(AA_SELECTABLE_IMPORT_FIELDS);
+    const normalizeFields = (fields: AASelectableImportField[] | undefined, fallback: readonly string[]) =>
+      new Set((fields ?? fallback).filter((field) => selectableFields.has(field)));
+    const createFields = normalizeFields(selection?.createFields, AA_SELECTABLE_IMPORT_FIELDS);
+    AA_REQUIRED_CREATE_FIELDS.forEach((field) => createFields.add(field));
+    const updateFields = normalizeFields(selection?.updateFields, AA_SELECTABLE_IMPORT_FIELDS);
+    const createKeys = selection?.createExternalKeys ? new Set(selection.createExternalKeys) : null;
+    const updateKeys = selection?.updateExternalKeys ? new Set(selection.updateExternalKeys) : null;
+    const appliedAt = new Date();
 
     let createdCount = 0;
     let updatedCount = 0;
 
     for (const row of plan.toUpdate) {
+      if (updateKeys && !updateKeys.has(row.externalKey)) continue;
       const normalized = rowMap.get(row.externalKey);
       if (!normalized) continue;
+      const selectedChangedFields = row.changedFields.filter(
+        (field) => ALWAYS_SYNCED_IDENTITY_FIELDS.has(field) || updateFields.has(field),
+      );
+      if (selectedChangedFields.length === 0) continue;
+      const existing = await ProductModel.findById(row.productId).select('sourceImportedAt createdAt').lean();
       await ProductModel.updateOne(
         { _id: row.productId },
         {
-          $set: mapSetFields(normalized),
+          $set: {
+            ...mapSetFields(normalized, updateFields),
+            sourceImportedAt: existing?.sourceImportedAt ?? existing?.createdAt ?? appliedAt,
+            sourceLastSyncedAt: appliedAt,
+          },
           $unset: { mergedInto: '' },
         },
       );
@@ -1585,9 +1664,14 @@ export async function applyProductImportFromItems({
     }
 
     for (const row of plan.toCreate) {
+      if (createKeys && !createKeys.has(row.externalKey)) continue;
       const normalized = rowMap.get(row.externalKey);
       if (!normalized) continue;
-      await ProductModel.create(mapSetFields(normalized));
+      await ProductModel.create({
+        ...mapSetFields(normalized, createFields),
+        sourceImportedAt: appliedAt,
+        sourceLastSyncedAt: appliedAt,
+      });
       createdCount += 1;
     }
 
@@ -1595,12 +1679,15 @@ export async function applyProductImportFromItems({
       ...plan.summary,
       createdCount,
       updatedCount,
-      skippedCount: plan.toSkip.length,
+      skippedCount:
+        plan.toSkip.length +
+        (plan.toCreate.length - createdCount) +
+        (plan.toUpdate.length - updatedCount),
       excludedConflictCount: plan.conflicts.length,
       excludedInvalidCount: plan.invalidRows.length,
     };
 
-    if (source === 'aa_api' && prepared.filteringEnabled) {
+    if (source === 'aa_api' && prepared.filteringEnabled && !selection) {
       await syncAAProductActiveStateWithCategorySettings();
       await refreshCategoryStatsFromDatabase();
     }

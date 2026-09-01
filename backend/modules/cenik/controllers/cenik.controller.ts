@@ -36,6 +36,8 @@ type ProductResponse = ProductPayload & {
   externalSource?: string;
   externalId?: string;
   externalKey?: string;
+  sourceImportedAt?: Date;
+  sourceLastSyncedAt?: Date;
   isActive?: boolean;
   aaData?: ProductDocument['aaData'];
   classification?: ProductDocument['classification'];
@@ -138,6 +140,8 @@ function sanitizeProduct(
     externalSource: product.externalSource ?? '',
     externalId: product.externalId ?? '',
     externalKey: product.externalKey ?? '',
+    sourceImportedAt: product.sourceImportedAt,
+    sourceLastSyncedAt: product.sourceLastSyncedAt,
     ime: product.ime,
     categorySlugs: product.categorySlugs ?? [],
     isService: product.isService,

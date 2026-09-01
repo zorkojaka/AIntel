@@ -9,7 +9,10 @@ import { mapAAProductsToImportItems } from '../../cenik/sync/aaProductMapper';
 import {
   analyzeProductImportFromItems,
   applyProductImportFromItems,
+  AA_SELECTABLE_IMPORT_FIELDS,
   resolveProductImportConflict,
+  type AASelectableImportField,
+  type ProductImportSelection,
 } from '../../cenik/services/product-sync.service';
 
 const SOURCE_PATHS: Record<string, string | null> = {
@@ -24,6 +27,22 @@ const importLocks = new Set<string>();
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseAAImportSelection(value: unknown): ProductImportSelection | undefined {
+  if (!isPlainObject(value)) return undefined;
+  const allowedFields = new Set<string>(AA_SELECTABLE_IMPORT_FIELDS);
+  const strings = (input: unknown) =>
+    Array.isArray(input)
+      ? Array.from(new Set(input.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '').map((entry) => entry.trim())))
+      : undefined;
+  const fields = (input: unknown) => strings(input)?.filter((field): field is AASelectableImportField => allowedFields.has(field));
+  return {
+    createExternalKeys: strings(value.createExternalKeys),
+    updateExternalKeys: strings(value.updateExternalKeys),
+    createFields: fields(value.createFields),
+    updateFields: fields(value.updateFields),
+  };
 }
 
 function getGitBaseUrl() {
@@ -226,9 +245,22 @@ export async function importProductsFromGit(req: Request, res: Response) {
     }
 
     const { items, sourceFingerprint } = snapshot;
+    const expectedSourceFingerprint =
+      typeof req.body?.expectedSourceFingerprint === 'string' ? req.body.expectedSourceFingerprint.trim() : '';
+    if (mode === 'apply' && expectedSourceFingerprint && expectedSourceFingerprint !== sourceFingerprint) {
+      await ProductImportRunModel.findByIdAndUpdate(run._id, {
+        finishedAt: new Date(),
+        status: 'failed',
+        sourceFingerprint,
+        errorSummary: 'AA podatki so se po analizi spremenili.',
+        warnings: ['Pred uvozom je potrebna nova analiza.'],
+      });
+      return res.fail('AA podatki so se po analizi spremenili. Ponovno zaženi analizo pred uvozom.', 409);
+    }
+    const selection = source === 'aa_api' ? parseAAImportSelection(req.body?.selection) : undefined;
     const result =
       mode === 'apply'
-        ? await applyProductImportFromItems({ source, items })
+        ? await applyProductImportFromItems({ source, items, selection })
         : await analyzeProductImportFromItems({ source, items });
     const summary = result.summary;
     const warnings = buildWarnings(summary);
