@@ -50,12 +50,23 @@ export async function markInstallerAcceptanceEmailSent(workOrderId: string, empl
 
 async function recordAcceptance(workOrder: any, employeeId: string, via: 'system' | 'email' | 'admin') {
   const entry = (workOrder.installerAcceptances ?? []).find((item: any) => String(item.employeeId) === employeeId);
-  if (!entry) throw new InstallerAcceptanceError('Monter ni dodeljen temu projektu.', 403);
-  if (!entry.acceptedAt) {
+  if (!entry) throw new InstallerAcceptanceError('Monter ni dodeljen temu delovnemu nalogu.', 403);
+  const isNewAcceptance = !entry.acceptedAt;
+  if (isNewAcceptance) {
     entry.acceptedAt = new Date();
     entry.acceptedVia = via;
+  }
+  const allAssignedInstallersAccepted = (workOrder.installerAcceptances ?? []).length > 0
+    && (workOrder.installerAcceptances ?? []).every((item: any) => Boolean(item.acceptedAt));
+  const shouldPromoteStatus = workOrder.status === 'issued' && allAssignedInstallersAccepted;
+  if (shouldPromoteStatus) {
+    workOrder.status = 'confirmed';
+  }
+  if (isNewAcceptance || shouldPromoteStatus) {
     await workOrder.save();
+  }
 
+  if (isNewAcceptance) {
     const [employee, project] = await Promise.all([
       EmployeeModel.findById(employeeId).select({ name: 1 }).lean(),
       ProjectModel.findOne({ id: workOrder.projectId }),
@@ -63,8 +74,8 @@ async function recordAcceptance(workOrder: any, employeeId: string, via: 'system
     if (project) {
       addTimeline(project, {
         type: 'edit',
-        title: 'Monter sprejel projekt',
-        description: `${employee?.name ?? 'Monter'} je potrdil, da je projekt videl in sprejel.`,
+        title: 'Monter sprejel delovni nalog',
+        description: `${employee?.name ?? 'Monter'} je potrdil, da je delovni nalog videl in sprejel.`,
         timestamp: new Date().toLocaleString('sl-SI'),
         user: employee?.name ?? 'Monter',
         metadata: { workOrderId: String(workOrder._id), employeeId, via },
@@ -116,8 +127,14 @@ export async function confirmAllInstallerAssignmentsByAdmin(input: {
     entry.acceptedVia = 'admin';
     confirmedEmployeeIds.push(String(entry.employeeId));
   }
-  if (confirmedEmployeeIds.length > 0) {
+  const shouldPromoteStatus = workOrder.status === 'issued' && entries.every((entry: any) => Boolean(entry.acceptedAt));
+  if (shouldPromoteStatus) {
+    workOrder.status = 'confirmed';
+  }
+  if (confirmedEmployeeIds.length > 0 || shouldPromoteStatus) {
     await workOrder.save();
+  }
+  if (confirmedEmployeeIds.length > 0) {
     const [employees, project] = await Promise.all([
       EmployeeModel.find({ _id: { $in: confirmedEmployeeIds } }).select({ name: 1 }).lean(),
       ProjectModel.findOne({ id: workOrder.projectId }),
@@ -127,7 +144,7 @@ export async function confirmAllInstallerAssignmentsByAdmin(input: {
       addTimeline(project, {
         type: 'edit',
         title: 'Administrator ročno potrdil monterje',
-        description: `${input.actorName} je potrdil, da so projekt videli in sprejeli: ${names}.`,
+        description: `${input.actorName} je potrdil, da so delovni nalog videli in sprejeli: ${names}.`,
         timestamp: acceptedAt.toLocaleString('sl-SI'),
         user: input.actorName,
         metadata: { workOrderId: String(workOrder._id), employeeIds: confirmedEmployeeIds.join(','), via: 'admin' },

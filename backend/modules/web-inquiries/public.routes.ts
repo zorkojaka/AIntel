@@ -135,7 +135,7 @@ router.get('/installer-accept/:token', async (req: Request, res: Response) => {
       displayName: 'Monter (potrditev iz emaila)',
       employeeId: accepted.employeeId,
     });
-    return res.status(200).type('html').send(`<!doctype html><html lang="sl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Projekt sprejet</title></head><body style="margin:0;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a"><main style="max-width:560px;margin:80px auto;padding:32px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;text-align:center"><h1 style="color:#15803d">Projekt je sprejet</h1><p>Potrdili ste, da ste projekt videli in ga sprejemate.</p><p>To stran lahko zaprete.</p></main></body></html>`);
+    return res.status(200).type('html').send(`<!doctype html><html lang="sl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Delovni nalog sprejet</title></head><body style="margin:0;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a"><main style="max-width:560px;margin:80px auto;padding:32px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;text-align:center"><h1 style="color:#15803d">Delovni nalog je sprejet</h1><p>Potrdili ste, da ste delovni nalog videli in ga sprejemate.</p><p>To stran lahko zaprete.</p></main></body></html>`);
   } catch (error) {
     const status = error instanceof InstallerAcceptanceError ? error.statusCode : 500;
     const message = error instanceof InstallerAcceptanceError ? error.message : 'Potrditve ni bilo mogoče shraniti.';

@@ -15,7 +15,7 @@ const TEMPLATE_CATEGORY_OPTIONS = [
   { value: 'offer_send', label: 'Pošiljanje ponudbe' },
   { value: 'work_order_confirmation_send', label: 'Pošiljanje potrdila delovnega naloga' },
   { value: 'invoice_send', label: 'Pošiljanje računa' },
-  { value: 'installer_preparation_send', label: 'Email monterju (priprava montaže)' },
+  { value: 'installer_preparation_send', label: 'Delovni nalog monterju (izvedba)' },
   { value: 'booking_invite_send', label: 'Vabilo stranki k izbiri termina' },
   { value: 'booking_confirmation_send', label: 'Potrditev izbranega termina (stranki)' },
 ] as const;

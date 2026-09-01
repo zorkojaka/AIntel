@@ -61,6 +61,7 @@ test('vsak dodeljeni monter lahko projekt sprejme v sistemu ali prek svojega ema
     offerVersionId: new mongoose.Types.ObjectId().toString(),
     items: [],
     assignedEmployeeIds: [miha._id, ana._id],
+    status: 'issued',
   });
 
   const entries = await ensureInstallerAcceptanceTokens(workOrder);
@@ -72,6 +73,7 @@ test('vsak dodeljeni monter lahko projekt sprejme v sistemu ali prek svojega ema
     workOrderId: String(workOrder._id),
     employeeId: String(miha._id),
   });
+  assert.equal((await WorkOrderModel.findById(workOrder._id).lean())?.status, 'issued');
   const anaEntry = entries.find((entry) => String(entry.employeeId) === String(ana._id));
   assert.ok(anaEntry?.token);
   await acceptInstallerAssignmentByToken(anaEntry.token);
@@ -81,6 +83,8 @@ test('vsak dodeljeni monter lahko projekt sprejme v sistemu ali prek svojega ema
   assert.equal(updated?.installerAcceptances?.find((entry) => String(entry.employeeId) === String(miha._id))?.acceptedVia, 'system');
   assert.equal(updated?.installerAcceptances?.find((entry) => String(entry.employeeId) === String(ana._id))?.acceptedVia, 'email');
   assert.ok(updated?.installerAcceptances?.every((entry) => entry.acceptedAt));
+  assert.equal(updated?.status, 'confirmed');
+  assert.equal((await ProjectModel.findOne({ id: 'PRJ-ACCEPT' }).lean())?.status, 'ordered');
 });
 
 test('monter, ki ni dodeljen delovnemu nalogu, projekta ne more sprejeti', async () => {
@@ -120,6 +124,7 @@ test('administrator lahko ročno potrdi vse še nepotrjene dodeljene monterje', 
     offerVersionId: new mongoose.Types.ObjectId().toString(),
     items: [],
     assignedEmployeeIds: [miha._id, ana._id],
+    status: 'issued',
   });
 
   const result = await confirmAllInstallerAssignmentsByAdmin({
@@ -132,4 +137,32 @@ test('administrator lahko ročno potrdi vse še nepotrjene dodeljene monterje', 
   const updated = await WorkOrderModel.findById(workOrder._id).lean();
   assert.ok(updated?.installerAcceptances?.every((entry) => entry.acceptedAt));
   assert.ok(updated?.installerAcceptances?.every((entry) => entry.acceptedVia === 'admin'));
+  assert.equal(updated?.status, 'confirmed');
+});
+
+test('stari že potrjeni nalog brez statusa sprejet se popravi brez migracije', async () => {
+  const miha = await createInstaller('Miha');
+  const acceptedAt = new Date('2026-01-10T10:00:00.000Z');
+  const workOrder = await WorkOrderModel.create({
+    projectId: 'PRJ-LEGACY-ACCEPT',
+    offerVersionId: new mongoose.Types.ObjectId().toString(),
+    items: [],
+    assignedEmployeeIds: [miha._id],
+    installerAcceptances: [{
+      employeeId: miha._id,
+      token: 'a'.repeat(48),
+      acceptedAt,
+      acceptedVia: 'system',
+    }],
+    status: 'issued',
+  });
+
+  const result = await confirmAllInstallerAssignmentsByAdmin({
+    projectId: 'PRJ-LEGACY-ACCEPT',
+    workOrderId: String(workOrder._id),
+    actorName: 'Administrator',
+  });
+
+  assert.deepEqual(result.confirmedEmployeeIds, []);
+  assert.equal((await WorkOrderModel.findById(workOrder._id).lean())?.status, 'confirmed');
 });

@@ -201,6 +201,7 @@ export const DEFAULT_SETTINGS: SettingsDto = {
   defaultPaymentTerms: '',
   disclaimer: '',
   phaseProgressionMode: 'manual',
+  autoSendWorkOrderToInstallers: false,
   workOrderCompletionSignatureMode: 'optional',
 };
 

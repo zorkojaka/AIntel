@@ -1373,7 +1373,7 @@ export async function sendInstallerPreparationEmail(input: {
   appendSection(detailsLines, "Povezava", [
     input.projectLink ? `Projekt/delovni nalog: ${input.projectLink}` : null,
   ]);
-  appendSection(detailsLines, "Potrditev sprejema projekta", acceptanceLinks.map((entry) =>
+  appendSection(detailsLines, "Potrditev sprejema delovnega naloga", acceptanceLinks.map((entry) =>
     `${entry.name}: ${entry.url}`,
   ));
   const workOrderDetails = detailsLines.join("\n").trim();
@@ -1381,7 +1381,7 @@ export async function sendInstallerPreparationEmail(input: {
   const bodyLines: string[] = [
     `Pozdravljen ${primaryInstaller?.name || "monter"},`,
     "",
-    `Pošiljamo podatke za pripravo na montažo in potrditev termina za projekt ${projectIdentifier}${project.title ? ` - ${project.title}` : ""}.`,
+    `Pošiljamo delovni nalog za projekt ${projectIdentifier}${project.title ? ` - ${project.title}` : ""}.`,
     "",
     workOrderDetails,
     "",
@@ -1430,11 +1430,11 @@ export async function sendInstallerPreparationEmail(input: {
   const subjectFinal =
     sanitizeString(input.subject) ||
     renderedTemplate?.subject ||
-    `Priprava montaže: ${projectIdentifier}${schedule ? ` - ${schedule}` : ""}`;
+    `Delovni nalog: ${projectIdentifier}${schedule ? ` - ${schedule}` : ""}`;
   const bodyBase = input.body?.toString().trim() || renderedTemplate?.body || bodyLines.join("\n");
   const missingAcceptanceLinks = acceptanceLinks.filter((entry) => !bodyBase.includes(entry.url));
   const bodyWithoutFooter = missingAcceptanceLinks.length > 0
-    ? `${bodyBase}\n\nPotrditev sprejema projekta\n${missingAcceptanceLinks.map((entry) => `${entry.name}: ${entry.url}`).join("\n")}`
+    ? `${bodyBase}\n\nPotrditev sprejema delovnega naloga\n${missingAcceptanceLinks.map((entry) => `${entry.name}: ${entry.url}`).join("\n")}`
     : bodyBase;
   // Delovni nalog je zavezujoč za celotno dodeljeno ekipo. Tudi če je v
   // predogledu ročno spremenjeno polje »To«, naj vsak dodeljeni monter z
@@ -1458,7 +1458,7 @@ export async function sendInstallerPreparationEmail(input: {
   }
   const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
   const htmlFinal = renderCommunicationBodyHtml(bodyWithoutFooter, renderedFooterHtml, {
-    actions: acceptanceLinks.map((entry) => ({ href: entry.url, label: `${entry.name}: Sprejmi projekt` })),
+    actions: acceptanceLinks.map((entry) => ({ href: entry.url, label: `${entry.name}: Sprejmi delovni nalog` })),
   });
 
   const attachment = await resolveCommunicationAttachment({

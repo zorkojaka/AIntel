@@ -424,9 +424,9 @@ function mergeDraftItems(
 
 const STATUS_OPTIONS: { value: WorkOrderStatus; label: string }[] = [
   { value: "draft", label: "V pripravi" },
-  { value: "issued", label: "Izdan" },
+  { value: "issued", label: "Čaka na sprejem" },
+  { value: "confirmed", label: "Sprejet" },
   { value: "in-progress", label: "V delu" },
-  { value: "confirmed", label: "Potrjen" },
   { value: "completed", label: "Zaključen" },
 ];
 
@@ -639,6 +639,7 @@ export function ExecutionPanel({
   const [preparingInstallerEmailId, setPreparingInstallerEmailId] = useState<string | null>(null);
   const [sendingInstallerEmail, setSendingInstallerEmail] = useState(false);
   const [acceptingAssignmentId, setAcceptingAssignmentId] = useState<string | null>(null);
+  const [adminConfirmingAssignmentId, setAdminConfirmingAssignmentId] = useState<string | null>(null);
 
   const workOrders = useMemo(() => rawWorkOrders, [rawWorkOrders]);
 
@@ -724,13 +725,36 @@ export function ExecutionPanel({
         method: "POST",
         credentials: "include",
       });
-      await parseApiEnvelope(response, "Sprejema projekta ni bilo mogoče shraniti.");
-      toast.success("Projekt ste sprejeli.");
+      await parseApiEnvelope(response, "Sprejema delovnega naloga ni bilo mogoče shraniti.");
+      toast.success("Delovni nalog ste sprejeli.");
       await refreshAfterMutation();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Sprejema projekta ni bilo mogoče shraniti.");
+      toast.error(error instanceof Error ? error.message : "Sprejema delovnega naloga ni bilo mogoče shraniti.");
     } finally {
       setAcceptingAssignmentId(null);
+    }
+  };
+
+  const confirmAllInstallerAssignments = async (order: WorkOrder) => {
+    if (adminConfirmingAssignmentId) return;
+    if (!window.confirm("Potrdiš, da so vsi dodeljeni monterji videli in sprejeli delovni nalog?")) return;
+    setAdminConfirmingAssignmentId(order._id);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/work-orders/${order._id}/confirm-all-installer-assignments`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const result = await parseApiEnvelope<{ confirmedEmployeeIds: string[] }>(
+        response,
+        "Ročne potrditve monterjev ni bilo mogoče shraniti.",
+      );
+      const count = result?.confirmedEmployeeIds?.length ?? 0;
+      toast.success(count > 0 ? `Ročno potrjenih monterjev: ${count}.` : "Vsi dodeljeni monterji so že potrdili nalog.");
+      await refreshAfterMutation();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Ročne potrditve monterjev ni bilo mogoče shraniti.");
+    } finally {
+      setAdminConfirmingAssignmentId(null);
     }
   };
   const signatureMode = settings.workOrderCompletionSignatureMode ?? "optional";
@@ -1153,7 +1177,9 @@ export function ExecutionPanel({
           }
         : {
             workOrderId: orderId,
-            status: overrides?.status ?? (draft.status === "issued" ? "in-progress" : draft.status ?? order.status),
+            status:
+              overrides?.status ??
+              (draft.status === "issued" || draft.status === "confirmed" ? "in-progress" : draft.status ?? order.status),
             scheduledAt: draft.scheduledAt ?? null,
             scheduledConfirmedAt: draft.scheduledConfirmedAt ?? null,
             executionNote: draft.executionNote?.trim() ? draft.executionNote : null,
@@ -2312,9 +2338,13 @@ export function ExecutionPanel({
                   const requiresResign = confirmationState === "resign_required";
                   const activeConfirmation = getActiveSignedConfirmation(order);
                   const confirmationHistory = order.confirmationVersions ?? [];
-                  const workOrderBadgeClass = isOrderCompleted
+                  const workOrderBadgeClass = order.status === "completed"
                     ? "border-green-500/30 bg-green-500/10 text-green-700"
-                    : "border-orange-400/50 bg-orange-500/10 text-orange-700";
+                    : order.status === "in-progress"
+                      ? "border-blue-500/30 bg-blue-500/10 text-blue-700"
+                      : order.status === "confirmed"
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+                        : "border-amber-500/30 bg-amber-500/10 text-amber-700";
                   const isCompletingOrder = completingId === order._id;
                   const savingState = savingStates[order._id];
                   const isSavingOrder = savingState === "saving";
@@ -2340,11 +2370,12 @@ export function ExecutionPanel({
                     order.mainInstallerId ?? "",
                     ...(order.assignedEmployeeIds ?? []),
                   ].filter(Boolean)));
-                  const allInstallersAccepted = assignedInstallerIds.length > 0 && assignedInstallerIds.every((employeeId) =>
-                    (order.installerAcceptances ?? []).some(
-                      (entry) => entry.employeeId === employeeId && Boolean(entry.acceptedAt),
-                    ),
-                  );
+                  const installerAcceptances = assignedInstallerIds.map((employeeId) => ({
+                    employeeId,
+                    name: employeeNameById.get(employeeId) ?? "Monter",
+                    acceptance: (order.installerAcceptances ?? []).find((entry) => entry.employeeId === employeeId),
+                  }));
+                  const hasPendingInstallerAcceptance = installerAcceptances.some(({ acceptance }) => !acceptance?.acceptedAt);
                   return (
                     <div key={order._id} className="space-y-4">
                       {materialOrder ? (
@@ -2437,32 +2468,50 @@ export function ExecutionPanel({
                               </div>
                             </div>
                           </div>
-                          <div className="flex flex-wrap items-center justify-end gap-2">
-                            {assignedInstallerIds.length > 0 ? (
-                              <Badge
-                                className={
-                                  allInstallersAccepted
-                                    ? "border-green-500/30 bg-green-500/10 text-green-700"
-                                    : "border-amber-500/30 bg-amber-500/10 text-amber-700"
-                                }
-                              >
-                                {allInstallersAccepted ? "Projekt sprejet" : "Čaka na sprejem monterja"}
-                              </Badge>
+                          <div className="flex max-w-xl flex-col items-end gap-2">
+                            <Badge className={workOrderBadgeClass}>{statusOption.label}</Badge>
+                            {installerAcceptances.length > 0 ? (
+                              <div className="flex flex-wrap justify-end gap-2">
+                                {installerAcceptances.map(({ employeeId, name, acceptance }) => (
+                                  <Badge
+                                    key={employeeId}
+                                    variant="outline"
+                                    className={
+                                      acceptance?.acceptedAt
+                                        ? "border-green-500/30 bg-green-500/10 text-green-700"
+                                        : "border-amber-500/30 bg-amber-500/10 text-amber-700"
+                                    }
+                                  >
+                                    {name}: {acceptance?.acceptedAt ? "sprejel" : "še ni sprejel"}
+                                  </Badge>
+                                ))}
+                              </div>
                             ) : null}
-                            {currentInstallerIsAssigned && !currentInstallerAccepted && !isWorkOrderStatusCompleted ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                onClick={() => void acceptProjectAssignment(order)}
-                                disabled={acceptingAssignmentId === order._id}
-                              >
-                                {acceptingAssignmentId === order._id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                Sprejmi projekt
-                              </Button>
-                            ) : null}
-                            <Badge className={workOrderBadgeClass}>
-                              {isOrderCompleted ? "Zaključeno" : "V teku"}
-                            </Badge>
+                            <div className="flex flex-wrap justify-end gap-2">
+                              {currentInstallerIsAssigned && !currentInstallerAccepted && !isWorkOrderStatusCompleted ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() => void acceptProjectAssignment(order)}
+                                  disabled={acceptingAssignmentId === order._id}
+                                >
+                                  {acceptingAssignmentId === order._id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                  Sprejmi delovni nalog
+                                </Button>
+                              ) : null}
+                              {viewerRoles.includes("ADMIN") && hasPendingInstallerAcceptance && !isWorkOrderStatusCompleted ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => void confirmAllInstallerAssignments(order)}
+                                  disabled={adminConfirmingAssignmentId === order._id}
+                                >
+                                  {adminConfirmingAssignmentId === order._id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                  Ročno potrdi vse
+                                </Button>
+                              ) : null}
+                            </div>
                           </div>
                         </CardHeader>
                         <CardContent className="space-y-4">

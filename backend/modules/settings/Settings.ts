@@ -93,6 +93,7 @@ export interface Settings {
   disclaimer?: string;
   offerClauses?: LegacyOfferClause[];
   phaseProgressionMode?: 'automatic' | 'manual';
+  autoSendWorkOrderToInstallers?: boolean;
   workOrderCompletionSignatureMode?: WorkOrderCompletionSignatureMode;
 }
 
@@ -215,6 +216,7 @@ const SettingsSchema = new Schema<SettingsDocument>(
     disclaimer: { type: String },
     offerClauses: { type: [LegacyClauseSchema], default: [] },
     phaseProgressionMode: { type: String, enum: ['automatic', 'manual'], default: 'manual' },
+    autoSendWorkOrderToInstallers: { type: Boolean, default: false },
     workOrderCompletionSignatureMode: { type: String, enum: ['none', 'optional', 'required'], default: 'optional' }
   },
   {

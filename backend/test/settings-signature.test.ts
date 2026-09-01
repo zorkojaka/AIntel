@@ -87,3 +87,11 @@ test('neveljaven nacin ne povozi shranjenega', async () => {
     assert.equal((await getSettings(true)).invoiceSignatureMode, 'manual');
   });
 });
+
+test('nastavitev samodejnega pošiljanja delovnega naloga monterjem se shrani', async () => {
+  await withMongo(async () => {
+    assert.equal((await getSettings(true)).autoSendWorkOrderToInstallers, false);
+    await updateSettings({ autoSendWorkOrderToInstallers: true });
+    assert.equal((await getSettings(true)).autoSendWorkOrderToInstallers, true);
+  });
+});

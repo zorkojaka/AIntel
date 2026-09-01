@@ -39,6 +39,7 @@ import { createInvoiceFromClosing, refreshDraftInvoiceFromClosing } from '../ser
 import {
   buildActorDisplayName,
   recordOfferConfirmedCommunicationEvent,
+  sendInstallerPreparationEmail,
 } from '../../communication/services/communication.service';
 import { normalizeSupplierFields, normalizeSupplierKey } from '../services/supplier-normalization.service';
 import { OfferBookingModel } from '../../availability/offer-booking.model';
@@ -1511,23 +1512,47 @@ async function getPreparationReadiness(projectId: string, workOrderId: string) {
 
   const assignedEmployeeIds = Array.isArray(workOrder.assignedEmployeeIds) ? workOrder.assignedEmployeeIds : [];
   const hasAssignedTeam = assignedEmployeeIds.length > 0;
-  const acceptedEmployeeIds = new Set(
-    (workOrder.installerAcceptances ?? [])
-      .filter((entry: any) => Boolean(entry.acceptedAt))
-      .map((entry: any) => String(entry.employeeId)),
-  );
-  const hasInstallerAcceptance = hasAssignedTeam && assignedEmployeeIds.every((employeeId: any) =>
-    acceptedEmployeeIds.has(String(employeeId)),
-  );
   const hasSchedule = typeof workOrder.scheduledAt === 'string' && workOrder.scheduledAt.trim().length > 0;
   const hasConfirmedSchedule = Boolean(workOrder.scheduledConfirmedAt);
   const materialItems = materialOrders.flatMap((order: any) => (order.items ?? []).filter((item: any) => !item.isExtra));
   const materialReady = materialItems.length === 0 || materialItems.every(isMaterialItemReadyForIssue);
 
   return {
-    ready: hasAssignedTeam && hasInstallerAcceptance && hasSchedule && hasConfirmedSchedule && materialReady,
+    ready: hasAssignedTeam && hasSchedule && hasConfirmedSchedule && materialReady,
     workOrder,
   };
+}
+
+async function sendWorkOrderToInstallersOnIssue(projectId: string, workOrderId: string, req: Request) {
+  const settings = await getSettings();
+  if (!settings.autoSendWorkOrderToInstallers) return;
+
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  try {
+    await sendInstallerPreparationEmail({
+      projectId,
+      workOrderId,
+      projectLink: `${baseUrl}/projects/${encodeURIComponent(projectId)}`,
+      acceptanceBaseUrl: `${baseUrl}/api/public/installer-accept`,
+      confirmSend: true,
+      actorUserId: (req as any)?.context?.actorUserId ?? null,
+      actorDisplayName: buildActorDisplayName(req as any),
+    });
+  } catch (error) {
+    (req as any).log?.error({ err: error, projectId, workOrderId }, 'Automatic installer work order email failed');
+    const project = await ProjectModel.findOne({ id: projectId });
+    if (project) {
+      addTimeline(project, {
+        type: 'edit',
+        title: 'Samodejno pošiljanje delovnega naloga ni uspelo',
+        description: error instanceof Error ? error.message : 'Emaila monterjem ni bilo mogoče poslati.',
+        timestamp: new Date().toISOString(),
+        user: buildActorDisplayName(req as any),
+        metadata: { workOrderId },
+      });
+      await project.save();
+    }
+  }
 }
 
 async function moveProjectToExecution(params: {
@@ -1580,6 +1605,9 @@ export async function applyAutomaticPreparationProgression(
   }
   workOrder.status = 'issued';
   await workOrder.save();
+  if (req) {
+    await sendWorkOrderToInstallersOnIssue(projectId, workOrderId, req);
+  }
   return moveProjectToExecution({
     projectId,
     workOrderId,
@@ -2727,6 +2755,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
   let shouldRefreshResponseOrder = false;
   if (previousWorkOrderStatus !== 'issued' && nextWorkOrderStatus === 'issued') {
     await moveProjectToExecution({ projectId, workOrderId, req, mode: 'manual' });
+    await sendWorkOrderToInstallersOnIssue(projectId, workOrderId, req);
   } else {
     shouldRefreshResponseOrder = await applyAutomaticPreparationProgression(projectId, workOrderId, req);
   }
@@ -2774,7 +2803,6 @@ export async function acceptInstallerAssignment(req: Request, res: Response) {
       workOrderId: req.params.workOrderId,
       employeeId,
     });
-    await applyAutomaticPreparationProgression(req.params.projectId, req.params.workOrderId, req);
     return res.success({
       employeeId: result.employeeId,
       acceptedAt: result.acceptedAt.toISOString(),
@@ -2792,7 +2820,6 @@ export async function confirmAllInstallerAssignmentsByAdmin(req: Request, res: R
       workOrderId: req.params.workOrderId,
       actorName: resolveScheduleConfirmerLabel(req),
     });
-    await applyAutomaticPreparationProgression(req.params.projectId, req.params.workOrderId, req);
     return res.success({
       confirmedEmployeeIds: result.confirmedEmployeeIds,
       acceptedAt: result.acceptedAt.toISOString(),

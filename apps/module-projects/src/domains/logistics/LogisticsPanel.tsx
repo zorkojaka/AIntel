@@ -13,7 +13,6 @@ import type {
   WorkOrderStatus,
 } from "@aintel/shared/types/logistics";
 import type { Employee } from "@aintel/shared/types/employee";
-import type { CommunicationMessage } from "@aintel/shared/types/communication";
 import { Card, CardContent, CardHeader } from "../../components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Badge } from "../../components/ui/badge";
@@ -22,7 +21,6 @@ import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { MaterialOrderCard } from "./MaterialOrderCard";
 import { SupplierOrderEmailDialog } from "./SupplierOrderEmailDialog";
 import { PreparationPhotoThumbnails } from "./ExecutionDefinitionPanel";
@@ -30,10 +28,9 @@ import { normalizeMaterialStatusLabel } from "./materialStatus";
 import { useConfirmOffer } from "../core/useConfirmOffer";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
 import { downloadPdf } from "../../api";
-import { AlertTriangle, Camera, Check, ChevronDown, ChevronRight, Download, Loader2, Send, Trash2, X } from "lucide-react";
+import { AlertTriangle, Camera, Check, ChevronDown, ChevronRight, Download, Loader2, Trash2, X } from "lucide-react";
 import { useSettingsData } from "@aintel/module-settings";
 import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
-import { fetchInstallerPreparationMessages } from "../communication/api";
 
 interface LogisticsPanelProps {
   projectId: string;
@@ -67,7 +64,7 @@ const workOrderStatusLabels: Record<WorkOrderStatus, string> = {
   draft: "V pripravi",
   issued: "Izdan",
   "in-progress": "V delu",
-  confirmed: "Potrjen",
+  confirmed: "Sprejet",
   completed: "Zaključen",
 };
 
@@ -128,19 +125,6 @@ function getUnitLocationPhotoIndex(unit: Pick<WorkOrderExecutionUnit, "projectLo
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("sl-SI", { style: "currency", currency: "EUR" }).format(value);
-}
-
-function formatCommunicationTimestamp(value?: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return "";
-  return new Intl.DateTimeFormat("sl-SI", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
 }
 
 async function readJsonEnvelope(response: Response) {
@@ -347,36 +331,6 @@ function getPreparedUnitsSummary(item: LogisticsWorkOrder["items"][number]) {
   return `Enote: ${definedUnits}`;
 }
 
-function formatExecutionDetailsForEmail(items: LogisticsWorkOrder["items"] | undefined) {
-  const lines: string[] = [];
-  for (const item of items ?? []) {
-    const spec = ensureExecutionSpec(item.executionSpec);
-    const itemLines: string[] = [];
-    if (spec.locationSummary?.trim()) {
-      itemLines.push(`Lokacija: ${spec.locationSummary.trim()}`);
-    }
-    if (spec.instructions?.trim()) {
-      itemLines.push(`Navodila: ${spec.instructions.trim()}`);
-    }
-    for (const unit of spec.executionUnits ?? []) {
-      const unitParts = [
-        unit.label?.trim() || "Enota",
-        unit.location?.trim() ? `lokacija: ${unit.location.trim()}` : "",
-        unit.instructions?.trim() ? `navodila: ${unit.instructions.trim()}` : "",
-        unit.note?.trim() ? `opomba: ${unit.note.trim()}` : "",
-        unit.isCompleted ? "izvedeno" : "",
-      ].filter(Boolean);
-      if (unitParts.length > 0) {
-        itemLines.push(`- ${unitParts.join(", ")}`);
-      }
-    }
-    if (itemLines.length > 0) {
-      lines.push(`${item.name || "Postavka"}:`, ...itemLines);
-    }
-  }
-  return lines;
-}
-
 function isMeasurementLikeUnit(unit?: string | null) {
   const normalized = (unit ?? "")
     .trim()
@@ -456,23 +410,12 @@ export function LogisticsPanel({
   const [workOrderForm, setWorkOrderForm] = useState<Partial<LogisticsWorkOrder>>({});
   const [materialOrderForm, setMaterialOrderForm] = useState<MaterialOrder | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [currentEmployeeId, setCurrentEmployeeId] = useState<string | null>(null);
-  const [viewerRoles, setViewerRoles] = useState<string[]>([]);
-  const [acceptingAssignmentId, setAcceptingAssignmentId] = useState<string | null>(null);
-  const [adminConfirmingAssignmentId, setAdminConfirmingAssignmentId] = useState<string | null>(null);
   const [installerAvailability, setInstallerAvailability] = useState<InstallerAvailabilityEntry[]>([]);
   const [emailTouched, setEmailTouched] = useState(false);
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [locationTouched, setLocationTouched] = useState(false);
   const [savingWorkOrder, setSavingWorkOrder] = useState(false);
   const [issuingOrder, setIssuingOrder] = useState(false);
-  const [sendingInstallerEmail, setSendingInstallerEmail] = useState(false);
-  const [preparingInstallerEmail, setPreparingInstallerEmail] = useState(false);
-  const [installerEmailDialogOpen, setInstallerEmailDialogOpen] = useState(false);
-  const [installerEmailDraft, setInstallerEmailDraft] = useState({ to: "", cc: "", bcc: "", subject: "", body: "" });
-  const [installerEmailPreparationError, setInstallerEmailPreparationError] = useState<string | null>(null);
-  const [installerEmailMessages, setInstallerEmailMessages] = useState<CommunicationMessage[]>([]);
-  const [installerEmailStatusLoading, setInstallerEmailStatusLoading] = useState(false);
   const [advancingMaterialOrderId, setAdvancingMaterialOrderId] = useState<string | null>(null);
   const [materialDownloading, setMaterialDownloading] = useState<"PURCHASE_ORDER" | "DELIVERY_NOTE" | null>(null);
   const [workOrderDownloading, setWorkOrderDownloading] = useState<"WORK_ORDER" | "WORK_ORDER_CONFIRMATION" | null>(null);
@@ -521,25 +464,6 @@ export function LogisticsPanel({
     () => filteredWorkOrders.find((w) => w._id === selectedWorkOrderId) ?? filteredWorkOrders[0] ?? null,
     [filteredWorkOrders, selectedWorkOrderId],
   );
-  const refreshInstallerEmailStatus = useCallback(async () => {
-    if (!projectId || !selectedWorkOrder?._id) {
-      setInstallerEmailMessages([]);
-      return;
-    }
-    setInstallerEmailStatusLoading(true);
-    try {
-      const messages = await fetchInstallerPreparationMessages(projectId, selectedWorkOrder._id);
-      setInstallerEmailMessages(messages);
-    } catch {
-      setInstallerEmailMessages([]);
-    } finally {
-      setInstallerEmailStatusLoading(false);
-    }
-  }, [projectId, selectedWorkOrder?._id]);
-  useEffect(() => {
-    void refreshInstallerEmailStatus();
-  }, [refreshInstallerEmailStatus]);
-  const latestInstallerEmailMessage = installerEmailMessages[0] ?? null;
   const selectedMaterialOrder = useMemo(
     () =>
       selectedWorkOrder
@@ -656,28 +580,6 @@ export function LogisticsPanel({
       alive = false;
     };
   }, [projectId]);
-
-  useEffect(() => {
-    let alive = true;
-    const fetchCurrentEmployee = async () => {
-      try {
-        const response = await fetch("/api/auth/me", { credentials: "include" });
-        const payload = await parseApiEnvelope<any>(response, "Prijave ni mogoče preveriti.");
-        if (!alive) return;
-        setCurrentEmployeeId(typeof payload?.employee?.id === "string" ? payload.employee.id : null);
-        const roles = Array.isArray(payload?.employee?.roles) ? payload.employee.roles : [];
-        setViewerRoles(roles.filter((role: unknown): role is string => typeof role === "string"));
-      } catch {
-        if (!alive) return;
-        setCurrentEmployeeId(null);
-        setViewerRoles([]);
-      }
-    };
-    void fetchCurrentEmployee();
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (confirmedOffers.length === 0) {
@@ -1284,18 +1186,12 @@ export function LogisticsPanel({
   const canConfirmSchedule = Boolean(resolvedSchedule && !isTermConfirmed);
   const assignedTeamIds = workOrderForm.assignedEmployeeIds ?? selectedWorkOrder?.assignedEmployeeIds ?? [];
   const hasAssignedTeam = assignedTeamIds.length > 0;
-  const acceptedInstallerIds = new Set(
-    (selectedWorkOrder?.installerAcceptances ?? [])
-      .filter((entry) => Boolean(entry.acceptedAt))
-      .map((entry) => entry.employeeId),
-  );
-  const hasInstallerAcceptance = hasAssignedTeam && assignedTeamIds.every((employeeId) => acceptedInstallerIds.has(employeeId));
   const currentIssueMaterialOrder = materialOrderForm ?? selectedMaterialOrder ?? null;
   const currentIssueMaterialItems = (currentIssueMaterialOrder?.items ?? []).filter((item) => !item.isExtra);
   const isMaterialReadyForIssue =
     currentIssueMaterialItems.length === 0 || currentIssueMaterialItems.every((item) => isMaterialPreviewItemReady(item));
 
-  const canIssueOrder = Boolean(resolvedSchedule && hasAssignedTeam && hasInstallerAcceptance && isTermConfirmed);
+  const canIssueOrder = Boolean(resolvedSchedule && hasAssignedTeam && isTermConfirmed);
   const canIssueWorkOrder = canIssueOrder && isMaterialReadyForIssue;
   const isManualPhaseProgression = (settings.phaseProgressionMode ?? "manual") === "manual";
   const issueRequirements = [
@@ -1303,11 +1199,6 @@ export function LogisticsPanel({
       label: "Izvedbena ekipa",
       met: hasAssignedTeam,
       missingText: "Manjka izvedbena ekipa",
-    },
-    {
-      label: "Monter sprejel projekt",
-      met: hasInstallerAcceptance,
-      missingText: "Monter še ni sprejel projekta",
     },
     {
       label: "Termin izvedbe",
@@ -1353,164 +1244,6 @@ export function LogisticsPanel({
     const saved = await handleSaveWorkOrder(undefined, { scheduledConfirmedAt: null });
     if (saved) {
       toast.success("Potrditev termina odstranjena.");
-    }
-  };
-
-  const buildInstallerPreparationEmailDraft = (workOrder: LogisticsWorkOrder) => {
-    const installerIds = Array.from(new Set([
-      workOrder.mainInstallerId ?? "",
-      ...(Array.isArray(workOrder.assignedEmployeeIds) ? workOrder.assignedEmployeeIds : []),
-    ].filter(Boolean)));
-    const primaryInstaller = installerIds
-      .map((id) => employees.find((employee) => employee.id === id))
-      .find((employee) => employee?.email?.trim());
-    const installerEmails = installerIds
-      .map((id) => employees.find((employee) => employee.id === id)?.email?.trim().toLowerCase() ?? "")
-      .filter((email): email is string => Boolean(email));
-    const teamNames = installerIds
-      .map((id) => employees.find((employee) => employee.id === id)?.name)
-      .filter((name): name is string => Boolean(name?.trim()));
-    const projectLink = `${window.location.origin}/projects/${encodeURIComponent(projectId)}`;
-    const schedule = workOrder.scheduledAt ? new Date(workOrder.scheduledAt).toLocaleString("sl-SI") : "";
-    const itemLines = (workOrder.items ?? []).map((item) => {
-      const quantity = typeof item.quantity === "number" ? item.quantity : item.plannedQuantity ?? "";
-      return `- ${item.name || "Postavka"} (${quantity} ${item.unit || ""})`;
-    });
-    const executionLines = formatExecutionDetailsForEmail(workOrder.items);
-    const body = [
-      `Pozdravljen ${primaryInstaller?.name || "monter"},`,
-      "",
-      `Pošiljamo podatke za pripravo na montažo in potrditev termina za projekt ${projectId}.`,
-      "",
-      "Termin",
-      schedule ? `Termin izvedbe: ${schedule}` : "Termin izvedbe: ni določen",
-      teamNames.length > 0 ? `Ekipa: ${teamNames.join(", ")}` : "",
-      "",
-      "Stranka",
-      resolvedCustomerName,
-      resolvedCustomerAddress,
-      resolvedCustomerEmail ? `Email: ${resolvedCustomerEmail}` : "",
-      resolvedCustomerPhone ? `Telefon: ${resolvedCustomerPhone}` : "",
-      "",
-      "Opombe",
-      workOrder.notes ? `Delovni nalog: ${workOrder.notes}` : "",
-      workOrder.executionNote ? `Izvedba: ${workOrder.executionNote}` : "",
-      "",
-      "Postavke delovnega naloga",
-      ...itemLines,
-      "",
-      ...(executionLines.length > 0 ? ["Definicija izvedbe", ...executionLines, ""] : []),
-      "Povezava",
-      `Projekt/delovni nalog: ${projectLink}`,
-      "",
-      "Delovni nalog je priložen v PDF priponki.",
-      "",
-      "Lep pozdrav",
-    ].filter((line, index, lines) => line || lines[index - 1] !== "").join("\n");
-
-    return {
-      to: Array.from(new Set(installerEmails)).join(", "),
-      cc: "",
-      bcc: "",
-      subject: `Priprava montaže: ${projectId}${schedule ? ` - ${schedule}` : ""}`,
-      body,
-    };
-  };
-
-  const prepareInstallerPreparationEmail = async (workOrder: LogisticsWorkOrder) => {
-    setPreparingInstallerEmail(true);
-    try {
-      const saved = await handleSaveWorkOrder(undefined, undefined, {
-        refreshAfterSave: false,
-        showSuccessToast: false,
-      });
-      if (!saved) {
-        setInstallerEmailPreparationError("Podatkov delovnega naloga ni bilo mogoče shraniti. Emaila ni mogoče poslati.");
-        return;
-      }
-      const workOrderId = typeof saved === "object" && saved._id ? saved._id : workOrder._id;
-      if (!workOrderId) {
-        const message = "Delovni nalog ni pripravljen za pošiljanje emaila.";
-        setInstallerEmailPreparationError(message);
-        toast.error(message);
-        return;
-      }
-      const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrderId}/send-installer-preparation`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          previewOnly: true,
-          projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
-        }),
-      });
-      const payload = await readJsonEnvelope(response);
-      if (!payload.success) {
-        const message = payload.error ?? "Emaila monterju ni bilo mogoče pripraviti.";
-        setInstallerEmailPreparationError(message);
-        toast.error(message);
-        return;
-      }
-      const draft = payload.data?.draft ?? payload.draft;
-      setInstallerEmailDraft(draft ?? buildInstallerPreparationEmailDraft(typeof saved === "object" ? saved : workOrder));
-      setInstallerEmailPreparationError(null);
-      void refreshInstallerEmailStatus();
-    } catch (error) {
-      console.error(error);
-      const message = "Emaila monterju ni bilo mogoče pripraviti.";
-      setInstallerEmailPreparationError(message);
-      toast.error(message);
-    } finally {
-      setPreparingInstallerEmail(false);
-    }
-  };
-
-  const openInstallerPreparationEmailDialog = () => {
-    if (!selectedWorkOrder?._id || preparingInstallerEmail || sendingInstallerEmail) return;
-    const workOrder = selectedWorkOrder;
-    setInstallerEmailDraft(buildInstallerPreparationEmailDraft(workOrder));
-    setInstallerEmailPreparationError(null);
-    setInstallerEmailDialogOpen(true);
-    window.setTimeout(() => {
-      void prepareInstallerPreparationEmail(workOrder);
-    }, 0);
-  };
-
-  const handleSendInstallerPreparationEmail = async () => {
-    const workOrderId = workOrderForm._id ?? selectedWorkOrder?._id;
-    if (!workOrderId || sendingInstallerEmail) return;
-    setSendingInstallerEmail(true);
-    try {
-      const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrderId}/send-installer-preparation`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...installerEmailDraft,
-          confirmSend: true,
-          projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
-        }),
-      });
-      const payload = await readJsonEnvelope(response);
-      if (!payload.success) {
-        toast.error(payload.error ?? "Emaila monterju ni bilo mogoče poslati.");
-        return;
-      }
-      const loggingFailed = payload.data?.loggingFailed || payload.loggingFailed;
-      const sentMessage = payload.data?.message ?? payload.message;
-      if (sentMessage?.id) {
-        setInstallerEmailMessages((current) => [
-          sentMessage,
-          ...current.filter((message) => message.id !== sentMessage.id),
-        ]);
-      } else {
-        await refreshInstallerEmailStatus();
-      }
-      toast.success(loggingFailed ? "Email monterju je bil poslan, zapis v komunikacijah pa ni uspel." : "Email monterju je bil poslan.");
-      setInstallerEmailDialogOpen(false);
-    } catch (error) {
-      console.error(error);
-      toast.error("Emaila monterju ni bilo mogoče poslati.");
-    } finally {
-      setSendingInstallerEmail(false);
     }
   };
 
@@ -2314,65 +2047,6 @@ export function LogisticsPanel({
     const previewServiceCount = previewItems.filter((item) => isServiceWorkOrderItem(item)).length;
     const previewProductCount = previewItems.length - previewServiceCount;
     const previewDurationLabel = formatExecutionDuration(previewItems);
-    const currentInstallerIsAssigned = Boolean(currentEmployeeId) && previewTeamIds.includes(currentEmployeeId as string);
-    const currentInstallerAccepted = Boolean(currentEmployeeId) && (previewWorkOrder?.installerAcceptances ?? []).some(
-      (entry) => entry.employeeId === currentEmployeeId && Boolean(entry.acceptedAt),
-    );
-    const installerAcceptanceByEmployeeId = new Map(
-      (previewWorkOrder?.installerAcceptances ?? []).map((entry) => [entry.employeeId, entry]),
-    );
-    const previewInstallerAcceptances = previewTeamIds.map((employeeId) => {
-      const acceptance = installerAcceptanceByEmployeeId.get(employeeId);
-      const employee = employees.find((entry) => entry.id === employeeId);
-      return {
-        employeeId,
-        name: employee?.name || "Monter",
-        acceptedAt: acceptance?.acceptedAt ?? null,
-        acceptedVia: acceptance?.acceptedVia ?? null,
-        emailSentAt: acceptance?.emailSentAt ?? null,
-      };
-    });
-    const canAdminConfirmInstallers = viewerRoles.includes("ADMIN");
-    const hasPendingInstallerAcceptance = previewInstallerAcceptances.some((installer) => !installer.acceptedAt);
-
-    const acceptProjectAssignment = async () => {
-      if (!previewWorkOrder?._id || acceptingAssignmentId) return;
-      setAcceptingAssignmentId(previewWorkOrder._id);
-      try {
-        const response = await fetch(`/api/projects/${projectId}/work-orders/${previewWorkOrder._id}/accept-assignment`, {
-          method: "POST",
-          credentials: "include",
-        });
-        await parseApiEnvelope(response, "Sprejema projekta ni bilo mogoče shraniti.");
-        toast.success("Projekt ste sprejeli.");
-        await refreshAfterMutation(fetchSnapshot);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Sprejema projekta ni bilo mogoče shraniti.");
-      } finally {
-        setAcceptingAssignmentId(null);
-      }
-    };
-
-    const confirmAllInstallerAssignments = async () => {
-      if (!previewWorkOrder?._id || adminConfirmingAssignmentId) return;
-      if (!window.confirm("Potrdiš, da so vsi dodeljeni monterji videli in sprejeli projekt?")) return;
-      setAdminConfirmingAssignmentId(previewWorkOrder._id);
-      try {
-        const response = await fetch(`/api/projects/${projectId}/work-orders/${previewWorkOrder._id}/confirm-all-installer-assignments`, {
-          method: "POST",
-          credentials: "include",
-        });
-        const result = await parseApiEnvelope<{ confirmedEmployeeIds: string[] }>(response, "Ročne potrditve monterjev ni bilo mogoče shraniti.");
-        const count = result?.confirmedEmployeeIds?.length ?? 0;
-        toast.success(count > 0 ? `Ročno potrjenih monterjev: ${count}.` : "Vsi dodeljeni monterji so že potrjeni.");
-        await refreshAfterMutation(fetchSnapshot);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Ročne potrditve monterjev ni bilo mogoče shraniti.");
-      } finally {
-        setAdminConfirmingAssignmentId(null);
-      }
-    };
-
     const formatSchedule = (value?: string | null) =>
       value
         ? new Intl.DateTimeFormat("sl-SI", {
@@ -2490,73 +2164,6 @@ export function LogisticsPanel({
                 <div className="space-y-1">
                   <p className="text-muted-foreground">Ekipa</p>
                   <p className="font-medium">{previewTeamNames.length > 0 ? previewTeamNames.join(", ") : "Ni določena"}</p>
-                  {previewTeamIds.length > 0 ? (
-                    <div className="space-y-2">
-                      <Badge
-                        className={
-                          previewTeamIds.every((employeeId) =>
-                            (previewWorkOrder?.installerAcceptances ?? []).some(
-                              (entry) => entry.employeeId === employeeId && Boolean(entry.acceptedAt),
-                            ),
-                          )
-                            ? "border-green-500/30 bg-green-500/10 text-green-700"
-                            : "border-amber-500/30 bg-amber-500/10 text-amber-700"
-                        }
-                      >
-                        {previewTeamIds.every((employeeId) =>
-                          (previewWorkOrder?.installerAcceptances ?? []).some(
-                            (entry) => entry.employeeId === employeeId && Boolean(entry.acceptedAt),
-                          ),
-                        )
-                          ? "Projekt sprejet"
-                          : "Čaka na sprejem monterja"}
-                      </Badge>
-                      <div className="flex flex-wrap gap-2">
-                        {previewInstallerAcceptances.map((installer) => (
-                          <Badge
-                            key={installer.employeeId}
-                            variant="outline"
-                            className={
-                              installer.acceptedAt
-                                ? "border-green-500/30 bg-green-500/10 text-green-700"
-                                : "border-amber-500/30 bg-amber-500/10 text-amber-700"
-                            }
-                          >
-                            {installer.name}: {installer.acceptedAt
-                              ? `potrdil ${formatCommunicationTimestamp(installer.acceptedAt)}${installer.acceptedVia ? ` (${installer.acceptedVia === "email" ? "email" : installer.acceptedVia === "admin" ? "ročno potrdil admin" : "v sistemu"})` : ""}`
-                              : installer.emailSentAt
-                                ? "čaka na potrditev"
-                                : "email še ni poslan"}
-                          </Badge>
-                        ))}
-                      </div>
-                      {currentInstallerIsAssigned && !currentInstallerAccepted ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-8"
-                          onClick={() => void acceptProjectAssignment()}
-                          disabled={acceptingAssignmentId === previewWorkOrder?._id}
-                        >
-                          {acceptingAssignmentId === previewWorkOrder?._id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                          Sprejmi projekt
-                        </Button>
-                      ) : null}
-                      {canAdminConfirmInstallers && hasPendingInstallerAcceptance ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-8"
-                          onClick={() => void confirmAllInstallerAssignments()}
-                          disabled={adminConfirmingAssignmentId === previewWorkOrder?._id}
-                        >
-                          {adminConfirmingAssignmentId === previewWorkOrder?._id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
-                          Admin: ročno potrdi vse
-                        </Button>
-                      ) : null}
-                    </div>
-                  ) : null}
                 </div>
                 <div className="space-y-1">
                   <p className="text-muted-foreground">Število produktov</p>
@@ -2572,43 +2179,7 @@ export function LogisticsPanel({
                 </div>
               </div>
               {previewWorkOrder?._id ? (
-                <div className="mt-auto space-y-2 pt-2">
-                  <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                    {installerEmailStatusLoading ? (
-                      <span>Preverjam status emaila monterju ...</span>
-                    ) : latestInstallerEmailMessage ? (
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge
-                            className={
-                              latestInstallerEmailMessage.status === "sent"
-                                ? "border-green-500/30 bg-green-500/10 text-green-700"
-                                : "border-red-500/30 bg-red-500/10 text-red-700"
-                            }
-                          >
-                            {latestInstallerEmailMessage.status === "sent" ? "Email monterju poslan" : "Email monterju ni uspel"}
-                          </Badge>
-                          <span>{formatCommunicationTimestamp(latestInstallerEmailMessage.sentAt ?? latestInstallerEmailMessage.createdAt)}</span>
-                        </div>
-                        {latestInstallerEmailMessage.to.length > 0 ? <div>Prejemnik: {latestInstallerEmailMessage.to.join(", ")}</div> : null}
-                        {latestInstallerEmailMessage.subjectFinal ? <div>Zadeva: {latestInstallerEmailMessage.subjectFinal}</div> : null}
-                      </div>
-                    ) : (
-                      <span>Email monterju za ta delovni nalog še ni zabeležen kot poslan.</span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1.5"
-                    onClick={() => void openInstallerPreparationEmailDialog()}
-                    disabled={savingWorkOrder || preparingInstallerEmail || sendingInstallerEmail}
-                  >
-                    {preparingInstallerEmail || sendingInstallerEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    Pošlji email monterju
-                  </Button>
+                <div className="mt-auto flex flex-wrap justify-end gap-2 pt-2">
                   {renderPdfActionGroup(
                     "Predogled naloga",
                     () => openWorkOrderPdfPreview("WORK_ORDER"),
@@ -2617,7 +2188,6 @@ export function LogisticsPanel({
                     },
                     workOrderDownloading === "WORK_ORDER",
                   )}
-                  </div>
                 </div>
               ) : null}
             </CardContent>
@@ -3270,94 +2840,6 @@ export function LogisticsPanel({
         </CardContent>
       </Card>
       {renderExecutionDefinition(selectedWorkOrder)}
-
-      <Dialog open={installerEmailDialogOpen} onOpenChange={(open) => !sendingInstallerEmail && setInstallerEmailDialogOpen(open)}>
-        <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Pošlji email monterju</DialogTitle>
-            <DialogDescription>
-              Preglej podatke za pripravo montaže. Delovni nalog bo dodan kot PDF priponka.
-            </DialogDescription>
-          </DialogHeader>
-          {latestInstallerEmailMessage ? (
-            <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-              Zadnji status: {latestInstallerEmailMessage.status === "sent" ? "poslano" : "neuspešno"}{" "}
-              {formatCommunicationTimestamp(latestInstallerEmailMessage.sentAt ?? latestInstallerEmailMessage.createdAt)}
-              {latestInstallerEmailMessage.to.length > 0 ? `, prejemnik: ${latestInstallerEmailMessage.to.join(", ")}` : ""}
-            </div>
-          ) : null}
-          {preparingInstallerEmail ? (
-            <div className="flex items-center gap-2 rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Pripravljam končni osnutek emaila ...
-            </div>
-          ) : null}
-          {installerEmailPreparationError ? (
-            <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-700">
-              {installerEmailPreparationError}
-            </div>
-          ) : null}
-          <div className="grid gap-4 md:grid-cols-3">
-            <label className="space-y-2 text-sm">
-              <span className="font-medium">To</span>
-              <Input
-                value={installerEmailDraft.to}
-                onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, to: event.target.value }))}
-                disabled={preparingInstallerEmail || sendingInstallerEmail}
-              />
-            </label>
-            <label className="space-y-2 text-sm">
-              <span className="font-medium">Cc</span>
-              <Input
-                value={installerEmailDraft.cc}
-                onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, cc: event.target.value }))}
-                disabled={preparingInstallerEmail || sendingInstallerEmail}
-              />
-            </label>
-            <label className="space-y-2 text-sm">
-              <span className="font-medium">Bcc</span>
-              <Input
-                value={installerEmailDraft.bcc}
-                onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, bcc: event.target.value }))}
-                disabled={preparingInstallerEmail || sendingInstallerEmail}
-              />
-            </label>
-          </div>
-          <label className="space-y-2 text-sm">
-            <span className="font-medium">Zadeva</span>
-            <Input
-              value={installerEmailDraft.subject}
-              onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, subject: event.target.value }))}
-              disabled={preparingInstallerEmail || sendingInstallerEmail}
-            />
-          </label>
-          <label className="space-y-2 text-sm">
-            <span className="font-medium">Vsebina</span>
-            <Textarea
-              rows={16}
-              value={installerEmailDraft.body}
-              onChange={(event) => setInstallerEmailDraft((prev) => ({ ...prev, body: event.target.value }))}
-              disabled={preparingInstallerEmail || sendingInstallerEmail}
-            />
-          </label>
-          <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-            Priloga: delovni nalog PDF
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setInstallerEmailDialogOpen(false)} disabled={sendingInstallerEmail}>
-              Prekliči
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void handleSendInstallerPreparationEmail()}
-              disabled={Boolean(installerEmailPreparationError) || preparingInstallerEmail || sendingInstallerEmail || !installerEmailDraft.to.trim() || !installerEmailDraft.subject.trim() || !installerEmailDraft.body.trim()}
-            >
-              {sendingInstallerEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              Pošlji
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {photoContext ? (
         <PhotoManager
