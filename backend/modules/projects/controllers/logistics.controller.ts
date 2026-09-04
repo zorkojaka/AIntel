@@ -1911,17 +1911,20 @@ export async function updateProjectExecutionDefinition(req: Request, res: Respon
   }
 }
 
-export async function confirmOffer(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { projectId, offerId } = req.params;
-    const [offer, project] = await Promise.all([
-      OfferVersionModel.findOne({ _id: offerId, projectId }),
-      ProjectModel.findOne({ id: projectId }),
-    ]);
+export async function confirmOfferForProject(input: {
+  projectId: string;
+  offerId: string;
+  actorDisplayName: string;
+}) {
+  const { projectId, offerId } = input;
+  const [offer, project] = await Promise.all([
+    OfferVersionModel.findOne({ _id: offerId, projectId }),
+    ProjectModel.findOne({ id: projectId }),
+  ]);
 
-    if (!offer || !project) {
-      return res.fail('Ponudba ni najdena.', 404);
-    }
+  if (!offer || !project) {
+    return null;
+  }
 
     const projectClient = await resolveProjectClient(project);
     const previousStatus = offer.status;
@@ -2009,28 +2012,41 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       items: logisticsItems,
     });
 
-      if (updatedProject) {
-        addTimeline(updatedProject, {
-          type: 'offer',
-          title: previousStatus === 'cancelled' ? 'Ponovno potrjena ponudba' : 'Ponudba potrjena',
-          description: `Verzija ${offer.title || offer.baseTitle || offerId}`,
-          timestamp: new Date().toISOString(),
-          user: 'system',
-        });
-        await updatedProject.save();
-      }
+  if (updatedProject) {
+    addTimeline(updatedProject, {
+      type: 'offer',
+      title: previousStatus === 'cancelled' ? 'Ponovno potrjena ponudba' : 'Ponudba potrjena',
+      description: `Verzija ${offer.title || offer.baseTitle || offerId}`,
+      timestamp: new Date().toISOString(),
+      user: 'system',
+    });
+    await updatedProject.save();
+  }
 
-      await recordOfferConfirmedCommunicationEvent({
-        projectId,
-        offerId,
-        title: previousStatus === 'cancelled' ? 'Ponudba ponovno potrjena' : 'Ponudba potrjena',
-        description: `Verzija ${offer.title || offer.baseTitle || offerId}`,
-        user: buildActorDisplayName(req as any),
-      });
+  await recordOfferConfirmedCommunicationEvent({
+    projectId,
+    offerId,
+    title: previousStatus === 'cancelled' ? 'Ponudba ponovno potrjena' : 'Ponudba potrjena',
+    description: `Verzija ${offer.title || offer.baseTitle || offerId}`,
+    user: input.actorDisplayName,
+  });
 
-      const finalProject = updatedProject ?? project;
-    const payload = await serializeProjectDetails(finalProject, projectClient);
-    return res.success(payload);
+  const finalProject = updatedProject ?? project;
+  const payload = await serializeProjectDetails(finalProject, projectClient);
+  return { payload, workOrder };
+}
+
+export async function confirmOffer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await confirmOfferForProject({
+      projectId: req.params.projectId,
+      offerId: req.params.offerId,
+      actorDisplayName: buildActorDisplayName(req as any),
+    });
+    if (!result) {
+      return res.fail('Ponudba ni najdena.', 404);
+    }
+    return res.success(result.payload);
   } catch (err) {
     next(err);
   }

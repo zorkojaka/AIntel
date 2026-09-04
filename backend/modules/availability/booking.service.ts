@@ -4,7 +4,14 @@ import { WorkOrderModel } from '../projects/schemas/work-order';
 import { OfferVersionModel } from '../projects/schemas/offer-version';
 import { EmployeeModel } from '../employees/schemas/employee';
 import { ProjectModel, newTimelineEventId } from '../projects/schemas/project';
-import { sendBookingConfirmationEmail, sendBookingInviteEmail } from '../communication/services/communication.service';
+import {
+  sendBookingConfirmationEmail,
+  sendBookingInviteEmail,
+  sendInstallerPreparationEmail,
+} from '../communication/services/communication.service';
+import { ensureInstallerAcceptanceTokens } from '../projects/services/installer-acceptance.service';
+import { ensureRuleTask } from '../scheduler/rules';
+import { UserModel } from '../users/schemas/user';
 import { getConfig } from '../settings/config/config-store.service';
 import {
   AvailabilityError,
@@ -52,6 +59,71 @@ async function bookingPageUrl(): Promise<string> {
 
 function bookingLinkFor(token: string, baseUrl: string): string {
   return `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}t=${token}`;
+}
+
+function bookingApplicationOrigin(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).origin;
+  } catch {
+    return 'https://dev.inteligent.si';
+  }
+}
+
+async function notifyProjectTeamAboutChosenBooking(input: {
+  projectId: string;
+  offerId: string;
+  workOrder: any;
+  scheduledAt: string;
+}) {
+  const project = await ProjectModel.findOne({ id: input.projectId });
+  if (!project) return;
+
+  const salesUser = project.salesUserId
+    ? await UserModel.findById(project.salesUserId).select({ employeeId: 1 }).lean()
+    : null;
+  const assigneeEmployeeId = salesUser?.employeeId ?? undefined;
+  const projectLabel = project.code || project.title || project.id;
+  const formattedSchedule = new Date(input.scheduledAt).toLocaleString('sl-SI');
+
+  try {
+    await ensureRuleTask({
+      ruleKey: 'booking.customer_selected',
+      dedupeKey: `booking.customer_selected:${input.offerId}`,
+      type: 'booking.customer_selected',
+      title: `Stranka je izbrala termin — ${projectLabel}`,
+      description: `Termin montaže: ${formattedSchedule}. Ponudba je potrjena in projekt je v fazi priprave.`,
+      subject: { kind: 'project', id: project._id, label: projectLabel },
+      ...(assigneeEmployeeId ? { assigneeEmployeeId } : { assigneeRole: 'SALES' }),
+      priority: 'high',
+    });
+  } catch (error) {
+    console.error('Obvestila prodajalcu o izbranem terminu ni bilo mogoče ustvariti.', error);
+  }
+
+  try {
+    await ensureInstallerAcceptanceTokens(input.workOrder);
+    const origin = bookingApplicationOrigin(await bookingPageUrl());
+    await sendInstallerPreparationEmail({
+      projectId: input.projectId,
+      workOrderId: String(input.workOrder._id),
+      projectLink: `${origin}/projects/${encodeURIComponent(input.projectId)}`,
+      acceptanceBaseUrl: `${origin}/api/public/installer-accept`,
+      confirmSend: true,
+      actorDisplayName: 'Sistem — izbira termina',
+    });
+  } catch (error) {
+    console.error('Obvestila monterjem o izbranem terminu ni bilo mogoče poslati.', error);
+    project.timeline.push({
+      id: newTimelineEventId(),
+      type: 'edit',
+      title: 'Obvestilo monterjem ni bilo poslano',
+      description: error instanceof Error ? error.message : 'Emaila monterjem ni bilo mogoče poslati.',
+      timestamp: new Date().toISOString(),
+      user: 'Sistem',
+      metadata: { workOrderId: String(input.workOrder._id) },
+    } as any);
+    await project.save();
+  }
 }
 
 type EmployeeFreeDay = FreeDay & { employeeId: string };
@@ -360,8 +432,6 @@ export async function chooseBookingDay(token: string, date: unknown): Promise<{ 
     const scheduledAt = `${chosen.date}T${String(chosen.startHour).padStart(2, '0')}:00:00`;
     offerBooking.scheduledAt = scheduledAt;
     offerBooking.selectedEmployeeId = chosen.employeeId as any;
-    offerBooking.selectedAt = new Date();
-    offerBooking.bookingToken = undefined;
     await offerBooking.save();
 
     await ProjectModel.updateOne(
@@ -381,6 +451,40 @@ export async function chooseBookingDay(token: string, date: unknown): Promise<{ 
         },
       },
     );
+
+    // Izbira termina je hkrati sprejem poslane ponudbe. Uporabimo isto domensko
+    // operacijo kot ročna potrditev, da se enako ustvarijo nalogi, zneski in faza.
+    const { confirmOfferForProject } = await import('../projects/controllers/logistics.controller');
+    const confirmation = await confirmOfferForProject({
+      projectId: offerBooking.projectId,
+      offerId: String(offerBooking.offerVersionId),
+      actorDisplayName: 'Stranka (spletna izbira termina)',
+    });
+    if (!confirmation) {
+      throw new AvailabilityError('Ponudbe ni bilo mogoče potrditi.', 404);
+    }
+
+    offerBooking.selectedAt = new Date();
+    offerBooking.bookingToken = undefined;
+    await offerBooking.save();
+
+    await notifyProjectTeamAboutChosenBooking({
+      projectId: offerBooking.projectId,
+      offerId: String(offerBooking.offerVersionId),
+      workOrder: confirmation.workOrder,
+      scheduledAt,
+    });
+
+    try {
+      await sendBookingConfirmationEmail({
+        projectId: offerBooking.projectId,
+        workOrderId: String(confirmation.workOrder._id),
+        scheduledAt,
+        durationHours: bookingSlotHours(offerBooking.durationHours),
+      });
+    } catch (error) {
+      console.error('Potrditvenega e-maila termina ni bilo mogoče poslati.', error);
+    }
     return { scheduledAt };
   }
 
@@ -429,6 +533,13 @@ export async function chooseBookingDay(token: string, date: unknown): Promise<{ 
       },
     },
   );
+
+  await notifyProjectTeamAboutChosenBooking({
+    projectId: workOrder.projectId,
+    offerId: String(workOrder.offerVersionId),
+    workOrder,
+    scheduledAt,
+  });
 
   // Potrditveni e-mail z gumbom »Dodaj v koledar« — napaka pri pošiljanju ne sme
   // razveljaviti izbire termina (ta je že zapisana in potrjena).
