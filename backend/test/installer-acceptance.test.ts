@@ -83,7 +83,7 @@ test('vsak dodeljeni monter lahko projekt sprejme v sistemu ali prek svojega ema
   assert.equal(updated?.installerAcceptances?.find((entry) => String(entry.employeeId) === String(miha._id))?.acceptedVia, 'system');
   assert.equal(updated?.installerAcceptances?.find((entry) => String(entry.employeeId) === String(ana._id))?.acceptedVia, 'email');
   assert.ok(updated?.installerAcceptances?.every((entry) => entry.acceptedAt));
-  assert.equal(updated?.status, 'confirmed');
+  assert.equal(updated?.status, 'issued', 'sprejem monterjev je samo informativna oznaka');
   assert.equal((await ProjectModel.findOne({ id: 'PRJ-ACCEPT' }).lean())?.status, 'ordered');
 });
 
@@ -137,10 +137,10 @@ test('administrator lahko ročno potrdi vse še nepotrjene dodeljene monterje', 
   const updated = await WorkOrderModel.findById(workOrder._id).lean();
   assert.ok(updated?.installerAcceptances?.every((entry) => entry.acceptedAt));
   assert.ok(updated?.installerAcceptances?.every((entry) => entry.acceptedVia === 'admin'));
-  assert.equal(updated?.status, 'confirmed');
+  assert.equal(updated?.status, 'issued', 'ročna potrditev ne spremeni statusa naloga');
 });
 
-test('stari že potrjeni nalog brez statusa sprejet se popravi brez migracije', async () => {
+test('stari sprejem monterja ne spremeni statusa delovnega naloga', async () => {
   const miha = await createInstaller('Miha');
   const acceptedAt = new Date('2026-01-10T10:00:00.000Z');
   const workOrder = await WorkOrderModel.create({
@@ -164,5 +164,5 @@ test('stari že potrjeni nalog brez statusa sprejet se popravi brez migracije', 
   });
 
   assert.deepEqual(result.confirmedEmployeeIds, []);
-  assert.equal((await WorkOrderModel.findById(workOrder._id).lean())?.status, 'confirmed');
+  assert.equal((await WorkOrderModel.findById(workOrder._id).lean())?.status, 'issued');
 });

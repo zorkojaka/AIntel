@@ -424,8 +424,8 @@ function mergeDraftItems(
 
 const STATUS_OPTIONS: { value: WorkOrderStatus; label: string }[] = [
   { value: "draft", label: "V pripravi" },
-  { value: "issued", label: "Čaka na sprejem" },
-  { value: "confirmed", label: "Sprejet" },
+  { value: "issued", label: "Izdan" },
+  { value: "confirmed", label: "Potrjen" },
   { value: "in-progress", label: "V delu" },
   { value: "completed", label: "Zaključen" },
 ];

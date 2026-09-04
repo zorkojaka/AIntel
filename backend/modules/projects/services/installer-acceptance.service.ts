@@ -55,14 +55,6 @@ async function recordAcceptance(workOrder: any, employeeId: string, via: 'system
   if (isNewAcceptance) {
     entry.acceptedAt = new Date();
     entry.acceptedVia = via;
-  }
-  const allAssignedInstallersAccepted = (workOrder.installerAcceptances ?? []).length > 0
-    && (workOrder.installerAcceptances ?? []).every((item: any) => Boolean(item.acceptedAt));
-  const shouldPromoteStatus = workOrder.status === 'issued' && allAssignedInstallersAccepted;
-  if (shouldPromoteStatus) {
-    workOrder.status = 'confirmed';
-  }
-  if (isNewAcceptance || shouldPromoteStatus) {
     await workOrder.save();
   }
 
@@ -127,11 +119,7 @@ export async function confirmAllInstallerAssignmentsByAdmin(input: {
     entry.acceptedVia = 'admin';
     confirmedEmployeeIds.push(String(entry.employeeId));
   }
-  const shouldPromoteStatus = workOrder.status === 'issued' && entries.every((entry: any) => Boolean(entry.acceptedAt));
-  if (shouldPromoteStatus) {
-    workOrder.status = 'confirmed';
-  }
-  if (confirmedEmployeeIds.length > 0 || shouldPromoteStatus) {
+  if (confirmedEmployeeIds.length > 0) {
     await workOrder.save();
   }
   if (confirmedEmployeeIds.length > 0) {
