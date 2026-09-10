@@ -4,6 +4,8 @@ export interface ProductDocument extends Document {
   externalSource?: string;
   externalId?: string;
   externalKey?: string;
+  sourceImportedAt?: Date;
+  sourceLastSyncedAt?: Date;
   ime: string;
   kategorija?: string;
   categorySlugs: string[];
@@ -89,6 +91,8 @@ const ProductSchema = new Schema<ProductDocument>(
     externalSource: { type: String, trim: true, default: '' },
     externalId: { type: String, trim: true, default: '' },
     externalKey: { type: String, trim: true, unique: true, sparse: true },
+    sourceImportedAt: { type: Date, default: undefined },
+    sourceLastSyncedAt: { type: Date, default: undefined },
     ime: { type: String, required: true, trim: true },
     kategorija: { type: String, trim: true, default: '' },
     categorySlugs: { type: [String], default: [] },

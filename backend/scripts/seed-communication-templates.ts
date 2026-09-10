@@ -12,13 +12,13 @@ import { CommunicationTemplateModel } from '../modules/communication/schemas/tem
 const DEFAULTS = [
   {
     key: 'monter-priprava-privzeta',
-    name: 'Email monterju — priprava montaže',
+    name: 'Delovni nalog monterju — izvedba',
     category: 'installer_preparation_send',
-    subjectTemplate: 'Priprava montaže: {{workOrder.identifier}}',
+    subjectTemplate: 'Delovni nalog: {{workOrder.identifier}}',
     bodyTemplate: [
       'Pozdravljen {{installer.name}},',
       '',
-      'pošiljamo podatke za pripravo na montažo in potrditev termina za projekt {{project.name}}.',
+      'pošiljamo delovni nalog za projekt {{project.name}}.',
       '',
       '{{workOrder.details}}',
       '',

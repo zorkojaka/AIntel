@@ -3,6 +3,7 @@ import { ProductModel } from '../../cenik/product.model';
 import { WorkOrderModel, type WorkOrderDocument } from '../../projects/schemas/work-order';
 import { OfferVersionModel } from '../../projects/schemas/offer-version';
 import { EmployeeServiceRateModel } from '../../employee-profiles/schemas/employee-service-rate';
+import { EmployeeProfileModel } from '../../employee-profiles/schemas/employee-profile';
 import { FinanceSnapshotModel, type FinanceSnapshotDocument } from '../schemas/finance-snapshot';
 
 const financeSnapshotDebugEnabled =
@@ -370,6 +371,7 @@ export async function createFinanceSnapshot(params: {
   const employeeEarningsMap = new Map<string, number>();
   const rateByEmployeeProduct = new Map<string, RateValue | null>();
   const rateLookupProductByProductId = new Map<string, Promise<RateLookupProduct>>();
+  const customServiceRateByEmployee = new Map<string, RateValue | null>();
 
   const getRateForEmployeeProduct = async (employeeId: string, serviceProductId: string) => {
     if (!rateLookupProductByProductId.has(serviceProductId)) {
@@ -407,6 +409,20 @@ export async function createFinanceSnapshot(params: {
     return normalizedRate;
   };
 
+  const getRateForCustomService = async (employeeId: string) => {
+    if (customServiceRateByEmployee.has(employeeId)) {
+      return customServiceRateByEmployee.get(employeeId) ?? null;
+    }
+    const profile = isObjectId(employeeId)
+      ? await EmployeeProfileModel.findOne({ employeeId }).select('profitSharePercent').lean()
+      : null;
+    const rate = profile
+      ? { defaultPercent: toNumber(profile.profitSharePercent, 0), overridePrice: null }
+      : null;
+    customServiceRateByEmployee.set(employeeId, rate);
+    return rate;
+  };
+
   const snapshotItems = (invoiceVersion.items ?? []).map((item, index) => {
     const resolvedProductId = resolvedProductIds[index];
     debugSnapshotLog('[Snapshot] Looking up product:', item.productId);
@@ -436,9 +452,8 @@ export async function createFinanceSnapshot(params: {
     const totalSale = toNumber(item.totalWithoutVat, round(quantity * unitPriceSale));
     const totalPurchase = round(quantity * unitPricePurchase);
     const margin = round(totalSale - totalPurchase);
-    const hasServiceWorkOrderItem = productId
-      ? getMatchingServiceWorkOrderItems(workOrders as Array<Pick<WorkOrderDocument, 'items'>>, item, productId).length > 0
-      : false;
+    const hasServiceWorkOrderItem =
+      getMatchingServiceWorkOrderItems(workOrders as Array<Pick<WorkOrderDocument, 'items'>>, item, productId).length > 0;
     const isService = Boolean(product?.isService || hasServiceWorkOrderItem);
 
     if (!product) {
@@ -463,7 +478,7 @@ export async function createFinanceSnapshot(params: {
   });
 
   for (const snapshotItem of snapshotItems) {
-    if (!snapshotItem.isService || !snapshotItem.productId) {
+    if (!snapshotItem.isService) {
       continue;
     }
 
@@ -485,7 +500,7 @@ export async function createFinanceSnapshot(params: {
         )
       : getServiceWorkOrderItemsForProduct(
           workOrders as Array<Pick<WorkOrderDocument, 'items'>>,
-          snapshotItem.productId
+          snapshotItem.productId ?? ''
         );
 
     for (const workOrderItem of workOrderItems) {
@@ -514,10 +529,12 @@ export async function createFinanceSnapshot(params: {
           continue;
         }
 
-        const rate = await getRateForEmployeeProduct(completedByEmployeeId, snapshotItem.productId);
+        const rate = snapshotItem.productId
+          ? await getRateForEmployeeProduct(completedByEmployeeId, snapshotItem.productId)
+          : await getRateForCustomService(completedByEmployeeId);
         if (!rate) {
           console.warn(
-            `Employee service rate not found for employee ${completedByEmployeeId} and service ${snapshotItem.productId}`
+            `Employee service rate not found for employee ${completedByEmployeeId} and service ${snapshotItem.productId ?? 'custom'}`
           );
           employeeEarningsMap.set(completedByEmployeeId, employeeEarningsMap.get(completedByEmployeeId) ?? 0);
           continue;
@@ -540,10 +557,12 @@ export async function createFinanceSnapshot(params: {
           continue;
         }
 
-        const rate = await getRateForEmployeeProduct(completedByEmployeeId, snapshotItem.productId);
+        const rate = snapshotItem.productId
+          ? await getRateForEmployeeProduct(completedByEmployeeId, snapshotItem.productId)
+          : await getRateForCustomService(completedByEmployeeId);
         if (!rate) {
           console.warn(
-            `Employee service rate not found for employee ${completedByEmployeeId} and service ${snapshotItem.productId}`
+            `Employee service rate not found for employee ${completedByEmployeeId} and service ${snapshotItem.productId ?? 'custom'}`
           );
           employeeEarningsMap.set(completedByEmployeeId, employeeEarningsMap.get(completedByEmployeeId) ?? 0);
           continue;

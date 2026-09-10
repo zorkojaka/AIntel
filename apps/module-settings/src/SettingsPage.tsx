@@ -1196,6 +1196,25 @@ const SystemSettingsSection: React.FC<SystemSettingsSectionProps> = ({
       </label>
     </Card>
 
+    <Card title="Izdaja delovnega naloga">
+      <label className="flex max-w-2xl cursor-pointer items-start gap-3">
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4"
+          checked={form.autoSendWorkOrderToInstallers ?? false}
+          onChange={(event) => onFieldChange('autoSendWorkOrderToInstallers', event.target.checked)}
+        />
+        <span>
+          <span className="block text-sm font-medium text-foreground">
+            Ob izdaji avtomatsko pošlji delovni nalog vsem dodeljenim monterjem
+          </span>
+          <span className="mt-1 block text-sm text-muted-foreground">
+            Vsak monter z nastavljenim emailom prejme isti delovni nalog in svojo povezavo za sprejem.
+          </span>
+        </span>
+      </label>
+    </Card>
+
     <div className="flex flex-wrap items-center gap-3">
       <Button type="submit" disabled={saving || loading}>
         {saving ? 'Shranjujem ...' : 'Shrani sistem'}

@@ -11,6 +11,7 @@ import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
 type OfferItemsMobileItem = {
   id: string;
   productId: string | null;
+  isService: boolean;
   name: string;
   quantity: number;
   unit: string;
@@ -44,7 +45,7 @@ type OfferItemsMobileProps = {
   onDeleteItem: (id: string) => void;
   onMoveItem: (id: string, direction: -1 | 1) => void;
   onSelectProduct: (rowId: string, product: PriceListSearchItem, rowIndex: number) => void;
-  onSelectCustomItem: (rowId: string) => void;
+  onSelectCustomItem: (rowId: string, isService: boolean) => void;
   renderItemActions?: (item: OfferItemsMobileItem, rowIndex: number) => ReactNode;
   renderSuggestions?: (item: OfferItemsMobileItem, rowIndex: number) => ReactNode;
 };
@@ -152,9 +153,9 @@ export function OfferItemsMobile({
                     placeholder="Naziv ali iskanje v ceniku"
                     inputClassName="min-w-0 h-10 text-base font-semibold"
                     onChange={(name) => {
-                      onUpdateItem(item.id, { name, productId: null, imageUrl: undefined });
+                      onUpdateItem(item.id, { name, productId: null, isService: false, imageUrl: undefined });
                     }}
-                    onCustomSelected={() => onSelectCustomItem(item.id)}
+                    onCustomSelected={(isService) => onSelectCustomItem(item.id, isService)}
                     onProductSelected={(product) => onSelectProduct(item.id, product, index)}
                   />
                 </div>

@@ -76,6 +76,7 @@ export interface SettingsDto {
   defaultPaymentTerms?: string;
   disclaimer?: string;
   phaseProgressionMode?: 'automatic' | 'manual';
+  autoSendWorkOrderToInstallers?: boolean;
   workOrderCompletionSignatureMode?: 'none' | 'optional' | 'required';
   orsApiConfigured?: boolean;
 }

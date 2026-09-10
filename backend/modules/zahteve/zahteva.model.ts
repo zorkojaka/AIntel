@@ -20,6 +20,9 @@ export interface ZahtevaDocument extends Document {
       lokacije: Array<{
         id: string;
         ime: string;
+        opomba?: string;
+        projectLocationId?: string | null;
+        sourcePhotoItemId?: string | null;
         asortimaIdAssigned?: string | null;
         slike?: Array<{
           filename: string;
@@ -95,6 +98,9 @@ const VideonadzorSchema = new Schema(
           {
             id: { type: String, required: true, trim: true },
             ime: { type: String, trim: true, default: '' },
+            opomba: { type: String, trim: true, default: '' },
+            projectLocationId: { type: String, trim: true, default: null },
+            sourcePhotoItemId: { type: String, trim: true, default: null },
             asortimaIdAssigned: { type: String, default: null },
             slike: {
               type: [

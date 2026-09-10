@@ -6,8 +6,11 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 
 import { EmployeeModel } from '../modules/employees/schemas/employee';
 import { WorkOrderModel } from '../modules/projects/schemas/work-order';
+import { MaterialOrderModel } from '../modules/projects/schemas/material-order';
 import { ProjectModel } from '../modules/projects/schemas/project';
 import { OfferVersionModel } from '../modules/projects/schemas/offer-version';
+import { TaskModel } from '../modules/tasks/task.model';
+import { UserModel } from '../modules/users/schemas/user';
 import { EmployeeAvailabilityDayModel } from '../modules/availability/availability.model';
 import {
   addDays,
@@ -27,6 +30,7 @@ import { chooseBookingDay, createBookingPreviewLink, getBookingByToken } from '.
 import { OfferBookingModel } from '../modules/availability/offer-booking.model';
 import { BookingPreviewModel } from '../modules/availability/booking-preview.model';
 import { registerCoreConfigNamespaces } from '../modules/settings/config/config-namespaces';
+import * as communication from '../modules/communication/services/communication.service';
 
 let mongod: MongoMemoryServer;
 
@@ -47,10 +51,13 @@ test.beforeEach(async () => {
     EmployeeAvailabilityDayModel.deleteMany({}),
     EmployeeWeekLimitModel.deleteMany({}),
     WorkOrderModel.deleteMany({}),
+    MaterialOrderModel.deleteMany({}),
     OfferBookingModel.deleteMany({}),
     BookingPreviewModel.deleteMany({}),
     OfferVersionModel.deleteMany({}),
     ProjectModel.deleteMany({}),
+    TaskModel.deleteMany({}),
+    UserModel.deleteMany({}),
   ]);
 });
 
@@ -246,7 +253,10 @@ test('prosti dnevi: presek dveh monterjev + zasedenost z razpisanim nalogom', as
   assert.deepEqual(freePoNalogu, [], 'zaseden nalog vzame skupne ure');
 });
 
-test('rezervacija: stranka izbere dan, termin se zapiše in potrdi, povezava postane enkratna', async () => {
+test('rezervacija: stranka izbere dan, termin se zapiše in potrdi, povezava postane enkratna', async (t) => {
+  const internalEmail = t.mock.method(communication, 'sendBookingSelectedInternalEmail', async () => {
+    throw new Error('Testna napaka internega emaila');
+  });
   const miha = await monter('Miha');
   await setAvailabilityDay(String(miha._id), D1, [8, 9, 10, 11]);
   await ProjectModel.create({
@@ -269,6 +279,8 @@ test('rezervacija: stranka izbere dan, termin se zapiše in potrdi, povezava pos
   assert.ok(view.days.some((day) => day.date === D1));
 
   const chosen = await chooseBookingDay('a'.repeat(48), D1);
+  assert.equal(internalEmail.mock.callCount(), 1);
+  assert.equal(internalEmail.mock.calls[0].arguments[0].projectId, 'PRJ-401');
   assert.equal(chosen.scheduledAt, `${D1}T08:00:00`);
 
   const updated = await WorkOrderModel.findById(workOrder._id).lean();
@@ -282,6 +294,7 @@ test('rezervacija: stranka izbere dan, termin se zapiše in potrdi, povezava pos
 
   const project = await ProjectModel.findOne({ id: 'PRJ-401' }).lean();
   assert.ok((project as any)?.timeline?.some((entry: any) => entry.title === 'Stranka izbrala termin montaže'));
+  assert.ok(project?.timeline?.some((entry) => entry.description === 'Testna napaka internega emaila'));
 });
 
 test('prosti termini: po projektu je ena ura rezerve za pot', async () => {
@@ -300,14 +313,23 @@ test('prosti termini: po projektu je ena ura rezerve za pot', async () => {
   assert.deepEqual(free, [], 'projekt 8–14 zasede še 14–15, zato servis 14–16 ni dovoljen');
 });
 
-test('rezervacija iz ponudbe: združi termine kandidatov in ob izbiri dodeli prostega monterja', async () => {
+test('rezervacija iz ponudbe: potrdi ponudbo, odpre pripravo in obvesti odgovorne', async (t) => {
+  const internalEmail = t.mock.method(communication, 'sendBookingSelectedInternalEmail', async () => ({ message: null }));
   const miha = await monter('Miha');
   const ana = await monter('Ana');
+  const prodajalec = await EmployeeModel.create({
+    tenantId: 'inteligent', name: 'Prodajalec', roles: ['SALES'], hourRateWithoutVat: 20,
+  });
+  const salesUser = await UserModel.create({
+    tenantId: 'inteligent', email: 'prodajalec@example.com', name: 'Prodajalec',
+    roles: ['SALES'], employeeId: prodajalec._id,
+  });
   await setAvailabilityDay(String(miha._id), D1, [8, 9, 10]);
   await setAvailabilityDay(String(ana._id), D2, [10, 11, 12]);
   await ProjectModel.create({
     id: 'PRJ-404', code: 'PRJ-404', projectNumber: 404, title: 'PRJ-404: Izbira monterja',
-    customer: { name: 'Testna stranka' }, status: 'offered', createdAt: new Date().toISOString(),
+    customer: { name: 'Testna stranka' }, salesUserId: salesUser._id,
+    status: 'offered', createdAt: new Date().toISOString(),
   });
   const offer = await OfferVersionModel.create({
     projectId: 'PRJ-404', baseTitle: 'Ponudba', versionNumber: 1, title: 'Ponudba', status: 'sent', items: [],
@@ -329,12 +351,32 @@ test('rezervacija iz ponudbe: združi termine kandidatov in ob izbiri dodeli pro
   );
 
   const chosen = await chooseBookingDay('d'.repeat(48), D2);
+  assert.equal(internalEmail.mock.callCount(), 1);
+  assert.equal(internalEmail.mock.calls[0].arguments[0].projectId, 'PRJ-404');
+  assert.equal(internalEmail.mock.calls[0].arguments[0].scheduledAt, `${D2}T10:00:00`);
   assert.equal(chosen.scheduledAt, `${D2}T10:00:00`);
   const project = await ProjectModel.findOne({ id: 'PRJ-404' }).lean();
   assert.deepEqual((project as any)?.assignedEmployeeIds?.map(String), [String(ana._id)]);
+  assert.equal(project?.status, 'ordered', 'projekt preide v fazo Priprava');
+  assert.equal(String(project?.confirmedOfferVersionId), String(offerVersionId));
+  const acceptedOffer = await OfferVersionModel.findById(offerVersionId).lean();
+  assert.equal(acceptedOffer?.status, 'accepted');
+  assert.ok(acceptedOffer?.acceptedAt);
   const booking = await OfferBookingModel.findOne({ projectId: 'PRJ-404', offerVersionId }).lean();
   assert.equal(String(booking?.selectedEmployeeId), String(ana._id));
   assert.equal(booking?.bookingToken, undefined, 'povezava po izbiri ni več veljavna');
+  const workOrders = await WorkOrderModel.find({ projectId: 'PRJ-404', offerVersionId }).lean();
+  assert.equal(workOrders.length, 1, 'ustvari se samo en delovni nalog');
+  assert.equal(workOrders[0].scheduledAt, `${D2}T10:00:00`);
+  assert.ok(workOrders[0].scheduledConfirmedAt, 'strankina izbira termin tudi potrdi');
+  assert.deepEqual(workOrders[0].assignedEmployeeIds.map(String), [String(ana._id)]);
+  assert.equal(workOrders[0].installerAcceptances.length, 1);
+  assert.equal(String(workOrders[0].installerAcceptances[0].employeeId), String(ana._id));
+  assert.ok(workOrders[0].installerAcceptances[0].token, 'monter dobi osebni žeton za sprejem naloga');
+  assert.equal(await MaterialOrderModel.countDocuments({ projectId: 'PRJ-404', offerVersionId }), 1);
+  const notification = await TaskModel.findOne({ dedupeKey: `booking.customer_selected:${offerVersionId}` }).lean();
+  assert.equal(String(notification?.assigneeEmployeeId), String(prodajalec._id));
+  assert.equal(notification?.status, 'open');
   assert.deepEqual(
     await findFreeDays({ employeeIds: [String(ana._id)], durationHours: 2, from: D2, days: 1 }),
     [],

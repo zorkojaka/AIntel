@@ -8,7 +8,7 @@ type PriceListProductAutocompleteProps = {
   value: string;
   onChange: (name: string) => void;
   onProductSelected: (product: PriceListSearchItem) => void;
-  onCustomSelected?: () => void;
+  onCustomSelected?: (isService: boolean) => void;
   disabled?: boolean;
   placeholder?: string;
   inputClassName?: string;
@@ -171,8 +171,8 @@ export function PriceListProductAutocomplete({
     setIsOpen(false);
   };
 
-  const handleCustomPick = () => {
-    onCustomSelected?.();
+  const handleCustomPick = (isService: boolean) => {
+    onCustomSelected?.(isService);
     setIsOpen(false);
   };
 
@@ -245,15 +245,26 @@ export function PriceListProductAutocomplete({
               <div className="flex max-h-64 flex-col overflow-y-auto">
                 <div>
                   {onCustomSelected && inputValue.trim() ? (
-                    <button
-                      type="button"
-                      className="flex w-full items-center justify-between gap-2 border-b px-3 py-2 text-left hover:bg-muted/70"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={handleCustomPick}
-                    >
-                      <span className="truncate">Uporabi kot postavko po meri</span>
-                      <span className="text-xs text-muted-foreground">ročni naziv/cena</span>
-                    </button>
+                    <div className="grid grid-cols-2 gap-px border-b bg-border">
+                      <button
+                        type="button"
+                        className="px-3 py-2 text-left hover:bg-muted/70"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => handleCustomPick(false)}
+                      >
+                        <span className="block truncate">Produkt po meri</span>
+                        <span className="text-xs text-muted-foreground">ročni naziv/cena</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="px-3 py-2 text-left hover:bg-muted/70"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => handleCustomPick(true)}
+                      >
+                        <span className="block truncate">Storitev po meri</span>
+                        <span className="text-xs text-muted-foreground">obračun monterju</span>
+                      </button>
+                    </div>
                   ) : null}
                   {loading && (
                     <div className="flex items-center gap-2 px-3 py-2 text-muted-foreground">

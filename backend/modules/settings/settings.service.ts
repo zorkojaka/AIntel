@@ -102,6 +102,7 @@ const DEFAULT_SETTINGS: Settings = {
   disclaimer: '',
   offerClauses: [],
   phaseProgressionMode: 'manual',
+  autoSendWorkOrderToInstallers: false,
   workOrderCompletionSignatureMode: 'optional',
 };
 
@@ -354,6 +355,10 @@ function sanitizeSettings(payload: SettingsUpdate, baseOverride?: Settings): Set
       payload.phaseProgressionMode === 'automatic' || payload.phaseProgressionMode === 'manual'
         ? payload.phaseProgressionMode
         : base.phaseProgressionMode ?? DEFAULT_SETTINGS.phaseProgressionMode,
+    autoSendWorkOrderToInstallers:
+      typeof payload.autoSendWorkOrderToInstallers === 'boolean'
+        ? payload.autoSendWorkOrderToInstallers
+        : base.autoSendWorkOrderToInstallers ?? DEFAULT_SETTINGS.autoSendWorkOrderToInstallers,
     workOrderCompletionSignatureMode:
       payload.workOrderCompletionSignatureMode === 'none' ||
       payload.workOrderCompletionSignatureMode === 'optional' ||

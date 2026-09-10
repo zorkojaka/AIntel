@@ -202,6 +202,9 @@ export interface Zahteva {
       lokacije: Array<{
         id: string;
         ime: string;
+        opomba?: string;
+        projectLocationId?: string | null;
+        sourcePhotoItemId?: string | null;
         asortimaIdAssigned?: string | null;
         slike?: Array<{
           filename: string;
@@ -244,6 +247,9 @@ export interface Zahteva {
       lokacije: Array<{
         id: string;
         ime: string;
+        opomba?: string;
+        projectLocationId?: string | null;
+        sourcePhotoItemId?: string | null;
         senzorIdAssigned?: string | null;
         slike?: Array<{
           filename: string;

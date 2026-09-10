@@ -85,6 +85,10 @@ function validatePayload(body: unknown): SettingsUpdate {
       payload.phaseProgressionMode === 'automatic' || payload.phaseProgressionMode === 'manual'
         ? payload.phaseProgressionMode
         : undefined,
+    autoSendWorkOrderToInstallers:
+      typeof payload.autoSendWorkOrderToInstallers === 'boolean'
+        ? payload.autoSendWorkOrderToInstallers
+        : undefined,
     workOrderCompletionSignatureMode:
       payload.workOrderCompletionSignatureMode === 'none' ||
       payload.workOrderCompletionSignatureMode === 'optional' ||

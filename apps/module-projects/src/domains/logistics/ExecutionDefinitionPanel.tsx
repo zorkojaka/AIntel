@@ -50,6 +50,7 @@ function buildPhotoQuery(context: PhotoContext) {
   if (context.itemId) params.set("itemId", context.itemId);
   if (typeof context.unitIndex === "number") params.set("unitIndex", String(context.unitIndex));
   if (context.tag) params.set("tag", context.tag);
+  if (context.linkedLocationPhotos) params.set("linkedLocationPhotos", "true");
   return params.toString();
 }
 
@@ -245,7 +246,7 @@ function UnitPhotoButton({
   onOpen: (context: PhotoContext) => void;
 }) {
   const context = useMemo<PhotoContext>(
-    () => ({ projectId, phase: "preparation", itemId, unitIndex }),
+    () => ({ projectId, phase: "preparation", itemId, unitIndex, linkedLocationPhotos: true }),
     [itemId, projectId, unitIndex],
   );
   const { count, refresh } = usePhotoCount(context);
@@ -276,7 +277,7 @@ export function PreparationPhotoThumbnails({
   const [photos, setPhotos] = useState<PreparationPhoto[]>([]);
   const [previewPhoto, setPreviewPhoto] = useState<PreparationPhoto | null>(null);
   const context = useMemo<PhotoContext>(
-    () => ({ projectId, phase: "preparation", itemId, unitIndex }),
+    () => ({ projectId, phase: "preparation", itemId, unitIndex, linkedLocationPhotos: true }),
     [itemId, projectId, unitIndex],
   );
   const queryString = useMemo(() => buildPhotoQuery(context), [context]);
@@ -288,10 +289,6 @@ export function PreparationPhotoThumbnails({
     async function loadPhotos() {
       try {
         const queries = [queryString];
-        if (itemId.startsWith("zahteva-")) {
-          const requirementContext: PhotoContext = { projectId, phase: "requirements", itemId };
-          queries.push(buildPhotoQuery(requirementContext));
-        }
         const payloads = await Promise.all(
           queries.map(async (query) => {
             const response = await fetch(`/api/photos?${query}`, {

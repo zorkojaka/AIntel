@@ -46,7 +46,7 @@ test('location photos use the same location key from requirements and offer step
   const offerLocationId = 'project-location-offer-1';
   const [filter] = buildLocationPhotoFilters('project-object-id', [requirementItemId, offerLocationId, requirementItemId]);
 
-  assert.deepEqual((filter as any).phase.$in, ['requirements', 'offer', 'preparation']);
+  assert.deepEqual((filter as any).phase.$in, ['requirements', 'offer', 'preparation', 'execution']);
   assert.deepEqual((filter as any).itemId.$in, [requirementItemId, offerLocationId]);
   assert.equal((filter as any).unitIndex, undefined);
 });
@@ -54,7 +54,7 @@ test('location photos use the same location key from requirements and offer step
 test('legacy offer location photos still fall back to offer item and unit index', () => {
   const [filter] = buildLocationPhotoFilters('project-object-id', [], { itemId: 'offer-item-1', unitIndex: 2 });
 
-  assert.deepEqual((filter as any).phase.$in, ['requirements', 'offer', 'preparation']);
+  assert.deepEqual((filter as any).phase.$in, ['requirements', 'offer', 'preparation', 'execution']);
   assert.equal((filter as any).itemId, 'offer-item-1');
   assert.equal((filter as any).unitIndex, 2);
 });

@@ -10,6 +10,7 @@ export interface PhotoContext {
   itemId?: string;
   unitIndex?: number;
   tag?: string;
+  linkedLocationPhotos?: boolean;
 }
 
 export interface PhotoManagerProps {
@@ -87,6 +88,7 @@ function buildPhotoQuery(context: PhotoContext) {
   if (context.itemId) params.set('itemId', context.itemId);
   if (typeof context.unitIndex === 'number') params.set('unitIndex', String(context.unitIndex));
   if (context.tag) params.set('tag', context.tag);
+  if (context.linkedLocationPhotos) params.set('linkedLocationPhotos', 'true');
   return params.toString();
 }
 
@@ -430,10 +432,10 @@ export function PhotoManager({
   const photosRef = useRef<ManagedPhoto[]>([]);
   const onPhotoCountChangeRef = useRef(onPhotoCountChange);
   const lastNotifiedCountRef = useRef<number | null>(null);
-  const { projectId, phase, itemId, unitIndex, tag } = context;
+  const { projectId, phase, itemId, unitIndex, tag, linkedLocationPhotos } = context;
   const queryString = useMemo(
-    () => buildPhotoQuery({ projectId, phase, itemId, unitIndex, tag }),
-    [itemId, phase, projectId, tag, unitIndex],
+    () => buildPhotoQuery({ projectId, phase, itemId, unitIndex, tag, linkedLocationPhotos }),
+    [itemId, linkedLocationPhotos, phase, projectId, tag, unitIndex],
   );
 
   const photos = useMemo(() => tiles.filter((tile): tile is Extract<PhotoTile, { kind: 'photo' }> => tile.kind === 'photo').map((tile) => tile.photo), [tiles]);
@@ -750,7 +752,7 @@ export function PhotoManager({
   };
 
   const deletePhoto = async (photo: ManagedPhoto) => {
-    if (!window.confirm('Zbrisati sliko?')) return;
+    if (!window.confirm('Ali res želite izbrisati sliko?')) return;
     const photoId = getPhotoId(photo);
     try {
       const response = await fetch(`/api/photos/${photoId}`, {
@@ -882,8 +884,25 @@ export function PhotoManager({
                         <button
                           type="button"
                           onClick={() => void deletePhoto(tile.photo)}
-                          className={`absolute right-2 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-black/80 text-white opacity-100 shadow-md transition hover:bg-red-600 ${alwaysShowDeleteActions ? '' : 'md:opacity-0 md:group-hover:opacity-100'}`}
-                          style={alwaysShowDeleteActions ? { opacity: 1, visibility: 'visible', pointerEvents: 'auto' } : undefined}
+                          className={`absolute flex items-center justify-center rounded-full shadow-md transition ${alwaysShowDeleteActions ? '' : 'right-2 top-2 bg-black/80 text-white opacity-100 hover:bg-red-700 md:opacity-0 md:group-hover:opacity-100'}`}
+                          style={
+                            alwaysShowDeleteActions
+                              ? {
+                                  position: 'absolute',
+                                  right: '0.5rem',
+                                  top: '0.5rem',
+                                  zIndex: 1000,
+                                  width: '2.25rem',
+                                  height: '2.25rem',
+                                  border: '2px solid #dc2626',
+                                  backgroundColor: 'rgba(255, 255, 255, 0.72)',
+                                  color: '#dc2626',
+                                  opacity: 1,
+                                  visibility: 'visible',
+                                  pointerEvents: 'auto',
+                                }
+                              : undefined
+                          }
                           aria-label="Izbriši fotografijo"
                           title="Izbriši fotografijo"
                         >

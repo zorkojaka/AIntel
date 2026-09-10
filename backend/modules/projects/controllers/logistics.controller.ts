@@ -30,16 +30,22 @@ import {
   resolveConfirmationState,
 } from '../services/work-order-confirmation.service';
 import { canEditPreparation } from '../../../../shared/utils/preparationAccess';
+import {
+  propagateCanonicalProjectLocations,
+  syncCanonicalLocationsFromExecutionItems,
+} from '../services/project-locations.service';
 import { getSettings } from '../../settings/settings.service';
 import { createInvoiceFromClosing, refreshDraftInvoiceFromClosing } from '../services/invoice.service';
 import {
   buildActorDisplayName,
   recordOfferConfirmedCommunicationEvent,
+  sendInstallerPreparationEmail,
 } from '../../communication/services/communication.service';
 import { normalizeSupplierFields, normalizeSupplierKey } from '../services/supplier-normalization.service';
 import { OfferBookingModel } from '../../availability/offer-booking.model';
 import {
   acceptInstallerAssignmentInSystem,
+  confirmAllInstallerAssignmentsByAdmin as confirmAllInstallerAssignmentsByAdminService,
   InstallerAcceptanceError,
 } from '../services/installer-acceptance.service';
 
@@ -504,8 +510,14 @@ function buildRequirementLocationUnitsByProductId(zahteva: any) {
         appendUnit(variant?.kameraProductId, {
           locationId,
           locationName: normalizeRequirementLocationName(location?.ime, locationId),
-          sourcePhotoItemId: buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
-          projectLocationId: buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          sourcePhotoItemId: typeof location?.sourcePhotoItemId === 'string' && location.sourcePhotoItemId.trim()
+            ? location.sourcePhotoItemId.trim()
+            : buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          projectLocationId: typeof location?.projectLocationId === 'string' && location.projectLocationId.trim()
+            ? location.projectLocationId.trim()
+            : typeof location?.sourcePhotoItemId === 'string' && location.sourcePhotoItemId.trim()
+              ? location.sourcePhotoItemId.trim()
+              : buildZahtevaLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
         });
       }
     }
@@ -520,8 +532,14 @@ function buildRequirementLocationUnitsByProductId(zahteva: any) {
         appendUnit(sensor?.senzorProductId, {
           locationId,
           locationName: normalizeRequirementLocationName(location?.ime, locationId),
-          sourcePhotoItemId: buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
-          projectLocationId: buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          sourcePhotoItemId: typeof location?.sourcePhotoItemId === 'string' && location.sourcePhotoItemId.trim()
+            ? location.sourcePhotoItemId.trim()
+            : buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
+          projectLocationId: typeof location?.projectLocationId === 'string' && location.projectLocationId.trim()
+            ? location.projectLocationId.trim()
+            : typeof location?.sourcePhotoItemId === 'string' && location.sourcePhotoItemId.trim()
+              ? location.sourcePhotoItemId.trim()
+              : buildAlarmLocationPhotoItemId(zahtevaId, String(sistem.id), locationId),
         });
       }
     }
@@ -654,9 +672,9 @@ function mapOfferItemsToWorkOrderItems(
     const quantity = typeof item.quantity === 'number' ? item.quantity : 0;
     const generatedId = item.id ?? new Types.ObjectId().toString();
     const note = (item as any).note ?? undefined;
-    const isService =
-      Boolean((item as any).isService) ||
-      (item.productId ? serviceProductIds.has(String(item.productId)) : false);
+    const isService = item.productId
+      ? serviceProductIds.has(String(item.productId))
+      : item.isService === true;
     const productDefaults = item.productId ? productDefaultsById.get(String(item.productId)) : null;
     return {
       id: generatedId,
@@ -1312,7 +1330,7 @@ function serializeWorkOrder(order: any): WorkOrder | null {
       employeeId: String(entry.employeeId),
       emailSentAt: entry.emailSentAt ? new Date(entry.emailSentAt).toISOString() : null,
       acceptedAt: entry.acceptedAt ? new Date(entry.acceptedAt).toISOString() : null,
-      acceptedVia: entry.acceptedVia === 'system' || entry.acceptedVia === 'email' ? entry.acceptedVia : null,
+      acceptedVia: entry.acceptedVia === 'system' || entry.acceptedVia === 'email' || entry.acceptedVia === 'admin' ? entry.acceptedVia : null,
     })),
     location: order.location,
     notes: order.notes,
@@ -1494,23 +1512,47 @@ async function getPreparationReadiness(projectId: string, workOrderId: string) {
 
   const assignedEmployeeIds = Array.isArray(workOrder.assignedEmployeeIds) ? workOrder.assignedEmployeeIds : [];
   const hasAssignedTeam = assignedEmployeeIds.length > 0;
-  const acceptedEmployeeIds = new Set(
-    (workOrder.installerAcceptances ?? [])
-      .filter((entry: any) => Boolean(entry.acceptedAt))
-      .map((entry: any) => String(entry.employeeId)),
-  );
-  const hasInstallerAcceptance = hasAssignedTeam && assignedEmployeeIds.every((employeeId: any) =>
-    acceptedEmployeeIds.has(String(employeeId)),
-  );
   const hasSchedule = typeof workOrder.scheduledAt === 'string' && workOrder.scheduledAt.trim().length > 0;
   const hasConfirmedSchedule = Boolean(workOrder.scheduledConfirmedAt);
   const materialItems = materialOrders.flatMap((order: any) => (order.items ?? []).filter((item: any) => !item.isExtra));
   const materialReady = materialItems.length === 0 || materialItems.every(isMaterialItemReadyForIssue);
 
   return {
-    ready: hasAssignedTeam && hasInstallerAcceptance && hasSchedule && hasConfirmedSchedule && materialReady,
+    ready: hasAssignedTeam && hasSchedule && hasConfirmedSchedule && materialReady,
     workOrder,
   };
+}
+
+async function sendWorkOrderToInstallersOnIssue(projectId: string, workOrderId: string, req: Request) {
+  const settings = await getSettings();
+  if (!settings.autoSendWorkOrderToInstallers) return;
+
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  try {
+    await sendInstallerPreparationEmail({
+      projectId,
+      workOrderId,
+      projectLink: `${baseUrl}/projects/${encodeURIComponent(projectId)}`,
+      acceptanceBaseUrl: `${baseUrl}/api/public/installer-accept`,
+      confirmSend: true,
+      actorUserId: (req as any)?.context?.actorUserId ?? null,
+      actorDisplayName: buildActorDisplayName(req as any),
+    });
+  } catch (error) {
+    (req as any).log?.error({ err: error, projectId, workOrderId }, 'Automatic installer work order email failed');
+    const project = await ProjectModel.findOne({ id: projectId });
+    if (project) {
+      addTimeline(project, {
+        type: 'edit',
+        title: 'Samodejno pošiljanje delovnega naloga ni uspelo',
+        description: error instanceof Error ? error.message : 'Emaila monterjem ni bilo mogoče poslati.',
+        timestamp: new Date().toISOString(),
+        user: buildActorDisplayName(req as any),
+        metadata: { workOrderId },
+      });
+      await project.save();
+    }
+  }
 }
 
 async function moveProjectToExecution(params: {
@@ -1563,6 +1605,9 @@ export async function applyAutomaticPreparationProgression(
   }
   workOrder.status = 'issued';
   await workOrder.save();
+  if (req) {
+    await sendWorkOrderToInstallersOnIssue(projectId, workOrderId, req);
+  }
   return moveProjectToExecution({
     projectId,
     workOrderId,
@@ -1854,6 +1899,7 @@ export async function updateProjectExecutionDefinition(req: Request, res: Respon
       ? sanitizeProjectExecutionLocations(req.body.locations)
       : mergeProjectExecutionLocations(result.project.executionLocations ?? [], incomingDefinitions);
     await result.project.save();
+    await propagateCanonicalProjectLocations(result.project);
     await syncWorkOrdersFromProjectExecutionDefinitions(projectId, offerVersionId);
 
     const items = offerVersionId
@@ -1865,17 +1911,20 @@ export async function updateProjectExecutionDefinition(req: Request, res: Respon
   }
 }
 
-export async function confirmOffer(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { projectId, offerId } = req.params;
-    const [offer, project] = await Promise.all([
-      OfferVersionModel.findOne({ _id: offerId, projectId }),
-      ProjectModel.findOne({ id: projectId }),
-    ]);
+export async function confirmOfferForProject(input: {
+  projectId: string;
+  offerId: string;
+  actorDisplayName: string;
+}) {
+  const { projectId, offerId } = input;
+  const [offer, project] = await Promise.all([
+    OfferVersionModel.findOne({ _id: offerId, projectId }),
+    ProjectModel.findOne({ id: projectId }),
+  ]);
 
-    if (!offer || !project) {
-      return res.fail('Ponudba ni najdena.', 404);
-    }
+  if (!offer || !project) {
+    return null;
+  }
 
     const projectClient = await resolveProjectClient(project);
     const previousStatus = offer.status;
@@ -1963,28 +2012,41 @@ export async function confirmOffer(req: Request, res: Response, next: NextFuncti
       items: logisticsItems,
     });
 
-      if (updatedProject) {
-        addTimeline(updatedProject, {
-          type: 'offer',
-          title: previousStatus === 'cancelled' ? 'Ponovno potrjena ponudba' : 'Ponudba potrjena',
-          description: `Verzija ${offer.title || offer.baseTitle || offerId}`,
-          timestamp: new Date().toISOString(),
-          user: 'system',
-        });
-        await updatedProject.save();
-      }
+  if (updatedProject) {
+    addTimeline(updatedProject, {
+      type: 'offer',
+      title: previousStatus === 'cancelled' ? 'Ponovno potrjena ponudba' : 'Ponudba potrjena',
+      description: `Verzija ${offer.title || offer.baseTitle || offerId}`,
+      timestamp: new Date().toISOString(),
+      user: 'system',
+    });
+    await updatedProject.save();
+  }
 
-      await recordOfferConfirmedCommunicationEvent({
-        projectId,
-        offerId,
-        title: previousStatus === 'cancelled' ? 'Ponudba ponovno potrjena' : 'Ponudba potrjena',
-        description: `Verzija ${offer.title || offer.baseTitle || offerId}`,
-        user: buildActorDisplayName(req as any),
-      });
+  await recordOfferConfirmedCommunicationEvent({
+    projectId,
+    offerId,
+    title: previousStatus === 'cancelled' ? 'Ponudba ponovno potrjena' : 'Ponudba potrjena',
+    description: `Verzija ${offer.title || offer.baseTitle || offerId}`,
+    user: input.actorDisplayName,
+  });
 
-      const finalProject = updatedProject ?? project;
-    const payload = await serializeProjectDetails(finalProject, projectClient);
-    return res.success(payload);
+  const finalProject = updatedProject ?? project;
+  const payload = await serializeProjectDetails(finalProject, projectClient);
+  return { payload, workOrder };
+}
+
+export async function confirmOffer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await confirmOfferForProject({
+      projectId: req.params.projectId,
+      offerId: req.params.offerId,
+      actorDisplayName: buildActorDisplayName(req as any),
+    });
+    if (!result) {
+      return res.fail('Ponudba ni najdena.', 404);
+    }
+    return res.success(result.payload);
   } catch (err) {
     next(err);
   }
@@ -2462,6 +2524,9 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
 
   const updated = await WorkOrderModel.findOneAndUpdate({ _id: workOrderId, projectId }, { $set: updates }, { new: true });
   const [normalizedUpdated] = await normalizeAndPersistWorkOrdersServiceFlags(updated ? [updated] : []);
+  if (normalizedUpdated?.items) {
+    await syncCanonicalLocationsFromExecutionItems(projectId, normalizedUpdated.items);
+  }
 
   const materialOrderId = typeof payload.materialOrderId === 'string' ? payload.materialOrderId : null;
   if (materialOrderId) {
@@ -2706,6 +2771,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
   let shouldRefreshResponseOrder = false;
   if (previousWorkOrderStatus !== 'issued' && nextWorkOrderStatus === 'issued') {
     await moveProjectToExecution({ projectId, workOrderId, req, mode: 'manual' });
+    await sendWorkOrderToInstallersOnIssue(projectId, workOrderId, req);
   } else {
     shouldRefreshResponseOrder = await applyAutomaticPreparationProgression(projectId, workOrderId, req);
   }
@@ -2753,7 +2819,6 @@ export async function acceptInstallerAssignment(req: Request, res: Response) {
       workOrderId: req.params.workOrderId,
       employeeId,
     });
-    await applyAutomaticPreparationProgression(req.params.projectId, req.params.workOrderId, req);
     return res.success({
       employeeId: result.employeeId,
       acceptedAt: result.acceptedAt.toISOString(),
@@ -2761,6 +2826,23 @@ export async function acceptInstallerAssignment(req: Request, res: Response) {
   } catch (error) {
     if (error instanceof InstallerAcceptanceError) return res.fail(error.message, error.statusCode);
     return res.fail('Sprejema projekta ni bilo mogoče shraniti.', 500);
+  }
+}
+
+export async function confirmAllInstallerAssignmentsByAdmin(req: Request, res: Response) {
+  try {
+    const result = await confirmAllInstallerAssignmentsByAdminService({
+      projectId: req.params.projectId,
+      workOrderId: req.params.workOrderId,
+      actorName: resolveScheduleConfirmerLabel(req),
+    });
+    return res.success({
+      confirmedEmployeeIds: result.confirmedEmployeeIds,
+      acceptedAt: result.acceptedAt.toISOString(),
+    });
+  } catch (error) {
+    if (error instanceof InstallerAcceptanceError) return res.fail(error.message, error.statusCode);
+    return res.fail('Ročne potrditve monterjev ni bilo mogoče shraniti.', 500);
   }
 }
 

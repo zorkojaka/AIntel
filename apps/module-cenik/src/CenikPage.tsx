@@ -8,6 +8,12 @@ import FilterBar from './components/FilterBar';
 import { ImportConflictReview } from './components/ImportConflictReview';
 import { CategorySettingsPanel } from './components/CategorySettingsPanel';
 import { IzlozbaPanel } from './components/IzlozbaPanel';
+import {
+  AAImportSelectionPanel,
+  AA_IMPORT_FIELD_GROUPS,
+  type AAImportField,
+  type AAImportMode,
+} from './components/AAImportSelectionPanel';
 
 type Product = {
   _id?: string;
@@ -38,6 +44,10 @@ type Product = {
   isActive?: boolean;
   status?: string;
   mergedIntoProductId?: string;
+  sourceImportedAt?: string;
+  sourceLastSyncedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type ProductServiceLinkDraft = ProductServiceLink;
@@ -73,6 +83,7 @@ type ImportUpdateRow = ImportPlanRow & {
   productId: string;
   matchType: 'external_key' | 'source_identifier' | 'strict_business_match';
   changedFields: string[];
+  changes?: Array<{ field: string; currentValue: unknown; incomingValue: unknown }>;
 };
 
 type ImportConflictRow = ImportPlanRow & {
@@ -194,7 +205,7 @@ type DuplicateCandidateGroup = {
 };
 
 type CatalogView = 'cenik' | 'produkti' | 'storitve' | 'category-settings' | 'izlozba';
-type CenikQuickFilter = 'all' | 'products' | 'services';
+type CenikQuickFilter = 'all' | 'products' | 'services' | 'recent-aa';
 
 type AuditReport = {
   totals: {
@@ -507,6 +518,15 @@ export const CenikPage: React.FC = () => {
   const [exportLoading, setExportLoading] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [aaImportMode, setAaImportMode] = useState<AAImportMode>('new_only');
+  const [aaCreateFields, setAaCreateFields] = useState<Set<AAImportField>>(
+    () => new Set(AA_IMPORT_FIELD_GROUPS.flatMap((group) => [...group.fields])),
+  );
+  const [aaUpdateFields, setAaUpdateFields] = useState<Set<AAImportField>>(
+    () => new Set(['purchasePriceWithoutVat', 'nabavnaCena', 'prodajnaCena']),
+  );
+  const [aaSelectedCreateKeys, setAaSelectedCreateKeys] = useState<Set<string>>(new Set());
+  const [aaSelectedUpdateKeys, setAaSelectedUpdateKeys] = useState<Set<string>>(new Set());
   const [resolvingConflictKey, setResolvingConflictKey] = useState<string | null>(null);
   const [bulkAdditionsText, setBulkAdditionsText] = useState('');
   const [excelImportFile, setExcelImportFile] = useState<File | null>(null);
@@ -665,7 +685,10 @@ export const CenikPage: React.FC = () => {
             ? true
             : cenikQuickFilter === 'products'
               ? !product.isService
-              : !!product.isService
+              : cenikQuickFilter === 'services'
+                ? !!product.isService
+                : product.externalSource === 'aa_api' && Boolean(product.sourceImportedAt) &&
+                  Date.now() - new Date(product.sourceImportedAt!).getTime() <= 30 * 24 * 60 * 60 * 1000
           : catalogView === 'produkti'
             ? !product.isService
             : !!product.isService;
@@ -1027,6 +1050,11 @@ export const CenikPage: React.FC = () => {
     setSelectedRun(null);
     setAuditResult(null);
     setAuditError(null);
+    setAaImportMode('new_only');
+    setAaCreateFields(new Set(AA_IMPORT_FIELD_GROUPS.flatMap((group) => [...group.fields])));
+    setAaUpdateFields(new Set(['purchasePriceWithoutVat', 'nabavnaCena', 'prodajnaCena']));
+    setAaSelectedCreateKeys(new Set());
+    setAaSelectedUpdateKeys(new Set());
     setIsImportOpen(true);
   };
 
@@ -1134,6 +1162,10 @@ export const CenikPage: React.FC = () => {
       });
       const data = await parseEnvelope<ImportResult>(response);
       setImportResult(data);
+      if (importSource === 'aa_api') {
+        setAaSelectedCreateKeys(new Set(data.toCreate.map((row) => row.externalKey)));
+        setAaSelectedUpdateKeys(new Set());
+      }
       if (data.run) {
         setSelectedRun(data.run);
       }
@@ -1212,6 +1244,10 @@ export const CenikPage: React.FC = () => {
         });
         const data = await parseEnvelope<ImportResult>(analyzeResponse);
         setImportResult(data);
+        if (source === 'aa_api') {
+          setAaSelectedCreateKeys(new Set(data.toCreate.map((row) => row.externalKey)));
+          setAaSelectedUpdateKeys(new Set());
+        }
         if (data.run) {
           setSelectedRun(data.run);
         }
@@ -1247,7 +1283,20 @@ export const CenikPage: React.FC = () => {
       const response = await fetch('/api/admin/import/products/from-git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: importSource, mode: 'apply', items })
+        body: JSON.stringify({
+          source: importSource,
+          mode: 'apply',
+          items,
+          expectedSourceFingerprint: importSource === 'aa_api' ? importResult?.run?.sourceFingerprint : undefined,
+          selection: importSource === 'aa_api'
+            ? {
+                createExternalKeys: Array.from(aaSelectedCreateKeys),
+                updateExternalKeys: aaImportMode === 'new_and_existing' ? Array.from(aaSelectedUpdateKeys) : [],
+                createFields: Array.from(aaCreateFields),
+                updateFields: aaImportMode === 'new_and_existing' ? Array.from(aaUpdateFields) : [],
+              }
+            : undefined,
+        })
       });
       const data = await parseEnvelope<ImportResult>(response);
       setImportResult(data);
@@ -1414,7 +1463,12 @@ export const CenikPage: React.FC = () => {
   };
 
   const canApplyImport =
-    importResult?.mode === 'analyze' && importResult.source === importSource && !importLoading;
+    importResult?.mode === 'analyze' &&
+    importResult.source === importSource &&
+    !importLoading &&
+    (importSource !== 'aa_api' ||
+      aaSelectedCreateKeys.size > 0 ||
+      (aaImportMode === 'new_and_existing' && aaSelectedUpdateKeys.size > 0 && aaUpdateFields.size > 0));
 
   const importSummary = importResult?.summary ?? null;
   const importPreviewRows = {
@@ -1490,6 +1544,7 @@ export const CenikPage: React.FC = () => {
                 { id: 'all', label: 'Vse' },
                 { id: 'products', label: 'Produkti' },
                 { id: 'services', label: 'Storitve' },
+                { id: 'recent-aa', label: 'Novi AA (30 dni)' },
               ] as Array<{ id: CenikQuickFilter; label: string }>).map((option) => (
                 <Button
                   key={option.id}
@@ -1532,6 +1587,10 @@ export const CenikPage: React.FC = () => {
                   },
                   { header: 'Proizvajalec', accessor: 'proizvajalec' },
                   { header: 'Opis', accessor: 'kratekOpis' },
+                  {
+                    header: 'Dodano',
+                    accessor: (row: Product) => formatDateTime(row.sourceImportedAt ?? row.createdAt),
+                  },
                   {
                     header: 'Akcije',
                     accessor: (row: Product) => {
@@ -1707,6 +1766,22 @@ export const CenikPage: React.FC = () => {
                     Storitev
                   </label>
                 </div>
+                {editingProduct._id && (
+                  <div className="col-span-1 grid gap-2 rounded-lg border border-border/60 bg-muted/20 p-3 text-xs md:col-span-2 md:grid-cols-3">
+                    <div>
+                      <div className="font-semibold text-foreground">Dodano v cenik</div>
+                      <div className="text-muted-foreground">{formatDateTime(editingProduct.sourceImportedAt ?? editingProduct.createdAt)}</div>
+                    </div>
+                    <div>
+                      <div className="font-semibold text-foreground">Zadnja AA posodobitev</div>
+                      <div className="text-muted-foreground">{formatDateTime(editingProduct.sourceLastSyncedAt)}</div>
+                    </div>
+                    <div>
+                      <div className="font-semibold text-foreground">Zadnja ročna ali sistemska sprememba</div>
+                      <div className="text-muted-foreground">{formatDateTime(editingProduct.updatedAt)}</div>
+                    </div>
+                  </div>
+                )}
                 <div className="col-span-1 md:col-span-2">
                   <div className="cenik-category-picker">
                     <CategoryMultiSelect
@@ -2293,7 +2368,7 @@ export const CenikPage: React.FC = () => {
 
       {isImportOpen && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-6 md:items-center">
-          <div className="w-full max-w-3xl rounded-xl bg-card p-6 shadow-2xl shadow-black/40 max-h-[calc(100vh-3rem)] overflow-y-auto">
+          <div className={`w-full rounded-xl bg-card p-6 shadow-2xl shadow-black/40 max-h-[calc(100vh-3rem)] overflow-y-auto ${importSource === 'aa_api' ? 'max-w-6xl' : 'max-w-3xl'}`}>
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-xl font-semibold text-foreground">Uvoz produktov</h2>
               <button
@@ -2307,8 +2382,8 @@ export const CenikPage: React.FC = () => {
             </div>
 
             <div className="mt-4 space-y-3">
-              <p className="text-sm text-muted-foreground">Izberi vir in sproži uvoz.</p>
-              <div className="grid gap-3">
+              <p className="text-sm text-muted-foreground">Najprej izberi vir in zaženi analizo. Cenik se spremeni šele po pregledu in potrditvi.</p>
+              <div className="grid gap-3 md:grid-cols-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -2380,7 +2455,7 @@ export const CenikPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-3 rounded-lg border border-border/60 bg-muted/20 p-4">
+            {importSource === 'excel' && <div className="mt-4 flex flex-wrap gap-3 rounded-lg border border-border/60 bg-muted/20 p-4">
               <Button
                 variant="outline"
                 type="button"
@@ -2410,7 +2485,7 @@ export const CenikPage: React.FC = () => {
                   {excelImportFile.name}
                 </span>
               )}
-            </div>
+            </div>}
 
             {importSource === 'dodatki' && (
               <div className="mt-4 space-y-3 rounded-lg border border-border/60 bg-muted/20 p-4">
@@ -2452,9 +2527,6 @@ export const CenikPage: React.FC = () => {
               <Button variant="outline" type="button" onClick={runImportAnalyze} disabled={importLoading}>
                 {importLoading ? 'Analiziram ...' : 'Analiziraj uvoz'}
               </Button>
-              <Button type="button" onClick={runImportApply} disabled={!canApplyImport}>
-                {importLoading ? 'Uvažam ...' : 'Potrdi uvoz'}
-              </Button>
             </div>
 
             {(importError || importResult) && (
@@ -2472,9 +2544,26 @@ export const CenikPage: React.FC = () => {
                       <span>Neveljavne vrstice: {importSummary.invalidCount}</span>
                     </div>
 
+                    {importSource === 'aa_api' && importResult?.mode === 'analyze' && (
+                      <AAImportSelectionPanel
+                        toCreate={importResult.toCreate}
+                        toUpdate={importResult.toUpdate}
+                        mode={aaImportMode}
+                        onModeChange={setAaImportMode}
+                        createFields={aaCreateFields}
+                        updateFields={aaUpdateFields}
+                        onCreateFieldsChange={setAaCreateFields}
+                        onUpdateFieldsChange={setAaUpdateFields}
+                        selectedCreateKeys={aaSelectedCreateKeys}
+                        selectedUpdateKeys={aaSelectedUpdateKeys}
+                        onSelectedCreateKeysChange={setAaSelectedCreateKeys}
+                        onSelectedUpdateKeysChange={setAaSelectedUpdateKeys}
+                      />
+                    )}
+
                     {(importResult?.conflicts.length ?? 0) > 0 && (
                       <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                        Konflikti so izkljuÄeni iz samodejnega create toka. Veljavne vrstice lahko vseeno nadaljujejo v uvoz.
+                        Konflikti so izključeni iz samodejnega ustvarjanja. Veljavne vrstice lahko vseeno nadaljujejo v uvoz.
                       </div>
                     )}
 
@@ -2483,12 +2572,12 @@ export const CenikPage: React.FC = () => {
                         <span>Ustvarjeni: {importResult.applied.createdCount}</span>
                         <span>Posodobljeni: {importResult.applied.updatedCount}</span>
                         <span>Nespremenjeni: {importResult.applied.skippedCount}</span>
-                        <span>IzkljuÄeni konflikti: {importResult.applied.excludedConflictCount}</span>
-                        <span>IzkljuÄene neveljavne: {importResult.applied.excludedInvalidCount}</span>
+                        <span>Izključeni konflikti: {importResult.applied.excludedConflictCount}</span>
+                        <span>Izključene neveljavne: {importResult.applied.excludedInvalidCount}</span>
                       </div>
                     )}
 
-                    {importPreviewRows.toCreate.length > 0 && (
+                    {importSource !== 'aa_api' && importPreviewRows.toCreate.length > 0 && (
                       <div className="space-y-1 text-xs text-foreground">
                         <div className="font-semibold">Za ustvariti</div>
                         {importPreviewRows.toCreate.map((row) => (
@@ -2497,7 +2586,7 @@ export const CenikPage: React.FC = () => {
                       </div>
                     )}
 
-                    {importPreviewRows.toUpdate.length > 0 && (
+                    {importSource !== 'aa_api' && importPreviewRows.toUpdate.length > 0 && (
                       <div className="space-y-1 text-xs text-foreground">
                         <div className="font-semibold">Za posodobiti</div>
                         {importPreviewRows.toUpdate.map((row) => (
@@ -2508,7 +2597,7 @@ export const CenikPage: React.FC = () => {
                       </div>
                     )}
 
-                    {importPreviewRows.toSkip.length > 0 && (
+                    {importSource !== 'aa_api' && importPreviewRows.toSkip.length > 0 && (
                       <div className="space-y-1 text-xs text-foreground">
                         <div className="font-semibold">Nespremenjeni</div>
                         {importPreviewRows.toSkip.map((row) => (
@@ -2517,7 +2606,7 @@ export const CenikPage: React.FC = () => {
                       </div>
                     )}
 
-                    {importPreviewRows.conflicts.length > 0 && (
+                    {importSource !== 'aa_api' && importPreviewRows.conflicts.length > 0 && (
                       <div className="space-y-1 text-xs text-destructive">
                         <div className="font-semibold">Konflikti</div>
                         {importPreviewRows.conflicts.map((row) => (
@@ -2528,9 +2617,9 @@ export const CenikPage: React.FC = () => {
                       </div>
                     )}
 
-                    {(importResult?.conflicts.length ?? 0) > 0 && importSource === 'excel' && (
+                    {(importResult?.conflicts.length ?? 0) > 0 && (importSource === 'excel' || importSource === 'aa_api') && (
                       <ImportConflictReview
-                        source="excel"
+                        source={importSource}
                         conflicts={importResult?.conflicts ?? []}
                         resolvingKey={resolvingConflictKey}
                         onResolve={resolveImportConflict}
@@ -2545,6 +2634,17 @@ export const CenikPage: React.FC = () => {
                             [{row.rowIndex}] {row.ime || row.rowId} - {row.errors[0]?.field}: {row.errors[0]?.reason}
                           </div>
                         ))}
+                      </div>
+                    )}
+
+                    {importResult?.mode === 'analyze' && (
+                      <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-border bg-card/95 py-3 backdrop-blur">
+                        <span className="text-xs text-muted-foreground">
+                          Uvoženi bodo samo označeni produkti in izbrana polja.
+                        </span>
+                        <Button type="button" onClick={runImportApply} disabled={!canApplyImport}>
+                          {importLoading ? 'Uvažam ...' : 'Potrdi izbrani uvoz'}
+                        </Button>
                       </div>
                     )}
                   </div>

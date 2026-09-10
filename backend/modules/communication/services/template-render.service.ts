@@ -15,6 +15,7 @@ interface TemplateContext {
   workOrder: { identifier: string; confirmationDate: string; schedule: string; details: string };
   installer: { name: string };
   booking: { link: string; duration: string };
+  review: { link: string };
   company: {
     name: string;
     website: string;
@@ -39,6 +40,7 @@ const TOKEN_MAP: Record<string, (context: TemplateContext) => string> = {
   "{{workOrder.details}}": (context) => context.workOrder.details,
   "{{installer.name}}": (context) => context.installer.name,
   "{{booking.link}}": (context) => context.booking.link,
+  "{{review.link}}": (context) => context.review.link,
   "{{booking.duration}}": (context) => context.booking.duration,
   "{{confirmation.date}}": (context) => context.workOrder.confirmationDate,
   "{{company.name}}": (context) => context.company.name,
@@ -149,6 +151,7 @@ export function buildTemplateContext(input: {
   workOrderDetails?: string;
   installerName?: string;
   bookingLink?: string;
+  reviewLink?: string;
   bookingDuration?: string;
   companyName: string;
   companyWebsite?: string;
@@ -171,6 +174,7 @@ export function buildTemplateContext(input: {
     },
     installer: { name: input.installerName || "" },
     booking: { link: input.bookingLink || "", duration: input.bookingDuration || "" },
+    review: { link: input.reviewLink || "" },
     company: {
       name: input.companyName || "",
       website: input.companyWebsite || "",

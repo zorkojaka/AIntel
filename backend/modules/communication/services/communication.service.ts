@@ -30,6 +30,8 @@ import { ProjectModel } from "../../projects/schemas/project";
 import { OfferVersionModel } from "../../projects/schemas/offer-version";
 import { WorkOrderModel } from "../../projects/schemas/work-order";
 import { EmployeeModel } from "../../employees/schemas/employee";
+import { UserModel } from "../../users/schemas/user";
+import { ensureBookingReviewTemplates, renderBookingReviewTemplate } from './booking-review-templates.service';
 import { resolveProjectClient } from "../../projects/services/project.service";
 import { buildIcsEvent, googleCalendarLink } from "../../availability/calendar-event";
 import { getActiveSignedConfirmationVersion } from "../../projects/services/work-order-confirmation.service";
@@ -325,6 +327,7 @@ async function findActiveTemplate(category: CommunicationCategory) {
 }
 
 export async function listCommunicationTemplates(category?: CommunicationCategory) {
+  await ensureBookingReviewTemplates(category);
   const filter = category ? { category } : {};
   const templates = await CommunicationTemplateModel.find(filter).sort({ name: 1, updatedAt: -1 }).lean();
   return templates.map(serializeTemplate);
@@ -877,8 +880,12 @@ export async function sendOfferCommunicationEmail(input: {
   const subjectFinal = sanitizeString(input.subject) || renderedTemplate.subject;
   const baseBodyWithoutFooter = input.body?.toString().trim() || renderedTemplate.body;
   const bookingLink = sanitizeString(input.bookingLink);
+  templateContext.booking.link = bookingLink;
+  const bookingInvite = bookingLink
+    ? await renderBookingReviewTemplate('offer_booking_invite', templateContext, bookingLink)
+    : null;
   const bodyWithoutFooter = bookingLink
-    ? `${baseBodyWithoutFooter}\n\nTermin montaže lahko izberete na naslednji povezavi. Prikazani so združeni prosti termini izbranih monterjev:\n${bookingLink}`
+    ? `${baseBodyWithoutFooter}\n\n${bookingInvite!.body}`
     : baseBodyWithoutFooter;
   const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
   if (!subjectFinal || !bodyFinal) {
@@ -1318,7 +1325,10 @@ export async function sendInstallerPreparationEmail(input: {
     .filter((entry) => entry.url);
   const selectedRecipients = sanitizeEmailList(input.to);
   const primaryInstaller = installerIds.map((id) => installerById.get(id)).find((installer) => sanitizeString(installer?.email));
-  if (!primaryInstaller && selectedRecipients.length === 0) {
+  const assignedInstallerRecipients = installerIds
+    .map((id) => sanitizeString(installerById.get(id)?.email).toLowerCase())
+    .filter(Boolean);
+  if (assignedInstallerRecipients.length === 0 && selectedRecipients.length === 0) {
     throw new Error("Monter nima nastavljenega emaila.");
   }
 
@@ -1370,7 +1380,7 @@ export async function sendInstallerPreparationEmail(input: {
   appendSection(detailsLines, "Povezava", [
     input.projectLink ? `Projekt/delovni nalog: ${input.projectLink}` : null,
   ]);
-  appendSection(detailsLines, "Potrditev sprejema projekta", acceptanceLinks.map((entry) =>
+  appendSection(detailsLines, "Potrditev sprejema delovnega naloga", acceptanceLinks.map((entry) =>
     `${entry.name}: ${entry.url}`,
   ));
   const workOrderDetails = detailsLines.join("\n").trim();
@@ -1378,7 +1388,7 @@ export async function sendInstallerPreparationEmail(input: {
   const bodyLines: string[] = [
     `Pozdravljen ${primaryInstaller?.name || "monter"},`,
     "",
-    `Pošiljamo podatke za pripravo na montažo in potrditev termina za projekt ${projectIdentifier}${project.title ? ` - ${project.title}` : ""}.`,
+    `Pošiljamo delovni nalog za projekt ${projectIdentifier}${project.title ? ` - ${project.title}` : ""}.`,
     "",
     workOrderDetails,
     "",
@@ -1427,13 +1437,16 @@ export async function sendInstallerPreparationEmail(input: {
   const subjectFinal =
     sanitizeString(input.subject) ||
     renderedTemplate?.subject ||
-    `Priprava montaže: ${projectIdentifier}${schedule ? ` - ${schedule}` : ""}`;
+    `Delovni nalog: ${projectIdentifier}${schedule ? ` - ${schedule}` : ""}`;
   const bodyBase = input.body?.toString().trim() || renderedTemplate?.body || bodyLines.join("\n");
   const missingAcceptanceLinks = acceptanceLinks.filter((entry) => !bodyBase.includes(entry.url));
   const bodyWithoutFooter = missingAcceptanceLinks.length > 0
-    ? `${bodyBase}\n\nPotrditev sprejema projekta\n${missingAcceptanceLinks.map((entry) => `${entry.name}: ${entry.url}`).join("\n")}`
+    ? `${bodyBase}\n\nPotrditev sprejema delovnega naloga\n${missingAcceptanceLinks.map((entry) => `${entry.name}: ${entry.url}`).join("\n")}`
     : bodyBase;
-  const resolvedRecipients = selectedRecipients.length > 0 ? selectedRecipients : [String(primaryInstaller.email).toLowerCase()];
+  // Delovni nalog je zavezujoč za celotno dodeljeno ekipo. Tudi če je v
+  // predogledu ročno spremenjeno polje »To«, naj vsak dodeljeni monter z
+  // nastavljenim emailom prejme isti email in svojo povezavo za potrditev.
+  const resolvedRecipients = Array.from(new Set([...assignedInstallerRecipients, ...selectedRecipients]));
   const cc = sanitizeEmailList(input.cc);
   const bcc = sanitizeEmailList(input.bcc);
   if (input.previewOnly) {
@@ -1452,7 +1465,7 @@ export async function sendInstallerPreparationEmail(input: {
   }
   const bodyFinal = appendCommunicationFooter(bodyWithoutFooter, renderedFooter);
   const htmlFinal = renderCommunicationBodyHtml(bodyWithoutFooter, renderedFooterHtml, {
-    actions: acceptanceLinks.map((entry) => ({ href: entry.url, label: `${entry.name}: Sprejmi projekt` })),
+    actions: acceptanceLinks.map((entry) => ({ href: entry.url, label: `${entry.name}: Sprejmi delovni nalog` })),
   });
 
   const attachment = await resolveCommunicationAttachment({
@@ -1524,7 +1537,11 @@ export async function sendInstallerPreparationEmail(input: {
       return { message: null, sent: true, loggingFailed: true };
     },
   });
-  await markInstallerAcceptanceEmailSent(workOrderId, acceptanceLinks.map((entry) => entry.employeeId)).catch((error) => {
+  const notifiedInstallerIds = installerIds.filter((employeeId) => {
+    const email = sanitizeString(installerById.get(employeeId)?.email).toLowerCase();
+    return email && resolvedRecipients.includes(email);
+  });
+  await markInstallerAcceptanceEmailSent(workOrderId, notifiedInstallerIds).catch((error) => {
     logger.error({ err: error }, "Installer email was sent, but acceptance delivery status could not be saved");
   });
   return { ...payload, sent: true };
@@ -1817,6 +1834,50 @@ function renderConfirmationHtml(bodyText: string, calendarLink: string, footerHt
  * e-mail s potrjenim datumom in gumbom »Dodaj v koledar« (+ .ics priloga).
  * Zabeleži se kot ostala pošta projekta (nit, dnevnik, dogodki).
  */
+export async function sendBookingSelectedInternalEmail(input: {
+  projectId: string;
+  workOrderId: string;
+  scheduledAt: string;
+}) {
+  const [project, senderSettings, settings] = await Promise.all([
+    ProjectModel.findOne({ id: input.projectId }), getCommunicationSenderSettings(), getSettings(),
+  ]);
+  if (!project) throw new Error('Projekt ni najden.');
+  if (!senderSettings.enabled || !senderSettings.senderEmail || !senderSettings.senderName) {
+    throw new Error('Pošiljatelj ni pravilno nastavljen.');
+  }
+  const users = await UserModel.find({
+    tenantId: 'inteligent', active: true, deletedAt: null, status: { $nin: ['DISABLED', 'INVITED'] },
+    $or: [{ roles: { $in: ['ADMIN', 'admin'] } }, ...(project.salesUserId ? [{ _id: project.salesUserId }] : [])],
+  }).select({ email: 1 }).lean();
+  const recipients: string[] = Array.from(new Set<string>(users.map((user) => String(user.email ?? '').trim().toLowerCase()).filter(Boolean)));
+  if (!recipients.length) throw new Error('Prodajalec in administratorji nimajo nastavljenega e-naslova.');
+  const context = buildTemplateContext({
+    customerName: project.customer?.name ?? '', projectName: project.title || project.code || project.id,
+    offerNumber: '', offerTotal: '', companyName: settings.companyName ?? '', sender: senderSettings,
+    workOrderSchedule: new Date(input.scheduledAt).toLocaleString('sl-SI'),
+  });
+  const rendered = await renderBookingReviewTemplate('booking_selected_internal', context);
+  const footer = renderCommunicationText(senderSettings.emailFooterTemplate, context);
+  const bodyFinal = appendCommunicationFooter(rendered.body, footer);
+  const footerHtml = renderCommunicationFooterHtmlForEmail(senderSettings.emailFooterTemplate, context);
+  return sendAndRecordCommunicationEmail({
+    senderSettings, effectiveSender: senderSettings, recipients, cc: [], bcc: [],
+    subjectFinal: rendered.subject, bodyFinal,
+    htmlFinal: renderCommunicationBodyHtml(rendered.body, footerHtml),
+    attachments: [], inlineCompanyLogo: null,
+    baseMessage: {
+      projectId: input.projectId, workOrderId: input.workOrderId, audience: 'internal',
+      direction: 'outbound', channel: 'email', to: recipients, cc: [], bcc: [],
+      subjectFinal: rendered.subject, bodyFinal, templateId: String(rendered.template._id),
+      templateKey: rendered.template.key, selectedAttachments: [], sentByUserId: null,
+    },
+    actorDisplayName: 'Sistem — izbira termina',
+    successEvent: { projectId: input.projectId, title: 'Izbran termin — obvestilo prodajalcu in administratorjem poslano', metadata: {} },
+    failureEvent: { projectId: input.projectId, title: 'Izbran termin — obvestilo prodajalcu in administratorjem ni bilo poslano', metadata: {} },
+  });
+}
+
 export async function sendBookingConfirmationEmail(input: {
   projectId: string;
   workOrderId: string;

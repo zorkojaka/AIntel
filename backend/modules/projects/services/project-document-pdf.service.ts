@@ -220,6 +220,7 @@ async function resolveWorkOrderExecutionUnits(projectObjectId: unknown, item: an
       ? [
           { projectId: projectObjectId, phase: 'preparation', itemId: locationItemId, deletedAt: { $exists: false } },
           { projectId: projectObjectId, phase: 'requirements', itemId: locationItemId, deletedAt: { $exists: false } },
+          { projectId: projectObjectId, phase: 'execution', itemId: locationItemId, deletedAt: { $exists: false } },
         ]
       : [
           { projectId: projectObjectId, phase: 'preparation', itemId: fallbackItemId, unitIndex, deletedAt: { $exists: false } },

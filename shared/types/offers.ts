@@ -3,6 +3,8 @@ export type OfferStatus = 'draft' | 'offered' | 'accepted' | 'rejected' | 'cance
 export interface OfferLineItem {
   id: string;
   productId: string | null;
+  /** Pri postavki po meri določa, ali gre za storitev, ki se obračuna monterju. */
+  isService?: boolean;
   name: string;
   quantity: number;
   unit: string;
