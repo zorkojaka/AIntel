@@ -18,6 +18,9 @@ const TEMPLATE_CATEGORY_OPTIONS = [
   { value: 'installer_preparation_send', label: 'Delovni nalog monterju (izvedba)' },
   { value: 'booking_invite_send', label: 'Vabilo stranki k izbiri termina' },
   { value: 'booking_confirmation_send', label: 'Potrditev izbranega termina (stranki)' },
+  { value: 'invoice_review_request', label: 'Prošnja za oceno ob računu' },
+  { value: 'offer_booking_invite', label: 'Izbira termina ob ponudbi' },
+  { value: 'booking_selected_internal', label: 'Izbran termin — prodajalec in administrator' },
 ] as const;
 
 function createEmptyTemplate(): EditableTemplate {
@@ -198,6 +201,9 @@ export const CommunicationTemplatesSection: React.FC<CommunicationTemplatesSecti
             {'{{sender.phone}}'}, {'{{sender.role}}'}.
             Email monterju: {'{{installer.name}}'}, {'{{workOrder.schedule}}'}, {'{{workOrder.details}}'} (podatki naloga — termin, stranka,
             postavke). Vabilo k terminu: {'{{booking.link}}'}, {'{{booking.duration}}'}.
+            Dodatka ob računu in ponudbi uporabita vsebino zadnje shranjene aktivne predloge svoje kategorije;
+            njuna zadeva in priloge se ne uporabljajo. Prošnja za oceno: {'{{review.link}}'}.
+            Obvestilo prodajalcu in administratorjem: {'{{workOrder.schedule}}'}.
           </div>
           <div className="flex items-center gap-3">
             <Button type="submit" disabled={savingDraft}>

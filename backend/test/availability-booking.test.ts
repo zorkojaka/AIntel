@@ -30,6 +30,7 @@ import { chooseBookingDay, createBookingPreviewLink, getBookingByToken } from '.
 import { OfferBookingModel } from '../modules/availability/offer-booking.model';
 import { BookingPreviewModel } from '../modules/availability/booking-preview.model';
 import { registerCoreConfigNamespaces } from '../modules/settings/config/config-namespaces';
+import * as communication from '../modules/communication/services/communication.service';
 
 let mongod: MongoMemoryServer;
 
@@ -252,7 +253,10 @@ test('prosti dnevi: presek dveh monterjev + zasedenost z razpisanim nalogom', as
   assert.deepEqual(freePoNalogu, [], 'zaseden nalog vzame skupne ure');
 });
 
-test('rezervacija: stranka izbere dan, termin se zapiše in potrdi, povezava postane enkratna', async () => {
+test('rezervacija: stranka izbere dan, termin se zapiše in potrdi, povezava postane enkratna', async (t) => {
+  const internalEmail = t.mock.method(communication, 'sendBookingSelectedInternalEmail', async () => {
+    throw new Error('Testna napaka internega emaila');
+  });
   const miha = await monter('Miha');
   await setAvailabilityDay(String(miha._id), D1, [8, 9, 10, 11]);
   await ProjectModel.create({
@@ -275,6 +279,8 @@ test('rezervacija: stranka izbere dan, termin se zapiše in potrdi, povezava pos
   assert.ok(view.days.some((day) => day.date === D1));
 
   const chosen = await chooseBookingDay('a'.repeat(48), D1);
+  assert.equal(internalEmail.mock.callCount(), 1);
+  assert.equal(internalEmail.mock.calls[0].arguments[0].projectId, 'PRJ-401');
   assert.equal(chosen.scheduledAt, `${D1}T08:00:00`);
 
   const updated = await WorkOrderModel.findById(workOrder._id).lean();
@@ -288,6 +294,7 @@ test('rezervacija: stranka izbere dan, termin se zapiše in potrdi, povezava pos
 
   const project = await ProjectModel.findOne({ id: 'PRJ-401' }).lean();
   assert.ok((project as any)?.timeline?.some((entry: any) => entry.title === 'Stranka izbrala termin montaže'));
+  assert.ok(project?.timeline?.some((entry) => entry.description === 'Testna napaka internega emaila'));
 });
 
 test('prosti termini: po projektu je ena ura rezerve za pot', async () => {
@@ -306,7 +313,8 @@ test('prosti termini: po projektu je ena ura rezerve za pot', async () => {
   assert.deepEqual(free, [], 'projekt 8–14 zasede še 14–15, zato servis 14–16 ni dovoljen');
 });
 
-test('rezervacija iz ponudbe: potrdi ponudbo, odpre pripravo in obvesti odgovorne', async () => {
+test('rezervacija iz ponudbe: potrdi ponudbo, odpre pripravo in obvesti odgovorne', async (t) => {
+  const internalEmail = t.mock.method(communication, 'sendBookingSelectedInternalEmail', async () => ({ message: null }));
   const miha = await monter('Miha');
   const ana = await monter('Ana');
   const prodajalec = await EmployeeModel.create({
@@ -343,6 +351,9 @@ test('rezervacija iz ponudbe: potrdi ponudbo, odpre pripravo in obvesti odgovorn
   );
 
   const chosen = await chooseBookingDay('d'.repeat(48), D2);
+  assert.equal(internalEmail.mock.callCount(), 1);
+  assert.equal(internalEmail.mock.calls[0].arguments[0].projectId, 'PRJ-404');
+  assert.equal(internalEmail.mock.calls[0].arguments[0].scheduledAt, `${D2}T10:00:00`);
   assert.equal(chosen.scheduledAt, `${D2}T10:00:00`);
   const project = await ProjectModel.findOne({ id: 'PRJ-404' }).lean();
   assert.deepEqual((project as any)?.assignedEmployeeIds?.map(String), [String(ana._id)]);

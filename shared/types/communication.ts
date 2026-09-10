@@ -8,7 +8,10 @@ export type CommunicationCategory =
   | "invoice_send"
   | "installer_preparation_send"
   | "booking_invite_send"
-  | "booking_confirmation_send";
+  | "booking_confirmation_send"
+  | "invoice_review_request"
+  | "offer_booking_invite"
+  | "booking_selected_internal";
 
 export type CommunicationAttachmentType = "offer_pdf" | "project_pdf" | "work_order_pdf" | "work_order_confirmation_pdf" | "invoice_pdf";
 

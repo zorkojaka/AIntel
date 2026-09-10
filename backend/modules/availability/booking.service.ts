@@ -6,6 +6,7 @@ import { EmployeeModel } from '../employees/schemas/employee';
 import { ProjectModel, newTimelineEventId } from '../projects/schemas/project';
 import {
   sendBookingConfirmationEmail,
+  sendBookingSelectedInternalEmail,
   sendBookingInviteEmail,
   sendInstallerPreparationEmail,
 } from '../communication/services/communication.service';
@@ -77,6 +78,20 @@ async function notifyProjectTeamAboutChosenBooking(input: {
 }) {
   const project = await ProjectModel.findOne({ id: input.projectId });
   if (!project) return;
+
+  try {
+    await sendBookingSelectedInternalEmail({
+      projectId: input.projectId, workOrderId: String(input.workOrder._id), scheduledAt: input.scheduledAt,
+    });
+  } catch (error) {
+    console.error('Obvestila prodajalcu in administratorjem ni bilo mogoče poslati.', error);
+    await ProjectModel.updateOne({ id: input.projectId }, { $push: { timeline: {
+      id: newTimelineEventId(), type: 'edit', timestamp: new Date().toISOString(), user: 'Sistem',
+      title: 'Email o izbranem terminu prodajalcu in administratorjem ni bil poslan',
+      description: error instanceof Error ? error.message : 'Pošiljanje ni uspelo.',
+      metadata: { workOrderId: String(input.workOrder._id) },
+    } } });
+  }
 
   const salesUser = project.salesUserId
     ? await UserModel.findById(project.salesUserId).select({ employeeId: 1 }).lean()

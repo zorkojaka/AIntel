@@ -59,14 +59,6 @@ function buildDefaultBody(invoiceNumber: string) {
   ].join("\n");
 }
 
-function buildDefaultReviewText(link: string) {
-  return [
-    "Bomo zelo veseli, če si vzamete minuto in ocenite našo izvedbo:",
-    link,
-    "Vaše mnenje nam veliko pomeni in pomaga drugim strankam pri odločitvi.",
-  ].join("\n");
-}
-
 export function InvoiceCommunicationComposeDialog({
   open,
   onOpenChange,
@@ -156,17 +148,19 @@ export function InvoiceCommunicationComposeDialog({
           fetchCommunicationSenderSettings(),
         ]);
         let nextReviewLink = "";
+        let nextReviewText = "";
         try {
           const reviewResponse = await fetch(`/api/projects/${projectId}/review-link`, { credentials: "include" });
           const reviewPayload = await reviewResponse.json();
           nextReviewLink = reviewPayload?.data?.url ?? "";
+          nextReviewText = reviewPayload?.data?.text ?? "";
         } catch {
           nextReviewLink = "";
         }
         if (!active) return;
         setReviewLink(nextReviewLink);
         setAskReview(false);
-        setReviewText(nextReviewLink ? buildDefaultReviewText(nextReviewLink) : "");
+        setReviewText(nextReviewText);
 
         const activeTemplates = nextTemplates.filter((entry) => entry.isActive);
         const defaultTemplate = activeTemplates[0] ?? null;
@@ -214,7 +208,7 @@ export function InvoiceCommunicationComposeDialog({
     return () => {
       active = false;
     };
-  }, [companyName, customerName, invoiceNumber, invoiceTotalLabel, normalizedCustomerEmail, open, projectName, reloadKey]);
+  }, [companyName, customerName, invoiceNumber, invoiceTotalLabel, normalizedCustomerEmail, open, projectId, projectName, reloadKey]);
 
   const selectedTemplate = useMemo(
     () => templates.find((entry) => entry.id === selectedTemplateId) ?? null,
