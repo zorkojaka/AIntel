@@ -5,6 +5,7 @@ import { OfferVersionModel } from '../../projects/schemas/offer-version';
 import { EmployeeServiceRateModel } from '../../employee-profiles/schemas/employee-service-rate';
 import { EmployeeProfileModel } from '../../employee-profiles/schemas/employee-profile';
 import { FinanceSnapshotModel, type FinanceSnapshotDocument } from '../schemas/finance-snapshot';
+import { financeLedgerPipeline, listFinanceLedger } from './finance-ledger.service';
 
 const financeSnapshotDebugEnabled =
   process.env.NODE_ENV !== 'production' && ['1', 'true', 'yes', 'on'].includes((process.env.AINTEL_FINANCE_DEBUG ?? '').trim().toLowerCase());
@@ -654,20 +655,24 @@ export async function listFinanceSnapshots(params: {
     if (dateTo) filter.issuedAt.$lte = dateTo;
   }
 
-  const [total, rows] = await Promise.all([
-    FinanceSnapshotModel.countDocuments(filter),
-    FinanceSnapshotModel.find(filter)
-      .sort({ issuedAt: -1, createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .lean(),
+  const [result] = await FinanceSnapshotModel.aggregate([
+    ...financeLedgerPipeline(filter),
+    { $facet: {
+      count: [{ $count: 'total' }],
+      rows: [{ $sort: { issuedAt: -1, createdAt: -1 } }, { $skip: (page - 1) * limit }, { $limit: limit }],
+    } },
   ]);
-
-  return { total, page, limit, items: rows };
+  return { total: result?.count[0]?.total ?? 0, page, limit, items: result?.rows ?? [] };
 }
 
 export async function getProjectSnapshot(projectId: string) {
-  return FinanceSnapshotModel.findOne({ projectId, superseded: { $ne: true } })
+  const snapshot = await FinanceSnapshotModel.findOne({ projectId, superseded: { $ne: true } })
     .sort({ issuedAt: -1, createdAt: -1 })
     .lean();
+  if (!snapshot) return null;
+  const entries = await listFinanceLedger({ projectId });
+  const netSummary = Object.fromEntries(Object.keys(snapshot.summary).map((key) => [key,
+    Math.round(entries.reduce((sum, entry) => sum + Number(entry.summary[key] ?? 0), 0) * 100) / 100,
+  ]));
+  return { ...snapshot, netSummary, creditNotes: (snapshot.creditNotes ?? []).map(({ finance, requestId, payloadHash, ...note }) => note) };
 }

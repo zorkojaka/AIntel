@@ -71,6 +71,12 @@ interface FinanceInvoiceRow {
   totalWithVat: number;
   totalWithoutVat: number;
   hasFinanceSnapshot: boolean;
+  creditNoteId?: string;
+  sourceInvoiceNumber?: string;
+  creditedAmount?: number;
+  netTotalWithVat?: number;
+  amountDue?: number;
+  refundDue?: number;
   paidAmount?: number;
   lastPaymentAt?: string | null;
   paymentState?: 'unpaid' | 'partial' | 'paid' | null;
@@ -294,6 +300,7 @@ function statusLabel(isPaid: boolean) {
 }
 
 function invoiceStatusLabel(status: string) {
+  if (status === 'credited') return 'Dobropis';
   if (status === 'issued') return 'Izdan';
   if (status === 'draft') return 'Osnutek';
   if (status === 'cancelled') return 'Odstranjen';
@@ -314,6 +321,10 @@ function paymentStateBadgeClass(state: FinanceInvoiceRow['paymentState']) {
 }
 
 function invoicePdfUrl(invoice: FinanceInvoiceRow, inline = false) {
+  if (invoice.creditNoteId) {
+    const baseUrl = `/api/projects/${encodeURIComponent(invoice.projectId)}/invoices/${encodeURIComponent(invoice.invoiceVersionId)}/credit-notes/${encodeURIComponent(invoice.creditNoteId)}/pdf`;
+    return inline ? `${baseUrl}?mode=inline` : baseUrl;
+  }
   const baseUrl = `/api/projects/${encodeURIComponent(invoice.projectId)}/invoices/${encodeURIComponent(invoice.invoiceVersionId)}/pdf`;
   return inline ? `${baseUrl}?mode=inline` : baseUrl;
 }
@@ -601,7 +612,7 @@ export const FinancePage: React.FC = () => {
       totalWithVat: active.reduce((sum, invoice) => sum + (Number(invoice.totalWithVat) || 0), 0),
       paidCount: active.filter((invoice) => invoice.paymentState === 'paid').length,
       openAmount: openInvoices.reduce(
-        (sum, invoice) => sum + Math.max(0, (Number(invoice.totalWithVat) || 0) - (Number(invoice.paidAmount) || 0)),
+        (sum, invoice) => sum + Math.max(0, (Number(invoice.amountDue ?? invoice.totalWithVat) || 0) - (Number(invoice.paidAmount) || 0)),
         0,
       ),
       openCount: openInvoices.length,
@@ -736,7 +747,7 @@ export const FinancePage: React.FC = () => {
   };
 
   const handleRecordPayment = async (invoice: FinanceInvoiceRow) => {
-    const outstanding = Math.max(0, (Number(invoice.totalWithVat) || 0) - (Number(invoice.paidAmount) || 0));
+    const outstanding = Math.max(0, (Number(invoice.amountDue ?? invoice.totalWithVat) || 0) - (Number(invoice.paidAmount) || 0));
     const vnos = window.prompt(
       `Prejeti znesek za račun ${invoice.invoiceNumber} (odprto: ${currency.format(outstanding)})`,
       outstanding.toFixed(2),
@@ -1356,8 +1367,8 @@ export const FinancePage: React.FC = () => {
                       const isSavingCancel = !!invoiceActionSaving[cancelKey];
                       const dateValue = invoice.issuedAt ?? invoice.createdAt;
                       return (
-                        <tr key={`${invoice.projectId}-${invoice.invoiceVersionId}`}>
-                          <td>{invoice.invoiceNumber}</td>
+                        <tr key={`${invoice.projectId}-${invoice.invoiceVersionId}-${invoice.creditNoteId ?? 'invoice'}`}>
+                          <td>{invoice.invoiceNumber}{invoice.sourceInvoiceNumber ? <div className="finance-cell-note">za račun {invoice.sourceInvoiceNumber}</div> : null}</td>
                           <td><span className={`status-badge ${invoice.status === 'issued' ? 'is-paid' : invoice.status === 'cancelled' ? 'is-cancelled' : 'is-pending'}`}>{invoiceStatusLabel(invoice.status)}</span></td>
                           <td>{invoice.projectTitle || invoice.projectId}</td>
                           <td>{invoice.customerName || '-'}</td>
@@ -1370,7 +1381,7 @@ export const FinancePage: React.FC = () => {
                                 className={`status-badge ${paymentStateBadgeClass(invoice.paymentState)}`}
                                 title={
                                   invoice.paymentState === 'partial'
-                                    ? `Plačano ${currency.format(Number(invoice.paidAmount) || 0)} od ${currency.format(Number(invoice.totalWithVat) || 0)}`
+                                    ? `Plačano ${currency.format(Number(invoice.paidAmount) || 0)} od ${currency.format(Number(invoice.amountDue ?? invoice.totalWithVat) || 0)}`
                                     : invoice.lastPaymentAt
                                       ? `Zadnje plačilo: ${new Date(invoice.lastPaymentAt).toLocaleDateString('sl-SI')}`
                                       : undefined
@@ -1381,6 +1392,7 @@ export const FinancePage: React.FC = () => {
                             ) : (
                               '-'
                             )}
+                            {invoice.status === 'issued' && Number(invoice.refundDue ?? 0) > 0 && <div className="finance-cell-note">Za vračilo: {currency.format(Number(invoice.refundDue))}</div>}
                           </td>
                           <td>
                             <span className={`status-badge ${invoice.hasFinanceSnapshot ? 'is-paid' : 'is-pending'}`}>
@@ -1432,7 +1444,7 @@ export const FinancePage: React.FC = () => {
                               <button
                                 type="button"
                                 className="finance-btn finance-btn--danger"
-                                disabled={invoice.status === 'cancelled' || isSavingClone || isSavingCancel}
+                                disabled={invoice.status !== 'issued' || isSavingClone || isSavingCancel}
                                 onClick={() => void handleCancelInvoice(invoice)}
                               >
                                 {isSavingCancel ? 'Odstranjujem...' : 'Odstrani'}

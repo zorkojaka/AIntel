@@ -28,6 +28,7 @@ import { downloadPdf } from "../../../api";
 import { toast } from "sonner";
 import { useProjectMutationRefresh } from "../../core/useProjectMutationRefresh";
 import { InvoiceCommunicationComposeDialog } from "../../communication/InvoiceCommunicationComposeDialog";
+import { CreditNotesPanel } from "./CreditNotesPanel";
 import { PriceListProductAutocomplete } from "../../../components/PriceListProductAutocomplete";
 import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
 
@@ -236,7 +237,6 @@ export function InvoiceVersionEditor({
   const [dirty, setDirty] = useState(false);
   const [invoiceNumberDraft, setInvoiceNumberDraft] = useState("");
   const [downloading, setDownloading] = useState(false);
-  const [creditDownloading, setCreditDownloading] = useState(false);
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
 
   useEffect(() => {
@@ -419,26 +419,6 @@ export function InvoiceVersionEditor({
     window.open(`/api/projects/${projectId}/invoices/${draftVersion._id}/pdf?mode=inline`, "_blank", "noopener,noreferrer");
   };
 
-  const handleDownloadCreditNote = async () => {
-    if (!draftVersion || !projectId) return;
-    try {
-      setCreditDownloading(true);
-      const numberPart = filenameSafe(draftVersion.invoiceNumber || invoiceNumberDraft || String(draftVersion.versionNumber ?? draftVersion._id));
-      const filename = `dobropis-${numberPart}.pdf`;
-      await downloadPdf(`/api/projects/${projectId}/invoices/${draftVersion._id}/pdf?docType=CREDIT_NOTE`, filename);
-      toast.success("Dobropis prenesen.");
-    } catch (error) {
-      console.error(error);
-      toast.error(error instanceof Error ? error.message : "Prenos dobropisa ni uspel.");
-    } finally {
-      setCreditDownloading(false);
-    }
-  };
-
-  const handlePreviewCreditNote = () => {
-    if (!draftVersion || !projectId) return;
-    window.open(`/api/projects/${projectId}/invoices/${draftVersion._id}/pdf?docType=CREDIT_NOTE&mode=inline`, "_blank", "noopener,noreferrer");
-  };
 
   if (!projectId) {
     return (
@@ -778,13 +758,6 @@ export function InvoiceVersionEditor({
                 onPreview={handlePreview}
                 onDownload={handleDownload}
               />
-              <DownloadActionButton
-                label="Poglej dobropis"
-                disabled={!draftVersion || creditDownloading}
-                downloading={creditDownloading}
-                onPreview={handlePreviewCreditNote}
-                onDownload={handleDownloadCreditNote}
-              />
               <Button
                 variant="outline"
                 disabled={!draftVersion || draftVersion.status !== "issued"}
@@ -827,6 +800,9 @@ export function InvoiceVersionEditor({
             </div>
           </div>
         </div>
+      )}
+      {draftVersion?.status === "issued" && (
+        <CreditNotesPanel projectId={projectId} invoiceVersionId={draftVersion._id} issued onIssued={async () => { await refresh(); await refreshAfterMutation(); }} />
       )}
       <InvoiceCommunicationComposeDialog
         open={sendDialogOpen}

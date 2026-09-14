@@ -6,6 +6,7 @@ import type { OfferLineItem } from '../../../../shared/types/offers';
 import { ProductModel } from '../../cenik/product.model';
 import { createFinanceSnapshot } from '../../finance/services/finance-snapshot.service';
 import { FinanceSnapshotModel } from '../../finance/schemas/finance-snapshot';
+import { assertInvoiceHasNoCredits } from '../../finance/services/finance-ledger.service';
 import {
   generateInvoiceSequentialNumber,
   parseInvoiceSequentialNumber,
@@ -582,6 +583,11 @@ export async function issueInvoiceVersion(projectId: string, versionId: string, 
     return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id, includeProjectStatus: true });
   }
   const cancelledIssuedVersionIds: string[] = [];
+  for (const entry of project.invoiceVersions ?? []) {
+    if (entry._id !== version._id && (entry.status === 'issued' || entry._id === version.correctedFromInvoiceVersionId)) {
+      await assertInvoiceHasNoCredits(String(entry._id));
+    }
+  }
   (project.invoiceVersions ?? []).forEach((entry) => {
     if (entry._id !== version._id && entry.status === 'issued') {
       entry.status = 'cancelled';
@@ -681,6 +687,7 @@ export async function issueInvoiceVersion(projectId: string, versionId: string, 
 }
 
 export async function cloneInvoiceVersion(projectId: string, versionId: string): Promise<InvoiceListResponse> {
+  await assertInvoiceHasNoCredits(versionId);
   const project = await findProjectOrFail(projectId);
   const version = ensureInvoiceVersion(project, versionId);
   const existingDraft = findDraftVersion(project);
@@ -723,6 +730,7 @@ export async function cloneInvoiceVersion(projectId: string, versionId: string):
 }
 
 export async function cancelInvoiceVersion(projectId: string, versionId: string): Promise<InvoiceListResponse> {
+  await assertInvoiceHasNoCredits(versionId);
   const project = await findProjectOrFail(projectId);
   const version = ensureInvoiceVersion(project, versionId);
   if (version.status !== 'cancelled') {

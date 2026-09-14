@@ -97,11 +97,12 @@ export async function cancelInvoice(req: Request, res: Response) {
 export async function exportInvoicePdf(req: Request, res: Response) {
   try {
     const requestedType = typeof req.query.docType === 'string' ? req.query.docType.toUpperCase() : 'INVOICE';
-    const docType = requestedType === 'CREDIT_NOTE' ? 'CREDIT_NOTE' : 'INVOICE';
+    if (requestedType === 'CREDIT_NOTE') return res.fail('Najprej izdaj ločen dobropis za izbrane vrnjene postavke.', 400);
+    const docType = 'INVOICE';
     const mode = typeof req.query.mode === 'string' && req.query.mode.toLowerCase() === 'inline' ? 'inline' : 'attachment';
     const buffer = await generateInvoicePdf(getProjectId(req), getVersionId(req), { docType });
     res.setHeader('Content-Type', 'application/pdf');
-    const slug = docType === 'CREDIT_NOTE' ? 'credit-note' : 'invoice';
+    const slug = 'invoice';
     res.setHeader('Content-Disposition', `${mode}; filename="${slug}-${getVersionId(req)}.pdf"`);
     return res.end(buffer);
   } catch (error) {
