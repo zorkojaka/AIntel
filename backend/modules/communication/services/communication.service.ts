@@ -30,7 +30,7 @@ import { ProjectModel } from "../../projects/schemas/project";
 import { OfferVersionModel } from "../../projects/schemas/offer-version";
 import { WorkOrderModel } from "../../projects/schemas/work-order";
 import { EmployeeModel } from "../../employees/schemas/employee";
-import { UserModel } from "../../users/schemas/user";
+import { resolveInternalNotificationRecipients, type InternalNotificationEvent } from './internal-notification-settings.service';
 import { ensureBookingReviewTemplates, renderBookingReviewTemplate } from './booking-review-templates.service';
 import { resolveProjectClient } from "../../projects/services/project.service";
 import { buildIcsEvent, googleCalendarLink } from "../../availability/calendar-event";
@@ -1544,7 +1544,7 @@ export async function sendInstallerPreparationEmail(input: {
   await markInstallerAcceptanceEmailSent(workOrderId, notifiedInstallerIds).catch((error) => {
     logger.error({ err: error }, "Installer email was sent, but acceptance delivery status could not be saved");
   });
-  return { ...payload, sent: true };
+  return { ...payload, sent: true, recipients: resolvedRecipients };
 }
 
 /** Strankin odgovor (email_messages) v obliki dogodka za potek komunikacije. */
@@ -1837,27 +1837,32 @@ function renderConfirmationHtml(bodyText: string, calendarLink: string, footerHt
 export async function sendBookingSelectedInternalEmail(input: {
   projectId: string;
   workOrderId: string;
-  scheduledAt: string;
+  scheduledAt?: string;
+  event?: InternalNotificationEvent;
+  customerSelected?: boolean;
+  excludeRecipients?: string[];
 }) {
-  const [project, senderSettings, settings] = await Promise.all([
-    ProjectModel.findOne({ id: input.projectId }), getCommunicationSenderSettings(), getSettings(),
-  ]);
+  const project = await ProjectModel.findOne({ id: input.projectId });
   if (!project) throw new Error('Projekt ni najden.');
+  const event = input.event ?? 'scheduled';
+  const recipients = (await resolveInternalNotificationRecipients(event, project.salesUserId))
+    .filter((email) => !(input.excludeRecipients ?? []).includes(email));
+  if (!recipients.length) return { skipped: true };
+  const [senderSettings, settings] = await Promise.all([getCommunicationSenderSettings(), getSettings()]);
   if (!senderSettings.enabled || !senderSettings.senderEmail || !senderSettings.senderName) {
     throw new Error('Pošiljatelj ni pravilno nastavljen.');
   }
-  const users = await UserModel.find({
-    tenantId: 'inteligent', active: true, deletedAt: null, status: { $nin: ['DISABLED', 'INVITED'] },
-    $or: [{ roles: { $in: ['ADMIN', 'admin'] } }, ...(project.salesUserId ? [{ _id: project.salesUserId }] : [])],
-  }).select({ email: 1 }).lean();
-  const recipients: string[] = Array.from(new Set<string>(users.map((user) => String(user.email ?? '').trim().toLowerCase()).filter(Boolean)));
-  if (!recipients.length) throw new Error('Prodajalec in administratorji nimajo nastavljenega e-naslova.');
+  const workOrder = await WorkOrderModel.findOne({ _id: input.workOrderId, projectId: input.projectId }).lean();
+  const category = event === 'issued' ? 'work_order_issued_internal'
+    : event === 'completed' ? 'work_order_completed_internal'
+    : input.customerSelected !== false ? 'booking_selected_internal' : 'work_order_scheduled_internal';
   const context = buildTemplateContext({
     customerName: project.customer?.name ?? '', projectName: project.title || project.code || project.id,
     offerNumber: '', offerTotal: '', companyName: settings.companyName ?? '', sender: senderSettings,
-    workOrderSchedule: new Date(input.scheduledAt).toLocaleString('sl-SI'),
+    workOrderIdentifier: workOrder?.code || workOrder?.title || input.workOrderId,
+    workOrderSchedule: formatDateTime(input.scheduledAt || workOrder?.scheduledAt),
   });
-  const rendered = await renderBookingReviewTemplate('booking_selected_internal', context);
+  const rendered = await renderBookingReviewTemplate(category, context);
   const footer = renderCommunicationText(senderSettings.emailFooterTemplate, context);
   const bodyFinal = appendCommunicationFooter(rendered.body, footer);
   const footerHtml = renderCommunicationFooterHtmlForEmail(senderSettings.emailFooterTemplate, context);
@@ -1872,9 +1877,9 @@ export async function sendBookingSelectedInternalEmail(input: {
       subjectFinal: rendered.subject, bodyFinal, templateId: String(rendered.template._id),
       templateKey: rendered.template.key, selectedAttachments: [], sentByUserId: null,
     },
-    actorDisplayName: 'Sistem — izbira termina',
-    successEvent: { projectId: input.projectId, title: 'Izbran termin — obvestilo prodajalcu in administratorjem poslano', metadata: {} },
-    failureEvent: { projectId: input.projectId, title: 'Izbran termin — obvestilo prodajalcu in administratorjem ni bilo poslano', metadata: {} },
+    actorDisplayName: 'Sistem — interno obveščanje',
+    successEvent: { projectId: input.projectId, title: 'Interno obvestilo poslano', metadata: { event, workOrderId: input.workOrderId } },
+    failureEvent: { projectId: input.projectId, title: 'Interno obvestilo ni bilo poslano', metadata: { event, workOrderId: input.workOrderId } },
   });
 }
 

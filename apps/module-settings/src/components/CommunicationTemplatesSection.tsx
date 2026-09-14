@@ -21,6 +21,9 @@ const TEMPLATE_CATEGORY_OPTIONS = [
   { value: 'invoice_review_request', label: 'Prošnja za oceno ob računu' },
   { value: 'offer_booking_invite', label: 'Izbira termina ob ponudbi' },
   { value: 'booking_selected_internal', label: 'Izbran termin — prodajalec in administrator' },
+  { value: 'work_order_issued_internal', label: 'Interno obvestilo — delovni nalog izdan' },
+  { value: 'work_order_scheduled_internal', label: 'Interno obvestilo — termin nastavljen ali spremenjen' },
+  { value: 'work_order_completed_internal', label: 'Interno obvestilo — delovni nalog zaključen' },
 ] as const;
 
 function createEmptyTemplate(): EditableTemplate {

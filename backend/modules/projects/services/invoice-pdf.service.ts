@@ -7,6 +7,8 @@ import { getCompanySettings, getPdfDocumentSettings } from './pdf-settings.servi
 import { getSettings } from '../../settings/settings.service';
 import type { DocumentNumberingKind } from './document-numbering.service';
 import { formatClientAddress, resolveProjectClient } from './project.service';
+import type { CreditNote } from '../../../../shared/types/credit-notes';
+import { getCreditNote } from './credit-note.service';
 
 export interface InvoiceVersion {
   _id: string;
@@ -45,17 +47,28 @@ export interface InvoiceVersion {
 
 type InvoiceDocType = Extract<DocumentNumberingKind, 'INVOICE' | 'CREDIT_NOTE'>;
 
-export async function generateInvoicePdf(projectId: string, invoiceVersionId: string, options?: { docType?: InvoiceDocType }) {
+export async function generateInvoicePdf(projectId: string, invoiceVersionId: string, options?: { docType?: InvoiceDocType; creditNote?: CreditNote }) {
   const docType: InvoiceDocType = options?.docType === 'CREDIT_NOTE' ? 'CREDIT_NOTE' : 'INVOICE';
   const project = (await ProjectModel.findOne({ id: projectId }).lean()) as ProjectDocument | null;
   if (!project) {
     throw new Error('Projekt ni najden.');
   }
-  const invoice = (project.invoiceVersions ?? []).find((entry: InvoiceVersion) => entry._id === invoiceVersionId) as
+  let invoice = (project.invoiceVersions ?? []).find((entry: InvoiceVersion) => entry._id === invoiceVersionId) as
     | InvoiceVersion
     | undefined;
   if (!invoice) {
     throw new Error('Verzija računa ni najdena.');
+  }
+  const credit = options?.creditNote;
+  if (credit) {
+    invoice = {
+      ...invoice, invoiceNumber: credit.number, issuedAt: credit.issuedAt, createdAt: credit.issuedAt,
+      paidAmount: 0, remainingAmount: 0, discountPercent: 0, fixedDiscountAmount: 0,
+      useGlobalDiscount: false, usePerItemDiscount: false,
+      items: credit.items.map((item) => ({ ...item, id: item.invoiceItemId, unitPrice: item.totalWithoutVat / item.quantity })),
+      summary: { baseWithoutVat: credit.summary.totalWithoutVat, discountedBase: credit.summary.totalWithoutVat,
+        vatAmount: credit.summary.vatAmount, totalWithVat: credit.summary.totalWithVat },
+    };
   }
   const [company, documentSettings, globalSettings] = await Promise.all([
     getCompanySettings(),
@@ -127,16 +140,16 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
     documentNumber,
     issueDate: formatDate(issueDate),
     servicePerformedDate,
-    dueDate,
+    dueDate: credit ? null : dueDate,
     company: companyProfile,
-    customer,
+    customer: credit?.customer ?? customer,
     projectTitle: project.title ?? project.id,
     items,
     totals,
-    notes,
-    paymentTerms: project.customer?.paymentTerms ?? documentSettings.defaultTexts.paymentTerms ?? null,
-    paymentInfo,
-    referenceNumber: docType === 'CREDIT_NOTE' ? documentNumber : null,
+    notes: credit ? [...notes, credit.reason] : notes,
+    paymentTerms: credit ? null : project.customer?.paymentTerms ?? documentSettings.defaultTexts.paymentTerms ?? null,
+    paymentInfo: credit ? null : paymentInfo,
+    referenceNumber: credit?.invoiceNumber ?? (docType === 'CREDIT_NOTE' ? documentNumber : null),
   } as DocumentPreviewContext;
 
   console.log('INVOICE EXPORT renderer', {
@@ -149,6 +162,11 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
 
   const html = renderDocumentHtml(context);
   return renderHtmlToPdf(html);
+}
+
+export async function generateCreditNotePdf(projectId: string, invoiceVersionId: string, noteId: string) {
+  const creditNote = await getCreditNote(projectId, invoiceVersionId, noteId);
+  return generateInvoicePdf(projectId, invoiceVersionId, { docType: 'CREDIT_NOTE', creditNote });
 }
 
 function formatDate(value: Date | string | null): string {

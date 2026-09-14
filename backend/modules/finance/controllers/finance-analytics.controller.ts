@@ -193,10 +193,10 @@ export async function invoicesList(_req: Request, res: Response) {
   );
   const snapshots = invoiceVersionIds.length
     ? await FinanceSnapshotModel.find({ invoiceVersionId: { $in: invoiceVersionIds } })
-        .select({ invoiceVersionId: 1, superseded: 1 })
+        .select({ invoiceVersionId: 1, superseded: 1, creditNotes: 1 })
         .lean()
     : [];
-  const snapshotByVersionId = new Map<string, { superseded?: boolean }>(
+  const snapshotByVersionId = new Map<string, { superseded?: boolean; creditNotes?: any[] }>(
     snapshots.map((snapshot: any) => [String(snapshot.invoiceVersionId), snapshot]),
   );
 
@@ -209,7 +209,9 @@ export async function invoicesList(_req: Request, res: Response) {
         if (snapshot?.superseded === true) {
           return null;
         }
-        return {
+        const creditNotes = snapshot?.creditNotes ?? [];
+        const creditedAmount = Number(creditNotes.reduce((sum: number, note: any) => sum + Number(note?.summary?.totalWithVat ?? 0), 0).toFixed(2));
+        const invoiceRow = {
           projectId: project.id,
           projectTitle: project.title ?? project.id,
           customerName: project.customer?.name ?? '',
@@ -222,9 +224,20 @@ export async function invoicesList(_req: Request, res: Response) {
           totalWithVat: version.summary?.totalWithVat ?? 0,
           totalWithoutVat: version.summary?.discountedBase ?? version.summary?.baseWithoutVat ?? 0,
           hasFinanceSnapshot: Boolean(snapshot),
+          creditedAmount,
+          netTotalWithVat: Number((Number(version.summary?.totalWithVat ?? 0) - creditedAmount).toFixed(2)),
         };
+        const creditRows = creditNotes.map((note: any) => ({
+          projectId: project.id, projectTitle: project.title ?? project.id, customerName: project.customer?.name ?? '',
+          invoiceVersionId: versionId, versionNumber: version.versionNumber ?? null, invoiceNumber: note.number ?? '',
+          sourceInvoiceNumber: version.invoiceNumber ?? '', creditNoteId: note.id, status: 'credited',
+          issuedAt: note.issuedAt ?? null, createdAt: note.issuedAt ?? null,
+          totalWithVat: -Number(note.summary?.totalWithVat ?? 0), totalWithoutVat: -Number(note.summary?.totalWithoutVat ?? 0),
+          hasFinanceSnapshot: true, creditedAmount: 0, netTotalWithVat: 0,
+        }));
+        return [invoiceRow, ...creditRows];
       })
-      .filter(Boolean),
+      .filter(Boolean).flat(),
   );
 
   rows.sort((a, b) => {
@@ -240,11 +253,15 @@ export async function invoicesList(_req: Request, res: Response) {
   const enriched = rows.map((row) => {
     const paid = paymentsByNumber.get(String(row.invoiceNumber ?? ''));
     const paidAmount = paid?.paidAmount ?? 0;
+    const totalDue = Math.max(0, Number((Number(row.totalWithVat) - Number(row.creditedAmount ?? 0)).toFixed(2)));
+    const refundDue = row.status === 'issued' ? Math.max(0, Number((paidAmount - totalDue).toFixed(2))) : 0;
     return {
       ...row,
       paidAmount,
       lastPaymentAt: paid?.lastPaymentAt ?? null,
-      paymentState: row.status === 'issued' ? paymentStateFor(Number(row.totalWithVat) || 0, paidAmount) : null,
+      paymentState: row.status === 'issued' ? paymentStateFor(totalDue, paidAmount) : null,
+      amountDue: totalDue,
+      refundDue,
     };
   });
   const openPaymentsCount = await countOpenPayments();

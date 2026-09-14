@@ -39,6 +39,7 @@ import {
 import * as logisticsController from '../controllers/logistics.controller';
 import { cancelOfferConfirmation } from '../controllers/logistics.controller';
 import * as invoiceController from '../controllers/invoice.controller';
+import * as creditNoteController from '../controllers/credit-note.controller';
 import {
   sendInstallerPreparationCommunicationController,
   sendInvoiceCommunicationController,
@@ -114,6 +115,10 @@ router.post('/:projectId/invoices/:versionId/send', requireProjectWrite, sendInv
 router.post('/:projectId/invoices/:versionId/clone-for-edit', requireProjectWrite, invoiceController.cloneInvoiceForEdit);
 router.delete('/:projectId/invoices/:versionId', requireProjectWrite, invoiceController.cancelInvoice);
 router.get('/:projectId/invoices/:versionId/pdf', invoiceController.exportInvoicePdf);
+router.get('/:projectId/invoices/:versionId/credit-notes', requireProjectWrite, creditNoteController.listCreditNotes);
+router.post('/:projectId/invoices/:versionId/credit-notes/preview', requireProjectWrite, creditNoteController.previewCredit);
+router.post('/:projectId/invoices/:versionId/credit-notes', requireProjectWrite, creditNoteController.issueCredit);
+router.get('/:projectId/invoices/:versionId/credit-notes/:noteId/pdf', requireProjectWrite, creditNoteController.exportCreditPdf);
 router.post('/:id/deliveries/:deliveryId/receive', requireProjectWrite, receiveDelivery);
 router.post('/:id/signature', requireWorkOrderWrite, saveSignature);
 

@@ -11,7 +11,10 @@ export type CommunicationCategory =
   | "booking_confirmation_send"
   | "invoice_review_request"
   | "offer_booking_invite"
-  | "booking_selected_internal";
+  | "booking_selected_internal"
+  | "work_order_issued_internal"
+  | "work_order_scheduled_internal"
+  | "work_order_completed_internal";
 
 export type CommunicationAttachmentType = "offer_pdf" | "project_pdf" | "work_order_pdf" | "work_order_confirmation_pdf" | "invoice_pdf";
 

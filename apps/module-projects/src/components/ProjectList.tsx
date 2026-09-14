@@ -1,4 +1,5 @@
-import { Archive, CalendarDays, CheckCircle2, Copy, Loader2, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, CalendarDays, CheckCircle2, Copy, Loader2, Pencil, RotateCcw, Trash2, XCircle } from "lucide-react";
+import { ProjectClosureInfo } from './ProjectClosureInfo';
 import { useMemo, useState } from "react";
 import { TableRowActions } from "@aintel/ui";
 import { Badge } from "./ui/badge";
@@ -17,6 +18,7 @@ interface ProjectListProps {
   onArchiveProject?: (project: ProjectSummary) => void;
   onUnarchiveProject?: (project: ProjectSummary) => void;
   onCloseProject?: (project: ProjectSummary) => void;
+  onRejectProject?: (project: ProjectSummary) => void;
   onReopenProject?: (project: ProjectSummary) => void;
   readOnly?: boolean;
   hideFilters?: boolean;
@@ -93,6 +95,7 @@ export function ProjectList({
   onArchiveProject,
   onUnarchiveProject,
   onCloseProject,
+  onRejectProject,
   onReopenProject,
   readOnly = false,
   hideFilters = false,
@@ -170,6 +173,10 @@ export function ProjectList({
 
   const renderLifecycleActions = (project: ProjectSummary) => (
     <>
+      {!project.closedAt && onRejectProject && <button type="button" className={lifecycleButtonClasses}
+        onClick={() => onRejectProject(project)} title="Označi kot zavrnjen" aria-label={`Zavrni ${project.title}`}>
+        <XCircle className="h-4 w-4" />
+      </button>}
       {project.closedAt ? (
         <button
           type="button"
@@ -191,7 +198,7 @@ export function ProjectList({
           <CheckCircle2 className="h-4 w-4" />
         </button>
       ) : null}
-      {project.archivedAt ? (
+      {project.closedAt ? null : project.archivedAt ? (
         <button
           type="button"
           className={lifecycleButtonClasses}
@@ -270,7 +277,7 @@ export function ProjectList({
                   <span className="block break-words leading-5">{project.customer}</span>
                 </TableCell>
                 <TableCell className="align-top">
-                  <Badge className={statusColors[project.status]}>{statusLabels[project.status]}</Badge>
+                  {project.closedAt ? <ProjectClosureInfo project={project} /> : <Badge className={statusColors[project.status]}>{statusLabels[project.status]}</Badge>}
                 </TableCell>
                 {!hideFinancials ? <TableCell className="text-right align-top">{formatAmount(project.quotedTotalWithVat)}</TableCell> : null}
                 {!hideFinancials ? <TableCell className="text-right align-top">{formatAmount(project.invoiceAmount)}</TableCell> : null}
@@ -355,7 +362,7 @@ export function ProjectList({
             </div>
 
             <div className="mt-2 flex flex-wrap gap-2">
-              <Badge className={statusColors[project.status]}>{statusLabels[project.status]}</Badge>
+              {project.closedAt ? <ProjectClosureInfo project={project} /> : <Badge className={statusColors[project.status]}>{statusLabels[project.status]}</Badge>}
               {project.categories.slice(0, 3).map((categoryId) => {
                 const label = categoryLookup.get(categoryId);
                 if (!label) return null;

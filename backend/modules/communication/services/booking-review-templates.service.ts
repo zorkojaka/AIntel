@@ -5,6 +5,24 @@ import { buildTemplateContext, renderCommunicationTemplate } from './template-re
 // Initial values are persisted once. Subsequent edits in communication settings win.
 const DEFAULTS = [
   {
+    key: 'work-order-issued-internal', category: 'work_order_issued_internal',
+    name: 'Interno obvestilo — delovni nalog izdan',
+    subjectTemplate: 'Delovni nalog izdan — {{project.name}}',
+    bodyTemplate: 'Izdan je delovni nalog {{workOrder.identifier}}.\nProjekt: {{project.name}}\nStranka: {{customer.name}}\nTermin: {{workOrder.schedule}}',
+  },
+  {
+    key: 'work-order-scheduled-internal', category: 'work_order_scheduled_internal',
+    name: 'Interno obvestilo — termin nastavljen ali spremenjen',
+    subjectTemplate: 'Termin montaže — {{project.name}}',
+    bodyTemplate: 'Termin delovnega naloga {{workOrder.identifier}} je nastavljen ali spremenjen.\nProjekt: {{project.name}}\nStranka: {{customer.name}}\nTermin: {{workOrder.schedule}}',
+  },
+  {
+    key: 'work-order-completed-internal', category: 'work_order_completed_internal',
+    name: 'Interno obvestilo — delovni nalog zaključen',
+    subjectTemplate: 'Delovni nalog zaključen — {{project.name}}',
+    bodyTemplate: 'Delovni nalog {{workOrder.identifier}} je zaključen.\nProjekt: {{project.name}}\nStranka: {{customer.name}}',
+  },
+  {
     key: 'invoice-review-request', category: 'invoice_review_request',
     name: 'Prošnja za oceno ob računu', subjectTemplate: 'Prošnja za oceno',
     bodyTemplate: 'Zelo bomo veseli, če si vzamete minuto in ocenite našo izvedbo:\n{{review.link}}\nVaše mnenje nam veliko pomeni in pomaga drugim strankam pri odločitvi.',

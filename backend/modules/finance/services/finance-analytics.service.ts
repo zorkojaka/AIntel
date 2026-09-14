@@ -1,4 +1,5 @@
 import { FinanceSnapshotModel } from '../schemas/finance-snapshot';
+import { financeLedgerPipeline } from './finance-ledger.service';
 import { OfferVersionModel } from '../../projects/schemas/offer-version';
 import { EmployeeModel } from '../../employees/schemas/employee';
 import { WorkOrderModel } from '../../projects/schemas/work-order';
@@ -193,7 +194,7 @@ export async function getMonthlySummary(year: number) {
   const from = new Date(Date.UTC(year, 0, 1));
   const to = new Date(Date.UTC(year + 1, 0, 1));
   return FinanceSnapshotModel.aggregate([
-    { $match: { superseded: { $ne: true }, issuedAt: { $gte: from, $lt: to } } },
+    ...financeLedgerPipeline({ issuedAt: { $gte: from, $lt: to } }),
     {
       $group: {
         _id: { $month: '$issuedAt' },
@@ -222,7 +223,7 @@ export async function getMonthlySummary(year: number) {
 export async function getProductFrequency(range: DateRange, limit: number) {
   const issuedAt = normalizeRange(range);
   return FinanceSnapshotModel.aggregate([
-    { $match: { superseded: { $ne: true }, ...(issuedAt ? { issuedAt } : {}) } },
+    ...financeLedgerPipeline(issuedAt ? { issuedAt } : {}),
     { $unwind: '$items' },
     {
       $group: {

@@ -51,6 +51,7 @@ export interface FinanceSnapshotDocument extends Document {
   snapshotVersion: number;
   correctedFromSnapshotId: string | null;
   superseded: boolean;
+  creditNotes?: any[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -111,6 +112,7 @@ const FinanceSnapshotSchema = new Schema<FinanceSnapshotDocument>(
     snapshotVersion: { type: Number, required: true, default: 1 },
     correctedFromSnapshotId: { type: String, default: null },
     superseded: { type: Boolean, required: true, default: false, index: true },
+    creditNotes: { type: [Schema.Types.Mixed], default: [] },
   },
   { timestamps: true }
 );

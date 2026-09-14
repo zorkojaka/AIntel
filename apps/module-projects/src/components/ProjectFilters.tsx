@@ -43,8 +43,8 @@ export function ProjectFilters({
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="active">Aktivni</SelectItem>
-          <SelectItem value="closed">ZakljuÄeni</SelectItem>
-          <SelectItem value="archived">Arhivirani</SelectItem>
+          <SelectItem value="closed">Zaključeni</SelectItem>
+          <SelectItem value="archived">Arhiv</SelectItem>
           <SelectItem value="all">Vsi</SelectItem>
         </SelectContent>
       </Select>

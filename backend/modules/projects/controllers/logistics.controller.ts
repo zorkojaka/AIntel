@@ -39,8 +39,8 @@ import { createInvoiceFromClosing, refreshDraftInvoiceFromClosing } from '../ser
 import {
   buildActorDisplayName,
   recordOfferConfirmedCommunicationEvent,
-  sendInstallerPreparationEmail,
 } from '../../communication/services/communication.service';
+import { notifyInternalWorkOrderEvent } from '../../communication/services/internal-notification.service';
 import { normalizeSupplierFields, normalizeSupplierKey } from '../services/supplier-normalization.service';
 import { OfferBookingModel } from '../../availability/offer-booking.model';
 import {
@@ -1523,36 +1523,12 @@ async function getPreparationReadiness(projectId: string, workOrderId: string) {
   };
 }
 
-async function sendWorkOrderToInstallersOnIssue(projectId: string, workOrderId: string, req: Request) {
-  const settings = await getSettings();
-  if (!settings.autoSendWorkOrderToInstallers) return;
-
-  const baseUrl = `${req.protocol}://${req.get('host')}`;
-  try {
-    await sendInstallerPreparationEmail({
-      projectId,
-      workOrderId,
-      projectLink: `${baseUrl}/projects/${encodeURIComponent(projectId)}`,
-      acceptanceBaseUrl: `${baseUrl}/api/public/installer-accept`,
-      confirmSend: true,
-      actorUserId: (req as any)?.context?.actorUserId ?? null,
-      actorDisplayName: buildActorDisplayName(req as any),
-    });
-  } catch (error) {
-    (req as any).log?.error({ err: error, projectId, workOrderId }, 'Automatic installer work order email failed');
-    const project = await ProjectModel.findOne({ id: projectId });
-    if (project) {
-      addTimeline(project, {
-        type: 'edit',
-        title: 'Samodejno pošiljanje delovnega naloga ni uspelo',
-        description: error instanceof Error ? error.message : 'Emaila monterjem ni bilo mogoče poslati.',
-        timestamp: new Date().toISOString(),
-        user: buildActorDisplayName(req as any),
-        metadata: { workOrderId },
-      });
-      await project.save();
-    }
-  }
+async function sendWorkOrderToInstallersOnIssue(projectId: string, workOrderId: string, req?: Request) {
+  await notifyInternalWorkOrderEvent({
+    projectId, workOrderId, event: 'issued',
+    baseUrl: req ? `${req.protocol}://${req.get('host')}` : undefined,
+    actorDisplayName: req ? buildActorDisplayName(req as any) : undefined,
+  });
 }
 
 async function moveProjectToExecution(params: {
@@ -1605,9 +1581,7 @@ export async function applyAutomaticPreparationProgression(
   }
   workOrder.status = 'issued';
   await workOrder.save();
-  if (req) {
-    await sendWorkOrderToInstallersOnIssue(projectId, workOrderId, req);
-  }
+  await sendWorkOrderToInstallersOnIssue(projectId, workOrderId, req);
   return moveProjectToExecution({
     projectId,
     workOrderId,
@@ -2768,6 +2742,13 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
   }
 
   const nextWorkOrderStatus = String((normalizedUpdated ?? updated)?.status ?? '');
+  const nextSchedule = (normalizedUpdated ?? updated)?.scheduledAt;
+  if (nextSchedule && nextSchedule !== existing.scheduledAt) {
+    await notifyInternalWorkOrderEvent({
+      projectId, workOrderId, event: 'scheduled',
+      baseUrl: `${req.protocol}://${req.get('host')}`, actorDisplayName: buildActorDisplayName(req as any),
+    });
+  }
   let shouldRefreshResponseOrder = false;
   if (previousWorkOrderStatus !== 'issued' && nextWorkOrderStatus === 'issued') {
     await moveProjectToExecution({ projectId, workOrderId, req, mode: 'manual' });
@@ -2777,6 +2758,10 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
   }
 
   if (previousWorkOrderStatus !== 'completed' && nextWorkOrderStatus === 'completed') {
+    await notifyInternalWorkOrderEvent({
+      projectId, workOrderId, event: 'completed',
+      baseUrl: `${req.protocol}://${req.get('host')}`, actorDisplayName: buildActorDisplayName(req as any),
+    });
     await createInvoiceFromClosing(projectId);
     const project = await ProjectModel.findOne({ id: projectId });
     if (project) {
