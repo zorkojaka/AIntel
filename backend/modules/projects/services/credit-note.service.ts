@@ -33,9 +33,7 @@ export async function getCreditNoteOptions(projectId: string, invoiceVersionId: 
     items: invoice.items.map((item: any, index: number) => ({
       id: item.id, name: item.name, unit: item.unit, invoiceQuantity: item.quantity,
       remainingQuantity: quantityRound(item.quantity - returnedQuantity(notes, item.id)),
-      isService: snapshot.items[index]?.isService,
-    })).filter((item: any) => item.invoiceQuantity > 0 && !item.isService)
-      .map(({ isService, ...item }: any) => item),
+    })).filter((item: any) => item.invoiceQuantity > 0),
   };
 }
 
@@ -54,7 +52,7 @@ function calculate(sourceData: Awaited<ReturnType<typeof source>>, input: any) {
     const original = invoice.items[index];
     const financeItem = snapshot.items[index];
     const quantity = selection.quantity;
-    if (!original || !financeItem || financeItem.name !== original.name || financeItem.isService) throw new Error('Vrnjena postavka ni veljavna postavka blaga na računu.');
+    if (!original || !financeItem || financeItem.name !== original.name) throw new Error('Vrnjena postavka ni veljavna postavka na računu.');
     if (seen.has(original.id)) throw new Error('Ista postavka je izbrana večkrat.');
     seen.add(original.id);
     if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0 || quantityRound(quantity) !== quantity || original.quantity <= 0) {
