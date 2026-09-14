@@ -141,8 +141,8 @@ function serializePhoto(photo: PhotoDocument | any) {
     itemId: typeof photo.itemId === 'string' ? photo.itemId : undefined,
     unitIndex: typeof photo.unitIndex === 'number' ? photo.unitIndex : undefined,
     tag: typeof photo.tag === 'string' ? photo.tag : undefined,
-    url: `/api/photos/${photoId}/file`,
-    thumbnailUrl: photo.thumbnailUrl ? `/api/photos/${photoId}/file?variant=thumbnail` : undefined,
+    url: `/api/photos/${photoId}/file?v=${encodeURIComponent(photo.filename)}`,
+    thumbnailUrl: photo.thumbnailUrl ? `/api/photos/${photoId}/file?variant=thumbnail&v=${encodeURIComponent(photo.filename)}` : undefined,
     originalName: photo.originalName,
     filename: photo.filename,
     size: photo.size,
@@ -259,6 +259,37 @@ router.post('/', upload.single('file'), async (req: Request, res: Response, next
     next(error);
   } finally {
     await removeFileIfExists(req.file?.path);
+  }
+});
+
+router.put('/:photoId', upload.single('file'), async (req: Request, res: Response, next: NextFunction) => {
+  let processed: Awaited<ReturnType<typeof processImage>> | undefined;
+  let saved = false;
+  try {
+    if (!mongoose.isValidObjectId(req.params.photoId)) return res.fail('Neveljaven ID fotografije.', 400);
+    const photo = await PhotoModel.findById(req.params.photoId);
+    if (!photo || photo.deletedAt) return res.fail('Fotografija ni najdena.', 404);
+    if (!(await canAccessPhoto(req, photo)) || !canDeletePhoto(photo, await buildPermissionUser(req, photo))) {
+      return res.fail('Ni dovoljenja za urejanje fotografije.', 403);
+    }
+    if (!req.file) return res.fail('Manjka fotografija.', 400);
+    if (req.body.filename !== photo.filename) return res.fail('Fotografija se je spremenila. Ponovno jo odprite.', 409);
+    const directory = path.join(UPLOAD_BASE_DIR, 'projects', String(photo.projectId), photo.phase);
+    processed = await processImage(req.file.path, directory, `${new Types.ObjectId()}-oznacena`);
+    const prefix = `/uploads/projects/${photo.projectId}/${photo.phase}/`;
+    const updated = await PhotoModel.findOneAndUpdate(
+      { _id: photo._id, filename: photo.filename, deletedAt: { $exists: false } },
+      { $set: { url: prefix + processed.filename, thumbnailUrl: prefix + processed.thumbnailFilename,
+        filename: processed.filename, size: processed.size, mimeType: processed.mimeType,
+        width: processed.width, height: processed.height } }, { new: true },
+    );
+    if (!updated) return res.fail('Fotografija se je spremenila. Ponovno jo odprite.', 409);
+    saved = true;
+    return res.success({ photo: serializePhoto(updated) });
+  } catch (error) { next(error); }
+  finally {
+    await removeFileIfExists(req.file?.path);
+    if (processed && !saved) await Promise.all([removeFileIfExists(processed.mainPath), removeFileIfExists(processed.thumbnailPath)]);
   }
 });
 
