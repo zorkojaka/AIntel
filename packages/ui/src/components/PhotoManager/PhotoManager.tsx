@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import React, { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, ChevronLeft, ChevronRight, Image as ImageIcon, Loader2, X } from 'lucide-react';
+import { Camera, Check, ChevronLeft, ChevronRight, Image as ImageIcon, Loader2, RotateCcw, X } from 'lucide-react';
 
 export type PhotoPhase = 'requirements' | 'offer' | 'preparation' | 'execution' | 'delivery' | 'other';
 
@@ -80,6 +80,41 @@ const LARGE_UPLOAD_WARNING_BYTES = 20 * 1024 * 1024;
 const COMPRESSION_MIN_BYTES = 1.5 * 1024 * 1024;
 const COMPRESSION_MAX_DIMENSION = 1920;
 const COMPRESSION_QUALITY = 0.82;
+const MARKING_COLORS = [
+  { value: '#ef4444', label: 'Rdeča' },
+  { value: '#facc15', label: 'Rumena' },
+  { value: '#22c55e', label: 'Zelena' },
+] as const;
+
+type CameraCapabilitiesWithZoom = MediaTrackCapabilities & { zoom?: { min?: number } };
+
+function getUltraWideCamera(devices: MediaDeviceInfo[]) {
+  const ultraWidePattern = /ultra[\s_-]*wide|ultrawide|0[.,]5\s*x|wide[\s_-]*angle/i;
+  const rearPattern = /back|rear|environment|zadnja|hrbtna/i;
+  const frontPattern = /front|user|sprednja/i;
+
+  return devices
+    .filter((device) => device.kind === 'videoinput' && ultraWidePattern.test(device.label) && !frontPattern.test(device.label))
+    .sort((left, right) => Number(rearPattern.test(right.label)) - Number(rearPattern.test(left.label)))[0];
+}
+
+async function setMinimumCameraZoom(stream: MediaStream) {
+  const track = stream.getVideoTracks()[0];
+  if (!track) return;
+
+  try {
+    const capabilities = track.getCapabilities?.() as CameraCapabilitiesWithZoom | undefined;
+    const minimumZoom = capabilities?.zoom?.min;
+    if (typeof minimumZoom === 'number') {
+      await track.applyConstraints({ advanced: [{ zoom: minimumZoom } as MediaTrackConstraintSet] });
+    }
+  } catch (error) {
+    console.info(`${PHOTO_MANAGER_LOG_PREFIX} Minimum camera zoom is not available`, {
+      error,
+      message: getErrorMessage(error),
+    });
+  }
+}
 
 function buildPhotoQuery(context: PhotoContext) {
   const params = new URLSearchParams();
@@ -404,6 +439,205 @@ function PhotoPreviewImage({ photo }: { photo: ManagedPhoto }) {
   );
 }
 
+type MarkingStroke = {
+  color: string;
+  points: Array<{ x: number; y: number }>;
+};
+
+function PhotoMarkingEditor({
+  file,
+  onCancel,
+  onSave,
+}: {
+  file: File;
+  onCancel: () => void;
+  onSave: (markedFile: File) => void | Promise<void>;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const strokesRef = useRef<MarkingStroke[]>([]);
+  const drawingRef = useRef(false);
+  const [color, setColor] = useState<string>(MARKING_COLORS[0].value);
+  const [strokeCount, setStrokeCount] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [imageReady, setImageReady] = useState(false);
+
+  const redraw = useCallback(() => {
+    const canvas = canvasRef.current;
+    const image = imageRef.current;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !image || !context) return;
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.lineWidth = Math.max(8, Math.min(canvas.width, canvas.height) * 0.012);
+
+    strokesRef.current.forEach((stroke) => {
+      const firstPoint = stroke.points[0];
+      if (!firstPoint) return;
+      context.strokeStyle = stroke.color;
+      context.fillStyle = stroke.color;
+      if (stroke.points.length === 1) {
+        context.beginPath();
+        context.arc(firstPoint.x, firstPoint.y, context.lineWidth / 2, 0, Math.PI * 2);
+        context.fill();
+        return;
+      }
+      context.beginPath();
+      context.moveTo(firstPoint.x, firstPoint.y);
+      stroke.points.slice(1).forEach((point) => context.lineTo(point.x, point.y));
+      context.stroke();
+    });
+  }, []);
+
+  useEffect(() => {
+    strokesRef.current = [];
+    imageRef.current = null;
+    setStrokeCount(0);
+    setImageReady(false);
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    image.onload = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      imageRef.current = image;
+      redraw();
+      setImageReady(true);
+    };
+    image.src = objectUrl;
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file, redraw]);
+
+  const getCanvasPoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const bounds = canvas.getBoundingClientRect();
+    return {
+      x: ((event.clientX - bounds.left) / bounds.width) * canvas.width,
+      y: ((event.clientY - bounds.top) / bounds.height) * canvas.height,
+    };
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const point = getCanvasPoint(event);
+    if (!point) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drawingRef.current = true;
+    strokesRef.current.push({ color, points: [point] });
+    redraw();
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!drawingRef.current) return;
+    const point = getCanvasPoint(event);
+    const stroke = strokesRef.current[strokesRef.current.length - 1];
+    if (!point || !stroke) return;
+    stroke.points.push(point);
+    redraw();
+  };
+
+  const finishStroke = () => {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    setStrokeCount(strokesRef.current.length);
+  };
+
+  const undoStroke = () => {
+    strokesRef.current.pop();
+    setStrokeCount(strokesRef.current.length);
+    redraw();
+  };
+
+  const saveMarkedPhoto = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || saving) return;
+    setSaving(true);
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          setSaving(false);
+          return;
+        }
+        const markedFile = new File([blob], file.name, {
+          type: 'image/jpeg',
+          lastModified: Date.now(),
+        });
+        void Promise.resolve(onSave(markedFile)).finally(() => setSaving(false));
+      },
+      'image/jpeg',
+      COMPRESSION_QUALITY,
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted-foreground">Izberite barvo in s prstom označite lokacijo na fotografiji.</p>
+      <div className="flex items-center justify-center overflow-hidden rounded-md bg-black">
+        <canvas
+          ref={canvasRef}
+          className="block h-auto max-h-[55vh] max-w-full cursor-crosshair"
+          style={{ touchAction: 'none' }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={finishStroke}
+          onPointerCancel={finishStroke}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2" role="group" aria-label="Barva označevanja">
+          {MARKING_COLORS.map((markingColor) => (
+            <button
+              key={markingColor.value}
+              type="button"
+              className="h-11 w-11 rounded-full border-4 shadow-sm transition"
+              style={{
+                backgroundColor: markingColor.value,
+                borderColor: color === markingColor.value ? 'white' : 'transparent',
+                outline: color === markingColor.value ? '2px solid #334155' : undefined,
+              }}
+              onClick={() => setColor(markingColor.value)}
+              aria-label={markingColor.label}
+              aria-pressed={color === markingColor.value}
+            />
+          ))}
+        </div>
+        <button
+          type="button"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium disabled:opacity-50"
+          onClick={undoStroke}
+          disabled={strokeCount === 0}
+        >
+          <RotateCcw className="h-4 w-4" />
+          Razveljavi
+        </button>
+      </div>
+      <div className="grid grid-cols-[auto_1fr] gap-3">
+        <button
+          type="button"
+          className="inline-flex min-h-11 items-center justify-center rounded-md border bg-background px-4 py-2 text-sm font-medium"
+          onClick={onCancel}
+          disabled={saving || !imageReady}
+        >
+          Ponovi
+        </button>
+        <button
+          type="button"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
+          onClick={saveMarkedPhoto}
+          disabled={saving || !imageReady}
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+          Shrani fotografijo
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function PhotoManager({
   open,
   onOpenChange,
@@ -425,6 +659,7 @@ export function PhotoManager({
   const [cameraLoading, setCameraLoading] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraSessionCaptureCount, setCameraSessionCaptureCount] = useState(0);
+  const [pendingCapturedPhoto, setPendingCapturedPhoto] = useState<File | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -469,9 +704,10 @@ export function PhotoManager({
     setCameraOpen(false);
     setCameraLoading(false);
     setCameraError(null);
+    setPendingCapturedPhoto(null);
   }, []);
 
-  const startInlineCamera = useCallback(async () => {
+  const startInlineCamera = useCallback(async (keepCaptureCount = false) => {
     if (!inlineCameraCapture) {
       cameraInputRef.current?.click();
       return;
@@ -481,7 +717,7 @@ export function PhotoManager({
       return;
     }
 
-    setCameraSessionCaptureCount(0);
+    if (!keepCaptureCount) setCameraSessionCaptureCount(0);
     setCameraOpen(true);
     setCameraLoading(true);
     setCameraError(null);
@@ -489,14 +725,39 @@ export function PhotoManager({
       stopInlineCamera();
       setCameraOpen(true);
       setCameraLoading(true);
-      const stream = await navigator.mediaDevices.getUserMedia({
+      let stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
+          width: { ideal: 3840 },
+          height: { ideal: 2160 },
         },
         audio: false,
       });
+
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const ultraWideCamera = getUltraWideCamera(devices);
+        const activeDeviceId = stream.getVideoTracks()[0]?.getSettings().deviceId;
+        if (ultraWideCamera?.deviceId && ultraWideCamera.deviceId !== activeDeviceId) {
+          const ultraWideStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              deviceId: { exact: ultraWideCamera.deviceId },
+              width: { ideal: 3840 },
+              height: { ideal: 2160 },
+            },
+            audio: false,
+          });
+          stream.getTracks().forEach((track) => track.stop());
+          stream = ultraWideStream;
+        }
+      } catch (error) {
+        console.info(`${PHOTO_MANAGER_LOG_PREFIX} Ultra-wide camera is not available; using the default rear camera`, {
+          error,
+          message: getErrorMessage(error),
+        });
+      }
+
+      await setMinimumCameraZoom(stream);
       cameraStreamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -728,18 +989,42 @@ export function PhotoManager({
         lastModified: Date.now(),
       });
       setCameraSessionCaptureCount((count) => count + 1);
-      void uploadFile(file);
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+      setPendingCapturedPhoto(file);
     }, 'image/jpeg', COMPRESSION_QUALITY);
   }, []);
+
+  const resumeInlineCamera = () => {
+    setPendingCapturedPhoto(null);
+    void startInlineCamera(true);
+  };
+
+  const saveMarkedPhoto = (markedFile: File) => {
+    setPendingCapturedPhoto(null);
+    void uploadFile(markedFile);
+    if (inlineCameraCapture) {
+      void startInlineCamera(true);
+    } else {
+      setCameraOpen(false);
+    }
+  };
 
   const handleFileSelect = async (event: ChangeEvent<HTMLInputElement>) => {
     try {
       const selectedFiles = Array.from(event.target.files ?? []);
+      const isCameraCapture = event.currentTarget === cameraInputRef.current;
       console.log(`${PHOTO_MANAGER_LOG_PREFIX} Step file selection: input changed`, {
         fileCount: selectedFiles.length,
         files: selectedFiles.map(describeFile),
       });
       event.target.value = '';
+      if (isCameraCapture && selectedFiles.length === 1) {
+        setCameraSessionCaptureCount((count) => count + 1);
+        setCameraOpen(true);
+        setPendingCapturedPhoto(selectedFiles[0]);
+        return;
+      }
       await Promise.all(selectedFiles.map((file) => uploadFile(file)));
     } catch (error) {
       const message = `Napaka pri nalaganju (file selection): ${getErrorMessage(error)}`;
@@ -826,12 +1111,14 @@ export function PhotoManager({
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
-            {inlineCameraCapture && cameraOpen ? (
+            {pendingCapturedPhoto ? (
+              <PhotoMarkingEditor file={pendingCapturedPhoto} onCancel={resumeInlineCamera} onSave={saveMarkedPhoto} />
+            ) : inlineCameraCapture && cameraOpen ? (
               <div className="flex min-h-56 flex-col gap-3">
                 <div className="relative overflow-hidden rounded-md bg-black">
                   <video
                     ref={videoRef}
-                    className="aspect-[3/4] w-full bg-black object-cover sm:aspect-video"
+                    className="block max-h-[55vh] w-full bg-black object-contain"
                     autoPlay
                     muted
                     playsInline
@@ -883,30 +1170,17 @@ export function PhotoManager({
                       {canDelete ? (
                         <button
                           type="button"
-                          onClick={() => void deletePhoto(tile.photo)}
-                          className={`absolute flex items-center justify-center rounded-full shadow-md transition ${alwaysShowDeleteActions ? '' : 'right-2 top-2 bg-black/80 text-white opacity-100 hover:bg-red-700 md:opacity-0 md:group-hover:opacity-100'}`}
-                          style={
-                            alwaysShowDeleteActions
-                              ? {
-                                  position: 'absolute',
-                                  right: '0.5rem',
-                                  top: '0.5rem',
-                                  zIndex: 1000,
-                                  width: '2.25rem',
-                                  height: '2.25rem',
-                                  border: '2px solid #dc2626',
-                                  backgroundColor: 'rgba(255, 255, 255, 0.72)',
-                                  color: '#dc2626',
-                                  opacity: 1,
-                                  visibility: 'visible',
-                                  pointerEvents: 'auto',
-                                }
-                              : undefined
-                          }
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void deletePhoto(tile.photo);
+                          }}
+                          className={`absolute right-2 top-2 z-20 flex h-10 w-10 items-center justify-center rounded-full border-2 border-red-600 text-red-600 opacity-100 shadow-md transition hover:scale-105 hover:bg-red-600 hover:text-white ${
+                            alwaysShowDeleteActions ? 'bg-white/80' : 'bg-white/90'
+                          }`}
                           aria-label="Izbriši fotografijo"
                           title="Izbriši fotografijo"
                         >
-                          <span aria-hidden className="text-2xl font-semibold leading-none">×</span>
+                          <X className="h-6 w-6" aria-hidden />
                         </button>
                       ) : null}
                     </div>
@@ -925,7 +1199,7 @@ export function PhotoManager({
           </div>
 
           <div className="sticky bottom-0 z-10 shrink-0 border-t bg-background px-4 py-4">
-            {inlineCameraCapture && cameraOpen ? (
+            {pendingCapturedPhoto ? null : inlineCameraCapture && cameraOpen ? (
               <div className="grid grid-cols-[auto_1fr] gap-3">
                 <button
                   type="button"
