@@ -22,6 +22,7 @@ import { SuppliersSettingsSection } from './SuppliersSettingsSection';
 import { WebInquiriesSection } from './WebInquiriesSection';
 import { CommunicationSenderSection } from './components/CommunicationSenderSection';
 import { CommunicationTemplatesSection } from './components/CommunicationTemplatesSection';
+import { InternalNotificationsSection } from './components/InternalNotificationsSection';
 import { DocumentPreview } from './components/DocumentPreview';
 import { DocumentSettingsTab } from './components/DocumentSettingsTab';
 import { useSettingsData } from './hooks/useSettings';
@@ -70,7 +71,7 @@ const SETTINGS_SECTIONS: Array<{
     key: 'communication',
     label: 'Komunikacija',
     title: 'Komunikacija',
-    description: 'Pošiljatelj in email predloge za komunikacijo s strankami.',
+    description: 'Pošiljatelj, interno obveščanje in email predloge.',
   },
   {
     key: 'sales',
@@ -647,6 +648,7 @@ export const SettingsPage: React.FC = () => {
               }}
               onSave={handleSaveCommunicationSettings}
             />
+            <InternalNotificationsSection />
             <CommunicationTemplatesSection
               templates={communicationTemplates}
               onCreate={handleCreateCommunicationTemplate}
@@ -1193,25 +1195,6 @@ const SystemSettingsSection: React.FC<SystemSettingsSectionProps> = ({
           <option value="optional">Opcijsko</option>
           <option value="required">Zahtevano</option>
         </select>
-      </label>
-    </Card>
-
-    <Card title="Izdaja delovnega naloga">
-      <label className="flex max-w-2xl cursor-pointer items-start gap-3">
-        <input
-          type="checkbox"
-          className="mt-1 h-4 w-4"
-          checked={form.autoSendWorkOrderToInstallers ?? false}
-          onChange={(event) => onFieldChange('autoSendWorkOrderToInstallers', event.target.checked)}
-        />
-        <span>
-          <span className="block text-sm font-medium text-foreground">
-            Ob izdaji avtomatsko pošlji delovni nalog vsem dodeljenim monterjem
-          </span>
-          <span className="mt-1 block text-sm text-muted-foreground">
-            Vsak monter z nastavljenim emailom prejme isti delovni nalog in svojo povezavo za sprejem.
-          </span>
-        </span>
       </label>
     </Card>
 

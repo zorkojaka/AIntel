@@ -1,4 +1,5 @@
-import { Archive, CheckCircle2, ChevronDown, Copy, Loader2, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, CheckCircle2, ChevronDown, Copy, Loader2, Pencil, RotateCcw, Trash2, XCircle } from "lucide-react";
+import { ProjectClosureInfo } from './ProjectClosureInfo';
 import { useMemo, useState } from "react";
 import { Badge } from "./ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
@@ -23,6 +24,7 @@ interface ProjectKanbanProps {
   onArchiveProject: (project: ProjectSummary) => void;
   onUnarchiveProject: (project: ProjectSummary) => void;
   onCloseProject: (project: ProjectSummary) => void;
+  onRejectProject: (project: ProjectSummary) => void;
   onReopenProject: (project: ProjectSummary) => void;
   cloningProjectId?: string | null;
   readOnly?: boolean;
@@ -58,6 +60,7 @@ export function ProjectKanban({
   onArchiveProject,
   onUnarchiveProject,
   onCloseProject,
+  onRejectProject,
   onReopenProject,
   cloningProjectId = null,
   readOnly = false,
@@ -146,7 +149,7 @@ export function ProjectKanban({
                       onClick={() => onSelectProject(project.id)}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <strong className="text-sm leading-5">{project.title}</strong>
+                        <div><strong className="text-sm leading-5">{project.title}</strong><ProjectClosureInfo project={project} /></div>
                         <div className="flex shrink-0 items-center gap-1">
                           <span className="text-xs text-muted-foreground">{formatDate(project.createdAt)}</span>
                           {!readOnly ? (
@@ -181,7 +184,11 @@ export function ProjectKanban({
                                       Zaključi projekt
                                     </DropdownMenuItem>
                                   ) : null}
-                                  {project.archivedAt ? (
+                                  {!project.closedAt && <DropdownMenuItem onSelect={() => onRejectProject(project)}>
+                                    <XCircle className="h-4 w-4" />
+                                    Označi kot zavrnjen
+                                  </DropdownMenuItem>}
+                                  {project.closedAt ? null : project.archivedAt ? (
                                     <DropdownMenuItem onSelect={() => onUnarchiveProject(project)}>
                                       <RotateCcw className="h-4 w-4" />
                                       Vrni iz arhiva

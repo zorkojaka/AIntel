@@ -6,6 +6,7 @@ import { Plus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import { ProjectList } from "./components/ProjectList";
+import { ProjectCloseDialog } from './components/ProjectCloseDialog';
 import { ProjectFilters } from "./components/ProjectFilters";
 import { ProjectKanban } from "./components/ProjectKanban";
 import { ProjectCalendar } from "./components/ProjectCalendar";
@@ -61,6 +62,9 @@ function toSummary(project: ProjectDetails): ProjectSummary {
     archivedBy: project.archivedBy ?? null,
     closedAt: project.closedAt ?? null,
     closedBy: project.closedBy ?? null,
+    closedByUserId: project.closedByUserId ?? null,
+    closureOutcome: project.closureOutcome ?? null,
+    closureReason: project.closureReason ?? null,
     categories: project.categories ?? [],
     requirementsTemplateVariantSlug: project.requirementsTemplateVariantSlug,
     phaseSignals: project.phaseSignals,
@@ -100,6 +104,7 @@ function buildProjectTitle(projectCode: string, categoryNames: string[], custome
 }
 
 export function ProjectsPage() {
+  const [closingProject, setClosingProject] = useState<{ project: ProjectSummary; action: 'close' | 'reject' } | null>(null);
   const { settings: globalSettings } = useSettingsData({ applyTheme: false });
   const [viewerRoles, setViewerRoles] = useState<string[]>([]);
   const [viewerRolesLoaded, setViewerRolesLoaded] = useState(false);
@@ -438,15 +443,21 @@ export function ProjectsPage() {
 
   const handleLifecycleProject = async (
     project: ProjectSummary,
-    action: "archive" | "unarchive" | "close" | "reopen"
+    action: "archive" | "unarchive" | "close" | "reopen" | "reject",
+    reason?: string,
   ) => {
+    if ((action === 'close' || action === 'reject') && reason === undefined) {
+      setClosingProject({ project, action });
+      return false;
+    }
     const confirmMessages: Record<typeof action, string> = {
       archive: `Arhiviraj projekt ${project.title}?`,
       unarchive: `Vrni projekt ${project.title} iz arhiva?`,
       close: `Zaključi projekt ${project.title}?`,
       reopen: `Ponovno odpri projekt ${project.title}?`,
+      reject: `Zavrni projekt ${project.title}?`,
     };
-    if (!globalThis.confirm(confirmMessages[action])) {
+    if (action !== 'close' && action !== 'reject' && !globalThis.confirm(confirmMessages[action])) {
       return;
     }
 
@@ -454,7 +465,7 @@ export function ProjectsPage() {
       const response = await fetch(`${API_PREFIX}/${project.id}/lifecycle`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, reason }),
       });
       const result = await parseApiEnvelope<any>(response, "Projekta ni bilo mogoče posodobiti.");
       const mapped = mapProject(result);
@@ -466,10 +477,13 @@ export function ProjectsPage() {
         unarchive: "Projekt je vrnjen iz arhiva.",
         close: "Projekt je zaključen.",
         reopen: "Projekt je ponovno odprt.",
+        reject: 'Projekt je označen kot zavrnjen in premaknjen v Arhiv.',
       };
       toast.success(messages[action]);
+      return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Napaka pri posodabljanju projekta.");
+      return false;
     }
   };
 
@@ -821,6 +835,7 @@ export function ProjectsPage() {
                 onArchiveProject={(project) => handleLifecycleProject(project, "archive")}
                 onUnarchiveProject={(project) => handleLifecycleProject(project, "unarchive")}
                 onCloseProject={(project) => handleLifecycleProject(project, "close")}
+                onRejectProject={(project) => void handleLifecycleProject(project, 'reject')}
                 onReopenProject={(project) => handleLifecycleProject(project, "reopen")}
                 readOnly={isExecutionOnlyViewer}
                 hideFinancials={isExecutionOnlyViewer}
@@ -837,6 +852,7 @@ export function ProjectsPage() {
                 onArchiveProject={(project) => void handleLifecycleProject(project, "archive")}
                 onUnarchiveProject={(project) => void handleLifecycleProject(project, "unarchive")}
                 onCloseProject={(project) => void handleLifecycleProject(project, "close")}
+                onRejectProject={(project) => void handleLifecycleProject(project, 'reject')}
                 onReopenProject={(project) => void handleLifecycleProject(project, "reopen")}
                 cloningProjectId={cloningProjectId}
                 readOnly={isExecutionOnlyViewer}
@@ -872,6 +888,9 @@ export function ProjectsPage() {
       )}
 
 
+      {closingProject && <ProjectCloseDialog project={closingProject.project} action={closingProject.action}
+        onClose={() => setClosingProject(null)}
+        onSubmit={(reason) => handleLifecycleProject(closingProject.project, closingProject.action, reason)} />}
       <NewProjectDialog
         open={isNewProjectDialogOpen}
         onOpenChange={(open) => {

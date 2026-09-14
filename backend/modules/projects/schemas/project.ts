@@ -156,6 +156,9 @@ export interface Project {
   archivedBy?: string | null;
   closedAt?: Date | null;
   closedBy?: string | null;
+  closedByUserId?: string | null;
+  closureOutcome?: 'completed' | 'rejected' | null;
+  closureReason?: string | null;
 }
 
 export interface ProjectDocument extends Omit<Project, 'id'>, Document {
@@ -348,6 +351,9 @@ const ProjectSchema = new Schema<ProjectDocument>(
     routeCoordinates: { type: Schema.Types.Mixed, default: null },
     archivedAt: { type: Date, default: null },
     archivedBy: { type: String, default: null },
+    closedByUserId: { type: String, default: null },
+    closureOutcome: { type: String, enum: ['completed', 'rejected', null], default: null },
+    closureReason: { type: String, maxlength: 2000, default: null },
     closedAt: { type: Date, default: null },
     closedBy: { type: String, default: null },
   },
@@ -406,6 +412,9 @@ export function summarizeProject(project: Project | ProjectDocument) {
     archivedBy: project.archivedBy ?? null,
     closedAt: project.closedAt ? new Date(project.closedAt).toISOString() : null,
     closedBy: project.closedBy ?? null,
+    closedByUserId: project.closedByUserId ?? null,
+    closureOutcome: project.closureOutcome ?? null,
+    closureReason: project.closureReason ?? null,
   };
 }
 

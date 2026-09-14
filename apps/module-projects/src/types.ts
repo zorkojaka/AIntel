@@ -77,6 +77,9 @@ export interface ProjectSummary {
   archivedBy?: string | null;
   closedAt?: string | null;
   closedBy?: string | null;
+  closedByUserId?: string | null;
+  closureOutcome?: 'completed' | 'rejected' | null;
+  closureReason?: string | null;
   categories: string[];
   requirementsTemplateVariantSlug?: string;
   salesUserId?: string | null;

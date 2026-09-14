@@ -469,12 +469,12 @@ function buildProjectCalendarEntries(workOrders: any[]) {
 function lifecycleProjectFilter(view: unknown) {
   const normalized = typeof view === 'string' ? view.trim().toLowerCase() : 'active';
   if (normalized === 'archived') {
-    return { archivedAt: { $ne: null } };
+    return { $or: [{ archivedAt: { $ne: null } }, { closedAt: { $ne: null } }] };
   }
   if (normalized === 'closed') {
     return {
       closedAt: { $ne: null },
-      $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }],
+      closureOutcome: { $ne: 'rejected' },
     };
   }
   if (normalized === 'all') {
@@ -689,6 +689,12 @@ export async function updateProjectLifecycle(req: Request, res: Response) {
   const actor = buildActorDisplayName(req as any);
   const now = new Date();
 
+  const reason = req.body?.reason;
+  if ((action === 'close' || action === 'reject') && reason != null &&
+      (typeof reason !== 'string' || reason.trim().length > 2000)) {
+    return res.fail('Razlog zaprtja je lahko dolg največ 2000 znakov.', 400);
+  }
+
   if (action === 'archive') {
     project.archivedAt = project.archivedAt ?? now;
     project.archivedBy = project.archivedBy ?? actor;
@@ -700,6 +706,7 @@ export async function updateProjectLifecycle(req: Request, res: Response) {
       user: actor,
     });
   } else if (action === 'unarchive') {
+    if (project.closedAt) return res.fail('Zaprt projekt vrni med aktivne z akcijo Ponovno odpri.', 400);
     project.archivedAt = null;
     project.archivedBy = null;
     addTimeline(project, {
@@ -709,22 +716,41 @@ export async function updateProjectLifecycle(req: Request, res: Response) {
       timestamp: now.toLocaleString('sl-SI'),
       user: actor,
     });
-  } else if (action === 'close') {
-    if (!hasIssuedInvoice(project)) {
+  } else if (action === 'close' || action === 'reject') {
+    const outcome = action === 'reject' ? 'rejected' : 'completed';
+    if (project.closedAt) {
+      if ((project.closureOutcome ?? 'completed') !== outcome) return res.fail('Projekt je že zaprt. Pred spremembo ga ponovno odpri.', 409);
+      return res.success(await responseProject(project.toObject()));
+    }
+    if (action === 'close' && !hasIssuedInvoice(project)) {
       return res.fail('Projekt lahko zaključiš šele, ko ima izdan račun.', 400);
     }
-    project.closedAt = project.closedAt ?? now;
-    project.closedBy = project.closedBy ?? actor;
+    if (action === 'reject' && hasIssuedInvoice(project)) {
+      return res.fail('Projekt ima izdan račun. Uporabi akcijo Zaključi projekt.', 400);
+    }
+    project.closedAt = now;
+    project.closedBy = actor;
+    project.closedByUserId = (req as any).context?.actorUserId ?? (req as any).user?.id ?? null;
+    project.closureOutcome = outcome;
+    project.closureReason = typeof reason === 'string' ? reason.trim() || null : null;
+    project.archivedAt = now;
+    project.archivedBy = actor;
     addTimeline(project, {
       type: 'status-change',
-      title: 'Projekt zaključen',
-      description: 'Projekt je premaknjen med zaključene projekte.',
-      timestamp: now.toLocaleString('sl-SI'),
+      title: action === 'reject' ? 'Projekt zavrnjen' : 'Projekt zaključen',
+      description: project.closureReason || 'Projekt je zaprt in premaknjen v arhiv.',
+      timestamp: now.toISOString(),
       user: actor,
+      metadata: { outcome, reason: project.closureReason ?? '', closedByUserId: project.closedByUserId ?? '' },
     });
   } else if (action === 'reopen') {
     project.closedAt = null;
     project.closedBy = null;
+    project.closedByUserId = null;
+    project.closureOutcome = null;
+    project.closureReason = null;
+    project.archivedAt = null;
+    project.archivedBy = null;
     addTimeline(project, {
       type: 'status-change',
       title: 'Projekt ponovno odprt',

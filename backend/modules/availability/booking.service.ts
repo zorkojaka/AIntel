@@ -6,10 +6,9 @@ import { EmployeeModel } from '../employees/schemas/employee';
 import { ProjectModel, newTimelineEventId } from '../projects/schemas/project';
 import {
   sendBookingConfirmationEmail,
-  sendBookingSelectedInternalEmail,
   sendBookingInviteEmail,
-  sendInstallerPreparationEmail,
 } from '../communication/services/communication.service';
+import { notifyInternalWorkOrderEvent } from '../communication/services/internal-notification.service';
 import { ensureInstallerAcceptanceTokens } from '../projects/services/installer-acceptance.service';
 import { ensureRuleTask } from '../scheduler/rules';
 import { UserModel } from '../users/schemas/user';
@@ -62,14 +61,6 @@ function bookingLinkFor(token: string, baseUrl: string): string {
   return `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}t=${token}`;
 }
 
-function bookingApplicationOrigin(baseUrl: string): string {
-  try {
-    return new URL(baseUrl).origin;
-  } catch {
-    return 'https://dev.inteligent.si';
-  }
-}
-
 async function notifyProjectTeamAboutChosenBooking(input: {
   projectId: string;
   offerId: string;
@@ -79,19 +70,9 @@ async function notifyProjectTeamAboutChosenBooking(input: {
   const project = await ProjectModel.findOne({ id: input.projectId });
   if (!project) return;
 
-  try {
-    await sendBookingSelectedInternalEmail({
-      projectId: input.projectId, workOrderId: String(input.workOrder._id), scheduledAt: input.scheduledAt,
-    });
-  } catch (error) {
-    console.error('Obvestila prodajalcu in administratorjem ni bilo mogoče poslati.', error);
-    await ProjectModel.updateOne({ id: input.projectId }, { $push: { timeline: {
-      id: newTimelineEventId(), type: 'edit', timestamp: new Date().toISOString(), user: 'Sistem',
-      title: 'Email o izbranem terminu prodajalcu in administratorjem ni bil poslan',
-      description: error instanceof Error ? error.message : 'Pošiljanje ni uspelo.',
-      metadata: { workOrderId: String(input.workOrder._id) },
-    } } });
-  }
+  await notifyInternalWorkOrderEvent({
+    projectId: input.projectId, workOrderId: String(input.workOrder._id), event: 'scheduled', customerSelected: true,
+  });
 
   const salesUser = project.salesUserId
     ? await UserModel.findById(project.salesUserId).select({ employeeId: 1 }).lean()
@@ -117,15 +98,6 @@ async function notifyProjectTeamAboutChosenBooking(input: {
 
   try {
     await ensureInstallerAcceptanceTokens(input.workOrder);
-    const origin = bookingApplicationOrigin(await bookingPageUrl());
-    await sendInstallerPreparationEmail({
-      projectId: input.projectId,
-      workOrderId: String(input.workOrder._id),
-      projectLink: `${origin}/projects/${encodeURIComponent(input.projectId)}`,
-      acceptanceBaseUrl: `${origin}/api/public/installer-accept`,
-      confirmSend: true,
-      actorDisplayName: 'Sistem — izbira termina',
-    });
   } catch (error) {
     console.error('Obvestila monterjem o izbranem terminu ni bilo mogoče poslati.', error);
     project.timeline.push({
@@ -355,9 +327,17 @@ async function findByToken(token: string) {
   const clean = typeof token === 'string' ? token.trim() : '';
   if (!/^[a-f0-9]{24,64}$/i.test(clean)) throw new AvailabilityError('Neveljavna povezava.', 404);
   const workOrder = await WorkOrderModel.findOne({ bookingToken: clean, cancelledAt: null });
-  if (workOrder) return { kind: 'work-order' as const, workOrder };
+  if (workOrder) {
+    if (await ProjectModel.exists({ id: workOrder.projectId, closedAt: { $ne: null } })) {
+      throw new AvailabilityError('Projekt je zaprt. Izbira termina ni več na voljo.', 404);
+    }
+    return { kind: 'work-order' as const, workOrder };
+  }
   const offerBooking = await OfferBookingModel.findOne({ bookingToken: clean });
   if (offerBooking) {
+    if (await ProjectModel.exists({ id: offerBooking.projectId, closedAt: { $ne: null } })) {
+      throw new AvailabilityError('Projekt je zaprt. Izbira termina ni več na voljo.', 404);
+    }
     const offerExists = await OfferVersionModel.exists({
       _id: offerBooking.offerVersionId,
       projectId: offerBooking.projectId,

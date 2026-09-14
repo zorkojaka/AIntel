@@ -33,10 +33,10 @@ const context = buildTemplateContext({
 });
 
 test('nastavitve ustvarijo predloge samo enkrat in ohranijo shranjene popravke', async () => {
-  assert.equal((await listCommunicationTemplates()).length, 3);
+  assert.equal((await listCommunicationTemplates()).length, 6);
   await CommunicationTemplateModel.updateOne({ category: 'invoice_review_request' }, { $set: { bodyTemplate: 'Hvala {{customer.name}}! {{review.link}}' } });
   await listCommunicationTemplates();
-  assert.equal(await CommunicationTemplateModel.countDocuments(), 3);
+  assert.equal(await CommunicationTemplateModel.countDocuments(), 6);
   assert.equal((await renderBookingReviewTemplate('invoice_review_request', context)).body, 'Hvala Žiga! https://example.com/review');
 });
 
@@ -68,7 +68,7 @@ test('email prejmeta prodajalec in admin enkrat; uporabi predlogo in interno evi
   await listCommunicationTemplates();
   await CommunicationTemplateModel.updateOne({ category: 'booking_selected_internal' }, { $set: { subjectTemplate: 'Izbrano: {{project.name}}' } });
   const send = t.mock.method(transport, 'sendEmail', async () => ({ messageId: 'test' }));
-  await sendBookingSelectedInternalEmail({ projectId: 'PRJ-980', workOrderId: 'work-1', scheduledAt: '2026-09-15T09:00:00' });
+  await sendBookingSelectedInternalEmail({ projectId: 'PRJ-980', workOrderId: new mongoose.Types.ObjectId().toString(), scheduledAt: '2026-09-15T09:00:00' });
   assert.equal(send.mock.callCount(), 1);
   const mail = send.mock.calls[0].arguments[0] as any;
   assert.deepEqual(mail.to.split(', ').sort(), ['admin@example.com', 'sales@example.com']);
@@ -83,6 +83,6 @@ test('email prejmeta prodajalec in admin enkrat; uporabi predlogo in interno evi
 test('napaka SMTP ostane zabeležena kot neuspešno interno sporočilo', async (t) => {
   await recipientsProject();
   t.mock.method(transport, 'sendEmail', async () => { throw new Error('SMTP test failure'); });
-  await assert.rejects(sendBookingSelectedInternalEmail({ projectId: 'PRJ-980', workOrderId: 'work-1', scheduledAt: '2026-09-15T09:00:00' }), /SMTP test failure/);
+  await assert.rejects(sendBookingSelectedInternalEmail({ projectId: 'PRJ-980', workOrderId: new mongoose.Types.ObjectId().toString(), scheduledAt: '2026-09-15T09:00:00' }), /SMTP test failure/);
   assert.equal((await CommunicationMessageModel.findOne({ projectId: 'PRJ-980' }))?.status, 'failed');
 });

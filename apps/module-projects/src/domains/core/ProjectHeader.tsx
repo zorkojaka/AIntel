@@ -2,6 +2,7 @@ import { ArrowLeft, Copy, Loader2, Plus, Save } from "lucide-react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ProjectDetails, ProjectStatus } from "../../types";
+import { ProjectClosureInfo } from '../../components/ProjectClosureInfo';
 
 export type ProjectHeaderProps = {
   project: ProjectDetails;
@@ -54,9 +55,10 @@ export function ProjectHeader({
           <div className="min-w-0">
             <div className="flex items-center gap-3">
               <h1 className="m-0 truncate">{project.title}</h1>
-              <Badge className={statusClasses[status]}>{statusLabels[status]}</Badge>
+              {!project.closedAt && <Badge className={statusClasses[status]}>{statusLabels[status]}</Badge>}
             </div>
             <p className="m-0 text-sm text-muted-foreground">ID: {project.id}</p>
+            <ProjectClosureInfo project={project} />
           </div>
         </div>
 
