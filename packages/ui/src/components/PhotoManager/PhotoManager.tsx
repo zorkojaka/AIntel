@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import React, { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, Check, ChevronLeft, ChevronRight, Image as ImageIcon, Loader2, RotateCcw, X } from 'lucide-react';
+import { Camera, Check, ChevronLeft, ChevronRight, Image as ImageIcon, Loader2, RotateCcw, Pencil, Palette, X } from 'lucide-react';
 
 export type PhotoPhase = 'requirements' | 'offer' | 'preparation' | 'execution' | 'delivery' | 'other';
 
@@ -446,12 +446,10 @@ type MarkingStroke = {
 
 function PhotoMarkingEditor({
   file,
-  onCancel,
   onSave,
 }: {
   file: File;
-  onCancel: () => void;
-  onSave: (markedFile: File) => void | Promise<void>;
+  onSave: (markedFile: File, nextPhoto: boolean) => void | Promise<void>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -461,6 +459,8 @@ function PhotoMarkingEditor({
   const [strokeCount, setStrokeCount] = useState(0);
   const [saving, setSaving] = useState(false);
   const [imageReady, setImageReady] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -508,6 +508,7 @@ function PhotoMarkingEditor({
       redraw();
       setImageReady(true);
     };
+    image.onerror = () => setError('Slike ni mogoče odpreti.');
     image.src = objectUrl;
     return () => URL.revokeObjectURL(objectUrl);
   }, [file, redraw]);
@@ -523,6 +524,7 @@ function PhotoMarkingEditor({
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (saving || !imageReady || !event.isPrimary || event.button !== 0) return;
     const point = getCanvasPoint(event);
     if (!point) return;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -552,7 +554,7 @@ function PhotoMarkingEditor({
     redraw();
   };
 
-  const saveMarkedPhoto = () => {
+  const saveMarkedPhoto = (nextPhoto = false) => {
     const canvas = canvasRef.current;
     if (!canvas || saving) return;
     setSaving(true);
@@ -566,7 +568,7 @@ function PhotoMarkingEditor({
           type: 'image/jpeg',
           lastModified: Date.now(),
         });
-        void Promise.resolve(onSave(markedFile)).finally(() => setSaving(false));
+        void Promise.resolve(onSave(markedFile, nextPhoto)).catch((error) => setError(getErrorMessage(error))).finally(() => setSaving(false));
       },
       'image/jpeg',
       COMPRESSION_QUALITY,
@@ -588,7 +590,7 @@ function PhotoMarkingEditor({
         />
       </div>
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2" role="group" aria-label="Barva označevanja">
+        <div className="flex items-center gap-2" style={{ visibility: paletteOpen ? 'visible' : 'hidden' }} role="group" aria-label="Barva označevanja">
           {MARKING_COLORS.map((markingColor) => (
             <button
               key={markingColor.value}
@@ -599,7 +601,7 @@ function PhotoMarkingEditor({
                 borderColor: color === markingColor.value ? 'white' : 'transparent',
                 outline: color === markingColor.value ? '2px solid #334155' : undefined,
               }}
-              onClick={() => setColor(markingColor.value)}
+              onClick={() => { setColor(markingColor.value); setPaletteOpen(false); }}
               aria-label={markingColor.label}
               aria-pressed={color === markingColor.value}
             />
@@ -609,30 +611,17 @@ function PhotoMarkingEditor({
           type="button"
           className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium disabled:opacity-50"
           onClick={undoStroke}
-          disabled={strokeCount === 0}
+          disabled={saving || strokeCount === 0}
         >
           <RotateCcw className="h-4 w-4" />
           Razveljavi
         </button>
       </div>
-      <div className="grid grid-cols-[auto_1fr] gap-3">
-        <button
-          type="button"
-          className="inline-flex min-h-11 items-center justify-center rounded-md border bg-background px-4 py-2 text-sm font-medium"
-          onClick={onCancel}
-          disabled={saving || !imageReady}
-        >
-          Ponovi
-        </button>
-        <button
-          type="button"
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
-          onClick={saveMarkedPhoto}
-          disabled={saving || !imageReady}
-        >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-          Shrani fotografijo
-        </button>
+      {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+      <div className="sticky bottom-0 grid grid-cols-3 gap-3 bg-background py-2">
+        <button type="button" style={{ minHeight: 64 }} className="flex items-center justify-center rounded-md border" aria-label="Izberi barvo" disabled={saving} onClick={() => setPaletteOpen(value => !value)}><Palette className="h-8 w-8" style={{ color }} /></button>
+        <button type="button" style={{ minHeight: 64 }} className="flex items-center justify-center rounded-md bg-primary text-primary-foreground" aria-label="Shrani in odpri slike lokacije" disabled={saving || !imageReady} onClick={() => saveMarkedPhoto(false)}>{saving ? <Loader2 className="h-8 w-8 animate-spin" /> : <Check className="h-8 w-8" />}</button>
+        <button type="button" style={{ minHeight: 64 }} className="flex items-center justify-center rounded-md border" aria-label="Shrani in zajemi še eno sliko" disabled={saving || !imageReady} onClick={() => saveMarkedPhoto(true)}><Camera className="h-8 w-8" /></button>
       </div>
     </div>
   );
@@ -660,6 +649,7 @@ export function PhotoManager({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraSessionCaptureCount, setCameraSessionCaptureCount] = useState(0);
   const [pendingCapturedPhoto, setPendingCapturedPhoto] = useState<File | null>(null);
+  const [editingPhoto, setEditingPhoto] = useState<ManagedPhoto | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -705,6 +695,7 @@ export function PhotoManager({
     setCameraLoading(false);
     setCameraError(null);
     setPendingCapturedPhoto(null);
+    setEditingPhoto(null);
   }, []);
 
   const startInlineCamera = useCallback(async (keepCaptureCount = false) => {
@@ -864,7 +855,7 @@ export function PhotoManager({
     };
   }, []);
 
-  const uploadFile = async (selectedFile: File) => {
+  const uploadFile = async (selectedFile: File, propagateError = false) => {
     let file = normalizeUploadFile(selectedFile);
     const placeholderId = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     let previewUrl: string | undefined;
@@ -929,6 +920,10 @@ export function PhotoManager({
     } catch (error) {
       const message = formatUploadError(error, 'fetch to /api/photos', file);
       showToast(message);
+      if (propagateError) {
+        setTiles(current => current.filter(tile => tile.kind !== 'uploading' || tile.id !== placeholderId));
+        throw error;
+      }
       if (!placeholderAdded) {
         setTiles((current) => [
           ...current,
@@ -995,19 +990,33 @@ export function PhotoManager({
     }, 'image/jpeg', COMPRESSION_QUALITY);
   }, []);
 
-  const resumeInlineCamera = () => {
-    setPendingCapturedPhoto(null);
-    void startInlineCamera(true);
+  const editPhoto = async (photo: ManagedPhoto) => {
+    try {
+      const response = await fetch(photo.url, { credentials: 'same-origin' });
+      if (!response.ok) throw new Error('Fotografije ni mogoče odpreti.');
+      const blob = await response.blob();
+      setEditingPhoto(photo);
+      setPendingCapturedPhoto(new File([blob], photo.originalName, { type: blob.type }));
+      setPreviewIndex(null);
+    } catch (error) { showToast(getErrorMessage(error)); }
   };
 
-  const saveMarkedPhoto = (markedFile: File) => {
-    setPendingCapturedPhoto(null);
-    void uploadFile(markedFile);
-    if (inlineCameraCapture) {
-      void startInlineCamera(true);
+  const saveMarkedPhoto = async (markedFile: File, nextPhoto: boolean) => {
+    if (editingPhoto) {
+    const form = new FormData();
+      form.append('file', markedFile);
+      form.append('filename', editingPhoto.filename);
+      const response = await fetch(`/api/photos/${getPhotoId(editingPhoto)}`, { method: 'PUT', body: form, credentials: 'same-origin' });
+      const result = await response.json() as PhotosResponse;
+      if (!response.ok || !result.success || !result.data?.photo) throw new Error(result.error || 'Shranjevanje ni uspelo.');
+      const updated = result.data.photo;
+      setTiles(current => current.map(tile => tile.kind === 'photo' && getPhotoId(tile.photo) === getPhotoId(updated) ? { kind: 'photo', photo: updated } : tile));
     } else {
-      setCameraOpen(false);
+      await uploadFile(markedFile, true);
     }
+    setEditingPhoto(null);
+    stopInlineCamera();
+    if (nextPhoto) void startInlineCamera(true);
   };
 
   const handleFileSelect = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1112,7 +1121,7 @@ export function PhotoManager({
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
             {pendingCapturedPhoto ? (
-              <PhotoMarkingEditor file={pendingCapturedPhoto} onCancel={resumeInlineCamera} onSave={saveMarkedPhoto} />
+              <PhotoMarkingEditor file={pendingCapturedPhoto} onSave={saveMarkedPhoto} />
             ) : inlineCameraCapture && cameraOpen ? (
               <div className="flex min-h-56 flex-col gap-3">
                 <div className="relative overflow-hidden rounded-md bg-black">
@@ -1167,6 +1176,7 @@ export function PhotoManager({
                       <button type="button" className="h-full w-full" onClick={() => openPreview(tile.photo)} aria-label="Odpri fotografijo">
                         <PhotoTileImage photo={tile.photo} />
                       </button>
+                      <button type="button" onClick={() => void editPhoto(tile.photo)} className="absolute top-2 z-20 flex h-10 w-10 items-center justify-center rounded-full border bg-white text-black shadow-md" style={{ right: canDelete ? 56 : 8 }} aria-label="Uredi fotografijo"><Pencil className="h-5 w-5" /></button>
                       {canDelete ? (
                         <button
                           type="button"
