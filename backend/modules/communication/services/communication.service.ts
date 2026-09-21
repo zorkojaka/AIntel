@@ -1265,6 +1265,8 @@ export async function sendInstallerPreparationEmail(input: {
   acceptanceBaseUrl?: string | null;
   previewOnly?: boolean;
   confirmSend?: boolean;
+  excludeRecipients?: string[];
+  allowedRecipients?: string[];
   actorUserId?: string | null;
   actorDisplayName?: string | null;
   actorProfile?: {
@@ -1446,7 +1448,12 @@ export async function sendInstallerPreparationEmail(input: {
   // Delovni nalog je zavezujoč za celotno dodeljeno ekipo. Tudi če je v
   // predogledu ročno spremenjeno polje »To«, naj vsak dodeljeni monter z
   // nastavljenim emailom prejme isti email in svojo povezavo za potrditev.
-  const resolvedRecipients = Array.from(new Set([...assignedInstallerRecipients, ...selectedRecipients]));
+  const excludedRecipients = new Set((input.excludeRecipients ?? []).map((email) => email.trim().toLowerCase()));
+  const allowedRecipients = Array.isArray(input.allowedRecipients)
+    ? new Set(input.allowedRecipients.map((email) => email.trim().toLowerCase())) : null;
+  const resolvedRecipients = Array.from(new Set([...assignedInstallerRecipients, ...selectedRecipients]))
+    .filter((email) => !excludedRecipients.has(email) && (!allowedRecipients || allowedRecipients.has(email)));
+  if (resolvedRecipients.length === 0) return { skipped: true, recipients: [] };
   const cc = sanitizeEmailList(input.cc);
   const bcc = sanitizeEmailList(input.bcc);
   if (input.previewOnly) {

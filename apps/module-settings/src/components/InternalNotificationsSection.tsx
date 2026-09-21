@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { Button, Card } from '@aintel/ui';
 import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 
-type Values = Record<string, Record<string, boolean>>;
+type Values = Record<string, Record<string, boolean | string[] | undefined>>;
 type Options = {
   events: Array<{ key: string; label: string }>;
   roles: Array<{ key: string; label: string; description: string; events: string[] }>;
+  recipients: Record<string, Array<{ email: string; name: string }>>;
   value: Values;
 };
 
@@ -61,7 +62,7 @@ export function InternalNotificationsSection() {
                   <p className="text-xs text-muted-foreground">{role.description}</p>
                   {options.events.filter((event) => role.events.includes(event.key)).map((event) => (
                     <label key={event.key} className="flex items-center gap-2 text-sm">
-                      <input type="checkbox" checked={value[role.key]?.[event.key] ?? false}
+                      <input type="checkbox" checked={value[role.key]?.[event.key] === true}
                         onChange={(e) => {
                           setSaved(false);
                           setValue((old) => ({ ...old, [role.key]: { ...old[role.key], [event.key]: e.target.checked } }));
@@ -69,6 +70,33 @@ export function InternalNotificationsSection() {
                       {event.label}
                     </label>
                   ))}
+                  {(options.recipients[role.key] ?? []).length > 0 && (
+                    <div className="space-y-1 border-t border-border pt-2">
+                      <p className="text-xs text-muted-foreground">Prejemniki te vloge</p>
+                      {(options.recipients[role.key] ?? []).map((recipient) => {
+                        const selected = value[role.key]?.recipients;
+                        const isSelected = !Array.isArray(selected) || selected.includes(recipient.email);
+                        return (
+                          <label key={recipient.email} className="flex items-center gap-2 text-sm">
+                            <input type="checkbox" checked={isSelected}
+                              onChange={(e) => {
+                                setSaved(false);
+                                setValue((old) => {
+                                  const current = old[role.key] ?? {};
+                                  const configured = Array.isArray(current.recipients)
+                                    ? current.recipients : (options.recipients[role.key] ?? []).map((item) => item.email);
+                                  const recipients = e.target.checked
+                                    ? Array.from(new Set([...configured, recipient.email]))
+                                    : configured.filter((email) => email !== recipient.email);
+                                  return { ...old, [role.key]: { ...current, recipients } };
+                                });
+                              }} />
+                            <span>{recipient.name ? `${recipient.name} — ` : ''}{recipient.email}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
                 </fieldset>
               ))}
             </div>
