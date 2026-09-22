@@ -455,14 +455,27 @@ function buildProjectPhaseSignals(project: any, workOrders: any[]) {
 
 function buildProjectCalendarEntries(workOrders: any[]) {
   return workOrders
-    .map((order: any) => ({
-      workOrderId: String(order?._id ?? ''),
-      title: typeof order?.title === 'string' ? order.title : null,
-      status: typeof order?.status === 'string' ? order.status : null,
-      scheduledAt: typeof order?.scheduledAt === 'string' && order.scheduledAt.trim().length > 0 ? order.scheduledAt : null,
-      scheduledConfirmedAt: order.scheduledConfirmedAt ? new Date(order.scheduledConfirmedAt).toISOString() : null,
-      scheduledConfirmedBy: typeof order?.scheduledConfirmedBy === 'string' ? order.scheduledConfirmedBy : null,
-    }))
+    .map((order: any) => {
+      const assignedInstallerIds = new Set([
+        order?.mainInstallerId ? String(order.mainInstallerId) : '',
+        ...(Array.isArray(order?.assignedEmployeeIds) ? order.assignedEmployeeIds.map(String) : []),
+      ].filter(Boolean));
+      const acceptedInstallerIds = new Set(
+        (Array.isArray(order?.installerAcceptances) ? order.installerAcceptances : [])
+          .filter((acceptance: any) => acceptance?.acceptedAt && assignedInstallerIds.has(String(acceptance.employeeId)))
+          .map((acceptance: any) => String(acceptance.employeeId)),
+      );
+      return {
+        workOrderId: String(order?._id ?? ''),
+        title: typeof order?.title === 'string' ? order.title : null,
+        status: typeof order?.status === 'string' ? order.status : null,
+        scheduledAt: typeof order?.scheduledAt === 'string' && order.scheduledAt.trim().length > 0 ? order.scheduledAt : null,
+        scheduledConfirmedAt: order.scheduledConfirmedAt ? new Date(order.scheduledConfirmedAt).toISOString() : null,
+        scheduledConfirmedBy: typeof order?.scheduledConfirmedBy === 'string' ? order.scheduledConfirmedBy : null,
+        assignedInstallerCount: assignedInstallerIds.size,
+        acceptedInstallerCount: acceptedInstallerIds.size,
+      };
+    })
     .filter((entry: any) => entry.workOrderId);
 }
 
@@ -540,7 +553,7 @@ export async function listProjects(_req: Request, res: Response) {
   const workOrders =
     projectIds.length > 0
       ? await WorkOrderModel.find({ projectId: { $in: projectIds } })
-          .select('projectId title status scheduledAt scheduledConfirmedAt scheduledConfirmedBy items confirmationState customerSignedAt confirmationVersions')
+          .select('projectId title status scheduledAt scheduledConfirmedAt scheduledConfirmedBy mainInstallerId assignedEmployeeIds installerAcceptances items confirmationState customerSignedAt confirmationVersions')
           .lean()
       : [];
   const workOrdersByProject = new Map<string, any[]>();

@@ -101,6 +101,8 @@ export interface ProjectSummary {
     scheduledAt: string | null;
     scheduledConfirmedAt?: string | null;
     scheduledConfirmedBy?: string | null;
+    assignedInstallerCount?: number;
+    acceptedInstallerCount?: number;
   }>;
 }
 

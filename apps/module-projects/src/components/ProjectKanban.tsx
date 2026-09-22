@@ -49,6 +49,17 @@ function canCloseProject(project: ProjectSummary) {
   return project.status === "invoiced" || project.phaseSignals?.hasIssuedInvoice === true;
 }
 
+function getPreparationDetails(project: ProjectSummary) {
+  const entries = project.calendarEntries ?? [];
+  const scheduled = entries
+    .map((entry) => entry.scheduledAt)
+    .filter((value): value is string => Boolean(value))
+    .sort()[0] ?? null;
+  const assigned = entries.reduce((total, entry) => total + (entry.assignedInstallerCount ?? 0), 0);
+  const accepted = entries.reduce((total, entry) => total + (entry.acceptedInstallerCount ?? 0), 0);
+  return { scheduled, assigned, accepted };
+}
+
 export function ProjectKanban({
   projects,
   categoryLookup,
@@ -136,6 +147,7 @@ export function ProjectKanban({
               <div className="space-y-2 p-2">
                 {phaseProjects.map((project) => {
                   const progress = getPhaseProgress(project, phase.id);
+                  const preparation = phase.id === "priprava" ? getPreparationDetails(project) : null;
                   return (
                     <article
                       key={project.id}
@@ -236,10 +248,20 @@ export function ProjectKanban({
                         </div>
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">{project.customer}</p>
-                      {project.offerSentAt ? (
+                      {phase.id === "ponudbe" && project.offerSentAt ? (
                         <p className="mt-0.5 text-xs font-medium" style={{ color: "#185FA5" }}>
                           Ponudba poslana: {formatDate(project.offerSentAt)}
                         </p>
+                      ) : null}
+                      {preparation ? (
+                        <div className="mt-1 space-y-0.5 text-xs font-medium" style={{ color: "#9A6700" }}>
+                          <p>Termin izvedbe: {preparation.scheduled ? formatDate(preparation.scheduled) : "še ni nastavljen"}</p>
+                          <p>
+                            {preparation.assigned > 0
+                              ? `Monterji potrdili: ${preparation.accepted}/${preparation.assigned}`
+                              : "Monterji še niso dodeljeni"}
+                          </p>
+                        </div>
                       ) : null}
                       <div className="mt-2 flex flex-wrap gap-1">
                         {project.categories.map((categorySlug) => {
