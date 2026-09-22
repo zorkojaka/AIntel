@@ -38,6 +38,8 @@ export async function notifyInternalWorkOrderEvent(input: {
           projectId: input.projectId, workOrderId: input.workOrderId,
           projectLink: `${origin}/projects/${encodeURIComponent(input.projectId)}`,
           acceptanceBaseUrl: `${origin}/api/public/installer-accept`, confirmSend: true,
+          allowedRecipients: Array.isArray(settings.EXECUTION?.recipients)
+            ? settings.EXECUTION.recipients as string[] : undefined,
           actorDisplayName: input.actorDisplayName || 'Sistem — interno obveščanje',
         });
         if ('recipients' in result) installerRecipients = result.recipients;
