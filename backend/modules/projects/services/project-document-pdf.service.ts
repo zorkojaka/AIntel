@@ -210,23 +210,24 @@ async function resolveWorkOrderExecutionUnits(projectObjectId: unknown, item: an
   if (!fallbackItemId) return [];
 
   return Promise.all(units.map(async (unit: any, unitIndex: number) => {
-    const locationItemId =
-      typeof unit?.projectLocationId === 'string' && unit.projectLocationId.trim()
-        ? unit.projectLocationId.trim()
-        : typeof unit?.sourcePhotoItemId === 'string' && unit.sourcePhotoItemId.trim()
-          ? unit.sourcePhotoItemId.trim()
-          : '';
-    const photoQueries = locationItemId
-      ? [
-          { projectId: projectObjectId, phase: 'preparation', itemId: locationItemId, deletedAt: { $exists: false } },
-          { projectId: projectObjectId, phase: 'requirements', itemId: locationItemId, deletedAt: { $exists: false } },
-          { projectId: projectObjectId, phase: 'execution', itemId: locationItemId, deletedAt: { $exists: false } },
-        ]
+    // Fotografije lokacije se v urejevalniku shranjujejo pod sourcePhotoItemId,
+    // medtem ko novejše lokacije dobijo še svoj projectLocationId. Za PDF
+    // preverimo oba ID-ja, sicer so slike vidne v definiciji, ne pa monterju.
+    const locationItemIds = Array.from(new Set([
+      typeof unit?.projectLocationId === 'string' ? unit.projectLocationId.trim() : '',
+      typeof unit?.sourcePhotoItemId === 'string' ? unit.sourcePhotoItemId.trim() : '',
+    ].filter(Boolean)));
+    const photoQueries = locationItemIds.length > 0
+      ? locationItemIds.flatMap((itemId) => [
+          { projectId: projectObjectId, phase: 'preparation', itemId, deletedAt: { $exists: false } },
+          { projectId: projectObjectId, phase: 'requirements', itemId, deletedAt: { $exists: false } },
+          { projectId: projectObjectId, phase: 'execution', itemId, deletedAt: { $exists: false } },
+        ])
       : [
           { projectId: projectObjectId, phase: 'preparation', itemId: fallbackItemId, unitIndex, deletedAt: { $exists: false } },
         ];
     const photosNested = await Promise.all(photoQueries.map((query) => PhotoModel.find(query).sort({ uploadedAt: 1 }).lean()));
-    const photos = photosNested.flat();
+    const photos = Array.from(new Map(photosNested.flat().map((photo) => [String(photo._id), photo])).values());
 
     const photoDataUrls = (
       await Promise.all(photos.map((photo) => readPhotoDataUrl({
