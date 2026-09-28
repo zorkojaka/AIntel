@@ -91,6 +91,8 @@ function sanitizeExecutionUnits(units: WorkOrderExecutionSpec["executionUnits"] 
   return Array.isArray(units)
     ? units.map((unit) => ({
         id: unit.id,
+        projectLocationId: unit.projectLocationId ?? null,
+        sourcePhotoItemId: unit.sourcePhotoItemId ?? null,
         label: unit.label ?? "",
         location: unit.location ?? "",
         instructions: unit.instructions ?? "",
@@ -2054,6 +2056,72 @@ export function ExecutionPanel({
     );
   };
 
+  const renderWorkOrderExecutionDefinition = (items: WorkOrderItemDraft[]) => {
+    const locations = new Map<string, {
+      name: string;
+      note: string;
+      photoItemId: string;
+      products: Array<{ name: string; quantity: number | null; unit: string; label: string; instructions: string }>;
+    }>();
+
+    items.forEach((item) => {
+      if (item.isService) return;
+      const spec = ensureExecutionSpec(item.executionSpec);
+      (spec.executionUnits ?? []).forEach((unit, index) => {
+        const locationKey = unit.projectLocationId?.trim() || unit.sourcePhotoItemId?.trim() || "";
+        const locationName = unit.location?.trim() || "";
+        if (!locationKey && !locationName) return;
+        const key = locationKey || `named:${locationName}`;
+        const current = locations.get(key) ?? {
+          name: locationName || `Lokacija ${locations.size + 1}`,
+          note: "",
+          photoItemId: getUnitLocationPhotoItemId(getWorkOrderItemPhotoId(item), unit),
+          products: [],
+        };
+        if (!current.note && unit.instructions?.trim()) current.note = unit.instructions.trim();
+        current.products.push({
+          name: item.name,
+          quantity: typeof item.offeredQuantity === "number" ? item.offeredQuantity : item.quantity ?? null,
+          unit: item.unit ?? "",
+          label: unit.label?.trim() || String(index + 1),
+          instructions: unit.instructions?.trim() || "",
+        });
+        locations.set(key, current);
+      });
+    });
+
+    if (locations.size === 0) return null;
+    return (
+      <section className="space-y-3 rounded-md border border-border/70 bg-muted/20 p-4">
+        <div>
+          <h3 className="text-base font-semibold">Definicija izvedbe</h3>
+          <p className="text-sm text-muted-foreground">Lokacije, pripadajoči produkti in fotografije iz priprave projekta.</p>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {Array.from(locations.entries()).map(([key, location]) => (
+            <div key={key} className="space-y-3 rounded-md border border-border/70 bg-card p-3">
+              <div>
+                <p className="text-sm font-semibold">{location.name}</p>
+                {location.note ? <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">{location.note}</p> : null}
+              </div>
+              <PreparationPhotoThumbnails projectId={projectId} itemId={location.photoItemId} />
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Povezani produkti</p>
+                {location.products.map((product, index) => (
+                  <div key={`${product.name}-${product.label}-${index}`} className="rounded border border-border/60 bg-background/60 px-2 py-1.5 text-sm">
+                    <span className="font-medium">{product.name}</span>
+                    {product.quantity !== null ? <span className="text-muted-foreground"> · {product.quantity} {product.unit}</span> : null}
+                    {product.instructions ? <p className="mt-0.5 text-xs text-muted-foreground">{product.instructions}</p> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  };
+
   const renderExtraExecutionItemEditor = (
     order: WorkOrder,
     item: WorkOrderItemDraft,
@@ -2515,6 +2583,7 @@ export function ExecutionPanel({
                           </div>
                         </CardHeader>
                         <CardContent className="space-y-4">
+                        {renderWorkOrderExecutionDefinition(items)}
                         {!isWorkOrderStatusCompleted ? (
                         <div className="rounded-md border border-border/70 bg-muted/20 p-4">
                           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
