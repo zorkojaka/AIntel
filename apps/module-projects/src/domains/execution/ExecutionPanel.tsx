@@ -83,6 +83,18 @@ type PreparationPhoto = {
   uploadedAt?: string | null;
 };
 
+type ProjectExecutionLocation = {
+  id: string;
+  name?: string | null;
+  note?: string | null;
+  sourcePhotoItemId?: string | null;
+};
+
+type ProjectExecutionDefinition = {
+  locations: ProjectExecutionLocation[];
+  items: Array<{ id: string; offerItemId?: string | null; name?: string; quantity?: number; unit?: string; executionSpec?: WorkOrderExecutionSpec | null }>;
+};
+
 function normalizeExecutionMode(value: WorkOrderExecutionSpec["mode"] | undefined) {
   return value === "per_unit" || value === "measured" ? value : "simple";
 }
@@ -91,6 +103,8 @@ function sanitizeExecutionUnits(units: WorkOrderExecutionSpec["executionUnits"] 
   return Array.isArray(units)
     ? units.map((unit) => ({
         id: unit.id,
+        projectLocationId: unit.projectLocationId ?? null,
+        sourcePhotoItemId: unit.sourcePhotoItemId ?? null,
         label: unit.label ?? "",
         location: unit.location ?? "",
         instructions: unit.instructions ?? "",
@@ -640,8 +654,31 @@ export function ExecutionPanel({
   const [sendingInstallerEmail, setSendingInstallerEmail] = useState(false);
   const [acceptingAssignmentId, setAcceptingAssignmentId] = useState<string | null>(null);
   const [adminConfirmingAssignmentId, setAdminConfirmingAssignmentId] = useState<string | null>(null);
+  const [projectExecutionDefinition, setProjectExecutionDefinition] = useState<ProjectExecutionDefinition | null>(null);
 
   const workOrders = useMemo(() => rawWorkOrders, [rawWorkOrders]);
+
+  useEffect(() => {
+    let alive = true;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/execution-definition`, {
+          credentials: "include", signal: controller.signal,
+        });
+        const payload = await parseApiEnvelope<ProjectExecutionDefinition>(response, "Definicije izvedbe ni mogoče naložiti.");
+        if (!alive) return;
+        setProjectExecutionDefinition({
+          locations: Array.isArray(payload?.locations) ? payload.locations : [],
+          items: Array.isArray(payload?.items) ? payload.items : [],
+        });
+      } catch (error: any) {
+        if (!alive || error?.name === "AbortError") return;
+        setProjectExecutionDefinition(null);
+      }
+    })();
+    return () => { alive = false; controller.abort(); };
+  }, [projectId]);
 
   useEffect(() => {
     let alive = true;
@@ -1951,7 +1988,12 @@ export function ExecutionPanel({
     item: WorkOrderItemDraft,
     options?: { compact?: boolean; className?: string; showToggle?: boolean; disabled?: boolean },
   ) => {
-    const spec = ensureExecutionSpec(item.executionSpec);
+    const canonicalItem = (projectExecutionDefinition?.items ?? []).find((definition) =>
+      definition.id === item.id || definition.offerItemId === item.id || definition.id === item.offerItemId,
+    );
+    // Lokacije in slike so skupne projektne informacije. Te imajo prednost
+    // pred starejšim posnetkom postavke v že ustvarjenem delovnem nalogu.
+    const spec = ensureExecutionSpec(canonicalItem?.executionSpec ?? item.executionSpec);
     const isLocked = !!options?.disabled;
     const isPerUnit = spec.mode === "per_unit";
     const hasUnitList = (spec.executionUnits?.length ?? 0) > 0;
