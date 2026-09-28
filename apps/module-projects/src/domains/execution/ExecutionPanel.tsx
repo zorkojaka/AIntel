@@ -22,6 +22,7 @@ import type {
 } from "@aintel/shared/types/logistics";
 import { cn } from "../../components/ui/utils";
 import { MaterialOrderCard } from "../logistics/MaterialOrderCard";
+import { ExecutionDefinitionPanel } from "../logistics/ExecutionDefinitionPanel";
 import { PriceListProductAutocomplete } from "../../components/PriceListProductAutocomplete";
 import { SignaturePad } from "./SignaturePad";
 import { ClientNotesCard } from "../core/ClientNotesCard";
@@ -657,6 +658,10 @@ export function ExecutionPanel({
   const [projectExecutionDefinition, setProjectExecutionDefinition] = useState<ProjectExecutionDefinition | null>(null);
 
   const workOrders = useMemo(() => rawWorkOrders, [rawWorkOrders]);
+  const executionDefinitionOfferVersionId = useMemo(
+    () => workOrders.find((order) => typeof order.offerVersionId === "string" && order.offerVersionId)?.offerVersionId ?? null,
+    [workOrders],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -3246,6 +3251,12 @@ export function ExecutionPanel({
             </CardContent>
           </Card>
         )}
+        {hasWorkOrders && executionDefinitionOfferVersionId ? (
+          <ExecutionDefinitionPanel
+            projectId={projectId}
+            offerVersionId={executionDefinitionOfferVersionId}
+          />
+        ) : null}
       </div>
 
       <Dialog open={Boolean(activeUnitNoteEditor)} onOpenChange={(open) => {
