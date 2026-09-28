@@ -83,6 +83,18 @@ type PreparationPhoto = {
   uploadedAt?: string | null;
 };
 
+type ProjectExecutionLocation = {
+  id: string;
+  name?: string | null;
+  note?: string | null;
+  sourcePhotoItemId?: string | null;
+};
+
+type ProjectExecutionDefinition = {
+  locations: ProjectExecutionLocation[];
+  items: Array<{ id: string; name?: string; quantity?: number; unit?: string; executionSpec?: WorkOrderExecutionSpec | null }>;
+};
+
 function normalizeExecutionMode(value: WorkOrderExecutionSpec["mode"] | undefined) {
   return value === "per_unit" || value === "measured" ? value : "simple";
 }
@@ -642,8 +654,31 @@ export function ExecutionPanel({
   const [sendingInstallerEmail, setSendingInstallerEmail] = useState(false);
   const [acceptingAssignmentId, setAcceptingAssignmentId] = useState<string | null>(null);
   const [adminConfirmingAssignmentId, setAdminConfirmingAssignmentId] = useState<string | null>(null);
+  const [projectExecutionDefinition, setProjectExecutionDefinition] = useState<ProjectExecutionDefinition | null>(null);
 
   const workOrders = useMemo(() => rawWorkOrders, [rawWorkOrders]);
+
+  useEffect(() => {
+    let alive = true;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/execution-definition`, {
+          credentials: "include", signal: controller.signal,
+        });
+        const payload = await parseApiEnvelope<ProjectExecutionDefinition>(response, "Definicije izvedbe ni mogoče naložiti.");
+        if (!alive) return;
+        setProjectExecutionDefinition({
+          locations: Array.isArray(payload?.locations) ? payload.locations : [],
+          items: Array.isArray(payload?.items) ? payload.items : [],
+        });
+      } catch (error: any) {
+        if (!alive || error?.name === "AbortError") return;
+        setProjectExecutionDefinition(null);
+      }
+    })();
+    return () => { alive = false; controller.abort(); };
+  }, [projectId]);
 
   useEffect(() => {
     let alive = true;
@@ -2064,7 +2099,23 @@ export function ExecutionPanel({
       products: Array<{ name: string; quantity: number | null; unit: string; label: string; instructions: string }>;
     }>();
 
-    items.forEach((item) => {
+    // Lokacije so kanonični podatki projekta. Delovni nalog je lahko ustvarjen
+    // pred povezavo produkta z lokacijo, zato mora monter videti tudi prazne
+    // lokacije, njihove opombe in fotografije.
+    (projectExecutionDefinition?.locations ?? []).forEach((location) => {
+      if (!location.id) return;
+      locations.set(location.id, {
+        name: location.name?.trim() || "Neimenovana lokacija",
+        note: location.note?.trim() || "",
+        photoItemId: location.sourcePhotoItemId?.trim() || location.id,
+        products: [],
+      });
+    });
+
+    const definitionItems = projectExecutionDefinition?.items?.length
+      ? projectExecutionDefinition.items
+      : items;
+    definitionItems.forEach((item) => {
       if (item.isService) return;
       const spec = ensureExecutionSpec(item.executionSpec);
       (spec.executionUnits ?? []).forEach((unit, index) => {
