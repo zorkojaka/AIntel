@@ -478,15 +478,16 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId, refreshTok
   const [photoRefreshKey, setPhotoRefreshKey] = useState(0);
 
   const loadDefinition = useCallback(async () => {
-    if (!projectId || !offerVersionId) {
+    if (!projectId) {
       setItems([]);
       setLocations([]);
       return;
     }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ offerVersionId });
-      const response = await fetch(`/api/projects/${projectId}/execution-definition?${params.toString()}`);
+      const params = new URLSearchParams();
+      if (offerVersionId) params.set("offerVersionId", offerVersionId);
+      const response = await fetch(`/api/projects/${projectId}/execution-definition${params.size ? `?${params.toString()}` : ""}`);
       const payload = await parseApiEnvelope<{ items?: ProjectExecutionDefinitionItem[]; locations?: ProjectExecutionLocation[] }>(
         response,
         "Definicije izvedbe ni bilo mogoče naložiti.",
@@ -561,9 +562,10 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId, refreshTok
     );
   };
 
-  const addLocation = () => {
+  const addLocation = (system?: "videonadzor" | "alarm") => {
     const id = `project-location-${Date.now().toString(36)}`;
-    setLocations((current) => [...current, { id, name: "", note: "", sourcePhotoItemId: null }]);
+    const label = system === "videonadzor" ? "Videonadzor" : system === "alarm" ? "Alarm" : "";
+    setLocations((current) => [...current, { id, name: label ? `${label} – lokacija ${current.length + 1}` : "", note: "", sourcePhotoItemId: null }]);
     setExpanded((current) => ({ ...current, [id]: true }));
   };
 
@@ -593,7 +595,7 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId, refreshTok
   };
 
   const saveDefinition = async () => {
-    if (!projectId || !offerVersionId) return;
+    if (!projectId) return;
     setSaving(true);
     try {
       const response = await fetch(`/api/projects/${projectId}/execution-definition`, {
@@ -632,15 +634,16 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId, refreshTok
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Badge variant="outline">{locationRows.length} lokacij</Badge>
-          <Button type="button" variant="outline" size="sm" onClick={addLocation} disabled={!offerVersionId || loading}>
-            Dodaj lokacijo
+          <Button type="button" variant="outline" size="sm" onClick={() => addLocation("videonadzor")} disabled={loading}>
+            Dodaj videonadzor
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => addLocation("alarm")} disabled={loading}>
+            Dodaj alarm
           </Button>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!offerVersionId ? (
-          <p className="text-sm text-muted-foreground">Najprej izberi ali shrani verzijo ponudbe.</p>
-        ) : loading ? (
+        {loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             Nalagam definicijo izvedbe...
@@ -761,7 +764,7 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId, refreshTok
           </div>
         )}
         <div className="flex justify-end border-t border-border/60 pt-4">
-          <Button variant="outline" size="sm" onClick={() => void saveDefinition()} disabled={saving || loading || !offerVersionId}>
+          <Button variant="outline" size="sm" onClick={() => void saveDefinition()} disabled={saving || loading}>
             {saving ? "Shranjujem definicijo..." : "Shrani definicijo izvedbe"}
           </Button>
         </div>
