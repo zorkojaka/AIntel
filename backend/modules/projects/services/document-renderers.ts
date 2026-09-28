@@ -108,6 +108,12 @@ export interface DocumentPreviewContext {
     right?: PreviewSignature | null;
   } | null;
   projectPlanPhotos?: string[];
+  projectExecutionLocations?: Array<{
+    name: string;
+    note?: string;
+    photos: string[];
+    products: Array<{ name: string; quantity?: number | null; unit?: string }>;
+  }>;
 }
 
 const baseStyles = `
@@ -835,6 +841,25 @@ export function renderWorkOrderPdf(context: DocumentPreviewContext) {
           ${context.projectPlanPhotos.map((photo) => `<img src="${photo}" alt="" />`).join('')}
         </div>
       </section>`
+      : '';
+  const executionDefinitionBlock = context.projectExecutionLocations?.length
+    ? `<section class="execution-locations">
+        <strong>Definicija izvedbe</strong>
+        <div class="execution-location-grid">
+          ${context.projectExecutionLocations.map((location) => {
+            const photos = location.photos.map((photo) => `<img src="${photo}" alt="" />`).join('');
+            const products = location.products.length
+              ? `<p class="execution-location-note"><strong>Produkti:</strong> ${location.products.map((product) => `${escapeHtml(product.name)}${product.quantity != null ? ` (${product.quantity}${product.unit ? ` ${escapeHtml(product.unit)}` : ''})` : ''}`).join(', ')}</p>`
+              : '<p class="execution-location-note">Ni povezanih produktov.</p>';
+            return `<div class="execution-location">
+              <p class="execution-location-name">${escapeHtml(location.name)}</p>
+              ${location.note ? `<p class="execution-location-note">${escapeHtml(location.note)}</p>` : ''}
+              ${photos ? `<div class="execution-location-photos">${photos}</div>` : ''}
+              ${products}
+            </div>`;
+          }).join('')}
+        </div>
+      </section>`
     : '';
   const notesBlock = buildNotesList(context.notes);
   const commentBlock = context.comment
@@ -853,7 +878,7 @@ export function renderWorkOrderPdf(context: DocumentPreviewContext) {
     tableBodyRows: '',
     commentBlock,
     notesBlock,
-    extraSections: `${projectPlanBlock}${itemsBlock}`,
+    extraSections: `${projectPlanBlock}${itemsBlock}${executionDefinitionBlock}`,
   });
 }
 

@@ -267,6 +267,39 @@ async function resolveProjectPlanPhotos(projectObjectId: unknown) {
   ).filter((value): value is string => Boolean(value));
 }
 
+async function resolveProjectExecutionDefinitionLocations(project: any, workOrder: any) {
+  const locations = Array.isArray(project?.executionLocations) ? project.executionLocations : [];
+  const definitions = (Array.isArray(project?.executionDefinitions) ? project.executionDefinitions : [])
+    .filter((definition: any) => !workOrder?.offerVersionId || String(definition?.offerVersionId ?? '') === String(workOrder.offerVersionId));
+
+  return Promise.all(locations.map(async (location: any) => {
+    const locationId = String(location?.id ?? '').trim();
+    const sourcePhotoItemId = String(location?.sourcePhotoItemId ?? '').trim();
+    const photoItemId = sourcePhotoItemId || locationId;
+    const photos = photoItemId
+      ? await PhotoModel.find({ projectId: project._id, phase: 'preparation', itemId: photoItemId, deletedAt: { $exists: false } })
+        .sort({ uploadedAt: 1 }).lean()
+      : [];
+    const photoDataUrls = (await Promise.all(photos.map((photo) => readPhotoDataUrl({
+      url: photo.url, thumbnailUrl: photo.thumbnailUrl, mimeType: photo.mimeType,
+    })))).filter((value): value is string => Boolean(value));
+    const products = definitions.flatMap((definition: any) => {
+      const units = Array.isArray(definition?.executionSpec?.executionUnits) ? definition.executionSpec.executionUnits : [];
+      return units.some((unit: any) => {
+        const unitLocationId = String(unit?.projectLocationId ?? '').trim();
+        const unitSourcePhotoItemId = String(unit?.sourcePhotoItemId ?? '').trim();
+        return unitLocationId === locationId || unitSourcePhotoItemId === sourcePhotoItemId || unitSourcePhotoItemId === locationId;
+      }) ? [{ name: String(definition?.name ?? 'Postavka'), quantity: definition?.quantity ?? null, unit: String(definition?.unit ?? '') }] : [];
+    });
+    return {
+      name: String(location?.name ?? '').trim() || 'Neimenovana lokacija',
+      note: String(location?.note ?? '').trim() || undefined,
+      photos: photoDataUrls,
+      products,
+    };
+  }));
+}
+
 function buildConfiguredNotes(
   settings: Awaited<ReturnType<typeof getSettings>>,
   settingsKey: 'workOrder' | 'workOrderConfirmation',
@@ -539,6 +572,9 @@ export async function generateWorkOrderDocumentPdf(
     comment,
     notes,
     projectPlanPhotos: docType === 'WORK_ORDER' ? await resolveProjectPlanPhotos(existingProject._id) : [],
+    projectExecutionLocations: docType === 'WORK_ORDER'
+      ? await resolveProjectExecutionDefinitionLocations(existingProject, existingOrder)
+      : [],
     signatures:
       docType === 'WORK_ORDER_CONFIRMATION'
         ? {
