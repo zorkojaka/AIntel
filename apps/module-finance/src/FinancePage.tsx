@@ -439,19 +439,24 @@ export const FinancePage: React.FC = () => {
   const [employeePaymentSaving, setEmployeePaymentSaving] = useState<Record<string, boolean>>({});
   const [invoiceActionSaving, setInvoiceActionSaving] = useState<Record<string, boolean>>({});
 
+  const employeeNameById = useMemo(
+    () => new Map(employees.map((employee) => [employee.employeeId, employee.employeeName])),
+    [employees],
+  );
+
   const adjustInstallerEarnings = async (snapshot: FinanceSnapshot) => {
-    const raw = window.prompt(
-      'Vnesite delitev zaslužka v obliki ID=znesek, ločeno z vejico. Primer: 65...ab=40,65...cd=40',
-      snapshot.employeeEarnings.map((entry) => `${entry.employeeId}=${entry.earnings}`).join(', '),
-    );
-    if (raw === null) return;
-    const earnings = raw.split(',').map((part) => {
-      const [employeeId, value] = part.split('=').map((item) => item.trim());
-      return { employeeId, earnings: Number(value) };
-    });
-    if (!earnings.length || earnings.some((entry) => !entry.employeeId || !Number.isFinite(entry.earnings) || entry.earnings < 0)) {
-      window.alert('Delitev ni veljavna.');
-      return;
+    const earnings: Array<{ employeeId: string; earnings: number }> = [];
+    for (const entry of snapshot.employeeEarnings) {
+      const employeeName = employeeNameById.get(entry.employeeId) ?? 'Monter';
+      const raw = window.prompt(`Znesek za monterja ${employeeName}:`, String(entry.earnings));
+      if (raw === null) return;
+
+      const amount = Number(raw.trim().replace(',', '.'));
+      if (!Number.isFinite(amount) || amount < 0) {
+        window.alert('Znesek ni veljaven.');
+        return;
+      }
+      earnings.push({ employeeId: entry.employeeId, earnings: amount });
     }
     try {
       const updated = await patchApi<FinanceSnapshot>(`/api/finance/snapshots/${snapshot._id}/employee-earnings`, { earnings });
@@ -1150,7 +1155,7 @@ export const FinancePage: React.FC = () => {
                                 </table>
                                 <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
                                   <strong>Delitev monterjem:</strong>
-                                  {snapshot.employeeEarnings.map((earning) => <span key={earning.employeeId}>{earning.employeeId}: {currency.format(earning.earnings)}</span>)}
+                                  {snapshot.employeeEarnings.map((earning) => <span key={earning.employeeId}>{employeeNameById.get(earning.employeeId) ?? 'Monter'}: {currency.format(earning.earnings)}</span>)}
                                   {isAdminOrFinance ? <button type="button" className="finance-button" onClick={() => void adjustInstallerEarnings(snapshot)}>Uredi delitev</button> : null}
                                 </div>
                               </td>
