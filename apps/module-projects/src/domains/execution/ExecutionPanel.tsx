@@ -921,7 +921,7 @@ export function ExecutionPanel({
           <span className="text-muted-foreground">Enota</span>
           {installerIds.map((employeeId) => <span key={employeeId} className="text-center font-medium text-emerald-800">{employeeNameById.get(employeeId) ?? "Monter"}</span>)}
           {unitAssignees.map((assignees, index) => (
-            <React.Fragment key={`${item.id}-${index}`}>
+            <div key={`${item.id}-${index}`} className="contents">
               <span>{unitCount === 1 ? "Postavka" : `${index + 1}. enota`}</span>
               {installerIds.map((employeeId) => (
                 <label key={employeeId} className="flex justify-center">
@@ -934,7 +934,7 @@ export function ExecutionPanel({
                   />
                 </label>
               ))}
-            </React.Fragment>
+            </div>
           ))}
         </div>
       </div>
