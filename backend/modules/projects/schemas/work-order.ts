@@ -14,7 +14,7 @@ interface WorkOrderItem {
   executedQuantity: number;
   isExtra: boolean;
   itemNote?: string | null;
-  laborAllocations?: Array<{ id: string; quantity: number; assigneeId: string | 'shared' }>;
+  laborAllocations?: Array<{ id: string; quantity: number; assigneeId: string | 'shared'; assigneeIds?: string[] }>;
   isCompleted?: boolean;
   completedBy?: string | null;
   completedAt?: Date | null;
@@ -152,7 +152,7 @@ const workOrderItemSchema = new Schema<WorkOrderItem>(
     isExtra: { type: Boolean, required: true, default: false },
     itemNote: { type: String, default: null },
     laborAllocations: {
-      type: [{ id: { type: String, required: true }, quantity: { type: Number, min: 0, required: true }, assigneeId: { type: String, required: true } }],
+      type: [{ id: { type: String, required: true }, quantity: { type: Number, min: 0, required: true }, assigneeId: { type: String, required: true }, assigneeIds: { type: [String], default: undefined } }],
       default: [],
       _id: false,
     },

@@ -121,6 +121,7 @@ export interface WorkOrderItem extends LogisticsMaterialItem {
     id: string;
     quantity: number;
     assigneeId: string | "shared";
+    assigneeIds?: string[];
   }>;
   offerItemId?: string | null;
   isService?: boolean;

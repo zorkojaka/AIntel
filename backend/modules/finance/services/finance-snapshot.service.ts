@@ -1,6 +1,7 @@
 import { FilterQuery } from 'mongoose';
 import { ProductModel } from '../../cenik/product.model';
 import { WorkOrderModel, type WorkOrderDocument } from '../../projects/schemas/work-order';
+import { ProjectModel } from '../../projects/schemas/project';
 import { OfferVersionModel } from '../../projects/schemas/offer-version';
 import { EmployeeServiceRateModel } from '../../employee-profiles/schemas/employee-service-rate';
 import { EmployeeProfileModel } from '../../employee-profiles/schemas/employee-profile';
@@ -153,7 +154,7 @@ type ServiceWorkOrderItemWithCompletion = {
   doneBy?: unknown;
   doneByEmployeeId?: unknown;
   executedQuantity?: unknown;
-  laborAllocations?: Array<{ id?: string; quantity?: unknown; assigneeId?: unknown }>;
+  laborAllocations?: Array<{ id?: string; quantity?: unknown; assigneeId?: unknown; assigneeIds?: unknown }>;
 };
 
 type RateValue = { defaultPercent: number; overridePrice: number | null };
@@ -258,8 +259,9 @@ export async function createFinanceSnapshot(params: {
   invoiceVersion: InvoiceVersionInput;
   correctedFromInvoiceVersionId?: string | null;
   actorUserId?: string | null;
+  refreshSnapshotId?: string | null;
 }) {
-  const { project, invoiceVersion, correctedFromInvoiceVersionId } = params;
+  const { project, invoiceVersion, correctedFromInvoiceVersionId, refreshSnapshotId } = params;
   debugSnapshotLog('[Snapshot] Raw invoice version:', JSON.stringify(invoiceVersion, null, 2));
   debugSnapshotLog(
     '[Snapshot] Invoice items:',
@@ -512,8 +514,11 @@ export async function createFinanceSnapshot(params: {
         for (const allocation of laborAllocations) {
           const quantity = Math.max(0, toNumber(allocation.quantity, 0));
           const assigneeId = normalizeEmployeeId(allocation.assigneeId);
+          const selectedSharedRecipients = Array.isArray(allocation.assigneeIds)
+            ? allocation.assigneeIds.map((employeeId) => normalizeEmployeeId(employeeId)).filter((employeeId): employeeId is string => !!employeeId)
+            : [];
           const recipients = assigneeId === 'shared' || String(allocation.assigneeId) === 'shared'
-            ? assignedEmployeeIds : assigneeId ? [assigneeId] : [];
+            ? (selectedSharedRecipients.length > 0 ? selectedSharedRecipients : assignedEmployeeIds) : assigneeId ? [assigneeId] : [];
           if (quantity <= 0 || recipients.length === 0) continue;
           for (const employeeId of recipients) {
             const rate = snapshotItem.productId
@@ -612,6 +617,40 @@ export async function createFinanceSnapshot(params: {
   const totalVat = round((invoiceVersion.summary?.vatAmount ?? 0) as number);
   const totalSaleWithVat = round((invoiceVersion.summary?.totalWithVat ?? totalSaleWithoutVat + totalVat) as number);
 
+  if (refreshSnapshotId) {
+    const existing = await FinanceSnapshotModel.findOne({
+      _id: refreshSnapshotId,
+      projectId: project.id,
+      invoiceVersionId: invoiceVersion._id,
+      superseded: { $ne: true },
+    });
+    if (!existing) return null;
+
+    const previousEarningsByEmployeeId = new Map<string, { isPaid: boolean; paidAt: Date | null; paidBy: string | null }>(
+      (existing.employeeEarnings ?? []).map((earning) => [String(earning.employeeId), {
+        isPaid: Boolean(earning.isPaid),
+        paidAt: earning.paidAt ?? null,
+        paidBy: earning.paidBy ?? null,
+      }]),
+    );
+    const refreshedEmployeeIds = Array.from(new Set([...assignedEmployeeIds, ...employeeEarningsMap.keys()]));
+    existing.items = snapshotItems as any;
+    existing.summary = { totalSaleWithoutVat, totalPurchase, totalMargin, totalVat, totalSaleWithVat };
+    existing.assignedEmployeeIds = assignedEmployeeIds;
+    existing.employeeEarnings = refreshedEmployeeIds.map((employeeId) => {
+      const previous = previousEarningsByEmployeeId.get(employeeId);
+      return {
+        employeeId,
+        earnings: round(employeeEarningsMap.get(employeeId) ?? 0),
+        isPaid: previous?.isPaid ?? false,
+        paidAt: previous?.paidAt ?? null,
+        paidBy: previous?.paidBy ?? null,
+      };
+    }) as any;
+    await existing.save();
+    return existing;
+  }
+
   let correctedFromSnapshotId: string | null = null;
   let snapshotVersion = 1;
 
@@ -659,6 +698,35 @@ export async function createFinanceSnapshot(params: {
   });
 
   return snapshot;
+}
+
+export async function refreshFinanceSnapshotLaborAllocation(projectId: string) {
+  const [project, snapshots] = await Promise.all([
+    ProjectModel.findOne({ id: projectId }).lean(),
+    FinanceSnapshotModel.find({ projectId, superseded: { $ne: true } }).lean(),
+  ]);
+  if (!project || snapshots.length === 0) return [];
+
+  const invoiceVersions = Array.isArray((project as { invoiceVersions?: unknown[] }).invoiceVersions)
+    ? (project as { invoiceVersions: any[] }).invoiceVersions
+    : [];
+  const refreshed = [];
+  for (const snapshot of snapshots) {
+    const invoiceVersion = invoiceVersions.find((version) => String(version?._id) === String(snapshot.invoiceVersionId));
+    if (!invoiceVersion) continue;
+    const updated = await createFinanceSnapshot({
+      project: {
+        id: project.id,
+        customer: project.customer,
+        confirmedOfferVersionId: project.confirmedOfferVersionId ? String(project.confirmedOfferVersionId) : null,
+        salesUserId: project.salesUserId ? String(project.salesUserId) : null,
+      },
+      invoiceVersion: invoiceVersion as InvoiceVersionInput,
+      refreshSnapshotId: String(snapshot._id),
+    });
+    if (updated) refreshed.push(updated);
+  }
+  return refreshed;
 }
 
 export async function listFinanceSnapshots(params: {

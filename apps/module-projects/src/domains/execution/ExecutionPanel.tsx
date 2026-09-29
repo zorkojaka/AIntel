@@ -755,7 +755,7 @@ export function ExecutionPanel({
   }, [employees]);
 
   const canOverrideCompletionAssignee = useMemo(
-    () => viewerRoles.includes("ADMIN") || viewerRoles.includes("ORGANIZER"),
+    () => viewerRoles.includes("ADMIN") || viewerRoles.includes("ORGANIZER") || viewerRoles.includes("EXECUTION"),
     [viewerRoles],
   );
 
@@ -809,6 +809,7 @@ export function ExecutionPanel({
     options?: {
       disabled?: boolean;
       onAssigneeChange?: (employeeId: string | null) => void;
+      assigneeIds?: string[];
     },
   ) => {
     if (!completedBy && !(canOverrideCompletionAssignee && options?.onAssigneeChange)) return null;
@@ -828,7 +829,7 @@ export function ExecutionPanel({
             aria-label="Izberi izvajalca naloge"
           >
             <option value="">Ni izbran</option>
-            {employees.map((employee) => (
+            {employees.filter((employee) => !options.assigneeIds || options.assigneeIds.includes(employee.id)).map((employee) => (
               <option key={employee.id} value={employee.id}>
                 {employee.name}
               </option>
@@ -847,16 +848,97 @@ export function ExecutionPanel({
 
   const renderItemCompletedByMeta = (item: WorkOrderItemDraft, order?: WorkOrder, disabled = false) => {
     if (!item.isCompleted) return null;
-    return renderCompletedByMeta(item.completedBy, item.completedAt, order ? {
-      disabled,
-      onAssigneeChange: (employeeId) => {
-        if (!employeeId) return;
-        applyItemChange(order, item.id, {
-          isCompleted: true,
-          completedBy: employeeId,
-        });
-      },
-    } : undefined);
+    return renderCompletedByMeta(item.completedBy, item.completedAt, { disabled });
+  };
+
+  const renderInstallerCompletionGrid = (order: WorkOrder, item: WorkOrderItemDraft, disabled = false) => {
+    if (!item.isService) return null;
+    const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
+    if (installerIds.length === 0) return null;
+    const unitCount = Math.max(1, Math.round(item.offeredQuantity || item.executedQuantity || 1));
+    const unitAssignees = Array.from({ length: unitCount }, () => new Set<string>());
+    let unitIndex = 0;
+    for (const allocation of item.laborAllocations ?? []) {
+      const recipients = allocation.assigneeId === "shared"
+        ? (allocation.assigneeIds?.length ? allocation.assigneeIds : installerIds)
+        : [allocation.assigneeId];
+      const count = Math.max(0, Math.round(allocation.quantity));
+      for (let offset = 0; offset < count && unitIndex < unitCount; offset += 1, unitIndex += 1) {
+        recipients.forEach((employeeId) => unitAssignees[unitIndex].add(employeeId));
+      }
+    }
+    const completedCount = unitAssignees.filter((assignees) => assignees.size > 0).length;
+    const saveAssignee = (targetUnitIndex: number, employeeId: string, checked: boolean) => {
+      const nextUnits = unitAssignees.map((assignees) => new Set(assignees));
+      if (checked) nextUnits[targetUnitIndex].add(employeeId);
+      else nextUnits[targetUnitIndex].delete(employeeId);
+
+      const laborAllocations = nextUnits.flatMap((assignees, index) => {
+        const assigneeIds = Array.from(assignees);
+        if (assigneeIds.length === 0) return [];
+        return [{
+          id: `completion-${item.id}-${index + 1}`,
+          quantity: 1,
+          assigneeId: assigneeIds.length > 1 ? "shared" : assigneeIds[0],
+          ...(assigneeIds.length > 1 ? { assigneeIds } : {}),
+        }];
+      });
+      const nextCompletedCount = nextUnits.filter((assignees) => assignees.size > 0).length;
+      const isCompleted = nextCompletedCount === unitCount;
+      const allSingleAssignee = isCompleted && nextUnits.every((assignees) => assignees.size === 1);
+      const soleAssigneeId = allSingleAssignee ? Array.from(nextUnits[0])[0] : null;
+      const executionSpec = ensureExecutionSpec(item.executionSpec);
+      const nextExecutionSpec = (executionSpec.executionUnits?.length ?? 0) === unitCount
+        ? {
+            ...executionSpec,
+            executionUnits: executionSpec.executionUnits?.map((unit, index) => {
+              const assigneeIds = Array.from(nextUnits[index]);
+              const completedBy = assigneeIds.length === 1 ? assigneeIds[0] : null;
+              return {
+                ...unit,
+                isCompleted: assigneeIds.length > 0,
+                completedBy,
+                completedByEmployeeId: completedBy,
+                completedAt: assigneeIds.length > 0 ? unit.completedAt ?? new Date().toISOString() : null,
+              };
+            }),
+          }
+        : undefined;
+      applyItemChange(order, item.id, {
+        laborAllocations,
+        executedQuantity: nextCompletedCount,
+        isCompleted,
+        completedBy: soleAssigneeId,
+        completedAt: nextCompletedCount > 0 ? item.completedAt ?? new Date().toISOString() : null,
+        ...(nextExecutionSpec ? { executionSpec: nextExecutionSpec } : {}),
+      });
+    };
+
+    return (
+      <div className="mt-2 overflow-x-auto rounded-md border border-emerald-200 bg-emerald-50/40 p-2">
+        <div className="mb-1 text-xs font-medium text-emerald-800">Kdo je opravil posamezno enoto ({completedCount}/{unitCount})</div>
+        <div className="grid min-w-max items-center gap-x-3 gap-y-1 text-xs" style={{ gridTemplateColumns: `minmax(72px,1fr) repeat(${installerIds.length}, minmax(76px,auto))` }}>
+          <span className="text-muted-foreground">Enota</span>
+          {installerIds.map((employeeId) => <span key={employeeId} className="text-center font-medium text-emerald-800">{employeeNameById.get(employeeId) ?? "Monter"}</span>)}
+          {unitAssignees.map((assignees, index) => (
+            <React.Fragment key={`${item.id}-${index}`}>
+              <span>{unitCount === 1 ? "Postavka" : `${index + 1}. enota`}</span>
+              {installerIds.map((employeeId) => (
+                <label key={employeeId} className="flex justify-center">
+                  <Checkbox
+                    className="h-4 w-4"
+                    checked={assignees.has(employeeId)}
+                    disabled={disabled}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => saveAssignee(index, employeeId, event.target.checked)}
+                    aria-label={`${employeeNameById.get(employeeId) ?? "Monter"}, enota ${index + 1}`}
+                  />
+                </label>
+              ))}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   const renderUnitCompletedByMeta = (
@@ -868,6 +950,7 @@ export function ExecutionPanel({
     if (!unit.isCompleted) return null;
     return renderCompletedByMeta(getUnitCompletedBy(unit), unit.completedAt, {
       disabled,
+      assigneeIds: Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean))),
       onAssigneeChange: (employeeId) => {
         if (!employeeId) return;
         updateExecutionUnit(order, item.id, unit.id, {
@@ -1190,6 +1273,7 @@ export function ExecutionPanel({
         id: allocation.id,
         quantity: Number(allocation.quantity) || 0,
         assigneeId: allocation.assigneeId,
+        assigneeIds: allocation.assigneeIds ?? [],
       })),
       isCompleted: !!item.isCompleted,
       completedBy: item.completedBy ?? null,
@@ -1936,7 +2020,7 @@ export function ExecutionPanel({
                     {noteText && <span className="text-xs text-muted-foreground">{noteText}</span>}
                   </div>
                 )}
-                {renderUnitCompletedByMeta(order, item, unit, isLocked)}
+                {!item.isService ? renderUnitCompletedByMeta(order, item, unit, isLocked) : null}
                 <PreparationPhotoThumbnails
                   projectId={projectId}
                   itemId={getUnitLocationPhotoItemId(getWorkOrderItemPhotoId(item), unit)}
@@ -1972,7 +2056,7 @@ export function ExecutionPanel({
                   onOpen={openPhotoManager}
                 />
               </div>
-              <div className="flex items-center justify-center">
+              {!item.isService ? <div className="flex items-center justify-center">
                 <Checkbox
                   className="h-5 w-5"
                   checked={!!unit.isCompleted}
@@ -1985,7 +2069,7 @@ export function ExecutionPanel({
                     })
                   }
                 />
-              </div>
+              </div> : null}
             </div>
           );
         })}
@@ -2836,6 +2920,7 @@ export function ExecutionPanel({
                                           <div className="space-y-1">
                                             <p className="font-medium">{item.name || "-"}</p>
                                             {renderItemCompletedByMeta(item, order, isConfirmationLocked)}
+                                            {renderInstallerCompletionGrid(order, item, isConfirmationLocked)}
                                             <div className="flex flex-wrap items-center gap-2">
                                               <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
                                               {renderItemStatusBadge(item)}
@@ -2921,14 +3006,14 @@ export function ExecutionPanel({
                                         ) : null}
                                       </td>
                                       <td className="p-2 text-center align-middle" style={{ width: "40px" }}>
-                                        <Checkbox
+                                        {!item.isService ? <Checkbox
                                           className="h-5 w-5"
                                           checked={isCompleted}
                                           disabled={isConfirmationLocked}
                                           onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                             handleCompletionChange(event.target.checked)
                                           }
-                                        />
+                                        /> : null}
                                       </td>
                                       <td className="p-2 text-right align-top">
                                         {item.isExtra ? (
@@ -3033,6 +3118,7 @@ export function ExecutionPanel({
                                     <div className="space-y-1">
                                       <p className="text-sm font-medium">{item.name}</p>
                                       {renderItemCompletedByMeta(item, order, isConfirmationLocked)}
+                                      {renderInstallerCompletionGrid(order, item, isConfirmationLocked)}
                                     </div>
                                   )}
                                   {!isNewExtraItem ? (
@@ -3043,14 +3129,14 @@ export function ExecutionPanel({
                                   ) : null}
                                   {!isNewExtraItem ? renderItemTimeTracking(order, item, true, isConfirmationLocked) : null}
                                   </div>
-                                  <Checkbox
+                                  {!item.isService ? <Checkbox
                                     className="mt-1 h-5 w-5 shrink-0"
                                     checked={isCompleted}
                                     disabled={isConfirmationLocked || isNewExtraItem}
                                     onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                       handleCompletionChange(event.target.checked)
                                     }
-                                  />
+                                  /> : null}
                                 </div>
                                 {hasVisibleInlineUnits ? (
                                   renderInlineExecutionUnits(order, item, {

@@ -48,6 +48,7 @@ import {
   confirmAllInstallerAssignmentsByAdmin as confirmAllInstallerAssignmentsByAdminService,
   InstallerAcceptanceError,
 } from '../services/installer-acceptance.service';
+import { refreshFinanceSnapshotLaborAllocation } from '../../finance/services/finance-snapshot.service';
 
 function calculateOfferTotalsFromSnapshot(offer: {
   items: OfferLineItem[];
@@ -2234,7 +2235,7 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
     }
     const canEditProjectPreparation = roleCanEditPreparation || assignedInstallerCanEditProjectPreparation;
     const isExecutionRestrictedMutation = isExecutionOnlyMutation && !canEditProjectPreparation;
-    const allowCompletionAssigneeOverride = roleCanEditPreparation;
+    const allowCompletionAssigneeOverride = roleCanEditPreparation || isExecutionOnlyMutation;
     ensureConfirmationVersionHistory(existing);
     const confirmationLocked = isConfirmationLocked(existing);
     const isCompletionStatusRequest = payload.status === 'completed' && previousWorkOrderStatus !== 'completed';
@@ -2341,6 +2342,52 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           : payload.executionNote ?? null;
     }
     if (Array.isArray(payload.items)) {
+      const nextAssignedEmployeeIds = Array.isArray(updates.assignedEmployeeIds)
+        ? updates.assignedEmployeeIds.map(String)
+        : (existing.assignedEmployeeIds ?? []).map(String);
+      const nextMainInstallerId = 'mainInstallerId' in updates
+        ? (updates.mainInstallerId ? String(updates.mainInstallerId) : '')
+        : (existing.mainInstallerId ? String(existing.mainInstallerId) : '');
+      const selectableInstallerIds = new Set([nextMainInstallerId, ...nextAssignedEmployeeIds].filter(Boolean));
+      const normalizeLaborAllocations = (value: unknown) => {
+        if (!Array.isArray(value)) return null;
+        const normalized: Array<{ id: string; quantity: number; assigneeId: string; assigneeIds?: string[] }> = [];
+        for (const allocation of value) {
+          const id = typeof allocation?.id === 'string' ? allocation.id.trim() : '';
+          const quantity = Number(allocation?.quantity);
+          const assigneeId = typeof allocation?.assigneeId === 'string' ? allocation.assigneeId.trim() : '';
+          const rawAssigneeIds: unknown[] = Array.isArray(allocation?.assigneeIds) ? allocation.assigneeIds : [];
+          const assigneeIds: string[] = Array.from(new Set(
+            rawAssigneeIds
+              .filter((employeeId): employeeId is string => typeof employeeId === 'string')
+              .map((employeeId) => employeeId.trim())
+              .filter(Boolean),
+          ));
+          if (
+            !id || !Number.isFinite(quantity) || quantity < 0 || !assigneeId ||
+            (assigneeId !== 'shared' && !selectableInstallerIds.has(assigneeId)) ||
+            (assigneeIds.length > 0 && (assigneeId !== 'shared' || assigneeIds.some((employeeId) => !selectableInstallerIds.has(employeeId))))
+          ) {
+            return null;
+          }
+          normalized.push({ id, quantity, assigneeId, ...(assigneeIds.length > 0 ? { assigneeIds } : {}) });
+        }
+        return normalized;
+      };
+      for (const incoming of payload.items) {
+        if ('laborAllocations' in incoming && normalizeLaborAllocations(incoming.laborAllocations) === null) {
+          return res.fail('Neveljavna razdelitev plačila monterjem.', 400);
+        }
+        if (
+          isExecutionOnlyMutation &&
+          incoming?.isCompleted === true &&
+          typeof incoming.completedBy === 'string' &&
+          incoming.completedBy !== 'shared' &&
+          !selectableInstallerIds.has(incoming.completedBy)
+        ) {
+          return res.fail('Izbrani monter ni dodeljen temu delovnemu nalogu.', 400);
+        }
+      }
       const currentItems =
         Array.isArray(existing.items) && existing.items.length > 0
           ? existing.items.map((item: any) => ({ ...(item.toObject ? item.toObject() : item) }))
@@ -2375,6 +2422,9 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
             if (typeof incoming.executedQuantity === 'number') {
               target.executedQuantity = incoming.executedQuantity;
             }
+            if ('laborAllocations' in incoming) {
+              target.laborAllocations = normalizeLaborAllocations(incoming.laborAllocations) ?? [];
+            }
             if (!isExecutionRestrictedMutation && typeof incoming.isExtra === 'boolean') {
               target.isExtra = incoming.isExtra;
             }
@@ -2384,7 +2434,9 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
               target.isCompleted = incoming.isCompleted;
               if (incoming.isCompleted) {
                 target.completedBy =
-                  allowCompletionAssigneeOverride && incomingCompletedBy
+                  incoming.completedBy === 'shared'
+                    ? null
+                    : allowCompletionAssigneeOverride && incomingCompletedBy
                     ? incomingCompletedBy
                     : wasCompleted
                       ? normalizeExecutionUnitEmployeeId(target.completedBy) ?? incomingCompletedBy ?? actorEmployeeId
@@ -2444,10 +2496,13 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
           executedQuantity: executed,
           isExtra: incoming.isExtra !== undefined ? !!incoming.isExtra : true,
           itemNote: typeof incoming.itemNote === 'string' ? incoming.itemNote : null,
+          laborAllocations: normalizeLaborAllocations(incoming.laborAllocations) ?? [],
           isCompleted: typeof incoming.isCompleted === 'boolean' ? incoming.isCompleted : false,
           completedBy:
             incoming.isCompleted === true
-              ? allowCompletionAssigneeOverride
+              ? incoming.completedBy === 'shared'
+                ? null
+                : allowCompletionAssigneeOverride
                 ? normalizeExecutionUnitEmployeeId(incoming.completedBy) ?? actorEmployeeId
                 : actorEmployeeId ?? normalizeExecutionUnitEmployeeId(incoming.completedBy)
               : null,
@@ -2500,6 +2555,9 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
   const [normalizedUpdated] = await normalizeAndPersistWorkOrdersServiceFlags(updated ? [updated] : []);
   if (normalizedUpdated?.items) {
     await syncCanonicalLocationsFromExecutionItems(projectId, normalizedUpdated.items);
+  }
+  if ('items' in updates || 'assignedEmployeeIds' in updates || 'mainInstallerId' in updates) {
+    await refreshFinanceSnapshotLaborAllocation(projectId);
   }
 
   const materialOrderId = typeof payload.materialOrderId === 'string' ? payload.materialOrderId : null;
