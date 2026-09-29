@@ -1186,6 +1186,11 @@ export function ExecutionPanel({
       executedQuantity: typeof item.executedQuantity === "number" ? item.executedQuantity : 0,
       isExtra: !!item.isExtra,
       itemNote: item.itemNote && item.itemNote.length > 0 ? item.itemNote : null,
+      laborAllocations: (item.laborAllocations ?? []).map((allocation) => ({
+        id: allocation.id,
+        quantity: Number(allocation.quantity) || 0,
+        assigneeId: allocation.assigneeId,
+      })),
       isCompleted: !!item.isCompleted,
       completedBy: item.completedBy ?? null,
       completedAt: item.completedAt ?? null,
@@ -2043,6 +2048,44 @@ export function ExecutionPanel({
               <div className="text-sm">
                 <span className="text-muted-foreground">Lokacija: </span>
                 <span>{spec.locationSummary}</span>
+              </div>
+            ) : null}
+            {item.isService ? (
+              <div className="space-y-2 rounded-md border border-border/60 bg-background/70 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">Razdelitev plačila monterjem</p>
+                  {!isLocked ? (
+                    <Button type="button" size="sm" variant="outline" onClick={() => {
+                      const quantity = Math.max(1, typeof item.executedQuantity === "number" ? item.executedQuantity : item.offeredQuantity);
+                      applyItemChange(order, item.id, {
+                        laborAllocations: [...(item.laborAllocations ?? []), { id: `allocation-${Date.now().toString(36)}`, quantity, assigneeId: "shared" }],
+                      });
+                    }}>Dodaj razdelitev</Button>
+                  ) : null}
+                </div>
+                {(item.laborAllocations ?? []).length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Dodajte razdelitev: izberite monterja ali možnost »Skupno«.</p>
+                ) : (item.laborAllocations ?? []).map((allocation) => (
+                  <div key={allocation.id} className="flex flex-wrap items-center gap-2">
+                    <Input type="number" min="0" step="0.01" className="h-8 w-20" value={allocation.quantity}
+                      disabled={isLocked} onChange={(event) => applyItemChange(order, item.id, {
+                        laborAllocations: (item.laborAllocations ?? []).map((entry) => entry.id === allocation.id ? { ...entry, quantity: Number(event.target.value) || 0 } : entry),
+                      })} />
+                    <select className="h-8 rounded-md border border-input bg-background px-2 text-sm" value={allocation.assigneeId} disabled={isLocked}
+                      onChange={(event) => applyItemChange(order, item.id, {
+                        laborAllocations: (item.laborAllocations ?? []).map((entry) => entry.id === allocation.id ? { ...entry, assigneeId: event.target.value } : entry),
+                      })}>
+                      <option value="shared">Skupno</option>
+                      {Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean))).map((employeeId) => (
+                        <option key={employeeId} value={employeeId}>{employeeNameById.get(employeeId) ?? "Monter"}</option>
+                      ))}
+                    </select>
+                    {!isLocked ? <Button type="button" size="sm" variant="ghost" onClick={() => applyItemChange(order, item.id, {
+                      laborAllocations: (item.laborAllocations ?? []).filter((entry) => entry.id !== allocation.id),
+                    })}>Odstrani</Button> : null}
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground">Količina se lahko razdeli v več vrstic; pri »Skupno« vsak dodeljen monter dobi svoj delež, deljen s številom monterjev.</p>
               </div>
             ) : null}
             {hasUnitList ? (

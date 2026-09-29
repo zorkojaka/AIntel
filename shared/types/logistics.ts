@@ -117,6 +117,11 @@ export interface WorkOrderTimeTracking {
 }
 
 export interface WorkOrderItem extends LogisticsMaterialItem {
+  laborAllocations?: Array<{
+    id: string;
+    quantity: number;
+    assigneeId: string | "shared";
+  }>;
   offerItemId?: string | null;
   isService?: boolean;
   offeredQuantity: number;

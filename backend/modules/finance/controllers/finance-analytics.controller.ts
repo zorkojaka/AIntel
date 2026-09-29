@@ -12,6 +12,7 @@ import {
   getProductCooccurrence,
   getProductFrequency,
   setEmployeeProjectEarningPaid,
+  overrideSnapshotEmployeeEarnings,
 } from '../services/finance-analytics.service';
 import { getProjectSnapshot, listFinanceSnapshots } from '../services/finance-snapshot.service';
 import {
@@ -114,6 +115,13 @@ export async function updateEmployeeProjectEarningPayment(req: Request, res: Res
   if (!data) {
     return res.fail('Zaslužek zaposlenega ni najden.', 404);
   }
+  return res.success(data);
+}
+
+export async function updateSnapshotEmployeeEarnings(req: Request, res: Response) {
+  const snapshotId = typeof req.params.snapshotId === 'string' ? req.params.snapshotId.trim() : '';
+  const data = await overrideSnapshotEmployeeEarnings(snapshotId, Array.isArray(req.body?.earnings) ? req.body.earnings : []);
+  if (!data) return res.fail('Delitev zaslužka ni veljavna.', 400);
   return res.success(data);
 }
 

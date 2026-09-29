@@ -153,6 +153,7 @@ type ServiceWorkOrderItemWithCompletion = {
   doneBy?: unknown;
   doneByEmployeeId?: unknown;
   executedQuantity?: unknown;
+  laborAllocations?: Array<{ id?: string; quantity?: unknown; assigneeId?: unknown }>;
 };
 
 type RateValue = { defaultPercent: number; overridePrice: number | null };
@@ -505,6 +506,29 @@ export async function createFinanceSnapshot(params: {
         );
 
     for (const workOrderItem of workOrderItems) {
+      const laborAllocations = Array.isArray((workOrderItem as ServiceWorkOrderItemWithCompletion).laborAllocations)
+        ? (workOrderItem as ServiceWorkOrderItemWithCompletion).laborAllocations ?? [] : [];
+      if (laborAllocations.length > 0 && workOrderItem.isCompleted) {
+        for (const allocation of laborAllocations) {
+          const quantity = Math.max(0, toNumber(allocation.quantity, 0));
+          const assigneeId = normalizeEmployeeId(allocation.assigneeId);
+          const recipients = assigneeId === 'shared' || String(allocation.assigneeId) === 'shared'
+            ? assignedEmployeeIds : assigneeId ? [assigneeId] : [];
+          if (quantity <= 0 || recipients.length === 0) continue;
+          for (const employeeId of recipients) {
+            const rate = snapshotItem.productId
+              ? await getRateForEmployeeProduct(employeeId, snapshotItem.productId)
+              : await getRateForCustomService(employeeId);
+            if (!rate) continue;
+            const perUnitEarnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
+            const divisor = String(allocation.assigneeId) === 'shared' ? recipients.length : 1;
+            const earnings = round((perUnitEarnings * quantity) / divisor);
+            serviceLaborPurchaseTotal = round(serviceLaborPurchaseTotal + earnings);
+            employeeEarningsMap.set(employeeId, round((employeeEarningsMap.get(employeeId) ?? 0) + earnings));
+          }
+        }
+        continue;
+      }
       const executionUnits = workOrderItem.executionSpec?.executionUnits ?? [];
       debugSnapshotLog(
         '[Snapshot] Service item execution units:',
