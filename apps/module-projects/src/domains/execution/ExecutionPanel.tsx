@@ -2204,7 +2204,9 @@ export function ExecutionPanel({
                       })} />
                     <select className="h-8 rounded-md border border-input bg-background px-2 text-sm" value={allocation.assigneeId} disabled={isLocked}
                       onChange={(event) => applyItemChange(order, item.id, {
-                        laborAllocations: (item.laborAllocations ?? []).map((entry) => entry.id === allocation.id ? { ...entry, assigneeId: event.target.value } : entry),
+                        laborAllocations: (item.laborAllocations ?? []).map((entry) => entry.id === allocation.id
+                          ? { ...entry, assigneeId: event.target.value, assigneeIds: undefined }
+                          : entry),
                       })}>
                       <option value="shared">Skupno</option>
                       {Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean))).map((employeeId) => (

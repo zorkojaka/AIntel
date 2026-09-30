@@ -2378,14 +2378,20 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
               .map((employeeId) => employeeId.trim())
               .filter(Boolean),
           ));
+          const sharedAssigneeIds = assigneeId === 'shared' ? assigneeIds : [];
           if (
             !id || !Number.isFinite(quantity) || quantity < 0 || !assigneeId ||
             (assigneeId !== 'shared' && !selectableInstallerIds.has(assigneeId)) ||
-            (assigneeIds.length > 0 && (assigneeId !== 'shared' || assigneeIds.some((employeeId) => !selectableInstallerIds.has(employeeId))))
+            sharedAssigneeIds.some((employeeId) => !selectableInstallerIds.has(employeeId))
           ) {
             return null;
           }
-          normalized.push({ id, quantity, assigneeId, ...(assigneeIds.length > 0 ? { assigneeIds } : {}) });
+          normalized.push({
+            id,
+            quantity,
+            assigneeId,
+            ...(sharedAssigneeIds.length > 0 ? { assigneeIds: sharedAssigneeIds } : {}),
+          });
         }
         return normalized;
       };
