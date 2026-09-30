@@ -922,7 +922,10 @@ export function ExecutionPanel({
         : undefined;
       applyItemChange(order, item.id, {
         laborAllocations,
-        executedQuantity: nextCompletedCount,
+        // Izvedena količina je dejanska vrednost postavke (npr. 19 ur),
+        // ne število trenutno označenih checkboxov. Dodeljevanje monterjev
+        // ne sme količine skrčiti nazaj na predvideno vrednost.
+        executedQuantity: allocationQuantity,
         isCompleted,
         completedBy: soleAssigneeId,
         completedAt: nextCompletedCount > 0 ? item.completedAt ?? new Date().toISOString() : null,
