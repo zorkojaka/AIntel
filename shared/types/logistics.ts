@@ -175,6 +175,7 @@ export interface WorkOrder {
   scheduledConfirmedBy?: string | null;
   mainInstallerId?: string | null;
   assignedEmployeeIds?: string[];
+  laborAllocationMode?: "shared" | "individual";
   installerAcceptances?: InstallerAcceptance[];
   location?: string;
   notes?: string;

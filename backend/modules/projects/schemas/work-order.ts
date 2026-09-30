@@ -92,6 +92,7 @@ export interface WorkOrderConfirmationVersion {
   scheduledAt?: string | null;
   mainInstallerId?: string | null;
   assignedEmployeeIds?: string[];
+  laborAllocationMode?: 'shared' | 'individual';
   installerAcceptances?: InstallerAcceptance[];
   location?: string | null;
   workOrderCode?: string | null;
@@ -304,6 +305,7 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
     bookingInviteSentAt: { type: Date, default: null },
     mainInstallerId: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
     assignedEmployeeIds: { type: [Schema.Types.ObjectId], default: [] },
+    laborAllocationMode: { type: String, enum: ['shared', 'individual'], default: 'shared' },
     installerAcceptances: { type: [installerAcceptanceSchema], default: [] },
     location: { type: String },
     notes: { type: String },

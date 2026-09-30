@@ -57,6 +57,7 @@ interface ExecutionPanelProps {
 
 type WorkOrderDraft = {
   status: WorkOrderStatus;
+  laborAllocationMode: "shared" | "individual";
   executionNote: string;
   scheduledAt: string | null;
   scheduledConfirmedAt: string | null;
@@ -851,7 +852,12 @@ export function ExecutionPanel({
     return renderCompletedByMeta(item.completedBy, item.completedAt, { disabled });
   };
 
-  const renderInstallerCompletionGrid = (order: WorkOrder, item: WorkOrderItemDraft, disabled = false) => {
+  const renderInstallerCompletionGrid = (
+    order: WorkOrder,
+    item: WorkOrderItemDraft,
+    allocationMode: "shared" | "individual",
+    disabled = false,
+  ) => {
     if (!item.isService) return null;
     const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
     if (installerIds.length === 0) return null;
@@ -870,7 +876,9 @@ export function ExecutionPanel({
     const completedCount = unitAssignees.filter((assignees) => assignees.size > 0).length;
     const saveAssignee = (targetUnitIndex: number, employeeId: string, checked: boolean) => {
       const nextUnits = unitAssignees.map((assignees) => new Set(assignees));
-      if (checked) nextUnits[targetUnitIndex].add(employeeId);
+      if (checked && allocationMode === "shared" && nextUnits[targetUnitIndex].size === 0) {
+        installerIds.forEach((installerId) => nextUnits[targetUnitIndex].add(installerId));
+      } else if (checked) nextUnits[targetUnitIndex].add(employeeId);
       else nextUnits[targetUnitIndex].delete(employeeId);
 
       const laborAllocations = nextUnits.flatMap((assignees, index) => {
@@ -916,7 +924,7 @@ export function ExecutionPanel({
 
     return (
       <div className="mt-2 overflow-x-auto rounded-md border border-emerald-200 bg-emerald-50/40 p-2">
-        <div className="mb-1 text-xs font-medium text-emerald-800">Kdo je opravil posamezno enoto ({completedCount}/{unitCount})</div>
+        <div className="mb-1 text-xs font-medium text-emerald-800">Kdo je opravil posamezno enoto ({completedCount}/{unitCount}) · {allocationMode === "shared" ? "Skupno" : "Posamezno"}</div>
         <div className="grid min-w-max items-center gap-x-3 gap-y-1 text-xs" style={{ gridTemplateColumns: `minmax(72px,1fr) repeat(${installerIds.length}, minmax(76px,auto))` }}>
           <span className="text-muted-foreground">Enota</span>
           {installerIds.map((employeeId) => <span key={employeeId} className="text-center font-medium text-emerald-800">{employeeNameById.get(employeeId) ?? "Monter"}</span>)}
@@ -963,6 +971,7 @@ export function ExecutionPanel({
 
   const getInitialDraftValues = (order: WorkOrder) => ({
     status: order.status,
+    laborAllocationMode: order.laborAllocationMode === "individual" ? "individual" : "shared",
     executionNote: order.executionNote ?? "",
     scheduledAt: order.scheduledAt ?? null,
     scheduledConfirmedAt: order.scheduledConfirmedAt ?? null,
@@ -1009,6 +1018,7 @@ export function ExecutionPanel({
     order: WorkOrder,
     values: Partial<{
       status: WorkOrderStatus;
+      laborAllocationMode: "shared" | "individual";
       executionNote: string;
       items: WorkOrder["items"];
     }>
@@ -1027,6 +1037,7 @@ export function ExecutionPanel({
     onWorkOrderDraftChange?.({
       ...order,
       status: nextDraft.status,
+      laborAllocationMode: nextDraft.laborAllocationMode,
       executionNote: nextDraft.executionNote,
       scheduledAt: nextDraft.scheduledAt,
       scheduledConfirmedAt: nextDraft.scheduledConfirmedAt,
@@ -1063,6 +1074,7 @@ export function ExecutionPanel({
     onWorkOrderDraftChange?.({
       ...order,
       status: current.status,
+      laborAllocationMode: current.laborAllocationMode,
       executionNote: current.executionNote,
       scheduledAt: current.scheduledAt,
       scheduledConfirmedAt: current.scheduledConfirmedAt,
@@ -1311,6 +1323,7 @@ export function ExecutionPanel({
             status:
               overrides?.status ??
               (draft.status === "issued" || draft.status === "confirmed" ? "in-progress" : draft.status ?? order.status),
+            laborAllocationMode: draft.laborAllocationMode,
             scheduledAt: draft.scheduledAt ?? null,
             scheduledConfirmedAt: draft.scheduledConfirmedAt ?? null,
             executionNote: draft.executionNote?.trim() ? draft.executionNote : null,
@@ -1333,6 +1346,7 @@ export function ExecutionPanel({
           ...prev,
           [orderId]: {
             status: updatedDraft.status,
+            laborAllocationMode: updatedDraft.laborAllocationMode,
             executionNote: updatedDraft.executionNote,
             scheduledAt: updatedDraft.scheduledAt,
             scheduledConfirmedAt: updatedDraft.scheduledConfirmedAt,
@@ -1577,7 +1591,7 @@ export function ExecutionPanel({
     );
   };
 
-  const applyDraftChange = (order: WorkOrder, values: Partial<{ status: WorkOrderStatus; executionNote: string }>) => {
+  const applyDraftChange = (order: WorkOrder, values: Partial<{ status: WorkOrderStatus; executionNote: string; laborAllocationMode: "shared" | "individual" }>) => {
     if (getOrderConfirmationState(order) === "signed_active") {
       return;
     }
@@ -2626,6 +2640,29 @@ export function ExecutionPanel({
                               <div className="space-y-1">
                                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Ekipa</p>
                                 <p className="text-sm font-medium">{executionTeamLabel || "Ni določena"}</p>
+                                {assignedInstallerIds.length > 1 ? (
+                                  <div className="pt-1">
+                                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Način obračuna</p>
+                                    <div className="mt-1 inline-flex rounded-md border border-input p-0.5">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant={draft.laborAllocationMode === "shared" ? "default" : "ghost"}
+                                        className="h-7 px-2 text-xs"
+                                        disabled={isConfirmationLocked}
+                                        onClick={() => applyDraftChange(order, { laborAllocationMode: "shared" })}
+                                      >Skupno</Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant={draft.laborAllocationMode === "individual" ? "default" : "ghost"}
+                                        className="h-7 px-2 text-xs"
+                                        disabled={isConfirmationLocked}
+                                        onClick={() => applyDraftChange(order, { laborAllocationMode: "individual" })}
+                                      >Posamezno</Button>
+                                    </div>
+                                  </div>
+                                ) : null}
                               </div>
                               <div className="space-y-1">
                                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Termin izvedbe</p>
@@ -2883,6 +2920,26 @@ export function ExecutionPanel({
                                 const hasVisibleInlineUnits = hasInlineExecutionUnits(item);
                                 const isExecutionExpanded = !!expandedExecutionItems[item.id];
                                 const handleCompletionChange = (checked: boolean) => {
+                                  if (item.isService) {
+                                    const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
+                                    const unitCount = Math.max(1, Math.round(offeredValue || executedValue || 1));
+                                    const assigneeIds = draft.laborAllocationMode === "shared" ? installerIds : currentEmployeeId ? [currentEmployeeId] : [];
+                                    applyItemChange(order, item.id, {
+                                      laborAllocations: checked && assigneeIds.length > 0
+                                        ? Array.from({ length: unitCount }, (_, index) => ({
+                                            id: `completion-${item.id}-${index + 1}`,
+                                            quantity: 1,
+                                            assigneeId: assigneeIds.length > 1 ? "shared" : assigneeIds[0],
+                                            ...(assigneeIds.length > 1 ? { assigneeIds } : {}),
+                                          }))
+                                        : [],
+                                      isCompleted: checked,
+                                      completedBy: assigneeIds.length === 1 ? assigneeIds[0] : null,
+                                      completedAt: checked ? item.completedAt ?? new Date().toISOString() : null,
+                                      executedQuantity: checked ? unitCount : 0,
+                                    });
+                                    return;
+                                  }
                                   if (hasVisibleInlineUnits) {
                                     const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => ({
                                       ...unit,
@@ -2920,29 +2977,27 @@ export function ExecutionPanel({
                                           <div className="space-y-1">
                                             <p className="font-medium">{item.name || "-"}</p>
                                             {renderItemCompletedByMeta(item, order, isConfirmationLocked)}
-                                            {renderInstallerCompletionGrid(order, item, isConfirmationLocked)}
+                                            {isExecutionExpanded ? renderInstallerCompletionGrid(order, item, draft.laborAllocationMode, isConfirmationLocked) : null}
                                             <div className="flex flex-wrap items-center gap-2">
                                               <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
                                               {renderItemStatusBadge(item)}
                                               {hasVisibleInlineUnits ? (
                                                 <Badge variant="outline">{getPerUnitSummary(executionSpec)}</Badge>
                                               ) : null}
-                                              {!hasVisibleInlineUnits ? (
-                                                <Button
-                                                  type="button"
-                                                  variant="ghost"
-                                                  size="sm"
-                                                  className="h-8 px-2 text-xs"
-                                                  onClick={() => toggleExecutionDetails(item.id)}
-                                                >
-                                                  {isExecutionExpanded ? (
-                                                    <ChevronDown className="mr-1 h-4 w-4" />
-                                                  ) : (
-                                                    <ChevronRight className="mr-1 h-4 w-4" />
-                                                  )}
-                                                  Detajli izvedbe
-                                                </Button>
-                                              ) : null}
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-8 px-2 text-xs"
+                                                onClick={() => toggleExecutionDetails(item.id)}
+                                              >
+                                                {isExecutionExpanded ? (
+                                                  <ChevronDown className="mr-1 h-4 w-4" />
+                                                ) : (
+                                                  <ChevronRight className="mr-1 h-4 w-4" />
+                                                )}
+                                                Detajli izvedbe
+                                              </Button>
                                             </div>
                                             {!hasVisibleInlineUnits ? (
                                               <PreparationPhotoThumbnails
@@ -3006,14 +3061,14 @@ export function ExecutionPanel({
                                         ) : null}
                                       </td>
                                       <td className="p-2 text-center align-middle" style={{ width: "40px" }}>
-                                        {!item.isService ? <Checkbox
+                                        <Checkbox
                                           className="h-5 w-5"
                                           checked={isCompleted}
                                           disabled={isConfirmationLocked}
                                           onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                             handleCompletionChange(event.target.checked)
                                           }
-                                        /> : null}
+                                        />
                                       </td>
                                       <td className="p-2 text-right align-top">
                                         {item.isExtra ? (
@@ -3031,7 +3086,7 @@ export function ExecutionPanel({
                                         ) : null}
                                       </td>
                                     </tr>,
-                                    hasVisibleInlineUnits ? (
+                                    hasVisibleInlineUnits && isExecutionExpanded ? (
                                       <tr key={`${item.id}-inline-units`} className={cn("border-t", itemStatusStyles.rowClassName)}>
                                         <td colSpan={4} className="px-2 pb-2 pt-0">
                                           {renderInlineExecutionUnits(order, item, {
@@ -3079,6 +3134,26 @@ export function ExecutionPanel({
                             const hasVisibleInlineUnits = hasInlineExecutionUnits(item);
                             const isExecutionExpanded = !!expandedExecutionItems[item.id];
                             const handleCompletionChange = (checked: boolean) => {
+                              if (item.isService) {
+                                const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
+                                const unitCount = Math.max(1, Math.round(offeredValue || item.executedQuantity || 1));
+                                const assigneeIds = draft.laborAllocationMode === "shared" ? installerIds : currentEmployeeId ? [currentEmployeeId] : [];
+                                applyItemChange(order, item.id, {
+                                  laborAllocations: checked && assigneeIds.length > 0
+                                    ? Array.from({ length: unitCount }, (_, index) => ({
+                                        id: `completion-${item.id}-${index + 1}`,
+                                        quantity: 1,
+                                        assigneeId: assigneeIds.length > 1 ? "shared" : assigneeIds[0],
+                                        ...(assigneeIds.length > 1 ? { assigneeIds } : {}),
+                                      }))
+                                    : [],
+                                  isCompleted: checked,
+                                  completedBy: assigneeIds.length === 1 ? assigneeIds[0] : null,
+                                  completedAt: checked ? item.completedAt ?? new Date().toISOString() : null,
+                                  executedQuantity: checked ? unitCount : 0,
+                                });
+                                return;
+                              }
                               if (hasVisibleInlineUnits) {
                                 const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => ({
                                   ...unit,
@@ -3118,7 +3193,7 @@ export function ExecutionPanel({
                                     <div className="space-y-1">
                                       <p className="text-sm font-medium">{item.name}</p>
                                       {renderItemCompletedByMeta(item, order, isConfirmationLocked)}
-                                      {renderInstallerCompletionGrid(order, item, isConfirmationLocked)}
+                                      {isExecutionExpanded ? renderInstallerCompletionGrid(order, item, draft.laborAllocationMode, isConfirmationLocked) : null}
                                     </div>
                                   )}
                                   {!isNewExtraItem ? (
@@ -3129,16 +3204,16 @@ export function ExecutionPanel({
                                   ) : null}
                                   {!isNewExtraItem ? renderItemTimeTracking(order, item, true, isConfirmationLocked) : null}
                                   </div>
-                                  {!item.isService ? <Checkbox
+                                  <Checkbox
                                     className="mt-1 h-5 w-5 shrink-0"
                                     checked={isCompleted}
                                     disabled={isConfirmationLocked || isNewExtraItem}
                                     onChange={(event: ChangeEvent<HTMLInputElement>) =>
                                       handleCompletionChange(event.target.checked)
                                     }
-                                  /> : null}
+                                  />
                                 </div>
-                                {hasVisibleInlineUnits ? (
+                                {hasVisibleInlineUnits && isExecutionExpanded ? (
                                   renderInlineExecutionUnits(order, item, {
                                     compact: true,
                                     disabled: isConfirmationLocked,

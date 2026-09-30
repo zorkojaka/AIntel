@@ -1303,6 +1303,14 @@ function serializeWorkOrder(order: any): WorkOrder | null {
               : item.itemNote === null
                 ? null
                 : undefined,
+          laborAllocations: Array.isArray(item.laborAllocations)
+            ? item.laborAllocations.map((allocation: any) => ({
+                id: String(allocation.id),
+                quantity: Number(allocation.quantity) || 0,
+                assigneeId: String(allocation.assigneeId),
+                assigneeIds: Array.isArray(allocation.assigneeIds) ? allocation.assigneeIds.map((employeeId: any) => String(employeeId)) : [],
+              }))
+            : [],
           isCompleted: !!item.isCompleted,
           completedBy: normalizeExecutionUnitEmployeeId(item.completedBy),
           completedAt: item.completedAt ? new Date(item.completedAt).toISOString() : null,
@@ -1327,6 +1335,7 @@ function serializeWorkOrder(order: any): WorkOrder | null {
     assignedEmployeeIds: Array.isArray(order.assignedEmployeeIds)
       ? order.assignedEmployeeIds.map((id: any) => String(id))
       : [],
+    laborAllocationMode: order.laborAllocationMode === 'individual' ? 'individual' : 'shared',
     installerAcceptances: (order.installerAcceptances ?? []).map((entry: any) => ({
       employeeId: String(entry.employeeId),
       emailSentAt: entry.emailSentAt ? new Date(entry.emailSentAt).toISOString() : null,
@@ -2320,6 +2329,12 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         return res.fail(resolved.error, 400);
       }
       updates.mainInstallerId = resolved.id;
+    }
+    if ('laborAllocationMode' in payload) {
+      if (payload.laborAllocationMode !== 'shared' && payload.laborAllocationMode !== 'individual') {
+        return res.fail('Neveljaven način obračuna monterjev.', 400);
+      }
+      updates.laborAllocationMode = payload.laborAllocationMode;
     }
     if ('assignedEmployeeIds' in payload || 'mainInstallerId' in payload) {
       const nextAssignedEmployeeIds = Array.isArray(updates.assignedEmployeeIds)
