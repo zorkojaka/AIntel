@@ -861,7 +861,11 @@ export function ExecutionPanel({
     if (!item.isService) return null;
     const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
     if (installerIds.length === 0) return null;
-    const unitCount = Math.max(1, Math.round(item.offeredQuantity || item.executedQuantity || 1));
+    const isMeasuredTravelOrLength = /\[(?:km|m)\]/i.test(item.name);
+    const completedQuantity = Math.max(0, Number(item.executedQuantity) || 0);
+    const plannedQuantity = Math.max(0, Number(item.offeredQuantity) || 0);
+    const allocationQuantity = Math.max(1, completedQuantity, plannedQuantity);
+    const unitCount = isMeasuredTravelOrLength ? 1 : Math.max(1, Math.round(allocationQuantity));
     const unitAssignees = Array.from({ length: unitCount }, () => new Set<string>());
     let unitIndex = 0;
     for (const allocation of item.laborAllocations ?? []) {
@@ -886,7 +890,7 @@ export function ExecutionPanel({
         if (assigneeIds.length === 0) return [];
         return [{
           id: `completion-${item.id}-${index + 1}`,
-          quantity: 1,
+          quantity: isMeasuredTravelOrLength ? allocationQuantity : 1,
           assigneeId: assigneeIds.length > 1 ? "shared" : assigneeIds[0],
           ...(assigneeIds.length > 1 ? { assigneeIds } : {}),
         }];
@@ -2922,13 +2926,15 @@ export function ExecutionPanel({
                                 const handleCompletionChange = (checked: boolean) => {
                                   if (item.isService) {
                                     const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
-                                    const unitCount = Math.max(1, Math.round(offeredValue || executedValue || 1));
+                                    const isMeasuredTravelOrLength = /\[(?:km|m)\]/i.test(item.name);
+                                    const quantity = Math.max(1, offeredValue, executedValue);
+                                    const unitCount = isMeasuredTravelOrLength ? 1 : Math.round(quantity);
                                     const assigneeIds = draft.laborAllocationMode === "shared" ? installerIds : currentEmployeeId ? [currentEmployeeId] : [];
                                     applyItemChange(order, item.id, {
                                       laborAllocations: checked && assigneeIds.length > 0
                                         ? Array.from({ length: unitCount }, (_, index) => ({
                                             id: `completion-${item.id}-${index + 1}`,
-                                            quantity: 1,
+                                            quantity: isMeasuredTravelOrLength ? quantity : 1,
                                             assigneeId: assigneeIds.length > 1 ? "shared" : assigneeIds[0],
                                             ...(assigneeIds.length > 1 ? { assigneeIds } : {}),
                                           }))
@@ -2936,7 +2942,7 @@ export function ExecutionPanel({
                                       isCompleted: checked,
                                       completedBy: assigneeIds.length === 1 ? assigneeIds[0] : null,
                                       completedAt: checked ? item.completedAt ?? new Date().toISOString() : null,
-                                      executedQuantity: checked ? unitCount : 0,
+                                      executedQuantity: checked ? quantity : 0,
                                     });
                                     return;
                                   }
@@ -3136,13 +3142,15 @@ export function ExecutionPanel({
                             const handleCompletionChange = (checked: boolean) => {
                               if (item.isService) {
                                 const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
-                                const unitCount = Math.max(1, Math.round(offeredValue || item.executedQuantity || 1));
+                                const isMeasuredTravelOrLength = /\[(?:km|m)\]/i.test(item.name);
+                                const quantity = Math.max(1, offeredValue, Number(item.executedQuantity) || 0);
+                                const unitCount = isMeasuredTravelOrLength ? 1 : Math.round(quantity);
                                 const assigneeIds = draft.laborAllocationMode === "shared" ? installerIds : currentEmployeeId ? [currentEmployeeId] : [];
                                 applyItemChange(order, item.id, {
                                   laborAllocations: checked && assigneeIds.length > 0
                                     ? Array.from({ length: unitCount }, (_, index) => ({
                                         id: `completion-${item.id}-${index + 1}`,
-                                        quantity: 1,
+                                        quantity: isMeasuredTravelOrLength ? quantity : 1,
                                         assigneeId: assigneeIds.length > 1 ? "shared" : assigneeIds[0],
                                         ...(assigneeIds.length > 1 ? { assigneeIds } : {}),
                                       }))
@@ -3150,7 +3158,7 @@ export function ExecutionPanel({
                                   isCompleted: checked,
                                   completedBy: assigneeIds.length === 1 ? assigneeIds[0] : null,
                                   completedAt: checked ? item.completedAt ?? new Date().toISOString() : null,
-                                  executedQuantity: checked ? unitCount : 0,
+                                  executedQuantity: checked ? quantity : 0,
                                 });
                                 return;
                               }

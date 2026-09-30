@@ -2446,10 +2446,13 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
             if (typeof incoming.isCompleted === 'boolean') {
               const wasCompleted = !!target.isCompleted;
               const incomingCompletedBy = normalizeExecutionUnitEmployeeId(incoming.completedBy);
+              const sharedLaborCompletion = Array.isArray(incoming.laborAllocations) && incoming.laborAllocations.some((allocation: any) =>
+                allocation?.assigneeId === 'shared' || (Array.isArray(allocation?.assigneeIds) && allocation.assigneeIds.length > 1),
+              );
               target.isCompleted = incoming.isCompleted;
               if (incoming.isCompleted) {
                 target.completedBy =
-                  incoming.completedBy === 'shared'
+                  incoming.completedBy === 'shared' || sharedLaborCompletion
                     ? null
                     : allowCompletionAssigneeOverride && incomingCompletedBy
                     ? incomingCompletedBy
