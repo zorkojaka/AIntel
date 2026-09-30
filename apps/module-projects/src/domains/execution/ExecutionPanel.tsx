@@ -864,7 +864,11 @@ export function ExecutionPanel({
     const isMeasuredTravelOrLength = /\[(?:km|m)\]/i.test(item.name);
     const completedQuantity = Math.max(0, Number(item.executedQuantity) || 0);
     const plannedQuantity = Math.max(0, Number(item.offeredQuantity) || 0);
-    const allocationQuantity = Math.max(1, completedQuantity, plannedQuantity);
+    const savedAllocationQuantity = (item.laborAllocations ?? []).reduce(
+      (sum, allocation) => sum + Math.max(0, Number(allocation.quantity) || 0),
+      0,
+    );
+    const allocationQuantity = Math.max(1, completedQuantity, plannedQuantity, savedAllocationQuantity);
     const unitCount = isMeasuredTravelOrLength ? 1 : Math.max(1, Math.round(allocationQuantity));
     const unitAssignees = Array.from({ length: unitCount }, () => new Set<string>());
     let unitIndex = 0;
@@ -1162,6 +1166,29 @@ export function ExecutionPanel({
       const offeredValue = typeof item.offeredQuantity === "number" ? item.offeredQuantity : 0;
       const executedValue = typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
       const executionSpec = ensureExecutionSpec(item.executionSpec);
+
+      if (item.isService) {
+        const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
+        const isMeasuredTravelOrLength = /\[(?:km|m)\]/i.test(item.name);
+        const quantity = Math.max(1, offeredValue, executedValue);
+        const unitCount = isMeasuredTravelOrLength ? 1 : Math.round(quantity);
+        const assigneeIds = current.laborAllocationMode === "shared" ? installerIds : currentEmployeeId ? [currentEmployeeId] : [];
+        return {
+          ...item,
+          laborAllocations: checked && assigneeIds.length > 0
+            ? Array.from({ length: unitCount }, (_, index) => ({
+                id: `completion-${item.id}-${index + 1}`,
+                quantity: isMeasuredTravelOrLength ? quantity : 1,
+                assigneeId: assigneeIds.length > 1 ? "shared" : assigneeIds[0],
+                ...(assigneeIds.length > 1 ? { assigneeIds } : {}),
+              }))
+            : [],
+          isCompleted: checked,
+          completedBy: assigneeIds.length === 1 ? assigneeIds[0] : null,
+          completedAt: checked ? completionChanges.completedAt ?? new Date().toISOString() : null,
+          executedQuantity: checked ? quantity : 0,
+        };
+      }
 
       if (hasInlineExecutionUnits(item)) {
         const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => ({
