@@ -427,6 +427,14 @@ export async function createFinanceSnapshot(params: {
     return rate;
   };
 
+  const getEffectiveServiceRate = async (employeeId: string, serviceProductId: string | null) => {
+    if (serviceProductId) {
+      const configuredRate = await getRateForEmployeeProduct(employeeId, serviceProductId);
+      if (configuredRate) return configuredRate;
+    }
+    return getRateForCustomService(employeeId);
+  };
+
   const snapshotItems = (invoiceVersion.items ?? []).map((item, index) => {
     const resolvedProductId = resolvedProductIds[index];
     debugSnapshotLog('[Snapshot] Looking up product:', item.productId);
@@ -521,9 +529,7 @@ export async function createFinanceSnapshot(params: {
             ? (selectedSharedRecipients.length > 0 ? selectedSharedRecipients : assignedEmployeeIds) : assigneeId ? [assigneeId] : [];
           if (quantity <= 0 || recipients.length === 0) continue;
           for (const employeeId of recipients) {
-            const rate = snapshotItem.productId
-              ? await getRateForEmployeeProduct(employeeId, snapshotItem.productId)
-              : await getRateForCustomService(employeeId);
+            const rate = await getEffectiveServiceRate(employeeId, snapshotItem.productId);
             if (!rate) continue;
             const perUnitEarnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
             const divisor = String(allocation.assigneeId) === 'shared' ? recipients.length : 1;
@@ -559,9 +565,7 @@ export async function createFinanceSnapshot(params: {
           continue;
         }
 
-        const rate = snapshotItem.productId
-          ? await getRateForEmployeeProduct(completedByEmployeeId, snapshotItem.productId)
-          : await getRateForCustomService(completedByEmployeeId);
+        const rate = await getEffectiveServiceRate(completedByEmployeeId, snapshotItem.productId);
         if (!rate) {
           console.warn(
             `Employee service rate not found for employee ${completedByEmployeeId} and service ${snapshotItem.productId ?? 'custom'}`
@@ -587,9 +591,7 @@ export async function createFinanceSnapshot(params: {
           continue;
         }
 
-        const rate = snapshotItem.productId
-          ? await getRateForEmployeeProduct(completedByEmployeeId, snapshotItem.productId)
-          : await getRateForCustomService(completedByEmployeeId);
+        const rate = await getEffectiveServiceRate(completedByEmployeeId, snapshotItem.productId);
         if (!rate) {
           console.warn(
             `Employee service rate not found for employee ${completedByEmployeeId} and service ${snapshotItem.productId ?? 'custom'}`
