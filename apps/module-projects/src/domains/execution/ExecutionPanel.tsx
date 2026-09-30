@@ -3013,7 +3013,7 @@ export function ExecutionPanel({
                                           <div className="space-y-1">
                                             <p className="font-medium">{item.name || "-"}</p>
                                             {renderItemCompletedByMeta(item, order, isConfirmationLocked)}
-                                            {isExecutionExpanded ? renderInstallerCompletionGrid(order, item, draft.laborAllocationMode, isConfirmationLocked) : null}
+                                            {renderInstallerCompletionGrid(order, item, draft.laborAllocationMode, isConfirmationLocked)}
                                             <div className="flex flex-wrap items-center gap-2">
                                               <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
                                               {renderItemStatusBadge(item)}
@@ -3231,7 +3231,7 @@ export function ExecutionPanel({
                                     <div className="space-y-1">
                                       <p className="text-sm font-medium">{item.name}</p>
                                       {renderItemCompletedByMeta(item, order, isConfirmationLocked)}
-                                      {isExecutionExpanded ? renderInstallerCompletionGrid(order, item, draft.laborAllocationMode, isConfirmationLocked) : null}
+                                      {renderInstallerCompletionGrid(order, item, draft.laborAllocationMode, isConfirmationLocked)}
                                     </div>
                                   )}
                                   {!isNewExtraItem ? (
