@@ -858,7 +858,6 @@ export function ExecutionPanel({
     allocationMode: "shared" | "individual",
     disabled = false,
   ) => {
-    if (!item.isService) return null;
     const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
     if (installerIds.length === 0) return null;
     const isMeasuredTravelOrLength = /\[(?:km|m)\]/i.test(item.name);
@@ -1170,8 +1169,8 @@ export function ExecutionPanel({
       const executedValue = typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
       const executionSpec = ensureExecutionSpec(item.executionSpec);
 
-      if (item.isService) {
-        const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
+      const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
+      if (installerIds.length > 0) {
         const isMeasuredTravelOrLength = /\[(?:km|m)\]/i.test(item.name);
         const quantity = Math.max(1, offeredValue, executedValue);
         const unitCount = isMeasuredTravelOrLength ? 1 : Math.round(quantity);
@@ -2954,8 +2953,8 @@ export function ExecutionPanel({
                                 const hasVisibleInlineUnits = hasInlineExecutionUnits(item);
                                 const isExecutionExpanded = !!expandedExecutionItems[item.id];
                                 const handleCompletionChange = (checked: boolean) => {
-                                  if (item.isService) {
-                                    const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
+                                  const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
+                                  if (installerIds.length > 0) {
                                     const isMeasuredTravelOrLength = /\[(?:km|m)\]/i.test(item.name);
                                     const quantity = Math.max(1, offeredValue, executedValue);
                                     const unitCount = isMeasuredTravelOrLength ? 1 : Math.round(quantity);
@@ -3170,8 +3169,8 @@ export function ExecutionPanel({
                             const hasVisibleInlineUnits = hasInlineExecutionUnits(item);
                             const isExecutionExpanded = !!expandedExecutionItems[item.id];
                             const handleCompletionChange = (checked: boolean) => {
-                              if (item.isService) {
-                                const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
+                              const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
+                              if (installerIds.length > 0) {
                                 const isMeasuredTravelOrLength = /\[(?:km|m)\]/i.test(item.name);
                                 const quantity = Math.max(1, offeredValue, Number(item.executedQuantity) || 0);
                                 const unitCount = isMeasuredTravelOrLength ? 1 : Math.round(quantity);
