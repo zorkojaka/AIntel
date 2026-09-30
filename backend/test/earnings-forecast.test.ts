@@ -228,7 +228,7 @@ test('meseci se sestejejo po datumu potrditve; brez datuma gre v svojo skupino',
   });
 });
 
-test('storitev brez nastavljene cene se posebej javi, da zasluzek ni tiho podcenjen', async () => {
+test('storitev brez posebne cene uporabi monterjev najpogostejsi aktivni odstotek', async () => {
   await withMongo(async () => {
     const montaza = await createService('Montaža kamere', 100);
     const zagon = await createService('Zagon snemalnika', 80);
@@ -245,7 +245,7 @@ test('storitev brez nastavljene cene se posebej javi, da zasluzek ni tiho podcen
     });
 
     const forecast = await getEarningsForecast(String(MONTER_A));
-    assert.equal(forecast.totalEarnings, 40, 'steje samo storitev z nastavljeno ceno');
-    assert.deepEqual(forecast.projects[0].servicesWithoutRate, ['Zagon snemalnika']);
+    assert.equal(forecast.totalEarnings, 72, 'za manjkajoco tarifo uporabi obstojeci privzeti 40 %');
+    assert.deepEqual(forecast.projects[0].servicesWithoutRate, []);
   });
 });
