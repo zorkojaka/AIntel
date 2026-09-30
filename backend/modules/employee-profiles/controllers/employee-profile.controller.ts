@@ -1,7 +1,12 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { resolveTenantId } from '../../../utils/tenant';
-import { createProfile, getProfileByEmployeeId, updateProfile } from '../services/employee-profile.service';
+import {
+  createProfile,
+  getProfileByEmployeeId,
+  updateProfile,
+  upsertEmployeeDefaultServicePercent,
+} from '../services/employee-profile.service';
 import {
   bulkUpsertEmployeeServiceRates,
   copyEmployeeServiceRates,
@@ -115,6 +120,28 @@ export async function postEmployeeServiceRates(req: Request, res: Response) {
     return res.fail('EmployeeId ni veljaven.', 400);
   }
   const rates = Array.isArray(req.body?.rates) ? (req.body.rates as EmployeeServiceRateInput[]) : [];
+  for (const rate of rates) {
+    if (rate?.inheritDefault === true) continue;
+    const percent = Number(rate?.defaultPercent);
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+      return res.fail('Odstotek za storitev mora biti med 0 in 100.', 400);
+    }
+  }
+  const hasDefaultPercent = Object.prototype.hasOwnProperty.call(req.body ?? {}, 'defaultPercent');
+  const defaultPercent = Number(req.body?.defaultPercent);
+  if (hasDefaultPercent && (!Number.isFinite(defaultPercent) || defaultPercent < 0 || defaultPercent > 100)) {
+    return res.fail('Privzeti odstotek za storitve mora biti med 0 in 100.', 400);
+  }
+  if (hasDefaultPercent) {
+    const tenantId = resolveTenantId(req);
+    if (!tenantId) {
+      return res.fail('TenantId ni podan.', 400);
+    }
+    const primaryRole = typeof req.body?.primaryRole === 'string' && req.body.primaryRole.trim()
+      ? req.body.primaryRole.trim()
+      : 'EXECUTION';
+    await upsertEmployeeDefaultServicePercent(tenantId, employeeId, defaultPercent, primaryRole);
+  }
   const data = await bulkUpsertEmployeeServiceRates(employeeId, rates);
   return res.success(data);
 }

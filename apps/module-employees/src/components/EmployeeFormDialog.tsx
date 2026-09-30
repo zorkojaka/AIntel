@@ -36,6 +36,10 @@ interface EmployeeServiceRate {
   isActive: boolean;
 }
 
+interface EmployeeProfile {
+  profitSharePercent: number;
+}
+
 interface ServiceRateRow {
   productId: string;
   productName: string;
@@ -162,15 +166,17 @@ export function EmployeeFormDialog({
     const loadServiceRates = async () => {
       setServiceRatesLoading(true);
       try {
-        const [productsResponse, ratesResponse, employeesResponse] = await Promise.all([
+        const [productsResponse, ratesResponse, employeesResponse, profileResponse] = await Promise.all([
           fetch('/api/cenik/products?isService=true', { credentials: 'include' }),
           fetch(`/api/employee-profiles/${initialData.id}/service-rates`, { credentials: 'include' }),
           fetch('/api/employees', { credentials: 'include' }),
+          fetch(`/api/employee-profiles?employeeId=${encodeURIComponent(initialData.id)}`, { credentials: 'include' }),
         ]);
 
         const products = await parseEnvelope<CenikProduct[]>(productsResponse);
         const rates = await parseEnvelope<EmployeeServiceRate[]>(ratesResponse);
         const employees = await parseEnvelope<Employee[]>(employeesResponse);
+        const profile = await parseEnvelope<EmployeeProfile | null>(profileResponse);
 
         if (!mounted) return;
 
@@ -214,6 +220,7 @@ export function EmployeeFormDialog({
 
         if (!mounted) return;
         setServiceRows(rows);
+        setBulkDefaultPercent(profile ? String(profile.profitSharePercent) : '');
         setCopyCandidates(
           sourceRates
             .filter((entry) => entry.hasRates)
@@ -243,22 +250,24 @@ export function EmployeeFormDialog({
     setServiceRows((prev) => prev.map((row) => (row.productId === productId ? { ...row, ...patch } : row)));
   };
 
-  const applyBulkDefaultPercent = () => {
-    const parsed = Number(bulkDefaultPercent);
-    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
-      toast.error('Privzeti % mora biti med 0 in 100.');
-      return;
-    }
-    setServiceRows((prev) => prev.map((row) => ({ ...row, defaultPercent: String(parsed) })));
-  };
-
   const handleSaveServiceRates = async () => {
     if (!initialData?.id || !canManageServiceRates) return;
 
     try {
+      const parsedDefaultPercent = Number(bulkDefaultPercent);
+      if (!bulkDefaultPercent.trim() || !Number.isFinite(parsedDefaultPercent) || parsedDefaultPercent < 0 || parsedDefaultPercent > 100) {
+        throw new Error('Privzeti % za storitve mora biti med 0 in 100.');
+      }
       const ratesPayload = serviceRows.map((row) => {
-        const defaultPercent = Number(row.defaultPercent);
+        const hasSpecificPercent = row.defaultPercent.trim().length > 0;
+        const defaultPercent = hasSpecificPercent ? Number(row.defaultPercent) : parsedDefaultPercent;
         const parsedOverride = row.overridePrice.trim() ? Number(row.overridePrice) : null;
+        if (!hasSpecificPercent && parsedOverride === null) {
+          return {
+            serviceProductId: row.productId,
+            inheritDefault: true,
+          };
+        }
         if (!Number.isFinite(defaultPercent) || defaultPercent < 0 || defaultPercent > 100) {
           throw new Error(`Neveljaven % za storitev "${row.productName}".`);
         }
@@ -284,10 +293,14 @@ export function EmployeeFormDialog({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ rates: ratesPayload }),
+        body: JSON.stringify({
+          rates: ratesPayload,
+          defaultPercent: parsedDefaultPercent,
+          primaryRole: initialData.roles?.includes('EXECUTION') ? 'EXECUTION' : initialData.roles?.[0] ?? 'EXECUTION',
+        }),
       });
       await parseEnvelope<EmployeeServiceRate[]>(response);
-      toast.success('Cenik storitev je shranjen.');
+      toast.success('Privzeti odstotek in cenik storitev sta shranjena.');
     } catch (saveError) {
       toast.error(saveError instanceof Error ? saveError.message : 'Shranjevanje cenika ni uspelo.');
     } finally {
@@ -672,7 +685,7 @@ export function EmployeeFormDialog({
             </form>
           ) : (
             <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-[1fr_auto_auto] md:items-end">
+              <div className="grid gap-4 md:grid-cols-2 md:items-end">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700" htmlFor="hourRateWithoutVatServiceTab">
                     Urna postavka (brez DDV)
@@ -689,7 +702,7 @@ export function EmployeeFormDialog({
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700" htmlFor="bulkDefaultPercent">
-                    Default % za vse storitve
+                    Privzeti % za storitve
                   </label>
                   <input
                     id="bulkDefaultPercent"
@@ -701,14 +714,10 @@ export function EmployeeFormDialog({
                     value={bulkDefaultPercent}
                     onChange={(event) => setBulkDefaultPercent(event.target.value)}
                   />
+                  <p className="text-xs text-slate-500">
+                    Uporabi se, kadar storitev nima svojega odstotka v ceniku.
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={applyBulkDefaultPercent}
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Nastavi za vse
-                </button>
               </div>
 
               <div className="grid gap-4 md:grid-cols-[1fr_auto_auto] md:items-end">
@@ -751,7 +760,7 @@ export function EmployeeFormDialog({
                       <tr>
                         <th className="border-b border-slate-200 px-2 py-1.5">Storitev</th>
                         <th className="border-b border-slate-200 px-2 py-1.5">Prodajna cena</th>
-                        <th className="border-b border-slate-200 px-2 py-1.5">Default %</th>
+                        <th className="border-b border-slate-200 px-2 py-1.5">Odstotek za postavko</th>
                         <th className="border-b border-slate-200 px-2 py-1.5">Zaslužek (izračunan)</th>
                         <th className="border-b border-slate-200 px-2 py-1.5">Override cena (€)</th>
                         <th className="border-b border-slate-200 px-2 py-1.5">Aktivno</th>
@@ -773,11 +782,14 @@ export function EmployeeFormDialog({
                               className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-xs"
                               value={row.defaultPercent}
                               onChange={(event) => updateServiceRow(row.productId, { defaultPercent: event.target.value })}
+                              placeholder={bulkDefaultPercent.trim() ? `Privzeto ${bulkDefaultPercent} %` : 'Privzeto'}
                             />
                           </td>
                           <td className="border-b border-green-100 bg-green-50 px-2 py-1.5 text-xs font-semibold text-green-700">
                             {(
-                              (Number.isFinite(Number(row.defaultPercent)) ? Number(row.defaultPercent) : 0) *
+                              (row.defaultPercent.trim() && Number.isFinite(Number(row.defaultPercent))
+                                ? Number(row.defaultPercent)
+                                : Number(bulkDefaultPercent) || 0) *
                               row.salePrice /
                               100
                             ).toLocaleString('sl-SI', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}

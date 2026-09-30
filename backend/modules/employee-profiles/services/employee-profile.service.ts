@@ -45,3 +45,26 @@ export async function updateProfile(id: string, tenantId: string, payload: Parti
   );
   return updated ? sanitizeProfile(updated as any) : null;
 }
+
+export async function upsertEmployeeDefaultServicePercent(
+  tenantId: string,
+  employeeId: string,
+  profitSharePercent: number,
+  primaryRole = 'EXECUTION',
+) {
+  const profile = await EmployeeProfileModel.findOneAndUpdate(
+    { tenantId, employeeId },
+    {
+      $set: { profitSharePercent },
+      $setOnInsert: {
+        tenantId,
+        employeeId,
+        primaryRole,
+        hourlyRate: null,
+        exceptions: {},
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+  return sanitizeProfile(profile as any);
+}

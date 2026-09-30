@@ -6,6 +6,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 
 import { ProductModel } from '../modules/cenik/product.model';
 import { EmployeeServiceRateModel } from '../modules/employee-profiles/schemas/employee-service-rate';
+import { EmployeeProfileModel } from '../modules/employee-profiles/schemas/employee-profile';
 import { OfferVersionModel } from '../modules/projects/schemas/offer-version';
 import { WorkOrderModel } from '../modules/projects/schemas/work-order';
 import { ProjectModel } from '../modules/projects/schemas/project';
@@ -228,11 +229,17 @@ test('meseci se sestejejo po datumu potrditve; brez datuma gre v svojo skupino',
   });
 });
 
-test('storitev brez posebne cene uporabi monterjev najpogostejsi aktivni odstotek', async () => {
+test('storitev brez posebne cene uporabi monterjev shranjeni privzeti odstotek', async () => {
   await withMongo(async () => {
     const montaza = await createService('Montaža kamere', 100);
     const zagon = await createService('Zagon snemalnika', 80);
     await EmployeeServiceRateModel.create({ employeeId: MONTER_A, serviceProductId: montaza._id, defaultPercent: 40, overridePrice: null });
+    await EmployeeProfileModel.create({
+      tenantId: 'inteligent',
+      employeeId: MONTER_A,
+      primaryRole: 'EXECUTION',
+      profitSharePercent: 40,
+    });
 
     await createConfirmedProject({
       code: 'PRJ-12',
