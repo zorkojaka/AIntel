@@ -124,9 +124,14 @@ function getPurchasePrice(product: { purchasePriceWithoutVat?: number; nabavnaCe
   return toNumber(product?.purchasePriceWithoutVat ?? product?.nabavnaCena ?? 0, 0);
 }
 
-function resolveAssignedEmployeeIds(workOrders: Array<Pick<WorkOrderDocument, 'assignedEmployeeIds'>>) {
+function resolveAssignedEmployeeIds(
+  workOrders: Array<Pick<WorkOrderDocument, 'assignedEmployeeIds' | 'mainInstallerId'>>
+) {
   const ids = new Set<string>();
   workOrders.forEach((order) => {
+    if (order.mainInstallerId) {
+      ids.add(String(order.mainInstallerId));
+    }
     (order.assignedEmployeeIds ?? []).forEach((employeeId) => {
       if (employeeId) {
         ids.add(String(employeeId));
@@ -388,7 +393,9 @@ export async function createFinanceSnapshot(params: {
     return product ? String(product._id) : resolvedProductIds[index];
   };
 
-  const assignedEmployeeIds = resolveAssignedEmployeeIds(workOrders as Array<Pick<WorkOrderDocument, 'assignedEmployeeIds'>>);
+  const assignedEmployeeIds = resolveAssignedEmployeeIds(
+    workOrders as Array<Pick<WorkOrderDocument, 'assignedEmployeeIds' | 'mainInstallerId'>>
+  );
 
   const employeeEarningsMap = new Map<string, number>();
   const rateByEmployeeProduct = new Map<string, RateValue | null>();
@@ -547,7 +554,7 @@ export async function createFinanceSnapshot(params: {
     for (const workOrderItem of workOrderItems) {
       const laborAllocations = Array.isArray((workOrderItem as ServiceWorkOrderItemWithCompletion).laborAllocations)
         ? (workOrderItem as ServiceWorkOrderItemWithCompletion).laborAllocations ?? [] : [];
-      if (laborAllocations.length > 0 && workOrderItem.isCompleted) {
+      if (laborAllocations.length > 0) {
         for (const allocation of laborAllocations) {
           const quantity = Math.max(0, toNumber(allocation.quantity, 0));
           const assigneeId = normalizeEmployeeId(allocation.assigneeId);
@@ -590,24 +597,29 @@ export async function createFinanceSnapshot(params: {
           completedByEmployeeId,
           executedQuantity: workOrderItem.executedQuantity,
         });
-        if (!workOrderItem.isCompleted || !completedByEmployeeId) {
-          continue;
-        }
-
-        const rate = await getEffectiveServiceRate(completedByEmployeeId, snapshotItem.productId);
-        if (!rate) {
-          console.warn(
-            `Employee service rate not found for employee ${completedByEmployeeId} and service ${snapshotItem.productId ?? 'custom'}`
-          );
-          employeeEarningsMap.set(completedByEmployeeId, employeeEarningsMap.get(completedByEmployeeId) ?? 0);
+        const recipients = completedByEmployeeId && assignedEmployeeIds.includes(completedByEmployeeId)
+          ? [completedByEmployeeId]
+          : assignedEmployeeIds;
+        if (recipients.length === 0) {
           continue;
         }
 
         const executedQuantity = Math.max(1, toNumber(workOrderItem.executedQuantity, snapshotItem.quantity));
-        const perUnitEarnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
-        const earnings = round(perUnitEarnings * executedQuantity);
-        serviceLaborPurchaseTotal = round(serviceLaborPurchaseTotal + earnings);
-        employeeEarningsMap.set(completedByEmployeeId, round((employeeEarningsMap.get(completedByEmployeeId) ?? 0) + earnings));
+        for (const employeeId of recipients) {
+          const rate = await getEffectiveServiceRate(employeeId, snapshotItem.productId);
+          if (!rate) {
+            console.warn(
+              `Employee service rate not found for employee ${employeeId} and service ${snapshotItem.productId ?? 'custom'}`
+            );
+            employeeEarningsMap.set(employeeId, employeeEarningsMap.get(employeeId) ?? 0);
+            continue;
+          }
+
+          const perUnitEarnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
+          const earnings = round((perUnitEarnings * executedQuantity) / recipients.length);
+          serviceLaborPurchaseTotal = round(serviceLaborPurchaseTotal + earnings);
+          employeeEarningsMap.set(employeeId, round((employeeEarningsMap.get(employeeId) ?? 0) + earnings));
+        }
         continue;
       }
       for (const unit of executionUnits as ExecutionUnitWithEmployee[]) {
