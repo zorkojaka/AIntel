@@ -79,6 +79,11 @@ function normalizeText(value: unknown) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
+function isLegacyCustomServiceName(value: unknown) {
+  const name = normalizeText(value);
+  return /^(montaža|demontaža|konfiguracija|rekonfiguracija|zagon|napeljava|polaganje|izrez|delovna ura|potni stroški)\b/.test(name);
+}
+
 function normalizeId(value: unknown) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -239,13 +244,14 @@ function getServiceWorkOrderItemsForProduct(workOrders: Array<Pick<WorkOrderDocu
 function getMatchingServiceWorkOrderItems(
   workOrders: Array<Pick<WorkOrderDocument, 'items'>>,
   invoiceItem: InvoiceItemInput,
-  productId: string | null
+  productId: string | null,
+  allowLegacyUnflaggedService = false,
 ) {
   const invoiceItemId = normalizeRefId(invoiceItem.id);
   const invoiceName = normalizeText(invoiceItem.name);
   return workOrders.flatMap((order) =>
     (order.items ?? []).filter((item) => {
-      if (item.isService !== true) return false;
+      if (item.isService !== true && !allowLegacyUnflaggedService) return false;
       if (productId && item.productId && String(item.productId) === productId) return true;
       if (invoiceItemId && item.offerItemId && String(item.offerItemId) === invoiceItemId) return true;
       if (invoiceItemId && item.id && String(item.id) === invoiceItemId) return true;
@@ -286,11 +292,20 @@ export async function createFinanceSnapshot(params: {
     : null;
 
   const offerProductIdByItemId = new Map<string, string>();
+  const offerItemIds = new Set<string>();
+  const offerServiceItemIds = new Set<string>();
+  const offerServiceNames = new Set<string>();
   (offer?.items ?? []).forEach((item) => {
     const itemId = normalizeId(item.id);
     const productId = normalizeId(item.productId);
+    if (itemId) offerItemIds.add(itemId);
     if (itemId && productId) {
       offerProductIdByItemId.set(itemId, productId);
+    }
+    if (item.isService === true) {
+      if (itemId) offerServiceItemIds.add(itemId);
+      const itemName = normalizeText(item.name);
+      if (itemName) offerServiceNames.add(itemName);
     }
   });
 
@@ -302,6 +317,9 @@ export async function createFinanceSnapshot(params: {
     const itemId = normalizeRefId(item.id);
     const offerProductId = itemId ? offerProductIdByItemId.get(itemId) : null;
     if (offerProductId) return offerProductId;
+
+    // ID custom postavke je ID vrstice ponudbe, ne ID produkta iz cenika.
+    if (itemId && offerItemIds.has(itemId)) return null;
 
     return isObjectId(itemId) ? itemId : null;
   });
@@ -464,9 +482,19 @@ export async function createFinanceSnapshot(params: {
     const totalSale = toNumber(item.totalWithoutVat, round(quantity * unitPriceSale));
     const totalPurchase = round(quantity * unitPricePurchase);
     const margin = round(totalSale - totalPurchase);
-    const hasServiceWorkOrderItem =
-      getMatchingServiceWorkOrderItems(workOrders as Array<Pick<WorkOrderDocument, 'items'>>, item, productId).length > 0;
-    const isService = Boolean(product?.isService || hasServiceWorkOrderItem);
+    const invoiceItemId = normalizeRefId(item.id);
+    const isConfirmedOfferService = Boolean(
+      (invoiceItemId && offerServiceItemIds.has(invoiceItemId)) || offerServiceNames.has(normalizeText(item.name)),
+    );
+    const isLegacyCustomService = !productId && isLegacyCustomServiceName(item.name);
+    const allowUnflaggedService = isConfirmedOfferService || isLegacyCustomService;
+    const hasServiceWorkOrderItem = getMatchingServiceWorkOrderItems(
+      workOrders as Array<Pick<WorkOrderDocument, 'items'>>,
+      item,
+      productId,
+      allowUnflaggedService,
+    ).length > 0;
+    const isService = Boolean(product?.isService || isConfirmedOfferService || isLegacyCustomService || hasServiceWorkOrderItem);
 
     if (!product) {
       console.warn('Purchase price not found for:', item.name);
@@ -508,7 +536,8 @@ export async function createFinanceSnapshot(params: {
       ? getMatchingServiceWorkOrderItems(
           workOrders as Array<Pick<WorkOrderDocument, 'items'>>,
           invoiceItem,
-          snapshotItem.productId
+          snapshotItem.productId,
+          snapshotItem.isService,
         )
       : getServiceWorkOrderItemsForProduct(
           workOrders as Array<Pick<WorkOrderDocument, 'items'>>,
