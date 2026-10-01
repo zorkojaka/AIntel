@@ -1,4 +1,3 @@
-import QRCode from 'qrcode';
 import type { Types } from 'mongoose';
 import { ProjectModel, type ProjectDocument } from '../schemas/project';
 import { renderHtmlToPdf } from './html-pdf.service';
@@ -9,6 +8,7 @@ import type { DocumentNumberingKind } from './document-numbering.service';
 import { formatClientAddress, resolveProjectClient } from './project.service';
 import type { CreditNote } from '../../../../shared/types/credit-notes';
 import { getCreditNote } from './credit-note.service';
+import { buildPaymentInfo } from './payment-qr.service';
 
 export interface InvoiceVersion {
   _id: string;
@@ -205,55 +205,6 @@ function buildInvoiceNotes(defaults: { paymentTerms?: string; disclaimer?: strin
   return [defaults.disclaimer]
     .filter((text): text is string => typeof text === 'string' && text.trim().length > 0)
     .map((text) => text.trim());
-}
-
-interface PaymentSeed {
-  recipient: string;
-  iban: string;
-  amount: number;
-  reference: string;
-  purpose: string;
-}
-
-async function buildPaymentInfo(seed: PaymentSeed) {
-  const info = {
-    recipient: seed.recipient,
-    iban: seed.iban,
-    amount: seed.amount,
-    reference: seed.reference,
-    purpose: seed.purpose,
-    qrCodeDataUri: null as string | null,
-    notice: null as string | null,
-  };
-
-  const hasData = seed.recipient && seed.iban && seed.amount > 0 && seed.reference;
-  if (!hasData) {
-    info.notice = 'QR ni na voljo (manjkajo podatki).';
-    return info;
-  }
-
-  const payload = buildUpnQrPayload(seed);
-  try {
-    info.qrCodeDataUri = await QRCode.toDataURL(payload, { errorCorrectionLevel: 'M', margin: 0 });
-  } catch (error) {
-    info.qrCodeDataUri = null;
-    info.notice = 'QR ni na voljo (napaka pri generiranju).';
-    console.error('Failed to generate QR code', error);
-  }
-  return info;
-}
-
-function buildUpnQrPayload(seed: PaymentSeed) {
-  const amount = (seed.amount ?? 0).toFixed(2);
-  const lines = [
-    'UPNQR',
-    seed.recipient ?? '',
-    seed.iban ?? '',
-    amount,
-    seed.reference ?? '',
-    seed.purpose ?? '',
-  ];
-  return lines.join('\n');
 }
 
 function buildCompanyProfile(
