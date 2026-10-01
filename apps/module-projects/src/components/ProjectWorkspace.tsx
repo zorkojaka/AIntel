@@ -1285,6 +1285,7 @@ export function ProjectWorkspace({
         const nextLogistics: ProjectLogistics = {
           workOrders: nextWorkOrders,
           materialOrders: previousLogistics?.materialOrders ?? [],
+          teamMembers: previousLogistics?.teamMembers ?? [],
           materialOrder: previousLogistics?.materialOrder ?? null,
           workOrder:
             previousLogistics?.workOrder && previousLogistics.workOrder._id === updatedWorkOrder._id
@@ -1315,6 +1316,7 @@ export function ProjectWorkspace({
         const nextLogistics: ProjectLogistics = {
           workOrders: nextWorkOrders,
           materialOrders: previousLogistics?.materialOrders ?? [],
+          teamMembers: previousLogistics?.teamMembers ?? [],
           materialOrder: previousLogistics?.materialOrder ?? null,
           workOrder:
             previousLogistics?.workOrder && previousLogistics.workOrder._id === draftWorkOrder._id

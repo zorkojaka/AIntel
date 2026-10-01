@@ -3,6 +3,7 @@ import type { MaterialOrder, ProjectLogisticsSnapshot, WorkOrder } from '../logi
 export interface ProjectLogistics {
   workOrders: WorkOrder[];
   materialOrders: MaterialOrder[];
+  teamMembers?: ProjectLogisticsSnapshot['teamMembers'];
   materialOrder?: MaterialOrder | null;
   workOrder?: WorkOrder | null;
   acceptedOfferId?: ProjectLogisticsSnapshot['acceptedOfferId'];

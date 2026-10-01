@@ -1647,6 +1647,21 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
     normalizedWorkOrderDocs,
     Array.isArray((project as any).executionDefinitions) ? (project as any).executionDefinitions : [],
   );
+  const teamMemberIds = Array.from(new Set(
+    workOrderDocsWithProjectDefinitions.flatMap((workOrder: any) => [
+      workOrder?.mainInstallerId ? String(workOrder.mainInstallerId) : '',
+      ...(Array.isArray(workOrder?.assignedEmployeeIds)
+        ? workOrder.assignedEmployeeIds.map((employeeId: any) => String(employeeId))
+        : []),
+    ]).filter((employeeId: string) => mongoose.isValidObjectId(employeeId)),
+  ));
+  const teamMemberDocs = teamMemberIds.length > 0
+    ? await EmployeeModel.find({ _id: { $in: teamMemberIds } }).select('_id name').lean()
+    : [];
+  const teamMembers = teamMemberDocs.map((employee) => ({
+    id: String(employee._id),
+    name: employee.name,
+  }));
 
   const resolveTotalWithVat = (offer: any) => {
     const sumFromItems =
@@ -1669,6 +1684,7 @@ async function buildLogisticsSnapshot(projectId: string): Promise<ProjectLogisti
 
   return {
     projectId,
+    teamMembers,
     confirmedOfferVersionId,
     offerVersions: offerVersions.map((offer) => ({
       _id: String(offer._id),
@@ -2124,6 +2140,7 @@ export async function getProjectLogistics(req: Request, res: Response, next: Nex
         confirmedOfferVersionId: null,
         offerVersions: [],
         offers: [],
+        teamMembers: [],
         materialOrders: [],
         workOrders: [],
         materialOrder: null,
