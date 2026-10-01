@@ -749,11 +749,14 @@ export function ExecutionPanel({
 
   const employeeNameById = useMemo(() => {
     const map = new Map<string, string>();
+    (logistics?.teamMembers ?? []).forEach((employee) => {
+      map.set(employee.id, employee.name);
+    });
     employees.forEach((employee) => {
       map.set(employee.id, employee.name);
     });
     return map;
-  }, [employees]);
+  }, [employees, logistics?.teamMembers]);
 
   const canOverrideCompletionAssignee = useMemo(
     () => viewerRoles.includes("ADMIN") || viewerRoles.includes("ORGANIZER") || viewerRoles.includes("EXECUTION"),

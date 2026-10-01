@@ -201,6 +201,7 @@ export interface WorkOrder {
 
 export interface ProjectLogisticsSnapshot {
   projectId: string;
+  teamMembers: Array<{ id: string; name: string }>;
   confirmedOfferVersionId: string | null;
   offerVersions: {
     _id: string;

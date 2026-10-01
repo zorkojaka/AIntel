@@ -126,6 +126,7 @@ async function fetchProjectLogistics(projectId: string): Promise<ProjectLogistic
     return {
       workOrders: data.workOrders ?? [],
       materialOrders: data.materialOrders ?? [],
+      teamMembers: data.teamMembers ?? [],
       materialOrder: data.materialOrder ?? null,
       workOrder: data.workOrder ?? null,
       acceptedOfferId: data.acceptedOfferId ?? null,
