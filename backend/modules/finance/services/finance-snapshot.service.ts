@@ -547,6 +547,10 @@ export async function createFinanceSnapshot(params: {
     }
 
     let serviceLaborPurchaseTotal = 0;
+    const itemRawEarningsByEmployee = new Map<string, number>();
+    const addItemEarnings = (employeeId: string, earnings: number) => {
+      itemRawEarningsByEmployee.set(employeeId, (itemRawEarningsByEmployee.get(employeeId) ?? 0) + earnings);
+    };
     const invoiceItem = (invoiceVersion.items ?? []).find((item) => item.name === snapshotItem.name) ?? null;
     workOrders.forEach((workOrder) => {
       debugSnapshotLog(
@@ -586,9 +590,7 @@ export async function createFinanceSnapshot(params: {
             if (!rate) continue;
             const perUnitEarnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
             const divisor = String(allocation.assigneeId) === 'shared' ? recipients.length : 1;
-            const earnings = round((perUnitEarnings * quantity) / divisor);
-            serviceLaborPurchaseTotal = round(serviceLaborPurchaseTotal + earnings);
-            employeeEarningsMap.set(employeeId, round((employeeEarningsMap.get(employeeId) ?? 0) + earnings));
+            addItemEarnings(employeeId, (perUnitEarnings * quantity) / divisor);
           }
         }
         continue;
@@ -633,9 +635,7 @@ export async function createFinanceSnapshot(params: {
           }
 
           const perUnitEarnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
-          const earnings = round((perUnitEarnings * executedQuantity) / recipients.length);
-          serviceLaborPurchaseTotal = round(serviceLaborPurchaseTotal + earnings);
-          employeeEarningsMap.set(employeeId, round((employeeEarningsMap.get(employeeId) ?? 0) + earnings));
+          addItemEarnings(employeeId, (perUnitEarnings * executedQuantity) / recipients.length);
         }
         continue;
       }
@@ -659,10 +659,20 @@ export async function createFinanceSnapshot(params: {
         }
 
         const earnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
-        serviceLaborPurchaseTotal = round(serviceLaborPurchaseTotal + earnings);
-        employeeEarningsMap.set(completedByEmployeeId, round((employeeEarningsMap.get(completedByEmployeeId) ?? 0) + earnings));
+        addItemEarnings(completedByEmployeeId, earnings);
       }
     }
+
+    const rawEarningEntries = Array.from(itemRawEarningsByEmployee.entries());
+    serviceLaborPurchaseTotal = round(rawEarningEntries.reduce((sum, [, earnings]) => sum + earnings, 0));
+    let distributedPurchaseTotal = 0;
+    rawEarningEntries.forEach(([employeeId, rawEarnings], index) => {
+      const earnings = index === rawEarningEntries.length - 1
+        ? round(serviceLaborPurchaseTotal - distributedPurchaseTotal)
+        : round(rawEarnings);
+      distributedPurchaseTotal = round(distributedPurchaseTotal + earnings);
+      employeeEarningsMap.set(employeeId, round((employeeEarningsMap.get(employeeId) ?? 0) + earnings));
+    });
 
     snapshotItem.totalPurchase = round(serviceLaborPurchaseTotal);
     snapshotItem.unitPricePurchase = snapshotItem.quantity > 0 ? round(serviceLaborPurchaseTotal / snapshotItem.quantity) : round(serviceLaborPurchaseTotal);
