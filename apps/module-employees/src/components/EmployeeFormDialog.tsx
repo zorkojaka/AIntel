@@ -181,9 +181,15 @@ export function EmployeeFormDialog({
         if (!mounted) return;
 
         const rateByProductId = new Map<string, EmployeeServiceRate>();
+        const legacyPercentFrequency = new Map<number, number>();
         rates.forEach((rate) => {
           rateByProductId.set(rate.serviceProductId, rate);
+          if (rate.isActive && Number.isFinite(rate.defaultPercent) && rate.defaultPercent > 0) {
+            legacyPercentFrequency.set(rate.defaultPercent, (legacyPercentFrequency.get(rate.defaultPercent) ?? 0) + 1);
+          }
         });
+        const inferredLegacyDefaultPercent = Array.from(legacyPercentFrequency.entries())
+          .sort(([percentA, countA], [percentB, countB]) => countB - countA || percentA - percentB)[0]?.[0] ?? null;
 
         const rows = products
           .filter((product) => product.isService)
@@ -220,7 +226,13 @@ export function EmployeeFormDialog({
 
         if (!mounted) return;
         setServiceRows(rows);
-        setBulkDefaultPercent(profile ? String(profile.profitSharePercent) : '');
+        setBulkDefaultPercent(
+          profile
+            ? String(profile.profitSharePercent)
+            : inferredLegacyDefaultPercent !== null
+              ? String(inferredLegacyDefaultPercent)
+              : '',
+        );
         setCopyCandidates(
           sourceRates
             .filter((entry) => entry.hasRates)
@@ -831,7 +843,7 @@ export function EmployeeFormDialog({
                   disabled={serviceRatesSaving || serviceRatesLoading}
                   className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {serviceRatesSaving ? 'Shranjujem...' : 'Shrani cenik'}
+                  {serviceRatesSaving ? 'Shranjujem...' : 'Shrani privzeti % in cenik'}
                 </button>
               </div>
             </div>
