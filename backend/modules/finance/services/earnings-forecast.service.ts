@@ -154,9 +154,26 @@ export async function getEarningsForecast(employeeId: string): Promise<EarningsF
   const getCustomServiceRate = async () => {
     if (customServiceRateCache.has(employeeId)) return customServiceRateCache.get(employeeId) ?? null;
     const profile = await EmployeeProfileModel.findOne({ employeeId }).select('profitSharePercent').lean();
+    let legacyDefaultPercent: number | null = null;
+    if (!profile) {
+      const configuredRates = await EmployeeServiceRateModel.find({
+        employeeId,
+        isActive: true,
+        defaultPercent: { $gt: 0 },
+      }).select('defaultPercent').lean();
+      const frequency = new Map<number, number>();
+      for (const configuredRate of configuredRates) {
+        const percent = toNumber(configuredRate.defaultPercent, 0);
+        if (percent > 0) frequency.set(percent, (frequency.get(percent) ?? 0) + 1);
+      }
+      legacyDefaultPercent = Array.from(frequency.entries())
+        .sort(([percentA, countA], [percentB, countB]) => countB - countA || percentA - percentB)[0]?.[0] ?? null;
+    }
     const rate = profile
       ? { defaultPercent: toNumber(profile.profitSharePercent, 0), overridePrice: null }
-      : null;
+      : legacyDefaultPercent !== null
+        ? { defaultPercent: legacyDefaultPercent, overridePrice: null }
+        : null;
     customServiceRateCache.set(employeeId, rate);
     return rate;
   };
@@ -183,7 +200,9 @@ export async function getEarningsForecast(employeeId: string): Promise<EarningsF
       const isCustomService = !productId && (item as any).isService === true;
       if (!isCustomService && (!productId || !serviceIds.has(productId))) continue;
 
-      const rate = isCustomService ? await getCustomServiceRate() : await getRate(productId);
+      const rate = isCustomService
+        ? await getCustomServiceRate()
+        : (await getRate(productId)) ?? (await getCustomServiceRate());
       if (!rate) {
         servicesWithoutRate.push((item as any).name ?? 'Neimenovana storitev');
         continue;

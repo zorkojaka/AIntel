@@ -7,6 +7,7 @@ import { Input } from "../../components/ui/input";
 import { ProjectDetails } from "../../types";
 import type { ProjectRequirement } from "@aintel/shared/types/project";
 import { Loader2 } from "lucide-react";
+import { ExecutionDefinitionPanel } from "../logistics/ExecutionDefinitionPanel";
 
 export type RequirementRow = ProjectRequirement;
 
@@ -55,6 +56,7 @@ export function RequirementsPanel({
 
   return (
     <>
+      <ExecutionDefinitionPanel projectId={project.id} />
       {showVariantWizard && (
         <Card className="p-4 space-y-3">
           <h3 className="text-lg font-semibold">Izberi varianto zahtev</h3>

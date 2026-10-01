@@ -439,6 +439,33 @@ export const FinancePage: React.FC = () => {
   const [employeePaymentSaving, setEmployeePaymentSaving] = useState<Record<string, boolean>>({});
   const [invoiceActionSaving, setInvoiceActionSaving] = useState<Record<string, boolean>>({});
 
+  const employeeNameById = useMemo(
+    () => new Map(employees.map((employee) => [employee.employeeId, employee.employeeName])),
+    [employees],
+  );
+
+  const adjustInstallerEarnings = async (snapshot: FinanceSnapshot) => {
+    const earnings: Array<{ employeeId: string; earnings: number }> = [];
+    for (const entry of snapshot.employeeEarnings) {
+      const employeeName = employeeNameById.get(entry.employeeId) ?? 'Monter';
+      const raw = window.prompt(`Znesek za monterja ${employeeName}:`, String(entry.earnings));
+      if (raw === null) return;
+
+      const amount = Number(raw.trim().replace(',', '.'));
+      if (!Number.isFinite(amount) || amount < 0) {
+        window.alert('Znesek ni veljaven.');
+        return;
+      }
+      earnings.push({ employeeId: entry.employeeId, earnings: amount });
+    }
+    try {
+      const updated = await patchApi<FinanceSnapshot>(`/api/finance/snapshots/${snapshot._id}/employee-earnings`, { earnings });
+      setSnapshots((current) => current.map((entry) => entry._id === updated._id ? updated : entry));
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Delitve ni mogoče shraniti.');
+    }
+  };
+
   const isExecutionOnly = useMemo(() => {
     const roleSet = new Set(roles);
     return roleSet.has('EXECUTION') && !roleSet.has('ADMIN') && !roleSet.has('FINANCE');
@@ -1126,6 +1153,11 @@ export const FinancePage: React.FC = () => {
                                     ))}
                                   </tbody>
                                 </table>
+                                <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                                  <strong>Delitev monterjem:</strong>
+                                  {snapshot.employeeEarnings.map((earning) => <span key={earning.employeeId}>{employeeNameById.get(earning.employeeId) ?? 'Monter'}: {currency.format(earning.earnings)}</span>)}
+                                  {isAdminOrFinance ? <button type="button" className="finance-button" onClick={() => void adjustInstallerEarnings(snapshot)}>Uredi delitev</button> : null}
+                                </div>
                               </td>
                             </tr>
                           )}

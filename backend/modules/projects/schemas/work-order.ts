@@ -14,6 +14,7 @@ interface WorkOrderItem {
   executedQuantity: number;
   isExtra: boolean;
   itemNote?: string | null;
+  laborAllocations?: Array<{ id: string; quantity: number; assigneeId: string | 'shared'; assigneeIds?: string[] }>;
   isCompleted?: boolean;
   completedBy?: string | null;
   completedAt?: Date | null;
@@ -91,6 +92,7 @@ export interface WorkOrderConfirmationVersion {
   scheduledAt?: string | null;
   mainInstallerId?: string | null;
   assignedEmployeeIds?: string[];
+  laborAllocationMode?: 'shared' | 'individual';
   installerAcceptances?: InstallerAcceptance[];
   location?: string | null;
   workOrderCode?: string | null;
@@ -150,6 +152,11 @@ const workOrderItemSchema = new Schema<WorkOrderItem>(
     executedQuantity: { type: Number, required: true, default: 0 },
     isExtra: { type: Boolean, required: true, default: false },
     itemNote: { type: String, default: null },
+    laborAllocations: {
+      type: [{ id: { type: String, required: true }, quantity: { type: Number, min: 0, required: true }, assigneeId: { type: String, required: true }, assigneeIds: { type: [String], default: undefined } }],
+      default: [],
+      _id: false,
+    },
     isCompleted: { type: Boolean, default: false },
     completedBy: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
     completedAt: { type: Date, default: null },
@@ -298,6 +305,7 @@ const workOrderSchema = new Schema<WorkOrderDocument>(
     bookingInviteSentAt: { type: Date, default: null },
     mainInstallerId: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
     assignedEmployeeIds: { type: [Schema.Types.ObjectId], default: [] },
+    laborAllocationMode: { type: String, enum: ['shared', 'individual'], default: 'shared' },
     installerAcceptances: { type: [installerAcceptanceSchema], default: [] },
     location: { type: String },
     notes: { type: String },

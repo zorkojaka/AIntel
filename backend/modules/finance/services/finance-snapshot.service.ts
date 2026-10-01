@@ -1,6 +1,7 @@
 import { FilterQuery } from 'mongoose';
 import { ProductModel } from '../../cenik/product.model';
 import { WorkOrderModel, type WorkOrderDocument } from '../../projects/schemas/work-order';
+import { ProjectModel } from '../../projects/schemas/project';
 import { OfferVersionModel } from '../../projects/schemas/offer-version';
 import { EmployeeServiceRateModel } from '../../employee-profiles/schemas/employee-service-rate';
 import { EmployeeProfileModel } from '../../employee-profiles/schemas/employee-profile';
@@ -78,6 +79,11 @@ function normalizeText(value: unknown) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
+function isLegacyCustomServiceName(value: unknown) {
+  const name = normalizeText(value);
+  return /^(montaža|demontaža|konfiguracija|rekonfiguracija|zagon|napeljava|polaganje|izrez|delovna ura|potni stroški)\b/.test(name);
+}
+
 function normalizeId(value: unknown) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -118,9 +124,14 @@ function getPurchasePrice(product: { purchasePriceWithoutVat?: number; nabavnaCe
   return toNumber(product?.purchasePriceWithoutVat ?? product?.nabavnaCena ?? 0, 0);
 }
 
-function resolveAssignedEmployeeIds(workOrders: Array<Pick<WorkOrderDocument, 'assignedEmployeeIds'>>) {
+function resolveAssignedEmployeeIds(
+  workOrders: Array<Pick<WorkOrderDocument, 'assignedEmployeeIds' | 'mainInstallerId'>>
+) {
   const ids = new Set<string>();
   workOrders.forEach((order) => {
+    if (order.mainInstallerId) {
+      ids.add(String(order.mainInstallerId));
+    }
     (order.assignedEmployeeIds ?? []).forEach((employeeId) => {
       if (employeeId) {
         ids.add(String(employeeId));
@@ -153,6 +164,7 @@ type ServiceWorkOrderItemWithCompletion = {
   doneBy?: unknown;
   doneByEmployeeId?: unknown;
   executedQuantity?: unknown;
+  laborAllocations?: Array<{ id?: string; quantity?: unknown; assigneeId?: unknown; assigneeIds?: unknown }>;
 };
 
 type RateValue = { defaultPercent: number; overridePrice: number | null };
@@ -237,13 +249,14 @@ function getServiceWorkOrderItemsForProduct(workOrders: Array<Pick<WorkOrderDocu
 function getMatchingServiceWorkOrderItems(
   workOrders: Array<Pick<WorkOrderDocument, 'items'>>,
   invoiceItem: InvoiceItemInput,
-  productId: string | null
+  productId: string | null,
+  allowLegacyUnflaggedService = false,
 ) {
   const invoiceItemId = normalizeRefId(invoiceItem.id);
   const invoiceName = normalizeText(invoiceItem.name);
   return workOrders.flatMap((order) =>
     (order.items ?? []).filter((item) => {
-      if (item.isService !== true) return false;
+      if (item.isService !== true && !allowLegacyUnflaggedService) return false;
       if (productId && item.productId && String(item.productId) === productId) return true;
       if (invoiceItemId && item.offerItemId && String(item.offerItemId) === invoiceItemId) return true;
       if (invoiceItemId && item.id && String(item.id) === invoiceItemId) return true;
@@ -257,8 +270,9 @@ export async function createFinanceSnapshot(params: {
   invoiceVersion: InvoiceVersionInput;
   correctedFromInvoiceVersionId?: string | null;
   actorUserId?: string | null;
+  refreshSnapshotId?: string | null;
 }) {
-  const { project, invoiceVersion, correctedFromInvoiceVersionId } = params;
+  const { project, invoiceVersion, correctedFromInvoiceVersionId, refreshSnapshotId } = params;
   debugSnapshotLog('[Snapshot] Raw invoice version:', JSON.stringify(invoiceVersion, null, 2));
   debugSnapshotLog(
     '[Snapshot] Invoice items:',
@@ -283,11 +297,20 @@ export async function createFinanceSnapshot(params: {
     : null;
 
   const offerProductIdByItemId = new Map<string, string>();
+  const offerItemIds = new Set<string>();
+  const offerServiceItemIds = new Set<string>();
+  const offerServiceNames = new Set<string>();
   (offer?.items ?? []).forEach((item) => {
     const itemId = normalizeId(item.id);
     const productId = normalizeId(item.productId);
+    if (itemId) offerItemIds.add(itemId);
     if (itemId && productId) {
       offerProductIdByItemId.set(itemId, productId);
+    }
+    if (item.isService === true) {
+      if (itemId) offerServiceItemIds.add(itemId);
+      const itemName = normalizeText(item.name);
+      if (itemName) offerServiceNames.add(itemName);
     }
   });
 
@@ -299,6 +322,9 @@ export async function createFinanceSnapshot(params: {
     const itemId = normalizeRefId(item.id);
     const offerProductId = itemId ? offerProductIdByItemId.get(itemId) : null;
     if (offerProductId) return offerProductId;
+
+    // ID custom postavke je ID vrstice ponudbe, ne ID produkta iz cenika.
+    if (itemId && offerItemIds.has(itemId)) return null;
 
     return isObjectId(itemId) ? itemId : null;
   });
@@ -367,7 +393,9 @@ export async function createFinanceSnapshot(params: {
     return product ? String(product._id) : resolvedProductIds[index];
   };
 
-  const assignedEmployeeIds = resolveAssignedEmployeeIds(workOrders as Array<Pick<WorkOrderDocument, 'assignedEmployeeIds'>>);
+  const assignedEmployeeIds = resolveAssignedEmployeeIds(
+    workOrders as Array<Pick<WorkOrderDocument, 'assignedEmployeeIds' | 'mainInstallerId'>>
+  );
 
   const employeeEarningsMap = new Map<string, number>();
   const rateByEmployeeProduct = new Map<string, RateValue | null>();
@@ -417,11 +445,36 @@ export async function createFinanceSnapshot(params: {
     const profile = isObjectId(employeeId)
       ? await EmployeeProfileModel.findOne({ employeeId }).select('profitSharePercent').lean()
       : null;
+    let legacyDefaultPercent: number | null = null;
+    if (!profile && isObjectId(employeeId)) {
+      const configuredRates = await EmployeeServiceRateModel.find({
+        employeeId,
+        isActive: true,
+        defaultPercent: { $gt: 0 },
+      }).select('defaultPercent').lean();
+      const frequency = new Map<number, number>();
+      for (const configuredRate of configuredRates) {
+        const percent = toNumber(configuredRate.defaultPercent, 0);
+        if (percent > 0) frequency.set(percent, (frequency.get(percent) ?? 0) + 1);
+      }
+      legacyDefaultPercent = Array.from(frequency.entries())
+        .sort(([percentA, countA], [percentB, countB]) => countB - countA || percentA - percentB)[0]?.[0] ?? null;
+    }
     const rate = profile
       ? { defaultPercent: toNumber(profile.profitSharePercent, 0), overridePrice: null }
-      : null;
+      : legacyDefaultPercent !== null
+        ? { defaultPercent: legacyDefaultPercent, overridePrice: null }
+        : null;
     customServiceRateByEmployee.set(employeeId, rate);
     return rate;
+  };
+
+  const getEffectiveServiceRate = async (employeeId: string, serviceProductId: string | null) => {
+    if (serviceProductId) {
+      const configuredRate = await getRateForEmployeeProduct(employeeId, serviceProductId);
+      if (configuredRate) return configuredRate;
+    }
+    return getRateForCustomService(employeeId);
   };
 
   const snapshotItems = (invoiceVersion.items ?? []).map((item, index) => {
@@ -453,9 +506,19 @@ export async function createFinanceSnapshot(params: {
     const totalSale = toNumber(item.totalWithoutVat, round(quantity * unitPriceSale));
     const totalPurchase = round(quantity * unitPricePurchase);
     const margin = round(totalSale - totalPurchase);
-    const hasServiceWorkOrderItem =
-      getMatchingServiceWorkOrderItems(workOrders as Array<Pick<WorkOrderDocument, 'items'>>, item, productId).length > 0;
-    const isService = Boolean(product?.isService || hasServiceWorkOrderItem);
+    const invoiceItemId = normalizeRefId(item.id);
+    const isConfirmedOfferService = Boolean(
+      (invoiceItemId && offerServiceItemIds.has(invoiceItemId)) || offerServiceNames.has(normalizeText(item.name)),
+    );
+    const isLegacyCustomService = !productId && isLegacyCustomServiceName(item.name);
+    const allowUnflaggedService = isConfirmedOfferService || isLegacyCustomService;
+    const hasServiceWorkOrderItem = getMatchingServiceWorkOrderItems(
+      workOrders as Array<Pick<WorkOrderDocument, 'items'>>,
+      item,
+      productId,
+      allowUnflaggedService,
+    ).length > 0;
+    const isService = Boolean(product?.isService || isConfirmedOfferService || isLegacyCustomService || hasServiceWorkOrderItem);
 
     if (!product) {
       console.warn('Purchase price not found for:', item.name);
@@ -484,6 +547,10 @@ export async function createFinanceSnapshot(params: {
     }
 
     let serviceLaborPurchaseTotal = 0;
+    const itemRawEarningsByEmployee = new Map<string, number>();
+    const addItemEarnings = (employeeId: string, earnings: number) => {
+      itemRawEarningsByEmployee.set(employeeId, (itemRawEarningsByEmployee.get(employeeId) ?? 0) + earnings);
+    };
     const invoiceItem = (invoiceVersion.items ?? []).find((item) => item.name === snapshotItem.name) ?? null;
     workOrders.forEach((workOrder) => {
       debugSnapshotLog(
@@ -497,7 +564,8 @@ export async function createFinanceSnapshot(params: {
       ? getMatchingServiceWorkOrderItems(
           workOrders as Array<Pick<WorkOrderDocument, 'items'>>,
           invoiceItem,
-          snapshotItem.productId
+          snapshotItem.productId,
+          snapshotItem.isService,
         )
       : getServiceWorkOrderItemsForProduct(
           workOrders as Array<Pick<WorkOrderDocument, 'items'>>,
@@ -505,6 +573,28 @@ export async function createFinanceSnapshot(params: {
         );
 
     for (const workOrderItem of workOrderItems) {
+      const laborAllocations = Array.isArray((workOrderItem as ServiceWorkOrderItemWithCompletion).laborAllocations)
+        ? (workOrderItem as ServiceWorkOrderItemWithCompletion).laborAllocations ?? [] : [];
+      if (laborAllocations.length > 0) {
+        for (const allocation of laborAllocations) {
+          const quantity = Math.max(0, toNumber(allocation.quantity, 0));
+          const assigneeId = normalizeEmployeeId(allocation.assigneeId);
+          const selectedSharedRecipients = Array.isArray(allocation.assigneeIds)
+            ? allocation.assigneeIds.map((employeeId) => normalizeEmployeeId(employeeId)).filter((employeeId): employeeId is string => !!employeeId)
+            : [];
+          const recipients = assigneeId === 'shared' || String(allocation.assigneeId) === 'shared'
+            ? (selectedSharedRecipients.length > 0 ? selectedSharedRecipients : assignedEmployeeIds) : assigneeId ? [assigneeId] : [];
+          if (quantity <= 0 || recipients.length === 0) continue;
+          for (const employeeId of recipients) {
+            const rate = await getEffectiveServiceRate(employeeId, snapshotItem.productId);
+            if (!rate) continue;
+            const perUnitEarnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
+            const divisor = String(allocation.assigneeId) === 'shared' ? recipients.length : 1;
+            addItemEarnings(employeeId, (perUnitEarnings * quantity) / divisor);
+          }
+        }
+        continue;
+      }
       const executionUnits = workOrderItem.executionSpec?.executionUnits ?? [];
       debugSnapshotLog(
         '[Snapshot] Service item execution units:',
@@ -526,26 +616,27 @@ export async function createFinanceSnapshot(params: {
           completedByEmployeeId,
           executedQuantity: workOrderItem.executedQuantity,
         });
-        if (!workOrderItem.isCompleted || !completedByEmployeeId) {
-          continue;
-        }
-
-        const rate = snapshotItem.productId
-          ? await getRateForEmployeeProduct(completedByEmployeeId, snapshotItem.productId)
-          : await getRateForCustomService(completedByEmployeeId);
-        if (!rate) {
-          console.warn(
-            `Employee service rate not found for employee ${completedByEmployeeId} and service ${snapshotItem.productId ?? 'custom'}`
-          );
-          employeeEarningsMap.set(completedByEmployeeId, employeeEarningsMap.get(completedByEmployeeId) ?? 0);
+        const recipients = completedByEmployeeId && assignedEmployeeIds.includes(completedByEmployeeId)
+          ? [completedByEmployeeId]
+          : assignedEmployeeIds;
+        if (recipients.length === 0) {
           continue;
         }
 
         const executedQuantity = Math.max(1, toNumber(workOrderItem.executedQuantity, snapshotItem.quantity));
-        const perUnitEarnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
-        const earnings = round(perUnitEarnings * executedQuantity);
-        serviceLaborPurchaseTotal = round(serviceLaborPurchaseTotal + earnings);
-        employeeEarningsMap.set(completedByEmployeeId, round((employeeEarningsMap.get(completedByEmployeeId) ?? 0) + earnings));
+        for (const employeeId of recipients) {
+          const rate = await getEffectiveServiceRate(employeeId, snapshotItem.productId);
+          if (!rate) {
+            console.warn(
+              `Employee service rate not found for employee ${employeeId} and service ${snapshotItem.productId ?? 'custom'}`
+            );
+            employeeEarningsMap.set(employeeId, employeeEarningsMap.get(employeeId) ?? 0);
+            continue;
+          }
+
+          const perUnitEarnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
+          addItemEarnings(employeeId, (perUnitEarnings * executedQuantity) / recipients.length);
+        }
         continue;
       }
       for (const unit of executionUnits as ExecutionUnitWithEmployee[]) {
@@ -558,9 +649,7 @@ export async function createFinanceSnapshot(params: {
           continue;
         }
 
-        const rate = snapshotItem.productId
-          ? await getRateForEmployeeProduct(completedByEmployeeId, snapshotItem.productId)
-          : await getRateForCustomService(completedByEmployeeId);
+        const rate = await getEffectiveServiceRate(completedByEmployeeId, snapshotItem.productId);
         if (!rate) {
           console.warn(
             `Employee service rate not found for employee ${completedByEmployeeId} and service ${snapshotItem.productId ?? 'custom'}`
@@ -570,10 +659,20 @@ export async function createFinanceSnapshot(params: {
         }
 
         const earnings = rate.overridePrice ?? round(snapshotItem.unitPriceSale * (rate.defaultPercent / 100));
-        serviceLaborPurchaseTotal = round(serviceLaborPurchaseTotal + earnings);
-        employeeEarningsMap.set(completedByEmployeeId, round((employeeEarningsMap.get(completedByEmployeeId) ?? 0) + earnings));
+        addItemEarnings(completedByEmployeeId, earnings);
       }
     }
+
+    const rawEarningEntries = Array.from(itemRawEarningsByEmployee.entries());
+    serviceLaborPurchaseTotal = round(rawEarningEntries.reduce((sum, [, earnings]) => sum + earnings, 0));
+    let distributedPurchaseTotal = 0;
+    rawEarningEntries.forEach(([employeeId, rawEarnings], index) => {
+      const earnings = index === rawEarningEntries.length - 1
+        ? round(serviceLaborPurchaseTotal - distributedPurchaseTotal)
+        : round(rawEarnings);
+      distributedPurchaseTotal = round(distributedPurchaseTotal + earnings);
+      employeeEarningsMap.set(employeeId, round((employeeEarningsMap.get(employeeId) ?? 0) + earnings));
+    });
 
     snapshotItem.totalPurchase = round(serviceLaborPurchaseTotal);
     snapshotItem.unitPricePurchase = snapshotItem.quantity > 0 ? round(serviceLaborPurchaseTotal / snapshotItem.quantity) : round(serviceLaborPurchaseTotal);
@@ -587,6 +686,40 @@ export async function createFinanceSnapshot(params: {
   const totalMargin = round(totalSaleWithoutVat - totalPurchase);
   const totalVat = round((invoiceVersion.summary?.vatAmount ?? 0) as number);
   const totalSaleWithVat = round((invoiceVersion.summary?.totalWithVat ?? totalSaleWithoutVat + totalVat) as number);
+
+  if (refreshSnapshotId) {
+    const existing = await FinanceSnapshotModel.findOne({
+      _id: refreshSnapshotId,
+      projectId: project.id,
+      invoiceVersionId: invoiceVersion._id,
+      superseded: { $ne: true },
+    });
+    if (!existing) return null;
+
+    const previousEarningsByEmployeeId = new Map<string, { isPaid: boolean; paidAt: Date | null; paidBy: string | null }>(
+      (existing.employeeEarnings ?? []).map((earning) => [String(earning.employeeId), {
+        isPaid: Boolean(earning.isPaid),
+        paidAt: earning.paidAt ?? null,
+        paidBy: earning.paidBy ?? null,
+      }]),
+    );
+    const refreshedEmployeeIds = Array.from(new Set([...assignedEmployeeIds, ...employeeEarningsMap.keys()]));
+    existing.items = snapshotItems as any;
+    existing.summary = { totalSaleWithoutVat, totalPurchase, totalMargin, totalVat, totalSaleWithVat };
+    existing.assignedEmployeeIds = assignedEmployeeIds;
+    existing.employeeEarnings = refreshedEmployeeIds.map((employeeId) => {
+      const previous = previousEarningsByEmployeeId.get(employeeId);
+      return {
+        employeeId,
+        earnings: round(employeeEarningsMap.get(employeeId) ?? 0),
+        isPaid: previous?.isPaid ?? false,
+        paidAt: previous?.paidAt ?? null,
+        paidBy: previous?.paidBy ?? null,
+      };
+    }) as any;
+    await existing.save();
+    return existing;
+  }
 
   let correctedFromSnapshotId: string | null = null;
   let snapshotVersion = 1;
@@ -635,6 +768,35 @@ export async function createFinanceSnapshot(params: {
   });
 
   return snapshot;
+}
+
+export async function refreshFinanceSnapshotLaborAllocation(projectId: string) {
+  const [project, snapshots] = await Promise.all([
+    ProjectModel.findOne({ id: projectId }).lean(),
+    FinanceSnapshotModel.find({ projectId, superseded: { $ne: true } }).lean(),
+  ]);
+  if (!project || snapshots.length === 0) return [];
+
+  const invoiceVersions = Array.isArray((project as { invoiceVersions?: unknown[] }).invoiceVersions)
+    ? (project as { invoiceVersions: any[] }).invoiceVersions
+    : [];
+  const refreshed = [];
+  for (const snapshot of snapshots) {
+    const invoiceVersion = invoiceVersions.find((version) => String(version?._id) === String(snapshot.invoiceVersionId));
+    if (!invoiceVersion) continue;
+    const updated = await createFinanceSnapshot({
+      project: {
+        id: project.id,
+        customer: project.customer,
+        confirmedOfferVersionId: project.confirmedOfferVersionId ? String(project.confirmedOfferVersionId) : null,
+        salesUserId: project.salesUserId ? String(project.salesUserId) : null,
+      },
+      invoiceVersion: invoiceVersion as InvoiceVersionInput,
+      refreshSnapshotId: String(snapshot._id),
+    });
+    if (updated) refreshed.push(updated);
+  }
+  return refreshed;
 }
 
 export async function listFinanceSnapshots(params: {

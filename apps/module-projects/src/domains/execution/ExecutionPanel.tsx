@@ -57,6 +57,7 @@ interface ExecutionPanelProps {
 
 type WorkOrderDraft = {
   status: WorkOrderStatus;
+  laborAllocationMode: "shared" | "individual";
   executionNote: string;
   scheduledAt: string | null;
   scheduledConfirmedAt: string | null;
@@ -755,7 +756,7 @@ export function ExecutionPanel({
   }, [employees]);
 
   const canOverrideCompletionAssignee = useMemo(
-    () => viewerRoles.includes("ADMIN") || viewerRoles.includes("ORGANIZER"),
+    () => viewerRoles.includes("ADMIN") || viewerRoles.includes("ORGANIZER") || viewerRoles.includes("EXECUTION"),
     [viewerRoles],
   );
 
@@ -809,6 +810,7 @@ export function ExecutionPanel({
     options?: {
       disabled?: boolean;
       onAssigneeChange?: (employeeId: string | null) => void;
+      assigneeIds?: string[];
     },
   ) => {
     if (!completedBy && !(canOverrideCompletionAssignee && options?.onAssigneeChange)) return null;
@@ -828,7 +830,7 @@ export function ExecutionPanel({
             aria-label="Izberi izvajalca naloge"
           >
             <option value="">Ni izbran</option>
-            {employees.map((employee) => (
+            {employees.filter((employee) => !options.assigneeIds || options.assigneeIds.includes(employee.id)).map((employee) => (
               <option key={employee.id} value={employee.id}>
                 {employee.name}
               </option>
@@ -847,16 +849,114 @@ export function ExecutionPanel({
 
   const renderItemCompletedByMeta = (item: WorkOrderItemDraft, order?: WorkOrder, disabled = false) => {
     if (!item.isCompleted) return null;
-    return renderCompletedByMeta(item.completedBy, item.completedAt, order ? {
-      disabled,
-      onAssigneeChange: (employeeId) => {
-        if (!employeeId) return;
-        applyItemChange(order, item.id, {
-          isCompleted: true,
-          completedBy: employeeId,
-        });
-      },
-    } : undefined);
+    return renderCompletedByMeta(item.completedBy, item.completedAt, { disabled });
+  };
+
+  const renderInstallerCompletionGrid = (
+    order: WorkOrder,
+    item: WorkOrderItemDraft,
+    allocationMode: "shared" | "individual",
+    disabled = false,
+  ) => {
+    const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
+    if (installerIds.length === 0) return null;
+    const isMeasuredTravelOrLength = /\[(?:km|m)\]/i.test(item.name);
+    const completedQuantity = Math.max(0, Number(item.executedQuantity) || 0);
+    const plannedQuantity = Math.max(0, Number(item.offeredQuantity) || 0);
+    const savedAllocationQuantity = (item.laborAllocations ?? []).reduce(
+      (sum, allocation) => sum + Math.max(0, Number(allocation.quantity) || 0),
+      0,
+    );
+    const allocationQuantity = Math.max(1, completedQuantity, plannedQuantity, savedAllocationQuantity);
+    const unitCount = isMeasuredTravelOrLength ? 1 : Math.max(1, Math.round(allocationQuantity));
+    const unitAssignees = Array.from({ length: unitCount }, () => new Set<string>());
+    let unitIndex = 0;
+    for (const allocation of item.laborAllocations ?? []) {
+      const recipients = allocation.assigneeId === "shared"
+        ? (allocation.assigneeIds?.length ? allocation.assigneeIds : installerIds)
+        : [allocation.assigneeId];
+      const count = Math.max(0, Math.round(allocation.quantity));
+      for (let offset = 0; offset < count && unitIndex < unitCount; offset += 1, unitIndex += 1) {
+        recipients.forEach((employeeId) => unitAssignees[unitIndex].add(employeeId));
+      }
+    }
+    const completedCount = unitAssignees.filter((assignees) => assignees.size > 0).length;
+    const saveAssignee = (targetUnitIndex: number, employeeId: string, checked: boolean) => {
+      const nextUnits = unitAssignees.map((assignees) => new Set(assignees));
+      if (checked && allocationMode === "shared" && nextUnits[targetUnitIndex].size === 0) {
+        installerIds.forEach((installerId) => nextUnits[targetUnitIndex].add(installerId));
+      } else if (checked) nextUnits[targetUnitIndex].add(employeeId);
+      else nextUnits[targetUnitIndex].delete(employeeId);
+
+      const laborAllocations = nextUnits.flatMap((assignees, index) => {
+        const assigneeIds = Array.from(assignees);
+        if (assigneeIds.length === 0) return [];
+        return [{
+          id: `completion-${item.id}-${index + 1}`,
+          quantity: isMeasuredTravelOrLength ? allocationQuantity : 1,
+          assigneeId: assigneeIds.length > 1 ? "shared" : assigneeIds[0],
+          ...(assigneeIds.length > 1 ? { assigneeIds } : {}),
+        }];
+      });
+      const nextCompletedCount = nextUnits.filter((assignees) => assignees.size > 0).length;
+      const isCompleted = nextCompletedCount === unitCount;
+      const allSingleAssignee = isCompleted && nextUnits.every((assignees) => assignees.size === 1);
+      const soleAssigneeId = allSingleAssignee ? Array.from(nextUnits[0])[0] : null;
+      const executionSpec = ensureExecutionSpec(item.executionSpec);
+      const nextExecutionSpec = (executionSpec.executionUnits?.length ?? 0) === unitCount
+        ? {
+            ...executionSpec,
+            executionUnits: executionSpec.executionUnits?.map((unit, index) => {
+              const assigneeIds = Array.from(nextUnits[index]);
+              const completedBy = assigneeIds.length === 1 ? assigneeIds[0] : null;
+              return {
+                ...unit,
+                isCompleted: assigneeIds.length > 0,
+                completedBy,
+                completedByEmployeeId: completedBy,
+                completedAt: assigneeIds.length > 0 ? unit.completedAt ?? new Date().toISOString() : null,
+              };
+            }),
+          }
+        : undefined;
+      applyItemChange(order, item.id, {
+        laborAllocations,
+        // Izvedena količina je dejanska vrednost postavke (npr. 19 ur),
+        // ne število trenutno označenih checkboxov. Dodeljevanje monterjev
+        // ne sme količine skrčiti nazaj na predvideno vrednost.
+        executedQuantity: allocationQuantity,
+        isCompleted,
+        completedBy: soleAssigneeId,
+        completedAt: nextCompletedCount > 0 ? item.completedAt ?? new Date().toISOString() : null,
+        ...(nextExecutionSpec ? { executionSpec: nextExecutionSpec } : {}),
+      });
+    };
+
+    return (
+      <div className="mt-2 overflow-x-auto rounded-md border border-emerald-200 bg-emerald-50/40 p-2">
+        <div className="mb-1 text-xs font-medium text-emerald-800">Kdo je opravil posamezno enoto ({completedCount}/{unitCount}) · {allocationMode === "shared" ? "Skupno" : "Posamezno"}</div>
+        <div className="grid min-w-max items-center gap-x-3 gap-y-1 text-xs" style={{ gridTemplateColumns: `minmax(72px,1fr) repeat(${installerIds.length}, minmax(76px,auto))` }}>
+          <span className="text-muted-foreground">Enota</span>
+          {installerIds.map((employeeId) => <span key={employeeId} className="text-center font-medium text-emerald-800">{employeeNameById.get(employeeId) ?? "Monter"}</span>)}
+          {unitAssignees.map((assignees, index) => (
+            <div key={`${item.id}-${index}`} className="contents">
+              <span>{unitCount === 1 ? "Postavka" : `${index + 1}. enota`}</span>
+              {installerIds.map((employeeId) => (
+                <label key={employeeId} className="flex justify-center">
+                  <Checkbox
+                    className="h-4 w-4"
+                    checked={assignees.has(employeeId)}
+                    disabled={disabled}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => saveAssignee(index, employeeId, event.target.checked)}
+                    aria-label={`${employeeNameById.get(employeeId) ?? "Monter"}, enota ${index + 1}`}
+                  />
+                </label>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   const renderUnitCompletedByMeta = (
@@ -868,6 +968,7 @@ export function ExecutionPanel({
     if (!unit.isCompleted) return null;
     return renderCompletedByMeta(getUnitCompletedBy(unit), unit.completedAt, {
       disabled,
+      assigneeIds: Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean))),
       onAssigneeChange: (employeeId) => {
         if (!employeeId) return;
         updateExecutionUnit(order, item.id, unit.id, {
@@ -880,6 +981,7 @@ export function ExecutionPanel({
 
   const getInitialDraftValues = (order: WorkOrder) => ({
     status: order.status,
+    laborAllocationMode: order.laborAllocationMode === "individual" ? "individual" : "shared",
     executionNote: order.executionNote ?? "",
     scheduledAt: order.scheduledAt ?? null,
     scheduledConfirmedAt: order.scheduledConfirmedAt ?? null,
@@ -926,6 +1028,7 @@ export function ExecutionPanel({
     order: WorkOrder,
     values: Partial<{
       status: WorkOrderStatus;
+      laborAllocationMode: "shared" | "individual";
       executionNote: string;
       items: WorkOrder["items"];
     }>
@@ -944,6 +1047,7 @@ export function ExecutionPanel({
     onWorkOrderDraftChange?.({
       ...order,
       status: nextDraft.status,
+      laborAllocationMode: nextDraft.laborAllocationMode,
       executionNote: nextDraft.executionNote,
       scheduledAt: nextDraft.scheduledAt,
       scheduledConfirmedAt: nextDraft.scheduledConfirmedAt,
@@ -980,6 +1084,7 @@ export function ExecutionPanel({
     onWorkOrderDraftChange?.({
       ...order,
       status: current.status,
+      laborAllocationMode: current.laborAllocationMode,
       executionNote: current.executionNote,
       scheduledAt: current.scheduledAt,
       scheduledConfirmedAt: current.scheduledConfirmedAt,
@@ -1063,6 +1168,29 @@ export function ExecutionPanel({
       const offeredValue = typeof item.offeredQuantity === "number" ? item.offeredQuantity : 0;
       const executedValue = typeof item.executedQuantity === "number" ? item.executedQuantity : 0;
       const executionSpec = ensureExecutionSpec(item.executionSpec);
+
+      const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
+      if (installerIds.length > 0) {
+        const isMeasuredTravelOrLength = /\[(?:km|m)\]/i.test(item.name);
+        const quantity = Math.max(1, offeredValue, executedValue);
+        const unitCount = isMeasuredTravelOrLength ? 1 : Math.round(quantity);
+        const assigneeIds = current.laborAllocationMode === "shared" ? installerIds : currentEmployeeId ? [currentEmployeeId] : [];
+        return {
+          ...item,
+          laborAllocations: checked && assigneeIds.length > 0
+            ? Array.from({ length: unitCount }, (_, index) => ({
+                id: `completion-${item.id}-${index + 1}`,
+                quantity: isMeasuredTravelOrLength ? quantity : 1,
+                assigneeId: assigneeIds.length > 1 ? "shared" : assigneeIds[0],
+                ...(assigneeIds.length > 1 ? { assigneeIds } : {}),
+              }))
+            : [],
+          isCompleted: checked,
+          completedBy: assigneeIds.length === 1 ? assigneeIds[0] : null,
+          completedAt: checked ? completionChanges.completedAt ?? new Date().toISOString() : null,
+          executedQuantity: checked ? quantity : 0,
+        };
+      }
 
       if (hasInlineExecutionUnits(item)) {
         const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => ({
@@ -1186,6 +1314,12 @@ export function ExecutionPanel({
       executedQuantity: typeof item.executedQuantity === "number" ? item.executedQuantity : 0,
       isExtra: !!item.isExtra,
       itemNote: item.itemNote && item.itemNote.length > 0 ? item.itemNote : null,
+      laborAllocations: (item.laborAllocations ?? []).map((allocation) => ({
+        id: allocation.id,
+        quantity: Number(allocation.quantity) || 0,
+        assigneeId: allocation.assigneeId,
+        assigneeIds: allocation.assigneeIds ?? [],
+      })),
       isCompleted: !!item.isCompleted,
       completedBy: item.completedBy ?? null,
       completedAt: item.completedAt ?? null,
@@ -1222,6 +1356,7 @@ export function ExecutionPanel({
             status:
               overrides?.status ??
               (draft.status === "issued" || draft.status === "confirmed" ? "in-progress" : draft.status ?? order.status),
+            laborAllocationMode: draft.laborAllocationMode,
             scheduledAt: draft.scheduledAt ?? null,
             scheduledConfirmedAt: draft.scheduledConfirmedAt ?? null,
             executionNote: draft.executionNote?.trim() ? draft.executionNote : null,
@@ -1244,6 +1379,7 @@ export function ExecutionPanel({
           ...prev,
           [orderId]: {
             status: updatedDraft.status,
+            laborAllocationMode: updatedDraft.laborAllocationMode,
             executionNote: updatedDraft.executionNote,
             scheduledAt: updatedDraft.scheduledAt,
             scheduledConfirmedAt: updatedDraft.scheduledConfirmedAt,
@@ -1488,7 +1624,7 @@ export function ExecutionPanel({
     );
   };
 
-  const applyDraftChange = (order: WorkOrder, values: Partial<{ status: WorkOrderStatus; executionNote: string }>) => {
+  const applyDraftChange = (order: WorkOrder, values: Partial<{ status: WorkOrderStatus; executionNote: string; laborAllocationMode: "shared" | "individual" }>) => {
     if (getOrderConfirmationState(order) === "signed_active") {
       return;
     }
@@ -1931,7 +2067,7 @@ export function ExecutionPanel({
                     {noteText && <span className="text-xs text-muted-foreground">{noteText}</span>}
                   </div>
                 )}
-                {renderUnitCompletedByMeta(order, item, unit, isLocked)}
+                {!item.isService ? renderUnitCompletedByMeta(order, item, unit, isLocked) : null}
                 <PreparationPhotoThumbnails
                   projectId={projectId}
                   itemId={getUnitLocationPhotoItemId(getWorkOrderItemPhotoId(item), unit)}
@@ -1967,7 +2103,7 @@ export function ExecutionPanel({
                   onOpen={openPhotoManager}
                 />
               </div>
-              <div className="flex items-center justify-center">
+              {!item.isService ? <div className="flex items-center justify-center">
                 <Checkbox
                   className="h-5 w-5"
                   checked={!!unit.isCompleted}
@@ -1980,7 +2116,7 @@ export function ExecutionPanel({
                     })
                   }
                 />
-              </div>
+              </div> : null}
             </div>
           );
         })}
@@ -2043,6 +2179,46 @@ export function ExecutionPanel({
               <div className="text-sm">
                 <span className="text-muted-foreground">Lokacija: </span>
                 <span>{spec.locationSummary}</span>
+              </div>
+            ) : null}
+            {item.isService ? (
+              <div className="space-y-2 rounded-md border border-border/60 bg-background/70 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">Razdelitev plačila monterjem</p>
+                  {!isLocked ? (
+                    <Button type="button" size="sm" variant="outline" onClick={() => {
+                      const quantity = Math.max(1, typeof item.executedQuantity === "number" ? item.executedQuantity : item.offeredQuantity);
+                      applyItemChange(order, item.id, {
+                        laborAllocations: [...(item.laborAllocations ?? []), { id: `allocation-${Date.now().toString(36)}`, quantity, assigneeId: "shared" }],
+                      });
+                    }}>Dodaj razdelitev</Button>
+                  ) : null}
+                </div>
+                {(item.laborAllocations ?? []).length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Dodajte razdelitev: izberite monterja ali možnost »Skupno«.</p>
+                ) : (item.laborAllocations ?? []).map((allocation) => (
+                  <div key={allocation.id} className="flex flex-wrap items-center gap-2">
+                    <Input type="number" min="0" step="0.01" className="h-8 w-20" value={allocation.quantity}
+                      disabled={isLocked} onChange={(event) => applyItemChange(order, item.id, {
+                        laborAllocations: (item.laborAllocations ?? []).map((entry) => entry.id === allocation.id ? { ...entry, quantity: Number(event.target.value) || 0 } : entry),
+                      })} />
+                    <select className="h-8 rounded-md border border-input bg-background px-2 text-sm" value={allocation.assigneeId} disabled={isLocked}
+                      onChange={(event) => applyItemChange(order, item.id, {
+                        laborAllocations: (item.laborAllocations ?? []).map((entry) => entry.id === allocation.id
+                          ? { ...entry, assigneeId: event.target.value, assigneeIds: undefined }
+                          : entry),
+                      })}>
+                      <option value="shared">Skupno</option>
+                      {Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean))).map((employeeId) => (
+                        <option key={employeeId} value={employeeId}>{employeeNameById.get(employeeId) ?? "Monter"}</option>
+                      ))}
+                    </select>
+                    {!isLocked ? <Button type="button" size="sm" variant="ghost" onClick={() => applyItemChange(order, item.id, {
+                      laborAllocations: (item.laborAllocations ?? []).filter((entry) => entry.id !== allocation.id),
+                    })}>Odstrani</Button> : null}
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground">Količina se lahko razdeli v več vrstic; pri »Skupno« vsak dodeljen monter dobi svoj delež, deljen s številom monterjev.</p>
               </div>
             ) : null}
             {hasUnitList ? (
@@ -2499,6 +2675,29 @@ export function ExecutionPanel({
                               <div className="space-y-1">
                                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Ekipa</p>
                                 <p className="text-sm font-medium">{executionTeamLabel || "Ni določena"}</p>
+                                {assignedInstallerIds.length > 1 ? (
+                                  <div className="pt-1">
+                                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Način obračuna</p>
+                                    <div className="mt-1 inline-flex rounded-md border border-input p-0.5">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant={draft.laborAllocationMode === "shared" ? "default" : "ghost"}
+                                        className="h-7 px-2 text-xs"
+                                        disabled={isConfirmationLocked}
+                                        onClick={() => applyDraftChange(order, { laborAllocationMode: "shared" })}
+                                      >Skupno</Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant={draft.laborAllocationMode === "individual" ? "default" : "ghost"}
+                                        className="h-7 px-2 text-xs"
+                                        disabled={isConfirmationLocked}
+                                        onClick={() => applyDraftChange(order, { laborAllocationMode: "individual" })}
+                                      >Posamezno</Button>
+                                    </div>
+                                  </div>
+                                ) : null}
                               </div>
                               <div className="space-y-1">
                                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Termin izvedbe</p>
@@ -2756,6 +2955,28 @@ export function ExecutionPanel({
                                 const hasVisibleInlineUnits = hasInlineExecutionUnits(item);
                                 const isExecutionExpanded = !!expandedExecutionItems[item.id];
                                 const handleCompletionChange = (checked: boolean) => {
+                                  const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
+                                  if (installerIds.length > 0) {
+                                    const isMeasuredTravelOrLength = /\[(?:km|m)\]/i.test(item.name);
+                                    const quantity = Math.max(1, offeredValue, executedValue);
+                                    const unitCount = isMeasuredTravelOrLength ? 1 : Math.round(quantity);
+                                    const assigneeIds = draft.laborAllocationMode === "shared" ? installerIds : currentEmployeeId ? [currentEmployeeId] : [];
+                                    applyItemChange(order, item.id, {
+                                      laborAllocations: checked && assigneeIds.length > 0
+                                        ? Array.from({ length: unitCount }, (_, index) => ({
+                                            id: `completion-${item.id}-${index + 1}`,
+                                            quantity: isMeasuredTravelOrLength ? quantity : 1,
+                                            assigneeId: assigneeIds.length > 1 ? "shared" : assigneeIds[0],
+                                            ...(assigneeIds.length > 1 ? { assigneeIds } : {}),
+                                          }))
+                                        : [],
+                                      isCompleted: checked,
+                                      completedBy: assigneeIds.length === 1 ? assigneeIds[0] : null,
+                                      completedAt: checked ? item.completedAt ?? new Date().toISOString() : null,
+                                      executedQuantity: checked ? quantity : 0,
+                                    });
+                                    return;
+                                  }
                                   if (hasVisibleInlineUnits) {
                                     const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => ({
                                       ...unit,
@@ -2793,28 +3014,27 @@ export function ExecutionPanel({
                                           <div className="space-y-1">
                                             <p className="font-medium">{item.name || "-"}</p>
                                             {renderItemCompletedByMeta(item, order, isConfirmationLocked)}
+                                            {renderInstallerCompletionGrid(order, item, draft.laborAllocationMode, isConfirmationLocked)}
                                             <div className="flex flex-wrap items-center gap-2">
                                               <p className="text-xs text-muted-foreground">{item.unit || "-"}</p>
                                               {renderItemStatusBadge(item)}
                                               {hasVisibleInlineUnits ? (
                                                 <Badge variant="outline">{getPerUnitSummary(executionSpec)}</Badge>
                                               ) : null}
-                                              {!hasVisibleInlineUnits ? (
-                                                <Button
-                                                  type="button"
-                                                  variant="ghost"
-                                                  size="sm"
-                                                  className="h-8 px-2 text-xs"
-                                                  onClick={() => toggleExecutionDetails(item.id)}
-                                                >
-                                                  {isExecutionExpanded ? (
-                                                    <ChevronDown className="mr-1 h-4 w-4" />
-                                                  ) : (
-                                                    <ChevronRight className="mr-1 h-4 w-4" />
-                                                  )}
-                                                  Detajli izvedbe
-                                                </Button>
-                                              ) : null}
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-8 px-2 text-xs"
+                                                onClick={() => toggleExecutionDetails(item.id)}
+                                              >
+                                                {isExecutionExpanded ? (
+                                                  <ChevronDown className="mr-1 h-4 w-4" />
+                                                ) : (
+                                                  <ChevronRight className="mr-1 h-4 w-4" />
+                                                )}
+                                                Detajli izvedbe
+                                              </Button>
                                             </div>
                                             {!hasVisibleInlineUnits ? (
                                               <PreparationPhotoThumbnails
@@ -2903,7 +3123,7 @@ export function ExecutionPanel({
                                         ) : null}
                                       </td>
                                     </tr>,
-                                    hasVisibleInlineUnits ? (
+                                    hasVisibleInlineUnits && isExecutionExpanded ? (
                                       <tr key={`${item.id}-inline-units`} className={cn("border-t", itemStatusStyles.rowClassName)}>
                                         <td colSpan={4} className="px-2 pb-2 pt-0">
                                           {renderInlineExecutionUnits(order, item, {
@@ -2951,6 +3171,28 @@ export function ExecutionPanel({
                             const hasVisibleInlineUnits = hasInlineExecutionUnits(item);
                             const isExecutionExpanded = !!expandedExecutionItems[item.id];
                             const handleCompletionChange = (checked: boolean) => {
+                              const installerIds = Array.from(new Set([order.mainInstallerId ?? "", ...(order.assignedEmployeeIds ?? [])].filter(Boolean)));
+                              if (installerIds.length > 0) {
+                                const isMeasuredTravelOrLength = /\[(?:km|m)\]/i.test(item.name);
+                                const quantity = Math.max(1, offeredValue, Number(item.executedQuantity) || 0);
+                                const unitCount = isMeasuredTravelOrLength ? 1 : Math.round(quantity);
+                                const assigneeIds = draft.laborAllocationMode === "shared" ? installerIds : currentEmployeeId ? [currentEmployeeId] : [];
+                                applyItemChange(order, item.id, {
+                                  laborAllocations: checked && assigneeIds.length > 0
+                                    ? Array.from({ length: unitCount }, (_, index) => ({
+                                        id: `completion-${item.id}-${index + 1}`,
+                                        quantity: isMeasuredTravelOrLength ? quantity : 1,
+                                        assigneeId: assigneeIds.length > 1 ? "shared" : assigneeIds[0],
+                                        ...(assigneeIds.length > 1 ? { assigneeIds } : {}),
+                                      }))
+                                    : [],
+                                  isCompleted: checked,
+                                  completedBy: assigneeIds.length === 1 ? assigneeIds[0] : null,
+                                  completedAt: checked ? item.completedAt ?? new Date().toISOString() : null,
+                                  executedQuantity: checked ? quantity : 0,
+                                });
+                                return;
+                              }
                               if (hasVisibleInlineUnits) {
                                 const nextUnits = (executionSpec.executionUnits ?? []).map((unit) => ({
                                   ...unit,
@@ -2990,6 +3232,7 @@ export function ExecutionPanel({
                                     <div className="space-y-1">
                                       <p className="text-sm font-medium">{item.name}</p>
                                       {renderItemCompletedByMeta(item, order, isConfirmationLocked)}
+                                      {renderInstallerCompletionGrid(order, item, draft.laborAllocationMode, isConfirmationLocked)}
                                     </div>
                                   )}
                                   {!isNewExtraItem ? (
@@ -3009,7 +3252,7 @@ export function ExecutionPanel({
                                     }
                                   />
                                 </div>
-                                {hasVisibleInlineUnits ? (
+                                {hasVisibleInlineUnits && isExecutionExpanded ? (
                                   renderInlineExecutionUnits(order, item, {
                                     compact: true,
                                     disabled: isConfirmationLocked,

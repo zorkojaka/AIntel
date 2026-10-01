@@ -4,9 +4,10 @@ import { EmployeeServiceRateModel } from '../schemas/employee-service-rate';
 
 export interface EmployeeServiceRateInput {
   serviceProductId: string;
-  defaultPercent: number;
+  defaultPercent?: number;
   overridePrice?: number | null;
   isActive?: boolean;
+  inheritDefault?: boolean;
 }
 
 function toNumber(value: unknown, fallback = 0) {
@@ -51,8 +52,18 @@ export async function bulkUpsertEmployeeServiceRates(employeeId: string, inputs:
     await ensureServiceProduct(entry.serviceProductId);
   }
 
+  const inheritedProductIds = normalized
+    .filter((entry) => entry.inheritDefault === true)
+    .map((entry) => entry.serviceProductId);
+  if (inheritedProductIds.length > 0) {
+    await EmployeeServiceRateModel.deleteMany({
+      employeeId,
+      serviceProductId: { $in: inheritedProductIds },
+    });
+  }
+
   await Promise.all(
-    normalized.map((entry) =>
+    normalized.filter((entry) => entry.inheritDefault !== true).map((entry) =>
       EmployeeServiceRateModel.findOneAndUpdate(
         { employeeId, serviceProductId: entry.serviceProductId },
         {

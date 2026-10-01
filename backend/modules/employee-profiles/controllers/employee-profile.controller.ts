@@ -1,13 +1,20 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { resolveTenantId } from '../../../utils/tenant';
-import { createProfile, getProfileByEmployeeId, updateProfile } from '../services/employee-profile.service';
+import {
+  createProfile,
+  getProfileByEmployeeId,
+  updateProfile,
+  upsertEmployeeDefaultServicePercent,
+} from '../services/employee-profile.service';
 import {
   bulkUpsertEmployeeServiceRates,
   copyEmployeeServiceRates,
   listEmployeeServiceRates,
   type EmployeeServiceRateInput,
 } from '../services/employee-service-rate.service';
+import { WorkOrderModel } from '../../projects/schemas/work-order';
+import { refreshFinanceSnapshotLaborAllocation } from '../../finance/services/finance-snapshot.service';
 
 function isValidNumber(value: unknown) {
   if (value === null || value === undefined || value === '') return true;
@@ -115,7 +122,51 @@ export async function postEmployeeServiceRates(req: Request, res: Response) {
     return res.fail('EmployeeId ni veljaven.', 400);
   }
   const rates = Array.isArray(req.body?.rates) ? (req.body.rates as EmployeeServiceRateInput[]) : [];
+  for (const rate of rates) {
+    if (rate?.inheritDefault === true) continue;
+    const percent = Number(rate?.defaultPercent);
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+      return res.fail('Odstotek za storitev mora biti med 0 in 100.', 400);
+    }
+  }
+  const hasDefaultPercent = Object.prototype.hasOwnProperty.call(req.body ?? {}, 'defaultPercent');
+  const defaultPercent = Number(req.body?.defaultPercent);
+  if (hasDefaultPercent && (!Number.isFinite(defaultPercent) || defaultPercent < 0 || defaultPercent > 100)) {
+    return res.fail('Privzeti odstotek za storitve mora biti med 0 in 100.', 400);
+  }
+  const legacyPercentFrequency = new Map<number, number>();
+  if (!hasDefaultPercent) {
+    for (const rate of rates) {
+      const percent = Number(rate?.defaultPercent);
+      if (rate?.inheritDefault !== true && rate?.isActive !== false && Number.isFinite(percent) && percent > 0) {
+        legacyPercentFrequency.set(percent, (legacyPercentFrequency.get(percent) ?? 0) + 1);
+      }
+    }
+  }
+  const legacyDefaultPercent = Array.from(legacyPercentFrequency.entries())
+    .sort(([percentA, countA], [percentB, countB]) => countB - countA || percentA - percentB)[0]?.[0] ?? null;
+  const persistedDefaultPercent = hasDefaultPercent ? defaultPercent : legacyDefaultPercent;
+
   const data = await bulkUpsertEmployeeServiceRates(employeeId, rates);
+  if (persistedDefaultPercent !== null) {
+    const tenantId = resolveTenantId(req);
+    if (!tenantId) {
+      return res.fail('TenantId ni podan.', 400);
+    }
+    const primaryRole = typeof req.body?.primaryRole === 'string' && req.body.primaryRole.trim()
+      ? req.body.primaryRole.trim()
+      : 'EXECUTION';
+    await upsertEmployeeDefaultServicePercent(tenantId, employeeId, persistedDefaultPercent, primaryRole);
+  }
+
+  const affectedProjectIds = await WorkOrderModel.distinct('projectId', {
+    $or: [{ mainInstallerId: employeeId }, { assignedEmployeeIds: employeeId }],
+  });
+  for (const projectId of affectedProjectIds) {
+    if (typeof projectId === 'string' && projectId) {
+      await refreshFinanceSnapshotLaborAllocation(projectId);
+    }
+  }
   return res.success(data);
 }
 

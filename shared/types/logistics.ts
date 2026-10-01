@@ -117,6 +117,12 @@ export interface WorkOrderTimeTracking {
 }
 
 export interface WorkOrderItem extends LogisticsMaterialItem {
+  laborAllocations?: Array<{
+    id: string;
+    quantity: number;
+    assigneeId: string | "shared";
+    assigneeIds?: string[];
+  }>;
   offerItemId?: string | null;
   isService?: boolean;
   offeredQuantity: number;
@@ -169,6 +175,7 @@ export interface WorkOrder {
   scheduledConfirmedBy?: string | null;
   mainInstallerId?: string | null;
   assignedEmployeeIds?: string[];
+  laborAllocationMode?: "shared" | "individual";
   installerAcceptances?: InstallerAcceptance[];
   location?: string;
   notes?: string;

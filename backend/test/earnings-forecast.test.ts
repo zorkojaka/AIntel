@@ -6,6 +6,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 
 import { ProductModel } from '../modules/cenik/product.model';
 import { EmployeeServiceRateModel } from '../modules/employee-profiles/schemas/employee-service-rate';
+import { EmployeeProfileModel } from '../modules/employee-profiles/schemas/employee-profile';
 import { OfferVersionModel } from '../modules/projects/schemas/offer-version';
 import { WorkOrderModel } from '../modules/projects/schemas/work-order';
 import { ProjectModel } from '../modules/projects/schemas/project';
@@ -228,11 +229,17 @@ test('meseci se sestejejo po datumu potrditve; brez datuma gre v svojo skupino',
   });
 });
 
-test('storitev brez nastavljene cene se posebej javi, da zasluzek ni tiho podcenjen', async () => {
+test('storitev brez posebne cene uporabi monterjev shranjeni privzeti odstotek', async () => {
   await withMongo(async () => {
     const montaza = await createService('Montaža kamere', 100);
     const zagon = await createService('Zagon snemalnika', 80);
     await EmployeeServiceRateModel.create({ employeeId: MONTER_A, serviceProductId: montaza._id, defaultPercent: 40, overridePrice: null });
+    await EmployeeProfileModel.create({
+      tenantId: 'inteligent',
+      employeeId: MONTER_A,
+      primaryRole: 'EXECUTION',
+      profitSharePercent: 40,
+    });
 
     await createConfirmedProject({
       code: 'PRJ-12',
@@ -245,7 +252,34 @@ test('storitev brez nastavljene cene se posebej javi, da zasluzek ni tiho podcen
     });
 
     const forecast = await getEarningsForecast(String(MONTER_A));
-    assert.equal(forecast.totalEarnings, 40, 'steje samo storitev z nastavljeno ceno');
-    assert.deepEqual(forecast.projects[0].servicesWithoutRate, ['Zagon snemalnika']);
+    assert.equal(forecast.totalEarnings, 72, 'za manjkajoco tarifo uporabi obstojeci privzeti 40 %');
+    assert.deepEqual(forecast.projects[0].servicesWithoutRate, []);
+  });
+});
+
+test('legacy monter brez profila uporabi najpogostejsi aktivni odstotek cenika', async () => {
+  await withMongo(async () => {
+    const montaza = await createService('Montaža kamere', 100);
+    const zagon = await createService('Zagon snemalnika', 80);
+    await EmployeeServiceRateModel.create({
+      employeeId: MONTER_A,
+      serviceProductId: montaza._id,
+      defaultPercent: 40,
+      overridePrice: null,
+    });
+
+    await createConfirmedProject({
+      code: 'PRJ-13',
+      num: 13,
+      assigned: [MONTER_A],
+      items: [
+        { productId: montaza._id as any, name: 'Montaža kamere', quantity: 1, unitPrice: 100 },
+        { productId: zagon._id as any, name: 'Zagon snemalnika', quantity: 1, unitPrice: 80 },
+      ],
+    });
+
+    const forecast = await getEarningsForecast(String(MONTER_A));
+    assert.equal(forecast.totalEarnings, 72);
+    assert.deepEqual(forecast.projects[0].servicesWithoutRate, []);
   });
 });

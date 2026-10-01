@@ -438,6 +438,28 @@ export async function setEmployeeProjectEarningPaid(params: {
   };
 }
 
+export async function overrideSnapshotEmployeeEarnings(snapshotId: string, earnings: Array<{ employeeId: string; earnings: number }>) {
+  if (!isObjectId(snapshotId) || !Array.isArray(earnings)) return null;
+  const snapshot = await FinanceSnapshotModel.findOne({ _id: snapshotId, superseded: { $ne: true } });
+  if (!snapshot) return null;
+  const next = earnings
+    .map((entry) => ({ employeeId: normalizeEmployeeId(entry.employeeId), earnings: round(toNumber(entry.earnings, -1)) }))
+    .filter((entry): entry is { employeeId: string; earnings: number } => !!entry.employeeId && entry.earnings >= 0);
+  if (next.length !== earnings.length) return null;
+  const previousTotal = (snapshot.employeeEarnings ?? []).reduce((sum, entry) => sum + toNumber(entry.earnings, 0), 0);
+  const nextTotal = next.reduce((sum, entry) => sum + entry.earnings, 0);
+  snapshot.employeeEarnings = next.map((entry) => ({
+    employeeId: entry.employeeId, earnings: entry.earnings,
+    isPaid: snapshot.employeeEarnings.find((current) => String(current.employeeId) === entry.employeeId)?.isPaid ?? false,
+    paidAt: snapshot.employeeEarnings.find((current) => String(current.employeeId) === entry.employeeId)?.paidAt ?? null,
+    paidBy: snapshot.employeeEarnings.find((current) => String(current.employeeId) === entry.employeeId)?.paidBy ?? null,
+  })) as any;
+  snapshot.summary.totalPurchase = round(toNumber(snapshot.summary.totalPurchase, 0) - previousTotal + nextTotal);
+  snapshot.summary.totalMargin = round(toNumber(snapshot.summary.totalSaleWithoutVat, 0) - snapshot.summary.totalPurchase);
+  await snapshot.save();
+  return snapshot.toObject();
+}
+
 export async function getPipelineSummary() {
   const offers = await OfferVersionModel.find().lean();
   const byStatus = new Map<string, { count: number; totalGross: number }>();
