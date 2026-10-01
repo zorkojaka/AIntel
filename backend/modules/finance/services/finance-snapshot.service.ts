@@ -445,9 +445,26 @@ export async function createFinanceSnapshot(params: {
     const profile = isObjectId(employeeId)
       ? await EmployeeProfileModel.findOne({ employeeId }).select('profitSharePercent').lean()
       : null;
+    let legacyDefaultPercent: number | null = null;
+    if (!profile && isObjectId(employeeId)) {
+      const configuredRates = await EmployeeServiceRateModel.find({
+        employeeId,
+        isActive: true,
+        defaultPercent: { $gt: 0 },
+      }).select('defaultPercent').lean();
+      const frequency = new Map<number, number>();
+      for (const configuredRate of configuredRates) {
+        const percent = toNumber(configuredRate.defaultPercent, 0);
+        if (percent > 0) frequency.set(percent, (frequency.get(percent) ?? 0) + 1);
+      }
+      legacyDefaultPercent = Array.from(frequency.entries())
+        .sort(([percentA, countA], [percentB, countB]) => countB - countA || percentA - percentB)[0]?.[0] ?? null;
+    }
     const rate = profile
       ? { defaultPercent: toNumber(profile.profitSharePercent, 0), overridePrice: null }
-      : null;
+      : legacyDefaultPercent !== null
+        ? { defaultPercent: legacyDefaultPercent, overridePrice: null }
+        : null;
     customServiceRateByEmployee.set(employeeId, rate);
     return rate;
   };

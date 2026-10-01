@@ -256,3 +256,30 @@ test('storitev brez posebne cene uporabi monterjev shranjeni privzeti odstotek',
     assert.deepEqual(forecast.projects[0].servicesWithoutRate, []);
   });
 });
+
+test('legacy monter brez profila uporabi najpogostejsi aktivni odstotek cenika', async () => {
+  await withMongo(async () => {
+    const montaza = await createService('Montaža kamere', 100);
+    const zagon = await createService('Zagon snemalnika', 80);
+    await EmployeeServiceRateModel.create({
+      employeeId: MONTER_A,
+      serviceProductId: montaza._id,
+      defaultPercent: 40,
+      overridePrice: null,
+    });
+
+    await createConfirmedProject({
+      code: 'PRJ-13',
+      num: 13,
+      assigned: [MONTER_A],
+      items: [
+        { productId: montaza._id as any, name: 'Montaža kamere', quantity: 1, unitPrice: 100 },
+        { productId: zagon._id as any, name: 'Zagon snemalnika', quantity: 1, unitPrice: 80 },
+      ],
+    });
+
+    const forecast = await getEarningsForecast(String(MONTER_A));
+    assert.equal(forecast.totalEarnings, 72);
+    assert.deepEqual(forecast.projects[0].servicesWithoutRate, []);
+  });
+});
