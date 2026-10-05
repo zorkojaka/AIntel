@@ -130,7 +130,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
     ? {
         name: projectClient?.name ?? project.customer.name ?? '',
         address: formatCustomerAddress(projectClient ? formatClientAddress(projectClient, project.customer.address) : project.customer.address),
-        taxId: project.customer.taxId ?? projectClient?.vatNumber ?? '',
+        taxId: project.customer.taxId?.trim() || projectClient?.vatNumber?.trim() || '',
       }
     : undefined;
 
