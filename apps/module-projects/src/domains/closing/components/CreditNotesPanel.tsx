@@ -8,13 +8,14 @@ import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
 import { downloadPdf } from "../../../api";
 import { toast } from "sonner";
+import { CreditNoteCommunicationComposeDialog } from "../../communication/CreditNoteCommunicationComposeDialog";
 
 const money = new Intl.NumberFormat("sl-SI", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const newRequestId = () => typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 type Preview = { items: CreditNote["items"]; summary: CreditNote["summary"] };
 
-export function CreditNotesPanel({ projectId, invoiceVersionId, issued, onIssued }: { projectId: string; invoiceVersionId: string; issued: boolean; onIssued: () => Promise<void> | void }) {
+export function CreditNotesPanel({ projectId, invoiceVersionId, issued, onIssued, customerName = "", customerEmail = "", projectName = "" }: { projectId: string; invoiceVersionId: string; issued: boolean; onIssued: () => Promise<void> | void; customerName?: string; customerEmail?: string; projectName?: string }) {
   const [options, setOptions] = useState<CreditNoteOptions | null>(null);
   const [open, setOpen] = useState(false);
   const [quantities, setQuantities] = useState<Record<string, string>>({});
@@ -23,6 +24,7 @@ export function CreditNotesPanel({ projectId, invoiceVersionId, issued, onIssued
   const [loading, setLoading] = useState(false);
   const [issuing, setIssuing] = useState(false);
   const [requestId, setRequestId] = useState(newRequestId);
+  const [sendNote, setSendNote] = useState<CreditNote | null>(null);
   const autoPreviewSignature = useRef("");
 
   const load = async () => {
@@ -69,7 +71,8 @@ export function CreditNotesPanel({ projectId, invoiceVersionId, issued, onIssued
   return <div className="space-y-2 border-t border-border pt-4">
     <div className="flex flex-wrap items-center justify-between gap-2"><div><div className="font-medium">Dobropisi</div><p className="m-0 text-sm text-muted-foreground">Za vrnjeno postavko ali storitev izdaj ločen dobropis. Izvirni račun ostane nespremenjen.</p></div><Button type="button" variant="outline" onClick={openDialog} disabled={!options?.items.length}>Ustvari dobropis</Button></div>
     {options && !options.items.some((item) => item.remainingQuantity > 0) && <p className="m-0 text-sm text-muted-foreground">Za ta račun ni več postavk, ki bi jih lahko dobropisali.</p>}
-    {options?.notes.map((note) => <div key={note.id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-2 text-sm"><span><strong>{note.number}</strong> · {money.format(note.summary.totalWithVat)} € · {note.reason}</span><span className="flex gap-1"><Button type="button" variant="ghost" size="sm" onClick={() => showPdf(note)}>Poglej</Button><Button type="button" variant="ghost" size="icon" onClick={() => showPdf(note, true)} aria-label="Prenesi dobropis"><Download className="h-4 w-4" /></Button></span></div>)}
+    {options?.notes.map((note) => <div key={note.id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-2 text-sm"><span><strong>{note.number}</strong> · {money.format(note.summary.totalWithVat)} € · {note.reason}</span><span className="flex gap-1"><Button type="button" variant="ghost" size="sm" onClick={() => showPdf(note)}>Poglej</Button><Button type="button" variant="ghost" size="sm" onClick={() => setSendNote(note)}>Pošlji dobropis stranki</Button><Button type="button" variant="ghost" size="icon" onClick={() => showPdf(note, true)} aria-label="Prenesi dobropis"><Download className="h-4 w-4" /></Button></span></div>)}
     <Dialog open={open} onOpenChange={(next) => !issuing && setOpen(next)}><DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Ustvari dobropis</DialogTitle><DialogDescription>Izberi postavke ali storitve in količine. Zneske s popusti in DDV izračuna strežnik iz izdanega računa.</DialogDescription></DialogHeader><div className="space-y-3">{options?.items.map((item) => <div key={item.id} className="grid grid-cols-[1fr_9rem] gap-3 items-center"><div><div>{item.name}</div><div className="text-xs text-muted-foreground">Na računu: {item.invoiceQuantity} {item.unit}; na voljo: {item.remainingQuantity} {item.unit}</div></div><Input aria-label={`Vrnjena količina ${item.name}`} type="number" min="0" max={item.remainingQuantity} step="1" value={quantities[item.id] ?? ""} onChange={(event) => { setQuantities((old) => ({ ...old, [item.id]: event.target.value })); clearPreview(); }} /></div>)}<div><label className="mb-1 block text-sm font-medium">Razlog dobropisa</label><Textarea value={reason} onChange={(event) => { setReason(event.target.value); clearPreview(); }} placeholder="Npr. stranka je vrnila neustrezen artikel" /></div>{preview && <div className="rounded border bg-muted/30 p-3 text-sm"><div className="font-medium">Predogled dobropisa</div>{preview.items.map((item) => <div key={item.invoiceItemId} className="flex justify-between gap-3"><span>{item.name} × {item.quantity}</span><span>{money.format(item.totalWithVat)} €</span></div>)}<div className="mt-2 flex justify-between border-t pt-2 font-semibold"><span>Skupaj z DDV</span><span>{money.format(preview.summary.totalWithVat)} €</span></div></div>}</div><DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={issuing}>Prekliči</Button><Button type="button" variant="outline" onClick={() => void makePreview()} disabled={loading || issuing}>{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Preveri znesek</Button><Button type="button" onClick={() => void issue()} disabled={!preview || issuing}>{issuing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Izdaj dobropis</Button></DialogFooter></DialogContent></Dialog>
+    {sendNote ? <CreditNoteCommunicationComposeDialog open={Boolean(sendNote)} onOpenChange={(value) => !value && setSendNote(null)} projectId={projectId} invoiceVersionId={invoiceVersionId} noteId={sendNote.id} customerName={customerName} customerEmail={customerEmail} projectName={projectName} creditNoteNumber={sendNote.number} creditNoteTotal={Number(sendNote.summary.totalWithVat ?? 0)} companyName="" onSent={async () => { setSendNote(null); await load(); }} /> : null}
   </div>;
 }

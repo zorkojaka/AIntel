@@ -6,6 +6,7 @@ import {
   listInstallerPreparationMessages,
   listOfferMessages,
   sendInvoiceCommunicationEmail,
+  sendCreditNoteCommunicationEmail,
   listProjectCommunicationFeed,
   normalizeWorkOrderObjectId,
   sendInstallerPreparationEmail,
@@ -141,6 +142,23 @@ export async function sendInvoiceCommunicationController(req: Request, res: Resp
     (req as any).log?.error({ err: error }, "Invoice communication send failed");
     return res.fail(error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.", 400);
   }
+}
+
+export async function sendCreditNoteCommunicationController(req: Request, res: Response) {
+  try {
+    const payload = await sendCreditNoteCommunicationEmail({
+      projectId: req.params.projectId, invoiceVersionId: req.params.versionId, noteId: req.params.noteId,
+      to: req.body?.to, cc: req.body?.cc, bcc: req.body?.bcc,
+      templateId: typeof req.body?.templateId === "string" ? req.body.templateId : null,
+      templateKey: typeof req.body?.templateKey === "string" ? req.body.templateKey : null,
+      subject: typeof req.body?.subject === "string" ? req.body.subject : null,
+      body: typeof req.body?.body === "string" ? req.body.body : null,
+      selectedAttachments: sanitizeAttachmentTypes(req.body?.selectedAttachments),
+      actorUserId: (req as any)?.context?.actorUserId ?? null,
+      actorDisplayName: buildActorDisplayName(req as any), actorProfile: resolveActorProfile(req),
+    });
+    return res.success(payload);
+  } catch (error) { return res.fail(error instanceof Error ? error.message : "Pošiljanje emaila ni uspelo.", 400); }
 }
 
 export async function sendWorkOrderConfirmationCommunicationController(req: Request, res: Response) {
