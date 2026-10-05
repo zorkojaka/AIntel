@@ -6,6 +6,7 @@ import { getCompanySettings, getPdfDocumentSettings } from './pdf-settings.servi
 import { getSettings } from '../../settings/settings.service';
 import type { DocumentNumberingKind } from './document-numbering.service';
 import { formatClientAddress, resolveProjectClient } from './project.service';
+import { previewInvoiceSequentialNumber } from './document-numbering.service';
 import type { CreditNote } from '../../../../shared/types/credit-notes';
 import { getCreditNote } from './credit-note.service';
 import { buildPaymentInfo } from './payment-qr.service';
@@ -77,8 +78,8 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
   ]);
   const projectClient = await resolveProjectClient(project);
 
-  const documentNumber = invoice.invoiceNumber ?? `${project.id}-${invoice.versionNumber}`;
   const issueDate = invoice.issuedAt ? new Date(invoice.issuedAt) : new Date(invoice.createdAt ?? Date.now());
+  const documentNumber = invoice.invoiceNumber ?? (await previewInvoiceSequentialNumber(issueDate)).number;
   const servicePerformedDate = invoice.servicePerformedAt ? formatDate(invoice.servicePerformedAt) : null;
   const dueDays = extractDueDays(project.customer?.paymentTerms) ?? 8;
   const dueDate = dueDays > 0 ? formatDate(addDays(issueDate, dueDays)) : null;
@@ -142,7 +143,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
     dueDate: credit ? null : dueDate,
     company: companyProfile,
     customer: credit?.customer ?? customer,
-    projectTitle: project.title ?? project.id,
+    projectTitle: documentNumber,
     items,
     totals,
     notes: credit ? [...notes, credit.reason] : notes,

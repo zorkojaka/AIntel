@@ -16,18 +16,18 @@ test('invoice counter can be viewed, changed manually and continues with +1', as
   try {
     const initial = await getInvoiceSequentialCounterState(date);
     assert.equal(initial.currentSequence, 0);
-    assert.equal(initial.nextNumber, '1/8/2026');
+    assert.equal(initial.nextNumber, 'RACUN-2026-001');
 
     const changed = await setInvoiceSequentialCounter(47, date);
     assert.equal(changed.currentSequence, 47);
-    assert.equal(changed.nextNumber, '48/8/2026');
+    assert.equal(changed.nextNumber, 'RACUN-2026-048');
 
     const issued = await generateInvoiceSequentialNumber(date);
-    assert.equal(issued.number, '48/8/2026');
+    assert.equal(issued.number, 'RACUN-2026-048');
 
     const afterIssue = await getInvoiceSequentialCounterState(date);
     assert.equal(afterIssue.currentSequence, 48);
-    assert.equal(afterIssue.nextNumber, '49/8/2026');
+    assert.equal(afterIssue.nextNumber, 'RACUN-2026-049');
   } finally {
     await mongoose.disconnect();
     await mongo.stop();

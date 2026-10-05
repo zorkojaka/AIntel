@@ -516,11 +516,11 @@ export function InvoiceVersionEditor({
                 setDirty(true);
               }}
               readOnly={!canEdit}
-              placeholder="50/6/2026"
+              placeholder="RACUN-2026-001"
             />
             {canEdit ? (
               <p className="text-xs text-muted-foreground m-0">
-                Po potrebi popravi zaporedno številko pred izdajo računa.
+                Po potrebi popravi številko pred izdajo računa.
               </p>
             ) : null}
           </div>
