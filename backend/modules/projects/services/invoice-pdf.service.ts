@@ -117,9 +117,10 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
   };
 
   const notes = buildInvoiceNotes(documentSettings.defaultTexts);
+  const companyProfile = buildCompanyProfile(company, globalSettings);
   const paymentInfo = await buildPaymentInfo({
-    recipient: company.companyName ?? 'Podjetje',
-    iban: company.iban ?? '',
+    recipient: companyProfile.companyName ?? 'Podjetje',
+    iban: companyProfile.iban ?? '',
     amount: totals.remaining ?? totals.total ?? 0,
     reference: documentNumber,
     purpose: `Plačilo računa ${documentNumber}`,
@@ -132,8 +133,6 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
         taxId: project.customer.taxId ?? projectClient?.vatNumber ?? '',
       }
     : undefined;
-
-  const companyProfile = buildCompanyProfile(company, globalSettings);
 
   const context = {
     docType,
