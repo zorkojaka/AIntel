@@ -228,11 +228,12 @@ const baseStyles = `
   .document-stamp img { max-height:76px; max-width:150px; object-fit:contain; }
   .document-stamp--none { font-size:11px; color:#64748b; font-style:italic; padding-bottom:6px; }
   .invoice-closing { margin-top:6px; }
-  .invoice-closing .document-signature { margin-top:8px; }
-  .invoice-closing .document-signature-image { max-height:42px; }
-  .invoice-closing .document-signature-line { height:42px; }
   .invoice-closing .payment-block { margin-top:6px; padding:8px 10px; }
   .invoice-closing .payment-qr, .invoice-closing .payment-qr img { width:96px; height:96px; flex-basis:96px; }
+  .invoice-summary { break-inside:avoid; page-break-inside:avoid; }
+  .invoice-summary .document-signature { margin-top:8px; }
+  .invoice-summary .document-signature-image { max-height:42px; }
+  .invoice-summary .document-signature-line { height:42px; }
   .offer-footer { border-top:1px solid #e2e8f0; margin-top:0; padding-top:8px; display:flex; flex-direction:column; gap:3px; break-inside:avoid; page-break-inside:avoid; }
   .offer-contact-line { display:flex; flex-wrap:wrap; justify-content:center; gap:4px; font-size:11px; color:#475569; }
   .offer-dot { color:#cbd5e1; margin:0 4px; }
@@ -398,6 +399,7 @@ interface DocumentShellOptions {
   extraSections?: string;
   /** Podpis direktorja (in po potrebi žig) desno spodaj. */
   signatureBlock?: string;
+  keepSignatureWithSummary?: boolean;
   closingClass?: string;
 }
 
@@ -509,6 +511,9 @@ function buildStandardDocument(context: DocumentPreviewContext, options: Documen
   const tableFooter = options.tableFooterRows
     ? `<table class="offer-table document-summary document-totals"><tbody>${options.tableFooterRows}</tbody></table>`
     : '';
+  const summaryBlock = options.keepSignatureWithSummary
+    ? `<div class="invoice-summary">${tableFooter}${options.signatureBlock ?? ''}</div>`
+    : tableFooter;
   const tableBlock = options.tableHeadRows || options.tableBodyRows
     ? `<table class="offer-table">
           <thead>${options.tableHeadRows}</thead>
@@ -547,13 +552,13 @@ function buildStandardDocument(context: DocumentPreviewContext, options: Documen
 
         ${tableBlock}
 
-        ${tableFooter}
+        ${summaryBlock}
 
         <div class="offer-closing document-ending ${options.closingClass ?? ''}">
           ${commentBlock}
           ${notesBlock}
           ${extraSections}
-          ${options.signatureBlock ?? ''}
+          ${options.keepSignatureWithSummary ? '' : options.signatureBlock ?? ''}
           ${paymentBlock}
 
           <div class="offer-bottom">
@@ -749,6 +754,7 @@ export function renderInvoicePdf(context: DocumentPreviewContext) {
     commentBlock,
     notesBlock,
     signatureBlock: buildDirectorSignatureBlock(context.company),
+    keepSignatureWithSummary: true,
     closingClass: 'invoice-closing',
   });
 }
