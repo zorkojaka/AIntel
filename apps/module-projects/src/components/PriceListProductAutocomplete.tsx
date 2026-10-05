@@ -5,6 +5,7 @@ import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
 import { cn } from "./ui/utils";
 
 type PriceListProductAutocompleteProps = {
+  showPrices?: boolean;
   value: string;
   onChange: (name: string) => void;
   onProductSelected: (product: PriceListSearchItem) => void;
@@ -29,6 +30,7 @@ export function PriceListProductAutocomplete({
   inputClassName,
   inputRef,
   multiline = false,
+  showPrices = true,
 }: PriceListProductAutocompleteProps) {
   const [inputValue, setInputValue] = useState(value ?? "");
   const [isOpen, setIsOpen] = useState(false);
@@ -284,7 +286,7 @@ export function PriceListProductAutocomplete({
                         onClick={() => handleProductPick(product)}
                       >
                         <span className="truncate">{product.name}</span>
-                        <span className="text-xs text-muted-foreground">{formatCurrency(product.unitPrice)} €</span>
+                        {showPrices ? <span className="text-xs text-muted-foreground">{formatCurrency(product.unitPrice)} €</span> : null}
                       </button>
                     ))}
                 </div>

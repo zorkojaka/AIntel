@@ -2443,17 +2443,18 @@ export async function updateWorkOrder(req: Request, res: Response, next: NextFun
         if (targetId) {
           const target = nextItems.find((item) => String(item.id) === targetId);
           if (target) {
-            if (!isExecutionRestrictedMutation && typeof incoming.name === 'string') target.name = incoming.name;
-            if (!isExecutionRestrictedMutation && typeof incoming.unit === 'string') target.unit = incoming.unit;
-            if (!isExecutionRestrictedMutation && typeof incoming.isService === 'boolean') target.isService = incoming.isService;
-            if (!isExecutionRestrictedMutation && (typeof incoming.productId === 'string' || incoming.productId === null)) {
+            const canEditExtraProduct = !isExecutionRestrictedMutation || (target.isExtra === true && !target.isCompleted);
+            if (canEditExtraProduct && typeof incoming.name === 'string') target.name = incoming.name;
+            if (canEditExtraProduct && typeof incoming.unit === 'string') target.unit = incoming.unit;
+            if (canEditExtraProduct && typeof incoming.isService === 'boolean') target.isService = incoming.isService;
+            if (canEditExtraProduct && (typeof incoming.productId === 'string' || incoming.productId === null)) {
               target.productId = incoming.productId ?? null;
             }
-            if (!isExecutionRestrictedMutation && (typeof incoming.note === 'string' || incoming.note === null)) target.note = incoming.note ?? '';
+            if (canEditExtraProduct && (typeof incoming.note === 'string' || incoming.note === null)) target.note = incoming.note ?? '';
             if (typeof incoming.itemNote === 'string' || incoming.itemNote === null) {
               target.itemNote = incoming.itemNote ?? null;
             }
-            if (!isExecutionRestrictedMutation && typeof incoming.plannedQuantity === 'number') {
+            if (canEditExtraProduct && typeof incoming.plannedQuantity === 'number') {
               target.plannedQuantity = incoming.plannedQuantity;
               target.quantity = incoming.plannedQuantity;
             }

@@ -41,7 +41,7 @@ const DOC_DEFAULTS: Record<PdfDocumentType, PdfDocumentSettings> = {
     numberingRule: { ...DEFAULT_DOCUMENT_SETTINGS.numberingRule, prefix: 'RAC' },
     defaultTexts: {
       paymentTerms: '',
-      disclaimer: 'Racun je izdan na podlagi izvedenih storitev.',
+      disclaimer: '',
     },
   },
   PURCHASE_ORDER: {

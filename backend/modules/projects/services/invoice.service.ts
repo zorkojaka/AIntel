@@ -215,15 +215,11 @@ async function resolveInvoiceNumberForIssue(
   }
   if (normalizedOverride) {
     const parsed = parseInvoiceSequentialNumber(normalizedOverride);
-    if (!parsed) {
-      throw new Error('Številka računa mora biti v obliki zaporedna/mesec/leto, npr. 50/6/2026.');
+    await assertInvoiceNumberAvailable(normalizedOverride, version._id, allowedVersionIds);
+    if (parsed) {
+      await syncInvoiceSequentialCounterAtLeast(parsed.sequence, parsed.year, issuedAt);
     }
-    if (parsed.month !== issuedAt.getMonth() + 1 || parsed.year !== issuedAt.getFullYear()) {
-      throw new Error(`Številka računa mora imeti trenutni mesec in leto izdaje (${issuedAt.getMonth() + 1}/${issuedAt.getFullYear()}).`);
-    }
-    await assertInvoiceNumberAvailable(parsed.number, version._id, allowedVersionIds);
-    await syncInvoiceSequentialCounterAtLeast(parsed.sequence, parsed.year, issuedAt);
-    return { invoiceNumber: parsed.number, invoiceSequence: parsed.sequence };
+    return { invoiceNumber: normalizedOverride, invoiceSequence: parsed?.sequence ?? null };
   }
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -504,6 +500,8 @@ export async function updateInvoiceVersion(
     invoiceNumber?: unknown;
     discountPercent?: unknown;
     useGlobalDiscount?: unknown;
+    usePerItemDiscount?: unknown;
+    fixedDiscountAmount?: unknown;
     paidAmount?: unknown;
   },
 ): Promise<InvoiceListResponse> {
@@ -523,15 +521,18 @@ export async function updateInvoiceVersion(
   if (payload.useGlobalDiscount !== undefined) {
     version.useGlobalDiscount = Boolean(payload.useGlobalDiscount);
   }
+  if (payload.usePerItemDiscount !== undefined) {
+    version.usePerItemDiscount = Boolean(payload.usePerItemDiscount);
+  }
+  if (payload.fixedDiscountAmount !== undefined) {
+    version.fixedDiscountAmount = Math.max(0, toNumber(payload.fixedDiscountAmount, 0));
+  }
   const invoiceNumber = typeof payload.invoiceNumber === 'string' ? payload.invoiceNumber.trim() : '';
   if (invoiceNumber) {
     const parsed = parseInvoiceSequentialNumber(invoiceNumber);
-    if (!parsed) {
-      throw new Error('Številka računa mora biti v obliki zaporedna/mesec/leto, npr. 50/6/2026.');
-    }
-    await assertInvoiceNumberAvailable(parsed.number, version._id, getInvoiceCorrectionChainIds(project.invoiceVersions ?? [], version));
-    version.invoiceNumber = parsed.number;
-    version.invoiceSequence = parsed.sequence;
+    await assertInvoiceNumberAvailable(invoiceNumber, version._id, getInvoiceCorrectionChainIds(project.invoiceVersions ?? [], version));
+    version.invoiceNumber = invoiceNumber;
+    version.invoiceSequence = parsed?.sequence ?? null;
   } else {
     version.invoiceNumber = null;
     version.invoiceSequence = null;

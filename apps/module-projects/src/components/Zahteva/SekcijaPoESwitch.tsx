@@ -1,3 +1,4 @@
+import { ProductPrice } from "./ProductPrice";
 import { Network } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
@@ -9,6 +10,7 @@ function optionKey(value?: string | number | null) {
 }
 
 type Props = {
+  onProductSelected?: (product: CenikProduct) => void;
   videonadzor: Videonadzor;
   productById: Map<string, CenikProduct>;
   onChange: (next: Videonadzor) => void;
@@ -117,7 +119,7 @@ function switchFitRank(product: CenikProduct, neededPorts: number) {
   return coversNeed * 1000 + distance;
 }
 
-export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) {
+export function SekcijaPoESwitch({ videonadzor, productById, onProductSelected, onChange }: Props) {
   const cameras = useMemo(() => assignedCameraProducts(videonadzor, productById), [productById, videonadzor]);
   const selectedNvr = videonadzor.snemalnik.productId ? productById.get(videonadzor.snemalnik.productId) : null;
   const allPoE = cameras.length > 0 && cameras.every((camera) => camera.classification?.hasPoE);
@@ -172,6 +174,11 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
   }, [manufacturer, recommendedId]);
 
   const setQuantity = (productId: string, quantity: number) => {
+    if (onProductSelected) {
+      const product = productById.get(productId);
+      if (product && quantity > 0) onProductSelected(product);
+      return;
+    }
     const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
     const items =
       nextQuantity > 0
@@ -201,7 +208,7 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
         <button type="button" style={{ order: neededPorts <= 0 ? -1 : 1 }} className={`zahteva-track-card zahteva-none-card ${selectedItems.length === 0 ? "is-active" : ""}`} onClick={clearSwitches}>
           <strong>Brez switcha</strong>
           <small>{neededPorts <= 0 ? "priporočeno" : "ni dovolj portov"}</small>
-          <b>0,00 €</b>
+          <ProductPrice>0,00 €</ProductPrice>
         </button>
         {alternatives.map((product) => {
           const quantity = selectedItems.find((item) => item.productId === product._id)?.kolicina ?? 0;
@@ -216,7 +223,7 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
                 <strong>{product.ime}</strong>
                 <small>{portSummary(product)}</small>
                 {product._id === najprodajnejsiId ? <span className="zahteva-sales-hint">★ najpogosteje izbrano</span> : null}
-                <b>{formatPrice(product.prodajnaCena)}</b>
+                <ProductPrice>{formatPrice(product.prodajnaCena)}</ProductPrice>
               </button>
               <div className="zahteva-qty-control">
                 <button type="button" onClick={() => setQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>−</button>

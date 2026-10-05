@@ -1,4 +1,3 @@
-import QRCode from 'qrcode';
 import type { Types } from 'mongoose';
 import { ProjectModel, type ProjectDocument } from '../schemas/project';
 import { renderHtmlToPdf } from './html-pdf.service';
@@ -7,8 +6,10 @@ import { getCompanySettings, getPdfDocumentSettings } from './pdf-settings.servi
 import { getSettings } from '../../settings/settings.service';
 import type { DocumentNumberingKind } from './document-numbering.service';
 import { formatClientAddress, resolveProjectClient } from './project.service';
+import { previewInvoiceSequentialNumber } from './document-numbering.service';
 import type { CreditNote } from '../../../../shared/types/credit-notes';
 import { getCreditNote } from './credit-note.service';
+import { buildPaymentInfo } from './payment-qr.service';
 
 export interface InvoiceVersion {
   _id: string;
@@ -77,8 +78,8 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
   ]);
   const projectClient = await resolveProjectClient(project);
 
-  const documentNumber = invoice.invoiceNumber ?? `${project.id}-${invoice.versionNumber}`;
   const issueDate = invoice.issuedAt ? new Date(invoice.issuedAt) : new Date(invoice.createdAt ?? Date.now());
+  const documentNumber = invoice.invoiceNumber ?? (await previewInvoiceSequentialNumber(issueDate)).number;
   const servicePerformedDate = invoice.servicePerformedAt ? formatDate(invoice.servicePerformedAt) : null;
   const dueDays = extractDueDays(project.customer?.paymentTerms) ?? 8;
   const dueDate = dueDays > 0 ? formatDate(addDays(issueDate, dueDays)) : null;
@@ -117,9 +118,10 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
   };
 
   const notes = buildInvoiceNotes(documentSettings.defaultTexts);
+  const companyProfile = buildCompanyProfile(company, globalSettings);
   const paymentInfo = await buildPaymentInfo({
-    recipient: company.companyName ?? 'Podjetje',
-    iban: company.iban ?? '',
+    recipient: companyProfile.companyName ?? 'Podjetje',
+    iban: companyProfile.iban ?? '',
     amount: totals.remaining ?? totals.total ?? 0,
     reference: documentNumber,
     purpose: `Plačilo računa ${documentNumber}`,
@@ -129,11 +131,9 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
     ? {
         name: projectClient?.name ?? project.customer.name ?? '',
         address: formatCustomerAddress(projectClient ? formatClientAddress(projectClient, project.customer.address) : project.customer.address),
-        taxId: project.customer.taxId ?? projectClient?.vatNumber ?? '',
+        taxId: project.customer.taxId?.trim() || projectClient?.vatNumber?.trim() || '',
       }
     : undefined;
-
-  const companyProfile = buildCompanyProfile(company, globalSettings);
 
   const context = {
     docType,
@@ -143,7 +143,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
     dueDate: credit ? null : dueDate,
     company: companyProfile,
     customer: credit?.customer ?? customer,
-    projectTitle: project.title ?? project.id,
+    projectTitle: documentNumber,
     items,
     totals,
     notes: credit ? [...notes, credit.reason] : notes,
@@ -202,58 +202,12 @@ function formatCustomerAddress(address?: string | null) {
 }
 
 function buildInvoiceNotes(defaults: { paymentTerms?: string; disclaimer?: string }) {
+  const legacyDefaultDisclaimer = 'Racun je izdan na podlagi izvedenih storitev.';
+
   return [defaults.disclaimer]
     .filter((text): text is string => typeof text === 'string' && text.trim().length > 0)
-    .map((text) => text.trim());
-}
-
-interface PaymentSeed {
-  recipient: string;
-  iban: string;
-  amount: number;
-  reference: string;
-  purpose: string;
-}
-
-async function buildPaymentInfo(seed: PaymentSeed) {
-  const info = {
-    recipient: seed.recipient,
-    iban: seed.iban,
-    amount: seed.amount,
-    reference: seed.reference,
-    purpose: seed.purpose,
-    qrCodeDataUri: null as string | null,
-    notice: null as string | null,
-  };
-
-  const hasData = seed.recipient && seed.iban && seed.amount > 0 && seed.reference;
-  if (!hasData) {
-    info.notice = 'QR ni na voljo (manjkajo podatki).';
-    return info;
-  }
-
-  const payload = buildUpnQrPayload(seed);
-  try {
-    info.qrCodeDataUri = await QRCode.toDataURL(payload, { errorCorrectionLevel: 'M', margin: 0 });
-  } catch (error) {
-    info.qrCodeDataUri = null;
-    info.notice = 'QR ni na voljo (napaka pri generiranju).';
-    console.error('Failed to generate QR code', error);
-  }
-  return info;
-}
-
-function buildUpnQrPayload(seed: PaymentSeed) {
-  const amount = (seed.amount ?? 0).toFixed(2);
-  const lines = [
-    'UPNQR',
-    seed.recipient ?? '',
-    seed.iban ?? '',
-    amount,
-    seed.reference ?? '',
-    seed.purpose ?? '',
-  ];
-  return lines.join('\n');
+    .map((text) => text.trim())
+    .filter((text) => text !== legacyDefaultDisclaimer);
 }
 
 function buildCompanyProfile(

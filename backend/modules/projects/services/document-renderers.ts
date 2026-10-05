@@ -207,6 +207,14 @@ const baseStyles = `
   .offer-notes { margin-top:10px; break-inside:avoid; page-break-inside:avoid; }
   .offer-notes ul { margin:5px 0 0; padding-left:18px; }
   .offer-notes li { font-size:11px; color:#475569; margin-bottom:2px; }
+  .payment-block { margin-top:10px; border:1px solid #dbe2ea; border-radius:10px; padding:10px 12px; display:flex; align-items:center; gap:14px; break-inside:avoid; page-break-inside:avoid; }
+  .payment-qr { flex:0 0 116px; width:116px; height:116px; display:flex; align-items:center; justify-content:center; }
+  .payment-qr img { display:block; width:116px; height:116px; object-fit:contain; }
+  .payment-details { min-width:0; flex:1; }
+  .payment-details h4 { margin:0 0 6px; font-size:13px; font-weight:700; color:#0f172a; }
+  .payment-details p { margin:2px 0; font-size:11px; color:#475569; overflow-wrap:anywhere; }
+  .payment-details strong { color:#0f172a; }
+  .payment-notice { color:#b45309 !important; }
   .offer-closing { margin-top:10px; break-inside:avoid; page-break-inside:avoid; }
   .offer-bottom { margin-top:10px; display:flex; flex-direction:column; gap:8px; break-inside:avoid; page-break-inside:avoid; }
   /* Podpis direktorja desno spodaj; žig levo od podpisa. */
@@ -219,6 +227,13 @@ const baseStyles = `
     text-align:center; font-size:11px; font-weight:600; }
   .document-stamp img { max-height:76px; max-width:150px; object-fit:contain; }
   .document-stamp--none { font-size:11px; color:#64748b; font-style:italic; padding-bottom:6px; }
+  .invoice-closing { margin-top:6px; }
+  .invoice-closing .payment-block { margin-top:6px; padding:8px 10px; }
+  .invoice-closing .payment-qr, .invoice-closing .payment-qr img { width:96px; height:96px; flex-basis:96px; }
+  .invoice-summary { break-inside:avoid; page-break-inside:avoid; }
+  .invoice-summary .document-signature { margin-top:8px; }
+  .invoice-summary .document-signature-image { max-height:42px; }
+  .invoice-summary .document-signature-line { height:42px; }
   .offer-footer { border-top:1px solid #e2e8f0; margin-top:0; padding-top:8px; display:flex; flex-direction:column; gap:3px; break-inside:avoid; page-break-inside:avoid; }
   .offer-contact-line { display:flex; flex-wrap:wrap; justify-content:center; gap:4px; font-size:11px; color:#475569; }
   .offer-dot { color:#cbd5e1; margin:0 4px; }
@@ -362,10 +377,11 @@ function buildCustomerLines(context: DocumentPreviewContext, emptyText: string) 
 }
 
 function buildNotesList(notes?: string[]) {
-  if (!notes || notes.length === 0) return '';
+  const visibleNotes = (notes ?? []).filter((note): note is string => typeof note === 'string' && note.trim().length > 0);
+  if (visibleNotes.length === 0) return '';
   return `<div class="offer-notes">
       <p style="font-weight:600;">Opombe</p>
-      <ul>${notes.map((note) => `<li>${note}</li>`).join('')}</ul>
+      <ul>${visibleNotes.map((note) => `<li>${note}</li>`).join('')}</ul>
     </div>`;
 }
 
@@ -383,6 +399,8 @@ interface DocumentShellOptions {
   extraSections?: string;
   /** Podpis direktorja (in po potrebi žig) desno spodaj. */
   signatureBlock?: string;
+  keepSignatureWithSummary?: boolean;
+  closingClass?: string;
 }
 
 /**
@@ -427,6 +445,34 @@ export function buildDirectorSignatureBlock(company: PdfCompanySettings | undefi
     </div>`;
 }
 
+export function buildPaymentBlock(paymentInfo?: PaymentInfoContext | null) {
+  if (!paymentInfo) return '';
+
+  const qrCode = paymentInfo.qrCodeDataUri
+    ? `<div class="payment-qr"><img src="${escapeHtml(paymentInfo.qrCodeDataUri)}" alt="QR koda za plačilo" /></div>`
+    : '';
+  const details = [
+    paymentInfo.recipient ? `<p><strong>Prejemnik:</strong> ${escapeHtml(paymentInfo.recipient)}</p>` : '',
+    paymentInfo.iban ? `<p><strong>IBAN:</strong> ${escapeHtml(paymentInfo.iban)}</p>` : '',
+    typeof paymentInfo.amount === 'number'
+      ? `<p><strong>Znesek:</strong> ${formatCurrency(paymentInfo.amount)}</p>`
+      : '',
+    paymentInfo.reference ? `<p><strong>Sklic:</strong> ${escapeHtml(paymentInfo.reference)}</p>` : '',
+    paymentInfo.purpose ? `<p><strong>Namen:</strong> ${escapeHtml(paymentInfo.purpose)}</p>` : '',
+    paymentInfo.notice ? `<p class="payment-notice">${escapeHtml(paymentInfo.notice)}</p>` : '',
+  ].join('');
+
+  if (!qrCode && !details) return '';
+
+  return `<div class="payment-block">
+      ${qrCode}
+      <div class="payment-details">
+        <h4>Podatki za plačilo</h4>
+        ${details}
+      </div>
+    </div>`;
+}
+
 function buildStandardDocument(context: DocumentPreviewContext, options: DocumentShellOptions) {
   const brandColor = context.company.primaryColor || '#0f62fe';
   const logoBlock = context.company.logoUrl
@@ -465,6 +511,9 @@ function buildStandardDocument(context: DocumentPreviewContext, options: Documen
   const tableFooter = options.tableFooterRows
     ? `<table class="offer-table document-summary document-totals"><tbody>${options.tableFooterRows}</tbody></table>`
     : '';
+  const summaryBlock = options.keepSignatureWithSummary
+    ? `<div class="invoice-summary">${tableFooter}${options.signatureBlock ?? ''}</div>`
+    : tableFooter;
   const tableBlock = options.tableHeadRows || options.tableBodyRows
     ? `<table class="offer-table">
           <thead>${options.tableHeadRows}</thead>
@@ -474,6 +523,7 @@ function buildStandardDocument(context: DocumentPreviewContext, options: Documen
   const commentBlock = options.commentBlock ?? '';
   const notesBlock = options.notesBlock ?? '';
   const extraSections = options.extraSections ?? '';
+  const paymentBlock = buildPaymentBlock(context.paymentInfo);
 
   const body = `<div class="offer-preview">
       <div class="offer-content">
@@ -502,13 +552,14 @@ function buildStandardDocument(context: DocumentPreviewContext, options: Documen
 
         ${tableBlock}
 
-        ${tableFooter}
+        ${summaryBlock}
 
-        <div class="offer-closing document-ending">
+        <div class="offer-closing document-ending ${options.closingClass ?? ''}">
           ${commentBlock}
           ${notesBlock}
           ${extraSections}
-          ${options.signatureBlock ?? ''}
+          ${options.keepSignatureWithSummary ? '' : options.signatureBlock ?? ''}
+          ${paymentBlock}
 
           <div class="offer-bottom">
             <div class="offer-footer">
@@ -703,6 +754,8 @@ export function renderInvoicePdf(context: DocumentPreviewContext) {
     commentBlock,
     notesBlock,
     signatureBlock: buildDirectorSignatureBlock(context.company),
+    keepSignatureWithSummary: true,
+    closingClass: 'invoice-closing',
   });
 }
 

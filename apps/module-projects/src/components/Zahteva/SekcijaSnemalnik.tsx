@@ -1,3 +1,4 @@
+import { ProductPrice } from "./ProductPrice";
 import { Square, Server } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
@@ -9,6 +10,7 @@ function optionKey(value?: string | number | null) {
 }
 
 type Props = {
+  onProductSelected?: (product: CenikProduct) => void;
   videonadzor: Videonadzor;
   productById: Map<string, CenikProduct>;
   onChange: (next: Videonadzor) => void;
@@ -97,7 +99,7 @@ function isIpRecorder(product: CenikProduct) {
   return optionKey(product.classification?.productType) === "snemalnik" || isRecorderCategory || /\b(drn|nvr)\b/i.test(text);
 }
 
-export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) {
+export function SekcijaSnemalnik({ videonadzor, productById, onProductSelected, onChange }: Props) {
   const cameraProducts = useMemo(() => assignedCameraProducts(videonadzor, productById), [productById, videonadzor]);
   const cameraCount = Math.max(cameraProducts.length, videonadzor.lokacije.length);
   const cameraBrand = dominantBrand(cameraProducts);
@@ -168,13 +170,13 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
   }, [allPoE, alternatives, poeFilter, selectedChannels]);
 
   useEffect(() => {
-    if (manualNoneRef.current || !recommendedId || cameraCount === 0) return;
+    if (onProductSelected || manualNoneRef.current || !recommendedId || cameraCount === 0) return;
     const signature = `${cameraCount}|${cameraBrand}|${manufacturer}|${allPoE}|${selectedChannels}|${poeFilter}|${recommendedId}`;
     if (autoAppliedRef.current === signature) return;
     autoAppliedRef.current = signature;
     if (videonadzor.snemalnik.productId === recommendedId) return;
     onChange({ ...videonadzor, snemalnik: { productId: recommendedId } });
-  }, [allPoE, cameraBrand, cameraCount, manufacturer, onChange, poeFilter, recommendedId, selectedChannels, videonadzor]);
+  }, [onProductSelected, allPoE, cameraBrand, cameraCount, manufacturer, onChange, poeFilter, recommendedId, selectedChannels, videonadzor]);
 
   useEffect(() => {
     recommendedCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
@@ -191,6 +193,11 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
   };
 
   const selectSnemalnik = (productId: string) => {
+    if (onProductSelected) {
+      const product = productById.get(productId);
+      if (product) onProductSelected(product);
+      return;
+    }
     if (videonadzor.snemalnik.productId === productId) {
       clearSnemalnik();
       return;
@@ -245,7 +252,7 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
           </span>
           <strong>Brez snemalnika</strong>
           <small>Obstoječi sistem ali cloud snemanje</small>
-          <b>0,00 €</b>
+          <ProductPrice>0,00 €</ProductPrice>
         </button>
         {alternatives.map((product) => (
           <button
@@ -262,7 +269,7 @@ export function SekcijaSnemalnik({ videonadzor, productById, onChange }: Props) 
               {product.classification?.nvrHasPoE ? " • PoE" : ""} • {hddLabel(product.classification?.nvrHddSlots)}
             </small>
             {product._id === najprodajnejsiId ? <span className="zahteva-sales-hint">★ najpogosteje izbrano</span> : null}
-            <b>{formatPrice(product.prodajnaCena)}</b>
+            <ProductPrice>{formatPrice(product.prodajnaCena)}</ProductPrice>
           </button>
         ))}
         {alternatives.length === 0 ? <div className="zahteva-empty">Ni snemalnikov za izbrane filtre.</div> : null}

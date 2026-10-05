@@ -4,6 +4,7 @@ import crmRoutes from './modules/crm/routes';
 import cenikRoutes from './modules/cenik/routes/cenik.routes';
 import categorySettingsRoutes from './modules/cenik/routes/category-settings.routes';
 import priceListRoutes from './modules/cenik/routes/price-list.routes';
+import { getAllProducts, searchPriceListItems } from './modules/cenik/controllers/cenik.controller';
 import settingsRoutes from './modules/settings/routes/settings.routes';
 import configRoutes from './modules/settings/config/config.routes';
 import financeRoutes from './modules/finance/routes';
@@ -39,6 +40,10 @@ const router = Router();
 router.use('/dashboard', dashboardRoutes);
 router.use('/crm', crmRoutes);
 router.use('/cenik/category-settings', requireRoles([ROLE_ADMIN, ROLE_ORGANIZER]), categorySettingsRoutes);
+// Execution needs product selection, while catalog writes keep their existing roles.
+const requireProductSelectionRead = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_EXECUTION, ROLE_ORGANIZER]);
+router.get('/cenik/products', requireProductSelectionRead, getAllProducts);
+router.get('/price-list/items/search', requireProductSelectionRead, searchPriceListItems);
 router.use('/cenik', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), cenikRoutes);
 router.use('/price-list', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE]), priceListRoutes);
 router.use('/settings', settingsRoutes);

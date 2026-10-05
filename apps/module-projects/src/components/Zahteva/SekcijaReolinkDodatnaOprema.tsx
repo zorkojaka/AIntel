@@ -1,3 +1,4 @@
+import { ProductPrice } from "./ProductPrice";
 import { MemoryStick } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo } from "react";
@@ -6,6 +7,7 @@ import type { Videonadzor } from "./utils";
 import { formatPrice } from "./utils";
 
 type Props = {
+  onProductSelected?: (product: CenikProduct) => void;
   videonadzor: Videonadzor;
   productById: Map<string, CenikProduct>;
   onChange: (next: Videonadzor) => void;
@@ -29,7 +31,7 @@ function assignedCameraCount(videonadzor: Videonadzor) {
   return assigned > 0 ? assigned : videonadzor.asortima.length;
 }
 
-export function SekcijaReolinkDodatnaOprema({ videonadzor, productById, onChange }: Props) {
+export function SekcijaReolinkDodatnaOprema({ videonadzor, productById, onProductSelected, onChange }: Props) {
   const microSdCards = useMemo(
     () =>
       Array.from(productById.values())
@@ -38,6 +40,11 @@ export function SekcijaReolinkDodatnaOprema({ videonadzor, productById, onChange
     [productById],
   );
   const setQuantity = (productId: string, quantity: number) => {
+    if (onProductSelected) {
+      const product = productById.get(productId);
+      if (product && quantity > 0) onProductSelected(product);
+      return;
+    }
     const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
     const byId = new Map((videonadzor.dodatnaOprema ?? []).map((item) => [item.productId, item.kolicina]));
     if (nextQuantity > 0) byId.set(productId, nextQuantity);
@@ -95,7 +102,7 @@ function AccessorySection({
                 {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
                 <strong>{product.ime}</strong>
                 <small>{title}</small>
-                <b>{formatPrice(product.prodajnaCena)}</b>
+                <ProductPrice>{formatPrice(product.prodajnaCena)}</ProductPrice>
               </button>
               <div className="zahteva-qty-control">
                 <button type="button" onClick={() => onSetQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>-</button>

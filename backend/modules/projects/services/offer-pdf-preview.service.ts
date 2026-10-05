@@ -16,6 +16,7 @@ import {
 import { renderDocumentHtml, type DocumentPreviewContext } from './document-renderers';
 import { renderHtmlToPdf } from './html-pdf.service';
 import { calculateOfferLineNetAmount } from './offer-totals.service';
+import { buildPaymentInfo } from './payment-qr.service';
 
 interface PreviewProjectInfo {
   id: string;
@@ -393,6 +394,15 @@ export async function buildOfferPdfPreviewPayload(
   );
 
   const totals = buildOfferPdfTotals(offerWithTexts);
+  const paymentInfo = docType === 'OFFER'
+    ? await buildPaymentInfo({
+        recipient: companyProfile.companyName ?? 'Podjetje',
+        iban: companyProfile.iban ?? '',
+        amount: totals.total,
+        reference: generatedNumber,
+        purpose: `Plačilo ponudbe ${generatedNumber}`,
+      })
+    : null;
 
   const offerProjectTitle = offerWithTexts.baseTitle ?? offerWithTexts.title ?? project?.title ?? 'Projekt';
   const versionedProjectTitle = docType === 'OFFER' && offerWithTexts.versionNumber
@@ -417,6 +427,7 @@ export async function buildOfferPdfPreviewPayload(
     notes,
     comment: docType === 'OFFER' ? offerWithTexts.comment ?? null : null,
     usePerItemDiscount: !!offerWithTexts.usePerItemDiscount,
+    paymentInfo,
     referenceNumber: docType === 'CREDIT_NOTE' ? generatedNumber.replace('DOBROPIS', 'RACUN') : null,
     tasks: docType === 'WORK_ORDER' || docType === 'WORK_ORDER_CONFIRMATION'
       ? items.map((item) => ({ label: item.name, status: docType === 'WORK_ORDER' ? 'in-progress' : 'done' }))

@@ -1,3 +1,4 @@
+import { ProductPrice } from "./ProductPrice";
 import { BellRing, ChevronDown, Flame, Keyboard, Package, Plus, RadioReceiver, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -6,6 +7,7 @@ import type { Alarm } from "./utils";
 import { formatPrice, salesCompare, topSellerId } from "./utils";
 
 type Props = {
+  onProductSelected?: (product: CenikProduct) => void;
   alarm: Alarm;
   productById: Map<string, CenikProduct>;
   onChange: (next: Alarm) => void;
@@ -148,7 +150,7 @@ export function alarmNeedsHub2(alarm: Alarm, productById: Map<string, CenikProdu
   });
 }
 
-export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }: Props) {
+export function SekcijaAlarmOprema({ alarm, productById, onProductSelected, onChange, onAddSenzor }: Props) {
   const [projectMode, setProjectMode] = useState<AlarmProjectMode>("wireless");
   const [collapsedSections, setCollapsedSections] = useState<Partial<Record<AlarmCollapseKey, boolean>>>({});
   const [sensorFilters, setSensorFilters] = useState<SensorFilter>({
@@ -184,9 +186,9 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
   const recommendedHub = needsHub2 ? photoHubs[0] : basicHubs[0];
 
   useEffect(() => {
-    if (!recommendedHub || alarm.centrala.productId === recommendedHub._id || alarm.centrala.autoSelected === false) return;
+    if (onProductSelected || !recommendedHub || alarm.centrala.productId === recommendedHub._id || alarm.centrala.autoSelected === false) return;
     onChange({ ...alarm, centrala: { productId: recommendedHub._id, autoSelected: true } });
-  }, [alarm, onChange, recommendedHub]);
+  }, [alarm, onChange, onProductSelected, recommendedHub]);
 
   useEffect(() => {
     const nextFilters = { ...sensorFilters };
@@ -208,10 +210,20 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
   };
 
   const setHub = (productId: string | null) => {
+    if (onProductSelected) {
+      const product = productId ? productById.get(productId) : null;
+      if (product) onProductSelected(product);
+      return;
+    }
     onChange({ ...alarm, centrala: { productId, autoSelected: false } });
   };
 
   const setQuantity = (field: QuantityField, productId: string, quantity: number) => {
+    if (onProductSelected) {
+      const product = productById.get(productId);
+      if (product && quantity > 0) onProductSelected(product);
+      return;
+    }
     const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
     const byId = new Map((alarm[field] ?? []).map((item) => [item.productId, item.kolicina]));
     if (nextQuantity > 0) byId.set(productId, nextQuantity);
@@ -286,7 +298,7 @@ export function SekcijaAlarmOprema({ alarm, productById, onChange, onAddSenzor }
                 {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
                 <strong>{productDisplayName(product)}</strong>
                 <small>{recommendedHub?._id === product._id ? "Priporočeno" : "Centrala"}</small>
-                <b>{formatPrice(product.prodajnaCena)}</b>
+                <ProductPrice>{formatPrice(product.prodajnaCena)}</ProductPrice>
               </button>
             ))}
             {hubOptions.length === 0 ? <div className="zahteva-empty">Ni ustrezne centrale v ceniku.</div> : null}
@@ -392,7 +404,7 @@ function SensorProductGroup({
                 {sensorColor(product) ? ` • ${sensorColor(product)}` : ""}
               </small>
               {product._id === topSellerId(products) ? <span className="zahteva-sales-hint">★ najpogosteje izbrano</span> : null}
-              <b>{formatPrice(product.prodajnaCena)}</b>
+              <ProductPrice>{formatPrice(product.prodajnaCena)}</ProductPrice>
               <span className="zahteva-card-action">
                 <Plus className="h-3 w-3" aria-hidden />
                 Dodaj
@@ -436,7 +448,7 @@ function QuantitySection({
                   {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
                   <strong>{productDisplayName(product)}</strong>
                   <small>{title}</small>
-                  <b>{formatPrice(product.prodajnaCena)}</b>
+                  <ProductPrice>{formatPrice(product.prodajnaCena)}</ProductPrice>
                 </button>
                 <div className="zahteva-qty-control">
                   <button type="button" onClick={() => onSetQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>-</button>

@@ -24,6 +24,7 @@ import { cn } from "../../components/ui/utils";
 import { MaterialOrderCard } from "../logistics/MaterialOrderCard";
 import { ExecutionDefinitionPanel } from "../logistics/ExecutionDefinitionPanel";
 import { PriceListProductAutocomplete } from "../../components/PriceListProductAutocomplete";
+import { ExecutionProductPicker } from "../../components/Zahteva/ExecutionProductPicker";
 import { SignaturePad } from "./SignaturePad";
 import { ClientNotesCard } from "../core/ClientNotesCard";
 import { useProjectMutationRefresh } from "../core/useProjectMutationRefresh";
@@ -2295,9 +2296,10 @@ export function ExecutionPanel({
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-2 md:col-span-2">
             <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Naziv naloge
+              Naziv postavke
             </label>
             <PriceListProductAutocomplete
+              showPrices={false}
               value={item.name ?? ""}
               disabled={isDisabled}
               placeholder="Poišči produkt ali storitev v ceniku"
@@ -2309,6 +2311,9 @@ export function ExecutionPanel({
             />
             {!item.productId ? (
               <p className="text-xs text-destructive">Izberi postavko iz cenika.</p>
+            ) : null}
+            {!isDisabled ? (
+              <ExecutionProductPicker onProductSelected={(product) => applyExtraProductSelection(order, item, product)} />
             ) : null}
           </div>
           <div className="space-y-2">
@@ -3135,11 +3140,11 @@ export function ExecutionPanel({
                                         </td>
                                       </tr>
                                     ) : null,
-                                    isNewExtraItem ? (
+                                    item.isExtra ? (
                                       <tr key={`${item.id}-new-extra`} className={cn("border-t", itemStatusStyles.rowClassName)}>
                                         <td colSpan={5} className="p-2 pt-0">
                                           {renderExtraExecutionItemEditor(order, item, {
-                                            disabled: isConfirmationLocked,
+                                            disabled: isConfirmationLocked || item.isCompleted,
                                           })}
                                         </td>
                                       </tr>
@@ -3337,9 +3342,9 @@ export function ExecutionPanel({
                                       : null}
                                   </div>
                                 )}
-                                {isNewExtraItem ? renderExtraExecutionItemEditor(order, item, {
+                                {item.isExtra ? renderExtraExecutionItemEditor(order, item, {
                                   compact: true,
-                                  disabled: isConfirmationLocked,
+                                  disabled: isConfirmationLocked || item.isCompleted,
                                 }) : null}
                                 {item.isExtra ? (
                                   <div className="flex justify-end">
@@ -3379,7 +3384,7 @@ export function ExecutionPanel({
                               disabled={isConfirmationLocked}
                               onClick={() => handleAddExtraItem(order)}
                             >
-                              + Dodaj nalogo
+                              + Dodaj postavko
                             </Button>
                           </div>
                         </div>

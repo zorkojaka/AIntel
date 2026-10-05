@@ -1,3 +1,4 @@
+import { ProductPrice } from "./ProductPrice";
 import { HardDrive } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchPredlogDisk, getProductImageUrl, type CenikProduct } from "../../api";
@@ -5,6 +6,7 @@ import type { Videonadzor } from "./utils";
 import { assignedCameraProducts, calculateDvcStorage, formatPrice, normalizedSelectedItems, salesCompare, topSellerId } from "./utils";
 
 type Props = {
+  onProductSelected?: (product: CenikProduct) => void;
   videonadzor: Videonadzor;
   productById: Map<string, CenikProduct>;
   onChange: (next: Videonadzor) => void;
@@ -20,7 +22,7 @@ function syncPrimary<T extends { productId: string; kolicina: number }>(items: T
   return { productId: first?.productId ?? null, kolicina: first?.kolicina ?? 0, items };
 }
 
-export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
+export function SekcijaDisk({ videonadzor, productById, onProductSelected, onChange }: Props) {
   const cameras = useMemo(() => assignedCameraProducts(videonadzor, productById), [productById, videonadzor]);
   const cameraIds = useMemo(() => cameras.map((camera) => camera._id), [cameras]);
   const selectedNvr = videonadzor.snemalnik.productId ? productById.get(videonadzor.snemalnik.productId) : null;
@@ -40,7 +42,7 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
   const autoAppliedRef = useRef("");
 
   useEffect(() => {
-    if (!hasSnemalnik) {
+    if (onProductSelected || !hasSnemalnik) {
       setServerSuggestion(null);
       return;
     }
@@ -68,7 +70,7 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [cameraIds, hasSnemalnik, videonadzor.disk.dniSnemanja, videonadzor.disk.motionRecord]);
+  }, [onProductSelected, cameraIds, hasSnemalnik, videonadzor.disk.dniSnemanja, videonadzor.disk.motionRecord]);
 
   const alternatives = useMemo(
     () =>
@@ -82,7 +84,7 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
   const najprodajnejsiId = useMemo(() => topSellerId(alternatives), [alternatives]);
 
   useEffect(() => {
-    if (!hasSnemalnik) return;
+    if (onProductSelected || !hasSnemalnik) return;
     const suggested = serverSuggestion?.productId ? productById.get(serverSuggestion.productId) : null;
     const selected = suggested ?? alternatives.find((product) => (product.classification?.diskCapacityTB ?? 0) >= storage.recommendedDiskTB) ?? alternatives[0];
     if (!selected || selectedItems.length > 0) return;
@@ -90,9 +92,14 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
     if (autoAppliedRef.current === signature) return;
     autoAppliedRef.current = signature;
     onChange({ ...videonadzor, disk: { ...videonadzor.disk, ...syncPrimary([{ productId: selected._id, kolicina: 1 }]) } });
-  }, [alternatives, hasSnemalnik, onChange, productById, selectedItems.length, serverSuggestion?.productId, storage.recommendedDiskTB, videonadzor]);
+  }, [onProductSelected, alternatives, hasSnemalnik, onChange, productById, selectedItems.length, serverSuggestion?.productId, storage.recommendedDiskTB, videonadzor]);
 
   const setQuantity = (productId: string, quantity: number) => {
+    if (onProductSelected) {
+      const product = productById.get(productId);
+      if (product && quantity > 0) onProductSelected(product);
+      return;
+    }
     const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
     const byId = new Map(selectedItems.map((item) => [item.productId, item.kolicina]));
     if (nextQuantity > 0) byId.set(productId, nextQuantity);
@@ -107,10 +114,11 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
         <HardDrive className="h-4 w-4" aria-hidden />
         <h4>Disk</h4>
       </div>
-      {!hasSnemalnik ? (
+      {!hasSnemalnik && !onProductSelected ? (
         <div className="zahteva-storage-note zahteva-muted-note">Disk ni potreben brez snemalnika.</div>
       ) : (
         <>
+      {!onProductSelected ? <>
       <div className="zahteva-recording-row">
         <span>Snemanje:</span>
         <input
@@ -135,6 +143,7 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
       <div className={`zahteva-capacity-note ${selectedDiskCount <= hddSlots ? "is-ok" : "is-warning"}`}>
         Snemalnik ima {hddSlots} disk {hddSlots === 1 ? "slot" : "slota"} • izbrano {selectedDiskCount} {selectedDiskCount <= hddSlots ? "✓" : "⚠"}
       </div>
+      </> : null}
       <div className="zahteva-product-track">
         {alternatives.map((product) => {
           const quantity = selectedItems.find((item) => item.productId === product._id)?.kolicina ?? 0;
@@ -149,7 +158,7 @@ export function SekcijaDisk({ videonadzor, productById, onChange }: Props) {
                 <strong>{product.ime}</strong>
                 <small>{product.classification?.diskCapacityTB ?? "-"} TB</small>
                 {product._id === najprodajnejsiId ? <span className="zahteva-sales-hint">★ najpogosteje izbrano</span> : null}
-                <b>{formatPrice(product.prodajnaCena)}</b>
+                <ProductPrice>{formatPrice(product.prodajnaCena)}</ProductPrice>
                 <span className="zahteva-disk-days">{days ? `${days} dni za ${cameras.length} kam` : "—"}</span>
               </button>
               <div className="zahteva-qty-control">
