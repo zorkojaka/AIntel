@@ -27,7 +27,9 @@ router.post('/', async (req, res) => {
         `Uporabnik: ${actor?.name || ''} (${actor?.email || ''})`,
         `Modul: ${request.moduleName}`, `Stran: ${request.page}`,
         `Zajem: ${request.capturedAt}`, `Poslano: ${new Date().toISOString()}`, `ID: ${id}`, '',
-        'Komentar:', request.comment, '', 'Označena slika zaslona je v prilogi.',
+        'Komentar:', request.comment, '',
+        ...request.frames.flatMap((frame) => [`Okvir ${frame.number}:`, frame.comment || '(brez komentarja)', '']),
+        'Označena slika zaslona je v prilogi.',
       ].join('\n'),
       attachments: [{ filename: `zahtevek-${id.slice(0, 8)}.jpg`, content: request.attachment, contentType: 'image/jpeg' }],
     });

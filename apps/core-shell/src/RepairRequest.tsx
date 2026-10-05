@@ -5,10 +5,10 @@ import html2canvas from 'html2canvas-pro';
 import './RepairRequest.css';
 
 type Point = { x: number; y: number };
-type Mark = { tool: 'pen' | 'rectangle'; points: Point[] };
+type Mark = { id: number; comment: string; tool: 'pen' | 'rectangle'; points: Point[] };
 type Capture = { image: string; page: string; module: string; capturedAt: string };
 
-function drawMark(context: CanvasRenderingContext2D, mark: Mark) {
+function drawMark(context: CanvasRenderingContext2D, mark: Mark, number?: number) {
   const start = mark.points[0];
   if (!start) return;
   context.strokeStyle = '#ef2626';
@@ -18,6 +18,21 @@ function drawMark(context: CanvasRenderingContext2D, mark: Mark) {
   if (mark.tool === 'rectangle') {
     const end = mark.points[mark.points.length - 1];
     context.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
+    if (number !== undefined) {
+      const x = Math.min(context.canvas.width - 18, Math.min(start.x, end.x) + 18);
+      const y = Math.min(context.canvas.height - 18, Math.min(start.y, end.y) + 18);
+      context.save();
+      context.fillStyle = '#ef2626';
+      context.beginPath();
+      context.arc(x, y, 16, 0, Math.PI * 2);
+      context.fill();
+      context.fillStyle = '#ffffff';
+      context.font = 'bold 20px sans-serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(String(number), x, y);
+      context.restore();
+    }
   } else {
     context.beginPath();
     context.moveTo(start.x, start.y);
@@ -32,7 +47,7 @@ export function RepairRequest({ moduleName }: { moduleName: string }) {
   const [capturing, setCapturing] = useState(false);
   const [comment, setComment] = useState('');
   const [marks, setMarks] = useState<Mark[]>([]);
-  const [tool, setTool] = useState<Mark['tool']>('pen');
+  const [tool, setTool] = useState<Mark['tool']>('rectangle');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -43,6 +58,8 @@ export function RepairRequest({ moduleName }: { moduleName: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const baseImage = useRef<HTMLImageElement | null>(null);
   const stroke = useRef<Mark | null>(null);
+  const nextMarkId = useRef(1);
+  const activePointer = useRef<number | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
 
   const redraw = (currentMarks: Mark[] = marks, activeMark = stroke.current) => {
@@ -52,8 +69,9 @@ export function RepairRequest({ moduleName }: { moduleName: string }) {
     if (!target || !image || !context) return;
     context.clearRect(0, 0, target.width, target.height);
     context.drawImage(image, 0, 0, target.width, target.height);
-    currentMarks.forEach((mark) => drawMark(context, mark));
-    if (activeMark) drawMark(context, activeMark);
+    let number = 0;
+    currentMarks.forEach((mark) => drawMark(context, mark, mark.tool === 'rectangle' ? ++number : undefined));
+    if (activeMark) drawMark(context, activeMark, activeMark.tool === 'rectangle' ? number + 1 : undefined);
   };
 
   useEffect(() => {
@@ -108,7 +126,8 @@ export function RepairRequest({ moduleName }: { moduleName: string }) {
       setComment('');
       setMarks([]);
       setReady(false);
-      setTool('pen');
+      setTool('rectangle');
+      nextMarkId.current = 1;
       setZoomed(false);
       setCapture({ ...context, image: screenshot.toDataURL('image/jpeg', 0.92) });
     } catch {
@@ -128,11 +147,16 @@ export function RepairRequest({ moduleName }: { moduleName: string }) {
     };
   };
   const finishMark = (event: PointerEvent<HTMLCanvasElement>) => {
-    if (!stroke.current) return;
+    if (!stroke.current || activePointer.current !== event.pointerId) return;
     stroke.current.points.push(point(event));
     const completed = stroke.current;
     stroke.current = null;
-    setMarks((previous) => [...previous, completed]);
+    activePointer.current = null;
+    const start = completed.points[0];
+    const end = completed.points[completed.points.length - 1];
+    if (completed.tool === 'pen' || (Math.abs(end.x - start.x) >= 4 && Math.abs(end.y - start.y) >= 4)) {
+      setMarks((previous) => [...previous, completed]);
+    } else redraw(marks, null);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
@@ -144,7 +168,8 @@ export function RepairRequest({ moduleName }: { moduleName: string }) {
       const response = await fetch('/api/repair-requests', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ comment: comment.trim(), screenshot: canvas.current.toDataURL('image/jpeg', 0.92),
-          page: capture.page, module: capture.module, capturedAt: capture.capturedAt }),
+          page: capture.page, module: capture.module, capturedAt: capture.capturedAt,
+          frames: marks.filter((mark) => mark.tool === 'rectangle').map((mark, index) => ({ number: index + 1, comment: mark.comment.trim() })) }),
       });
       const result = await response.json();
       if (!response.ok || result.success === false) throw new Error((typeof result.error === 'string' ? result.error : result.error?.message) || result.message || 'Pošiljanje zahtevka ni uspelo.');
@@ -181,11 +206,22 @@ export function RepairRequest({ moduleName }: { moduleName: string }) {
         onPointerDown={(event) => {
           if (sending || !ready || stroke.current || (event.pointerType === 'mouse' && event.button !== 0)) return;
           event.currentTarget.setPointerCapture(event.pointerId);
-          stroke.current = { tool, points: [point(event)] };
+          activePointer.current = event.pointerId;
+          stroke.current = { id: nextMarkId.current++, comment: '', tool, points: [point(event)] };
           redraw();
         }}
-        onPointerMove={(event) => { if (stroke.current) { stroke.current.points.push(point(event)); redraw(); } }}
-        onPointerUp={finishMark} onPointerCancel={() => { stroke.current = null; redraw(); }} /></div>
+        onPointerMove={(event) => { if (stroke.current && activePointer.current === event.pointerId) { stroke.current.points.push(point(event)); redraw(); } }}
+        onPointerUp={finishMark} onPointerCancel={(event) => { if (activePointer.current === event.pointerId) { stroke.current = null; activePointer.current = null; redraw(); } }} /></div>
+      {marks.filter((mark) => mark.tool === 'rectangle').map((mark, index) => (
+        <div key={mark.id} className="repair-request-frame-comment">
+          <label htmlFor={`repair-request-frame-${mark.id}`}><span className="repair-request-frame-number">{index + 1}</span> Komentar za okvir {index + 1}</label>
+          <textarea id={`repair-request-frame-${mark.id}`} rows={2} maxLength={2000} value={mark.comment} disabled={sending}
+            placeholder={`Opiši popravek v okvirju ${index + 1}`} onChange={(event) => {
+              const value = event.target.value;
+              setMarks((previous) => previous.map((entry) => entry.id === mark.id ? { ...entry, comment: value } : entry));
+            }} />
+        </div>
+      ))}
       <label htmlFor="repair-request-comment">Komentar za popravek</label>
       <textarea id="repair-request-comment" rows={4} maxLength={5000} value={comment} disabled={sending}
         placeholder="Kaj ne deluje oziroma kaj bi želel izboljšati?" onChange={(event) => setComment(event.target.value)} />

@@ -13,6 +13,11 @@ test('repair requests validate actual image bytes and preserve Slovenian comment
   const result = await validateRepairRequest(input);
   assert.equal(result.comment, 'Popravi prikaz č, š in ž.');
   assert.equal((await sharp(result.attachment).metadata()).format, 'jpeg');
+  assert.deepEqual(result.frames, []);
+  assert.deepEqual((await validateRepairRequest({ ...input, frames: [{ number: 1, comment: ' Prvi okvir ' }] })).frames,
+    [{ number: 1, comment: 'Prvi okvir' }]);
+  await assert.rejects(validateRepairRequest({ ...input, frames: [{ number: 2, comment: '' }] }), /okvirja/);
+  await assert.rejects(validateRepairRequest({ ...input, frames: [{ number: 1, comment: 'x'.repeat(2001) }] }), /okvirja/);
   await assert.rejects(validateRepairRequest({ ...input, comment: ' ' }), /Komentar/);
   await assert.rejects(validateRepairRequest({ ...input, screenshot: 'data:image/jpeg;base64,YWJj' }), /ni veljavna/);
   await assert.rejects(validateRepairRequest({ ...input, page: 'javascript:alert(1)' }), /strani/);
@@ -66,7 +71,7 @@ test('repair request route sends the image and authenticated author, and reports
     const image = await sharp({ create: { width: 20, height: 10, channels: 3, background: '#ffffff' } }).jpeg().toBuffer();
     const input = { comment: 'Popravek č š ž', page: 'https://aintel.inteligent.si/projects/123', module: 'Izvedba',
       capturedAt: '2026-10-05T10:00:00Z', screenshot: `data:image/jpeg;base64,${image.toString('base64')}`,
-      to: 'untrusted@example.test', author: 'Untrusted user' };
+      to: 'untrusted@example.test', author: 'Untrusted user', frames: [{ number: 1, comment: 'Komentar prvega okvirja' }] };
     const post = (body: unknown) => fetch(`http://127.0.0.1:${address.port}/api/repair-requests`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
@@ -76,6 +81,7 @@ test('repair request route sends the image and authenticated author, and reports
     assert.equal(mail.replyTo, 'monter@example.test');
     assert.match(mail.text, /Monter \(monter@example.test\)/);
     assert.match(mail.text, /Popravek č š ž/);
+    assert.match(mail.text, /Okvir 1:\nKomentar prvega okvirja/);
     assert.equal(mail.attachments[0].contentType, 'image/jpeg');
     assert.ok(mail.attachments[0].content.length > 0);
     assert.equal((await post({ ...input, screenshot: '' })).status, 400);

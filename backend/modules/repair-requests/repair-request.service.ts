@@ -9,6 +9,16 @@ export async function validateRepairRequest(body: unknown) {
   const input = body && typeof body === 'object' ? body as Record<string, unknown> : {};
   const comment = typeof input.comment === 'string' ? input.comment.trim() : '';
   if (!comment || comment.length > 5000) throw new RepairRequestValidationError('Komentar je obvezen in lahko vsebuje največ 5000 znakov.');
+  const frames: Array<{ number: number; comment: string }> = [];
+  if (input.frames !== undefined) {
+    if (!Array.isArray(input.frames) || input.frames.length > 100) throw new RepairRequestValidationError('Zahtevek lahko vsebuje največ 100 okvirjev.');
+    for (const [index, frame] of input.frames.entries()) {
+      if (!frame || typeof frame !== 'object' || frame.number !== index + 1 || typeof frame.comment !== 'string' || frame.comment.length > 2000) {
+        throw new RepairRequestValidationError('Številka ali komentar okvirja ni veljaven.');
+      }
+      frames.push({ number: frame.number, comment: frame.comment.trim() });
+    }
+  }
   const page = typeof input.page === 'string' ? input.page.trim() : '';
   if (!page || page.length > 2000) throw new RepairRequestValidationError('Podatek o strani ni veljaven.');
   try {
@@ -30,7 +40,7 @@ export async function validateRepairRequest(body: unknown) {
     // Decode and re-encode to verify the image and strip unrelated metadata.
     const attachment = await sharp(image, { limitInputPixels: 16_000_000 }).rotate()
       .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 92 }).toBuffer();
-    return { comment, page, moduleName, capturedAt: capturedAt.toISOString(), attachment };
+    return { comment, frames, page, moduleName, capturedAt: capturedAt.toISOString(), attachment };
   } catch { throw new RepairRequestValidationError('Slika zaslona ni veljavna.'); }
 }
 
