@@ -51,6 +51,8 @@ export interface InvoiceVersion {
 export interface InvoiceDiscountPayload {
   discountPercent: number;
   useGlobalDiscount: boolean;
+  usePerItemDiscount: boolean;
+  fixedDiscountAmount: number;
   paidAmount: number;
 }
 

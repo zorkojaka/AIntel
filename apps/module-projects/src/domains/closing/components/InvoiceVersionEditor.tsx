@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "../../../components/ui/table";
 import { Input } from "../../../components/ui/input";
+import { Checkbox } from "../../../components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -293,6 +294,22 @@ export function InvoiceVersionEditor({
     setDirty(true);
   };
 
+  const handleVatModeChange = (value: string) => {
+    if (!draftVersion || !canEdit) return;
+    const vatPercent = Number(value) as 0 | 9.5 | 22;
+    setDraftVersion({
+      ...draftVersion,
+      items: draftVersion.items.map((item) => recalculateItem({ ...item, vatPercent })),
+    });
+    setDirty(true);
+  };
+
+  const updateDiscountSettings = (updates: Partial<DiscountSettings>) => {
+    if (!draftVersion || !canEdit) return;
+    setDraftVersion({ ...draftVersion, ...updates });
+    setDirty(true);
+  };
+
   const handleItemChange = (itemId: string, updates: Partial<InvoiceItem>) => {
     if (!draftVersion || !canEdit) return;
     const nextItems = draftVersion.items.map((item) =>
@@ -359,6 +376,8 @@ export function InvoiceVersionEditor({
     const success = await saveDraft(draftVersion.items, invoiceNumberDraft, {
       discountPercent: draftVersion.discountPercent ?? 0,
       useGlobalDiscount: draftVersion.useGlobalDiscount ?? false,
+      usePerItemDiscount: draftVersion.usePerItemDiscount ?? false,
+      fixedDiscountAmount: draftVersion.fixedDiscountAmount ?? 0,
       paidAmount,
     });
     if (success) {
@@ -505,13 +524,45 @@ export function InvoiceVersionEditor({
               </p>
             ) : null}
           </div>
-          <div>
+          <div className="rounded-lg border bg-muted/25 px-4 py-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 xl:flex-nowrap">
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="text-sm text-muted-foreground">DDV način</span>
+                <Select value={String(items[0]?.vatPercent ?? 22)} onValueChange={handleVatModeChange} disabled={!canEdit}>
+                  <SelectTrigger className="h-9 w-[110px] bg-background"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="22">22 %</SelectItem>
+                    <SelectItem value="9.5">9,5 %</SelectItem>
+                    <SelectItem value="0">0 %</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-2 xl:flex-nowrap">
+                <label className="flex shrink-0 items-center gap-2">
+                  <Checkbox checked={useGlobalDiscount} disabled={!canEdit} onChange={(event) => updateDiscountSettings({ useGlobalDiscount: event.target.checked })} />
+                  <span className="whitespace-nowrap text-sm">Popust na celoten račun</span>
+                  {useGlobalDiscount && <><Input type="number" min={0} max={100} className="h-9 w-16 bg-background px-2 text-right" inputMode="decimal" value={discountPercent} disabled={!canEdit} onChange={(event) => handleDiscountChange(event.target.value)} /><span className="text-muted-foreground">%</span></>}
+                </label>
+                <label className="flex shrink-0 items-center gap-2">
+                  <Checkbox checked={usePerItemDiscount} disabled={!canEdit} onChange={(event) => updateDiscountSettings({ usePerItemDiscount: event.target.checked })} />
+                  <span className="whitespace-nowrap text-sm">Popust po produktih</span>
+                </label>
+                <label className="flex shrink-0 items-center gap-2">
+                  <span className="whitespace-nowrap text-sm">Fiksni popust</span>
+                  <Input type="number" min={0} step="0.01" className="h-9 w-20 bg-background px-2 text-right" inputMode="decimal" value={fixedDiscountAmount} disabled={!canEdit} onChange={(event) => updateDiscountSettings({ fixedDiscountAmount: Math.max(0, Number(event.target.value) || 0) })} />
+                  <span className="text-muted-foreground">€</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div className="overflow-hidden rounded-[var(--radius-card)] border bg-card">
             <Table className="w-full table-fixed">
               <colgroup>
                 <col style={{ width: canEdit ? "32%" : "35%" }} />
                 <col style={{ width: "7%" }} />
                 <col style={{ width: "7%" }} />
                 <col style={{ width: "10%" }} />
+                {usePerItemDiscount && <col style={{ width: "7%" }} />}
                 <col style={{ width: "7%" }} />
                 <col style={{ width: "11%" }} />
                 <col style={{ width: "11%" }} />
@@ -524,6 +575,7 @@ export function InvoiceVersionEditor({
                   <TableHead className="px-1">Enota</TableHead>
                   <TableHead className="px-1 text-right">Količina</TableHead>
                   <TableHead className="px-1 text-right">Cena (€)</TableHead>
+                  {usePerItemDiscount && <TableHead className="px-1 text-right">Popust (%)</TableHead>}
                   <TableHead className="px-1 text-right">DDV (%)</TableHead>
                   <TableHead className="px-1 text-right">Brez DDV (€)</TableHead>
                   <TableHead className="px-1 text-right">Z DDV (€)</TableHead>
@@ -534,7 +586,7 @@ export function InvoiceVersionEditor({
               <TableBody>
                 {items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={canEdit ? 9 : 8} className="text-center text-muted-foreground">
+                    <TableCell colSpan={(canEdit ? 9 : 8) + (usePerItemDiscount ? 1 : 0)} className="text-center text-muted-foreground">
                       Ni postavk za prikaz.
                     </TableCell>
                   </TableRow>
@@ -586,6 +638,19 @@ export function InvoiceVersionEditor({
                         <span>€</span>
                       </div>
                     </TableCell>
+                    {usePerItemDiscount && (
+                      <TableCell className="px-1 text-right">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={item.discountPercent ?? 0}
+                          disabled={!canEdit}
+                          onChange={(event) => handleItemChange(item.id, { discountPercent: clampPercent(event.target.value) })}
+                          className="h-9 min-w-0 px-1 text-right"
+                        />
+                      </TableCell>
+                    )}
                     <TableCell className="px-1 text-right">
                       <div className="flex items-center gap-1">
                         <Input
@@ -651,29 +716,12 @@ export function InvoiceVersionEditor({
                 <span>-{formatCurrency(summary.perItemDiscountAmount ?? 0)}</span>
               </div>
             )}
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2 text-muted-foreground">
-                Globalni popust
-                {canEdit ? (
-                  <span className="flex items-center gap-1">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      step={1}
-                      className="h-7 w-20 text-right"
-                      value={discountPercent}
-                      onChange={(event) => handleDiscountChange(event.target.value)}
-                      aria-label="Popust v odstotkih"
-                    />
-                    <span>%</span>
-                  </span>
-                ) : (
-                  <span>({percentFormatter.format(discountPercent)} %)</span>
-                )}
-              </span>
-              <span>{globalDiscountAmount > 0 ? `– ${formatCurrency(globalDiscountAmount)}` : formatCurrency(0)}</span>
-            </div>
+            {useGlobalDiscount && globalDiscountAmount > 0 && (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Popust na celoten račun ({percentFormatter.format(discountPercent)} %)</span>
+                <span>– {formatCurrency(globalDiscountAmount)}</span>
+              </div>
+            )}
             {usePerItemDiscount && (
               <p className="text-xs text-muted-foreground m-0">
                 Ponudba ima popuste po postavkah — zgornji odstotek se obračuna dodatno na že popustirane postavke.

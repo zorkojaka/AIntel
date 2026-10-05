@@ -504,6 +504,8 @@ export async function updateInvoiceVersion(
     invoiceNumber?: unknown;
     discountPercent?: unknown;
     useGlobalDiscount?: unknown;
+    usePerItemDiscount?: unknown;
+    fixedDiscountAmount?: unknown;
     paidAmount?: unknown;
   },
 ): Promise<InvoiceListResponse> {
@@ -522,6 +524,12 @@ export async function updateInvoiceVersion(
   }
   if (payload.useGlobalDiscount !== undefined) {
     version.useGlobalDiscount = Boolean(payload.useGlobalDiscount);
+  }
+  if (payload.usePerItemDiscount !== undefined) {
+    version.usePerItemDiscount = Boolean(payload.usePerItemDiscount);
+  }
+  if (payload.fixedDiscountAmount !== undefined) {
+    version.fixedDiscountAmount = Math.max(0, toNumber(payload.fixedDiscountAmount, 0));
   }
   const invoiceNumber = typeof payload.invoiceNumber === 'string' ? payload.invoiceNumber.trim() : '';
   if (invoiceNumber) {

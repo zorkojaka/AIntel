@@ -57,6 +57,8 @@ export async function updateInvoice(req: Request, res: Response) {
       invoiceNumber: req.body?.invoiceNumber,
       discountPercent: req.body?.discountPercent,
       useGlobalDiscount: req.body?.useGlobalDiscount,
+      usePerItemDiscount: req.body?.usePerItemDiscount,
+      fixedDiscountAmount: req.body?.fixedDiscountAmount,
       paidAmount: req.body?.paidAmount,
     });
     return res.success(payload);
