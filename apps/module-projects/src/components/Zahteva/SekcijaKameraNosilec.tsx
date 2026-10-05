@@ -6,6 +6,8 @@ import { Button } from "../ui/button";
 import { formatPrice, salesCompare, topSellerId } from "./utils";
 
 type Props = {
+  onProductSelected?: (product: CenikProduct) => void;
+  selectionGroup?: "camera" | "bracket";
   productById: Map<string, CenikProduct>;
   onAddVariant: (camera: CenikProduct, bracket: CenikProduct | null) => void;
   cameraMode?: "ip" | "reolink_wifi";
@@ -73,7 +75,7 @@ function defaultBrand(values: string[]) {
   return values.includes("DVC") ? "DVC" : values[0] ?? "";
 }
 
-export function SekcijaKameraNosilec({ productById, onAddVariant, cameraMode = "ip" }: Props) {
+export function SekcijaKameraNosilec({ productById, onAddVariant, onProductSelected, selectionGroup, cameraMode = "ip" }: Props) {
   const [brand, setBrand] = useState("");
   const [reolinkKind, setReolinkKind] = useState<ReolinkCameraKind | "">("");
   const [housing, setHousing] = useState("");
@@ -148,6 +150,7 @@ export function SekcijaKameraNosilec({ productById, onAddVariant, cameraMode = "
 
   const selectCamera = (camera: CenikProduct) => {
     setSelectedCamera(camera);
+    if (onProductSelected && selectionGroup !== "bracket") onProductSelected(camera);
     setSelectedBracket(null);
     fetchKompatibilniNosilci(camera._id)
       .then((items) => setBrackets([...items].sort((a, b) => categoryPriorityRank(a) - categoryPriorityRank(b) || salesCompare(a, b) || a.prodajnaCena - b.prodajnaCena)))
@@ -204,6 +207,7 @@ export function SekcijaKameraNosilec({ productById, onAddVariant, cameraMode = "
         {filteredCameras.length === 0 ? <div className="zahteva-empty">Ni kamer za izbrane filtre.</div> : null}
       </div>
 
+      {!onProductSelected || selectionGroup === "bracket" ? <>
       <div className="zahteva-subsection-title">
         <Wrench className="h-4 w-4" aria-hidden />
         <h4>Nosilec</h4>
@@ -223,7 +227,7 @@ export function SekcijaKameraNosilec({ productById, onAddVariant, cameraMode = "
             key={bracket._id}
             type="button"
             className={`zahteva-track-card ${selectedBracket?._id === bracket._id ? "is-active" : ""}`}
-            onClick={() => setSelectedBracket(bracket)}
+            onClick={() => { setSelectedBracket(bracket); onProductSelected?.(bracket); }}
           >
             {getProductImageUrl(bracket) ? <img src={getProductImageUrl(bracket)} alt="" /> : <span className="zahteva-image-empty" />}
             <strong>{bracket.ime}</strong>
@@ -232,12 +236,13 @@ export function SekcijaKameraNosilec({ productById, onAddVariant, cameraMode = "
           </button>
         ))}
       </div>
-      <div className="zahteva-inline-action-row">
+      </> : null}
+      {!onProductSelected ? <div className="zahteva-inline-action-row">
         <Button type="button" size="sm" onClick={addSelected} disabled={!selectedCamera}>
           <Plus className="h-4 w-4" aria-hidden />
           Dodaj varianto
         </Button>
-      </div>
+      </div> : null}
     </section>
   );
 }

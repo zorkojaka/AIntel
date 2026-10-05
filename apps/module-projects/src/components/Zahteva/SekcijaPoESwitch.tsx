@@ -9,6 +9,7 @@ function optionKey(value?: string | number | null) {
 }
 
 type Props = {
+  onProductSelected?: (product: CenikProduct) => void;
   videonadzor: Videonadzor;
   productById: Map<string, CenikProduct>;
   onChange: (next: Videonadzor) => void;
@@ -117,7 +118,7 @@ function switchFitRank(product: CenikProduct, neededPorts: number) {
   return coversNeed * 1000 + distance;
 }
 
-export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) {
+export function SekcijaPoESwitch({ videonadzor, productById, onProductSelected, onChange }: Props) {
   const cameras = useMemo(() => assignedCameraProducts(videonadzor, productById), [productById, videonadzor]);
   const selectedNvr = videonadzor.snemalnik.productId ? productById.get(videonadzor.snemalnik.productId) : null;
   const allPoE = cameras.length > 0 && cameras.every((camera) => camera.classification?.hasPoE);
@@ -172,6 +173,11 @@ export function SekcijaPoESwitch({ videonadzor, productById, onChange }: Props) 
   }, [manufacturer, recommendedId]);
 
   const setQuantity = (productId: string, quantity: number) => {
+    if (onProductSelected) {
+      const product = productById.get(productId);
+      if (product && quantity > 0) onProductSelected(product);
+      return;
+    }
     const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
     const items =
       nextQuantity > 0

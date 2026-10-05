@@ -6,6 +6,7 @@ import type { Videonadzor } from "./utils";
 import { formatPrice } from "./utils";
 
 type Props = {
+  onProductSelected?: (product: CenikProduct) => void;
   videonadzor: Videonadzor;
   productById: Map<string, CenikProduct>;
   onChange: (next: Videonadzor) => void;
@@ -29,7 +30,7 @@ function assignedCameraCount(videonadzor: Videonadzor) {
   return assigned > 0 ? assigned : videonadzor.asortima.length;
 }
 
-export function SekcijaReolinkDodatnaOprema({ videonadzor, productById, onChange }: Props) {
+export function SekcijaReolinkDodatnaOprema({ videonadzor, productById, onProductSelected, onChange }: Props) {
   const microSdCards = useMemo(
     () =>
       Array.from(productById.values())
@@ -38,6 +39,11 @@ export function SekcijaReolinkDodatnaOprema({ videonadzor, productById, onChange
     [productById],
   );
   const setQuantity = (productId: string, quantity: number) => {
+    if (onProductSelected) {
+      const product = productById.get(productId);
+      if (product && quantity > 0) onProductSelected(product);
+      return;
+    }
     const nextQuantity = Math.max(0, Math.min(99, Math.round(quantity)));
     const byId = new Map((videonadzor.dodatnaOprema ?? []).map((item) => [item.productId, item.kolicina]));
     if (nextQuantity > 0) byId.set(productId, nextQuantity);
