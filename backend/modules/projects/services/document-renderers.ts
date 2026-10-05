@@ -227,6 +227,12 @@ const baseStyles = `
     text-align:center; font-size:11px; font-weight:600; }
   .document-stamp img { max-height:76px; max-width:150px; object-fit:contain; }
   .document-stamp--none { font-size:11px; color:#64748b; font-style:italic; padding-bottom:6px; }
+  .invoice-closing { margin-top:6px; }
+  .invoice-closing .document-signature { margin-top:8px; }
+  .invoice-closing .document-signature-image { max-height:42px; }
+  .invoice-closing .document-signature-line { height:42px; }
+  .invoice-closing .payment-block { margin-top:6px; padding:8px 10px; }
+  .invoice-closing .payment-qr, .invoice-closing .payment-qr img { width:96px; height:96px; flex-basis:96px; }
   .offer-footer { border-top:1px solid #e2e8f0; margin-top:0; padding-top:8px; display:flex; flex-direction:column; gap:3px; break-inside:avoid; page-break-inside:avoid; }
   .offer-contact-line { display:flex; flex-wrap:wrap; justify-content:center; gap:4px; font-size:11px; color:#475569; }
   .offer-dot { color:#cbd5e1; margin:0 4px; }
@@ -370,10 +376,11 @@ function buildCustomerLines(context: DocumentPreviewContext, emptyText: string) 
 }
 
 function buildNotesList(notes?: string[]) {
-  if (!notes || notes.length === 0) return '';
+  const visibleNotes = (notes ?? []).filter((note): note is string => typeof note === 'string' && note.trim().length > 0);
+  if (visibleNotes.length === 0) return '';
   return `<div class="offer-notes">
       <p style="font-weight:600;">Opombe</p>
-      <ul>${notes.map((note) => `<li>${note}</li>`).join('')}</ul>
+      <ul>${visibleNotes.map((note) => `<li>${note}</li>`).join('')}</ul>
     </div>`;
 }
 
@@ -391,6 +398,7 @@ interface DocumentShellOptions {
   extraSections?: string;
   /** Podpis direktorja (in po potrebi žig) desno spodaj. */
   signatureBlock?: string;
+  closingClass?: string;
 }
 
 /**
@@ -541,12 +549,12 @@ function buildStandardDocument(context: DocumentPreviewContext, options: Documen
 
         ${tableFooter}
 
-        <div class="offer-closing document-ending">
+        <div class="offer-closing document-ending ${options.closingClass ?? ''}">
           ${commentBlock}
           ${notesBlock}
-          ${paymentBlock}
           ${extraSections}
           ${options.signatureBlock ?? ''}
+          ${paymentBlock}
 
           <div class="offer-bottom">
             <div class="offer-footer">
@@ -741,6 +749,7 @@ export function renderInvoicePdf(context: DocumentPreviewContext) {
     commentBlock,
     notesBlock,
     signatureBlock: buildDirectorSignatureBlock(context.company),
+    closingClass: 'invoice-closing',
   });
 }
 

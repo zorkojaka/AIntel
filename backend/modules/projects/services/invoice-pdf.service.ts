@@ -201,9 +201,12 @@ function formatCustomerAddress(address?: string | null) {
 }
 
 function buildInvoiceNotes(defaults: { paymentTerms?: string; disclaimer?: string }) {
+  const legacyDefaultDisclaimer = 'Racun je izdan na podlagi izvedenih storitev.';
+
   return [defaults.disclaimer]
     .filter((text): text is string => typeof text === 'string' && text.trim().length > 0)
-    .map((text) => text.trim());
+    .map((text) => text.trim())
+    .filter((text) => text !== legacyDefaultDisclaimer);
 }
 
 function buildCompanyProfile(
