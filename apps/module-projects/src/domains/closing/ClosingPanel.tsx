@@ -14,6 +14,9 @@ import { InvoiceVersionEditor } from "./components/InvoiceVersionEditor";
 
 interface ClosingPanelProps {
   logistics?: ProjectLogistics | null;
+  customerName?: string | null;
+  customerEmail?: string | null;
+  projectName?: string | null;
 }
 
 type AggregatedRow = {
@@ -116,7 +119,7 @@ function countUnderExecuted(items: WorkOrderItem[]) {
   ).length;
 }
 
-export function ClosingPanel({ logistics }: ClosingPanelProps) {
+export function ClosingPanel({ logistics, customerName, customerEmail, projectName }: ClosingPanelProps) {
   const workOrders = logistics?.workOrders ?? [];
   const allItems = useMemo(
     () => workOrders.flatMap((order) => order.items ?? []),
@@ -195,9 +198,9 @@ export function ClosingPanel({ logistics }: ClosingPanelProps) {
       </Card>
       <InvoiceVersionEditor
         projectId={derivedProjectId}
-        customerName={primaryWorkOrder?.customerName ?? ""}
-        customerEmail={primaryWorkOrder?.customerEmail ?? ""}
-        projectName={derivedProjectId ?? ""}
+        customerName={customerName ?? primaryWorkOrder?.customerName ?? ""}
+        customerEmail={customerEmail ?? primaryWorkOrder?.customerEmail ?? ""}
+        projectName={projectName ?? derivedProjectId ?? ""}
         sourceRevision={invoiceSourceRevision}
       />
     </div>

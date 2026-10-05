@@ -452,7 +452,7 @@ export function ProjectWorkspace({
   const isExecutionPhase = status === "ordered" || status === "in-progress" || status === "completed";
   const inlineClient = project?.client ?? null;
   const [remoteClient, setRemoteClient] = useState<ProjectClient | null>(null);
-  const crmClient = inlineClient ?? remoteClient;
+  const crmClient = remoteClient ?? inlineClient;
   const displayedClient: ProjectClient = crmClient ?? project?.customerDetail ?? {};
   const infoCardAddress = formatClientAddress(displayedClient);
   const infoCardEmail = crmClient?.email ?? project?.customerDetail.email ?? "";
@@ -1860,7 +1860,12 @@ export function ProjectWorkspace({
                 {allowedTabValues.includes("closing") ? (
                 <TabsContent value="closing" className="mt-0 space-y-4">
                   <div ref={invoiceSectionRef}>
-                    <ClosingPanel logistics={project?.logistics} />
+                    <ClosingPanel
+                      logistics={project?.logistics}
+                      customerName={displayedClient.name ?? project?.customerDetail.name}
+                      customerEmail={displayedClient.email ?? project?.customerDetail.email}
+                      projectName={project?.title}
+                    />
                   </div>
                 </TabsContent>
                 ) : null}

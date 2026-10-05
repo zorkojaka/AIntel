@@ -2480,8 +2480,8 @@ const loadOfferById = useCallback(async (offerId: string) => {
         onOpenChange={setIsComposeOpen}
         projectId={projectId}
         offerId={currentOffer?._id ?? selectedOfferId}
-        customerName={projectDetails?.customerDetail?.name ?? ""}
-        customerEmail={projectDetails?.customerDetail?.email ?? ""}
+        customerName={projectDetails?.client?.name ?? projectDetails?.customerDetail?.name ?? ""}
+        customerEmail={projectDetails?.client?.email ?? projectDetails?.customerDetail?.email ?? ""}
         projectName={projectDetails?.title ?? ""}
         offerNumber={currentOffer?.documentNumber ?? currentOffer?.title ?? currentOffer?.baseTitle ?? ""}
         offerTotal={Number(currentOffer?.totalWithVat ?? currentOffer?.totalGrossAfterDiscount ?? currentOffer?.totalGross ?? 0)}
