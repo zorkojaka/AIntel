@@ -1,0 +1,27 @@
+.repair-request-trigger { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex-shrink: 0; border: 1px solid var(--color-border); border-radius: 10px; color: var(--color-text); background: var(--color-surface); cursor: pointer; }
+.repair-request-trigger:hover { background: var(--color-surface-muted, #f1f5f9); }
+.repair-request-trigger:disabled { opacity: .6; cursor: wait; }
+.repair-request-spin { animation: repair-request-spin 1s linear infinite; }
+@keyframes repair-request-spin { to { transform: rotate(360deg); } }
+.repair-request-dialog { box-sizing: border-box; width: min(1100px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); margin: auto; padding: 20px; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-surface, #fff); color: var(--color-text, #111827); overflow-y: auto; box-shadow: 0 24px 80px #0004; }
+.repair-request-dialog::backdrop { background: #0007; }
+.repair-request-dialog header, .repair-request-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.repair-request-dialog h2 { margin: 0; font-size: 1.25rem; font-weight: 700; }
+.repair-request-dialog p { margin: 12px 0; font-size: .9rem; }
+.repair-request-dialog button, .repair-request-notice button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--color-border, #d1d5db); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
+.repair-request-dialog button:disabled { opacity: .45; cursor: default; }
+.repair-request-dialog button[aria-pressed='true'] { border-color: #dc2626; background: #fef2f2; color: #991b1b; }
+.repair-request-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.repair-request-preview { overflow: auto; border: 1px solid var(--color-border); border-radius: 8px; background: #e5e7eb; }
+.repair-request-preview canvas { display: block; width: auto; height: auto; max-width: 100%; max-height: 45dvh; margin: 0 auto; cursor: crosshair; touch-action: none; }
+.repair-request-preview[data-zoomed='true'] { max-height: 45dvh; }
+.repair-request-preview[data-zoomed='true'] canvas { width: 200%; max-width: none; max-height: none; margin: 0; }
+.repair-request-frame-comment { padding: 0 12px 12px; margin-top: 12px; border: 1px solid var(--color-border, #d1d5db); border-radius: 8px; }
+.repair-request-frame-number { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 26px; margin-right: 6px; border-radius: 50%; background: #ef2626; color: #fff; }
+.repair-request-dialog label { display: block; margin: 16px 0 6px; font-weight: 600; }
+.repair-request-dialog textarea { box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid var(--color-border, #d1d5db); border-radius: 8px; resize: vertical; background: var(--color-surface, #fff); color: inherit; }
+.repair-request-dialog footer { margin-top: 16px; justify-content: flex-end; }
+.repair-request-dialog .repair-request-send { background: var(--color-primary, #2563eb); color: #fff; }
+.repair-request-error { color: #dc2626; }
+.repair-request-notice { position: fixed; top: 66px; right: 16px; z-index: 100; display: flex; align-items: center; gap: 12px; max-width: min(440px, calc(100vw - 32px)); padding: 12px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface, #fff); box-shadow: 0 4px 20px #0002; }
+@media (max-width: 640px) { .repair-request-dialog { padding: 12px; } .repair-request-tools button { font-size: .8rem; padding: 6px 8px; } }
