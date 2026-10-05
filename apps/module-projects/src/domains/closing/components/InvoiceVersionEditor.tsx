@@ -555,7 +555,7 @@ export function InvoiceVersionEditor({
               </div>
             </div>
           </div>
-          <div className="overflow-hidden rounded-[var(--radius-card)] border bg-card">
+          <div className="overflow-hidden rounded-[var(--radius-card)] border bg-card offers-line-items-table">
             <Table className="w-full table-fixed">
               <colgroup>
                 <col style={{ width: canEdit ? "32%" : "35%" }} />
@@ -570,8 +570,8 @@ export function InvoiceVersionEditor({
                 {canEdit && <col style={{ width: "5%" }} />}
               </colgroup>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="px-1">Naziv</TableHead>
+                <TableRow className="h-11">
+                  <TableHead className="pl-4 text-left align-middle">Naziv</TableHead>
                   <TableHead className="px-1">Enota</TableHead>
                   <TableHead className="px-1 text-right">Količina</TableHead>
                   <TableHead className="px-1 text-right">Cena (€)</TableHead>
@@ -579,8 +579,8 @@ export function InvoiceVersionEditor({
                   <TableHead className="px-1 text-right">DDV (%)</TableHead>
                   <TableHead className="px-1 text-right">Brez DDV (€)</TableHead>
                   <TableHead className="px-1 text-right">Z DDV (€)</TableHead>
-                  <TableHead className="px-1">Tip</TableHead>
-                  {canEdit && <TableHead className="w-12 text-center">Akcije</TableHead>}
+                  <TableHead className="px-1 align-middle">Tip</TableHead>
+                  {canEdit && <TableHead className="w-12 text-center align-middle">Akcije</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -592,8 +592,8 @@ export function InvoiceVersionEditor({
                   </TableRow>
                 )}
                 {items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="whitespace-normal px-1">
+                  <TableRow key={item.id} className="h-11">
+                    <TableCell className="whitespace-normal pl-4 pr-1 align-middle">
                       <PriceListProductAutocomplete
                         value={item.name}
                         placeholder="Naziv ali iskanje v ceniku"
@@ -605,7 +605,7 @@ export function InvoiceVersionEditor({
                         onProductSelected={(product) => handleProductSelected(item.id, product)}
                       />
                     </TableCell>
-                    <TableCell className="px-1">
+                    <TableCell className="px-1 align-middle">
                       <Input
                         value={item.unit}
                         onChange={(event) => handleItemChange(item.id, { unit: event.target.value })}
@@ -613,7 +613,7 @@ export function InvoiceVersionEditor({
                         className="h-9 min-w-0 px-1"
                       />
                     </TableCell>
-                    <TableCell className="px-1 text-right">
+                    <TableCell className="px-1 text-right align-middle">
                       <Input
                         type="number"
                         value={item.quantity}
@@ -624,7 +624,7 @@ export function InvoiceVersionEditor({
                         className="h-9 min-w-0 px-1 text-right"
                       />
                     </TableCell>
-                    <TableCell className="px-1 text-right">
+                    <TableCell className="px-1 text-right align-middle">
                       <div className="flex items-center gap-1">
                         <Input
                           type="number"
@@ -639,7 +639,7 @@ export function InvoiceVersionEditor({
                       </div>
                     </TableCell>
                     {usePerItemDiscount && (
-                      <TableCell className="px-1 text-right">
+                      <TableCell className="px-1 text-right align-middle">
                         <Input
                           type="number"
                           min={0}
@@ -651,7 +651,7 @@ export function InvoiceVersionEditor({
                         />
                       </TableCell>
                     )}
-                    <TableCell className="px-1 text-right">
+                    <TableCell className="px-1 text-right align-middle">
                       <div className="flex items-center gap-1">
                         <Input
                           type="number"
@@ -665,9 +665,9 @@ export function InvoiceVersionEditor({
                         <span>%</span>
                       </div>
                     </TableCell>
-                    <TableCell className="whitespace-normal px-1 text-right">{formatCurrency(item.totalWithoutVat)}</TableCell>
-                    <TableCell className="whitespace-normal px-1 text-right">{formatCurrency(item.totalWithVat)}</TableCell>
-                    <TableCell className="px-1">
+                    <TableCell className="whitespace-normal px-1 text-right align-middle">{formatCurrency(item.totalWithoutVat)}</TableCell>
+                    <TableCell className="whitespace-normal px-1 text-right align-middle">{formatCurrency(item.totalWithVat)}</TableCell>
+                    <TableCell className="px-1 align-middle">
                       {canEdit ? (
                         <Select value={item.type} onValueChange={(value) => handleItemChange(item.id, { type: value as InvoiceItem["type"] })}>
                           <SelectTrigger>
@@ -686,7 +686,7 @@ export function InvoiceVersionEditor({
                       )}
                     </TableCell>
                     {canEdit && (
-                      <TableCell className="text-center">
+                      <TableCell className="text-center align-middle">
                         <Button variant="ghost" size="icon" onClick={() => handleRemoveItem(item.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
