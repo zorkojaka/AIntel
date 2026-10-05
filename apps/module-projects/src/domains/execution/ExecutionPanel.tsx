@@ -2299,6 +2299,7 @@ export function ExecutionPanel({
               Naziv postavke
             </label>
             <PriceListProductAutocomplete
+              showPrices={false}
               value={item.name ?? ""}
               disabled={isDisabled}
               placeholder="Poišči produkt ali storitev v ceniku"
@@ -3139,11 +3140,11 @@ export function ExecutionPanel({
                                         </td>
                                       </tr>
                                     ) : null,
-                                    isNewExtraItem ? (
+                                    item.isExtra ? (
                                       <tr key={`${item.id}-new-extra`} className={cn("border-t", itemStatusStyles.rowClassName)}>
                                         <td colSpan={5} className="p-2 pt-0">
                                           {renderExtraExecutionItemEditor(order, item, {
-                                            disabled: isConfirmationLocked,
+                                            disabled: isConfirmationLocked || item.isCompleted,
                                           })}
                                         </td>
                                       </tr>
@@ -3341,9 +3342,9 @@ export function ExecutionPanel({
                                       : null}
                                   </div>
                                 )}
-                                {isNewExtraItem ? renderExtraExecutionItemEditor(order, item, {
+                                {item.isExtra ? renderExtraExecutionItemEditor(order, item, {
                                   compact: true,
-                                  disabled: isConfirmationLocked,
+                                  disabled: isConfirmationLocked || item.isCompleted,
                                 }) : null}
                                 {item.isExtra ? (
                                   <div className="flex justify-end">

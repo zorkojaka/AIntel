@@ -1,3 +1,4 @@
+import { ProductPrice } from "./ProductPrice";
 import { Network } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
@@ -207,7 +208,7 @@ export function SekcijaPoESwitch({ videonadzor, productById, onProductSelected, 
         <button type="button" style={{ order: neededPorts <= 0 ? -1 : 1 }} className={`zahteva-track-card zahteva-none-card ${selectedItems.length === 0 ? "is-active" : ""}`} onClick={clearSwitches}>
           <strong>Brez switcha</strong>
           <small>{neededPorts <= 0 ? "priporočeno" : "ni dovolj portov"}</small>
-          <b>0,00 €</b>
+          <ProductPrice>0,00 €</ProductPrice>
         </button>
         {alternatives.map((product) => {
           const quantity = selectedItems.find((item) => item.productId === product._id)?.kolicina ?? 0;
@@ -222,7 +223,7 @@ export function SekcijaPoESwitch({ videonadzor, productById, onProductSelected, 
                 <strong>{product.ime}</strong>
                 <small>{portSummary(product)}</small>
                 {product._id === najprodajnejsiId ? <span className="zahteva-sales-hint">★ najpogosteje izbrano</span> : null}
-                <b>{formatPrice(product.prodajnaCena)}</b>
+                <ProductPrice>{formatPrice(product.prodajnaCena)}</ProductPrice>
               </button>
               <div className="zahteva-qty-control">
                 <button type="button" onClick={() => setQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>−</button>

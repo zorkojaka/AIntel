@@ -123,6 +123,14 @@ test('AIN-P0-02 finance and settings authorization gates sensitive routes', asyn
 
   try {
     const executionUser = await createUser(ROLE_EXECUTION, 'Execution User');
+    const executionProducts = await requestJson<any>(server, '/api/cenik/products', executionUser.cookie);
+    assert.equal(executionProducts.response.status, 200);
+    const executionSearch = await requestJson<any>(server, '/api/price-list/items/search?q=kamera', executionUser.cookie);
+    assert.equal(executionSearch.response.status, 200);
+    const executionProductWrite = await requestJson<any>(server, '/api/cenik/products', executionUser.cookie, {
+      method: 'POST', body: JSON.stringify({ ime: 'Forbidden product' }),
+    });
+    assert.equal(executionProductWrite.response.status, 403);
     const financeUser = await createUser(ROLE_FINANCE, 'Finance User');
     const adminUser = await createUser(ROLE_ADMIN, 'Admin User');
     const snapshot = await seedSnapshot(executionUser, financeUser);

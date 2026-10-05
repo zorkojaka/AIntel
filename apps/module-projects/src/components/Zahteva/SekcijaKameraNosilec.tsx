@@ -1,3 +1,4 @@
+import { ProductPrice } from "./ProductPrice";
 import { Camera, Plus, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -201,7 +202,7 @@ export function SekcijaKameraNosilec({ productById, onAddVariant, onProductSelec
               {camera.classification?.hasPoE ? " • PoE" : ""}
             </small>
             {camera._id === najprodajnejsiId ? <span className="zahteva-sales-hint">★ najpogosteje izbrano</span> : null}
-            <b>{formatPrice(camera.prodajnaCena)}</b>
+            <ProductPrice>{formatPrice(camera.prodajnaCena)}</ProductPrice>
           </button>
         ))}
         {filteredCameras.length === 0 ? <div className="zahteva-empty">Ni kamer za izbrane filtre.</div> : null}
@@ -220,7 +221,7 @@ export function SekcijaKameraNosilec({ productById, onAddVariant, onProductSelec
         >
           <strong>Brez nosilca</strong>
           <small>{selectedCamera ? "za izbrano kamero" : "najprej izberi kamero"}</small>
-          <b>0,00 €</b>
+          <ProductPrice>0,00 €</ProductPrice>
         </button>
         {brackets.map((bracket) => (
           <button
@@ -232,7 +233,7 @@ export function SekcijaKameraNosilec({ productById, onAddVariant, onProductSelec
             {getProductImageUrl(bracket) ? <img src={getProductImageUrl(bracket)} alt="" /> : <span className="zahteva-image-empty" />}
             <strong>{bracket.ime}</strong>
             <small>Kompatibilen nosilec</small>
-            <b>{formatPrice(bracket.prodajnaCena)}</b>
+            <ProductPrice>{formatPrice(bracket.prodajnaCena)}</ProductPrice>
           </button>
         ))}
       </div>

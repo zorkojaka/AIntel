@@ -1,3 +1,4 @@
+import { ProductPrice } from "./ProductPrice";
 import { MemoryStick } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo } from "react";
@@ -101,7 +102,7 @@ function AccessorySection({
                 {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
                 <strong>{product.ime}</strong>
                 <small>{title}</small>
-                <b>{formatPrice(product.prodajnaCena)}</b>
+                <ProductPrice>{formatPrice(product.prodajnaCena)}</ProductPrice>
               </button>
               <div className="zahteva-qty-control">
                 <button type="button" onClick={() => onSetQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>-</button>

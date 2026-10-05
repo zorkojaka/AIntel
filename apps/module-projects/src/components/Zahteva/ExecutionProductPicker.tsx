@@ -4,6 +4,7 @@ import type { PriceListSearchItem } from "@aintel/shared/types/price-list";
 import { fetchCenikProducts, type CenikProduct } from "../../api";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { ProductPricesVisible } from "./ProductPrice";
 import { SekcijaKameraNosilec } from "./SekcijaKameraNosilec";
 import { SekcijaSnemalnik } from "./SekcijaSnemalnik";
 import { SekcijaPoESwitch } from "./SekcijaPoESwitch";
@@ -63,6 +64,7 @@ export function ExecutionProductPicker({ onProductSelected }: { onProductSelecte
       {loading ? <p className="mt-3 text-sm">Nalaganje cenika...</p> : null}
       {error ? <div className="mt-3 text-sm text-destructive">{error} <Button type="button" size="sm" variant="outline" onClick={() => setRetry((value) => value + 1)}>Poskusi znova</Button></div> : null}
       {!loading && products.length === 0 && !error ? <p className="mt-3 text-sm">Cenik je prazen.</p> : null}
+      <ProductPricesVisible.Provider value={false}>
       <fieldset disabled={loading || selecting} className="zahteva-page mt-3 min-w-0">
         {selecting ? <p className="text-sm">Izbiram postavko...</p> : null}
         {(group === "Kamera" || group === "Nosilec" || group === "WiFi kamere") ? <SekcijaKameraNosilec key={group} {...common} selectionGroup={group === "Nosilec" ? "bracket" : "camera"} cameraMode={group === "WiFi kamere" ? "reolink_wifi" : "ip"} onAddVariant={ignoreChange} /> : null}
@@ -73,6 +75,7 @@ export function ExecutionProductPicker({ onProductSelected }: { onProductSelecte
         {group === "Alarm" ? <SekcijaAlarmOprema {...common} alarm={alarm} onAddSenzor={select} /> : null}
         {group === "MicroSD" ? <SekcijaReolinkDodatnaOprema {...common} videonadzor={video} /> : null}
       </fieldset>
+      </ProductPricesVisible.Provider>
     </details>
   );
 }

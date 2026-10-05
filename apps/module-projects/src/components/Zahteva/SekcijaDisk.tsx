@@ -1,3 +1,4 @@
+import { ProductPrice } from "./ProductPrice";
 import { HardDrive } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchPredlogDisk, getProductImageUrl, type CenikProduct } from "../../api";
@@ -157,7 +158,7 @@ export function SekcijaDisk({ videonadzor, productById, onProductSelected, onCha
                 <strong>{product.ime}</strong>
                 <small>{product.classification?.diskCapacityTB ?? "-"} TB</small>
                 {product._id === najprodajnejsiId ? <span className="zahteva-sales-hint">★ najpogosteje izbrano</span> : null}
-                <b>{formatPrice(product.prodajnaCena)}</b>
+                <ProductPrice>{formatPrice(product.prodajnaCena)}</ProductPrice>
                 <span className="zahteva-disk-days">{days ? `${days} dni za ${cameras.length} kam` : "—"}</span>
               </button>
               <div className="zahteva-qty-control">

@@ -1,3 +1,4 @@
+import { ProductPrice } from "./ProductPrice";
 import { BellRing, ChevronDown, Flame, Keyboard, Package, Plus, RadioReceiver, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -297,7 +298,7 @@ export function SekcijaAlarmOprema({ alarm, productById, onProductSelected, onCh
                 {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
                 <strong>{productDisplayName(product)}</strong>
                 <small>{recommendedHub?._id === product._id ? "Priporočeno" : "Centrala"}</small>
-                <b>{formatPrice(product.prodajnaCena)}</b>
+                <ProductPrice>{formatPrice(product.prodajnaCena)}</ProductPrice>
               </button>
             ))}
             {hubOptions.length === 0 ? <div className="zahteva-empty">Ni ustrezne centrale v ceniku.</div> : null}
@@ -403,7 +404,7 @@ function SensorProductGroup({
                 {sensorColor(product) ? ` • ${sensorColor(product)}` : ""}
               </small>
               {product._id === topSellerId(products) ? <span className="zahteva-sales-hint">★ najpogosteje izbrano</span> : null}
-              <b>{formatPrice(product.prodajnaCena)}</b>
+              <ProductPrice>{formatPrice(product.prodajnaCena)}</ProductPrice>
               <span className="zahteva-card-action">
                 <Plus className="h-3 w-3" aria-hidden />
                 Dodaj
@@ -447,7 +448,7 @@ function QuantitySection({
                   {getProductImageUrl(product) ? <img src={getProductImageUrl(product)} alt="" /> : <span className="zahteva-image-empty" />}
                   <strong>{productDisplayName(product)}</strong>
                   <small>{title}</small>
-                  <b>{formatPrice(product.prodajnaCena)}</b>
+                  <ProductPrice>{formatPrice(product.prodajnaCena)}</ProductPrice>
                 </button>
                 <div className="zahteva-qty-control">
                   <button type="button" onClick={() => onSetQuantity(product._id, quantity - 1)} aria-label={`Zmanjšaj ${product.ime}`}>-</button>

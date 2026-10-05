@@ -1,3 +1,4 @@
+import { ProductPrice } from "./ProductPrice";
 import { Square, Server } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getProductImageUrl, type CenikProduct } from "../../api";
@@ -251,7 +252,7 @@ export function SekcijaSnemalnik({ videonadzor, productById, onProductSelected, 
           </span>
           <strong>Brez snemalnika</strong>
           <small>Obstoječi sistem ali cloud snemanje</small>
-          <b>0,00 €</b>
+          <ProductPrice>0,00 €</ProductPrice>
         </button>
         {alternatives.map((product) => (
           <button
@@ -268,7 +269,7 @@ export function SekcijaSnemalnik({ videonadzor, productById, onProductSelected, 
               {product.classification?.nvrHasPoE ? " • PoE" : ""} • {hddLabel(product.classification?.nvrHddSlots)}
             </small>
             {product._id === najprodajnejsiId ? <span className="zahteva-sales-hint">★ najpogosteje izbrano</span> : null}
-            <b>{formatPrice(product.prodajnaCena)}</b>
+            <ProductPrice>{formatPrice(product.prodajnaCena)}</ProductPrice>
           </button>
         ))}
         {alternatives.length === 0 ? <div className="zahteva-empty">Ni snemalnikov za izbrane filtre.</div> : null}
