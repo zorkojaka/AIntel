@@ -32,12 +32,14 @@ import supplierRoutes from './modules/suppliers/supplier.routes';
 import shopRoutes from './modules/shop/shop.routes';
 import paymentsRoutes from './modules/payments/payments.routes';
 import availabilityRoutes from './modules/availability/availability.routes';
+import repairRequestRoutes from './modules/repair-requests/repair-request.routes';
 import { requireRoles } from './middlewares/auth';
 import { ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from './utils/roles';
 
 const router = Router();
 
 router.use('/dashboard', dashboardRoutes);
+router.use('/repair-requests', repairRequestRoutes);
 router.use('/crm', crmRoutes);
 router.use('/cenik/category-settings', requireRoles([ROLE_ADMIN, ROLE_ORGANIZER]), categorySettingsRoutes);
 // Execution needs product selection, while catalog writes keep their existing roles.

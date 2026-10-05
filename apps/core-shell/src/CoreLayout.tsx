@@ -24,6 +24,7 @@ import {
 } from '@aintel/shared/utils/mobileTopbar';
 import { fetchMyTaskCounts } from '@aintel/module-tasks';
 import './CoreLayout.css';
+import { RepairRequest } from './RepairRequest';
 
 type ModuleNavItem = {
   label: string;
@@ -194,7 +195,8 @@ const CoreLayout: React.FC<CoreLayoutProps> = ({
         )}
         <span className="core-shell__topbar-title">{mobileTopbarTitle}</span>
         <div className="core-shell__topbar-actions">
-          {mobileTopbarActions.map(renderMobileAction)}
+          <div className="core-shell__mobile-actions">{mobileTopbarActions.map(renderMobileAction)}</div>
+          <RepairRequest moduleName={mobileTopbarTitle} />
         </div>
       </header>
       <aside

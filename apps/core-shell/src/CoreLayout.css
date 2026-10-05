@@ -1,6 +1,7 @@
 .core-shell {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
   min-height: 100vh;
   background: var(--color-surface);
@@ -13,8 +14,19 @@
 }
 
 .core-shell__topbar {
-  display: none;
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
+
+.core-shell__topbar > .core-shell__menu-toggle,
+.core-shell__mobile-actions { display: none; }
 
 .core-shell__menu-toggle {
   border: 1px solid var(--color-border);
@@ -91,7 +103,8 @@
 .core-shell__sidebar {
   position: sticky;
   top: 0;
-  height: 100vh;
+  height: 100%;
+  min-height: 0;
   overflow-y: auto;
   align-self: start;
   border-right: 1px solid var(--color-border);
@@ -278,8 +291,12 @@
     max-width: 100%;
   }
 
+  .core-shell__topbar > .core-shell__menu-toggle { display: inline-flex; }
+  .core-shell__mobile-actions { display: inline-flex; align-items: center; gap: 8px; }
+
   .core-shell__sidebar {
     position: fixed;
+    height: 100dvh;
     top: 0;
     left: 0;
     width: min(82vw, 300px);

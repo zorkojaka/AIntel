@@ -1,0 +1,64 @@
+const assert = require('node:assert/strict');
+const { chromium } = require('playwright');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+// Run with core-shell Vite on port 4173. Every send is intercepted; no email leaves this test.
+const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), 'aintel-repair-request-ui-'));
+(async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    let body, attempt = 0;
+    await page.route('**/api/repair-requests', async route => {
+      body = route.request().postDataJSON();
+      attempt++;
+      await route.fulfill({ status: attempt === 1 ? 502 : 200, contentType:'application/json',
+        body: JSON.stringify(attempt === 1 ? {success:false,error:'Preizkus napake pošiljanja'} : {success:true,data:{id:'test'}}) });
+    });
+    await page.goto('http://127.0.0.1:4173/tests/repair-request.html');
+    await page.locator('.core-shell__content').evaluate(node => node.scrollTop = 600);
+    const target = await page.locator('#scroll-target').boundingBox();
+    assert.ok(target.y < 300, 'Scrolled content is visible');
+    await page.getByRole('button',{name:'Zahtevek za popravek',exact:true}).click();
+    await page.getByRole('dialog').waitFor();
+    await page.getByLabel('Komentar za popravek').fill('Preizkus označevanja č š ž');
+    await page.waitForFunction(() => !document.querySelector('.repair-request-send').disabled);
+    const green = await page.locator('.repair-request-preview canvas').evaluate((node, y) => {
+      return Array.from(node.getContext('2d').getImageData(500, Math.round(y + 100), 1, 1).data);
+    }, target.y);
+    assert.ok(green[1] > 220 && green[0] < 40 && green[2] < 40, `Screenshot preserves scroll position: ${green}`);
+    const preview = await page.locator('.repair-request-preview canvas').boundingBox();
+    await page.mouse.move(preview.x + 100, preview.y + 100);
+    await page.mouse.down(); await page.mouse.move(preview.x + 250, preview.y + 130, {steps:12}); await page.mouse.up();
+    assert.equal(await page.getByRole('button',{name:'Razveljavi'}).isEnabled(), true);
+    await page.getByRole('button',{name:'Okvir',exact:true}).click();
+    await page.mouse.move(preview.x + 300, preview.y + 100);
+    await page.mouse.down(); await page.mouse.move(preview.x + 400, preview.y + 160); await page.mouse.up();
+    await page.getByRole('button',{name:'Razveljavi'}).click();
+    await page.screenshot({path:path.join(artifacts,'desktop.png')});
+    await page.getByRole('button',{name:'Pošlji administratorju'}).click();
+    await page.getByRole('alert').filter({hasText:'Preizkus napake pošiljanja'}).waitFor();
+    assert.equal(await page.getByLabel('Komentar za popravek').inputValue(), 'Preizkus označevanja č š ž');
+    await page.getByRole('button',{name:'Pošlji administratorju'}).click();
+    await page.getByRole('dialog').waitFor({state:'detached'});
+    assert.equal(body.comment,'Preizkus označevanja č š ž');
+    assert.match(body.screenshot,/^data:image\/jpeg;base64,/);
+    fs.writeFileSync(path.join(artifacts,'sent.jpg'),Buffer.from(body.screenshot.split(',')[1],'base64'));
+    await page.setViewportSize({width:390,height:844});
+    await page.getByRole('button',{name:'Zahtevek za popravek',exact:true}).click();
+    await page.getByRole('dialog').waitFor();
+    await page.getByLabel('Komentar za popravek').fill('Mobilni preizkus');
+    await page.waitForFunction(() => !document.querySelector('.repair-request-send').disabled);
+    await page.screenshot({path:path.join(artifacts,'mobile.png')});
+    const box = await page.getByRole('dialog').boundingBox();
+    assert.ok(box.width <= 390 && box.x >= 0, 'Mobile dialog fits viewport');
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog').waitFor({state:'detached'});
+    assert.deepEqual(errors,[]);
+    console.log('PASS: desktop/mobile capture, scrolled content, drawing, rectangle, undo, error retention, retry, send payload, Escape. No real email sent.');
+    console.log(`UI artifacts: ${artifacts}`);
+  } finally { await browser.close(); }
+})().catch(error => {console.error(error);process.exitCode=1});
