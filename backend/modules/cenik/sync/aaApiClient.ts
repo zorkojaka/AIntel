@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+
 import type { AAProductRaw } from './types';
 
 const DEFAULT_AA_API_URL = 'https://api.alarmautomatika.com/b2b/GetProducts';
@@ -79,6 +81,23 @@ function parseProductsPayload(payload: unknown) {
     throw new Error('AA API returned no valid products.');
   }
   return normalized;
+}
+
+export function buildAAProductSourceFingerprint(products: AAProductRaw[]) {
+  const canonicalProducts = products
+    .map((product) => ({
+      ...product,
+      attributes: [...(product.attributes ?? [])].sort((left, right) => {
+        const attributeOrder = left.attribute.localeCompare(right.attribute);
+        return attributeOrder !== 0 ? attributeOrder : left.term.localeCompare(right.term);
+      }),
+    }))
+    .sort((left, right) => {
+      const idOrder = left.id.localeCompare(right.id);
+      return idOrder !== 0 ? idOrder : JSON.stringify(left).localeCompare(JSON.stringify(right));
+    });
+
+  return crypto.createHash('sha1').update(JSON.stringify(canonicalProducts)).digest('hex');
 }
 
 export async function fetchAAProducts(): Promise<AAProductRaw[]> {

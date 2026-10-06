@@ -4,7 +4,7 @@ import https from 'https';
 import { Request, Response } from 'express';
 
 import { ProductImportRunModel } from '../../cenik/import-run.model';
-import { fetchAAProducts } from '../../cenik/sync/aaApiClient';
+import { buildAAProductSourceFingerprint, fetchAAProducts } from '../../cenik/sync/aaApiClient';
 import { mapAAProductsToImportItems } from '../../cenik/sync/aaProductMapper';
 import {
   analyzeProductImportFromItems,
@@ -82,7 +82,7 @@ async function fetchSnapshot(source: string) {
   if (source === 'aa_api') {
     const products = await fetchAAProducts();
     const items = mapAAProductsToImportItems(products);
-    const sourceFingerprint = crypto.createHash('sha1').update(JSON.stringify(products)).digest('hex');
+    const sourceFingerprint = buildAAProductSourceFingerprint(products);
     return { items, sourceFingerprint };
   }
 
