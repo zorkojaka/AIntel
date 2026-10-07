@@ -161,3 +161,8 @@ export async function sendInvoiceCommunicationEmail(
   });
   return parseEnvelope<{ message: CommunicationMessage }>(response);
 }
+
+export async function sendCreditNoteCommunicationEmail(projectId: string, invoiceVersionId: string, noteId: string, payload: Omit<Parameters<typeof sendInvoiceCommunicationEmail>[2], "selectedAttachments"> & { selectedAttachments: Array<"credit_note_pdf"> }) {
+  const response = await fetch(`/api/projects/${projectId}/invoices/${invoiceVersionId}/credit-notes/${noteId}/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  return parseEnvelope<{ message: CommunicationMessage }>(response);
+}

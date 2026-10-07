@@ -43,6 +43,7 @@ import * as creditNoteController from '../controllers/credit-note.controller';
 import {
   sendInstallerPreparationCommunicationController,
   sendInvoiceCommunicationController,
+  sendCreditNoteCommunicationController,
   sendOfferCommunicationController,
   sendWorkOrderConfirmationCommunicationController,
 } from '../../communication/controllers/project-communication.controller';
@@ -119,7 +120,9 @@ router.get('/:projectId/invoices/:versionId/credit-notes', requireProjectWrite, 
 router.post('/:projectId/invoices/:versionId/credit-notes/preview', requireProjectWrite, creditNoteController.previewCredit);
 router.post('/:projectId/invoices/:versionId/credit-notes', requireProjectWrite, creditNoteController.issueCredit);
 router.get('/:projectId/invoices/:versionId/credit-notes/:noteId/pdf', requireProjectWrite, creditNoteController.exportCreditPdf);
+router.post('/:projectId/invoices/:versionId/credit-notes/:noteId/send', requireProjectWrite, sendCreditNoteCommunicationController);
 router.post('/:id/deliveries/:deliveryId/receive', requireProjectWrite, receiveDelivery);
 router.post('/:id/signature', requireWorkOrderWrite, saveSignature);
 
 export default router;
+

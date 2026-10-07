@@ -850,7 +850,7 @@ export function InvoiceVersionEditor({
         </div>
       )}
       {draftVersion?.status === "issued" && (
-        <CreditNotesPanel projectId={projectId} invoiceVersionId={draftVersion._id} issued onIssued={async () => { await refresh(); await refreshAfterMutation(); }} />
+        <CreditNotesPanel projectId={projectId} invoiceVersionId={draftVersion._id} issued customerName={customerName} customerEmail={customerEmail} projectName={projectName} onIssued={async () => { await refresh(); await refreshAfterMutation(); }} />
       )}
       <InvoiceCommunicationComposeDialog
         open={sendDialogOpen}

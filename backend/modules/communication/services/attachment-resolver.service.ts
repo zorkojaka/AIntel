@@ -7,6 +7,7 @@ import { generateOfferDescriptionsPdf } from "../../projects/services/offer-desc
 import { generateWorkOrderDocumentPdf } from "../../projects/services/project-document-pdf.service";
 import { getActiveSignedConfirmationVersion } from "../../projects/services/work-order-confirmation.service";
 import { generateInvoicePdf } from "../../projects/services/invoice-pdf.service";
+import { generateCreditNotePdf } from "../../projects/services/invoice-pdf.service";
 import { mergePdfBuffers } from "./pdf-merge.service";
 
 export interface ResolvedAttachment {
@@ -46,9 +47,21 @@ export async function resolveCommunicationAttachment(params: {
   offerId?: string | null;
   workOrderId?: string | null;
   invoiceVersionId?: string | null;
+  creditNoteId?: string | null;
   includeProductDescriptions?: boolean;
 }): Promise<ResolvedAttachment> {
-  const { type, projectId, offerId, workOrderId, invoiceVersionId, includeProductDescriptions } = params;
+  const { type, projectId, offerId, workOrderId, invoiceVersionId, creditNoteId, includeProductDescriptions } = params;
+
+  if (type === "credit_note_pdf") {
+    if (!invoiceVersionId || !creditNoteId) throw new Error("Dobropis za priponko ni podan.");
+    const project = await ProjectModel.findOne({ id: projectId }).lean();
+    const invoice: any = (project?.invoiceVersions ?? []).find((entry: any) => String(entry?._id) === invoiceVersionId);
+    const note = invoice?.creditNotes?.find((entry: any) => String(entry?.id) === creditNoteId);
+    if (!project || !invoice || !note) throw new Error("Dobropis za priponko ni najden.");
+    const buffer = await generateCreditNotePdf(projectId, invoiceVersionId, creditNoteId);
+    const label = sanitizeFilePart(`Dobropis ${note.number}`) || "Dobropis";
+    return { type, refId: creditNoteId, filename: `${label}.pdf`, content: buffer, contentType: "application/pdf" };
+  }
 
   if (type === "invoice_pdf") {
     if (!invoiceVersionId) {

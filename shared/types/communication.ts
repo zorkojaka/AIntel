@@ -6,6 +6,7 @@ export type CommunicationCategory =
   | "offer_send"
   | "work_order_confirmation_send"
   | "invoice_send"
+  | "credit_note_send"
   | "installer_preparation_send"
   | "booking_invite_send"
   | "booking_confirmation_send"
@@ -16,7 +17,7 @@ export type CommunicationCategory =
   | "work_order_scheduled_internal"
   | "work_order_completed_internal";
 
-export type CommunicationAttachmentType = "offer_pdf" | "project_pdf" | "work_order_pdf" | "work_order_confirmation_pdf" | "invoice_pdf";
+export type CommunicationAttachmentType = "offer_pdf" | "project_pdf" | "work_order_pdf" | "work_order_confirmation_pdf" | "invoice_pdf" | "credit_note_pdf";
 
 export type CommunicationMessageStatus = "sent" | "failed";
 

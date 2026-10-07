@@ -2024,3 +2024,5 @@ export async function sendBookingConfirmationEmail(input: {
     },
   });
 }
+
+export async function sendCreditNoteCommunicationEmail(input: any) { throw new Error('Pošiljanje dobropisa trenutno ni na voljo.'); }

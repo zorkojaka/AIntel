@@ -9,12 +9,14 @@ const ATTACHMENT_OPTIONS: Array<{ value: CommunicationAttachmentType; label: str
   { value: 'project_pdf', label: 'PDF projekta' },
   { value: 'work_order_confirmation_pdf', label: 'PDF potrdila delovnega naloga' },
   { value: 'invoice_pdf', label: 'PDF računa' },
+  { value: 'credit_note_pdf', label: 'PDF dobropisa' },
 ];
 
 const TEMPLATE_CATEGORY_OPTIONS = [
   { value: 'offer_send', label: 'Pošiljanje ponudbe' },
   { value: 'work_order_confirmation_send', label: 'Pošiljanje potrdila delovnega naloga' },
   { value: 'invoice_send', label: 'Pošiljanje računa' },
+  { value: 'credit_note_send', label: 'Pošiljanje dobropisa' },
   { value: 'installer_preparation_send', label: 'Delovni nalog monterju (izvedba)' },
   { value: 'booking_invite_send', label: 'Vabilo stranki k izbiri termina' },
   { value: 'booking_confirmation_send', label: 'Potrditev izbranega termina (stranki)' },
