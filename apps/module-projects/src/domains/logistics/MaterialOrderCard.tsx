@@ -277,6 +277,62 @@ export function MaterialOrderCard({
   defaultCollapsed = false,
 }: MaterialOrderCardProps) {
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+  const [installerPreparing, setInstallerPreparing] = useState(false);
+  const [installerSending, setInstallerSending] = useState(false);
+  const [installerDialogOpen, setInstallerDialogOpen] = useState(false);
+  const [installerDraft, setInstallerDraft] = useState({ to: "", cc: "", bcc: "", subject: "", body: "" });
+  const installerEndpoint = materialOrder?.workOrderId
+    ? `/api/projects/${encodeURIComponent(projectId)}/work-orders/${encodeURIComponent(materialOrder.workOrderId)}/send-installer-preparation`
+    : null;
+
+  const prepareInstallerEmail = async () => {
+    if (!installerEndpoint || installerPreparing) return;
+    setInstallerPreparing(true);
+    try {
+      const response = await fetch(installerEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ previewOnly: true, requestScheduleArrangement: true }),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error || "Emaila monterju ni bilo mogoče pripraviti.");
+      }
+      const draft = (payload?.data ?? payload)?.draft;
+      if (!draft) throw new Error("Emaila monterju ni bilo mogoče pripraviti.");
+      setInstallerDraft({ to: draft.to ?? "", cc: draft.cc ?? "", bcc: draft.bcc ?? "", subject: draft.subject ?? "", body: draft.body ?? "" });
+      setInstallerDialogOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Emaila monterju ni bilo mogoče pripraviti.");
+    } finally {
+      setInstallerPreparing(false);
+    }
+  };
+
+  const sendInstallerEmail = async () => {
+    if (!installerEndpoint || installerSending) return;
+    setInstallerSending(true);
+    try {
+      const response = await fetch(installerEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...installerDraft, confirmSend: true, requestScheduleArrangement: true }),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error || "Emaila monterju ni bilo mogoče poslati.");
+      }
+      const data = payload?.data ?? payload;
+      if (data?.skipped) throw new Error("Email ni bil poslan: ni prejemnikov.");
+      toast.success(data?.loggingFailed ? "Email monterju je bil poslan, zapis v komunikacijah pa ni uspel." : "Email monterju je bil poslan.");
+      setInstallerDialogOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Emaila monterju ni bilo mogoče poslati.");
+    } finally {
+      setInstallerSending(false);
+    }
+  };
+
   const [bookingSending, setBookingSending] = useState(false);
   const [bookingPreparing, setBookingPreparing] = useState(false);
   const [bookingDialogOpen, setBookingDialogOpen] = useState(false);
@@ -589,6 +645,16 @@ export function MaterialOrderCard({
                         ? bookingResult
                         : "Stranka po e-mailu dobi povezavo s prostimi dnevi monterjev; z izbiro dneva je termin hkrati potrjen. Pred pošiljanjem vidiš in urediš vsebino."}
                     </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-auto whitespace-normal text-left"
+                      disabled={installerPreparing || installerSending || savingWorkOrder}
+                      onClick={() => void prepareInstallerEmail()}
+                    >
+                      {installerPreparing ? "Pripravljam..." : "Pošlji email monterju za dogovor termina s stranko"}
+                    </Button>
                   </div>
                 ) : null}
               </div>
@@ -881,6 +947,35 @@ export function MaterialOrderCard({
           </>
         ) : null}
       </div>
+
+      <Dialog open={installerDialogOpen} onOpenChange={(open) => !installerSending && setInstallerDialogOpen(open)}>
+        <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Pošlji email monterju za dogovor termina s stranko</DialogTitle>
+            <DialogDescription>Preglej in po potrebi uredi sporočilo. Monter naj se s stranko dogovori za termin izvedbe.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {([
+              ["to", "Prejemnik"], ["cc", "Kp"], ["bcc", "Skp"], ["subject", "Zadeva"],
+            ] as const).map(([field, label]) => (
+              <label key={field} className="block space-y-1 text-sm">
+                <span>{label}</span>
+                <Input value={installerDraft[field]} onChange={(event) => setInstallerDraft((current) => ({ ...current, [field]: event.target.value }))} disabled={installerSending} />
+              </label>
+            ))}
+            <label className="block space-y-1 text-sm">
+              <span>Vsebina</span>
+              <Textarea rows={12} value={installerDraft.body} onChange={(event) => setInstallerDraft((current) => ({ ...current, body: event.target.value }))} disabled={installerSending} />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setInstallerDialogOpen(false)} disabled={installerSending}>Prekliči</Button>
+            <Button type="button" onClick={() => void sendInstallerEmail()} disabled={installerSending || !installerDraft.to.trim() || !installerDraft.subject.trim() || !installerDraft.body.trim()}>
+              {installerSending ? "Pošiljam..." : "Pošlji email"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={bookingDialogOpen} onOpenChange={(open) => !bookingSending && setBookingDialogOpen(open)}>
         <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-3xl">
