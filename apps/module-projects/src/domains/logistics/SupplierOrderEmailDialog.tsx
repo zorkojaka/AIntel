@@ -1,3 +1,4 @@
+import { EmailSchedule, useEmailSchedule } from '@aintel/ui';
 import { useEffect, useMemo, useState } from "react";
 import type { MaterialOrder } from "@aintel/shared/types/logistics";
 import { Loader2, Paperclip } from "lucide-react";
@@ -72,6 +73,7 @@ export function SupplierOrderEmailDialog({
   const [supplier, setSupplier] = useState<SupplierEntry | null>(null);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const schedule = useEmailSchedule(open);
   const [to, setTo] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
@@ -130,6 +132,7 @@ export function SupplierOrderEmailDialog({
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
+          scheduledAt: schedule.getScheduledAt(),
           supplierName: supplierLabel,
           itemIds: lines.map((line) => line.id),
           to,
@@ -137,7 +140,12 @@ export function SupplierOrderEmailDialog({
           body,
         }),
       });
-      await parseApiEnvelope<unknown>(response, "Naročila ni bilo mogoče poslati.");
+      const result = await parseApiEnvelope<any>(response, "Naročila ni bilo mogoče poslati.");
+      if (result?.scheduled) {
+        toast.success(`Email je načrtovan za ${new Date(result.scheduledAt).toLocaleString('sl-SI')}.`);
+        onOpenChange(false);
+        return;
+      }
       toast.success(`Naročilo poslano dobavitelju ${supplierLabel}. Postavke so označene kot naročene.`);
       onSent();
       onOpenChange(false);
@@ -206,15 +214,16 @@ export function SupplierOrderEmailDialog({
             Po pošiljanju se vse postavke tega dobavitelja samodejno označijo kot naročene. Kopija gre na vaš Bcc naslov.
           </p>
         </div>
+        <div><EmailSchedule value={schedule.value} onChange={schedule.setValue} disabled={sending} />
         <DialogFooter className="border-t px-4 py-3 sm:px-6">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
             Prekliči
           </Button>
           <Button type="button" onClick={() => void handleSend()} disabled={sending || !to.trim() || !subject.trim() || !body.trim()}>
             {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            {sending ? "Pošiljam" : "Pošlji naročilo"}
+            {sending ? "Pošiljam" : schedule.value ? "Načrtuj pošiljanje" : "Pošlji naročilo"}
           </Button>
-        </DialogFooter>
+        </DialogFooter></div>
       </DialogContent>
     </Dialog>
   );

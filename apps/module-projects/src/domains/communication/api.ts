@@ -17,17 +17,15 @@ async function parseEnvelope<T>(response: Response): Promise<T> {
   }
 
   if (!response.ok) {
-    throw {
-      message: payload?.message ?? payload?.error ?? rawText ?? 'Napaka pri komunikaciji s streznikom.',
+    throw Object.assign(new Error(payload?.message ?? payload?.error ?? rawText ?? 'Napaka pri komunikaciji s streznikom.'), {
       code: payload?.code,
-    };
+    });
   }
 
   if (!payload?.success) {
-    throw {
-      message: payload?.message ?? payload?.error ?? 'Napaka pri komunikaciji s streznikom.',
+    throw Object.assign(new Error(payload?.message ?? payload?.error ?? 'Napaka pri komunikaciji s streznikom.'), {
       code: payload?.code,
-    };
+    });
   }
 
   return payload.data as T;
@@ -97,6 +95,7 @@ export async function sendOfferCommunicationEmail(
   projectId: string,
   offerId: string,
   payload: {
+    scheduledAt?: string;
     to: string;
     cc?: string;
     bcc?: string;
@@ -115,13 +114,14 @@ export async function sendOfferCommunicationEmail(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  return parseEnvelope<{ message?: CommunicationMessage; queued?: boolean }>(response);
+  return parseEnvelope<{ message?: CommunicationMessage; queued?: boolean; scheduled?: boolean; scheduledAt?: string }>(response);
 }
 
 export async function sendWorkOrderConfirmationCommunicationEmail(
   projectId: string,
   workOrderId: string,
   payload: {
+    scheduledAt?: string;
     to: string;
     cc?: string;
     bcc?: string;
@@ -137,13 +137,14 @@ export async function sendWorkOrderConfirmationCommunicationEmail(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  return parseEnvelope<{ message: CommunicationMessage }>(response);
+  return parseEnvelope<{ message?: CommunicationMessage; scheduled?: boolean; scheduledAt?: string }>(response);
 }
 
 export async function sendInvoiceCommunicationEmail(
   projectId: string,
   invoiceVersionId: string,
   payload: {
+    scheduledAt?: string;
     to: string;
     cc?: string;
     bcc?: string;
@@ -159,10 +160,10 @@ export async function sendInvoiceCommunicationEmail(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return parseEnvelope<{ message: CommunicationMessage }>(response);
+  return parseEnvelope<{ message?: CommunicationMessage; scheduled?: boolean; scheduledAt?: string }>(response);
 }
 
 export async function sendCreditNoteCommunicationEmail(projectId: string, invoiceVersionId: string, noteId: string, payload: Omit<Parameters<typeof sendInvoiceCommunicationEmail>[2], "selectedAttachments"> & { selectedAttachments: Array<"credit_note_pdf"> }) {
   const response = await fetch(`/api/projects/${projectId}/invoices/${invoiceVersionId}/credit-notes/${noteId}/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-  return parseEnvelope<{ message: CommunicationMessage }>(response);
+  return parseEnvelope<{ message?: CommunicationMessage; scheduled?: boolean; scheduledAt?: string }>(response);
 }

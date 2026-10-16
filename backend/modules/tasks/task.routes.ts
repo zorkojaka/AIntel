@@ -1,3 +1,4 @@
+import { withScheduledEmail } from '../communication/services/scheduled-email.service';
 import { Router } from 'express';
 
 import { requireRoles } from '../../middlewares/auth';
@@ -35,7 +36,7 @@ router.patch('/templates/:id', requireRoles([ROLE_ADMIN]), patchTaskTemplate);
 router.delete('/templates/:id', requireRoles([ROLE_ADMIN]), removeTaskTemplate);
 router.post('/', postTask);
 router.post('/:id/follow-up-email/preview', previewTaskFollowUpEmail);
-router.post('/:id/follow-up-email/send', sendTaskFollowUpEmail);
+router.post('/:id/follow-up-email/send', withScheduledEmail('task-follow-up', sendTaskFollowUpEmail));
 router.patch('/:id', patchTask);
 
 export default router;

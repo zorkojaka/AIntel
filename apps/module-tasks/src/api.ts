@@ -128,8 +128,8 @@ export async function previewOfferFollowUpEmail(taskId: string): Promise<OfferFo
 
 export async function sendOfferFollowUpEmail(
   taskId: string,
-  payload: { to: string[]; subject: string; body: string },
-): Promise<{ message: { id: string }; task: TaskItem }> {
+  payload: { scheduledAt?: string; to: string[]; subject: string; body: string },
+): Promise<{ message?: { id: string }; task?: TaskItem; scheduled?: boolean; scheduledAt?: string }> {
   const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/follow-up-email/send`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

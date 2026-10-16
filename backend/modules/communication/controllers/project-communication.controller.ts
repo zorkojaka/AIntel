@@ -86,7 +86,10 @@ export async function sendOfferCommunicationController(req: Request, res: Respon
       actorProfile: resolveActorProfile(req),
     };
 
-    void sendOfferCommunicationEmail(input).catch((error) => {
+    if ((req as any).scheduledEmailExecution) {
+      const result = await sendOfferCommunicationEmail(input);
+      if ((result as any)?.message?.status === "failed") throw new Error("Pošiljanje ponudbe ni uspelo.");
+    } else void sendOfferCommunicationEmail(input).catch((error) => {
       (req as any).log?.error({ err: error }, "Offer communication background send failed");
     });
 

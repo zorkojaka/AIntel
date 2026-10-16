@@ -1,3 +1,4 @@
+import { EmailSchedule, useEmailSchedule } from '@aintel/ui';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, CircleSlash, Hand, Loader2, Lock, Mail, Plus, RefreshCw, Send, Unlock, X } from 'lucide-react';
 import {
@@ -56,6 +57,8 @@ export function OpravilaPage() {
   const [followUpForms, setFollowUpForms] = useState<Record<string, { to: string; subject: string; body: string }>>({});
   const [selectedFollowUps, setSelectedFollowUps] = useState<Set<string>>(() => new Set());
   const [followUpSending, setFollowUpSending] = useState(false);
+  const schedule = useEmailSchedule(followUpDrafts.length > 0);
+  const [scheduleNotice, setScheduleNotice] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', priority: 'normal' as TaskPriority, dueAt: '', assigneeRole: 'SALES', zame: true });
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
@@ -202,13 +205,16 @@ export function OpravilaPage() {
     setFollowUpSending(true);
     setError(null);
     try {
+      const scheduledAt = schedule.getScheduledAt();
       for (const payload of payloads) {
         await sendOfferFollowUpEmail(payload.draft.taskId, {
+          scheduledAt,
           to: payload.to,
           subject: payload.subject,
           body: payload.body,
         });
       }
+      if (scheduledAt) setScheduleNotice(`Emaili so načrtovani za ${new Date(scheduledAt).toLocaleString('sl-SI')}.`);
       setFollowUpDrafts([]);
       setFollowUpForms({});
       setSelectedFollowUps(new Set());
@@ -347,6 +353,7 @@ export function OpravilaPage() {
 
       {error ? <div className="opravila-napaka">{error}</div> : null}
 
+      {scheduleNotice ? <p role="status">{scheduleNotice}</p> : null}
       {followUpDrafts.length > 0 ? (
         <div className="opravila-modal" role="dialog" aria-modal="true" aria-labelledby="follow-up-title">
           <div className="opravila-modal__panel">
@@ -383,12 +390,13 @@ export function OpravilaPage() {
                   </div>
                 );
               })}
+              <EmailSchedule value={schedule.value} onChange={schedule.setValue} disabled={followUpSending} />
               <div className="opravila-modal__actions">
                 <button type="button" className="gumb-sekundarni" onClick={() => setFollowUpDrafts([])} disabled={followUpSending}>
                   Prekliči
                 </button>
                 <button type="button" className="gumb-primarni" onClick={() => void sendFollowUp()} disabled={followUpSending}>
-                  {followUpSending ? <Loader2 size={15} className="vrti" /> : <Send size={15} />} Pošlji
+                  {followUpSending ? <Loader2 size={15} className="vrti" /> : <Send size={15} />} {schedule.value ? 'Načrtuj pošiljanje' : 'Pošlji'}
                 </button>
               </div>
             </div>

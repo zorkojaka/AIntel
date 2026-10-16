@@ -13,3 +13,5 @@ export { TableRowActions } from './components/TableRowActions/TableRowActions';
 export { PhotoManager } from './components/PhotoManager/PhotoManager';
 export type { PhotoContext, PhotoManagerProps } from './components/PhotoManager/PhotoManager';
 export { usePhotoCount } from './components/PhotoManager/usePhotoCount';
+
+export { EmailSchedule, useEmailSchedule } from './components/EmailSchedule';

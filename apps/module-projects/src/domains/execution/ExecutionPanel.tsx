@@ -1,3 +1,4 @@
+import { EmailSchedule, useEmailSchedule } from '@aintel/ui';
 ﻿import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { parseApiEnvelope } from "@aintel/shared/utils/api-client";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
@@ -652,6 +653,7 @@ export function ExecutionPanel({
   const [photoCountRefreshKey, setPhotoCountRefreshKey] = useState(0);
   const [newExtraItems, setNewExtraItems] = useState<NewExtraItemsState>({});
   const [installerEmailOrderId, setInstallerEmailOrderId] = useState<string | null>(null);
+  const installerSchedule = useEmailSchedule(Boolean(installerEmailOrderId));
   const [installerEmailDraft, setInstallerEmailDraft] = useState({ to: "", cc: "", bcc: "", subject: "", body: "" });
   const [preparingInstallerEmailId, setPreparingInstallerEmailId] = useState<string | null>(null);
   const [sendingInstallerEmail, setSendingInstallerEmail] = useState(false);
@@ -1531,11 +1533,17 @@ export function ExecutionPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...installerEmailDraft,
+          scheduledAt: installerSchedule.getScheduledAt(),
           confirmSend: true,
           projectLink: `${window.location.origin}/projects/${encodeURIComponent(projectId)}`,
         }),
       });
       const payload = await parseApiEnvelope<any>(response, "Emaila monterju ni bilo mogoče poslati.");
+      if (payload?.scheduled) {
+        toast.success(`Email je načrtovan za ${new Date(payload.scheduledAt).toLocaleString('sl-SI')}.`);
+        setInstallerEmailOrderId(null);
+        return;
+      }
       toast.success(payload?.loggingFailed ? "Email monterju je bil poslan, zapis v komunikacijah pa ni uspel." : "Email monterju je bil poslan.");
       setInstallerEmailOrderId(null);
     } catch (error) {
@@ -3778,6 +3786,7 @@ export function ExecutionPanel({
                 disabled={sendingInstallerEmail}
               />
             </div>
+            <EmailSchedule value={installerSchedule.value} onChange={installerSchedule.setValue} disabled={sendingInstallerEmail} />
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setInstallerEmailOrderId(null)} disabled={sendingInstallerEmail}>
                 Prekliči
@@ -3788,7 +3797,7 @@ export function ExecutionPanel({
                 disabled={sendingInstallerEmail || !installerEmailDraft.to.trim() || !installerEmailDraft.subject.trim() || !installerEmailDraft.body.trim()}
               >
                 {sendingInstallerEmail ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                Pošlji email
+                {installerSchedule.value ? "Načrtuj pošiljanje" : "Pošlji email"}
               </Button>
             </div>
           </div>

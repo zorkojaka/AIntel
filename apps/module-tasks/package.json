@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@aintel/theme": "*",
+    "@aintel/ui": "*",
     "lucide-react": "^0.471.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

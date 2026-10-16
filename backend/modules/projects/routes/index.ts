@@ -1,3 +1,4 @@
+import { withScheduledEmail } from '../../communication/services/scheduled-email.service';
 import { Router } from 'express';
 import { requireRoles } from '../../../middlewares/auth';
 import { ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from '../../../utils/roles';
@@ -87,9 +88,9 @@ router.get('/:projectId/offers/:offerId', getOfferById);
 router.put('/:projectId/offers/:offerId', requireProjectWrite, updateOfferVersion);
 router.delete('/:projectId/offers/:offerId', requireProjectWrite, deleteOfferVersion);
 router.get('/:projectId/offers/:offerVersionId/pdf', exportOfferPdf);
-router.post('/:projectId/offers/:offerVersionId/send', requireProjectWrite, sendOfferCommunicationController);
-router.post('/:projectId/work-orders/:workOrderId/send-confirmation', requireWorkOrderWrite, sendWorkOrderConfirmationCommunicationController);
-router.post('/:projectId/work-orders/:workOrderId/send-installer-preparation', requireWorkOrderWrite, sendInstallerPreparationCommunicationController);
+router.post('/:projectId/offers/:offerVersionId/send', requireProjectWrite, withScheduledEmail('sendOfferCommunicationController', sendOfferCommunicationController, requireProjectWrite));
+router.post('/:projectId/work-orders/:workOrderId/send-confirmation', requireWorkOrderWrite, withScheduledEmail('sendWorkOrderConfirmationCommunicationController', sendWorkOrderConfirmationCommunicationController, requireWorkOrderWrite));
+router.post('/:projectId/work-orders/:workOrderId/send-installer-preparation', requireWorkOrderWrite, withScheduledEmail('sendInstallerPreparationCommunicationController', sendInstallerPreparationCommunicationController, requireWorkOrderWrite));
 router.post('/:projectId/work-orders/:workOrderId/accept-assignment', requireWorkOrderWrite, logisticsController.acceptInstallerAssignment);
 router.post('/:projectId/work-orders/:workOrderId/confirm-all-installer-assignments', requireRoles([ROLE_ADMIN]), logisticsController.confirmAllInstallerAssignmentsByAdmin);
 router.get('/:projectId/offer', getActiveOffer);
@@ -99,12 +100,12 @@ router.put('/:projectId/execution-definition', requireWorkOrderWrite, logisticsC
 router.post('/:projectId/logistics/cancel-confirmation', requireOfferConfirmationWrite, cancelOfferConfirmation);
 router.get('/:projectId/logistics', logisticsController.getProjectLogistics);
 router.get('/:projectId/logistics/installer-availability/:employeeId', requirePreparationAccess, logisticsController.getInstallerAvailability);
-router.post('/:projectId/work-orders/:workOrderId/booking-invite', requirePreparationAccess, bookingInviteController);
+router.post('/:projectId/work-orders/:workOrderId/booking-invite', requirePreparationAccess, withScheduledEmail('bookingInviteController', bookingInviteController, requirePreparationAccess));
 router.put('/:projectId/work-orders/:workOrderId', requireWorkOrderWrite, logisticsController.updateWorkOrder);
 router.post('/:projectId/work-orders/:workOrderId/start-correction', requireWorkOrderWrite, logisticsController.startWorkOrderConfirmationCorrection);
 router.post('/:projectId/material-orders/:materialOrderId/mark-equipment-ready', requireWorkOrderWrite, logisticsController.markEquipmentReady);
 router.post('/:projectId/material-orders/:materialOrderId/advance', requirePreparationAccess, logisticsController.advanceMaterialOrderStep);
-router.post('/:projectId/material-orders/:materialOrderId/supplier-order-email', requirePreparationAccess, supplierOrderEmailController);
+router.post('/:projectId/material-orders/:materialOrderId/supplier-order-email', requirePreparationAccess, withScheduledEmail('supplierOrderEmailController', supplierOrderEmailController, requirePreparationAccess));
 router.get('/:projectId/work-orders/:workOrderId/pdf', logisticsController.exportWorkOrderPdf);
 router.get('/:projectId/material-orders/:materialOrderId/pdf', logisticsController.exportMaterialOrderPdf);
 router.get('/:projectId/invoices', invoiceController.listInvoices);
@@ -112,7 +113,7 @@ router.post('/:projectId/invoices/from-closing', requireProjectWrite, invoiceCon
 router.get('/:projectId/invoices/next-number', requireProjectWrite, invoiceController.nextInvoiceNumber);
 router.patch('/:projectId/invoices/:versionId', requireProjectWrite, invoiceController.updateInvoice);
 router.post('/:projectId/invoices/:versionId/issue', requireProjectWrite, invoiceController.issueInvoice);
-router.post('/:projectId/invoices/:versionId/send', requireProjectWrite, sendInvoiceCommunicationController);
+router.post('/:projectId/invoices/:versionId/send', requireProjectWrite, withScheduledEmail('sendInvoiceCommunicationController', sendInvoiceCommunicationController, requireProjectWrite));
 router.post('/:projectId/invoices/:versionId/clone-for-edit', requireProjectWrite, invoiceController.cloneInvoiceForEdit);
 router.delete('/:projectId/invoices/:versionId', requireProjectWrite, invoiceController.cancelInvoice);
 router.get('/:projectId/invoices/:versionId/pdf', invoiceController.exportInvoicePdf);
@@ -120,7 +121,7 @@ router.get('/:projectId/invoices/:versionId/credit-notes', requireProjectWrite, 
 router.post('/:projectId/invoices/:versionId/credit-notes/preview', requireProjectWrite, creditNoteController.previewCredit);
 router.post('/:projectId/invoices/:versionId/credit-notes', requireProjectWrite, creditNoteController.issueCredit);
 router.get('/:projectId/invoices/:versionId/credit-notes/:noteId/pdf', requireProjectWrite, creditNoteController.exportCreditPdf);
-router.post('/:projectId/invoices/:versionId/credit-notes/:noteId/send', requireProjectWrite, sendCreditNoteCommunicationController);
+router.post('/:projectId/invoices/:versionId/credit-notes/:noteId/send', requireProjectWrite, withScheduledEmail('sendCreditNoteCommunicationController', sendCreditNoteCommunicationController, requireProjectWrite));
 router.post('/:id/deliveries/:deliveryId/receive', requireProjectWrite, receiveDelivery);
 router.post('/:id/signature', requireWorkOrderWrite, saveSignature);
 
