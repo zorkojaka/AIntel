@@ -10,10 +10,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Fiksiran javni ključ strežnika namesto ssh-keyscan: keyscan odpre 5
+      # povezav brez prijave, kar fail2ban (mode=aggressive) šteje kot napad in
+      # zaklene IP runnerja, preden se deploy sploh prijavi.
       - name: Add server to known_hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -H 178.104.24.47 >> ~/.ssh/known_hosts
+          echo "178.104.24.47 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJgMvYliZrB/5M02I2WGU9I7huwKBlXP4ryuTj3H7dO0" >> ~/.ssh/known_hosts
 
       - name: Deploy via SSH
         env:
