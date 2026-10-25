@@ -1,3 +1,4 @@
+import { EmailSchedule, useEmailSchedule } from '@aintel/ui';
 import { useEffect, useMemo, useState } from "react";
 import type { CommunicationSenderSettings, CommunicationTemplate } from "@aintel/shared/types/communication";
 import { renderCommunicationFooterText } from "../../../../../shared/utils/communication-footer";
@@ -78,6 +79,7 @@ export function InvoiceCommunicationComposeDialog({
   const [initError, setInitError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const schedule = useEmailSchedule(open);
   const [sent, setSent] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [to, setTo] = useState("");
@@ -242,7 +244,8 @@ export function InvoiceCommunicationComposeDialog({
     setSent(false);
     try {
       const finalBody = askReview && reviewText.trim() ? `${body.trimEnd()}\n\n${reviewText.trim()}` : body;
-      await sendInvoiceCommunicationEmail(projectId, invoiceVersionId, {
+      const result = await sendInvoiceCommunicationEmail(projectId, invoiceVersionId, {
+        scheduledAt: schedule.getScheduledAt(),
         to,
         cc,
         bcc,
@@ -252,6 +255,11 @@ export function InvoiceCommunicationComposeDialog({
         body: finalBody,
         selectedAttachments: ["invoice_pdf"],
       });
+      if (result.scheduled) {
+        toast.success(`Email je načrtovan za ${new Date(result.scheduledAt!).toLocaleString('sl-SI')}.`);
+        onOpenChange(false);
+        return;
+      }
       setSent(true);
       toast.success("Email z računom je bil uspešno poslan.");
       await onSent();
@@ -376,6 +384,7 @@ export function InvoiceCommunicationComposeDialog({
             </div>
           )}
         </div>
+        <div><div className="px-4 pb-3 sm:px-6"><EmailSchedule value={schedule.value} onChange={schedule.setValue} disabled={sending} /></div>
         <DialogFooter className="border-t px-4 py-3 sm:px-6">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
             Prekliči
@@ -386,9 +395,9 @@ export function InvoiceCommunicationComposeDialog({
             disabled={loading || sending || sent || senderDisabled || !invoiceVersionId || !to.trim() || !subject.trim() || !body.trim()}
           >
             {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            {sending ? "Pošiljam" : sent ? "Poslano" : "Pošlji"}
+            {sending ? "Pošiljam" : sent ? "Poslano" : schedule.value ? "Načrtuj pošiljanje" : "Pošlji"}
           </Button>
-        </DialogFooter>
+        </DialogFooter></div>
       </DialogContent>
     </Dialog>
   );

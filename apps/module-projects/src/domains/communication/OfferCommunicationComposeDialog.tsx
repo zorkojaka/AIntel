@@ -1,3 +1,4 @@
+import { EmailSchedule, useEmailSchedule } from '@aintel/ui';
 import { useEffect, useMemo, useState } from 'react';
 import type {
   CommunicationAttachmentType,
@@ -168,6 +169,7 @@ export function OfferCommunicationComposeDialog({
   const [initError, setInitError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const schedule = useEmailSchedule(open);
   const [sendStatus, setSendStatus] = useState<SendStatus>('idle');
   const [sendStatusText, setSendStatusText] = useState('');
   const [savingTemplate, setSavingTemplate] = useState(false);
@@ -489,6 +491,7 @@ export function OfferCommunicationComposeDialog({
     setSending(true);
     try {
       const result = await sendOfferCommunicationEmail(projectId, offerId, {
+        scheduledAt: schedule.getScheduledAt(),
         to,
         cc,
         bcc,
@@ -503,6 +506,15 @@ export function OfferCommunicationComposeDialog({
           : {}),
         booking: { enabled: bookingEnabled, employeeIds: bookingEmployeeIds },
       });
+      if (result.scheduled) {
+        toast.success(`Email je načrtovan za ${new Date(result.scheduledAt!).toLocaleString('sl-SI')}.`);
+        clearSavedDraft();
+        setIsDirty(false);
+        setSendStatus('idle');
+        setSendStatusText('');
+        onOpenChange(false);
+        return;
+      }
       if (result.queued) {
         // Okno se zapre takoj — napredek in potrditev (vsaj 5 s) kaže stransko
         // obvestilo v OffersTab.handleCommunicationSent (loading → success 8 s /
@@ -859,6 +871,7 @@ export function OfferCommunicationComposeDialog({
           </div>
         )}
         </div>
+        <div><div className="px-4 pb-3 sm:px-6"><EmailSchedule value={schedule.value} onChange={schedule.setValue} disabled={sending} /></div>
         <DialogFooter className="border-t px-4 py-3 sm:px-6">
           <Button type="button" variant="outline" onClick={handleSaveDraft} disabled={loading || sending || !offerId}>
             <Save className="mr-2 h-4 w-4" />
@@ -885,9 +898,9 @@ export function OfferCommunicationComposeDialog({
             }
           >
             {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            {sending ? 'Pošiljam' : sendStatus === 'sent' ? 'Poslano' : 'Pošlji'}
+            {sending ? 'Pošiljam' : sendStatus === 'sent' ? 'Poslano' : schedule.value ? 'Načrtuj pošiljanje' : 'Pošlji'}
           </Button>
-        </DialogFooter>
+        </DialogFooter></div>
       </DialogContent>
     </Dialog>
     <Dialog

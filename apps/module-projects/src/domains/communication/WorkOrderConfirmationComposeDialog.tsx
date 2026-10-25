@@ -1,3 +1,4 @@
+import { EmailSchedule, useEmailSchedule } from '@aintel/ui';
 import { useEffect, useMemo, useState } from 'react';
 import type { CommunicationSenderSettings, CommunicationTemplate } from '@aintel/shared/types/communication';
 import { renderCommunicationFooterText } from '../../../../../shared/utils/communication-footer';
@@ -62,6 +63,7 @@ export function WorkOrderConfirmationComposeDialog({
   const [sendError, setSendError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
+  const schedule = useEmailSchedule(open);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [to, setTo] = useState('');
   const [cc, setCc] = useState('');
@@ -229,7 +231,8 @@ export function WorkOrderConfirmationComposeDialog({
     setSendError(null);
     setSent(false);
     try {
-      await sendWorkOrderConfirmationCommunicationEmail(projectId, workOrderId, {
+      const result = await sendWorkOrderConfirmationCommunicationEmail(projectId, workOrderId, {
+        scheduledAt: schedule.getScheduledAt(),
         to,
         cc,
         bcc,
@@ -239,6 +242,11 @@ export function WorkOrderConfirmationComposeDialog({
         body,
         selectedAttachments: ['work_order_confirmation_pdf'],
       });
+      if (result.scheduled) {
+        toast.success(`Email je načrtovan za ${new Date(result.scheduledAt!).toLocaleString('sl-SI')}.`);
+        onOpenChange(false);
+        return;
+      }
       setSent(true);
       toast.success('Email s potrdilom je bil uspešno poslan.');
       await onSent();
@@ -392,6 +400,7 @@ export function WorkOrderConfirmationComposeDialog({
             </div>
           </div>
         )}
+        <div><div className="px-4 pb-3 sm:px-6"><EmailSchedule value={schedule.value} onChange={schedule.setValue} disabled={sending} /></div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Prekliči
@@ -407,10 +416,10 @@ export function WorkOrderConfirmationComposeDialog({
                 Pošiljam...
               </>
             ) : (
-              'Pošlji email'
+              schedule.value ? 'Načrtuj pošiljanje' : 'Pošlji email'
             )}
           </Button>
-        </DialogFooter>
+        </DialogFooter></div>
       </DialogContent>
     </Dialog>
   );

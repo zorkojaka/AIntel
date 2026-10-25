@@ -1263,6 +1263,7 @@ export async function sendInstallerPreparationEmail(input: {
   body?: string | null;
   projectLink?: string | null;
   acceptanceBaseUrl?: string | null;
+  requestScheduleArrangement?: boolean;
   previewOnly?: boolean;
   confirmSend?: boolean;
   excludeRecipients?: string[];
@@ -1438,9 +1439,12 @@ export async function sendInstallerPreparationEmail(input: {
   const renderedTemplate = template ? renderCommunicationTemplate(template, templateContext) : null;
   const subjectFinal =
     sanitizeString(input.subject) ||
-    renderedTemplate?.subject ||
+    (input.requestScheduleArrangement ? `Dogovor termina s stranko: ${projectIdentifier}` : renderedTemplate?.subject) ||
     `Delovni nalog: ${projectIdentifier}${schedule ? ` - ${schedule}` : ""}`;
-  const bodyBase = input.body?.toString().trim() || renderedTemplate?.body || bodyLines.join("\n");
+  const defaultBody = renderedTemplate?.body || bodyLines.join("\n");
+  const bodyBase = input.body?.toString().trim() || (input.requestScheduleArrangement
+    ? `Prosimo, kontaktirajte stranko in se z njo dogovorite za termin izvedbe.\n\n${defaultBody}`
+    : defaultBody);
   const missingAcceptanceLinks = acceptanceLinks.filter((entry) => !bodyBase.includes(entry.url));
   const bodyWithoutFooter = missingAcceptanceLinks.length > 0
     ? `${bodyBase}\n\nPotrditev sprejema delovnega naloga\n${missingAcceptanceLinks.map((entry) => `${entry.name}: ${entry.url}`).join("\n")}`

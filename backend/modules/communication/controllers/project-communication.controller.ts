@@ -86,7 +86,10 @@ export async function sendOfferCommunicationController(req: Request, res: Respon
       actorProfile: resolveActorProfile(req),
     };
 
-    void sendOfferCommunicationEmail(input).catch((error) => {
+    if ((req as any).scheduledEmailExecution) {
+      const result = await sendOfferCommunicationEmail(input);
+      if ((result as any)?.message?.status === "failed") throw new Error("Pošiljanje ponudbe ni uspelo.");
+    } else void sendOfferCommunicationEmail(input).catch((error) => {
       (req as any).log?.error({ err: error }, "Offer communication background send failed");
     });
 
@@ -224,6 +227,7 @@ export async function sendInstallerPreparationCommunicationController(req: Reque
           ? req.body.projectLink.trim()
           : `${req.protocol}://${req.get("host")}/projects/${encodeURIComponent(req.params.projectId)}`,
       acceptanceBaseUrl: `${req.protocol}://${req.get("host")}/api/public/installer-accept`,
+      requestScheduleArrangement: req.body?.requestScheduleArrangement === true,
       previewOnly: req.body?.previewOnly === true,
       confirmSend: req.body?.confirmSend === true,
       actorUserId: (req as any)?.context?.actorUserId ?? null,

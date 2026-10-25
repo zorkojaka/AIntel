@@ -1,3 +1,4 @@
+import { runScheduledEmails } from '../communication/services/scheduled-email.service';
 import { TaskModel } from '../tasks/task.model';
 import { scanLateMaterialDeliveries, scanOfferExpiry, scanOfferFollowUps, scanStaleInquiries } from './rules';
 import type { SchedulerJob } from './scheduler.service';
@@ -16,6 +17,7 @@ export async function sweepTaskSla(now = new Date()) {
 
 export function schedulerJobs(): SchedulerJob[] {
   return [
+    { key: 'email.scheduled', cron: '* * * * *', async handler() { return { counts: await runScheduledEmails() }; } },
     {
       key: 'tasks.sla_sweep',
       cron: '*/15 * * * *',

@@ -1,3 +1,4 @@
+import { ScheduledEmailModel } from '../modules/communication/services/scheduled-email.service';
 import mongoose, { type Model } from 'mongoose';
 
 import { connectToMongo } from '../db/mongo';
@@ -39,6 +40,7 @@ type IndexSpec = {
 };
 
 const INDEX_MODELS: Model<any>[] = [
+  ScheduledEmailModel,
   EmployeeAvailabilityDayModel,
   EmployeeWeekLimitModel,
   InvoicePaymentModel,
