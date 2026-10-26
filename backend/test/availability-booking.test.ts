@@ -523,3 +523,25 @@ test('rezervacija: dan, ki ni več prost, vrne 409', async () => {
   await assert.rejects(chooseBookingDay('b'.repeat(48), D1), (error: unknown) =>
     error instanceof AvailabilityError && error.statusCode === 409);
 });
+
+test('rezervacija iz ponudbe: zamik prvega termina skrije prezgodnje dni', async () => {
+  const miha = await monter('Miha');
+  await setAvailabilityDay(String(miha._id), addDays(todayKey(), 1), [8, 9, 10]);
+  await setAvailabilityDay(String(miha._id), addDays(todayKey(), 2), [8, 9, 10]);
+  await ProjectModel.create({
+    id: 'PRJ-405', code: 'PRJ-405', projectNumber: 405, title: 'PRJ-405', customer: { name: 'Stranka' },
+    status: 'offered', createdAt: new Date().toISOString(),
+  });
+  const offer = await OfferVersionModel.create({
+    projectId: 'PRJ-405', baseTitle: 'Ponudba', versionNumber: 1, title: 'Ponudba', status: 'sent', items: [],
+  });
+  await OfferBookingModel.create({
+    projectId: 'PRJ-405', offerVersionId: offer._id, candidateEmployeeIds: [miha._id],
+    bookingToken: 'e'.repeat(48), durationHours: 2, minLeadDays: 2,
+  });
+
+  const view = await getBookingByToken('e'.repeat(48));
+  assert.equal(view.days[0]?.date, addDays(todayKey(), 2), 'jutrišnji dan ni ponujen');
+  await assert.rejects(chooseBookingDay('e'.repeat(48), addDays(todayKey(), 1)), (error: unknown) =>
+    error instanceof AvailabilityError && error.statusCode === 409);
+});

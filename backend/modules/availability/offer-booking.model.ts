@@ -6,6 +6,7 @@ export interface OfferBookingDocument extends Document {
   candidateEmployeeIds: mongoose.Types.ObjectId[];
   bookingToken?: string;
   durationHours: number;
+  minLeadDays: number;
   scheduledAt?: string | null;
   selectedEmployeeId?: mongoose.Types.ObjectId | null;
   selectedAt?: Date | null;
@@ -20,6 +21,8 @@ const OfferBookingSchema = new Schema<OfferBookingDocument>(
     candidateEmployeeIds: { type: [Schema.Types.ObjectId], required: true, ref: 'Employee', default: [] },
     bookingToken: { type: String, default: undefined },
     durationHours: { type: Number, required: true, min: 1, default: 4 },
+    // Čez koliko dni je prvi ponujen termin; 1 = jutri (vedenje pred to nastavitvijo).
+    minLeadDays: { type: Number, min: 0, max: 30, default: 1 },
     scheduledAt: { type: String, default: null },
     selectedEmployeeId: { type: Schema.Types.ObjectId, ref: 'Employee', default: null },
     selectedAt: { type: Date, default: null },

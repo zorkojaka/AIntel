@@ -23,6 +23,7 @@ import { WebInquiriesSection } from './WebInquiriesSection';
 import { CommunicationSenderSection } from './components/CommunicationSenderSection';
 import { CommunicationTemplatesSection } from './components/CommunicationTemplatesSection';
 import { InternalNotificationsSection } from './components/InternalNotificationsSection';
+import { BookingSettingsSection } from './components/BookingSettingsSection';
 import { DocumentPreview } from './components/DocumentPreview';
 import { DocumentSettingsTab } from './components/DocumentSettingsTab';
 import { useSettingsData } from './hooks/useSettings';
@@ -649,6 +650,7 @@ export const SettingsPage: React.FC = () => {
               onSave={handleSaveCommunicationSettings}
             />
             <InternalNotificationsSection />
+            <BookingSettingsSection />
             <CommunicationTemplatesSection
               templates={communicationTemplates}
               onCreate={handleCreateCommunicationTemplate}

@@ -25,6 +25,7 @@ import {
   fetchCommunicationSenderSettings,
   fetchCommunicationTemplates,
   fetchFollowUpDefaults,
+  fetchBookingMinLeadDays,
   fetchProjectThread,
   sendOfferCommunicationEmail,
 } from './api';
@@ -44,6 +45,7 @@ type SavedOfferEmailDraft = {
   selectedOfferIds: string[];
   bookingEnabled?: boolean;
   bookingEmployeeIds?: string[];
+  bookingMinLeadDays?: number;
   savedAt: string;
 };
 
@@ -122,6 +124,7 @@ function readSavedOfferEmailDraft(key: string): SavedOfferEmailDraft | null {
       bookingEmployeeIds: Array.isArray(parsed.bookingEmployeeIds)
         ? parsed.bookingEmployeeIds.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
         : [],
+      bookingMinLeadDays: typeof parsed.bookingMinLeadDays === 'number' ? parsed.bookingMinLeadDays : undefined,
       savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : '',
     };
   } catch {
@@ -193,6 +196,7 @@ export function OfferCommunicationComposeDialog({
   const [followUpDays, setFollowUpDays] = useState(7);
   const [bookingEnabled, setBookingEnabled] = useState(false);
   const [bookingEmployeeIds, setBookingEmployeeIds] = useState<string[]>([]);
+  const [bookingMinLeadDays, setBookingMinLeadDays] = useState(2);
 
   const normalizedCustomerEmail = useMemo(() => customerEmail.trim(), [customerEmail]);
   const savedDraftKey = useMemo(() => buildSavedDraftKey(projectId, offerId), [offerId, projectId]);
@@ -257,12 +261,13 @@ export function OfferCommunicationComposeDialog({
       setInitError(null);
 
       try {
-        const [nextTemplates, nextSender, followUpDefaults, thread] = await Promise.all([
+        const [nextTemplates, nextSender, followUpDefaults, thread, defaultLeadDays] = await Promise.all([
           fetchCommunicationTemplates('offer_send'),
           fetchCommunicationSenderSettings(),
           fetchFollowUpDefaults().catch(() => ({ mode: 'off' as const, days: 7 })),
           // Nit je priročnost, ne pogoj za pošiljanje — ob napaki pišemo novo zadevo.
           fetchProjectThread(projectId).catch(() => ({ subject: null, hasThread: false })),
+          fetchBookingMinLeadDays().catch(() => 2),
         ]);
         if (!active) return;
 
@@ -303,6 +308,7 @@ export function OfferCommunicationComposeDialog({
         setSelectedAttachments(savedDraft?.selectedAttachments ?? defaultTemplate?.defaultAttachments ?? ['offer_pdf']);
         setSelectedOfferIds(savedDraft?.selectedOfferIds.length ? savedDraft.selectedOfferIds : offerId ? [offerId] : []);
         setBookingEnabled(savedDraft?.bookingEnabled === true);
+        setBookingMinLeadDays(savedDraft?.bookingMinLeadDays ?? defaultLeadDays);
         setBookingEmployeeIds(
           (savedDraft?.bookingEmployeeIds?.length ? savedDraft.bookingEmployeeIds : initialEmployeeIds).filter((id) =>
             availableInstallerIds.has(id),
@@ -451,6 +457,7 @@ export function OfferCommunicationComposeDialog({
       selectedOfferIds,
       bookingEnabled,
       bookingEmployeeIds,
+      bookingMinLeadDays,
       savedAt,
     };
     try {
@@ -504,7 +511,7 @@ export function OfferCommunicationComposeDialog({
         ...(followUpMode !== 'off'
           ? { followUp: { enabled: followUpEnabled, days: followUpDays } }
           : {}),
-        booking: { enabled: bookingEnabled, employeeIds: bookingEmployeeIds },
+        booking: { enabled: bookingEnabled, employeeIds: bookingEmployeeIds, minLeadDays: bookingMinLeadDays },
       });
       if (result.scheduled) {
         toast.success(`Email je načrtovan za ${new Date(result.scheduledAt!).toLocaleString('sl-SI')}.`);
@@ -835,6 +842,21 @@ export function OfferCommunicationComposeDialog({
               </label>
               {bookingEnabled ? (
                 <div className="space-y-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-3 text-sm">
+                  <label className="flex flex-wrap items-center gap-2 text-sky-950">
+                    <span>Prvi razpoložljiv termin čez</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={30}
+                      value={bookingMinLeadDays}
+                      onChange={(event) => {
+                        setBookingMinLeadDays(Math.max(0, Math.min(30, Math.floor(Number(event.target.value) || 0))));
+                        setIsDirty(true);
+                      }}
+                      className="h-8 w-16 rounded-md border border-input bg-background px-2 text-sm"
+                    />
+                    <span>dni (0 = še isti dan, 1 = naslednji dan)</span>
+                  </label>
                   <div className="font-medium text-sky-950">Monterji, katerih prosti termini bodo prikazani</div>
                   <div className="grid gap-2 md:grid-cols-2">
                     {availableInstallers.map((employee) => (

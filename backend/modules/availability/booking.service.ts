@@ -14,11 +14,13 @@ import { ensureRuleTask } from '../scheduler/rules';
 import { UserModel } from '../users/schemas/user';
 import { getConfig } from '../settings/config/config-store.service';
 import {
+  addDays,
   AvailabilityError,
   bookingSlotHours,
   estimateWorkOrderHours,
   findFreeDays,
   reservedSlotHours,
+  todayKey,
   type FreeDay,
 } from './availability.service';
 import { OfferBookingModel } from './offer-booking.model';
@@ -50,6 +52,21 @@ async function imenaMonterjevBrezRazpolozljivosti(
     }
   }
   return brez;
+}
+
+/** Ročno vnesen zamik (0–30 dni), sicer privzetek iz nastavitev. */
+async function resolveMinLeadDays(value: unknown): Promise<number> {
+  const days = Number(value);
+  if (value !== null && value !== undefined && value !== '' && Number.isInteger(days) && days >= 0 && days <= 30) {
+    return days;
+  }
+  const config = await getConfig<{ bookingMinLeadDays?: number }>('platform.general');
+  return config.bookingMinLeadDays ?? 2;
+}
+
+/** Prvi dan, ki ga stranka lahko izbere (šteto od danes, ob vsakem ogledu znova). */
+function leadFrom(minLeadDays: number | null | undefined): string {
+  return addDays(todayKey(), minLeadDays ?? 1);
 }
 
 async function bookingPageUrl(): Promise<string> {
@@ -118,6 +135,7 @@ type EmployeeFreeDay = FreeDay & { employeeId: string };
 async function findFreeDaysForAnyEmployee(input: {
   employeeIds: string[];
   durationHours: number;
+  from?: string;
   days?: number;
   excludeOfferBookingId?: string;
 }): Promise<EmployeeFreeDay[]> {
@@ -127,6 +145,7 @@ async function findFreeDaysForAnyEmployee(input: {
       days: await findFreeDays({
         employeeIds: [employeeId],
         durationHours: input.durationHours,
+        from: input.from,
         days: input.days,
         excludeOfferBookingId: input.excludeOfferBookingId,
       }),
@@ -148,6 +167,7 @@ export async function prepareOfferBookingLink(input: {
   projectId: string;
   offerId: string;
   employeeIds: string[];
+  minLeadDays?: unknown;
 }) {
   const employeeIds = Array.from(
     new Set((input.employeeIds ?? []).map((id) => String(id).trim()).filter((id) => /^[a-f0-9]{24}$/i.test(id))),
@@ -170,9 +190,11 @@ export async function prepareOfferBookingLink(input: {
   const durationHours = estimateWorkOrderHours(offer.items as any[]);
   const slotHours = reservedSlotHours(durationHours);
   const existing = await OfferBookingModel.findOne({ projectId: input.projectId, offerVersionId: offer._id });
+  const minLeadDays = await resolveMinLeadDays(input.minLeadDays);
   const freeDays = await findFreeDaysForAnyEmployee({
     employeeIds,
     durationHours: slotHours,
+    from: leadFrom(minLeadDays),
     days: BOOKING_WINDOW_DAYS,
     excludeOfferBookingId: existing ? String(existing._id) : undefined,
   });
@@ -190,6 +212,7 @@ export async function prepareOfferBookingLink(input: {
         candidateEmployeeIds: employeeIds,
         bookingToken: token,
         durationHours,
+        minLeadDays,
         scheduledAt: null,
         selectedEmployeeId: null,
         selectedAt: null,
@@ -372,6 +395,7 @@ export async function getBookingByToken(token: string): Promise<BookingView> {
     const days = await findFreeDaysForAnyEmployee({
       employeeIds: (offerBooking.candidateEmployeeIds ?? []).map((id: unknown) => String(id)),
       durationHours: reservedSlotHours(offerBooking.durationHours),
+      from: leadFrom(offerBooking.minLeadDays),
       days: BOOKING_WINDOW_DAYS,
     });
     return {
@@ -417,6 +441,7 @@ export async function chooseBookingDay(token: string, date: unknown): Promise<{ 
     const freeDays = await findFreeDaysForAnyEmployee({
       employeeIds,
       durationHours: reservedSlotHours(offerBooking.durationHours),
+      from: leadFrom(offerBooking.minLeadDays),
       days: BOOKING_WINDOW_DAYS,
     });
     const chosen = freeDays.find((day) => day.date === dateKey);

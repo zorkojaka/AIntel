@@ -65,6 +65,7 @@ export async function sendOfferCommunicationController(req: Request, res: Respon
             projectId: req.params.projectId,
             offerId: req.params.offerVersionId,
             employeeIds: sanitizeOfferIds(bookingRequest?.employeeIds),
+            minLeadDays: bookingRequest?.minLeadDays,
           }),
         )
       : null;

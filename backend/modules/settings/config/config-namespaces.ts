@@ -26,6 +26,8 @@ export function registerCoreConfigNamespaces(): void {
       executionLeadText: v.string({ max: 300 }).default('praviloma v 14 dneh po potrditvi in plačilu avansa'),
       // Javna stran, kjer stranka izbere dan montaže (OB CUTOVERU: inteligent.si/izbira-termina).
       bookingPageUrl: v.string({ max: 300 }).default('https://dev.inteligent.si/predogled/izbira-termina'),
+      // Prvi termin, ki ga stranka lahko izbere: 0 = še danes, 1 = jutri, 2 = pojutrišnjem …
+      bookingMinLeadDays: v.number({ min: 0, max: 30, int: true }).default(2),
     }),
   });
 

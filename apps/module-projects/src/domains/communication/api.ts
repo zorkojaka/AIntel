@@ -84,6 +84,13 @@ export async function fetchFollowUpDefaults() {
   return parseEnvelope<{ mode: 'off' | 'manual' | 'auto'; days: number }>(response);
 }
 
+// Privzeti zamik prvega termina (Nastavitve → Komunikacija → Izbira termina).
+export async function fetchBookingMinLeadDays() {
+  const response = await fetch('/api/config/platform.general');
+  const config = await parseEnvelope<{ bookingMinLeadDays?: number }>(response);
+  return config.bookingMinLeadDays ?? 2;
+}
+
 // Zadeva obstoječe niti projekta. Nova verzija ponudbe jo prevzame, sicer
 // Gmail ob spremenjeni zadevi odpre novo nit kljub pravilnim glavam.
 export async function fetchProjectThread(projectId: string) {
@@ -106,7 +113,7 @@ export async function sendOfferCommunicationEmail(
     selectedAttachments: Array<'offer_pdf' | 'project_pdf'>;
     selectedOfferIds?: string[];
     followUp?: { enabled: boolean; days: number };
-    booking?: { enabled: boolean; employeeIds: string[] };
+    booking?: { enabled: boolean; employeeIds: string[]; minLeadDays: number };
   }
 ) {
   const response = await fetch(`/api/projects/${projectId}/offers/${offerId}/send`, {

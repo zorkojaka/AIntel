@@ -562,7 +562,9 @@ export async function findFreeDays(input: {
     }
     if (!common?.size) continue;
 
-    const hours = [...common].sort((a, b) => a - b);
+    // Danes ponudimo le ure, ki se še niso začele.
+    const earliestHour = date === todayKey() ? new Date().getHours() + 1 : 0;
+    const hours = [...common].filter((hour) => hour >= earliestHour).sort((a, b) => a - b);
     for (const start of hours) {
       let ok = true;
       for (let offset = 1; offset < duration; offset += 1) {
