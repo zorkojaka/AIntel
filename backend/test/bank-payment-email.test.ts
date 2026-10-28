@@ -147,6 +147,12 @@ test('ujemanje: sklic s številkami računa najde pravi račun (12/7/2026 ↔ SI
   assert.equal(match?.strong, true);
 });
 
+test('ujemanje: številka mora stati samostojno (1-11-2026 ni v 21-11-2026)', () => {
+  const open = [{ projectId: 'PRJ-1', invoiceVersionId: 'v1', invoiceNumber: '1-11-2026', totalWithVat: 50, outstanding: 50 }];
+  assert.equal(matchOpenInvoice({ amount: 70, reference: null, payerName: null }, 'Plačilo računa 21-11-2026', open), null);
+  assert.equal(matchOpenInvoice({ amount: 70, reference: null, payerName: null }, 'Plačilo računa 1-11-2026', open)?.strong, true);
+});
+
 test('ujemanje: edini odprti račun s točnim zneskom je šibko ujemanje', async () => {
   await ustvariRacun('PRJ-203', '20/7/2026', 999);
   await ustvariRacun('PRJ-204', '21/7/2026', 500);

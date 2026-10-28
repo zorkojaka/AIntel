@@ -142,7 +142,8 @@ export async function listOpenInvoices(): Promise<OpenInvoice[]> {
   const issued: Array<Omit<OpenInvoice, 'outstanding'>> = [];
   for (const project of projects as any[]) {
     for (const version of project.invoiceVersions ?? []) {
-      if (version?.status !== 'issued' || !version?.invoiceNumber) continue;
+      // Interni obračun (plačilo monterjem) ni terjatev do stranke.
+      if (version?.status !== 'issued' || !version?.invoiceNumber || version?.internal === true) continue;
       issued.push({
         projectId: project.id,
         invoiceVersionId: String(version._id ?? ''),
@@ -170,7 +171,10 @@ export function matchOpenInvoice(
   besedilo: string,
   openInvoices: OpenInvoice[],
 ): { invoice: OpenInvoice; strong: boolean } | null {
-  const vBesedilu = openInvoices.filter((invoice) => besedilo.includes(invoice.invoiceNumber));
+  // Številka mora stati samostojno: "1-11-2026" ni zadetek v "21-11-2026".
+  const vBesedilu = openInvoices.filter((invoice) =>
+    new RegExp(`(?<!\\d)${invoice.invoiceNumber.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d)`).test(besedilo),
+  );
   if (vBesedilu.length === 1) return { invoice: vBesedilu[0], strong: true };
 
   if (parsed.reference) {
