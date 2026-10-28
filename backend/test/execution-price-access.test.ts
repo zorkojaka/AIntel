@@ -77,11 +77,16 @@ test('monter in organizator ne vidita cen; monter še vidi svoj zaslužek', asyn
       '/api/projects/PRJ-900/offer',
       '/api/projects/offer-templates',
       '/api/offers/abc/pdf-preview',
+      '/api/projects/PRJ-900/communication/feed',
+      '/api/projects/PRJ-900/offers/abc/messages',
+      `/api/projects/PRJ-900/messages/${new mongoose.Types.ObjectId()}`,
+      '/api/projects/PRJ-900/review-link',
     ]) {
       assert.equal((await get(path, monter.cookie)).status, 403, path);
       assert.equal((await get(path, organizer.cookie)).status, 403, `organizator ${path}`);
     }
     assert.equal((await get('/api/projects/PRJ-900/invoices', finance.cookie)).status, 200);
+    assert.equal((await get('/api/projects/PRJ-900/communication/feed', finance.cookie)).status, 200);
 
     const project = (await (await get('/api/projects/PRJ-900', monter.cookie)).json()) as any;
     assert.equal(project.success, true);

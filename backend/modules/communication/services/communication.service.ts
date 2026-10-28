@@ -638,6 +638,10 @@ export async function sendInvoiceCommunicationEmail(input: {
   if (!project || !invoice) {
     throw new Error("Projekt ali račun nista najdena.");
   }
+  // A scheduled send can run after the invoice was corrected or cancelled.
+  if (invoice.status !== "issued" || invoice.internal === true) {
+    throw new Error("Pošlje se lahko le izdan račun, ki ni interni obračun.");
+  }
 
   const effectiveSender = resolveSenderIdentity(senderSettings, input.actorProfile);
   const projectClient = await resolveProjectClient(project);
@@ -1126,7 +1130,8 @@ export async function sendWorkOrderConfirmationCommunicationEmail(input: {
         : template?.defaultAttachments ?? ["work_order_confirmation_pdf"]
       ).concat("work_order_confirmation_pdf")
     )
-  );
+  // Monters may send this email, so offer/invoice PDFs (our prices) are never attached here.
+  ).filter((type) => type === "work_order_confirmation_pdf" || type === "work_order_pdf");
 
   const attachments = await Promise.all(
     selectedAttachments.map((type) =>

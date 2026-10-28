@@ -12,11 +12,15 @@ import { renderBookingReviewTemplate } from '../services/booking-review-template
 import { buildTemplateContext } from '../services/template-render.service';
 import { getCommunicationSenderSettings } from '../services/communication.service';
 import { getSettings } from '../../settings/settings.service';
+import { requireRoles } from '../../../middlewares/auth';
+import { PRICE_ROLES } from '../../../utils/roles';
 
 const router = Router();
+// Sent offers and invoices carry our prices; monters and organizers must not read them.
+const requirePriceAccess = requireRoles(PRICE_ROLES);
 
 // Link za oceno projekta - uporabi se kot {{review.link}} v mailu za racun (rocno posiljanje).
-router.get("/:projectId/review-link", async (req, res) => {
+router.get("/:projectId/review-link", requirePriceAccess, async (req, res) => {
   try {
     const project = await ProjectModel.findOne({ id: req.params.projectId });
     if (!project) return res.fail(`Projekt ${req.params.projectId} ni najden.`, 404);
@@ -32,10 +36,10 @@ router.get("/:projectId/review-link", async (req, res) => {
   }
 });
 
-router.get("/:projectId/communication/feed", getProjectCommunicationFeedController);
+router.get("/:projectId/communication/feed", requirePriceAccess, getProjectCommunicationFeedController);
 router.get("/:projectId/communication/thread", getProjectThreadController);
-router.get("/:projectId/offers/:offerVersionId/messages", getOfferMessagesController);
+router.get("/:projectId/offers/:offerVersionId/messages", requirePriceAccess, getOfferMessagesController);
 router.get("/:projectId/work-orders/:workOrderId/installer-preparation-messages", getInstallerPreparationMessagesController);
-router.get("/:projectId/messages/:messageId", getCommunicationMessageController);
+router.get("/:projectId/messages/:messageId", requirePriceAccess, getCommunicationMessageController);
 
 export default router;
