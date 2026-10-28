@@ -23,7 +23,7 @@ import type {
 } from "@aintel/shared/types/logistics";
 import { cn } from "../../components/ui/utils";
 import { MaterialOrderCard } from "../logistics/MaterialOrderCard";
-import { ExecutionDefinitionPanel } from "../logistics/ExecutionDefinitionPanel";
+import { ExecutionDefinitionPanel, PreparationPhotoThumbnails } from "../logistics/ExecutionDefinitionPanel";
 import { PriceListProductAutocomplete } from "../../components/PriceListProductAutocomplete";
 import { ExecutionProductPicker } from "../../components/Zahteva/ExecutionProductPicker";
 import { SignaturePad } from "./SignaturePad";
@@ -78,15 +78,6 @@ type ActiveUnitNoteEditor = {
 } | null;
 
 type NewExtraItemsState = Record<string, Record<string, boolean>>;
-type PreparationPhoto = {
-  _id: string;
-  id?: string;
-  url: string;
-  thumbnailUrl?: string;
-  originalName?: string;
-  uploadedAt?: string | null;
-};
-
 type ProjectExecutionLocation = {
   id: string;
   name?: string | null;
@@ -179,128 +170,6 @@ function getUnitLocationPhotoItemId(fallbackItemId: string, unit: Pick<WorkOrder
 
 function getUnitLocationPhotoIndex(unit: Pick<WorkOrderExecutionUnit, "projectLocationId" | "sourcePhotoItemId">, fallbackIndex: number) {
   return unit.projectLocationId?.trim() || unit.sourcePhotoItemId?.trim() ? undefined : fallbackIndex;
-}
-
-function buildPhotoQuery(context: PhotoContext) {
-  const params = new URLSearchParams();
-  params.set("projectId", context.projectId);
-  params.set("phase", context.phase);
-  if (context.itemId) params.set("itemId", context.itemId);
-  if (typeof context.unitIndex === "number") params.set("unitIndex", String(context.unitIndex));
-  if (context.tag) params.set("tag", context.tag);
-  if (context.linkedLocationPhotos) params.set("linkedLocationPhotos", "true");
-  return params.toString();
-}
-
-function getPhotoKey(photo: PreparationPhoto) {
-  return photo.id || photo._id || photo.url;
-}
-
-function getPhotoSrc(photo: PreparationPhoto, variant: "thumbnail" | "full" = "thumbnail") {
-  return variant === "thumbnail" ? photo.thumbnailUrl || photo.url : photo.url || photo.thumbnailUrl || "";
-}
-
-function dedupePhotos(photos: PreparationPhoto[]) {
-  const seen = new Set<string>();
-  return photos.filter((photo) => {
-    const key = getPhotoKey(photo);
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function PreparationPhotoThumbnails({
-  projectId,
-  itemId,
-  unitIndex,
-  className,
-}: {
-  projectId: string;
-  itemId: string;
-  unitIndex?: number;
-  className?: string;
-}) {
-  const [photos, setPhotos] = useState<PreparationPhoto[]>([]);
-  const [previewPhoto, setPreviewPhoto] = useState<PreparationPhoto | null>(null);
-  const context = useMemo<PhotoContext>(
-    () => ({ projectId, phase: "preparation", itemId, unitIndex, linkedLocationPhotos: true }),
-    [itemId, projectId, unitIndex],
-  );
-  const queryString = useMemo(() => buildPhotoQuery(context), [context]);
-
-  useEffect(() => {
-    let alive = true;
-    const controller = new AbortController();
-
-    async function loadPhotos() {
-      try {
-        const response = await fetch(`/api/photos?${queryString}`, {
-          credentials: "same-origin",
-          signal: controller.signal,
-        });
-        const payload = await parseApiEnvelope<{ photos?: PreparationPhoto[] }>(response, "Fotografij ni mogoče naložiti.");
-        if (!alive) return;
-        setPhotos(dedupePhotos(payload?.photos ?? []));
-      } catch (error: any) {
-        if (!alive || error?.name === "AbortError") return;
-        setPhotos([]);
-      }
-    }
-
-    void loadPhotos();
-    return () => {
-      alive = false;
-      controller.abort();
-    };
-  }, [queryString]);
-
-  if (photos.length === 0) return null;
-
-  return (
-    <>
-      <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
-        {photos.map((photo) => {
-          const src = getPhotoSrc(photo);
-          return (
-            <button
-              key={getPhotoKey(photo)}
-              type="button"
-              className="h-10 w-10 overflow-hidden rounded-md border border-border/70 bg-muted/30 transition hover:border-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-              onClick={() => setPreviewPhoto(photo)}
-              aria-label="Odpri fotografijo definicije izvedbe"
-              title={photo.originalName || "Fotografija definicije izvedbe"}
-            >
-              {src ? (
-                <img src={src} alt={photo.originalName || "Fotografija definicije izvedbe"} className="h-full w-full object-cover" />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center">
-                  <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-      <Dialog open={Boolean(previewPhoto)} onOpenChange={(open) => !open && setPreviewPhoto(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Fotografija definicije izvedbe</DialogTitle>
-            {previewPhoto?.originalName ? <DialogDescription>{previewPhoto.originalName}</DialogDescription> : null}
-          </DialogHeader>
-          {previewPhoto ? (
-            <div className="flex justify-center rounded-md bg-black/5 p-2">
-              <img
-                src={getPhotoSrc(previewPhoto, "full")}
-                alt={previewPhoto.originalName || "Fotografija definicije izvedbe"}
-                className="max-h-[72vh] max-w-full rounded-md object-contain"
-              />
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-    </>
-  );
 }
 
 function ExecutionUnitPhotoButton({
@@ -2082,6 +1951,8 @@ export function ExecutionPanel({
                 {!item.isService ? renderUnitCompletedByMeta(order, item, unit, isLocked) : null}
                 <PreparationPhotoThumbnails
                   projectId={projectId}
+                  refreshKey={photoCountRefreshKey}
+                  onOpen={openPhotoManager}
                   itemId={getUnitLocationPhotoItemId(getWorkOrderItemPhotoId(item), unit)}
                   unitIndex={getUnitLocationPhotoIndex(unit, index)}
                   className="mt-2"
@@ -2253,6 +2124,8 @@ export function ExecutionPanel({
                       {renderUnitCompletedByMeta(order, item, unit, isLocked)}
                       <PreparationPhotoThumbnails
                         projectId={projectId}
+                        refreshKey={photoCountRefreshKey}
+                        onOpen={openPhotoManager}
                         itemId={getUnitLocationPhotoItemId(getWorkOrderItemPhotoId(item), unit)}
                         unitIndex={getUnitLocationPhotoIndex(unit, index)}
                         className="pt-1"
@@ -3055,6 +2928,8 @@ export function ExecutionPanel({
                                             {!hasVisibleInlineUnits ? (
                                               <PreparationPhotoThumbnails
                                                 projectId={projectId}
+                                                refreshKey={photoCountRefreshKey}
+                                                onOpen={openPhotoManager}
                                                 itemId={getWorkOrderItemPhotoId(item)}
                                                 unitIndex={0}
                                                 className="pt-1"
@@ -3338,6 +3213,8 @@ export function ExecutionPanel({
                                     </div>
                                     <PreparationPhotoThumbnails
                                       projectId={projectId}
+                                      refreshKey={photoCountRefreshKey}
+                                      onOpen={openPhotoManager}
                                       itemId={getWorkOrderItemPhotoId(item)}
                                       unitIndex={0}
                                     />

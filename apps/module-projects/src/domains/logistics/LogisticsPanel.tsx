@@ -2306,6 +2306,7 @@ export function LogisticsPanel({
                                       itemId={getUnitLocationPhotoItemId(getWorkOrderItemPhotoId(item), unit)}
                                       unitIndex={getUnitLocationPhotoIndex(unit, index)}
                                       refreshKey={photoCountRefreshKey}
+                                      onOpen={openPhotoManager}
                                     />
                                   </div>
                                   <Input

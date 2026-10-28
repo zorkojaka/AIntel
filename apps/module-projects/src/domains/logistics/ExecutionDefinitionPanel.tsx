@@ -7,11 +7,11 @@ import type {
   WorkOrderExecutionSpec,
   WorkOrderExecutionUnit,
 } from "@aintel/shared/types/logistics";
+import { cn } from "../../components/ui/utils";
 import { PhotoManager, usePhotoCount, type PhotoContext } from "@aintel/ui";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader } from "../../components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 
 type ExecutionDefinitionPanelProps = {
@@ -268,14 +268,17 @@ export function PreparationPhotoThumbnails({
   itemId,
   unitIndex,
   refreshKey,
+  onOpen,
+  className,
 }: {
   projectId: string;
   itemId: string;
   unitIndex?: number;
   refreshKey: number;
+  onOpen: (context: PhotoContext) => void;
+  className?: string;
 }) {
   const [photos, setPhotos] = useState<PreparationPhoto[]>([]);
-  const [previewPhoto, setPreviewPhoto] = useState<PreparationPhoto | null>(null);
   const context = useMemo<PhotoContext>(
     () => ({ projectId, phase: "preparation", itemId, unitIndex, linkedLocationPhotos: true }),
     [itemId, projectId, unitIndex],
@@ -317,48 +320,29 @@ export function PreparationPhotoThumbnails({
   if (photos.length === 0) return null;
 
   return (
-    <>
-      <div className="flex min-h-9 flex-wrap items-center gap-1.5">
-        {photos.map((photo) => {
-          const src = getPhotoSrc(photo);
-          return (
-            <button
-              key={getPhotoKey(photo)}
-              type="button"
-              className="h-9 w-9 overflow-hidden rounded-md border border-border/70 bg-muted/30 transition hover:border-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-              onClick={() => setPreviewPhoto(photo)}
-              aria-label="Odpri fotografijo definicije izvedbe"
-              title={photo.originalName || "Fotografija definicije izvedbe"}
-            >
-              {src ? (
-                <img src={src} alt={photo.originalName || "Fotografija definicije izvedbe"} className="h-full w-full object-cover" />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center">
-                  <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-      <Dialog open={Boolean(previewPhoto)} onOpenChange={(open) => !open && setPreviewPhoto(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Fotografija definicije izvedbe</DialogTitle>
-            {previewPhoto?.originalName ? <DialogDescription>{previewPhoto.originalName}</DialogDescription> : null}
-          </DialogHeader>
-          {previewPhoto ? (
-            <div className="flex justify-center rounded-md bg-black/5 p-2">
-              <img
-                src={getPhotoSrc(previewPhoto, "full")}
-                alt={previewPhoto.originalName || "Fotografija definicije izvedbe"}
-                className="max-h-[72vh] max-w-full rounded-md object-contain"
-              />
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-    </>
+    <div className={cn("flex min-h-9 flex-wrap items-center gap-1.5", className)}>
+      {photos.map((photo) => {
+        const src = getPhotoSrc(photo);
+        return (
+          <button
+            key={getPhotoKey(photo)}
+            type="button"
+            className="h-9 w-9 overflow-hidden rounded-md border border-border/70 bg-muted/30 transition hover:border-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            onClick={() => onOpen(context)}
+            aria-label="Odpri fotografije definicije izvedbe"
+            title={photo.originalName || "Fotografija definicije izvedbe"}
+          >
+            {src ? (
+              <img src={src} alt={photo.originalName || "Fotografija definicije izvedbe"} className="h-full w-full object-cover" />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center">
+                <ImageIcon className="h-4 w-4 text-muted-foreground" />
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -372,7 +356,6 @@ function ProjectPlanPhotoSection({
   onOpen: (context: PhotoContext) => void;
 }) {
   const [photos, setPhotos] = useState<PreparationPhoto[]>([]);
-  const [previewPhoto, setPreviewPhoto] = useState<PreparationPhoto | null>(null);
   const context = useMemo<PhotoContext>(
     () => ({ projectId, phase: "preparation", itemId: PROJECT_PLAN_PHOTO_ITEM_ID }),
     [projectId],
@@ -431,7 +414,7 @@ function ProjectPlanPhotoSection({
                 key={getPhotoKey(photo)}
                 type="button"
                 className="block w-full overflow-hidden rounded-md border border-border/70 bg-muted/20 transition hover:border-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                onClick={() => setPreviewPhoto(photo)}
+                onClick={() => onOpen(context)}
                 aria-label="Odpri načrt projekta"
                 title={photo.originalName || "Načrt projekta"}
               >
@@ -447,23 +430,6 @@ function ProjectPlanPhotoSection({
           })}
         </div>
       ) : null}
-      <Dialog open={Boolean(previewPhoto)} onOpenChange={(open) => !open && setPreviewPhoto(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
-          <DialogHeader>
-            <DialogTitle>Načrt projekta</DialogTitle>
-            {previewPhoto?.originalName ? <DialogDescription>{previewPhoto.originalName}</DialogDescription> : null}
-          </DialogHeader>
-          {previewPhoto ? (
-            <div className="flex justify-center rounded-md bg-black/5 p-2">
-              <img
-                src={getPhotoSrc(previewPhoto, "full")}
-                alt={previewPhoto.originalName || "Načrt projekta"}
-                className="max-h-[72vh] max-w-full rounded-md object-contain"
-              />
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -707,7 +673,7 @@ export function ExecutionDefinitionPanel({ projectId, offerVersionId, refreshTok
                         />
                         <UnitPhotoButton projectId={projectId} itemId={photoItemId} refreshKey={photoRefreshKey} onOpen={setPhotoContext} />
                       </div>
-                      <PreparationPhotoThumbnails projectId={projectId} itemId={photoItemId} refreshKey={photoRefreshKey} />
+                      <PreparationPhotoThumbnails projectId={projectId} itemId={photoItemId} refreshKey={photoRefreshKey} onOpen={setPhotoContext} />
 
                       <div className="space-y-2">
                         <p className="text-xs font-medium text-muted-foreground">Povezani produkti</p>

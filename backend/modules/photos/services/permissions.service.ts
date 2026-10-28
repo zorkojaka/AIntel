@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 
-import { ROLE_ADMIN } from '../../../utils/roles';
+import { ROLE_ADMIN, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from '../../../utils/roles';
 import type { PhotoDocument } from '../schemas/photo';
 
 export interface PhotoPermissionUser {
@@ -16,7 +16,8 @@ function asString(value: unknown) {
 
 export function canDeletePhoto(photo: Pick<PhotoDocument, 'projectId' | 'uploadedBy'>, user: PhotoPermissionUser): boolean {
   const roles = Array.isArray(user.roles) ? user.roles : [];
-  if (roles.includes(ROLE_ADMIN)) {
+  // Project photos are shared across phases, so everyone who manages the project can edit or remove them.
+  if ([ROLE_ADMIN, ROLE_SALES, ROLE_ORGANIZER, ROLE_FINANCE].some((role) => roles.includes(role))) {
     return true;
   }
 
