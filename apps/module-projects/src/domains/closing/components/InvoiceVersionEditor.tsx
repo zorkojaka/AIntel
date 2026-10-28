@@ -386,13 +386,19 @@ export function InvoiceVersionEditor({
     return success;
   };
 
-  const handleIssue = async () => {
+  const handleIssue = async (internal = false) => {
     if (!draftVersion || !canEdit) return;
+    if (
+      internal &&
+      !window.confirm("Obračunaj brez izdaje računa? Monterjem se obračuna plačilo, račun stranki se ne izda in številka računa se ne porabi.")
+    ) {
+      return;
+    }
     if (canSaveDraft) {
       const saved = await handleSave();
       if (!saved) return;
     }
-    const issuedVersion = await issue(invoiceNumberDraft);
+    const issuedVersion = await issue(internal ? undefined : invoiceNumberDraft, internal);
     if (!issuedVersion) {
       return;
     }
@@ -801,14 +807,14 @@ export function InvoiceVersionEditor({
             <div className="flex gap-2">
               <DownloadActionButton
                 label="Poglej račun"
-                disabled={!draftVersion || downloading}
+                disabled={!draftVersion || downloading || draftVersion.internal === true}
                 downloading={downloading}
                 onPreview={handlePreview}
                 onDownload={handleDownload}
               />
               <Button
                 variant="outline"
-                disabled={!draftVersion || draftVersion.status !== "issued"}
+                disabled={!draftVersion || draftVersion.status !== "issued" || draftVersion.internal === true}
                 onClick={() => setSendDialogOpen(true)}
               >
                 Pošlji račun stranki
@@ -831,7 +837,10 @@ export function InvoiceVersionEditor({
                       "Shrani račun"
                     )}
                   </Button>
-                  <Button onClick={handleIssue} disabled={!paidAmountIsValid || saving}>
+                  <Button variant="outline" onClick={() => void handleIssue(true)} disabled={!paidAmountIsValid || saving}>
+                    Obračunaj brez računa
+                  </Button>
+                  <Button onClick={() => void handleIssue()} disabled={!paidAmountIsValid || saving}>
                     Izdaj račun
                   </Button>
                 </>

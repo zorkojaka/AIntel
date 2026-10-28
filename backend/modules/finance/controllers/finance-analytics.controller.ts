@@ -226,6 +226,7 @@ export async function invoicesList(_req: Request, res: Response) {
           invoiceVersionId: versionId,
           versionNumber: version.versionNumber ?? null,
           invoiceNumber: version.invoiceNumber ?? '',
+          internal: version.internal === true,
           status: version.status ?? 'draft',
           issuedAt: version.issuedAt ?? null,
           createdAt: version.createdAt ?? null,

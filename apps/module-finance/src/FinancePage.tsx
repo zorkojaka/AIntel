@@ -64,6 +64,7 @@ interface FinanceInvoiceRow {
   projectTitle: string;
   customerName: string;
   invoiceVersionId: string;
+  internal?: boolean;
   versionNumber: number | null;
   invoiceNumber: string;
   status: 'draft' | 'issued' | 'cancelled' | string;
@@ -641,7 +642,7 @@ export const FinancePage: React.FC = () => {
   const filteredInvoices = useMemo(() => {
     const term = invoiceSearch.trim().toLowerCase();
     return periodInvoices.filter((invoice) => {
-      if (samoNeplacani && (invoice.status !== 'issued' || invoice.paymentState === 'paid')) {
+      if (samoNeplacani && (invoice.status !== 'issued' || invoice.internal || invoice.paymentState === 'paid')) {
         return false;
       }
       if (!term) return true;
@@ -655,7 +656,8 @@ export const FinancePage: React.FC = () => {
   }, [invoiceSearch, samoNeplacani, periodInvoices]);
 
   const invoiceSummary = useMemo(() => {
-    const active = filteredInvoices.filter((invoice) => invoice.status === 'issued');
+    // Interni obračun (plačilo monterjem brez računa stranki) ni terjatev.
+    const active = filteredInvoices.filter((invoice) => invoice.status === 'issued' && !invoice.internal);
     const openInvoices = active.filter((invoice) => invoice.paymentState && invoice.paymentState !== 'paid');
     return {
       issuedCount: active.length,
@@ -1156,7 +1158,7 @@ export const FinancePage: React.FC = () => {
                             <td>{currency.format(snapshot.summary.totalMargin)}</td>
                             <td><span className={`margin-badge ${marginClass(marginPercent)}`}>{marginPercent.toFixed(2)}%</span></td>
                             <td><span className={`status-badge ${isPaid ? 'is-paid' : 'is-pending'}`}>{statusLabel(isPaid)}</span></td>
-                            {isAdminOrFinance ? <td>{snapshot.invoiceVersionId ? <InvoicePdfActions invoice={snapshot} /> : '-'}</td> : null}
+                            {isAdminOrFinance ? <td>{snapshot.invoiceVersionId && !snapshot.invoiceNumber.startsWith('INTERNO ') ? <InvoicePdfActions invoice={snapshot} /> : '-'}</td> : null}
                           </tr>
                           {expandedProjectRows[snapshot._id] && (
                             <tr className="expanded-row">
@@ -1427,14 +1429,14 @@ export const FinancePage: React.FC = () => {
                       return (
                         <tr key={`${invoice.projectId}-${invoice.invoiceVersionId}-${invoice.creditNoteId ?? 'invoice'}`}>
                           <td>{invoice.invoiceNumber}{invoice.sourceInvoiceNumber ? <div className="finance-cell-note">za račun {invoice.sourceInvoiceNumber}</div> : null}</td>
-                          <td><span className={`status-badge ${invoice.status === 'issued' ? 'is-paid' : invoice.status === 'cancelled' ? 'is-cancelled' : 'is-pending'}`}>{invoiceStatusLabel(invoice.status)}</span></td>
+                          <td><span className={`status-badge ${invoice.status === 'issued' ? 'is-paid' : invoice.status === 'cancelled' ? 'is-cancelled' : 'is-pending'}`}>{invoice.internal ? 'Interni obračun' : invoiceStatusLabel(invoice.status)}</span></td>
                           <td>{invoice.projectTitle || invoice.projectId}</td>
                           <td>{invoice.customerName || '-'}</td>
                           <td>{dateValue ? new Date(dateValue).toLocaleDateString('sl-SI') : '-'}</td>
                           <td>{currency.format(Number(invoice.totalWithoutVat) || 0)}</td>
                           <td>{currency.format(Number(invoice.totalWithVat) || 0)}</td>
                           <td>
-                            {invoice.status === 'issued' ? (
+                            {invoice.status === 'issued' && !invoice.internal ? (
                               <span
                                 className={`status-badge ${paymentStateBadgeClass(invoice.paymentState)}`}
                                 title={
@@ -1459,11 +1461,11 @@ export const FinancePage: React.FC = () => {
                           </td>
                           <td>
                             <div className="finance-row-actions finance-row-actions--compact">
-                              <InvoicePdfActions invoice={invoice} />
+                              {invoice.internal ? null : <InvoicePdfActions invoice={invoice} />}
                               <button type="button" className="finance-btn" onClick={() => { window.location.href = `/projects/${invoice.projectId}`; }}>
                                 Odpri projekt
                               </button>
-                              {invoice.status === 'issued' && invoice.paymentState !== 'paid' && (
+                              {invoice.status === 'issued' && !invoice.internal && invoice.paymentState !== 'paid' && (
                                 <button
                                   type="button"
                                   className="finance-btn"

@@ -72,6 +72,7 @@ export async function issueInvoice(req: Request, res: Response) {
   try {
     const payload = await issueInvoiceVersion(getProjectId(req), getVersionId(req), {
       invoiceNumber: req.body?.invoiceNumber,
+      internal: req.body?.internal,
     });
     return res.success(payload);
   } catch (error) {

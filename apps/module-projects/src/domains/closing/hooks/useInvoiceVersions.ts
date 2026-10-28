@@ -34,6 +34,7 @@ export interface InvoiceVersion {
   versionNumber: number;
   invoiceNumber?: string | null;
   invoiceSequence?: number | null;
+  internal?: boolean;
   status: InvoiceStatus;
   createdAt: string;
   issuedAt?: string | null;
@@ -190,15 +191,15 @@ export function useInvoiceVersions(projectId?: string | null) {
     }
   }, [projectId]);
 
-  const issue = useCallback(async (invoiceNumber?: string): Promise<InvoiceVersion | null> => {
+  const issue = useCallback(async (invoiceNumber?: string, internal = false): Promise<InvoiceVersion | null> => {
     if (!projectId || !resolveActiveVersion || resolveActiveVersion.status !== "draft") return null;
     const result = await runAction(
       () =>
         requestInvoiceApi(projectId, `/invoices/${resolveActiveVersion._id}/issue`, {
           method: "POST",
-          body: JSON.stringify({ invoiceNumber }),
+          body: JSON.stringify({ invoiceNumber, internal }),
         }),
-      "Račun izdan.",
+      internal ? "Obračunano brez izdaje računa." : "Račun izdan.",
     );
     return result?.updatedVersion ?? resolveActiveVersion ?? null;
   }, [projectId, resolveActiveVersion, runAction]);

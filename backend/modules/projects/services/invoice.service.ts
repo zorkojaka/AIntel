@@ -58,6 +58,8 @@ interface InvoiceVersion {
   versionNumber: number;
   invoiceNumber?: string | null;
   invoiceSequence?: number | null;
+  /** Interni obračun: za plačilo monterjev, brez računa stranki in brez številke iz števca. */
+  internal?: boolean;
   status: InvoiceStatus;
   createdAt: string;
   issuedAt: string | null;
@@ -565,7 +567,7 @@ export async function updateInvoiceVersion(
   return serializeResponse(project);
 }
 
-export async function issueInvoiceVersion(projectId: string, versionId: string, payload?: { invoiceNumber?: unknown }): Promise<InvoiceListResponse> {
+export async function issueInvoiceVersion(projectId: string, versionId: string, payload?: { invoiceNumber?: unknown; internal?: unknown }): Promise<InvoiceListResponse> {
   const project = await findProjectOrFail(projectId);
   const version = ensureInvoiceVersion(project, versionId);
   const previousStatus = version.status;
@@ -595,13 +597,17 @@ export async function issueInvoiceVersion(projectId: string, versionId: string, 
     }
   });
   const issuedAt = new Date();
-  const numbering = await resolveInvoiceNumberForIssue(
-    project.id,
-    version,
-    issuedAt,
-    payload?.invoiceNumber,
-    getInvoiceCorrectionChainIds(project.invoiceVersions ?? [], version),
-  );
+  const internal = payload?.internal === true;
+  const numbering = internal
+    ? { invoiceNumber: `INTERNO ${project.id}`, invoiceSequence: null }
+    : await resolveInvoiceNumberForIssue(
+        project.id,
+        version,
+        issuedAt,
+        payload?.invoiceNumber,
+        getInvoiceCorrectionChainIds(project.invoiceVersions ?? [], version),
+      );
+  version.internal = internal;
   version.status = 'issued';
   version.issuedAt = issuedAt.toISOString();
   version.invoiceNumber = numbering.invoiceNumber;
