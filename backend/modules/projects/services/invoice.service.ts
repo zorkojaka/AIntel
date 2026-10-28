@@ -9,7 +9,7 @@ import { FinanceSnapshotModel } from '../../finance/schemas/finance-snapshot';
 import { assertInvoiceHasNoCredits } from '../../finance/services/finance-ledger.service';
 import {
   generateInvoiceSequentialNumber,
-  parseInvoiceSequentialNumber,
+  parseInvoiceNumber,
   previewInvoiceSequentialNumber,
   syncInvoiceSequentialCounterAtLeast,
 } from './document-numbering.service';
@@ -207,17 +207,17 @@ async function resolveInvoiceNumberForIssue(
   if (version.correctedFromInvoiceVersionId && version.invoiceNumber && !normalizedOverride) {
     const correctionNumber = version.invoiceNumber.trim();
     await assertInvoiceNumberAvailable(correctionNumber, version._id, allowedVersionIds);
-    const parsed = parseInvoiceSequentialNumber(correctionNumber);
+    const parsed = await parseInvoiceNumber(correctionNumber);
     return {
       invoiceNumber: correctionNumber,
       invoiceSequence: parsed?.sequence ?? version.invoiceSequence ?? null,
     };
   }
   if (normalizedOverride) {
-    const parsed = parseInvoiceSequentialNumber(normalizedOverride);
+    const parsed = await parseInvoiceNumber(normalizedOverride);
     await assertInvoiceNumberAvailable(normalizedOverride, version._id, allowedVersionIds);
     if (parsed) {
-      await syncInvoiceSequentialCounterAtLeast(parsed.sequence, parsed.year, issuedAt);
+      await syncInvoiceSequentialCounterAtLeast(parsed.sequence, parsed.year ?? issuedAt.getFullYear(), issuedAt);
     }
     return { invoiceNumber: normalizedOverride, invoiceSequence: parsed?.sequence ?? null };
   }
@@ -529,7 +529,7 @@ export async function updateInvoiceVersion(
   }
   const invoiceNumber = typeof payload.invoiceNumber === 'string' ? payload.invoiceNumber.trim() : '';
   if (invoiceNumber) {
-    const parsed = parseInvoiceSequentialNumber(invoiceNumber);
+    const parsed = await parseInvoiceNumber(invoiceNumber);
     await assertInvoiceNumberAvailable(invoiceNumber, version._id, getInvoiceCorrectionChainIds(project.invoiceVersions ?? [], version));
     version.invoiceNumber = invoiceNumber;
     version.invoiceSequence = parsed?.sequence ?? null;

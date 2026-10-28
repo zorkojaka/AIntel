@@ -155,3 +155,31 @@ export function ensureDocumentNumberingConfig(
 
 export const ensureOfferNumberingConfig = (config?: DocumentNumberingConfig | null) =>
   ensureDocumentNumberingConfig('offer', config);
+
+const TOKEN_PATTERNS: Record<string, string> = {
+  YYYY: '(?<year>\\d{4})',
+  YY: '(?<shortYear>\\d{2})',
+  MM: '\\d{1,2}',
+  DD: '\\d{1,2}',
+};
+
+// Reads the sequence (and year) back out of a number built from `pattern`, e.g. "RAČUN 089-10-2026".
+export function parseDocumentNumberSequence(value: string, pattern: string) {
+  const safePattern = normalizeNumberPattern(pattern);
+  let source = '';
+  let lastIndex = 0;
+  for (const match of safePattern.matchAll(TOKEN_REGEX)) {
+    source += safePattern.slice(lastIndex, match.index).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const token = match[1].toUpperCase();
+    source += token.startsWith('SEQ') ? '(?<seq>\\d+)' : TOKEN_PATTERNS[token] ?? '';
+    lastIndex = (match.index ?? 0) + match[0].length;
+  }
+  source += safePattern.slice(lastIndex).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Not anchored at the end, so a suffix like "RAČUN 087-10-2026 - Skladišče" still counts.
+  const groups = value.trim().match(new RegExp(`^${source}(?!\\d)`, 'i'))?.groups;
+  const sequence = Number(groups?.seq);
+  if (!groups || !Number.isInteger(sequence) || sequence < 1) return null;
+  const year = groups.year ? Number(groups.year) : groups.shortYear ? 2000 + Number(groups.shortYear) : null;
+  return { sequence, year };
+}

@@ -6,6 +6,7 @@ import {
   ensureDocumentNumberingConfig,
   formatDocumentNumber,
   getDefaultPattern,
+  parseDocumentNumberSequence,
 } from '../../settings/document-numbering.util';
 import type { DocumentNumberingConfig, DocumentTypeKey } from '../../settings/Settings';
 
@@ -127,6 +128,15 @@ export function parseInvoiceSequentialNumber(value: unknown) {
   }
 
   return { sequence, month, year, number: `${sequence}/${month}/${year}` };
+}
+
+// Accepts the legacy "50/6/2026" form and anything built from the configured invoice pattern.
+export async function parseInvoiceNumber(value: unknown) {
+  const legacy = parseInvoiceSequentialNumber(value);
+  if (legacy) return { sequence: legacy.sequence, year: legacy.year as number | null };
+  if (typeof value !== 'string') return null;
+  const config = await getDocumentNumberingConfig('INVOICE');
+  return parseDocumentNumberSequence(value, config.pattern);
 }
 
 async function resolveInvoiceCounterContext(referenceDate: Date = new Date()) {
