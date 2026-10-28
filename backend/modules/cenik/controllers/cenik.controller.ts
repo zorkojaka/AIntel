@@ -10,6 +10,7 @@ import {
   type CategoryMarginPricingInfo,
 } from '../services/category-margin-pricing';
 import { applyReolinkImageOverride } from '../services/reolink-image-overrides';
+import { ROLE_ADMIN, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from '../../../utils/roles';
 
 type ProductPayload = Pick<
   ProductDocument,
@@ -172,6 +173,16 @@ function sanitizeProduct(
   });
 }
 
+// Monterji izbirajo izdelke na izvedbi, naših cen pa ne vidijo.
+function canSeePrices(req: Request) {
+  const roles: string[] = Array.isArray((req as any)?.context?.roles) ? (req as any).context.roles : [];
+  return [ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_ORGANIZER].some((role) => roles.includes(role));
+}
+
+function withoutPrices(product: ProductResponse): ProductResponse {
+  return { ...product, purchasePriceWithoutVat: 0, nabavnaCena: 0, prodajnaCena: 0, pricingRule: null as any };
+}
+
 function sortBySuggested(products: ProductResponse[], suggested: string[]) {
   if (!suggested.length) {
     return products;
@@ -199,11 +210,15 @@ export async function getAllProducts(_req: Request, res: Response) {
     const products = await ProductModel.find(filter).lean();
     const categoryPriorityByPath = await buildCategoryPriorityMap();
     const marginSettings = await loadCategoryMarginSettings();
-    const sanitized = products.map((product) => sanitizeProduct(
-      product,
-      resolvePriorityFromProductMap(categoryPriorityByPath, product as any),
-      marginSettings,
-    ));
+    const showPrices = canSeePrices(_req);
+    const sanitized = products.map((product) => {
+      const sanitizedProduct = sanitizeProduct(
+        product,
+        resolvePriorityFromProductMap(categoryPriorityByPath, product as any),
+        marginSettings,
+      );
+      return showPrices ? sanitizedProduct : withoutPrices(sanitizedProduct);
+    });
     const query = _req.query?.suggestForCategories;
     if (!query) {
       return res.success(sanitized);
@@ -319,6 +334,7 @@ export async function searchPriceListItems(req: Request, res: Response) {
     return res.success([] as PriceListSearchItem[]);
   }
   const queryTokens = normalizedQuery.split(' ').filter(Boolean);
+  const showPrices = canSeePrices(req);
 
   try {
     const includeInactive = String(req.query?.includeInactive ?? '').toLowerCase() === 'true';
@@ -450,7 +466,7 @@ export async function searchPriceListItems(req: Request, res: Response) {
           externalSource: product.externalSource ?? undefined,
           imageUrl: castText(product.aaData?.image || product.povezavaDoSlike || '') || undefined,
           unit: resolveUnitFromName(name),
-          unitPrice: Number(product.prodajnaCena ?? 0),
+          unitPrice: showPrices ? Number(product.prodajnaCena ?? 0) : 0,
           vatRate: 22,
           _rank: rank,
           _priorityRank: resolvePriorityRank(resolvePriorityFromProductMap(categoryPriorityByPath, product as any)),

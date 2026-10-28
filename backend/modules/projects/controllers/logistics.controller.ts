@@ -2150,9 +2150,14 @@ export async function getProjectLogistics(req: Request, res: Response, next: Nex
       });
     }
 
+    // Monter brez priprave ne vidi zneskov ponudb.
+    const offerVersions = isExecutionRoleWithoutPreparationAccess(getContextRoles(req))
+      ? snapshot.offerVersions.map((offer) => ({ ...offer, totalWithVat: 0 }))
+      : snapshot.offerVersions;
     return res.success({
       ...snapshot,
-      offers: snapshot.offerVersions,
+      offerVersions,
+      offers: offerVersions,
       acceptedOfferId: snapshot.confirmedOfferVersionId,
       materialOrder: snapshot.materialOrder,
       materialOrders: snapshot.materialOrders ?? [],

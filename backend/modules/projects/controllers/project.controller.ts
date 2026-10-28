@@ -147,6 +147,7 @@ function redactFinancialProjectDetails<T extends Record<string, any>>(details: T
     invoiceAmount: 0,
     offers: [],
     purchaseOrders: [],
+    invoiceVersions: [],
     items: Array.isArray(details.items)
       ? details.items.map((item: any) => ({
           ...item,
