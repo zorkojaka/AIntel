@@ -155,17 +155,15 @@ async function assertInvoiceNumberAvailable(
   invoiceNumber: string,
   currentVersionId: string,
   allowedVersionIds: string[] = [],
-  reservedStatuses: InvoiceStatus[] = ['issued'],
+  projectId?: string,
 ) {
   const allowedIds = Array.from(new Set([currentVersionId, ...allowedVersionIds].filter(Boolean)));
   const existingProject = await ProjectModel.findOne({
-    invoiceVersions: {
-      $elemMatch: {
-        invoiceNumber,
-        status: { $in: reservedStatuses },
-        _id: { $nin: allowedIds },
-      },
-    },
+    $or: [
+      { invoiceVersions: { $elemMatch: { invoiceNumber, status: 'issued', _id: { $nin: allowedIds } } } },
+      // A cancelled invoice was a real document, so its number stays taken outside its own project.
+      ...(projectId ? [{ id: { $ne: projectId }, invoiceVersions: { $elemMatch: { invoiceNumber, status: 'cancelled' } } }] : []),
+    ],
   }).select({ id: 1 }).lean();
 
   if (existingProject) {
@@ -198,6 +196,7 @@ function getInvoiceCorrectionChainIds(versions: InvoiceVersion[], version: Invoi
 }
 
 async function resolveInvoiceNumberForIssue(
+  projectId: string,
   version: InvoiceVersion,
   issuedAt: Date,
   override?: unknown,
@@ -206,7 +205,7 @@ async function resolveInvoiceNumberForIssue(
   const normalizedOverride = typeof override === 'string' ? override.trim() : '';
   if (version.correctedFromInvoiceVersionId && version.invoiceNumber && !normalizedOverride) {
     const correctionNumber = version.invoiceNumber.trim();
-    await assertInvoiceNumberAvailable(correctionNumber, version._id, allowedVersionIds);
+    await assertInvoiceNumberAvailable(correctionNumber, version._id, allowedVersionIds, projectId);
     const parsed = await parseInvoiceNumber(correctionNumber);
     return {
       invoiceNumber: correctionNumber,
@@ -215,7 +214,7 @@ async function resolveInvoiceNumberForIssue(
   }
   if (normalizedOverride) {
     const parsed = await parseInvoiceNumber(normalizedOverride);
-    await assertInvoiceNumberAvailable(normalizedOverride, version._id, allowedVersionIds);
+    await assertInvoiceNumberAvailable(normalizedOverride, version._id, allowedVersionIds, projectId);
     if (parsed) {
       await syncInvoiceSequentialCounterAtLeast(parsed.sequence, parsed.year ?? issuedAt.getFullYear(), issuedAt);
     }
@@ -225,7 +224,7 @@ async function resolveInvoiceNumberForIssue(
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const generated = await generateInvoiceSequentialNumber(issuedAt);
     try {
-      await assertInvoiceNumberAvailable(generated.number, version._id, allowedVersionIds);
+      await assertInvoiceNumberAvailable(generated.number, version._id, allowedVersionIds, projectId);
       return { invoiceNumber: generated.number, invoiceSequence: generated.sequence };
     } catch (error) {
       if (attempt === 9) throw error;
@@ -530,7 +529,7 @@ export async function updateInvoiceVersion(
   const invoiceNumber = typeof payload.invoiceNumber === 'string' ? payload.invoiceNumber.trim() : '';
   if (invoiceNumber) {
     const parsed = await parseInvoiceNumber(invoiceNumber);
-    await assertInvoiceNumberAvailable(invoiceNumber, version._id, getInvoiceCorrectionChainIds(project.invoiceVersions ?? [], version));
+    await assertInvoiceNumberAvailable(invoiceNumber, version._id, getInvoiceCorrectionChainIds(project.invoiceVersions ?? [], version), project.id);
     version.invoiceNumber = invoiceNumber;
     version.invoiceSequence = parsed?.sequence ?? null;
   } else {
@@ -597,6 +596,7 @@ export async function issueInvoiceVersion(projectId: string, versionId: string, 
   });
   const issuedAt = new Date();
   const numbering = await resolveInvoiceNumberForIssue(
+    project.id,
     version,
     issuedAt,
     payload?.invoiceNumber,
