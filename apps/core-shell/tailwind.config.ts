@@ -8,6 +8,7 @@ const config: Config = {
     '../module-cenik/src/**/*.{js,jsx,ts,tsx,css}',
     '../module-finance/src/**/*.{js,jsx,ts,tsx,css}',
     '../module-settings/src/**/*.{js,jsx,ts,tsx,css}',
+    '../../packages/ui/src/**/*.{js,jsx,ts,tsx}',
   ],
   theme: {
     extend: {},
