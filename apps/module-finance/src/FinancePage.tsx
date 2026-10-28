@@ -40,6 +40,7 @@ interface SnapshotEmployeeEarning {
 interface FinanceSnapshot {
   _id: string;
   projectId: string;
+  invoiceVersionId: string;
   invoiceNumber: string;
   issuedAt: string;
   customer: { name: string };
@@ -320,13 +321,37 @@ function paymentStateBadgeClass(state: FinanceInvoiceRow['paymentState']) {
   return 'is-cancelled';
 }
 
-function invoicePdfUrl(invoice: FinanceInvoiceRow, inline = false) {
+function invoicePdfUrl(invoice: Pick<FinanceInvoiceRow, 'projectId' | 'invoiceVersionId' | 'creditNoteId'>, inline = false) {
   if (invoice.creditNoteId) {
     const baseUrl = `/api/projects/${encodeURIComponent(invoice.projectId)}/invoices/${encodeURIComponent(invoice.invoiceVersionId)}/credit-notes/${encodeURIComponent(invoice.creditNoteId)}/pdf`;
     return inline ? `${baseUrl}?mode=inline` : baseUrl;
   }
   const baseUrl = `/api/projects/${encodeURIComponent(invoice.projectId)}/invoices/${encodeURIComponent(invoice.invoiceVersionId)}/pdf`;
   return inline ? `${baseUrl}?mode=inline` : baseUrl;
+}
+
+function InvoicePdfActions({ invoice }: { invoice: Pick<FinanceInvoiceRow, 'projectId' | 'invoiceVersionId' | 'creditNoteId' | 'invoiceNumber'> }) {
+  return (
+    <div className="finance-document-actions" onClick={(event) => event.stopPropagation()}>
+      <button
+        type="button"
+        className="finance-btn finance-document-actions__preview"
+        onClick={() => window.open(invoicePdfUrl(invoice, true), '_blank', 'noopener,noreferrer')}
+      >
+        Poglej
+      </button>
+      <a
+        className="finance-btn finance-document-actions__download"
+        href={invoicePdfUrl(invoice)}
+        aria-label={`Prenesi račun ${invoice.invoiceNumber}`}
+        title="Prenesi račun PDF"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14" />
+        </svg>
+      </a>
+    </div>
+  );
 }
 
 function detailKey(employeeIdValue: string, snapshotId: string) {
@@ -1105,7 +1130,7 @@ export const FinancePage: React.FC = () => {
                 <table className="finance-table">
                   <thead>
                     <tr>
-                      <th>Račun</th><th>Projekt</th><th>Stranka</th><th>Datum</th><th>Prodajna brez DDV</th><th>Material - nabavna cena materiala</th><th>Delo - plačilo monterjem</th><th>Zaslužek</th><th>Marža %</th><th>Status plačila</th>
+                      <th>Račun</th><th>Projekt</th><th>Stranka</th><th>Datum</th><th>Prodajna brez DDV</th><th>Material - nabavna cena materiala</th><th>Delo - plačilo monterjem</th><th>Zaslužek</th><th>Marža %</th><th>Status plačila</th>{isAdminOrFinance ? <th>Račun PDF</th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -1131,10 +1156,11 @@ export const FinancePage: React.FC = () => {
                             <td>{currency.format(snapshot.summary.totalMargin)}</td>
                             <td><span className={`margin-badge ${marginClass(marginPercent)}`}>{marginPercent.toFixed(2)}%</span></td>
                             <td><span className={`status-badge ${isPaid ? 'is-paid' : 'is-pending'}`}>{statusLabel(isPaid)}</span></td>
+                            {isAdminOrFinance ? <td>{snapshot.invoiceVersionId ? <InvoicePdfActions invoice={snapshot} /> : '-'}</td> : null}
                           </tr>
                           {expandedProjectRows[snapshot._id] && (
                             <tr className="expanded-row">
-                              <td colSpan={10}>
+                              <td colSpan={isAdminOrFinance ? 11 : 10}>
                                 <table className="inner-table">
                                   <thead>
                                     <tr>
@@ -1433,25 +1459,7 @@ export const FinancePage: React.FC = () => {
                           </td>
                           <td>
                             <div className="finance-row-actions finance-row-actions--compact">
-                              <div className="finance-document-actions">
-                                <button
-                                  type="button"
-                                  className="finance-btn finance-document-actions__preview"
-                                  onClick={() => window.open(invoicePdfUrl(invoice, true), '_blank', 'noopener,noreferrer')}
-                                >
-                                  Poglej
-                                </button>
-                                <a
-                                  className="finance-btn finance-document-actions__download"
-                                  href={invoicePdfUrl(invoice)}
-                                  aria-label={`Prenesi račun ${invoice.invoiceNumber}`}
-                                  title="Prenesi račun PDF"
-                                >
-                                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                                    <path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14" />
-                                  </svg>
-                                </a>
-                              </div>
+                              <InvoicePdfActions invoice={invoice} />
                               <button type="button" className="finance-btn" onClick={() => { window.location.href = `/projects/${invoice.projectId}`; }}>
                                 Odpri projekt
                               </button>
