@@ -160,13 +160,15 @@ async function assertInvoiceNumberAvailable(
   projectId?: string,
 ) {
   const allowedIds = Array.from(new Set([currentVersionId, ...allowedVersionIds].filter(Boolean)));
-  const existingProject = await ProjectModel.findOne({
-    $or: [
-      { invoiceVersions: { $elemMatch: { invoiceNumber, status: 'issued', _id: { $nin: allowedIds } } } },
-      // A cancelled invoice was a real document, so its number stays taken outside its own project.
-      ...(projectId ? [{ id: { $ne: projectId }, invoiceVersions: { $elemMatch: { invoiceNumber, status: 'cancelled' } } }] : []),
-    ],
-  }).select({ id: 1 }).lean();
+  // Within its own project a number may repeat: a correction keeps its number and issuing it
+  // cancels the other issued versions. (Matching version _ids here is unreliable: Mongoose casts
+  // them in $elemMatch while they are stored as strings.) A cancelled invoice was a real document,
+  // so its number stays taken in other projects too.
+  const existingProject = await ProjectModel.findOne(
+    projectId
+      ? { id: { $ne: projectId }, invoiceVersions: { $elemMatch: { invoiceNumber, status: { $in: ['issued', 'cancelled'] } } } }
+      : { invoiceVersions: { $elemMatch: { invoiceNumber, status: 'issued', _id: { $nin: allowedIds } } } },
+  ).select({ id: 1 }).lean();
 
   if (existingProject) {
     throw new Error(`Številka računa ${invoiceNumber} je že uporabljena.`);
@@ -704,12 +706,8 @@ export async function cloneInvoiceVersion(projectId: string, versionId: string):
   if (version.status !== 'issued') {
     return buildInvoiceResponse(project, { activeVersionId: version._id, updatedVersionId: version._id });
   }
-  (project.invoiceVersions ?? []).forEach((entry) => {
-    if (entry._id !== version._id && entry.status === 'issued') {
-      entry.status = 'cancelled';
-    }
-  });
-  version.status = 'cancelled';
+  // The original stays issued until the correction is issued (issueInvoiceVersion cancels it then).
+  // Cancelling it here left projects without a valid invoice when a correction draft was abandoned.
   const clonedItems = (version.items ?? []).map((item) => ({ ...item }));
   const clone: InvoiceVersion = {
     _id: new Types.ObjectId().toString(),
