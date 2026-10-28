@@ -9,6 +9,7 @@ import { getActiveSignedConfirmationVersion } from "../../projects/services/work
 import { generateInvoicePdf } from "../../projects/services/invoice-pdf.service";
 import { generateCreditNotePdf } from "../../projects/services/invoice-pdf.service";
 import { mergePdfBuffers } from "./pdf-merge.service";
+import { withDocumentLabel } from "../../settings/document-numbering.util";
 
 export interface ResolvedAttachment {
   type: CommunicationAttachmentType;
@@ -76,7 +77,7 @@ export async function resolveCommunicationAttachment(params: {
 
     const invoiceIdentifier = invoice.invoiceNumber || `verzija ${invoice.versionNumber ?? invoiceVersionId}`;
     const customerName = project.customerName?.trim() || project.customer?.name?.trim() || "";
-    const label = sanitizeFilePart(`Račun ${invoiceIdentifier}${customerName ? ` - ${customerName}` : ""}`) || "Racun";
+    const label = sanitizeFilePart(`${withDocumentLabel("Račun", invoiceIdentifier)}${customerName ? ` - ${customerName}` : ""}`) || "Racun";
     const buffer = await generateInvoicePdf(projectId, invoiceVersionId, { docType: "INVOICE" });
 
     return {

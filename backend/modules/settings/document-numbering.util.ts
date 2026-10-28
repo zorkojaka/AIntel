@@ -183,3 +183,9 @@ export function parseDocumentNumberSequence(value: string, pattern: string) {
   const year = groups.year ? Number(groups.year) : groups.shortYear ? 2000 + Number(groups.shortYear) : null;
   return { sequence, year };
 }
+
+// "Račun 88-10-2026"; older numbers that already start with the label ("RAČUN 089-10-2026") are kept as they are.
+export function withDocumentLabel(label: string, documentNumber: string) {
+  const number = documentNumber.trim();
+  return number.toLocaleLowerCase('sl').startsWith(label.toLocaleLowerCase('sl')) ? number : `${label} ${number}`;
+}

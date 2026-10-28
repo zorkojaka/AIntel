@@ -1,5 +1,6 @@
 import type { PdfCompanySettings } from '../schemas/pdf-settings';
 import type { DocumentNumberingKind } from './document-numbering.service';
+import { withDocumentLabel } from '../../settings/document-numbering.util';
 
 export interface PreviewCustomerInfo {
   name?: string;
@@ -737,7 +738,7 @@ export function renderInvoicePdf(context: DocumentPreviewContext) {
 
   return buildStandardDocument(context, {
     docLabel: 'Račun',
-    pageTitle: 'Racun',
+    pageTitle: withDocumentLabel('Račun', context.documentNumber),
     projectTitleFallback: 'Račun',
     customerEmptyText: 'Podatki o stranki se prikažejo ob izdaji računa.',
     metaExtras,

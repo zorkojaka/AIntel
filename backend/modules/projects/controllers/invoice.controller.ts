@@ -9,6 +9,7 @@ import {
   updateInvoiceVersion,
 } from '../services/invoice.service';
 import { generateInvoicePdf } from '../services/invoice-pdf.service';
+import { withDocumentLabel } from '../../settings/document-numbering.util';
 
 function getProjectId(req: Request) {
   return (req.params.projectId ?? req.params.id ?? '').trim();
@@ -102,10 +103,15 @@ export async function exportInvoicePdf(req: Request, res: Response) {
     if (requestedType === 'CREDIT_NOTE') return res.fail('Najprej izdaj ločen dobropis za izbrane vrnjene postavke.', 400);
     const docType = 'INVOICE';
     const mode = typeof req.query.mode === 'string' && req.query.mode.toLowerCase() === 'inline' ? 'inline' : 'attachment';
-    const buffer = await generateInvoicePdf(getProjectId(req), getVersionId(req), { docType });
+    const [buffer, { versions }] = await Promise.all([
+      generateInvoicePdf(getProjectId(req), getVersionId(req), { docType }),
+      getInvoiceVersions(getProjectId(req)),
+    ]);
+    const version = versions.find((entry) => String(entry._id) === getVersionId(req));
+    const filename = `${withDocumentLabel('Račun', version?.invoiceNumber || `verzija ${version?.versionNumber ?? getVersionId(req)}`)}.pdf`.replace(/["\\/\r\n]+/g, ' ');
     res.setHeader('Content-Type', 'application/pdf');
-    const slug = 'invoice';
-    res.setHeader('Content-Disposition', `${mode}; filename="${slug}-${getVersionId(req)}.pdf"`);
+    // ASCII fallback for old clients, UTF-8 name (č, š, ž) for the rest
+    res.setHeader('Content-Disposition', `${mode}; filename="${filename.normalize('NFKD').replace(/[^\x20-\x7e]/g, '')}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
     return res.end(buffer);
   } catch (error) {
     return handleError(res, error);

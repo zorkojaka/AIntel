@@ -209,7 +209,7 @@ function generateId() {
 }
 
 function filenameSafe(value: string) {
-  return value.trim().replace(/[^\w.-]+/g, "-").replace(/-+/g, "-");
+  return value.trim().replace(/[^\p{L}\p{N} .-]+/gu, "-").replace(/-+/g, "-");
 }
 
 export function InvoiceVersionEditor({
@@ -422,7 +422,7 @@ export function InvoiceVersionEditor({
     try {
       setDownloading(true);
       const numberPart = filenameSafe(draftVersion.invoiceNumber || invoiceNumberDraft || String(draftVersion.versionNumber ?? draftVersion._id));
-      const filename = `racun-${numberPart}.pdf`;
+      const filename = `${/^račun/i.test(numberPart) ? numberPart : `Račun ${numberPart}`}.pdf`;
       await downloadPdf(`/api/projects/${projectId}/invoices/${draftVersion._id}/pdf`, filename);
       toast.success("Račun prenesen.");
     } catch (error) {

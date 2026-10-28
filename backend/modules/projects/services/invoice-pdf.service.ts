@@ -7,6 +7,7 @@ import { getSettings } from '../../settings/settings.service';
 import type { DocumentNumberingKind } from './document-numbering.service';
 import { formatClientAddress, resolveProjectClient } from './project.service';
 import { previewInvoiceSequentialNumber } from './document-numbering.service';
+import { withDocumentLabel } from '../../settings/document-numbering.util';
 import type { CreditNote } from '../../../../shared/types/credit-notes';
 import { getCreditNote } from './credit-note.service';
 import { buildPaymentInfo } from './payment-qr.service';
@@ -143,7 +144,7 @@ export async function generateInvoicePdf(projectId: string, invoiceVersionId: st
     dueDate: credit ? null : dueDate,
     company: companyProfile,
     customer: credit?.customer ?? customer,
-    projectTitle: documentNumber,
+    projectTitle: withDocumentLabel(credit ? 'Dobropis' : 'Račun', documentNumber),
     items,
     totals,
     notes: credit ? [...notes, credit.reason] : notes,
