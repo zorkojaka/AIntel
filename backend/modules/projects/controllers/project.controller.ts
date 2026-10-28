@@ -24,7 +24,7 @@ import { OfferVersionModel } from '../schemas/offer-version';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
 import { resolveTenantId } from '../../../utils/tenant';
-import { canSeePrices, ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_SALES } from '../../../utils/roles';
+import { canSeePrices, ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from '../../../utils/roles';
 import { UserModel } from '../../users/schemas/user';
 import { EmployeeModel } from '../../employees/schemas/employee';
 import { CrmClientModel } from '../../crm/schemas/client';
@@ -336,7 +336,9 @@ function getActorEmployeeId(req: Request): string | null {
 function isExecutionOnlyViewer(req: Request) {
   const roles = getContextRoles(req);
   const hasExecution = roles.includes(ROLE_EXECUTION);
-  const hasPrivileged = roles.includes(ROLE_ADMIN) || roles.includes(ROLE_SALES) || roles.includes(ROLE_FINANCE);
+  // Organizator planira vse projekte, tudi če je hkrati monter; cene skriva canSeePrices.
+  const hasPrivileged =
+    roles.includes(ROLE_ADMIN) || roles.includes(ROLE_SALES) || roles.includes(ROLE_FINANCE) || roles.includes(ROLE_ORGANIZER);
   return hasExecution && !hasPrivileged;
 }
 

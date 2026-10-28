@@ -14,9 +14,9 @@ import { authCookieName, signSessionToken } from '../modules/auth/services/auth.
 import { EmployeeServiceRateModel } from '../modules/employee-profiles/schemas/employee-service-rate';
 import { ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER } from '../utils/roles';
 
-async function createUser(role: string, label: string) {
+async function createUser(role: string | string[], label: string) {
   const employee = await EmployeeModel.create({
-    tenantId: 'inteligent', name: label, roles: [role], active: true, appAccess: true, hourRateWithoutVat: 0,
+    tenantId: 'inteligent', name: label, roles: Array.isArray(role) ? role : [role], active: true, appAccess: true, hourRateWithoutVat: 0,
   });
   const user = await UserModel.create({
     tenantId: 'inteligent', email: `${label.toLowerCase().replace(/\s+/g, '.')}@example.test`, name: label,
@@ -41,6 +41,7 @@ test('monter in organizator ne vidita cen; monter še vidi svoj zaslužek', asyn
   try {
     const monter = await createUser(ROLE_EXECUTION, 'Monter');
     const organizer = await createUser(ROLE_ORGANIZER, 'Organizator');
+    const organizerMonter = await createUser([ROLE_EXECUTION, ROLE_ORGANIZER], 'Organizator Monter');
     const finance = await createUser(ROLE_FINANCE, 'Finance');
     await ProductModel.create({ ime: 'Kamera test', categorySlugs: ['kamere'], prodajnaCena: 120, nabavnaCena: 70, isService: false });
     const service = await ProductModel.create({ ime: 'Montaža kamere', categorySlugs: ['storitve'], prodajnaCena: 50, isService: true });
@@ -54,6 +55,20 @@ test('monter in organizator ne vidita cen; monter še vidi svoj zaslužek', asyn
         summary: { baseWithoutVat: 100, discountedBase: 100, vatAmount: 22, totalWithVat: 122 },
       }],
     });
+
+    await ProjectModel.create({
+      id: 'PRJ-901', code: 'PRJ-901', projectNumber: 901, title: 'Nedodeljen', customer: { name: 'Druga' }, status: 'in-progress',
+      createdAt: new Date().toISOString(), invoiceVersions: [],
+    });
+
+    // Monter vidi le dodeljene projekte, organizator (tudi če je monter) vse; cen ne vidi nobeden od njiju.
+    const ids = async (cookie: string) => ((await (await get('/api/projects', cookie)).json()) as any).data.map((p: any) => p.id).sort();
+    assert.deepEqual(await ids(monter.cookie), ['PRJ-900']);
+    assert.deepEqual(await ids(organizerMonter.cookie), ['PRJ-900', 'PRJ-901']);
+    assert.equal((await get('/api/projects/PRJ-901', monter.cookie)).status, 403);
+    const orgMonterProject = (await (await get('/api/projects/PRJ-900', organizerMonter.cookie)).json()) as any;
+    assert.deepEqual(orgMonterProject.data.invoiceVersions, []);
+    assert.equal((await get('/api/projects/PRJ-900/invoices', organizerMonter.cookie)).status, 403);
 
     for (const path of [
       '/api/projects/PRJ-900/invoices',
