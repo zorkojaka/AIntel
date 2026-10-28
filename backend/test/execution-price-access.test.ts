@@ -11,7 +11,8 @@ import { EmployeeModel } from '../modules/employees/schemas/employee';
 import { ProjectModel } from '../modules/projects/schemas/project';
 import { UserModel } from '../modules/users/schemas/user';
 import { authCookieName, signSessionToken } from '../modules/auth/services/auth.service';
-import { ROLE_EXECUTION, ROLE_FINANCE } from '../utils/roles';
+import { EmployeeServiceRateModel } from '../modules/employee-profiles/schemas/employee-service-rate';
+import { ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER } from '../utils/roles';
 
 async function createUser(role: string, label: string) {
   const employee = await EmployeeModel.create({
@@ -25,7 +26,7 @@ async function createUser(role: string, label: string) {
   return { employeeId: String(employee._id), cookie: `${authCookieName}=${token}` };
 }
 
-test('monter ne vidi cen: računi, ponudbe in cene v ceniku so zaprti', async () => {
+test('monter in organizator ne vidita cen; monter še vidi svoj zaslužek', async () => {
   process.env.NODE_ENV = 'test';
   const mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri(), { dbName: 'aintel_execution_prices' });
@@ -39,8 +40,11 @@ test('monter ne vidi cen: računi, ponudbe in cene v ceniku so zaprti', async ()
 
   try {
     const monter = await createUser(ROLE_EXECUTION, 'Monter');
+    const organizer = await createUser(ROLE_ORGANIZER, 'Organizator');
     const finance = await createUser(ROLE_FINANCE, 'Finance');
     await ProductModel.create({ ime: 'Kamera test', categorySlugs: ['kamere'], prodajnaCena: 120, nabavnaCena: 70, isService: false });
+    const service = await ProductModel.create({ ime: 'Montaža kamere', categorySlugs: ['storitve'], prodajnaCena: 50, isService: true });
+    await EmployeeServiceRateModel.create({ employeeId: monter.employeeId, serviceProductId: service._id, defaultPercent: 40, isActive: true });
     const versionId = new mongoose.Types.ObjectId().toString();
     await ProjectModel.create({
       id: 'PRJ-900', code: 'PRJ-900', projectNumber: 900, title: 'Test', customer: { name: 'Stranka' }, status: 'invoiced',
@@ -60,6 +64,7 @@ test('monter ne vidi cen: računi, ponudbe in cene v ceniku so zaprti', async ()
       '/api/offers/abc/pdf-preview',
     ]) {
       assert.equal((await get(path, monter.cookie)).status, 403, path);
+      assert.equal((await get(path, organizer.cookie)).status, 403, `organizator ${path}`);
     }
     assert.equal((await get('/api/projects/PRJ-900/invoices', finance.cookie)).status, 200);
 
@@ -67,14 +72,28 @@ test('monter ne vidi cen: računi, ponudbe in cene v ceniku so zaprti', async ()
     assert.equal(project.success, true);
     assert.deepEqual(project.data.invoiceVersions, []);
 
-    const products = (await (await get('/api/cenik/products', monter.cookie)).json()) as any;
-    assert.equal(products.data[0].ime, 'Kamera test');
-    assert.equal(products.data[0].prodajnaCena, 0);
-    assert.equal(products.data[0].nabavnaCena, 0);
-    const search = (await (await get('/api/price-list/items/search?q=kamera', monter.cookie)).json()) as any;
+    const organizerProject = (await (await get('/api/projects/PRJ-900', organizer.cookie)).json()) as any;
+    assert.deepEqual(organizerProject.data.invoiceVersions, []);
+    const organizerList = (await (await get('/api/projects', organizer.cookie)).json()) as any;
+    assert.equal(organizerList.data[0].invoiceAmount, 0);
+
+    for (const user of [monter, organizer]) {
+      const products = (await (await get('/api/cenik/products', user.cookie)).json()) as any;
+      const camera = products.data.find((product: any) => product.ime === 'Kamera test');
+      assert.equal(camera.prodajnaCena, 0);
+      assert.equal(camera.nabavnaCena, 0);
+    }
+
+    // Monterjeva cena do nas ostane: 40 % od 50 € = 20 €, naše prodajne cene pa ne dobi.
+    const rates = (await (await get('/api/profile/my-service-rates', monter.cookie)).json()) as any;
+    assert.equal(rates.data[0].employeeEarnsAmount, 20);
+    assert.equal(rates.data[0].servicePrice, undefined);
+    assert.equal((await get('/api/profile/my-project-earnings', monter.cookie)).status, 200);
+    assert.equal((await get('/api/finance/my/earnings', monter.cookie)).status, 200);
+    const search = (await (await get('/api/price-list/items/search?q=kamera%20test', monter.cookie)).json()) as any;
     assert.equal(search.data[0].unitPrice, 0);
     const financeProducts = (await (await get('/api/cenik/products', finance.cookie)).json()) as any;
-    assert.equal(financeProducts.data[0].prodajnaCena, 120);
+    assert.equal(financeProducts.data.find((product: any) => product.ime === 'Kamera test').prodajnaCena, 120);
   } finally {
     server.close();
     await mongoose.disconnect();

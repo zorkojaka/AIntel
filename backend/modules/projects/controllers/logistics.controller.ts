@@ -15,7 +15,7 @@ import { ProductModel } from '../../cenik/product.model';
 import { ZahtevaModel } from '../../zahteve/zahteva.model';
 import { resolveActorId, resolveTenantId } from '../../../utils/tenant';
 import { EmployeeModel } from '../../employees/schemas/employee';
-import { ROLE_EXECUTION } from '../../../utils/roles';
+import { canSeePrices, ROLE_EXECUTION } from '../../../utils/roles';
 import type { OfferLineItem } from '../../../../shared/types/offers';
 import { formatClientAddress, resolveProjectClient, serializeProjectDetails } from '../services/project.service';
 import {
@@ -2150,10 +2150,10 @@ export async function getProjectLogistics(req: Request, res: Response, next: Nex
       });
     }
 
-    // Monter brez priprave ne vidi zneskov ponudb.
-    const offerVersions = isExecutionRoleWithoutPreparationAccess(getContextRoles(req))
-      ? snapshot.offerVersions.map((offer) => ({ ...offer, totalWithVat: 0 }))
-      : snapshot.offerVersions;
+    // Monter in organizator ne vidita zneskov ponudb.
+    const offerVersions = canSeePrices(getContextRoles(req))
+      ? snapshot.offerVersions
+      : snapshot.offerVersions.map((offer) => ({ ...offer, totalWithVat: 0 }));
     return res.success({
       ...snapshot,
       offerVersions,

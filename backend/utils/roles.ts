@@ -6,6 +6,13 @@ export const ROLE_ORGANIZER = 'ORGANIZER';
 
 export const ROLE_VALUES = [ROLE_ADMIN, ROLE_SALES, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER] as const;
 
+// Naše cene (ponudbe, računi, cenik) vidijo le te vloge; monter in organizator ne.
+export const PRICE_ROLES = [ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE];
+
+export function canSeePrices(roles: string[]) {
+  return PRICE_ROLES.some((role) => roles.includes(role));
+}
+
 const ROLE_ALIAS_MAP: Record<string, string> = {
   admin: ROLE_ADMIN,
   sales: ROLE_SALES,

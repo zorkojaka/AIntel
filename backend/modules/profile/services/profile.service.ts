@@ -531,10 +531,10 @@ export async function getMyServiceRates(context: ProfileContext) {
         ? overridePrice
         : normalizeMoney((normalizeMoney(rate.defaultPercent) / 100) * servicePrice);
 
+      // Monter vidi le svoj zaslužek, ne naše prodajne cene storitve.
       return {
         serviceProductId: String(rate.serviceProductId),
         serviceName: product?.name ?? 'Storitev',
-        servicePrice,
         employeeEarnsAmount,
       };
     })

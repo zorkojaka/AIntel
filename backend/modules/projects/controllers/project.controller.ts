@@ -24,7 +24,7 @@ import { OfferVersionModel } from '../schemas/offer-version';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
 import { resolveTenantId } from '../../../utils/tenant';
-import { ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_SALES } from '../../../utils/roles';
+import { canSeePrices, ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_SALES } from '../../../utils/roles';
 import { UserModel } from '../../users/schemas/user';
 import { EmployeeModel } from '../../employees/schemas/employee';
 import { CrmClientModel } from '../../crm/schemas/client';
@@ -512,8 +512,8 @@ function combineProjectFilters(...filters: any[]) {
 export async function listProjects(_req: Request, res: Response) {
   const req = _req as Request;
   let accessQuery: any = {};
-  const hideFinancials = isExecutionOnlyViewer(req);
-  if (hideFinancials) {
+  const hideFinancials = !canSeePrices(getContextRoles(req));
+  if (isExecutionOnlyViewer(req)) {
     const actorEmployeeId = getActorEmployeeId(req);
     if (!actorEmployeeId) {
       return res.success([]);
@@ -805,7 +805,7 @@ export async function getProject(req: Request, res: Response) {
   }
 
   const details = await responseProject(project);
-  return res.success(isExecutionOnlyViewer(req) ? redactFinancialProjectDetails(details as any) : details);
+  return res.success(canSeePrices(getContextRoles(req)) ? details : redactFinancialProjectDetails(details as any));
 }
 
 export async function getOfferCandidates(req: Request, res: Response) {

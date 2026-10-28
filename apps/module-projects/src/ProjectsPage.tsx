@@ -144,15 +144,21 @@ export function ProjectsPage() {
     return isExecution && !hasPrivileged;
   }, [viewerRoles]);
   const canAccessPreparationPhase = useMemo(() => canAccessPreparation(viewerRoles), [viewerRoles]);
+  // Naše cene vidijo le admin, prodaja in finance; monter in organizator delata brez njih.
+  const canSeePrices = useMemo(
+    // Dokler vloge niso naložene, ne skrivamo; strežnik cene tako ali tako odstrani.
+    () => !viewerRolesLoaded || viewerRoles.includes("ADMIN") || viewerRoles.includes("SALES") || viewerRoles.includes("FINANCE"),
+    [viewerRoles, viewerRolesLoaded],
+  );
   const allowedWorkspaceTabs = useMemo<WorkspaceTab[] | undefined>(() => {
-    if (isExecutionOnlyViewer) {
+    if (isExecutionOnlyViewer || !canSeePrices) {
       return ["logistics", "execution"];
     }
     if (!canAccessPreparationPhase) {
       return ["zahteva", "offers", "execution", "closing"];
     }
     return undefined;
-  }, [canAccessPreparationPhase, isExecutionOnlyViewer]);
+  }, [canAccessPreparationPhase, canSeePrices, isExecutionOnlyViewer]);
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -838,7 +844,7 @@ export function ProjectsPage() {
                 onRejectProject={(project) => void handleLifecycleProject(project, 'reject')}
                 onReopenProject={(project) => handleLifecycleProject(project, "reopen")}
                 readOnly={isExecutionOnlyViewer}
-                hideFinancials={isExecutionOnlyViewer}
+                hideFinancials={!canSeePrices}
               />
             ) : projectsViewMode === "kanban" ? (
               <ProjectKanban
@@ -856,7 +862,7 @@ export function ProjectsPage() {
                 onReopenProject={(project) => void handleLifecycleProject(project, "reopen")}
                 cloningProjectId={cloningProjectId}
                 readOnly={isExecutionOnlyViewer}
-                hideFinancials={isExecutionOnlyViewer}
+                hideFinancials={!canSeePrices}
               />
             ) : (
               <ProjectCalendar

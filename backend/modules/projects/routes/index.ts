@@ -1,7 +1,7 @@
 import { withScheduledEmail } from '../../communication/services/scheduled-email.service';
 import { Router } from 'express';
 import { requireRoles } from '../../../middlewares/auth';
-import { ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from '../../../utils/roles';
+import { PRICE_ROLES, ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from '../../../utils/roles';
 import { getProjectClientNotes, postProjectClientNote } from '../../crm/controllers/clientNotesController';
 import {
   addItem,
@@ -56,8 +56,8 @@ const requireProjectWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE])
 const requirePreparationAccess = requireRoles([ROLE_ORGANIZER]);
 const requireWorkOrderWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_EXECUTION, ROLE_ORGANIZER]);
 const requireOfferConfirmationWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_ORGANIZER]);
-// Monterji (EXECUTION) ne vidijo naših cen: ponudb, predlog ponudb in računov.
-const requirePriceAccess = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_ORGANIZER]);
+// Monter in organizator ne vidita naših cen: ponudb, predlog ponudb in računov.
+const requirePriceAccess = requireRoles(PRICE_ROLES);
 
 router.get('/', listProjects);
 router.get('/offer-templates', requirePriceAccess, listOfferTemplates);

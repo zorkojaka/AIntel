@@ -10,7 +10,7 @@ import {
   type CategoryMarginPricingInfo,
 } from '../services/category-margin-pricing';
 import { applyReolinkImageOverride } from '../services/reolink-image-overrides';
-import { ROLE_ADMIN, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from '../../../utils/roles';
+import { canSeePrices as rolesCanSeePrices } from '../../../utils/roles';
 
 type ProductPayload = Pick<
   ProductDocument,
@@ -173,10 +173,9 @@ function sanitizeProduct(
   });
 }
 
-// Monterji izbirajo izdelke na izvedbi, naših cen pa ne vidijo.
+// Monter in organizator izbirata izdelke, naših cen pa ne vidita.
 function canSeePrices(req: Request) {
-  const roles: string[] = Array.isArray((req as any)?.context?.roles) ? (req as any).context.roles : [];
-  return [ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_ORGANIZER].some((role) => roles.includes(role));
+  return rolesCanSeePrices(Array.isArray((req as any)?.context?.roles) ? (req as any).context.roles : []);
 }
 
 function withoutPrices(product: ProductResponse): ProductResponse {

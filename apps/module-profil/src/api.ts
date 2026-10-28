@@ -62,7 +62,6 @@ export interface ProjectEarning {
 export interface ServiceRate {
   serviceProductId: string;
   serviceName: string;
-  servicePrice: number;
   employeeEarnsAmount: number;
 }
 
