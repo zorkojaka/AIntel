@@ -210,7 +210,8 @@ export async function updateClient(req: Request, res: Response) {
         email: payload.email?.trim(),
         phone: payload.phone?.trim(),
         contact_person: payload.contactPerson?.trim(),
-        tags: normalizeTags(payload.tags),
+        // Urejanje stranke s projekta oznak ne pošlje, zato jih tedaj ne brišemo.
+        ...(payload.tags !== undefined ? { tags: normalizeTags(payload.tags) } : {}),
         notes: payload.notes?.trim()
       },
       { new: true }
@@ -220,8 +221,6 @@ export async function updateClient(req: Request, res: Response) {
     // ponudbe in drugi dokumenti se rišejo iz te kopije, zato so sicer kazali
     // stare podatke (lastnik 2026-07-10). Zaključeni/zaračunani projekti
     // ostanejo zamrznjeni (izdani dokumenti se ne spreminjajo za nazaj).
-    const customerNames = Array.from(new Set([existing.name, name].filter(Boolean)));
-    const taxIds = Array.from(new Set([existing.vat_number, type === 'company' ? vatNumber : undefined].filter(Boolean)));
     const snapshot: Record<string, unknown> = {
       'customer.name': name,
       'customer.taxId': type === 'company' ? vatNumber ?? '' : '',
@@ -233,10 +232,17 @@ export async function updateClient(req: Request, res: Response) {
     await ProjectModel.updateMany(
       {
         status: { $in: ['draft', 'offered', 'ordered', 'in-progress'] },
+        // Po imenu ali DDV ujemamo le projekte brez povezave in le po STARIH podatkih;
+        // sicer bi preimenovanje prepisalo projekte druge stranke z istim imenom.
         $or: [
           { clientId: existing._id },
-          ...(customerNames.length ? [{ 'customer.name': { $in: customerNames } }] : []),
-          ...(taxIds.length ? [{ 'customer.taxId': { $in: taxIds } }] : []),
+          {
+            clientId: null,
+            $or: [
+              { 'customer.name': existing.name },
+              ...(existing.vat_number ? [{ 'customer.taxId': existing.vat_number }] : []),
+            ],
+          },
         ],
       },
       { $set: snapshot },

@@ -16,6 +16,18 @@ import {
 import { WorkOrderModel } from '../../projects/schemas/work-order';
 import { refreshFinanceSnapshotLaborAllocation } from '../../finance/services/finance-snapshot.service';
 
+// Zaslužek monterja v Financah se izračuna ob izdaji računa; po spremembi postavk ga preračunamo.
+async function refreshEmployeeEarnings(employeeId: string) {
+  const affectedProjectIds = await WorkOrderModel.distinct('projectId', {
+    $or: [{ mainInstallerId: employeeId }, { assignedEmployeeIds: employeeId }],
+  });
+  for (const projectId of affectedProjectIds) {
+    if (typeof projectId === 'string' && projectId) {
+      await refreshFinanceSnapshotLaborAllocation(projectId);
+    }
+  }
+}
+
 function isValidNumber(value: unknown) {
   if (value === null || value === undefined || value === '') return true;
   const parsed = Number(value);
@@ -128,6 +140,10 @@ export async function postEmployeeServiceRates(req: Request, res: Response) {
     if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
       return res.fail('Odstotek za storitev mora biti med 0 in 100.', 400);
     }
+    const override = rate?.overridePrice;
+    if (override !== null && override !== undefined && !(Number(override) >= 0)) {
+      return res.fail('Fiksna cena za storitev ne sme biti negativna.', 400);
+    }
   }
   const hasDefaultPercent = Object.prototype.hasOwnProperty.call(req.body ?? {}, 'defaultPercent');
   const defaultPercent = Number(req.body?.defaultPercent);
@@ -159,14 +175,7 @@ export async function postEmployeeServiceRates(req: Request, res: Response) {
     await upsertEmployeeDefaultServicePercent(tenantId, employeeId, persistedDefaultPercent, primaryRole);
   }
 
-  const affectedProjectIds = await WorkOrderModel.distinct('projectId', {
-    $or: [{ mainInstallerId: employeeId }, { assignedEmployeeIds: employeeId }],
-  });
-  for (const projectId of affectedProjectIds) {
-    if (typeof projectId === 'string' && projectId) {
-      await refreshFinanceSnapshotLaborAllocation(projectId);
-    }
-  }
+  await refreshEmployeeEarnings(employeeId);
   return res.success(data);
 }
 
@@ -177,5 +186,6 @@ export async function copyEmployeeServiceRatesFrom(req: Request, res: Response) 
     return res.fail('EmployeeId ni veljaven.', 400);
   }
   const data = await copyEmployeeServiceRates(employeeId, sourceEmployeeId);
+  await refreshEmployeeEarnings(employeeId);
   return res.success(data);
 }

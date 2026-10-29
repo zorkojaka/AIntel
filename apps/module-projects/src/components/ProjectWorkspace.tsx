@@ -807,7 +807,6 @@ export function ProjectWorkspace({
           phone: clientDraft.phone.trim() || undefined,
           contactPerson: clientDraft.contactPerson.trim() || undefined,
           notes: clientDraft.notes.trim() || undefined,
-          tags: [],
         };
         const response = await fetch(`/api/crm/clients/${clientId}`, {
           method: "PUT",

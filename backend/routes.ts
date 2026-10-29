@@ -41,7 +41,8 @@ const router = Router();
 
 router.use('/dashboard', dashboardRoutes);
 router.use('/repair-requests', repairRequestRoutes);
-router.use('/crm', crmRoutes);
+// Stranke so osebni podatki: monter jih dobi le prek dodeljenega projekta.
+router.use('/crm', requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_ORGANIZER]), crmRoutes);
 router.use('/cenik/category-settings', requireRoles([ROLE_ADMIN, ROLE_ORGANIZER]), categorySettingsRoutes);
 // Execution needs product selection, while catalog writes keep their existing roles.
 const requireProductSelectionRead = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_EXECUTION, ROLE_ORGANIZER]);
