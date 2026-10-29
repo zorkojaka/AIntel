@@ -129,6 +129,21 @@ test('AIN-P1-09 task module', async (t) => {
     assert.equal(tasks[0].subject.label, 'PRJ-042 – Test');
   });
 
+  await t.test('only owner, role pool, creator or admin may act on a task', async () => {
+    const task = await createTask(sales, { title: 'Prodajna naloga', assigneeRole: 'SALES' });
+    await assert.rejects(
+      updateTask(otherEmployee, String(task._id), { action: 'cancel' }),
+      (error: unknown) => error instanceof TaskError && error.statusCode === 403,
+    );
+    const admin: ActorContext = { ...otherEmployee, roles: ['ADMIN'] };
+    const cancelled = await updateTask(admin, String(task._id), { action: 'cancel' });
+    assert.equal(cancelled.status, 'cancelled');
+    // The creator keeps access after handing the task to someone else.
+    const handedOff = await createTask(sales, { title: 'Za monterja', assigneeEmployeeId: otherEmployee.actorEmployeeId });
+    const done = await updateTask(sales, String(handedOff._id), { action: 'complete', resolution: { outcome: 'urejeno' } });
+    assert.equal(done.status, 'done');
+  });
+
   await t.test('reassign to role pool releases in_progress back to open', async () => {
     const task = await createTask(sales, { title: 'Prerazporedi', assigneeRole: 'SALES' });
     await updateTask(sales, String(task._id), { action: 'claim' });

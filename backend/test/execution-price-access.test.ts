@@ -85,6 +85,16 @@ test('monter in organizator ne vidita cen; monter še vidi svoj zaslužek', asyn
       assert.equal((await get(path, monter.cookie)).status, 403, path);
       assert.equal((await get(path, organizer.cookie)).status, 403, `organizator ${path}`);
     }
+    // Follow-up ponudbe pokaže znesek ponudbe in priloži njen PDF.
+    const taskId = new mongoose.Types.ObjectId();
+    for (const path of [`/api/tasks/${taskId}/follow-up-email/preview`, `/api/tasks/${taskId}/follow-up-email/send`]) {
+      for (const user of [monter, organizer]) {
+        const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+          method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', Cookie: user.cookie }, body: '{}',
+        });
+        assert.equal(response.status, 403, path);
+      }
+    }
     assert.equal((await get('/api/projects/PRJ-900/invoices', finance.cookie)).status, 200);
     assert.equal((await get('/api/projects/PRJ-900/communication/feed', finance.cookie)).status, 200);
 

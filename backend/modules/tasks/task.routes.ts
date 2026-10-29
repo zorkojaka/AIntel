@@ -2,7 +2,7 @@ import { withScheduledEmail } from '../communication/services/scheduled-email.se
 import { Router } from 'express';
 
 import { requireRoles } from '../../middlewares/auth';
-import { ROLE_ADMIN } from '../../utils/roles';
+import { PRICE_ROLES, ROLE_ADMIN } from '../../utils/roles';
 import {
   getFollowUpDefaults,
   getMyTasks,
@@ -35,8 +35,10 @@ router.post('/templates', requireRoles([ROLE_ADMIN]), postTaskTemplate);
 router.patch('/templates/:id', requireRoles([ROLE_ADMIN]), patchTaskTemplate);
 router.delete('/templates/:id', requireRoles([ROLE_ADMIN]), removeTaskTemplate);
 router.post('/', postTask);
-router.post('/:id/follow-up-email/preview', previewTaskFollowUpEmail);
-router.post('/:id/follow-up-email/send', withScheduledEmail('task-follow-up', sendTaskFollowUpEmail));
+// The follow-up shows the offer total and attaches the offer PDF (our prices).
+const requirePriceAccess = requireRoles(PRICE_ROLES);
+router.post('/:id/follow-up-email/preview', requirePriceAccess, previewTaskFollowUpEmail);
+router.post('/:id/follow-up-email/send', requirePriceAccess, withScheduledEmail('task-follow-up', sendTaskFollowUpEmail, requirePriceAccess));
 router.patch('/:id', patchTask);
 
 export default router;

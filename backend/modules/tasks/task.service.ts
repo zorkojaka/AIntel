@@ -225,6 +225,13 @@ export async function updateTask(context: ActorContext, taskId: string, input: U
   if (!id) throw new TaskError('Neveljaven ID opravila.');
   const task = await TaskModel.findOne({ _id: id, tenantId: context.tenantId });
   if (!task) throw new TaskError('Opravilo ne obstaja.', 404);
+  // Only the owner, the role pool it waits in, its creator or an admin may act on a task.
+  const isOwner = Boolean(task.assigneeEmployeeId) && String(task.assigneeEmployeeId) === context.actorEmployeeId;
+  const inMyPool = !task.assigneeEmployeeId && Boolean(task.assigneeRole) && context.roles.includes(String(task.assigneeRole));
+  const isCreator = Boolean(task.source?.userId) && String(task.source?.userId) === context.actorUserId;
+  if (!context.roles.includes('ADMIN') && !isOwner && !inMyPool && !isCreator) {
+    throw new TaskError('Opravilo ni dodeljeno tebi ali tvoji vlogi.', 403);
+  }
 
   const actorUserId = parseObjectId(context.actorUserId, 'actorUserId');
   const action = cleanString(input.action, 30);

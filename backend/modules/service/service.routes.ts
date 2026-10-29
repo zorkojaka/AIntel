@@ -2,6 +2,9 @@
 // role guard v routes.ts.
 import { Router } from 'express';
 
+import { requireRoles } from '../../middlewares/auth';
+import { ROLE_ADMIN } from '../../utils/roles';
+
 import {
   getServiceTickets,
   getOneServiceTicket,
@@ -30,7 +33,7 @@ router.get('/maintenance-plans', getMaintenancePlans);
 router.get('/maintenance-plans/:id', getOneMaintenancePlan);
 router.post('/maintenance-plans', postMaintenancePlan);
 router.post('/maintenance-plans/from-project', postMaintenancePlanFromProject);
-router.post('/maintenance-plans/run-due', runDueMaintenance);
+router.post('/maintenance-plans/run-due', requireRoles([ROLE_ADMIN]), runDueMaintenance);
 router.patch('/maintenance-plans/:id', patchMaintenancePlan);
 
 export default router;
