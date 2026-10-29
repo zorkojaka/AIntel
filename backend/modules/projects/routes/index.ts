@@ -22,6 +22,7 @@ import {
   calculateProjectKm,
   updateProjectAssignments,
   updateProjectLifecycle,
+  requireExecutionProjectAccess,
 } from '../controllers/project.controller';
 import {
   applyOfferTemplate,
@@ -58,14 +59,16 @@ const requireWorkOrderWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE
 const requireOfferConfirmationWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_ORGANIZER]);
 // Monter in organizator ne vidita naših cen: ponudb, predlog ponudb in računov.
 const requirePriceAccess = requireRoles(PRICE_ROLES);
+// Monter vidi le projekte, na katere je dodeljen.
+const requireAssigned = requireExecutionProjectAccess;
 
 router.get('/', listProjects);
 router.get('/offer-templates', requirePriceAccess, listOfferTemplates);
 router.post('/', requireProjectWrite, createProject);
 // Interni zapisi o stranki projekta — monter (EXECUTION) jih mora videti in dopisovati
 // iz delovnega naloga; zapis se shrani na stranko, projekt je le izvor.
-router.get('/:projectId/client-notes', getProjectClientNotes);
-router.post('/:projectId/client-notes', requireWorkOrderWrite, postProjectClientNote);
+router.get('/:projectId/client-notes', requireAssigned, getProjectClientNotes);
+router.post('/:projectId/client-notes', requireWorkOrderWrite, requireAssigned, postProjectClientNote);
 router.post('/:id/clone', requireProjectWrite, cloneProject);
 router.get('/:id', getProject);
 router.get('/:id/client-projects', listClientProjects);
@@ -75,7 +78,7 @@ router.post('/:id/status', requireProjectWrite, updateStatus);
 router.put('/:id', requireProjectWrite, updateProject);
 router.delete('/:id', requireProjectWrite, deleteProject);
 router.get('/:id/offer-candidates', requirePriceAccess, getOfferCandidates);
-router.post('/:id/izracunaj-km', requireWorkOrderWrite, calculateProjectKm);
+router.post('/:id/izracunaj-km', requireWorkOrderWrite, requireAssigned, calculateProjectKm);
 router.post('/:id/items', requireProjectWrite, addItem);
 router.post('/:id/items/from-cenik', requireProjectWrite, addItemFromCenik);
 router.put('/:id/items/:itemId', requireProjectWrite, updateItem);
@@ -91,25 +94,25 @@ router.put('/:projectId/offers/:offerId', requireProjectWrite, updateOfferVersio
 router.delete('/:projectId/offers/:offerId', requireProjectWrite, deleteOfferVersion);
 router.get('/:projectId/offers/:offerVersionId/pdf', requirePriceAccess, exportOfferPdf);
 router.post('/:projectId/offers/:offerVersionId/send', requireProjectWrite, withScheduledEmail('sendOfferCommunicationController', sendOfferCommunicationController, requireProjectWrite));
-router.post('/:projectId/work-orders/:workOrderId/send-confirmation', requireWorkOrderWrite, withScheduledEmail('sendWorkOrderConfirmationCommunicationController', sendWorkOrderConfirmationCommunicationController, requireWorkOrderWrite));
-router.post('/:projectId/work-orders/:workOrderId/send-installer-preparation', requireWorkOrderWrite, withScheduledEmail('sendInstallerPreparationCommunicationController', sendInstallerPreparationCommunicationController, requireWorkOrderWrite));
+router.post('/:projectId/work-orders/:workOrderId/send-confirmation', requireWorkOrderWrite, requireAssigned, withScheduledEmail('sendWorkOrderConfirmationCommunicationController', sendWorkOrderConfirmationCommunicationController, requireWorkOrderWrite));
+router.post('/:projectId/work-orders/:workOrderId/send-installer-preparation', requireWorkOrderWrite, requireAssigned, withScheduledEmail('sendInstallerPreparationCommunicationController', sendInstallerPreparationCommunicationController, requireWorkOrderWrite));
 router.post('/:projectId/work-orders/:workOrderId/accept-assignment', requireWorkOrderWrite, logisticsController.acceptInstallerAssignment);
 router.post('/:projectId/work-orders/:workOrderId/confirm-all-installer-assignments', requireRoles([ROLE_ADMIN]), logisticsController.confirmAllInstallerAssignmentsByAdmin);
 router.get('/:projectId/offer', requirePriceAccess, getActiveOffer);
 router.post('/:projectId/offers/:offerId/confirm', requireProjectWrite, logisticsController.confirmOffer);
-router.get('/:projectId/execution-definition', logisticsController.getProjectExecutionDefinition);
-router.put('/:projectId/execution-definition', requireWorkOrderWrite, logisticsController.updateProjectExecutionDefinition);
+router.get('/:projectId/execution-definition', requireAssigned, logisticsController.getProjectExecutionDefinition);
+router.put('/:projectId/execution-definition', requireWorkOrderWrite, requireAssigned, logisticsController.updateProjectExecutionDefinition);
 router.post('/:projectId/logistics/cancel-confirmation', requireOfferConfirmationWrite, cancelOfferConfirmation);
-router.get('/:projectId/logistics', logisticsController.getProjectLogistics);
+router.get('/:projectId/logistics', requireAssigned, logisticsController.getProjectLogistics);
 router.get('/:projectId/logistics/installer-availability/:employeeId', requirePreparationAccess, logisticsController.getInstallerAvailability);
 router.post('/:projectId/work-orders/:workOrderId/booking-invite', requirePreparationAccess, withScheduledEmail('bookingInviteController', bookingInviteController, requirePreparationAccess));
 router.put('/:projectId/work-orders/:workOrderId', requireWorkOrderWrite, logisticsController.updateWorkOrder);
-router.post('/:projectId/work-orders/:workOrderId/start-correction', requireWorkOrderWrite, logisticsController.startWorkOrderConfirmationCorrection);
+router.post('/:projectId/work-orders/:workOrderId/start-correction', requireWorkOrderWrite, requireAssigned, logisticsController.startWorkOrderConfirmationCorrection);
 router.post('/:projectId/material-orders/:materialOrderId/mark-equipment-ready', requireWorkOrderWrite, logisticsController.markEquipmentReady);
 router.post('/:projectId/material-orders/:materialOrderId/advance', requirePreparationAccess, logisticsController.advanceMaterialOrderStep);
 router.post('/:projectId/material-orders/:materialOrderId/supplier-order-email', requirePreparationAccess, withScheduledEmail('supplierOrderEmailController', supplierOrderEmailController, requirePreparationAccess));
-router.get('/:projectId/work-orders/:workOrderId/pdf', logisticsController.exportWorkOrderPdf);
-router.get('/:projectId/material-orders/:materialOrderId/pdf', logisticsController.exportMaterialOrderPdf);
+router.get('/:projectId/work-orders/:workOrderId/pdf', requireAssigned, logisticsController.exportWorkOrderPdf);
+router.get('/:projectId/material-orders/:materialOrderId/pdf', requireAssigned, logisticsController.exportMaterialOrderPdf);
 router.get('/:projectId/invoices', requirePriceAccess, invoiceController.listInvoices);
 router.post('/:projectId/invoices/from-closing', requireProjectWrite, invoiceController.createInvoice);
 router.get('/:projectId/invoices/next-number', requireProjectWrite, invoiceController.nextInvoiceNumber);

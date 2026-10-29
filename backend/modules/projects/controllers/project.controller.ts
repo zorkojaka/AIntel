@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import { ProductModel } from '../../cenik/product.model';
 import { logger } from '../../../core/logger';
 import {
@@ -354,6 +354,22 @@ async function getExecutionAssignedProjectIds(actorEmployeeId: string) {
         .filter((value) => value.length > 0),
     ),
   );
+}
+
+// Monter brez druge vloge sme do projekta (logistika, nalog, PDF, zapisi) le, če je nanj dodeljen.
+export async function requireExecutionProjectAccess(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!isExecutionOnlyViewer(req)) return next();
+    const projectId = req.params.projectId ?? req.params.id;
+    const actorEmployeeId = getActorEmployeeId(req);
+    const allowed =
+      Boolean(actorEmployeeId) &&
+      ((await ProjectModel.exists({ id: projectId, assignedEmployeeIds: actorEmployeeId })) != null ||
+        (await getExecutionAssignedProjectIds(actorEmployeeId as string)).includes(projectId));
+    return allowed ? next() : res.fail('Ni dostopa do projekta.', 403);
+  } catch (error) {
+    return next(error);
+  }
 }
 
 function calculateOfferItemsTotal(items: ProjectOfferItem[]) {
@@ -1589,7 +1605,8 @@ export async function saveSignature(req: Request, res: Response) {
     user: buildActorDisplayName(req as any),
   });
 
-  return res.success(await responseProject(project.toObject()));
+  const details = await responseProject(project.toObject());
+  return res.success(canSeePrices(getContextRoles(req)) ? details : redactFinancialProjectDetails(details as any));
 }
 
 export async function getProjectOffer(req: Request, res: Response) {
