@@ -11,6 +11,7 @@ import { ProjectModel } from '../modules/projects/schemas/project';
 import { linkEmailToProject, matchInboundEmail } from '../modules/email/email-ingest.service';
 import { EmailMessageModel } from '../modules/email/email-message.model';
 import { TaskModel } from '../modules/tasks/task.model';
+import { setWheelConfig } from '../modules/scheduler/wheel-config';
 
 // AIN-P1-14 F2: ujemanje dohodne pošte — odgovor na naš mail, številka
 // dokumenta, e-naslov stranke; ročna povezava v resolve centru.
@@ -124,11 +125,16 @@ test('AIN-P1-14 email matching', async (t) => {
       uid: 42,
       status: 'unmatched',
     });
+    await setWheelConfig({ rules: { 'email.ingest': { mode: 'manual' } } });
     const linked = await linkEmailToProject(String(email._id), project.id);
     assert.equal(linked.status, 'matched');
     assert.equal(linked.match?.projectId, project.id);
+    assert.equal(await TaskModel.countDocuments({ dedupeKey: `email.inbound:${email._id}` }), 0, 'manual ne ustvari opravila');
+
+    await setWheelConfig({ rules: { 'email.ingest': { mode: 'auto' } } });
+    await linkEmailToProject(String(email._id), project.id);
     const task = await TaskModel.findOne({ dedupeKey: `email.inbound:${email._id}` });
-    assert.ok(task, 'ročna povezava ustvari opravilo za branje');
+    assert.ok(task, 'auto: ročna povezava ustvari opravilo za branje');
     const updatedProject = await ProjectModel.findOne({ id: project.id }).lean();
     assert.ok(updatedProject!.timeline.some((entry: any) => entry.title === 'Prejet e-mail'));
   });

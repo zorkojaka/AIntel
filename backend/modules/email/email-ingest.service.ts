@@ -166,6 +166,8 @@ async function applyMatchActions(email: EmailMessageDocument) {
   }
 
   // … in ustvari opravilo »preberi odgovor« oz. za nepovezane »preberi in poveži«.
+  // manual: pošta se bere v Pošto, opravil pa ne ustvarjamo (Jaka 2026-10-29).
+  if ((await getRuleMode('email.ingest')) !== 'auto') return;
   const label = match?.projectId ? `${email.subject || 'e-mail'} — ${match.projectId}` : email.subject || 'e-mail';
   await ensureRuleTask({
     ruleKey: 'email.ingest',
