@@ -42,3 +42,13 @@
 .posta-sporocilo__meta { display: flex; align-items: center; gap: 6px; color: #64748b; font-size: 12.5px; margin-bottom: 8px; }
 .posta-sporocilo__besedilo { white-space: pre-wrap; font-family: inherit; font-size: 13.5px; color: #1e293b; background: #f8fafc; border: 1px solid #eef2f7; border-radius: 8px; padding: 10px 12px; max-height: 320px; overflow: auto; margin: 0 0 10px; }
 .posta-sporocilo__akcije { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.posta-zavihki { display: flex; gap: 4px; margin-top: 14px; border-bottom: 1px solid #e2e8f0; }
+.posta-zavihki button { border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 8px 12px; font-size: 14px; color: #475569; cursor: pointer; }
+.posta-zavihki button.is-active { border-bottom-color: #2563eb; color: #1d4ed8; font-weight: 600; }
+.posta-odlozeno--pending { border-left: 3px solid #f59e0b; }
+.posta-odlozeno--sent { border-left: 3px solid #16a34a; }
+.posta-odlozeno--failed { border-left: 3px solid #dc2626; }
+.posta-odlozeno--cancelled { opacity: 0.55; }
+.posta-odlozeno__status { color: #64748b; font-size: 12.5px; white-space: nowrap; }
+.posta-napaka-besedilo { color: #b91c1c; font-size: 13px; }

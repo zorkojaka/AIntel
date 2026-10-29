@@ -9,6 +9,7 @@ import {
   type EmailMessage,
   type EmailStatus,
 } from './api';
+import { OdlozenoPanel } from './OdlozenoPanel';
 import './styles.css';
 
 // AIN-P1-14: resolve center — dohodna prodajna pošta znotraj AIntela.
@@ -39,6 +40,7 @@ export function PostaPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [ingesting, setIngesting] = useState(false);
+  const [tab, setTab] = useState<'inbox' | 'scheduled'>('inbox');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,8 +55,8 @@ export function PostaPage() {
   }, [search, statusFilter]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (tab === 'inbox') void load();
+  }, [load, tab]);
 
   const messages = data?.messages ?? [];
   const ingest = data?.ingest;
@@ -113,16 +115,26 @@ export function PostaPage() {
             povezavo.
           </p>
         </div>
-        <div className="posta-glava__akcije">
+        {tab === 'inbox' ? <div className="posta-glava__akcije">
           <button type="button" className="gumb-sekundarni" onClick={() => void load()}>
             <RefreshCw size={15} /> Osveži
           </button>
           <button type="button" className="gumb-primarni" onClick={() => void runIngestNow()} disabled={ingesting || !ingest?.configured}>
             {ingesting ? <Loader2 size={15} className="vrti" /> : <Inbox size={15} />} Preberi nabiralnik
           </button>
-        </div>
+        </div> : null}
       </div>
 
+      <div className="posta-zavihki">
+        <button type="button" className={tab === 'inbox' ? 'is-active' : ''} onClick={() => setTab('inbox')}>
+          Dohodna pošta
+        </button>
+        <button type="button" className={tab === 'scheduled' ? 'is-active' : ''} onClick={() => setTab('scheduled')}>
+          Odloženo pošiljanje
+        </button>
+      </div>
+
+      {tab === 'scheduled' ? <OdlozenoPanel /> : <>
       {ingest && !ingest.configured ? (
         <div className="posta-obvestilo">
           Nabiralnik še ni nastavljen (IMAP podatki v backend .env) ali pa je pravilo »Branje prodajnega nabiralnika«
@@ -215,6 +227,7 @@ export function PostaPage() {
           })}
         </div>
       )}
+      </>}
     </div>
   );
 }

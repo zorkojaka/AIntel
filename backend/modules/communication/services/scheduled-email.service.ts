@@ -9,13 +9,15 @@ import { logger } from '../../../core/logger';
 const schema = new Schema({
   action: { type: String, required: true },
   scheduledAt: { type: Date, required: true },
-  status: { type: String, enum: ['pending', 'sending', 'sent', 'failed'], default: 'pending' },
+  status: { type: String, enum: ['pending', 'sending', 'sent', 'failed', 'cancelled'], default: 'pending' },
   params: Schema.Types.Mixed,
   body: Schema.Types.Mixed,
   tenantId: { type: String, required: true },
   actorUserId: { type: String, required: true },
   origin: String,
   sentAt: Date,
+  cancelledAt: Date,
+  cancelledByUserId: String,
   error: String,
 }, { timestamps: true });
 schema.index({ status: 1, scheduledAt: 1 });
@@ -106,4 +108,58 @@ export async function runScheduledEmails(now = new Date()) {
     }
   }
   return counts;
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  sendOfferCommunicationController: 'Ponudba',
+  sendInvoiceCommunicationController: 'Račun',
+  sendCreditNoteCommunicationController: 'Dobropis',
+  sendWorkOrderConfirmationCommunicationController: 'Potrdilo delovnega naloga',
+  sendInstallerPreparationCommunicationController: 'Priprava za monterja',
+  supplierOrderEmailController: 'Naročilo dobavitelju',
+  bookingInviteController: 'Vabilo za termin',
+  'task-follow-up': 'Opravilo',
+};
+
+type Viewer = { tenantId: string; actorUserId: string; isAdmin: boolean };
+
+// Admin sees and cancels every job; everyone else only the jobs they scheduled.
+function viewerFilter(viewer: Viewer) {
+  return viewer.isAdmin ? { tenantId: viewer.tenantId } : { tenantId: viewer.tenantId, actorUserId: viewer.actorUserId };
+}
+
+export async function listScheduledEmails(viewer: Viewer, now = new Date()) {
+  const since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const jobs = await ScheduledEmailModel.find({
+    ...viewerFilter(viewer),
+    $or: [{ status: { $in: ['pending', 'sending'] } }, { scheduledAt: { $gte: since } }],
+  }).sort({ scheduledAt: -1 }).limit(200).lean();
+  const users = await UserModel.find({ _id: { $in: jobs.map((job: any) => job.actorUserId) } }).select({ name: 1, email: 1 }).lean();
+  const names = new Map(users.map((user: any) => [String(user._id), user.name || user.email]));
+  return jobs.map((job: any) => ({
+    id: String(job._id),
+    action: job.action,
+    label: ACTION_LABELS[job.action] ?? job.action,
+    projectId: job.params?.projectId ?? null,
+    to: ([] as unknown[]).concat(job.body?.to ?? []).filter((value): value is string => typeof value === 'string'),
+    subject: typeof job.body?.subject === 'string' ? job.body.subject : null,
+    scheduledAt: job.scheduledAt,
+    status: job.status,
+    error: job.error ?? null,
+    sentAt: job.sentAt ?? null,
+    cancelledAt: job.cancelledAt ?? null,
+    actorName: names.get(String(job.actorUserId)) ?? null,
+  }));
+}
+
+export async function cancelScheduledEmail(id: string, viewer: Viewer) {
+  if (!mongoose.isValidObjectId(id)) throw new Error('Odloženo sporočilo ni najdeno.');
+  // Only a pending job can be cancelled; once claimed ('sending') the SMTP send may already be under way.
+  const job = await ScheduledEmailModel.findOneAndUpdate(
+    { _id: id, status: 'pending', ...viewerFilter(viewer) },
+    { $set: { status: 'cancelled', cancelledAt: new Date(), cancelledByUserId: viewer.actorUserId } },
+    { new: true },
+  ).lean();
+  if (!job) throw new Error('Sporočila ni več mogoče preklicati: že se pošilja, je poslano ali ni vaše.');
+  return { id: String((job as any)._id), status: (job as any).status };
 }

@@ -59,3 +59,27 @@ export async function runEmailIngest(): Promise<{ stored?: number; matched?: num
   const response = await fetch('/api/email/ingest/run', { method: 'POST' });
   return parseApiEnvelope(response, 'Branje nabiralnika ni uspelo.');
 }
+
+export type ScheduledEmailStatus = 'pending' | 'sending' | 'sent' | 'failed' | 'cancelled';
+
+export interface ScheduledEmail {
+  id: string;
+  label: string;
+  projectId: string | null;
+  to: string[];
+  subject: string | null;
+  scheduledAt: string;
+  status: ScheduledEmailStatus;
+  error: string | null;
+  actorName: string | null;
+}
+
+export async function fetchScheduledEmails(): Promise<ScheduledEmail[]> {
+  const response = await fetch('/api/scheduled-emails');
+  return parseApiEnvelope<ScheduledEmail[]>(response, 'Odloženih sporočil ni mogoče naložiti.');
+}
+
+export async function cancelScheduledEmail(id: string): Promise<{ id: string; status: ScheduledEmailStatus }> {
+  const response = await fetch(`/api/scheduled-emails/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+  return parseApiEnvelope(response, 'Preklic ni uspel.');
+}
