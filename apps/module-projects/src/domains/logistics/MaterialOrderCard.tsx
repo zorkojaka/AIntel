@@ -69,7 +69,8 @@ interface MaterialOrderCardProps {
   onDeliveredQtyCommit: (itemId: string, deliveredQty: number) => void;
   onMaterialItemsChange: (items: MaterialLine[]) => void;
   onSaveMaterialChanges: () => void;
-  onMarkEquipmentReady: () => void;
+  // Le v Pripravi; v Izvedbi gumba ni.
+  onMarkEquipmentReady?: () => void;
   onBulkMarkOrdered: (items: MaterialLine[]) => void;
   onBulkMarkReady: (items: MaterialLine[]) => void;
   onOrderBySupplier?: (group: { supplierLabel: string; lines: MaterialLine[] }) => void;

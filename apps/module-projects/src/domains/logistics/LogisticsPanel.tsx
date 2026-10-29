@@ -1069,6 +1069,7 @@ export function LogisticsPanel({
           pickupLocation: materialOverrides?.pickupLocation ?? currentMaterial?.pickupLocation ?? undefined,
           logisticsOwnerId: materialOverrides?.logisticsOwnerId ?? currentMaterial?.logisticsOwnerId ?? undefined,
           pickupNote: materialOverrides?.pickupNote ?? currentMaterial?.pickupNote ?? undefined,
+          expectedAt: currentMaterial ? currentMaterial.expectedAt ?? null : undefined,
           pickupConfirmedAt:
             materialOverrides && Object.prototype.hasOwnProperty.call(materialOverrides, "pickupConfirmedAt")
               ? materialOverrides.pickupConfirmedAt
@@ -2489,7 +2490,7 @@ export function LogisticsPanel({
     if (saved) {
       setPendingMaterialOrderIds((prev) => ({ ...prev, [materialOrderId]: false }));
     }
-    return saved;
+    return Boolean(saved);
   };
 
   const applyMaterialItemsAndSave = async (materialOrderId: string, items: MaterialOrder["items"]): Promise<boolean> => {
@@ -2501,7 +2502,7 @@ export function LogisticsPanel({
     if (saved) {
       setPendingMaterialOrderIds((prev) => ({ ...prev, [materialOrderId]: false }));
     }
-    return saved;
+    return Boolean(saved);
   };
 
   const handleAdvanceMaterialStepWithSave = async (materialOrderId: string, targetStep: MaterialStep) => {
@@ -2605,6 +2606,7 @@ export function LogisticsPanel({
                   onLogisticsOwnerChange={(employeeId) => updateMaterialOrderForm(order._id, { logisticsOwnerId: employeeId })}
                   onTechnicianNoteChange={(value) => handleWorkOrderChange("notes", value)}
                   onPickupNoteChange={(value) => updateMaterialOrderForm(order._id, { pickupNote: value })}
+                  onExpectedAtChange={(value) => updateMaterialOrderForm(order._id, { expectedAt: value })}
                   onAddExtraMaterial={(draft) => addExtraMaterialItem(order._id, draft)}
                   onConfirmPickup={() => {
                     void handleConfirmPickup(order._id);
@@ -2743,6 +2745,7 @@ export function LogisticsPanel({
               onLogisticsOwnerChange={(employeeId) => updateMaterialOrderForm(order._id, { logisticsOwnerId: employeeId })}
               onTechnicianNoteChange={(value) => handleWorkOrderChange("notes", value)}
               onPickupNoteChange={(value) => updateMaterialOrderForm(order._id, { pickupNote: value })}
+              onExpectedAtChange={(value) => updateMaterialOrderForm(order._id, { expectedAt: value })}
               onAddExtraMaterial={(draft) => addExtraMaterialItem(order._id, draft)}
               onConfirmPickup={() => {
                 void handleConfirmPickup(order._id);
