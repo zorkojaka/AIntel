@@ -1563,7 +1563,7 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
         { id: projectId, confirmedOfferVersionId: String(existing._id) },
         {
           $set: {
-            quotedTotal: totals.baseWithoutVat,
+            quotedTotal: totals.baseAfterDiscount,
             quotedVat: totals.vatAmount,
             quotedTotalWithVat: totals.totalWithVat,
             offerAmount: totals.totalWithVat,

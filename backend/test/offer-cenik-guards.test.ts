@@ -109,6 +109,7 @@ test('cenik in ponudba: marže le admin, nabavna cena enotna, potrjena ponudba z
     assert.equal(offer?.totalWithVat, 366);
     const project = await ProjectModel.findOne({ id: 'PRJ-950' }).lean();
     assert.equal(project?.quotedTotalWithVat, 366);
+    assert.equal(project?.quotedTotal, 300);
     assert.equal(project?.offerAmount, 366);
 
     // Brez nastavitev v telesu seštevki uporabijo shranjene (DDV 9,5 %), ne privzetih 22 %.
