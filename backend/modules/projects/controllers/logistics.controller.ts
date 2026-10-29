@@ -1111,7 +1111,7 @@ async function ensureMaterialOrderForOffer(params: {
         materialStep:
           typeof existingItems.get(item.id)?.materialStep === 'string'
             ? existingItems.get(item.id).materialStep
-            : item.materialStep ?? 'Za naro?iti',
+            : item.materialStep ?? 'Za naročiti',
         isExtra: false,
       })),
       ...extraItems,
@@ -1937,7 +1937,8 @@ export async function confirmOfferForProject(input: {
     const offerTotals = calculateOfferTotalsFromSnapshot(offer as any);
     const updatePayload: Record<string, unknown> = {
       confirmedOfferVersionId: offerId,
-      quotedTotal: offerTotals.baseWithoutVat,
+      // Neto po popustih, da se ujema z DDV in skupnim zneskom.
+      quotedTotal: offerTotals.baseAfterDiscount,
       quotedVat: offerTotals.vatAmount,
       quotedTotalWithVat: offerTotals.totalWithVat,
       offerAmount: offerTotals.totalWithVat,
