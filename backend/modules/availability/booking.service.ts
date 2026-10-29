@@ -450,9 +450,23 @@ export async function chooseBookingDay(token: string, date: unknown): Promise<{ 
     }
 
     const scheduledAt = `${chosen.date}T${String(chosen.startHour).padStart(2, '0')}:00:00`;
+    const bookingToken = offerBooking.bookingToken;
+    // Atomic claim: a double click must not confirm the offer (and email the customer) twice.
+    const claim = await OfferBookingModel.updateOne(
+      { _id: offerBooking._id, bookingToken, selectedAt: null },
+      { $set: { scheduledAt, selectedEmployeeId: chosen.employeeId }, $unset: { bookingToken: 1 } },
+    );
+    if (claim.modifiedCount === 0) {
+      throw new AvailabilityError('Termin je že izbran.', 409);
+    }
     offerBooking.scheduledAt = scheduledAt;
     offerBooking.selectedEmployeeId = chosen.employeeId as any;
-    await offerBooking.save();
+    offerBooking.bookingToken = undefined;
+    const releaseClaim = () =>
+      OfferBookingModel.updateOne(
+        { _id: offerBooking._id },
+        { $set: { bookingToken }, $unset: { scheduledAt: 1, selectedEmployeeId: 1 } },
+      );
 
     await ProjectModel.updateOne(
       { id: offerBooking.projectId },
@@ -479,8 +493,12 @@ export async function chooseBookingDay(token: string, date: unknown): Promise<{ 
       projectId: offerBooking.projectId,
       offerId: String(offerBooking.offerVersionId),
       actorDisplayName: 'Stranka (spletna izbira termina)',
+    }).catch(async (error) => {
+      await releaseClaim();
+      throw error;
     });
     if (!confirmation) {
+      await releaseClaim();
       throw new AvailabilityError('Ponudbe ni bilo mogoče potrditi.', 404);
     }
 
@@ -531,11 +549,19 @@ export async function chooseBookingDay(token: string, date: unknown): Promise<{ 
   }
 
   const scheduledAt = `${chosen.date}T${String(chosen.startHour).padStart(2, '0')}:00:00`;
+  const scheduledConfirmedAt = new Date();
+  // Povezava je enkratna; atomičen prevzem žetona prepreči dvojno potrditev ob dvojnem kliku.
+  const claim = await WorkOrderModel.updateOne(
+    { _id: workOrder._id, bookingToken: workOrder.bookingToken },
+    { $set: { scheduledAt, scheduledConfirmedAt, scheduledConfirmedBy: 'Stranka (spletna izbira)' }, $unset: { bookingToken: 1 } },
+  );
+  if (claim.modifiedCount === 0) {
+    throw new AvailabilityError('Termin je že izbran.', 409);
+  }
   workOrder.scheduledAt = scheduledAt;
-  workOrder.scheduledConfirmedAt = new Date();
+  workOrder.scheduledConfirmedAt = scheduledConfirmedAt;
   workOrder.scheduledConfirmedBy = 'Stranka (spletna izbira)';
-  workOrder.bookingToken = undefined; // povezava je enkratna
-  await workOrder.save();
+  workOrder.bookingToken = undefined;
 
   await ProjectModel.updateOne(
     { id: workOrder.projectId },

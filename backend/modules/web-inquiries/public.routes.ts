@@ -250,9 +250,24 @@ router.post('/inquiries', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/inquiries/:id/photos', (req: Request, res: Response) => {
+function removeUploadedFiles(req: Request) {
+  for (const file of (req.files as Express.Multer.File[]) ?? []) fs.rm(file.path, { force: true }, () => {});
+}
+
+router.post('/inquiries/:id/photos', async (req: Request, res: Response) => {
   if (!mongoose.isValidObjectId(String(req.params.id))) {
     return res.status(400).json({ ok: false, code: 'VALIDATION_ERROR', message: 'Neveljaven ID povpraševanja.' });
+  }
+  // The widget key is public, so check limits and the inquiry BEFORE anything is written to disk.
+  if (isRateLimited(clientIp(req))) {
+    return res.status(429).json({ ok: false, code: 'RATE_LIMITED', message: 'Preveč zahtevkov. Poskusite znova čez nekaj minut.' });
+  }
+  const existing = await WebInquiryModel.findById(req.params.id).select({ photos: 1 }).lean().catch(() => null);
+  if (!existing) {
+    return res.status(404).json({ ok: false, code: 'NOT_FOUND', message: 'Povpraševanje ni najdeno.' });
+  }
+  if ((existing.photos?.length ?? 0) >= 12) {
+    return res.status(400).json({ ok: false, code: 'UPLOAD_ERROR', message: 'Preveč slik za eno povpraševanje.' });
   }
   photoUpload.array('photos', 6)(req, res, async (uploadError: unknown) => {
     if (uploadError) {
@@ -262,10 +277,12 @@ router.post('/inquiries/:id/photos', (req: Request, res: Response) => {
     try {
       const inquiry = await WebInquiryModel.findById(req.params.id);
       if (!inquiry) {
+        removeUploadedFiles(req);
         return res.status(404).json({ ok: false, code: 'NOT_FOUND', message: 'Povpraševanje ni najdeno.' });
       }
       const files = (req.files as Express.Multer.File[]) ?? [];
       if ((inquiry.photos?.length ?? 0) + files.length > 12) {
+        removeUploadedFiles(req);
         return res.status(400).json({ ok: false, code: 'UPLOAD_ERROR', message: 'Preveč slik za eno povpraševanje.' });
       }
       const now = new Date();

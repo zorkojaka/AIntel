@@ -50,6 +50,7 @@ test('ECO-29 client documents (signed URLs)', async (t) => {
   await t.test('listClientDocuments returns issued offers + invoices with tokens', async () => {
     const clientId = new mongoose.Types.ObjectId();
     const offerId = new mongoose.Types.ObjectId();
+    const internalInvoiceId = new mongoose.Types.ObjectId().toString();
     await mongoose.connection.collection('crmclients').insertOne({ _id: clientId, name: 'Doc Stranka', email: 'doc@example.com', isActive: true });
     await mongoose.connection.collection('projects').insertOne({
       _id: new mongoose.Types.ObjectId(),
@@ -61,6 +62,7 @@ test('ECO-29 client documents (signed URLs)', async (t) => {
       invoiceVersions: [
         { _id: new mongoose.Types.ObjectId().toString(), status: 'issued', invoiceNumber: 'RAC-2026-5', issuedAt: '2026-04-10T00:00:00Z' },
         { _id: new mongoose.Types.ObjectId().toString(), status: 'draft', invoiceNumber: null, issuedAt: null },
+        { _id: internalInvoiceId, status: 'issued', internal: true, invoiceNumber: 'INTERNO PRJ-700', issuedAt: '2026-04-11T00:00:00Z' },
       ],
     });
     await mongoose.connection.collection('offerversions').insertMany([
@@ -71,7 +73,9 @@ test('ECO-29 client documents (signed URLs)', async (t) => {
     const byId = await listClientDocuments({ clientId: String(clientId), email: null });
     assert.equal(byId.clientId, String(clientId));
     const types = byId.documents.map((d) => d.type).sort();
-    assert.deepEqual(types, ['invoice', 'offer']); // draft offer + draft invoice excluded
+    assert.deepEqual(types, ['invoice', 'offer']); // draft offer, draft and internal invoice excluded
+    const internalToken = signDocToken({ c: String(clientId), t: 'invoice', p: 'PRJ-700', d: internalInvoiceId });
+    assert.deepEqual(await generateClientDocument(internalToken), { error: 'NOT_FOUND' });
     assert.ok(byId.documents.every((d) => typeof d.token === 'string' && d.token.includes('.')));
 
     // Email fallback resolves the same client.

@@ -124,7 +124,8 @@ export async function listClientDocuments(input: { clientId: string | null; emai
   // Računi (izdani; osnutki in stornirani se ne prikažejo).
   for (const project of projects) {
     for (const inv of (project.invoiceVersions ?? []) as any[]) {
-      if (inv?.status !== 'issued') continue;
+      // Interni obračun (plačilo monterjev) ni račun stranki.
+      if (inv?.status !== 'issued' || inv.internal === true) continue;
       documents.push({
         type: 'invoice',
         id: String(inv._id),
@@ -166,7 +167,7 @@ export async function generateClientDocument(
   // invoice
   const project = await ProjectModel.findOne({ id: payload.p }).select({ clientId: 1, 'customer.name': 1, invoiceVersions: 1 }).lean();
   if (!project || !(await projectBelongsToClient(project, payload.c))) return { error: 'NOT_FOUND' };
-  const inv = ((project.invoiceVersions ?? []) as any[]).find((v) => String(v._id) === payload.d && v.status === 'issued');
+  const inv = ((project.invoiceVersions ?? []) as any[]).find((v) => String(v._id) === payload.d && v.status === 'issued' && v.internal !== true);
   if (!inv) return { error: 'NOT_FOUND' };
   const { generateInvoicePdf } = await import('../projects/services/invoice-pdf.service');
   const buffer = await generateInvoicePdf(payload.p, payload.d, { docType: 'INVOICE' });

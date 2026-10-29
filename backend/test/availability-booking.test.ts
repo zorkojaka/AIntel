@@ -545,3 +545,26 @@ test('rezervacija iz ponudbe: zamik prvega termina skrije prezgodnje dni', async
   await assert.rejects(chooseBookingDay('e'.repeat(48), addDays(todayKey(), 1)), (error: unknown) =>
     error instanceof AvailabilityError && error.statusCode === 409);
 });
+
+test('rezervacija: dvojni klik potrdi ponudbo in pošlje obvestilo le enkrat', async (t) => {
+  const internalEmail = t.mock.method(communication, 'sendBookingSelectedInternalEmail', async () => ({ message: null }));
+  const confirmationEmail = t.mock.method(communication, 'sendBookingConfirmationEmail', async () => ({ message: null }));
+  const miha = await monter('Miha');
+  await setAvailabilityDay(String(miha._id), D1, [8, 9, 10]);
+  await ProjectModel.create({
+    id: 'PRJ-405', code: 'PRJ-405', projectNumber: 405, title: 'PRJ-405: Dvojni klik',
+    customer: { name: 'Testna stranka' }, status: 'offered', createdAt: new Date().toISOString(),
+  });
+  const offer = await OfferVersionModel.create({
+    projectId: 'PRJ-405', baseTitle: 'Ponudba', versionNumber: 1, title: 'Ponudba', status: 'sent', items: [],
+  });
+  await OfferBookingModel.create({
+    projectId: 'PRJ-405', offerVersionId: offer._id, candidateEmployeeIds: [miha._id], bookingToken: 'e'.repeat(48), durationHours: 2,
+  });
+
+  const results = await Promise.allSettled([chooseBookingDay('e'.repeat(48), D1), chooseBookingDay('e'.repeat(48), D1)]);
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(internalEmail.mock.callCount(), 1);
+  assert.equal(confirmationEmail.mock.callCount(), 1);
+  assert.equal(await WorkOrderModel.countDocuments({ projectId: 'PRJ-405' }), 1);
+});
