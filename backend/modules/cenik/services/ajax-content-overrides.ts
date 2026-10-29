@@ -25,7 +25,12 @@ type AjaxContentRule = {
 
 type CompiledRule = Omit<AjaxContentRule, 'match'> & { match: RegExp };
 
-const CONTENT_PATH = path.resolve(__dirname, '..', '..', '..', 'data', 'cenik', 'ajax_vsebine.json');
+// Iz izvorne kode so podatki 3 mape višje, iz prevedene (dist/backend/...) pa 5.
+const CONTENT_PATH =
+  [3, 5]
+    .map((up) => path.resolve(__dirname, ...Array(up).fill('..'), 'data', 'cenik', 'ajax_vsebine.json'))
+    .find((candidate) => fs.existsSync(candidate)) ??
+  path.resolve(__dirname, '..', '..', '..', 'data', 'cenik', 'ajax_vsebine.json');
 
 let cachedRules: CompiledRule[] | null = null;
 

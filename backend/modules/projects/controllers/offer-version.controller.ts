@@ -3,11 +3,12 @@ import mongoose, { Types } from 'mongoose';
 import PDFDocument from 'pdfkit';
 import http from 'http';
 import https from 'https';
-import type { OfferLineItem, OfferStatus, OfferTemplate, OfferVersion } from '../../../../shared/types/offers';
+import type { OfferLineItem, OfferTemplate, OfferVersion } from '../../../../shared/types/offers';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { OfferTemplateModel } from '../schemas/offer-template';
 import { ProductModel } from '../../cenik/product.model';
 import { ProjectModel } from '../schemas/project';
+import { WorkOrderModel } from '../schemas/work-order';
 import { renderHtmlToPdf } from '../services/html-pdf.service';
 import { renderProductDescriptionsHtml, type ProductDescriptionEntry } from '../services/document-renderers';
 import { generateOfferDocumentPdf } from '../services/offer-pdf-preview.service';
@@ -1248,7 +1249,7 @@ export async function saveOfferVersion(req: Request, res: Response, next: NextFu
       baseAfterDiscount: totals.baseAfterDiscount ?? totals.totalNetAfterDiscount ?? 0,
       vatAmount: totals.vatAmount ?? totals.totalVat ?? 0,
       totalWithVat: totals.totalWithVat ?? totals.totalGrossAfterDiscount ?? totals.totalGross ?? 0,
-      status: (body?.status as OfferStatus) || 'draft',
+      status: 'draft',
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
     };
@@ -1499,19 +1500,24 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
       return res.fail('Ponudba mora vsebovati vsaj eno veljavno postavko.', 400);
     }
 
-    const totals = calculateOfferTotals({
-      items: itemsWithNorma,
-      usePerItemDiscount: body?.usePerItemDiscount ?? false,
-      useGlobalDiscount: body?.useGlobalDiscount ?? true,
-      globalDiscountPercent: body?.globalDiscountPercent ?? body?.discountPercent ?? 0,
-      fixedDiscountAmount: body?.fixedDiscountAmount ?? 0,
-      vatMode: body?.vatMode ?? 22,
-    });
-
     const existing = await OfferVersionModel.findOne({ _id: offerId, projectId });
     if (!existing) {
       return res.success(null);
     }
+
+    // Seštevki morajo nastati iz istih nastavitev, ki jih shranimo.
+    const useGlobalDiscount = body?.useGlobalDiscount ?? existing.useGlobalDiscount ?? true;
+    const usePerItemDiscount = body?.usePerItemDiscount ?? existing.usePerItemDiscount ?? false;
+    const vatMode = body?.vatMode ?? existing.vatMode ?? 22;
+    const totals = calculateOfferTotals({
+      items: itemsWithNorma,
+      usePerItemDiscount,
+      useGlobalDiscount,
+      globalDiscountPercent:
+        body?.globalDiscountPercent ?? body?.discountPercent ?? existing.globalDiscountPercent ?? existing.discountPercent ?? 0,
+      fixedDiscountAmount: body?.fixedDiscountAmount ?? existing.fixedDiscountAmount ?? 0,
+      vatMode,
+    });
 
     if (body.title !== undefined) {
       const nextBaseTitle = extractBaseTitle(normalizeText(body.title, existing.baseTitle));
@@ -1537,9 +1543,9 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
     existing.discountAmount = totals.discountAmount;
     existing.totalNetAfterDiscount = totals.totalNetAfterDiscount;
     existing.totalGrossAfterDiscount = totals.totalGrossAfterDiscount;
-    existing.useGlobalDiscount = body?.useGlobalDiscount ?? existing.useGlobalDiscount ?? true;
-    existing.usePerItemDiscount = body?.usePerItemDiscount ?? existing.usePerItemDiscount ?? false;
-    existing.vatMode = body?.vatMode ?? existing.vatMode ?? 22;
+    existing.useGlobalDiscount = useGlobalDiscount;
+    existing.usePerItemDiscount = usePerItemDiscount;
+    existing.vatMode = vatMode;
     existing.baseWithoutVat = totals.baseWithoutVat ?? existing.baseWithoutVat ?? 0;
     existing.perItemDiscountAmount = totals.perItemDiscountAmount ?? existing.perItemDiscountAmount ?? 0;
     existing.globalDiscountAmount = totals.globalDiscountAmount ?? existing.globalDiscountAmount ?? 0;
@@ -1547,9 +1553,24 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
     existing.baseAfterDiscount = totals.baseAfterDiscount ?? existing.baseAfterDiscount ?? 0;
     existing.vatAmount = totals.vatAmount ?? existing.vatAmount ?? 0;
     existing.totalWithVat = totals.totalWithVat ?? existing.totalWithVat ?? existing.totalGrossAfterDiscount ?? 0;
-    existing.status = body.status ?? existing.status;
+    // Status spreminjajo le pošiljanje, potrditev in preklic potrditve.
 
     await existing.save();
+
+    // Potrjena ponudba je vir zneska projekta (Finance › Izdane ponudbe); po popravku ga uskladimo.
+    if (existing.status === 'accepted') {
+      await ProjectModel.updateOne(
+        { id: projectId, confirmedOfferVersionId: String(existing._id) },
+        {
+          $set: {
+            quotedTotal: totals.baseWithoutVat,
+            quotedVat: totals.vatAmount,
+            quotedTotalWithVat: totals.totalWithVat,
+            offerAmount: totals.totalWithVat,
+          },
+        },
+      );
+    }
 
     const plain = existing.toObject();
     return res.success(
@@ -1569,6 +1590,15 @@ export async function updateOfferVersion(req: Request, res: Response, next: Next
 export async function deleteOfferVersion(req: Request, res: Response, next: NextFunction) {
   try {
     const { projectId, offerId } = req.params;
+    const [existing, confirmingProject, activeWorkOrder] = await Promise.all([
+      OfferVersionModel.findOne({ _id: offerId, projectId }).select('status').lean(),
+      ProjectModel.exists({ id: projectId, confirmedOfferVersionId: offerId }),
+      WorkOrderModel.exists({ projectId, offerVersionId: offerId, cancelledAt: null, status: { $ne: 'cancelled' } }),
+    ]);
+    // Na potrjeno ponudbo so vezani delovni nalog, material in znesek projekta.
+    if (existing?.status === 'accepted' || confirmingProject || activeWorkOrder) {
+      return res.fail('Ponudba je potrjena. Najprej prekliči potrditev, nato jo izbriši.', 409);
+    }
     const deleted = await OfferVersionModel.findOneAndDelete({ _id: offerId, projectId });
     return res.success(!!deleted);
   } catch (err) {

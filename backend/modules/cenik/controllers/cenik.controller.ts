@@ -114,8 +114,9 @@ async function buildPayload(body: Partial<ProductPayload>): Promise<ProductPaylo
     ime: castText(body.ime),
     categorySlugs: normalizeCategorySlugs(body.categorySlugs),
     isService: parseBoolean(body.isService),
-    purchasePriceWithoutVat: parsePrice(body.purchasePriceWithoutVat ?? body.nabavnaCena),
-    nabavnaCena: parsePrice(body.nabavnaCena),
+    // Obrazec ureja le nabavnaCena, a pošlje tudi staro purchasePriceWithoutVat; obe morata ostati enaki.
+    purchasePriceWithoutVat: parsePrice(body.nabavnaCena ?? body.purchasePriceWithoutVat),
+    nabavnaCena: parsePrice(body.nabavnaCena ?? body.purchasePriceWithoutVat),
     prodajnaCena: parsePrice(body.prodajnaCena),
     kratekOpis: castText(body.kratekOpis),
     dolgOpis: castText(body.dolgOpis),
