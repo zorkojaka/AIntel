@@ -4,7 +4,7 @@ import { parseApiEnvelope } from '@aintel/shared/utils/api-client';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useDashboardLayout } from './hooks/useDashboardLayout';
 import { useInstallerDashboardData } from './hooks/useInstallerDashboardData';
-import { ALL_WIDGETS, getWidgetById } from './widgets/registry';
+import { ALL_WIDGETS } from './widgets/registry';
 import type { DashboardWidgetId } from './types';
 
 const DEFAULT_AUTH = {
@@ -206,11 +206,8 @@ export function DashboardPage() {
       ) : null}
 
       <div className="dashboard-grid">
-        {visibleWidgets.map((widgetId) => {
-          const widget = getWidgetById(widgetId);
-          if (!widget) {
-            return null;
-          }
+        {/* Le pripomočki, ki jih vloga sme videti, tudi če so v shranjeni postavitvi drugi. */}
+        {selectedWidgets.map((widget) => {
           const sizeClass = widget.size ? `dashboard-grid__item--${widget.size}` : '';
           return (
             <div key={widget.id} className={['dashboard-grid__item', sizeClass].filter(Boolean).join(' ')}>

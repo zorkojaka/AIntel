@@ -30,10 +30,11 @@ test('privzete izbire po vlogah; shranjevanje in validacija sta na backendu', as
   assert.deepEqual(options.value.EXECUTION, { issued: true, scheduled: true });
   assert.deepEqual(options.value.SALES, { scheduled: true, completed: true });
   assert.deepEqual(options.value.ADMIN, { issued: true, scheduled: true, completed: true });
-  const edited = { ...options.value, EXECUTION: { issued: false, scheduled: false }, ADMIN: { issued: false, scheduled: true, completed: false } };
+  const edited = { ...options.value, EXECUTION: { issued: false, scheduled: false }, ADMIN: { issued: false, scheduled: true, completed: false, recipients: ['admin@example.com'] } };
   await saveInternalNotificationSettings(edited, 'test-admin');
   _clearConfigCache();
-  assert.deepEqual(await getInternalNotificationSettings(), edited);
+  // Brez izbranih naslovnikov je polje recipients undefined (vsi naslovniki vloge); JSON ga izpusti kot Mongo.
+  assert.deepEqual(JSON.parse(JSON.stringify(await getInternalNotificationSettings())), edited);
   assert.equal((await ConfigStoreModel.findOne({ namespace: 'communication.internal' }))?.updatedBy, 'test-admin');
   await assert.rejects(saveInternalNotificationSettings({ ADMIN: { issued: 'invalid' } }), /logična/);
 });
