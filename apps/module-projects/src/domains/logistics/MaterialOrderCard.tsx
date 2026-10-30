@@ -737,7 +737,12 @@ export function MaterialOrderCard({
                       <Input
                         type="date"
                         value={toDateInputValue(materialOrder.expectedAt)}
-                        onChange={(event) => onExpectedAtChange(event.target.value || null)}
+                        onChange={(event) => {
+                          const next = event.target.value;
+                          // delni vnos (npr. leto 112026) bi sesul stran
+                          if (next && !/^\d{4}-\d{2}-\d{2}$/.test(next)) return;
+                          onExpectedAtChange(next || null);
+                        }}
                         className="h-9 text-sm"
                       />
                     </label>

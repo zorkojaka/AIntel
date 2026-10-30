@@ -63,6 +63,8 @@ export function ExecutionDateTimePicker({ value, onChange, className, disabled }
             onChange(null);
             return;
           }
+          // Med tipkanjem brskalnik da tudi npr. leto 112026 — tak datum bi sesul stran.
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(nextDate) || Number.isNaN(Date.parse(nextDate))) return;
           emit({ date: nextDate });
         }}
         className="h-12 w-[9.5rem] text-base font-semibold"
