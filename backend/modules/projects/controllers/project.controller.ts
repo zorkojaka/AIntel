@@ -1,3 +1,5 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { NextFunction, Request, Response } from 'express';
 import { ProductModel } from '../../cenik/product.model';
 import { logger } from '../../../core/logger';
@@ -23,6 +25,10 @@ import { serializeProjectDetails } from '../services/project.service';
 import { OfferVersionModel } from '../schemas/offer-version';
 import { MaterialOrderModel } from '../schemas/material-order';
 import { WorkOrderModel } from '../schemas/work-order';
+import { CommunicationEventModel } from '../../communication/schemas/event';
+import { CommunicationMessageModel } from '../../communication/schemas/message';
+import { ZahtevaModel } from '../../zahteve/zahteva.model';
+import { PhotoModel } from '../../photos/schemas/photo';
 import { resolveTenantId } from '../../../utils/tenant';
 import { canSeePrices, ROLE_ADMIN, ROLE_EXECUTION, ROLE_FINANCE, ROLE_ORGANIZER, ROLE_SALES } from '../../../utils/roles';
 import { UserModel } from '../../users/schemas/user';
@@ -40,6 +46,8 @@ import {
 import { calculateProjectRouteDistance } from '../services/route-distance.service';
 import { requestReviewForProject } from '../../reviews/review.service';
 import { generateOfferDocumentNumber } from '../services/document-numbering.service';
+
+const PROJECT_UPLOAD_DIR = '/var/www/aintel/uploads/projects';
 
 function normalizeSlug(value: string) {
   return value
@@ -1690,12 +1698,25 @@ export async function deleteProject(req: Request, res: Response) {
     return res.fail(`Projekt ${req.params.id} ni najden.`, 404);
   }
   const projectKey = deleted.id ?? (deleted as { _id?: Types.ObjectId })._id?.toString();
+  const projectObjectId = (deleted as { _id?: Types.ObjectId })._id;
   if (projectKey) {
     await Promise.all([
       OfferVersionModel.deleteMany({ projectId: projectKey }),
       MaterialOrderModel.deleteMany({ projectId: projectKey }),
       WorkOrderModel.deleteMany({ projectId: projectKey }),
+      CommunicationEventModel.deleteMany({ projectId: projectKey }),
+      CommunicationMessageModel.deleteMany({ projectId: projectKey }),
     ]);
+  }
+  // Zahteve, slike in mapa s slikami so vezane na _id projekta (brez tega ostanejo sirote).
+  if (projectObjectId) {
+    await Promise.all([
+      ZahtevaModel.deleteMany({ projectId: projectObjectId }),
+      PhotoModel.deleteMany({ projectId: projectObjectId }),
+    ]);
+    await fs
+      .rm(path.join(PROJECT_UPLOAD_DIR, projectObjectId.toString()), { recursive: true, force: true })
+      .catch((error) => logger.warn({ projectId: projectKey, error }, 'Mape s slikami projekta ni bilo mogoče odstraniti'));
   }
   return res.success({ id: deleted.id });
 }
