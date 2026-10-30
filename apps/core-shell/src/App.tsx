@@ -66,6 +66,7 @@ const moduleComponents: Record<ModuleId, React.ReactNode> = {
 
 const moduleRoleMap: Partial<Record<ModuleId, string[]>> = {
   service: ['SALES', 'EXECUTION'],
+  mail: ['SALES'], // /api/email je ADMIN + SALES
   crm: ['SALES', 'FINANCE'],
   projects: ['SALES', 'FINANCE', 'EXECUTION', 'ORGANIZER'],
   cenik: ['SALES', 'FINANCE'],
