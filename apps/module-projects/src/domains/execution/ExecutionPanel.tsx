@@ -630,6 +630,9 @@ export function ExecutionPanel({
     return map;
   }, [employees, logistics?.teamMembers]);
 
+  // Monter emaila monterju ne pošilja sam sebi (strežnik ga tudi zavrne).
+  const canSendInstallerEmail = ["ADMIN", "SALES", "FINANCE", "ORGANIZER"].some((role) => viewerRoles.includes(role));
+
   const canOverrideCompletionAssignee = useMemo(
     () => viewerRoles.includes("ADMIN") || viewerRoles.includes("ORGANIZER") || viewerRoles.includes("EXECUTION"),
     [viewerRoles],
@@ -2688,6 +2691,7 @@ export function ExecutionPanel({
                                   Potrdi termin
                                 </Button>
                               )}
+                              {canSendInstallerEmail ? (
                               <Button
                                 type="button"
                                 size="sm"
@@ -2697,6 +2701,7 @@ export function ExecutionPanel({
                                 {preparingInstallerEmailId === order._id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                                 Pošlji email monterju
                               </Button>
+                              ) : null}
                             </div>
                           </div>
                         </div>

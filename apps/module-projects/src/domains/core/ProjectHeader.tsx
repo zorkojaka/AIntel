@@ -9,8 +9,8 @@ export type ProjectHeaderProps = {
   status: ProjectStatus;
   onBack: () => void;
   onPrimaryAction: () => void;
-  onNewProject: () => void;
-  onCloneProject: () => void;
+  onNewProject?: () => void;
+  onCloneProject?: () => void;
   cloningProject?: boolean;
   primaryActionLabel?: string;
   showPrimaryAction?: boolean;
@@ -63,14 +63,18 @@ export function ProjectHeader({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={onNewProject}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nov projekt
-          </Button>
-          <Button variant="outline" onClick={onCloneProject} disabled={cloningProject}>
-            {cloningProject ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
-            Kopiraj projekt
-          </Button>
+          {onNewProject ? (
+            <Button onClick={onNewProject}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nov projekt
+            </Button>
+          ) : null}
+          {onCloneProject ? (
+            <Button variant="outline" onClick={onCloneProject} disabled={cloningProject}>
+              {cloningProject ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
+              Kopiraj projekt
+            </Button>
+          ) : null}
           {showPrimaryAction ? (
             <Button variant="outline" onClick={onPrimaryAction}>
               <Save className="mr-2 h-4 w-4" />

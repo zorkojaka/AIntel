@@ -207,9 +207,10 @@ interface ProjectWorkspaceProps {
   templates: Template[];
   onBack: () => void;
   onProjectUpdate: (path: string, options?: RequestInit) => Promise<ProjectDetails | null>;
-  onNewProject: () => void;
+  /** Brez teh dveh (monter) se gumba Nov/Kopiraj projekt ne prikažeta. */
+  onNewProject?: () => void;
   onOpenProject: (projectId: string) => void;
-  onCloneProject: (projectId: string) => Promise<void>;
+  onCloneProject?: (projectId: string) => Promise<void>;
   cloningProject?: boolean;
   brandColor?: string | null;
 }
@@ -1450,8 +1451,8 @@ export function ProjectWorkspace({
       void refresh();
     };
 
-    const handleNewProjectWithGuard = () => requestOfferNavigation(onNewProject);
-    const handleCloneProjectWithGuard = () => requestOfferNavigation(() => onCloneProject(project.id));
+    const handleNewProjectWithGuard = onNewProject ? () => requestOfferNavigation(onNewProject) : undefined;
+    const handleCloneProjectWithGuard = onCloneProject ? () => requestOfferNavigation(() => onCloneProject(project.id)) : undefined;
     const handleOpenClientProject = (projectId: string) => requestOfferNavigation(() => onOpenProject(projectId));
     const handleTabChangeWithGuard = (next: WorkspaceTabValue) => {
       if (!allowedTabValues.includes(next)) {
@@ -1620,6 +1621,7 @@ export function ProjectWorkspace({
                     {project.customerDetail.paymentTerms?.trim() ? <div>{project.customerDetail.paymentTerms.trim()}</div> : null}
                   </div>
                 )}
+                {handleCloneProjectWithGuard ? (
                 <div className="mt-4 border-t border-border pt-3">
                   <Button
                     type="button"
@@ -1635,6 +1637,7 @@ export function ProjectWorkspace({
                     Kopija ohrani ponudbe kot osnutke, brez računov in izvedbe.
                   </p>
                 </div>
+                ) : null}
               </Card>
 
               <Card className="p-4">

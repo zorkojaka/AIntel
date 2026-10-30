@@ -57,6 +57,8 @@ const requireProjectWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE])
 const requirePreparationAccess = requireRoles([ROLE_ORGANIZER]);
 const requireWorkOrderWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_EXECUTION, ROLE_ORGANIZER]);
 const requireOfferConfirmationWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_ORGANIZER]);
+// Email monterju pošlje organizator/prodaja, ne monter sam sebi.
+const requireInstallerEmailWrite = requireRoles([ROLE_ADMIN, ROLE_SALES, ROLE_FINANCE, ROLE_ORGANIZER]);
 // Monter in organizator ne vidita naših cen: ponudb, predlog ponudb in računov.
 const requirePriceAccess = requireRoles(PRICE_ROLES);
 // Monter vidi le projekte, na katere je dodeljen.
@@ -95,7 +97,7 @@ router.delete('/:projectId/offers/:offerId', requireProjectWrite, deleteOfferVer
 router.get('/:projectId/offers/:offerVersionId/pdf', requirePriceAccess, exportOfferPdf);
 router.post('/:projectId/offers/:offerVersionId/send', requireProjectWrite, withScheduledEmail('sendOfferCommunicationController', sendOfferCommunicationController, requireProjectWrite));
 router.post('/:projectId/work-orders/:workOrderId/send-confirmation', requireWorkOrderWrite, requireAssigned, withScheduledEmail('sendWorkOrderConfirmationCommunicationController', sendWorkOrderConfirmationCommunicationController, requireWorkOrderWrite));
-router.post('/:projectId/work-orders/:workOrderId/send-installer-preparation', requireWorkOrderWrite, requireAssigned, withScheduledEmail('sendInstallerPreparationCommunicationController', sendInstallerPreparationCommunicationController, requireWorkOrderWrite));
+router.post('/:projectId/work-orders/:workOrderId/send-installer-preparation', requireInstallerEmailWrite, requireAssigned, withScheduledEmail('sendInstallerPreparationCommunicationController', sendInstallerPreparationCommunicationController, requireInstallerEmailWrite));
 router.post('/:projectId/work-orders/:workOrderId/accept-assignment', requireWorkOrderWrite, logisticsController.acceptInstallerAssignment);
 router.post('/:projectId/work-orders/:workOrderId/confirm-all-installer-assignments', requireRoles([ROLE_ADMIN]), logisticsController.confirmAllInstallerAssignmentsByAdmin);
 router.get('/:projectId/offer', requirePriceAccess, getActiveOffer);

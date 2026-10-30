@@ -884,9 +884,9 @@ export function ProjectsPage() {
           templates={templates}
           onBack={handleBackToList}
           onProjectUpdate={handleProjectUpdate}
-          onNewProject={openNewProjectDialog}
+          onNewProject={isExecutionOnlyViewer ? undefined : openNewProjectDialog}
           onOpenProject={handleSelectProject}
-          onCloneProject={handleCloneProject}
+          onCloneProject={isExecutionOnlyViewer ? undefined : handleCloneProject}
           cloningProject={cloningProjectId === projectDetails.id}
           brandColor={globalSettings?.primaryColor}
           allowedTabs={allowedWorkspaceTabs}
